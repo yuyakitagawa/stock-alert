@@ -1,0 +1,11 @@
+.env
+venv/
+__pycache__/
+*.pkl
+*.keras
+screener_*.csv
+ranking_*.csv
+post_*.txt
+post_*.md
+*.pyc
+.DS_Store

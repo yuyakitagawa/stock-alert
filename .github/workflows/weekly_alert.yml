@@ -1,0 +1,61 @@
+name: Weekly Stock Alert
+
+on:
+  schedule:
+    - cron: '0 23 * * 5'  # 毎週金曜23:00 UTC = 土曜8:00 JST
+  workflow_dispatch:       # 手動実行ボタンも有効化
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
+          echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
+          echo "HELD_STOCKS=${{ secrets.HELD_STOCKS }}" >> ~/stock-alert/.env
+
+      - name: Step 1 - スクリーニング
+        run: cd ~/stock-alert && python screener.py
+
+      - name: Step 2 - RFモデル学習
+        run: cd ~/stock-alert && python rf_predict.py
+
+      - name: Step 3 - ランキング生成
+        run: cd ~/stock-alert && python rank_stocks.py
+
+      - name: Step 4 - SNS投稿文生成
+        run: cd ~/stock-alert && python generate_post.py
+
+      - name: Step 5 - メールアラート送信
+        run: cd ~/stock-alert && python alert_email.py
+
+      - name: 結果をアーティファクトとして保存
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-results-${{ github.run_number }}
+          path: |
+            screener_*.csv
+            ranking_*.csv
+            post_*.txt
+            post_*.md
+          retention-days: 30
