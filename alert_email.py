@@ -1,8 +1,10 @@
 import requests
 import numpy as np
 import os
+import glob
 import smtplib
 import joblib
+import pandas as pd
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -59,7 +61,6 @@ def get_prices(code, days=400):
         )
         if not timestamps or not closes:
             return None
-        import pandas as pd
         df = pd.DataFrame(
             {"Close": closes},
             index=pd.to_datetime(timestamps, unit="s", utc=True)
@@ -106,6 +107,24 @@ def extract_features(p):
     return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52]
 
 
+def load_x_post():
+    """最新のX投稿文を読み込む"""
+    files = glob.glob(os.path.expanduser("~/stock-alert/post_x_*.txt"))
+    if not files:
+        return None
+    with open(max(files, key=os.path.getmtime), encoding="utf-8") as f:
+        return f.read()
+
+
+def load_top_ranking(n=10):
+    """最新のランキングCSVから上位N銘柄を読み込む"""
+    files = glob.glob(os.path.expanduser("~/stock-alert/ranking_*.csv"))
+    if not files:
+        return None
+    df = pd.read_csv(max(files, key=os.path.getmtime))
+    return df.head(n)
+
+
 def build_html(results, today):
     sell = [r for r in results if r["signal"] == "sell"]
     hold = [r for r in results if r["signal"] == "hold"]
@@ -145,10 +164,49 @@ def build_html(results, today):
     else:
         sell_section = "<h2 style='color:#27ae60'>✅ 売りシグナルなし</h2><p>今週は全銘柄が保持判定です。</p>"
 
+    # X投稿文セクション
+    x_post = load_x_post()
+    x_section = ""
+    if x_post:
+        x_escaped = x_post.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        x_section = f"""
+        <h2>🐦 今週のX投稿文</h2>
+        <div style='background:#f0f8ff;border:1px solid #cce;padding:16px;border-radius:8px;
+                    font-family:monospace;white-space:pre-wrap;line-height:1.8'>
+        {x_escaped}
+        </div>
+        """
+
+    # 注目株ランキングセクション
+    ranking = load_top_ranking(10)
+    ranking_rows = ""
+    if ranking is not None:
+        for _, row in ranking.iterrows():
+            ranking_rows += (
+                f"<tr>"
+                f"<td style='text-align:center'>{int(row['順位'])}</td>"
+                f"<td>{row['銘柄名']}</td>"
+                f"<td style='text-align:center'>{int(row['銘柄コード'])}</td>"
+                f"<td style='text-align:right'>¥{int(row['直近株価(円)']):,}</td>"
+                f"<td style='text-align:center;color:#2980b9'><b>{row['上昇確率(%)']:.1f}%</b></td>"
+                f"</tr>"
+            )
+    ranking_section = f"""
+    <h2>📈 今週の注目株 Top10</h2>
+    <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
+    <tr style='background:#def'><th>順位</th><th>銘柄名</th><th>コード</th><th>株価</th><th>上昇確率</th></tr>
+    {ranking_rows}
+    </table>
+    """ if ranking_rows else ""
+
     return f"""
-    <html><body style='font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px'>
-    <h1>📊 チェック銘柄アラート</h1>
+    <html><body style='font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px'>
+    <h1>📊 週次レポート</h1>
     <p style='color:#666'>{today}</p>
+    {x_section}
+    <hr>
+    {ranking_section}
+    <hr>
     {sell_section}
     <h2>📋 全チェック銘柄サマリー</h2>
     <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
@@ -210,7 +268,7 @@ def main():
         results.append({"code": code, "name": name, "prob": prob, "close": close, "signal": signal})
 
     sell_count = sum(1 for r in results if r["signal"] == "sell")
-    subject = f"【チェック銘柄アラート】{today} 売りシグナル{sell_count}銘柄"
+    subject = f"【週次レポート】{today} 注目株Top10 / 売りシグナル{sell_count}銘柄"
     html = build_html(results, today)
 
     print(f"\nGmail送信中 → {GMAIL_ADDRESS}")
