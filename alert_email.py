@@ -23,18 +23,13 @@ HEADERS = {
 
 
 def load_held_stocks():
-    """環境変数から保有銘柄を読み込む"""
-    raw = os.getenv("HELD_STOCKS", "")
-    if not raw:
-        print("ERROR: .envにHELD_STOCKSが設定されていません")
+    """watch_list.csvから銘柄を読み込む"""
+    csv_path = os.path.expanduser("~/stock-alert/watch_list.csv")
+    if not os.path.exists(csv_path):
+        print("ERROR: watch_list.csvが見つかりません")
         return {}
-    stocks = {}
-    for item in raw.split(","):
-        item = item.strip()
-        if ":" in item:
-            code, name = item.split(":", 1)
-            stocks[code.strip()] = name.strip()
-    return stocks
+    df = pd.read_csv(csv_path, dtype=str)
+    return dict(zip(df["コード"].str.strip(), df["銘柄名"].str.strip()))
 
 
 def get_prices(code, days=400):
