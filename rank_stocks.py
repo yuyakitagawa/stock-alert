@@ -102,13 +102,17 @@ def main():
     print(f"スクリーナー通過銘柄に上昇確率スコアをつけてランキング")
     print("=" * 55)
 
-    # モデル読み込み
-    model_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
-    if not os.path.exists(model_path):
+    # モデル読み込み（上昇・下落）
+    rise_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
+    drop_path = os.path.expanduser("~/stock-alert/rf_drop_model.pkl")
+    if not os.path.exists(rise_path):
         print("ERROR: rf_model.pkl が見つかりません。先に rf_predict.py を実行してください")
         return
-    model = joblib.load(model_path)
-    print(f"\nモデル読み込み: {model_path}")
+    rise_model = joblib.load(rise_path)
+    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    print(f"\n上昇モデル読み込み: {rise_path}")
+    if drop_model:
+        print(f"下落モデル読み込み: {drop_path}")
 
     # スクリーナーCSV読み込み
     files = glob.glob(os.path.expanduser("~/stock-alert/screener_*.csv"))
@@ -130,35 +134,87 @@ def main():
         feat = extract_features(prices["Close"].values)
         if feat is None:
             continue
-        prob = float(model.predict_proba([feat])[0][1])
+        rise_prob = float(rise_model.predict_proba([feat])[0][1])
+        drop_prob = float(drop_model.predict_proba([feat])[0][1]) if drop_model else None
         close = float(prices["Close"].iloc[-1])
-        results.append({
+        rise_pct = round(rise_prob * 100, 1)
+        drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
+        net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
+
+        # ボラティリティ（feat[7] = vol20, 年率換算%）
+        vol = round(feat[7], 1)
+        if vol < 20:
+            vol_label = "🟢低"
+        elif vol < 40:
+            vol_label = "🟡中"
+        elif vol < 60:
+            vol_label = "🟠高"
+        else:
+            vol_label = "🔴超高"
+
+        # ネットスコア判定
+        if net >= 15:
+            judgment = "🟢強気買い"
+        elif net >= 5:
+            judgment = "🔵やや強気"
+        elif net >= -5:
+            judgment = "🟡中立    "
+        elif net >= -15:
+            judgment = "🟠やや弱気"
+        else:
+            judgment = "🔴売り検討"
+
+        # 総合推奨（ネット × ボラティリティ）
+        if net >= 5 and vol < 40:
+            recommend = "✅ 推奨"
+        elif net >= 5 and vol >= 40:
+            recommend = "⚡ 高リスク"
+        elif net < -5 and vol >= 40:
+            recommend = "🚫 避ける"
+        else:
+            recommend = "⏳ 様子見"
+
+        row = {
             "銘柄コード": code,
             "銘柄名": names.get(code, ""),
             "直近株価(円)": round(close, 1),
-            "上昇確率(%)": round(prob * 100, 1),
-        })
+            "上昇確率(%)": rise_pct,
+            "下落確率(%)": drop_pct if drop_pct is not None else "-",
+            "ネット(%)": net,
+            "判定": judgment,
+            "ボラ(%)": vol,
+            "ボラ水準": vol_label,
+            "推奨": recommend,
+        }
+        results.append(row)
         if (i + 1) % 100 == 0:
             print(f"  {i+1}/{len(codes)} 処理済み...")
         time.sleep(0.2)
 
-    # ランキング
-    result_df = pd.DataFrame(results).sort_values("上昇確率(%)", ascending=False).reset_index(drop=True)
+    # ランキング（ネットスコア順）
+    result_df = pd.DataFrame(results).sort_values("ネット(%)", ascending=False).reset_index(drop=True)
     result_df.index += 1
     result_df.insert(0, "順位", result_df.index)
 
     # 表示
-    print(f"\n{'='*55}")
-    print(f"上位{TOP_SHOW}銘柄ランキング（上昇確率順）")
-    print(f"{'='*55}")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<20}  {'株価':>8}  {'上昇確率':>8}")
-    print("-" * 55)
+    print(f"\n{'='*90}")
+    print(f"上位{TOP_SHOW}銘柄ランキング（ネットスコア順: 上昇確率-下落確率）")
+    print(f"{'='*90}")
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  推奨")
+    print("-" * 90)
     for _, row in result_df.head(TOP_SHOW).iterrows():
+        drop_str = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
         print(
             f"{int(row['順位']):>4}  {row['銘柄コード']:>6}  "
-            f"{row['銘柄名']:<20}  "
+            f"{str(row['銘柄名']):<18}  "
             f"{row['直近株価(円)']:>8,.0f}円  "
-            f"{row['上昇確率(%)']:>6.1f}%"
+            f"{row['上昇確率(%)']:>5.1f}%  "
+            f"{drop_str}  "
+            f"{row['ネット(%)']:>+6.1f}%  "
+            f"{row['判定']:<12}  "
+            f"{row['ボラ(%)']:>5.1f}%  "
+            f"{row['ボラ水準']:<6}  "
+            f"{row['推奨']}"
         )
 
     # CSV保存

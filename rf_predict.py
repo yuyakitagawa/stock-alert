@@ -6,9 +6,8 @@ import os
 import io
 import random
 from datetime import datetime, timedelta
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
-from sklearn.utils.class_weight import compute_class_weight
+from sklearn.metrics import accuracy_score, roc_auc_score
+from xgboost import XGBClassifier
 import joblib
 
 FORECAST = 63
@@ -151,18 +150,24 @@ def compute_features(prices_arr):
 
         feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52]
 
-        # ラベル
+        # ラベル（上昇・下落それぞれ）
         future = prices_arr[i + FORECAST]
-        label = 1 if (future - current) / current * 100 >= RISE_THRESHOLD else 0
+        change = (future - current) / current * 100
+        label_rise = 1 if change >= RISE_THRESHOLD else 0
+        label_drop = 1 if change <= -RISE_THRESHOLD else 0
 
         if i < split_idx:
             X_train.append(feat)
-            y_train.append(label)
+            y_train.append((label_rise, label_drop))
         else:
             X_test.append(feat)
-            y_test.append(label)
+            y_test.append((label_rise, label_drop))
 
-    return X_train, y_train, X_test, y_test
+    y_train_rise = [y[0] for y in y_train]
+    y_train_drop = [y[1] for y in y_train]
+    y_test_rise  = [y[0] for y in y_test]
+    y_test_drop  = [y[1] for y in y_test]
+    return X_train, y_train_rise, y_train_drop, X_test, y_test_rise, y_test_drop
 
 
 def predict_latest(model, prices_arr):
@@ -208,7 +213,7 @@ def predict_latest(model, prices_arr):
 
 def main():
     print("=" * 55)
-    print("Random Forest 上昇予測  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
+    print("XGBoost 上昇・下落予測  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
     print(f"学習: 全銘柄からランダム{SAMPLE_N}銘柄")
     print(f"特徴量: リターン・移動平均・RSI・ボラティリティ・52週レンジ")
     print(f"予測: {FORECAST}営業日後に+{RISE_THRESHOLD}%以上上昇する確率")
@@ -227,90 +232,109 @@ def main():
 
     # Step 2: 特徴量生成
     print(f"\n[Step 2] データ取得・特徴量生成中...")
-    all_X_train, all_y_train = [], []
-    all_X_test, all_y_test = [], []
+    all_X_train, all_yr_train, all_yd_train = [], [], []
+    all_X_test,  all_yr_test,  all_yd_test  = [], [], []
     success = 0
 
     for i, code in enumerate(codes):
         prices = get_prices(code, days=800)
         if prices is None or len(prices) < 90 + FORECAST + 10:
             continue
-        Xtr, ytr, Xte, yte = compute_features(prices["Close"].values)
+        Xtr, ytr_r, ytr_d, Xte, yte_r, yte_d = compute_features(prices["Close"].values)
         if len(Xtr) == 0:
             continue
         all_X_train.extend(Xtr)
-        all_y_train.extend(ytr)
+        all_yr_train.extend(ytr_r)
+        all_yd_train.extend(ytr_d)
         all_X_test.extend(Xte)
-        all_y_test.extend(yte)
+        all_yr_test.extend(yte_r)
+        all_yd_test.extend(yte_d)
         success += 1
         if (i + 1) % 100 == 0:
             print(f"  {i+1}/{len(codes)} 処理済み (学習サンプル: {len(all_X_train)})")
         time.sleep(0.3)
 
-    X_train = np.array(all_X_train)
-    y_train = np.array(all_y_train)
-    X_test  = np.array(all_X_test)
-    y_test  = np.array(all_y_test)
+    X_train   = np.array(all_X_train)
+    yr_train  = np.array(all_yr_train)
+    yd_train  = np.array(all_yd_train)
+    X_test    = np.array(all_X_test)
+    yr_test   = np.array(all_yr_test)
+    yd_test   = np.array(all_yd_test)
 
-    pos_rate = y_train.mean() * 100
     print(f"\n  取得成功: {success}/{len(codes)} 銘柄")
     print(f"  学習: {len(X_train)} サンプル / テスト: {len(X_test)} サンプル")
-    print(f"  上昇ラベル率: {pos_rate:.1f}%  (30〜50%が理想)")
+    print(f"  上昇ラベル率: {yr_train.mean()*100:.1f}% / 下落ラベル率: {yd_train.mean()*100:.1f}%")
 
-    # Step 3: 学習
-    print("\n[Step 3] Random Forest 学習中...")
-    classes = np.unique(y_train)
-    weights = compute_class_weight("balanced", classes=classes, y=y_train)
-    cw = dict(zip(classes.astype(int), weights))
+    def train_model(X_tr, y_tr, X_te, y_te, label_name):
+        print(f"\n[Step 3] {label_name}モデル学習中 (XGBoost)...")
+        pos = y_tr.sum()
+        neg = len(y_tr) - pos
+        spw = neg / pos if pos > 0 else 1.0  # クラス不均衡補正
+        print(f"  pos={int(pos)}, neg={int(neg)}, scale_pos_weight={spw:.2f}")
+        m = XGBClassifier(
+            n_estimators=400,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            scale_pos_weight=spw,
+            use_label_encoder=False,
+            eval_metric="auc",
+            random_state=RANDOM_SEED,
+            n_jobs=-1,
+        )
+        m.fit(X_tr, y_tr)
+        y_prob = m.predict_proba(X_te)[:, 1]
+        y_pred = (y_prob >= 0.5).astype(int)
+        acc = accuracy_score(y_te, y_pred)
+        auc = roc_auc_score(y_te, y_prob)
+        print(f"  Accuracy: {acc:.3f} / AUC: {auc:.3f}")
+        return m
 
-    model = RandomForestClassifier(
-        n_estimators=300,
-        max_depth=8,
-        min_samples_leaf=20,
-        class_weight=cw,
-        random_state=RANDOM_SEED,
-        n_jobs=-1
-    )
-    model.fit(X_train, y_train)
-    print("  学習完了")
+    rise_model = train_model(X_train, yr_train, X_test, yr_test, "上昇")
+    drop_model = train_model(X_train, yd_train, X_test, yd_test, "下落")
 
-    # Step 4: 精度評価
-    print("\n[Step 4] テスト精度評価...")
-    y_prob = model.predict_proba(X_test)[:, 1]
-    y_pred = (y_prob >= 0.5).astype(int)
-    acc = accuracy_score(y_test, y_pred)
-    auc = roc_auc_score(y_test, y_prob)
-    print(f"  Accuracy : {acc:.3f}")
-    print(f"  AUC      : {auc:.3f}  (0.5=ランダム / 0.7以上で実用的)")
-    print(classification_report(y_test, y_pred, target_names=["下落(0)", "上昇(1)"]))
+    rise_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
+    drop_path = os.path.expanduser("~/stock-alert/rf_drop_model.pkl")
+    joblib.dump(rise_model, rise_path)
+    joblib.dump(drop_model, drop_path)
+    print(f"\n  上昇モデル保存: {rise_path}")
+    print(f"  下落モデル保存: {drop_path}")
 
-    # 特徴量の重要度
-    print("  特徴量の重要度:")
-    importances = sorted(
-        zip(FEATURE_NAMES, model.feature_importances_),
-        key=lambda x: x[1], reverse=True
-    )
-    for name, imp in importances:
-        bar = "█" * int(imp * 100)
-        print(f"    {name:15s} {imp:.3f} {bar}")
+    # Step 4: チェック銘柄への適用
+    csv_path = os.path.expanduser("~/stock-alert/watch_list.csv")
+    if os.path.exists(csv_path):
+        import pandas as pd
+        wl = pd.read_csv(csv_path, dtype=str)
+        held = dict(zip(wl["コード"].str.strip(), wl["銘柄名"].str.strip()))
+    else:
+        held = HELD_STOCKS
 
-    model_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
-    joblib.dump(model, model_path)
-    print(f"\n  モデル保存: {model_path}")
-
-    # Step 5: 保有株への適用
-    print("\n[Step 5] 保有株 売りシグナル判定")
-    print("-" * 45)
-    for code, name in HELD_STOCKS.items():
+    print("\n[Step 4] チェック銘柄 判定")
+    print("-" * 55)
+    for code, name in held.items():
         prices = get_prices(code, days=400)
         if prices is None or len(prices) < 91:
             print(f"  ❓ {name}({code}): データ取得失敗")
             continue
-        prob = predict_latest(model, prices["Close"].values)
-        if prob is None:
+        rise_prob = predict_latest(rise_model, prices["Close"].values)
+        drop_prob = predict_latest(drop_model, prices["Close"].values)
+        if rise_prob is None:
             continue
-        signal = "⚠️  売り検討" if prob < SELL_SIGNAL_PROB else "✅ 保持"
-        print(f"  {signal}  {name}({code}): 上昇確率 {prob * 100:.1f}%")
+        rise_pct = rise_prob * 100
+        drop_pct = drop_prob * 100 if drop_prob is not None else 0
+        net = rise_pct - drop_pct
+        if net >= 15:
+            signal = "🟢 強気買い  "
+        elif net >= 5:
+            signal = "🔵 やや強気  "
+        elif net >= -5:
+            signal = "🟡 中立      "
+        elif net >= -15:
+            signal = "🟠 やや弱気  "
+        else:
+            signal = "🔴 売り検討  "
+        print(f"  {signal} {name}({code}): 上昇{rise_pct:5.1f}% 下落{drop_pct:5.1f}% ネット{net:+.1f}%")
         time.sleep(0.3)
 
     print("\n完了")
