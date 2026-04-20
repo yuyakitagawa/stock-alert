@@ -38,9 +38,7 @@ jobs:
         run: |
           echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
 
-      # モデルファイルをキャッシュから復元（前回の学習結果を再利用）
       - name: Restore model cache
-        id: cache-models
         uses: actions/cache@v4
         with:
           path: |
@@ -50,31 +48,29 @@ jobs:
           restore-keys: |
             ml-models-weekly-
 
-      - name: Step 1 - スクリーニング（毎日）
+      - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python screener.py
 
-      # モデル学習: 土曜 or モデルファイルが存在しない場合のみ実行
       - name: Step 2 - モデル学習（土曜 or 初回のみ）
         run: |
-          DAY=$(date +%u)  # 1=月曜 〜 7=日曜（6=土曜）
+          DAY=$(date +%u)
           MODEL_PATH=~/stock-alert/rf_model.pkl
           if [ "$DAY" = "6" ] || [ ! -f "$MODEL_PATH" ]; then
-            echo "▶ モデル学習を実行します（土曜 or 初回）"
+            echo "▶ モデル学習を実行します"
             cd ~/stock-alert && python rf_predict.py
           else
-            echo "⏭ モデルが存在するためスキップします（次の土曜に更新）"
+            echo "⏭ モデルが存在するためスキップします"
           fi
 
-      - name: Step 3 - ランキング生成（毎日）
+      - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python rank_stocks.py
 
-      - name: Step 4 - SNS投稿文生成（毎日）
+      - name: Step 4 - SNS投稿文生成
         run: cd ~/stock-alert && python generate_post.py
 
-      - name: Step 5 - メールアラート送信（毎日）
+      - name: Step 5 - メールアラート送信
         run: cd ~/stock-alert && python alert_email.py
 
-      # 学習済みモデルをキャッシュに保存
       - name: Save model cache
         if: always()
         uses: actions/cache@v4
