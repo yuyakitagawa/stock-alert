@@ -1,0 +1,97 @@
+name: Daily Stock Alert
+
+on:
+  schedule:
+    - cron: '0 23 * * *'  # 毎日23:00 UTC = 毎日8:00 JST
+  workflow_dispatch:       # 手動実行ボタン
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost \
+            gspread google-auth yfinance
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
+          echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
+          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+
+      - name: Create gcp_key.json from secret
+        run: |
+          echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
+
+      # モデルファイルをキャッシュから復元（前回の学習結果を再利用）
+      - name: Restore model cache
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-weekly-${{ github.run_number }}
+          restore-keys: |
+            ml-models-weekly-
+
+      - name: Step 1 - スクリーニング（毎日）
+        run: cd ~/stock-alert && python screener.py
+
+      # モデル学習: 土曜 or モデルファイルが存在しない場合のみ実行
+      - name: Step 2 - モデル学習（土曜 or 初回のみ）
+        run: |
+          DAY=$(date +%u)  # 1=月曜 〜 7=日曜（6=土曜）
+          MODEL_PATH=~/stock-alert/rf_model.pkl
+          if [ "$DAY" = "6" ] || [ ! -f "$MODEL_PATH" ]; then
+            echo "▶ モデル学習を実行します（土曜 or 初回）"
+            cd ~/stock-alert && python rf_predict.py
+          else
+            echo "⏭ モデルが存在するためスキップします（次の土曜に更新）"
+          fi
+
+      - name: Step 3 - ランキング生成（毎日）
+        run: cd ~/stock-alert && python rank_stocks.py
+
+      - name: Step 4 - SNS投稿文生成（毎日）
+        run: cd ~/stock-alert && python generate_post.py
+
+      - name: Step 5 - メールアラート送信（毎日）
+        run: cd ~/stock-alert && python alert_email.py
+
+      # 学習済みモデルをキャッシュに保存
+      - name: Save model cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-weekly-${{ github.run_number }}
+
+      - name: 結果をアーティファクトとして保存
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-results-${{ github.run_number }}
+          path: |
+            screener_*.csv
+            ranking_*.csv
+            post_*.txt
+            post_*.md
+          retention-days: 7
