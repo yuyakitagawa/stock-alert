@@ -9,3 +9,4 @@ post_*.txt
 post_*.md
 *.pyc
 .DS_Storewatch_list.csv
+gcp_key.json
