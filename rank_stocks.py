@@ -96,6 +96,26 @@ def extract_features(p):
     return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52]
 
 
+def get_dividend_yield(code):
+    """Yahoo Finance quoteSummaryから配当利回り(%)を取得"""
+    ticker = f"{code}.T"
+    url = (
+        f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+        f"?modules=summaryDetail"
+    )
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        data = resp.json()
+        result = data.get("quoteSummary", {}).get("result", [])
+        if not result:
+            return None
+        dy = result[0].get("summaryDetail", {}).get("dividendYield", {})
+        raw = dy.get("raw") if isinstance(dy, dict) else None
+        return round(raw * 100, 2) if raw else None
+    except Exception:
+        return None
+
+
 def main():
     print("=" * 55)
     print("スクリーナー × RF ランキング  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -174,6 +194,7 @@ def main():
         else:
             recommend = "⏳ 様子見"
 
+        div_yield = get_dividend_yield(code)
         row = {
             "銘柄コード": code,
             "銘柄名": names.get(code, ""),
@@ -185,6 +206,7 @@ def main():
             "ボラ(%)": vol,
             "ボラ水準": vol_label,
             "推奨": recommend,
+            "配当利回り(%)": div_yield if div_yield is not None else "-",
         }
         results.append(row)
         if (i + 1) % 100 == 0:
@@ -200,10 +222,11 @@ def main():
     print(f"\n{'='*90}")
     print(f"上位{TOP_SHOW}銘柄ランキング（ネットスコア順: 上昇確率-下落確率）")
     print(f"{'='*90}")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  推奨")
-    print("-" * 90)
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  {'配当':>6}  推奨")
+    print("-" * 100)
     for _, row in result_df.head(TOP_SHOW).iterrows():
         drop_str = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
+        div_str = f"{row['配当利回り(%)']:>5.2f}%" if row['配当利回り(%)'] != "-" else "   N/A"
         print(
             f"{int(row['順位']):>4}  {row['銘柄コード']:>6}  "
             f"{str(row['銘柄名']):<18}  "
@@ -214,6 +237,7 @@ def main():
             f"{row['判定']:<12}  "
             f"{row['ボラ(%)']:>5.1f}%  "
             f"{row['ボラ水準']:<6}  "
+            f"{div_str}  "
             f"{row['推奨']}"
         )
 

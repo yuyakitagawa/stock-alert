@@ -22,6 +22,26 @@ HEADERS = {
 }
 
 
+def _get_dividend_yield(code):
+    """Yahoo Finance quoteSummaryから配当利回り(%)を取得"""
+    ticker = f"{code}.T"
+    url = (
+        f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+        f"?modules=summaryDetail"
+    )
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        data = resp.json()
+        result = data.get("quoteSummary", {}).get("result", [])
+        if not result:
+            return None
+        dy = result[0].get("summaryDetail", {}).get("dividendYield", {})
+        raw = dy.get("raw") if isinstance(dy, dict) else None
+        return round(raw * 100, 2) if raw else None
+    except Exception:
+        return None
+
+
 def load_held_stocks():
     """Google SheetsまたはCSVからチェック銘柄を読み込む"""
     try:
@@ -149,6 +169,13 @@ def build_html(results, today):
         drop_color = "#c0392b" if r.get("drop_prob") is not None and r["drop_prob"] >= 40 else "#555"
         net = r.get("net", r["prob"])
         judgment, j_color = get_judgment(net)
+        vol = r.get("vol")
+        vol_label = r.get("vol_label", "")
+        recommend = r.get("recommend", "")
+        div_yield = r.get("div_yield")
+        vol_color = "#c0392b" if vol and vol >= 60 else ("#b05000" if vol and vol >= 40 else "#555")
+        div_str = f"{div_yield:.2f}%" if div_yield else "-"
+        div_color = "#27ae60" if div_yield and div_yield >= 3.0 else "#555"
         bg = "background:#fff3cd;" if highlight else ""
         return (
             f"<tr style='{bg}'>"
@@ -159,6 +186,9 @@ def build_html(results, today):
             f"<td style='text-align:center;color:{drop_color}'>{drop_str}</td>"
             f"<td style='text-align:center;font-weight:bold'>{net:+.1f}%</td>"
             f"<td style='text-align:center;color:{j_color}'><b>{judgment}</b></td>"
+            f"<td style='text-align:center;color:{vol_color}'>{f'{vol:.1f}% {vol_label}' if vol else '-'}</td>"
+            f"<td style='text-align:center'><b>{recommend}</b></td>"
+            f"<td style='text-align:center;color:{div_color}'>{div_str}</td>"
             f"</tr>"
         )
 
@@ -168,7 +198,7 @@ def build_html(results, today):
     table_header = (
         "<tr style='background:#eee'>"
         "<th>銘柄名</th><th>コード</th><th>直近株価</th>"
-        "<th>上昇確率</th><th>下落確率</th><th>ネット</th><th>判定</th>"
+        "<th>上昇確率</th><th>下落確率</th><th>ネット</th><th>判定</th><th>ボラ</th><th>推奨</th><th>配当利回り</th>"
         "</tr>"
     )
 
@@ -244,7 +274,7 @@ def build_html(results, today):
     <hr>
     {sell_section}
     <h2>📋 全チェック銘柄サマリー</h2>
-    <p style='color:#666;font-size:13px'>ネット = 上昇確率 - 下落確率。プラスほど強気、マイナスほど弱気。</p>
+    <p style='color:#666;font-size:13px'>ネット = 上昇確率 - 下落確率 ／ ボラ = 20日年率換算ボラティリティ（🟢低&lt;20% 🟡中&lt;40% 🟠高&lt;60% 🔴超高）</p>
     <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
     {table_header}
     {rows_sell}{rows_hold}
@@ -301,11 +331,32 @@ def main():
         rise_prob = float(rise_model.predict_proba([feat])[0][1]) * 100
         drop_prob = float(drop_model.predict_proba([feat])[0][1]) * 100 if drop_model else None
         close = float(prices["Close"].iloc[-1])
+        # 配当利回り取得
+        div_yield = _get_dividend_yield(code)
         net = rise_prob - drop_prob if drop_prob is not None else rise_prob
         signal = "sell" if net < NET_SELL_THRESHOLD else "hold"
         judgment, _ = get_judgment(net)
-        print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{drop_prob:5.1f}% ネット{net:+.1f}%" if drop_prob else f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}%")
-        results.append({"code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob, "net": net, "close": close, "signal": signal})
+        # ボラティリティ（feat[7] = vol20, 年率換算%）
+        vol = round(feat[7], 1)
+        if vol < 20:
+            vol_label = "🟢低"
+        elif vol < 40:
+            vol_label = "🟡中"
+        elif vol < 60:
+            vol_label = "🟠高"
+        else:
+            vol_label = "🔴超高"
+        # 総合推奨
+        if net >= 5 and vol < 40:
+            recommend = "✅ 推奨"
+        elif net >= 5 and vol >= 40:
+            recommend = "⚡ 高リスク"
+        elif net < -5 and vol >= 40:
+            recommend = "🚫 避ける"
+        else:
+            recommend = "⏳ 様子見"
+        print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{drop_prob:5.1f}% ネット{net:+.1f}% ボラ{vol:.1f}%{vol_label} {recommend}" if drop_prob else f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}%")
+        results.append({"code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob, "net": net, "close": close, "signal": signal, "vol": vol, "vol_label": vol_label, "recommend": recommend, "div_yield": div_yield})
 
     sell_count = sum(1 for r in results if r["signal"] == "sell")
     subject = f"【週次レポート】{today} 注目株Top10 / 要注意{sell_count}銘柄"

@@ -10,8 +10,8 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 from xgboost import XGBClassifier
 import joblib
 
-FORECAST = 63
-RISE_THRESHOLD = 15.0
+FORECAST = 21
+RISE_THRESHOLD = 7.0
 SELL_SIGNAL_PROB = 0.4
 SAMPLE_N = 500
 RANDOM_SEED = 42
@@ -302,19 +302,13 @@ def main():
     print(f"  下落モデル保存: {drop_path}")
 
     # Step 4: チェック銘柄への適用
-    try:
-        import sys
-        sys.path.insert(0, os.path.expanduser("~/stock-alert"))
-        from sheets_helper import load_watch_list
-        held = load_watch_list()
-    except Exception:
-        csv_path = os.path.expanduser("~/stock-alert/watch_list.csv")
-        if os.path.exists(csv_path):
-            import pandas as pd
-            wl = pd.read_csv(csv_path, dtype=str)
-            held = dict(zip(wl["コード"].str.strip(), wl["銘柄名"].str.strip()))
-        else:
-            held = HELD_STOCKS
+    csv_path = os.path.expanduser("~/stock-alert/watch_list.csv")
+    if os.path.exists(csv_path):
+        import pandas as pd
+        wl = pd.read_csv(csv_path, dtype=str)
+        held = dict(zip(wl["コード"].str.strip(), wl["銘柄名"].str.strip()))
+    else:
+        held = HELD_STOCKS
 
     print("\n[Step 4] チェック銘柄 判定")
     print("-" * 55)
