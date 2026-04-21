@@ -24,8 +24,12 @@ def generate_x_post(df):
     lines.append(f"📈【今週の注目株 Top{TOP_X}】{today}")
     lines.append("")
     for _, row in top.iterrows():
-        lines.append(f"#{int(row['銘柄コード'])} {row['銘柄名']}")
-        lines.append(f"  上昇確率 {row['上昇確率(%)']:.1f}%  株価 ¥{int(row['直近株価(円)']):,}")
+        net = row.get("ネット(%)", row["上昇確率(%)"])
+        judgment = row.get("判定", "").strip()
+        vol_label = row.get("ボラ水準", "").strip()
+        recommend = row.get("推奨", "").strip()
+        lines.append(f"#{int(row['銘柄コード'])} {row['銘柄名']} ¥{int(row['直近株価(円)']):,}")
+        lines.append(f"  ネット{net:+.1f}% {judgment} ボラ{vol_label} {recommend}")
     lines.append("")
     lines.append("東証3,756銘柄をスクリーニング＋機械学習で絞り込み。")
     lines.append("※過去データ基づく参考情報です。投資は自己責任で。")
@@ -50,19 +54,29 @@ def generate_note_post(df):
     lines.append("- ボラティリティ 50%以下")
     lines.append("")
     lines.append("**Step 2：機械学習スコアリング**")
-    lines.append("- Random Forestモデルで「3ヶ月後に+15%以上上昇する確率」を算出")
+    lines.append("- XGBoostモデルで「3ヶ月後に+15%以上上昇/下落する確率」を算出")
+    lines.append("- ネットスコア（上昇確率-下落確率）で総合判定")
     lines.append("- 特徴量：直近リターン・移動平均・RSI・ボラティリティ・52週レンジ")
     lines.append("")
     lines.append("---")
     lines.append("")
     lines.append(f"## 上位{TOP_NOTE}銘柄")
     lines.append("")
-    lines.append("| 順位 | コード | 銘柄名 | 株価 | 上昇確率 |")
-    lines.append("|------|--------|--------|------|----------|")
+    lines.append("| 順位 | コード | 銘柄名 | 株価 | 上昇確率 | 下落確率 | ネット | 判定 | ボラ | 推奨 |")
+    lines.append("|------|--------|--------|------|----------|----------|--------|------|------|------|")
     for i, (_, row) in enumerate(top.iterrows(), 1):
+        net = row.get("ネット(%)", row["上昇確率(%)"])
+        drop = row.get("下落確率(%)", "-")
+        drop_str = f"{drop:.1f}%" if isinstance(drop, float) else str(drop)
+        judgment = str(row.get("判定", "")).strip()
+        vol = row.get("ボラ(%)", "-")
+        vol_str = f"{vol:.1f}%" if isinstance(vol, float) else str(vol)
+        vol_label = str(row.get("ボラ水準", "")).strip()
+        recommend = str(row.get("推奨", "")).strip()
         lines.append(
             f"| {i} | {int(row['銘柄コード'])} | {row['銘柄名']} | "
-            f"¥{int(row['直近株価(円)']):,} | {row['上昇確率(%)']:.1f}% |"
+            f"¥{int(row['直近株価(円)']):,} | {row['上昇確率(%)']:.1f}% | "
+            f"{drop_str} | {net:+.1f}% | {judgment} | {vol_str}{vol_label} | {recommend} |"
         )
     lines.append("")
     lines.append("---")
