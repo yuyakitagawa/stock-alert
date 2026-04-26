@@ -62,8 +62,10 @@ def calc_rsi(prices, period=14):
     return 100 - 100 / (1 + gains / losses)
 
 
+SEQ_DAYS = 60  # 生リターン系列の日数
+
 def extract_features(p):
-    """最新時点の特徴量を返す（rf_predict.pyと同じ計算）"""
+    """最新時点の特徴量を返す（rf_predict_v2.pyと同じ計算: 70次元）"""
     if len(p) < 91:
         return None
     current = p[-1]
@@ -93,7 +95,14 @@ def extract_features(p):
     hi, lo = week52.max(), week52.min()
     pos52 = (current - lo) / (hi - lo) if hi > lo else 0.5
 
-    return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52]
+    # 過去60日の日次リターン系列
+    if len(p) >= SEQ_DAYS + 1:
+        seq = np.diff(p[-(SEQ_DAYS + 1):]) / p[-(SEQ_DAYS + 1):-1]
+        seq = np.clip(seq, -0.2, 0.2).tolist()
+    else:
+        seq = [0.0] * SEQ_DAYS
+
+    return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52] + seq
 
 
 def get_dividend_yield(code):
