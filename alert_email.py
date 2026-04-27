@@ -35,9 +35,14 @@ def _get_dividend_yield(code):
         result = data.get("quoteSummary", {}).get("result", [])
         if not result:
             return None
-        dy = result[0].get("summaryDetail", {}).get("dividendYield", {})
-        raw = dy.get("raw") if isinstance(dy, dict) else None
-        return round(raw * 100, 2) if raw else None
+        sd = result[0].get("summaryDetail", {})
+        # dividendYield → trailingAnnualDividendYield の順で試す
+        for key in ("dividendYield", "trailingAnnualDividendYield"):
+            dy = sd.get(key, {})
+            raw = dy.get("raw") if isinstance(dy, dict) else None
+            if raw:
+                return round(raw * 100, 2)
+        return None
     except Exception:
         return None
 
@@ -137,13 +142,6 @@ def extract_features(p):
     return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52] + seq
 
 
-def load_x_post():
-    """最新のX投稿文を読み込む"""
-    files = glob.glob(os.path.expanduser("~/stock-alert/post_x_*.txt"))
-    if not files:
-        return None
-    with open(max(files, key=os.path.getmtime), encoding="utf-8") as f:
-        return f.read()
 
 
 def load_top_ranking(n=10):
@@ -168,7 +166,38 @@ def get_judgment(net):
         return "🔴売り検討", "#c0392b"
 
 
-def build_html(results, today):
+def build_earnings_section(results, earnings_dict):
+    """決算サマリーセクションのHTML生成"""
+    if not earnings_dict:
+        return ""
+    rows_html = ""
+    for r in results:
+        summary = earnings_dict.get(r["code"])
+        if not summary:
+            continue
+        net = r.get("net", r["prob"])
+        net_color = "#27ae60" if net >= 5 else ("#c0392b" if net < -5 else "#888")
+        rows_html += (
+            f"<tr>"
+            f"<td><b>{r['name']}</b></td>"
+            f"<td style='text-align:center'>{r['code']}</td>"
+            f"<td style='color:{net_color};text-align:center'>{net:+.1f}%</td>"
+            f"<td style='color:#444;font-size:13px'>{summary}</td>"
+            f"</tr>"
+        )
+    if not rows_html:
+        return ""
+    return f"""
+    <h2>📋 決算サマリー（AI要約）</h2>
+    <p style='color:#666;font-size:13px'>株探の直近業績をClaude AIが要約しました。</p>
+    <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
+    <tr style='background:#e8f4e8'><th>銘柄名</th><th>コード</th><th>ネット</th><th>決算サマリー</th></tr>
+    {rows_html}
+    </table>
+    """
+
+
+def build_html(results, today, earnings_dict=None):
     sell = [r for r in results if r["signal"] == "sell"]
     hold = [r for r in results if r["signal"] == "hold"]
 
@@ -180,10 +209,7 @@ def build_html(results, today):
         vol = r.get("vol")
         vol_label = r.get("vol_label", "")
         recommend = r.get("recommend", "")
-        div_yield = r.get("div_yield")
         vol_color = "#c0392b" if vol and vol >= 60 else ("#b05000" if vol and vol >= 40 else "#555")
-        div_str = f"{div_yield:.2f}%" if div_yield else "-"
-        div_color = "#27ae60" if div_yield and div_yield >= 3.0 else "#555"
         bg = "background:#fff3cd;" if highlight else ""
         return (
             f"<tr style='{bg}'>"
@@ -196,7 +222,6 @@ def build_html(results, today):
             f"<td style='text-align:center;color:{j_color}'><b>{judgment}</b></td>"
             f"<td style='text-align:center;color:{vol_color}'>{f'{vol:.1f}% {vol_label}' if vol else '-'}</td>"
             f"<td style='text-align:center'><b>{recommend}</b></td>"
-            f"<td style='text-align:center;color:{div_color}'>{div_str}</td>"
             f"</tr>"
         )
 
@@ -206,7 +231,7 @@ def build_html(results, today):
     table_header = (
         "<tr style='background:#eee'>"
         "<th>銘柄名</th><th>コード</th><th>直近株価</th>"
-        "<th>上昇確率</th><th>下落確率</th><th>ネット</th><th>判定</th><th>ボラ</th><th>推奨</th><th>配当利回り</th>"
+        "<th>上昇確率</th><th>下落確率</th><th>ネット</th><th>判定</th><th>ボラ</th><th>推奨</th>"
         "</tr>"
     )
 
@@ -216,25 +241,15 @@ def build_html(results, today):
         <h2 style='color:#c0392b'>⚠️ 要注意シグナル（{len(sell)}銘柄）</h2>
         <p>以下のチェック銘柄はネットスコア（上昇確率-下落確率）がマイナスです。ニュースや決算を確認してください。</p>
         <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
-        <tr style='background:#f8d7da'><th>銘柄名</th><th>コード</th><th>直近株価</th><th>上昇確率</th><th>下落確率</th><th>ネット</th><th>判定</th></tr>
+        <tr style='background:#f8d7da'><th>銘柄名</th><th>コード</th><th>直近株価</th><th>上昇確率</th><th>下落確率</th><th>ネット</th><th>判定</th><th>ボラ</th><th>推奨</th></tr>
         {rows_sell}
         </table>
         """
     else:
         sell_section = "<h2 style='color:#27ae60'>✅ 要注意シグナルなし</h2><p>今週は全銘柄がポジティブ/中立判定です。</p>"
 
-    # X投稿文セクション
-    x_post = load_x_post()
     x_section = ""
-    if x_post:
-        x_escaped = x_post.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-        x_section = f"""
-        <h2>🐦 今週のX投稿文</h2>
-        <div style='background:#f0f8ff;border:1px solid #cce;padding:16px;border-radius:8px;
-                    font-family:monospace;white-space:pre-wrap;line-height:1.8'>
-        {x_escaped}
-        </div>
-        """
+    earnings_section = build_earnings_section(results, earnings_dict or {})
 
     # 注目株ランキングセクション
     ranking = load_top_ranking(10)
@@ -281,6 +296,7 @@ def build_html(results, today):
     {ranking_section}
     <hr>
     {sell_section}
+    {earnings_section}
     <h2>📋 全チェック銘柄サマリー</h2>
     <p style='color:#666;font-size:13px'>ネット = 上昇確率 - 下落確率 ／ ボラ = 20日年率換算ボラティリティ（🟢低&lt;20% 🟡中&lt;40% 🟠高&lt;60% 🔴超高）</p>
     <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
@@ -339,8 +355,6 @@ def main():
         rise_prob = float(rise_model.predict_proba([feat])[0][1]) * 100
         drop_prob = float(drop_model.predict_proba([feat])[0][1]) * 100 if drop_model else None
         close = float(prices["Close"].iloc[-1])
-        # 配当利回り取得
-        div_yield = _get_dividend_yield(code)
         net = rise_prob - drop_prob if drop_prob is not None else rise_prob
         signal = "sell" if net < NET_SELL_THRESHOLD else "hold"
         judgment, _ = get_judgment(net)
@@ -364,11 +378,32 @@ def main():
         else:
             recommend = "⏳ 様子見"
         print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{drop_prob:5.1f}% ネット{net:+.1f}% ボラ{vol:.1f}%{vol_label} {recommend}" if drop_prob else f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}%")
-        results.append({"code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob, "net": net, "close": close, "signal": signal, "vol": vol, "vol_label": vol_label, "recommend": recommend, "div_yield": div_yield})
+        results.append({"code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob, "net": net, "close": close, "signal": signal, "vol": vol, "vol_label": vol_label, "recommend": recommend})
+
+    # 決算サマリー取得
+    earnings_dict = {}
+    try:
+        import sys
+        sys.path.insert(0, os.path.expanduser("~/stock-alert"))
+        from earnings_summary import get_earnings_summary
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            print("\n決算サマリー取得中...")
+            for r in results:
+                res = get_earnings_summary(r["code"], r["name"])
+                if res and res.get("summary"):
+                    earnings_dict[r["code"]] = res["summary"]
+                    print(f"  ✅ {r['name']}: 取得")
+                else:
+                    print(f"  ⚠️  {r['name']}: データなし")
+        else:
+            print("\n[INFO] ANTHROPIC_API_KEY未設定のため決算サマリーをスキップ")
+    except Exception as e:
+        print(f"\n[WARN] 決算サマリーエラー: {e}")
 
     sell_count = sum(1 for r in results if r["signal"] == "sell")
     subject = f"【週次レポート】{today} 注目株Top10 / 要注意{sell_count}銘柄"
-    html = build_html(results, today)
+    html = build_html(results, today, earnings_dict)
 
     print(f"\nGmail送信中 → {GMAIL_ADDRESS}")
     try:
