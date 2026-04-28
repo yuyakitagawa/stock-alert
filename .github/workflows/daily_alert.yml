@@ -23,8 +23,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost \
-            gspread google-auth yfinance \
-            anthropic beautifulsoup4
+            gspread google-auth yfinance
 
       - name: Link repo to ~/stock-alert
         run: ln -s $GITHUB_WORKSPACE ~/stock-alert
@@ -34,7 +33,6 @@ jobs:
           echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
           echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
           echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
-          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
       - name: Create gcp_key.json from secret
         run: |
           echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json

@@ -166,38 +166,8 @@ def get_judgment(net):
         return "🔴売り検討", "#c0392b"
 
 
-def build_earnings_section(results, earnings_dict):
-    """決算サマリーセクションのHTML生成"""
-    if not earnings_dict:
-        return ""
-    rows_html = ""
-    for r in results:
-        summary = earnings_dict.get(r["code"])
-        if not summary:
-            continue
-        net = r.get("net", r["prob"])
-        net_color = "#27ae60" if net >= 5 else ("#c0392b" if net < -5 else "#888")
-        rows_html += (
-            f"<tr>"
-            f"<td><b>{r['name']}</b></td>"
-            f"<td style='text-align:center'>{r['code']}</td>"
-            f"<td style='color:{net_color};text-align:center'>{net:+.1f}%</td>"
-            f"<td style='color:#444;font-size:13px'>{summary}</td>"
-            f"</tr>"
-        )
-    if not rows_html:
-        return ""
-    return f"""
-    <h2>📋 決算サマリー（AI要約）</h2>
-    <p style='color:#666;font-size:13px'>株探の直近業績をClaude AIが要約しました。</p>
-    <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
-    <tr style='background:#e8f4e8'><th>銘柄名</th><th>コード</th><th>ネット</th><th>決算サマリー</th></tr>
-    {rows_html}
-    </table>
-    """
 
-
-def build_html(results, today, earnings_dict=None):
+def build_html(results, today):
     sell = [r for r in results if r["signal"] == "sell"]
     hold = [r for r in results if r["signal"] == "hold"]
 
@@ -248,8 +218,6 @@ def build_html(results, today, earnings_dict=None):
     else:
         sell_section = "<h2 style='color:#27ae60'>✅ 要注意シグナルなし</h2><p>今週は全銘柄がポジティブ/中立判定です。</p>"
 
-    x_section = ""
-    earnings_section = build_earnings_section(results, earnings_dict or {})
 
     # 注目株ランキングセクション
     ranking = load_top_ranking(10)
@@ -291,12 +259,10 @@ def build_html(results, today, earnings_dict=None):
     <html><body style='font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px'>
     <h1>📊 週次レポート</h1>
     <p style='color:#666'>{today}</p>
-    {x_section}
     <hr>
     {ranking_section}
     <hr>
     {sell_section}
-    {earnings_section}
     <h2>📋 全チェック銘柄サマリー</h2>
     <p style='color:#666;font-size:13px'>ネット = 上昇確率 - 下落確率 ／ ボラ = 20日年率換算ボラティリティ（🟢低&lt;20% 🟡中&lt;40% 🟠高&lt;60% 🔴超高）</p>
     <table border='1' cellpadding='8' cellspacing='0' style='border-collapse:collapse;width:100%'>
@@ -380,30 +346,9 @@ def main():
         print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{drop_prob:5.1f}% ネット{net:+.1f}% ボラ{vol:.1f}%{vol_label} {recommend}" if drop_prob else f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}%")
         results.append({"code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob, "net": net, "close": close, "signal": signal, "vol": vol, "vol_label": vol_label, "recommend": recommend})
 
-    # 決算サマリー取得
-    earnings_dict = {}
-    try:
-        import sys
-        sys.path.insert(0, os.path.expanduser("~/stock-alert"))
-        from earnings_summary import get_earnings_summary
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if api_key:
-            print("\n決算サマリー取得中...")
-            for r in results:
-                res = get_earnings_summary(r["code"], r["name"])
-                if res and res.get("summary"):
-                    earnings_dict[r["code"]] = res["summary"]
-                    print(f"  ✅ {r['name']}: 取得")
-                else:
-                    print(f"  ⚠️  {r['name']}: データなし")
-        else:
-            print("\n[INFO] ANTHROPIC_API_KEY未設定のため決算サマリーをスキップ")
-    except Exception as e:
-        print(f"\n[WARN] 決算サマリーエラー: {e}")
-
     sell_count = sum(1 for r in results if r["signal"] == "sell")
     subject = f"【週次レポート】{today} 注目株Top10 / 要注意{sell_count}銘柄"
-    html = build_html(results, today, earnings_dict)
+    html = build_html(results, today)
 
     print(f"\nGmail送信中 → {GMAIL_ADDRESS}")
     try:
