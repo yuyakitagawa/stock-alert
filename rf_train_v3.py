@@ -69,7 +69,16 @@ def compute_feat(p):
     w=p[-252:] if len(p)>=252 else p; hi,lo=w.max(),w.min()
     pos52=(c-lo)/(hi-lo) if hi>lo else 0.5
     seq=np.clip(np.diff(p[-(SEQ_DAYS+1):])/p[-(SEQ_DAYS+1):-1],-0.2,0.2).tolist() if len(p)>=SEQ_DAYS+1 else [0.0]*SEQ_DAYS
-    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52]+seq
+    rhi=p[-60:].max() if len(p)>=60 else p.max(); ddown60=(c-rhi)/rhi
+    hi52=p[-252:].max() if len(p)>=252 else p.max(); fhi52=(c-hi52)/hi52
+    stk=0
+    for j in range(1,min(21,len(p))):
+        if p[-j]<p[-j-1]: stk+=1
+        else: break
+    dstreak=stk/20.0; maccel=r5-(r20/4)
+    ma5a=p[-10:-5].mean() if len(p)>=10 else ma5; ma25a=p[-30:-5].mean() if len(p)>=30 else ma25
+    cprev=ma5a/ma25a-1 if ma25a>0 else 0; mcdir=m525-cprev
+    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir]+seq
     return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
 def generate_samples(df):
@@ -89,7 +98,7 @@ def train_model(X_tr,y_tr,X_te,y_te,label):
     m=XGBClassifier(n_estimators=500,max_depth=5,learning_rate=0.05,subsample=0.8,
         colsample_bytree=0.7,min_child_weight=10,scale_pos_weight=spw,
         eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
-    m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
+    m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100,early_stopping_rounds=30)
     y_prob=m.predict_proba(X_te)[:,1]
     auc=roc_auc_score(y_te,y_prob)
     print(f"  ✅ テストAUC: {auc:.4f}")
