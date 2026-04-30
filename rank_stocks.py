@@ -40,10 +40,15 @@ def get_prices(code, days=400):
             .get("adjclose", [{}])[0]
             .get("adjclose", [])
         )
+        volumes = (
+            result[0].get("indicators", {})
+            .get("quote", [{}])[0]
+            .get("volume", [])
+        )
         if not timestamps or not closes:
             return None
         df = pd.DataFrame(
-            {"Close": closes},
+            {"Close": closes, "Volume": volumes},
             index=pd.to_datetime(timestamps, unit="s", utc=True)
         )
         return df.dropna()
@@ -64,7 +69,7 @@ def calc_rsi(prices, period=14):
 
 SEQ_DAYS = 60  # 生リターン系列の日数
 
-def extract_features(p):
+def extract_features(p, v=None, nk_rets=None):
     """最新時点の特徴量を返す（75次元: テクニカル10 + トレンド反転5 + 60日リターン系列60）"""
     if len(p) < 91:
         return None
@@ -117,8 +122,22 @@ def extract_features(p):
     ma25_5ago = p[-30:-5].mean() if len(p) >= 30 else ma25
     cross_prev = ma5_5ago / ma25_5ago - 1 if ma25_5ago > 0 else 0
     ma_cross_dir = ma5_25 - cross_prev
+    if v is not None and len(v) >= 20:
+        va = np.array([x if x is not None else np.nan for x in v], dtype=float)
+        va5  = np.nanmean(va[-5:])  if len(va) >= 5  else 1
+        va20 = np.nanmean(va[-20:]) if len(va) >= 20 else 1
+        va60 = np.nanmean(va[-60:]) if len(va) >= 60 else va20
+        vr520  = va5  / va20 if va20 > 0 else 1.0
+        vr2060 = va20 / va60 if va60 > 0 else 1.0
+        vsurge = va[-1] / va20 if va20 > 0 and not np.isnan(va[-1]) else 1.0
+    else:
+        vr520, vr2060, vsurge = 1.0, 1.0, 1.0
+    nk5  = nk_rets[0] if nk_rets is not None else 0.0
+    nk20 = nk_rets[1] if nk_rets is not None else 0.0
+    nk60 = nk_rets[2] if nk_rets is not None else 0.0
     return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
-            drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir] + seq
+            drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq
 
 
 def get_nikkei_returns():
@@ -190,7 +209,8 @@ def main():
         prices = get_prices(code, days=400)
         if prices is None or len(prices) < 91:
             continue
-        feat = extract_features(prices["Close"].values)
+        nk_rets = (nk5/100, nk20/100, nk60/100) if nk5 is not None else None
+        feat = extract_features(prices["Close"].values, prices["Volume"].tolist() if "Volume" in prices.columns else None, nk_rets)
         if feat is None:
             continue
         # 連続下落 or 60日高値から15%超下落の銘柄を除外
