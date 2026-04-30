@@ -193,8 +193,8 @@ def main():
         feat = extract_features(prices["Close"].values)
         if feat is None:
             continue
-        # 6日以上連続下落の銘柄を除外（feat[12] = down_streak）
-        if feat[12] > 0.3:
+        # 連続下落 or 60日高値から15%超下落の銘柄を除外
+        if feat[12] > 0.15 or feat[10] < -0.15:
             continue
         rise_prob = float(rise_model.predict_proba([feat])[0][1])
         drop_prob = float(drop_model.predict_proba([feat])[0][1]) if drop_model else None
