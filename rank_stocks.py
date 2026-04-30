@@ -105,24 +105,30 @@ def extract_features(p):
     return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52] + seq
 
 
-def get_dividend_yield(code):
-    """Yahoo Finance quoteSummaryから配当利回り(%)を取得"""
-    ticker = f"{code}.T"
+def get_nikkei_returns():
+    """日経225の5日・20日・60日リターンを取得"""
     url = (
-        f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-        f"?modules=summaryDetail"
+        f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
+        f"?interval=1d&period1={int((datetime.now()-timedelta(days=400)).timestamp())}"
+        f"&period2={int(datetime.now().timestamp())}"
     )
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp = requests.get(url, headers=HEADERS, timeout=15)
         data = resp.json()
-        result = data.get("quoteSummary", {}).get("result", [])
+        result = data.get("chart", {}).get("result", [])
         if not result:
-            return None
-        dy = result[0].get("summaryDetail", {}).get("dividendYield", {})
-        raw = dy.get("raw") if isinstance(dy, dict) else None
-        return round(raw * 100, 2) if raw else None
+            return None, None, None
+        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
+        closes = [c for c in closes if c is not None]
+        if len(closes) < 61:
+            return None, None, None
+        p = closes
+        r5  = round((p[-1] - p[-6])  / p[-6]  * 100, 2) if len(p) >= 6  else 0
+        r20 = round((p[-1] - p[-21]) / p[-21] * 100, 2) if len(p) >= 21 else 0
+        r60 = round((p[-1] - p[-61]) / p[-61] * 100, 2) if len(p) >= 61 else 0
+        return r5, r20, r60
     except Exception:
-        return None
+        return None, None, None
 
 
 def main():
@@ -142,6 +148,14 @@ def main():
     print(f"\n上昇モデル読み込み: {rise_path}")
     if drop_model:
         print(f"下落モデル読み込み: {drop_path}")
+
+    # 日経225リターン取得
+    print("\n日経225リターン取得中...")
+    nk5, nk20, nk60 = get_nikkei_returns()
+    if nk5 is not None:
+        print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
+    else:
+        print("  日経225: 取得失敗（相対リターンはN/A）")
 
     # スクリーナーCSV読み込み
     files = glob.glob(os.path.expanduser("~/stock-alert/screener_*.csv"))
@@ -194,16 +208,32 @@ def main():
             judgment = "🔴売り検討"
 
         # 総合推奨（ネット × ボラティリティ）
-        if net >= 5 and vol < 40:
-            recommend = "✅ 推奨"
+        if net >= 10 and vol < 40:
+            recommend = "✅ 買い可能性あり"
+        elif net >= 5 and vol < 40:
+            recommend = "🔵 買い可能性あり"
         elif net >= 5 and vol >= 40:
-            recommend = "⚡ 高リスク"
+            recommend = "⚡ 買い可能性あり（荒れ注意）"
+        elif net < -10 and vol < 40:
+            recommend = "🔴 売り可能性あり"
+        elif net < -5 and vol < 40:
+            recommend = "⚠️ 売り可能性あり"
         elif net < -5 and vol >= 40:
-            recommend = "🚫 避ける"
+            recommend = "🌀 売り様子見"
         else:
             recommend = "⏳ 様子見"
 
-        div_yield = get_dividend_yield(code)
+        # 日経比相対リターン
+        p = prices["Close"].values
+        s5  = (p[-1] - p[-6])  / p[-6]  * 100 if len(p) >= 6  else 0
+        s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
+        s60 = (p[-1] - p[-61]) / p[-61] * 100 if len(p) >= 61 else 0
+        rel5  = round(s5  - nk5,  2) if nk5  is not None else None
+        rel20 = round(s20 - nk20, 2) if nk20 is not None else None
+        rel60 = round(s60 - nk60, 2) if nk60 is not None else None
+        rels = [r for r in [rel5, rel20, rel60] if r is not None]
+        rs_score = round(sum(rels) / len(rels), 2) if rels else None
+
         row = {
             "銘柄コード": code,
             "銘柄名": names.get(code, ""),
@@ -215,7 +245,10 @@ def main():
             "ボラ(%)": vol,
             "ボラ水準": vol_label,
             "推奨": recommend,
-            "配当利回り(%)": div_yield if div_yield is not None else "-",
+            "日経比5日(%)": rel5 if rel5 is not None else "-",
+            "日経比20日(%)": rel20 if rel20 is not None else "-",
+            "日経比60日(%)": rel60 if rel60 is not None else "-",
+            "相対強度": rs_score if rs_score is not None else "-",
         }
         results.append(row)
         if (i + 1) % 100 == 0:
