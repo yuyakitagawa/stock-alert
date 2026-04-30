@@ -335,12 +335,18 @@ def main():
         else:
             vol_label = "🔴超高"
         # 総合推奨
-        if net >= 5 and vol < 40:
-            recommend = "✅ 推奨"
+        if net >= 10 and vol < 40:
+            recommend = "✅ 買い可能性あり"
+        elif net >= 5 and vol < 40:
+            recommend = "🔵 買い可能性あり"
         elif net >= 5 and vol >= 40:
-            recommend = "⚡ 高リスク"
+            recommend = "⚡ 買い可能性あり（荒れ注意）"
+        elif net < -10 and vol < 40:
+            recommend = "🔴 売り可能性あり"
+        elif net < -5 and vol < 40:
+            recommend = "⚠️ 売り可能性あり"
         elif net < -5 and vol >= 40:
-            recommend = "🚫 避ける"
+            recommend = "🌀 売り様子見"
         else:
             recommend = "⏳ 様子見"
         print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{drop_prob:5.1f}% ネット{net:+.1f}% ボラ{vol:.1f}%{vol_label} {recommend}" if drop_prob else f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}%")
