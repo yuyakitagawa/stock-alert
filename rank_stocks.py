@@ -65,7 +65,7 @@ def calc_rsi(prices, period=14):
 SEQ_DAYS = 60  # 生リターン系列の日数
 
 def extract_features(p):
-    """最新時点の特徴量を返す（rf_predict_v2.pyと同じ計算: 70次元）"""
+    """最新時点の特徴量を返す（75次元: テクニカル10 + トレンド反転5 + 60日リターン系列60）"""
     if len(p) < 91:
         return None
     current = p[-1]
@@ -102,7 +102,23 @@ def extract_features(p):
     else:
         seq = [0.0] * SEQ_DAYS
 
-    return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52] + seq
+
+    rhi = p[-60:].max() if len(p) >= 60 else p.max()
+    drawdown60 = (current - rhi) / rhi
+    hi52 = p[-252:].max() if len(p) >= 252 else p.max()
+    from_hi52 = (current - hi52) / hi52
+    stk = 0
+    for j in range(1, min(21, len(p))):
+        if p[-j] < p[-j-1]: stk += 1
+        else: break
+    down_streak = stk / 20.0
+    momentum_accel = ret5 - (ret20 / 4)
+    ma5_5ago = p[-10:-5].mean() if len(p) >= 10 else ma5
+    ma25_5ago = p[-30:-5].mean() if len(p) >= 30 else ma25
+    cross_prev = ma5_5ago / ma25_5ago - 1 if ma25_5ago > 0 else 0
+    ma_cross_dir = ma5_25 - cross_prev
+    return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
+            drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir] + seq
 
 
 def get_nikkei_returns():
@@ -176,6 +192,9 @@ def main():
             continue
         feat = extract_features(prices["Close"].values)
         if feat is None:
+            continue
+        # 6日以上連続下落の銘柄を除外（feat[12] = down_streak）
+        if feat[12] > 0.3:
             continue
         rise_prob = float(rise_model.predict_proba([feat])[0][1])
         drop_prob = float(drop_model.predict_proba([feat])[0][1]) if drop_model else None
@@ -268,7 +287,7 @@ def main():
     print("-" * 100)
     for _, row in result_df.head(TOP_SHOW).iterrows():
         drop_str = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
-        div_str = f"{row['配当利回り(%)']:>5.2f}%" if row['配当利回り(%)'] != "-" else "   N/A"
+        div_str = "   N/A"
         print(
             f"{int(row['順位']):>4}  {row['銘柄コード']:>6}  "
             f"{str(row['銘柄名']):<18}  "
