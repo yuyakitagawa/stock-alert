@@ -139,7 +139,23 @@ def extract_features(p):
         seq = np.clip(seq, -0.2, 0.2).tolist()
     else:
         seq = [0.0] * SEQ_DAYS
-    return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52] + seq
+
+    rhi = p[-60:].max() if len(p) >= 60 else p.max()
+    drawdown60 = (current - rhi) / rhi
+    hi52 = p[-252:].max() if len(p) >= 252 else p.max()
+    from_hi52 = (current - hi52) / hi52
+    stk = 0
+    for j in range(1, min(21, len(p))):
+        if p[-j] < p[-j-1]: stk += 1
+        else: break
+    down_streak = stk / 20.0
+    momentum_accel = ret5 - (ret20 / 4)
+    ma5_5ago = p[-10:-5].mean() if len(p) >= 10 else ma5
+    ma25_5ago = p[-30:-5].mean() if len(p) >= 30 else ma25
+    cross_prev = ma5_5ago / ma25_5ago - 1 if ma25_5ago > 0 else 0
+    ma_cross_dir = ma5_25 - cross_prev
+    return [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
+            drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir] + seq
 
 
 
@@ -317,6 +333,9 @@ def main():
             continue
         feat = extract_features(prices["Close"].values)
         if feat is None:
+            continue
+        # 連続下落 or 60日高値から15%超下落の銘柄を除外
+        if feat[12] > 0.15 or feat[10] < -0.15:
             continue
         rise_prob = float(rise_model.predict_proba([feat])[0][1]) * 100
         drop_prob = float(drop_model.predict_proba([feat])[0][1]) * 100 if drop_model else None
