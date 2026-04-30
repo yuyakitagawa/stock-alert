@@ -4,12 +4,30 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
 from xgboost import XGBClassifier
 
-FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0
+FORECAST=21; RISE_THRESHOLD=8.0; DROP_THRESHOLD=8.0
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 SAVE_DIR=os.path.expanduser("~/stock-alert")
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
+
+def get_nikkei_df(days=2200):
+    """日経225の株価をDateインデックスのDataFrameで返す"""
+    end_ts=int(datetime.now().timestamp())
+    start_ts=int((datetime.now()-timedelta(days=days)).timestamp())
+    url=f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1d&period1={start_ts}&period2={end_ts}"
+    try:
+        resp=requests.get(url,headers=HEADERS,timeout=15)
+        data=resp.json()
+        result=data.get("chart",{}).get("result",[])
+        if not result: return None
+        ts=result[0].get("timestamp",[])
+        closes=result[0].get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[])
+        idx=pd.to_datetime(ts,unit="s",utc=True).tz_convert("Asia/Tokyo")
+        df=pd.DataFrame({"Close":closes},index=idx)
+        df=df.dropna(); df.index=df.index.date
+        return df
+    except Exception: return None
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -40,9 +58,10 @@ def get_prices(code,days=HISTORY_DAYS):
         if not result: return None
         ts=result[0].get("timestamp",[])
         closes=result[0].get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[])
+        volumes=result[0].get("indicators",{}).get("quote",[{}])[0].get("volume",[])
         if not ts or not closes: return None
         idx=pd.to_datetime(ts,unit="s",utc=True).tz_convert("Asia/Tokyo")
-        df=pd.DataFrame({"Close":closes},index=idx).dropna()
+        df=pd.DataFrame({"Close":closes,"Volume":volumes},index=idx).dropna()
         df.index=df.index.date
         return df
     except: return None
@@ -52,7 +71,7 @@ def calc_rsi(p,period=14):
     d=np.diff(p[-(period+1):]); g=np.where(d>0,d,0).mean(); l=np.where(d<0,-d,0).mean()
     return 100.0 if l==0 else 100-100/(1+g/l)
 
-def compute_feat(p):
+def compute_feat(p, v=None, nk_rets=None):
     if len(p)<91 or p[-1]==0: return None
     c=p[-1]
     r5=(c-p[-6])/p[-6] if len(p)>=6 else 0
@@ -78,16 +97,51 @@ def compute_feat(p):
     dstreak=stk/20.0; maccel=r5-(r20/4)
     ma5a=p[-10:-5].mean() if len(p)>=10 else ma5; ma25a=p[-30:-5].mean() if len(p)>=30 else ma25
     cprev=ma5a/ma25a-1 if ma25a>0 else 0; mcdir=m525-cprev
-    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir]+seq
+    if v is not None and len(v)>=20:
+        va=np.array([x if x is not None else np.nan for x in v],dtype=float)
+        va5=np.nanmean(va[-5:]) if len(va)>=5 else 1
+        va20=np.nanmean(va[-20:]) if len(va)>=20 else 1
+        va60=np.nanmean(va[-60:]) if len(va)>=60 else va20
+        vr520=va5/va20 if va20>0 else 1.0
+        vr2060=va20/va60 if va60>0 else 1.0
+        vsurge=va[-1]/va20 if va20>0 and not np.isnan(va[-1]) else 1.0
+    else:
+        vr520,vr2060,vsurge=1.0,1.0,1.0
+    nk5  = nk_rets[0] if nk_rets is not None else 0.0
+    nk20 = nk_rets[1] if nk_rets is not None else 0.0
+    nk60 = nk_rets[2] if nk_rets is not None else 0.0
+    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+seq
     return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
-def generate_samples(df):
+def generate_samples(df, nk_df=None):
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
+    volumes=df["Volume"].tolist() if "Volume" in df.columns else None
     samples=[]; start_i=max(252+SEQ_DAYS,90)
     for i in range(start_i,n-FORECAST,SAMPLE_INTERVAL):
-        feat=compute_feat(closes[:i+1])
+        v_slice=volumes[:i+1] if volumes is not None else None
+        nk_rets=None
+        if nk_df is not None:
+            d0=dates[i]
+            nk_dates=list(nk_df.index); nk_closes=nk_df["Close"].values
+            i0=next((j for j,d in enumerate(nk_dates) if d>=d0),None)
+            if i0 is not None:
+                i5 =max(0,i0-5);  i20=max(0,i0-20); i60=max(0,i0-60)
+                nk5 =(nk_closes[i0]-nk_closes[i5]) /nk_closes[i5]  if nk_closes[i5]!=0  else 0
+                nk20=(nk_closes[i0]-nk_closes[i20])/nk_closes[i20] if nk_closes[i20]!=0 else 0
+                nk60=(nk_closes[i0]-nk_closes[i60])/nk_closes[i60] if nk_closes[i60]!=0 else 0
+                nk_rets=(nk5,nk20,nk60)
+        feat=compute_feat(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
+        # 日経比相対リターン
+        if nk_df is not None:
+            d0,d1=dates[i],dates[i+FORECAST]
+            nk_dates=list(nk_df.index)
+            i0=next((j for j,d in enumerate(nk_dates) if d>=d0),None)
+            i1=next((j for j,d in enumerate(nk_dates) if d>=d1),None)
+            if i0 is not None and i1 is not None and nk_df["Close"].iloc[i0]!=0:
+                nk_chg=(nk_df["Close"].iloc[i1]-nk_df["Close"].iloc[i0])/nk_df["Close"].iloc[i0]*100
+                chg=chg-nk_chg
         samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
     return samples
 
@@ -113,6 +167,10 @@ def main():
     stock_list=get_tse_stock_list()
     if stock_list is None: return
     print(f"対象: {len(stock_list)}銘柄")
+    print("\n日経225データ取得中...")
+    nk_df=get_nikkei_df()
+    if nk_df is not None: print(f"  日経225: {len(nk_df)}日分取得")
+    else: print("  日経225取得失敗 → 絶対リターンで学習")
     print(f"\n株価取得中（30〜60分かかります）...")
     train_X,train_yr,train_yd=[],[],[]
     test_X,test_yr,test_yd=[],[],[]
@@ -121,7 +179,7 @@ def main():
         df=get_prices(row["code"])
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
-        for (sd,feat,lr,ld) in generate_samples(df):
+        for (sd,feat,lr,ld) in generate_samples(df, nk_df):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
             else:
