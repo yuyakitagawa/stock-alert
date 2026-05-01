@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
 from xgboost import XGBClassifier
 
-FORECAST=21; RISE_THRESHOLD=8.0; DROP_THRESHOLD=8.0
+FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
@@ -133,15 +133,7 @@ def generate_samples(df, nk_df=None):
         feat=compute_feat(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
-        # 日経比相対リターン
-        if nk_df is not None:
-            d0,d1=dates[i],dates[i+FORECAST]
-            nk_dates=list(nk_df.index)
-            i0=next((j for j,d in enumerate(nk_dates) if d>=d0),None)
-            i1=next((j for j,d in enumerate(nk_dates) if d>=d1),None)
-            if i0 is not None and i1 is not None and nk_df["Close"].iloc[i0]!=0:
-                nk_chg=(nk_df["Close"].iloc[i1]-nk_df["Close"].iloc[i0])/nk_df["Close"].iloc[i0]*100
-                chg=chg-nk_chg
+        # ラベルは絶対リターン
         samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
     return samples
 
