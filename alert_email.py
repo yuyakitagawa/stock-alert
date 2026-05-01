@@ -102,6 +102,29 @@ def get_prices(code, days=400):
         return None
 
 
+def get_nikkei_returns():
+    """日経225の5日・20日・60日リターンを取得"""
+    from datetime import datetime, timedelta
+    end_ts = int(datetime.now().timestamp())
+    start_ts = int((datetime.now() - timedelta(days=400)).timestamp())
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
+           f"?interval=1d&period1={start_ts}&period2={end_ts}")
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result: return None, None, None
+        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
+        closes = [c for c in closes if c is not None]
+        if len(closes) < 61: return None, None, None
+        p = closes
+        r5  = (p[-1] - p[-6])  / p[-6]  * 100 if len(p) >= 6  else 0
+        r20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
+        r60 = (p[-1] - p[-61]) / p[-61] * 100 if len(p) >= 61 else 0
+        return round(r5, 2), round(r20, 2), round(r60, 2)
+    except Exception:
+        return None, None, None
+
 def calc_rsi(prices, period=14):
     if len(prices) < period + 1:
         return 50.0
@@ -343,6 +366,11 @@ def main():
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+
+    print("日経225リターン取得中...")
+    nk5, nk20, nk60 = get_nikkei_returns()
+    if nk5 is not None:
+        print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
 
     results = []
     for code, name in held_stocks.items():
