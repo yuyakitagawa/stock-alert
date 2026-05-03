@@ -10,9 +10,9 @@ backtest.py
 
 import os
 import time
-import requests
 import numpy as np
 import pandas as pd
+from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, HEADERS, SEQ_DAYS
 import joblib
 from datetime import datetime, date
 
@@ -78,16 +78,6 @@ def get_nikkei_prices():
 
 
 # ── 特徴量計算 ──────────────────────────────
-def calc_rsi(prices, period=14):
-    if len(prices) < period + 1:
-        return 50.0
-    deltas = np.diff(prices[-(period + 1):])
-    gains = np.where(deltas > 0, deltas, 0).mean()
-    losses = np.where(deltas < 0, -deltas, 0).mean()
-    if losses == 0:
-        return 100.0
-    return 100 - 100 / (1 + gains / losses)
-
 
 def extract_features_at(hist, target_date, nk_rets=None):
     """target_date時点の特徴量を計算"""
@@ -120,7 +110,7 @@ def extract_features_at(hist, target_date, nk_rets=None):
     ma5_25  = ma5  / ma25 - 1 if ma25 > 0 else 0
     ma25_75 = ma25 / ma75 - 1 if ma75 > 0 else 0
 
-    rsi = calc_rsi(p, period=14)
+    rsi = calc_rsi(p)
 
     dr20 = np.diff(p[-21:]) / p[-21:-1] if len(p) >= 21 else np.array([0])
     vol20 = dr20.std() * np.sqrt(252) * 100
