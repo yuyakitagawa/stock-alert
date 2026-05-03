@@ -6,9 +6,11 @@ import io
 import sys
 from datetime import datetime, timedelta
 
-R2_THRESHOLD = 0.70
+R2_THRESHOLD = 0.65       # 0.70→0.65: 押し目のある上昇トレンドも取り込む
 MIN_MOMENTUM = 5.0
 MAX_VOLATILITY = 50.0
+MIN_MOMENTUM_20D = -3.0   # 20日モメンタム下限（直近失速銘柄を除外）
+MIN_PRICE = 300           # 低位株フィルター（300円未満除外）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -109,6 +111,8 @@ def calc_score(df):
 
     # 3ヶ月モメンタム（過去63営業日）
     n_mom = min(63, n - 1)
+    n_mom20 = min(20, n - 1)
+    momentum_20d = (prices[-1] - prices[-n_mom20 - 1]) / prices[-n_mom20 - 1] * 100
     momentum = (prices[-1] - prices[-n_mom - 1]) / prices[-n_mom - 1] * 100
 
     # ボラティリティ（年率換算%）
@@ -124,6 +128,7 @@ def calc_score(df):
         "vol": round(vol, 2),
         "score": round(score, 2),
         "close": round(float(prices[-1]), 1),
+        "momentum_20d": round(momentum_20d, 2),
         "slope_up": slope > 0
     }
 
@@ -170,7 +175,9 @@ def main():
         if (
             result["r2"] >= R2_THRESHOLD
             and result["momentum"] >= MIN_MOMENTUM
+            and result["momentum_20d"] >= MIN_MOMENTUM_20D
             and result["vol"] <= MAX_VOLATILITY
+            and result["close"] >= MIN_PRICE
             and result["slope_up"]
         ):
             passed.append({
