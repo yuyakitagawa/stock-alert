@@ -18,7 +18,16 @@ from datetime import datetime, date
 
 # ── パラメータ ──────────────────────────────
 BACKTEST_DATE  = date(2026, 2, 3)    # 予測基準日（約3ヶ月前=63営業日前）
-TODAY          = date(2026, 5, 2)    # 現在日
+TODAY          = date.today()         # 現在日（動的）
+BEAR_START     = date(2024, 7,  1)    # 下落相場テスト（2024年8月円キャリー崩壊期）
+BEAR_END       = date(2024, 10, 1)    # 下落相場テスト終了
+
+# 実行モード: python3 backtest.py bear → 下落相場テスト
+import sys as _sys
+if len(_sys.argv) > 1 and _sys.argv[1] == 'bear':
+    BACKTEST_DATE = BEAR_START
+    TODAY         = BEAR_END
+    print('【下落相場テストモード: 2024年8月クラッシュ期】')
 RISE_THRESHOLD = 15.0                # 上昇判定閾値(%)
 NET_THRESHOLD  = 5.0                 # ネットスコアの買いシグナル閾値
 TOP_N          = 30                  # 上位N銘柄を「買い」対象に
@@ -210,22 +219,14 @@ def main():
     # 銘柄リスト：スクリーナーCSVから読み込み
     import glob
     screener_files = glob.glob(os.path.expanduser("~/stock-alert/screener_*.csv"))
+    # バイアスなし: TSE全銘柄からサンプリング（スクリーナーCSVは今日時点なのでNG）
+    print("TSE全銘柄リストを取得中（バイアスなし）...")
+    all_stocks = fetch_tse_codes()
+    import random
+    random.seed(42)
+    stocks = random.sample(all_stocks, min(SAMPLE_N, len(all_stocks)))
     if screener_files:
-        screener_path = max(screener_files, key=os.path.getmtime)
-        print(f"スクリーナーCSV: {screener_path}")
-        import pandas as pd
-        sc_df = pd.read_csv(screener_path)
-        stocks = list(zip(
-            sc_df["銘柄コード"].astype(str).tolist(),
-            sc_df["銘柄名"].tolist()
-        ))
-        print(f"※ 注意: スクリーナーは今日時点のフィルター結果（ルックアヘッドバイアスあり）")
-    else:
-        print("スクリーナーCSVが見つかりません。TSE全銘柄からランダムサンプリングします")
-        all_stocks = fetch_tse_codes()
-        import random
-        random.seed(42)
-        stocks = random.sample(all_stocks, min(SAMPLE_N, len(all_stocks)))
+        print(f"  ※ スクリーナーCSVは使用しません（ルックアヘッドバイアス回避）")
     print(f"バックテスト対象: {len(stocks)}銘柄")
 
     # 日経225データを事前取得（特徴量計算用）
@@ -254,6 +255,9 @@ def main():
                 nk_rets_bt = (nk5_v, nk20_v, nk60_v)
         feat = extract_features_at(hist, BACKTEST_DATE, nk_rets_bt)
         if feat is None:
+            continue
+        # rank_stocks.pyと同一フィルター
+        if feat[12] > 0.15 or feat[10] < -0.15:
             continue
 
         close = hist["Close"].dropna()
