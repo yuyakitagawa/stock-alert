@@ -14,7 +14,8 @@ load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-NET_SELL_THRESHOLD = -5   # ネットスコア（上昇-下落）がこれ未満で売り検討
+NET_SELL_THRESHOLD    = -5    # ネットスコア（上昇-下落）がこれ未満で売り検討
+BEAR_MARKET_THRESHOLD = -5.0  # 日経20日リターンがこれ以下で下落相場と判定
 
 
 
@@ -88,7 +89,7 @@ def get_judgment(net):
 
 
 
-def build_html(results, today):
+def build_html(results, today, is_bear=False, nk20=None):
     sell = [r for r in results if r["signal"] == "sell"]
     hold = [r for r in results if r["signal"] == "hold"]
 
@@ -176,10 +177,19 @@ def build_html(results, today):
     </table>
     """ if ranking_rows else ""
 
+    bear_banner = ""
+    if is_bear:
+        bear_banner = f"""
+        <div style='background:#fff3cd;border:2px solid #f0ad4e;border-radius:6px;padding:12px 16px;margin-bottom:16px'>
+        <b>⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）</b><br>
+        モデルスコアの信頼性が低下しています。買いシグナルは慎重に判断してください。
+        </div>"""
+
     return f"""
     <html><body style='font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px'>
     <h1>📊 週次レポート</h1>
     <p style='color:#666'>{today}</p>
+    {bear_banner}
     <hr>
     {ranking_section}
     <hr>
@@ -232,8 +242,11 @@ def main():
 
     print("日経225リターン取得中...")
     nk5, nk20, nk60 = get_nikkei_returns()
+    is_bear = nk20 is not None and nk20 < BEAR_MARKET_THRESHOLD
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
+        if is_bear:
+            print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
 
     results = []
     for code, name in held_stocks.items():
@@ -283,8 +296,9 @@ def main():
         results.append({"code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob, "net": net, "close": close, "signal": signal, "vol": vol, "vol_label": vol_label, "recommend": recommend})
 
     sell_count = sum(1 for r in results if r["signal"] == "sell")
-    subject = f"【週次レポート】{today} 注目株Top10 / 要注意{sell_count}銘柄"
-    html = build_html(results, today)
+    bear_prefix = "【⚠️下落相場】" if is_bear else ""
+    subject = f"{bear_prefix}【週次レポート】{today} 注目株Top10 / 要注意{sell_count}銘柄"
+    html = build_html(results, today, is_bear=is_bear, nk20=nk20)
 
     print(f"\nGmail送信中 → {GMAIL_ADDRESS}")
     try:
