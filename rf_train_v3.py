@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
 from xgboost import XGBClassifier
 
-FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0
+FORECAST=63; RISE_THRESHOLD=10.0; DROP_THRESHOLD=10.0  # 日経225相対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
@@ -117,12 +117,13 @@ def generate_samples(df, nk_df=None):
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
     samples=[]; start_i=max(252+SEQ_DAYS,90)
+    nk_dates=list(nk_df.index) if nk_df is not None else []
+    nk_closes=nk_df["Close"].values if nk_df is not None else np.array([])
     for i in range(start_i,n-FORECAST,SAMPLE_INTERVAL):
         v_slice=volumes[:i+1] if volumes is not None else None
-        nk_rets=None
+        nk_rets=None; i0=None
         if nk_df is not None:
             d0=dates[i]
-            nk_dates=list(nk_df.index); nk_closes=nk_df["Close"].values
             i0=next((j for j,d in enumerate(nk_dates) if d>=d0),None)
             if i0 is not None:
                 i5 =max(0,i0-5);  i20=max(0,i0-20); i60=max(0,i0-60)
@@ -133,8 +134,15 @@ def generate_samples(df, nk_df=None):
         feat=compute_feat(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
-        # ラベルは絶対リターン
-        samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
+        # ラベルは日経225相対リターン（アルファ）
+        nk_fwd_chg=0.0
+        if i0 is not None:
+            d_fwd=dates[i+FORECAST]
+            i_fwd=next((j for j,d in enumerate(nk_dates) if d>=d_fwd),None)
+            if i_fwd is not None and nk_closes[i0]!=0:
+                nk_fwd_chg=(nk_closes[i_fwd]-nk_closes[i0])/nk_closes[i0]*100
+        rel_chg=chg-nk_fwd_chg
+        samples.append((dates[i],feat,int(rel_chg>=RISE_THRESHOLD),int(rel_chg<=-DROP_THRESHOLD)))
     return samples
 
 def train_model(X_tr,y_tr,X_te,y_te,label):
