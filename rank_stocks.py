@@ -10,6 +10,7 @@ from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, HE
 FORECAST = 63
 RISE_THRESHOLD = 15.0
 TOP_SHOW = 30
+BEAR_MARKET_THRESHOLD = -5.0
 
 
 
@@ -41,12 +42,14 @@ def main():
     # 日経225リターン取得
     print("\n日経225リターン取得中...")
     nk5, nk20, nk60 = get_nikkei_returns()
+    is_bear = nk20 is not None and nk20 < BEAR_MARKET_THRESHOLD
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
-        if nk20 < 0:
-            print("  ⚠️  現在下落相場: モデルスコアの信頼性が低下しています")
+        if is_bear:
+            print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     else:
         print("  日経225: 取得失敗（相対リターンはN/A）")
+        is_bear = False
 
     # スクリーナーCSV読み込み
     files = glob.glob(os.path.expanduser("~/stock-alert/screener_*.csv"))
@@ -158,8 +161,8 @@ def main():
     # 表示
     print(f"\n{'='*90}")
     print(f"上位{TOP_SHOW}銘柄ランキング（ネットスコア順: 上昇確率-下落確率）")
-    if nk20 is not None and nk20 < 0:
-        print(f"⚠️  現在下落相場（日経20日{nk20:+.2f}%）: モデルスコアの信頼性が低下しています")
+    if is_bear:
+        print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
     print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  {'配当':>6}  推奨")
     print("-" * 100)
