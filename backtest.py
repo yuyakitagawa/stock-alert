@@ -10,6 +10,8 @@ backtest.py
 
 import os
 import time
+import requests
+import io
 import numpy as np
 import pandas as pd
 from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, HEADERS, SEQ_DAYS
