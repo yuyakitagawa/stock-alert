@@ -36,6 +36,10 @@ TOP_N          = 30                  # 上位N銘柄を「買い」対象に
 NIKKEI_CODE    = "^N225"
 SAMPLE_N       = 200                 # バックテスト対象銘柄数
 
+# BACKTEST_DATEから91営業日前（≈130日）のデータが必要なため動的計算
+# 例: bear mode (2024-07-01) → (2026-05-04 - 2024-07-01) + 180 ≈ 853日
+FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
@@ -80,12 +84,12 @@ def _fetch_yahoo(ticker, days=800):
 def get_hist_for_features(code):
     """特徴量計算用の全履歴を取得"""
     ticker = f"{code}.T"
-    return _fetch_yahoo(ticker, days=800)
+    return _fetch_yahoo(ticker, days=FETCH_DAYS)
 
 
 def get_nikkei_prices():
     """日経225の株価を取得"""
-    return _fetch_yahoo("%5EN225", days=800)
+    return _fetch_yahoo("%5EN225", days=FETCH_DAYS)
 
 
 # ── 特徴量計算 ──────────────────────────────
