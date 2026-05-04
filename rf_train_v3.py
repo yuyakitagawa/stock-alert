@@ -5,7 +5,7 @@ from sklearn.metrics import roc_auc_score, classification_report
 from xgboost import XGBClassifier
 
 FORECAST=63; RISE_THRESHOLD=10.0; DROP_THRESHOLD=10.0  # 日経225相対リターン閾値(%)
-SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
+SAMPLE_INTERVAL=20; HISTORY_DAYS=2500  # 1800日→2500日: 2020年コロナ・2022年調整・2024年8月クラッシュを含む
 TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 SAVE_DIR=os.path.expanduser("~/stock-alert")
@@ -193,7 +193,9 @@ def main():
     X_tr=np.array(train_X); X_te=np.array(test_X)
     yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
-    print(f"上昇率: 学習{yr_tr.mean()*100:.1f}% テスト{yr_te.mean()*100:.1f}%")
+    print(f"\n--- サンプル統計 ---")
+    print(f"上昇ラベル: 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
+    print(f"下落ラベル: 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
     rise=train_model(X_tr,yr_tr,X_te,yr_te,"上昇")
     drop=train_model(X_tr,yd_tr,X_te,yd_te,"下落")
     joblib.dump(rise,os.path.join(SAVE_DIR,"rf_model.pkl"))
