@@ -5,7 +5,7 @@ from sklearn.metrics import roc_auc_score, classification_report
 from xgboost import XGBClassifier
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
-SAMPLE_INTERVAL=20; HISTORY_DAYS=2500  # 1800日→2500日: 2020年コロナ・2022年調整・2024年8月クラッシュを含む
+SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 SAVE_DIR=os.path.expanduser("~/stock-alert")
@@ -142,8 +142,8 @@ def train_model(X_tr,y_tr,X_te,y_te,label):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-    m=XGBClassifier(n_estimators=500,max_depth=5,learning_rate=0.05,subsample=0.8,early_stopping_rounds=30,
-        colsample_bytree=0.7,min_child_weight=10,scale_pos_weight=spw,
+    m=XGBClassifier(n_estimators=800,max_depth=5,learning_rate=0.04,subsample=0.8,early_stopping_rounds=50,
+        colsample_bytree=0.7,min_child_weight=8,scale_pos_weight=spw,
         eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
     m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
     y_prob=m.predict_proba(X_te)[:,1]
