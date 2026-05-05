@@ -2,6 +2,7 @@
 import requests, pandas as pd, numpy as np, time, os, io, joblib, json
 from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
+from sklearn.calibration import CalibratedClassifierCV
 from xgboost import XGBClassifier
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
@@ -151,7 +152,7 @@ def generate_samples(df, nk_df=None):
         samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
     return samples
 
-def train_model(X_tr,y_tr,X_te,y_te,label):
+def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
@@ -159,11 +160,14 @@ def train_model(X_tr,y_tr,X_te,y_te,label):
         colsample_bytree=0.7,min_child_weight=8,scale_pos_weight=spw,
         eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
     m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
-    y_prob=m.predict_proba(X_te)[:,1]
-    auc=roc_auc_score(y_te,y_prob)
-    print(f"  ✅ テストAUC: {auc:.4f}")
-    print(classification_report(y_te,(y_prob>=0.5).astype(int),target_names=["負例","正例"]))
-    return m
+    auc_raw=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
+    print(f"  テストAUC（生）: {auc_raw:.4f}")
+    cal_m=CalibratedClassifierCV(m,cv="prefit",method="isotonic")
+    cal_m.fit(X_cal,y_cal)
+    auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
+    print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
+    print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
+    return cal_m
 
 def main():
     print("="*60)
@@ -217,8 +221,16 @@ def main():
     print(f"\n--- サンプル統計 ---")
     print(f"上昇ラベル: 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     print(f"下落ラベル: 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
-    rise=train_model(X_tr,yr_tr,X_te,yr_te,"上昇")
-    drop=train_model(X_tr,yd_tr,X_te,yd_te,"下落")
+    # キャリブレーション用: 学習データを日付順に並べ、最新20%をキャリブレーション用に分離
+    sort_idx=np.argsort(np.array(train_dates))
+    X_tr_s=X_tr[sort_idx]; yr_s=yr_tr[sort_idx]; yd_s=yd_tr[sort_idx]
+    n_cal=max(500,int(len(X_tr_s)*0.2))
+    X_tr_fit,X_cal=X_tr_s[:-n_cal],X_tr_s[-n_cal:]
+    yr_fit,yr_cal=yr_s[:-n_cal],yr_s[-n_cal:]
+    yd_fit,yd_cal=yd_s[:-n_cal],yd_s[-n_cal:]
+    print(f"\nキャリブレーション分割: 学習{len(X_tr_fit):,} / キャリブレーション{len(X_cal):,} (最新20%)")
+    rise=train_model(X_tr_fit,yr_fit,X_te,yr_te,X_cal,yr_cal,"上昇")
+    drop=train_model(X_tr_fit,yd_fit,X_te,yd_te,X_cal,yd_cal,"下落")
     joblib.dump(rise,os.path.join(SAVE_DIR,"rf_model.pkl"))
     joblib.dump(drop,os.path.join(SAVE_DIR,"rf_drop_model.pkl"))
     # Save all samples (train+test) with dates for purged CV validation
