@@ -19,6 +19,10 @@
 | rf_train_v3.py | XGBoostモデルを東証全銘柄×5年データで学習 |
 | rank_stocks.py | スクリーナー通過銘柄に上昇/下落確率をつけてランキング |
 | alert_email.py | ランキング上位をGmailでメール送信 |
+| utils.py | 共通関数（get_prices, extract_features, compute_seq_features, add_cs_rank_features 等） |
+| validation.py | Purged K-Fold検証（先読みバイアス定量化）、ユニットテスト付き |
+| backtest.py | バックテスト（先読みバイアスなしモード実装済み） |
+| analyze_alpha.py | スクリーナーとモデルのアルファ貢献度を分離分析 |
 | generate_post.py | SNS投稿用テキストを生成 |
 | sheets_helper.py | Googleスプレッドシートへの書き込みユーティリティ |
 
@@ -189,7 +193,14 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
 
 ## モデル改善履歴
 
-### v6（2026-05-05）AUC 上昇0.657 / 下落0.790 ← 現在
+### v7（2026-05-05）学習中 ← 現在
+
+**変更したこと**
+- クロスセクショナルランク特徴量を追加（28→34次元）
+  - 同日内の全銘柄を対象に ret5/ret20/ret60/rsi/vol20/pos52 をパーセンタイルランク化
+  - 市場レジームをまたいだ絶対値のズレを吸収し、相対的な強さを捉える
+
+### v6（2026-05-05）AUC 上昇0.657 / 下落0.790
 
 **変更したこと**
 - 60日リターン系列（60次元）を7次元要約統計量に圧縮（特徴量: 81→28次元）
