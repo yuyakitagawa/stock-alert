@@ -1,5 +1,5 @@
 import numpy as np
-from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, HEADERS, SEQ_DAYS
+from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 import os
 import glob
 import smtplib
@@ -248,7 +248,8 @@ def main():
         if is_bear:
             print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
 
-    results = []
+    # フェーズ1: 全銘柄の特徴量を収集
+    raw_data = []
     for code, name in held_stocks.items():
         prices = get_prices(code, days=400)
         if prices is None or len(prices) < 91:
@@ -258,17 +259,27 @@ def main():
         feat = extract_features(prices["Close"].values, prices["Volume"].tolist() if "Volume" in prices.columns else None, nk_rets)
         if feat is None:
             continue
-        # 連続下落 or 60日高値から15%超下落の銘柄を除外
         if feat[12] > 0.15 or feat[10] < -0.15:
             continue
-        rise_prob = float(rise_model.predict_proba([feat])[0][1]) * 100
-        drop_prob = float(drop_model.predict_proba([feat])[0][1]) * 100 if drop_model else None
+        raw_data.append((code, name, prices, feat))
+
+    # フェーズ2: クロスセクショナルランク特徴量を付加（34次元化）
+    if not raw_data:
+        print("有効銘柄なし"); return
+    feats_matrix = np.array([d[3] for d in raw_data], dtype=float)
+    feats_aug = add_cs_rank_features(feats_matrix)
+
+    results = []
+    for idx, (code, name, prices, feat) in enumerate(raw_data):
+        feat_aug = feats_aug[idx]
+        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else None
         close = float(prices["Close"].iloc[-1])
         net = rise_prob - drop_prob if drop_prob is not None else rise_prob
         signal = "sell" if net < NET_SELL_THRESHOLD else "hold"
         judgment, _ = get_judgment(net)
         # ボラティリティ（feat[7] = vol20, 年率換算%）
-        vol = round(feat[7], 1)
+        vol = round(feat_aug[7], 1)
         if vol < 20:
             vol_label = "🟢低"
         elif vol < 40:
