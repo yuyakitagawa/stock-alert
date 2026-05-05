@@ -127,6 +127,23 @@ def compute_feat(p, v=None, nk_rets=None):
     feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+compute_seq_features(seq_raw)
     return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
+def triple_barrier_labels(closes, i, forecast, rise_pct, drop_pct):
+    """トリプルバリア法: 上限/下限/垂直バリアのうち最初に到達したものでラベル決定"""
+    entry = closes[i]
+    if entry == 0: return 0, 0
+    upper = entry * (1 + rise_pct / 100)
+    lower = entry * (1 - drop_pct / 100)
+    first_upper = first_lower = forecast + 1  # 到達しない場合の番兵
+    for j in range(1, forecast + 1):
+        if i + j >= len(closes): break
+        p = closes[i + j]
+        if first_upper > forecast and p >= upper: first_upper = j
+        if first_lower > forecast and p <= lower: first_lower = j
+        if first_upper <= forecast and first_lower <= forecast: break
+    if first_upper < first_lower: return 1, 0  # 上限バリア先着
+    if first_lower < first_upper: return 0, 1  # 下限バリア先着
+    return 0, 0  # 垂直バリア（同着 or 未到達）
+
 def generate_samples(df, nk_df=None):
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
@@ -147,9 +164,8 @@ def generate_samples(df, nk_df=None):
                 nk_rets=(nk5,nk20,nk60)
         feat=compute_feat(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
-        chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
-        # ラベルは絶対リターン
-        samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
+        lr, ld = triple_barrier_labels(closes, i, FORECAST, RISE_THRESHOLD, DROP_THRESHOLD)
+        samples.append((dates[i],feat,lr,ld))
     return samples
 
 def train_model(X_tr,y_tr,X_te,y_te,label):
