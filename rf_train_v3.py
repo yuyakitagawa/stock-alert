@@ -1,5 +1,5 @@
 
-import requests, pandas as pd, numpy as np, time, os, io, joblib
+import requests, pandas as pd, numpy as np, time, os, io, joblib, json
 from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
 from xgboost import XGBClassifier
@@ -167,6 +167,7 @@ def main():
     print(f"\n株価取得中（30〜60分かかります）...")
     train_X,train_yr,train_yd=[],[],[]
     test_X,test_yr,test_yd=[],[],[]
+    train_dates,test_dates=[],[]
     success=0
     for i,row in stock_list.iterrows():
         df=get_prices(row["code"])
@@ -174,9 +175,9 @@ def main():
             time.sleep(0.2); continue
         for (sd,feat,lr,ld) in generate_samples(df, nk_df):
             if sd<TRAIN_CUTOFF:
-                train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
+                train_X.append(feat); train_yr.append(lr); train_yd.append(ld); train_dates.append(sd)
             else:
-                test_X.append(feat); test_yr.append(lr); test_yd.append(ld)
+                test_X.append(feat); test_yr.append(lr); test_yd.append(ld); test_dates.append(sd)
         success+=1
         if success%100==0:
             print(f"  [{success}銘柄] 学習:{len(train_X):,} テスト:{len(test_X):,}")
@@ -193,6 +194,16 @@ def main():
     drop=train_model(X_tr,yd_tr,X_te,yd_te,"下落")
     joblib.dump(rise,os.path.join(SAVE_DIR,"rf_model.pkl"))
     joblib.dump(drop,os.path.join(SAVE_DIR,"rf_drop_model.pkl"))
-    print("\n保存完了 ✅  次: python3 ~/stock-alert/rank_stocks.py")
+    # Save all samples (train+test) with dates for purged CV validation
+    npz_path=os.path.join(SAVE_DIR,"training_data.npz")
+    all_X=np.vstack([X_tr,X_te]); all_yr=np.concatenate([yr_tr,yr_te]); all_yd=np.concatenate([yd_tr,yd_te])
+    all_dates=np.array([str(d) for d in train_dates+test_dates])
+    np.savez_compressed(npz_path,X=all_X,yr=all_yr,yd=all_yd,dates=all_dates)
+    rise_auc=roc_auc_score(yr_te,rise.predict_proba(X_te)[:,1])
+    drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te)[:,1])
+    with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
+        json.dump({"rise":float(rise_auc),"drop":float(drop_auc)},f)
+    print(f"\nデータ保存: {npz_path}")
+    print("\n保存完了 ✅  次: python3 ~/stock-alert/validation.py  →  python3 ~/stock-alert/rank_stocks.py")
 
 main()
