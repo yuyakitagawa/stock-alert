@@ -14,7 +14,7 @@ import requests
 import io
 import numpy as np
 import pandas as pd
-from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, HEADERS, SEQ_DAYS
+from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, compute_seq_features, HEADERS, SEQ_DAYS
 import joblib
 from datetime import datetime, date
 
@@ -139,10 +139,10 @@ def extract_features_at(hist, target_date, nk_rets=None):
 
     SEQ_DAYS = 60
     if len(p) >= SEQ_DAYS + 1:
-        seq = np.diff(p[-(SEQ_DAYS + 1):]) / p[-(SEQ_DAYS + 1):-1]
-        seq = np.clip(seq, -0.2, 0.2).tolist()
+        seq_raw = np.clip(np.diff(p[-(SEQ_DAYS + 1):]) / p[-(SEQ_DAYS + 1):-1], -0.2, 0.2)
     else:
-        seq = [0.0] * SEQ_DAYS
+        seq_raw = np.zeros(SEQ_DAYS)
+    seq = compute_seq_features(seq_raw)
 
     # トレンド反転5特徴量
     rhi = p[-60:].max() if len(p) >= 60 else p.max()
