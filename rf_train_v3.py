@@ -66,6 +66,20 @@ def get_prices(code,days=HISTORY_DAYS):
         return df
     except: return None
 
+def compute_seq_features(seq):
+    """60日リターン系列 → 7次元要約統計量"""
+    s=np.array(seq,dtype=float)
+    if len(s)<2: return [0.0]*7
+    mean_s=s.mean(); std_s=s.std()
+    ac=float(np.corrcoef(s[:-1],s[1:])[0,1]) if std_s>0 else 0.0
+    if np.isnan(ac): ac=0.0
+    skew=float(((s-mean_s)**3).mean()/(std_s**3+1e-10))
+    max_r=float(s.max()); min_r=float(s.min())
+    pos_ratio=float((s>0).mean())
+    t=np.arange(len(s),dtype=float); slope=float(np.polyfit(t,s,1)[0])
+    mid=len(s)//2; recent_vs_early=float(s[mid:].mean()-s[:mid].mean())
+    return [ac,skew,max_r,min_r,pos_ratio,slope,recent_vs_early]
+
 def calc_rsi(p,period=14):
     if len(p)<period+1: return 50.0
     d=np.diff(p[-(period+1):]); g=np.where(d>0,d,0).mean(); l=np.where(d<0,-d,0).mean()
@@ -87,7 +101,7 @@ def compute_feat(p, v=None, nk_rets=None):
     vol20=v20.std()*np.sqrt(252)*100; vol60=v60.std()*np.sqrt(252)*100
     w=p[-252:] if len(p)>=252 else p; hi,lo=w.max(),w.min()
     pos52=(c-lo)/(hi-lo) if hi>lo else 0.5
-    seq=np.clip(np.diff(p[-(SEQ_DAYS+1):])/p[-(SEQ_DAYS+1):-1],-0.2,0.2).tolist() if len(p)>=SEQ_DAYS+1 else [0.0]*SEQ_DAYS
+    seq_raw=np.clip(np.diff(p[-(SEQ_DAYS+1):])/p[-(SEQ_DAYS+1):-1],-0.2,0.2) if len(p)>=SEQ_DAYS+1 else np.zeros(SEQ_DAYS)
     rhi=p[-60:].max() if len(p)>=60 else p.max(); ddown60=(c-rhi)/rhi
     hi52=p[-252:].max() if len(p)>=252 else p.max(); fhi52=(c-hi52)/hi52
     stk=0
@@ -110,7 +124,7 @@ def compute_feat(p, v=None, nk_rets=None):
     nk5  = nk_rets[0] if nk_rets is not None else 0.0
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
-    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+seq
+    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+compute_seq_features(seq_raw)
     return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
 def generate_samples(df, nk_df=None):

@@ -76,8 +76,27 @@ def calc_rsi(prices, period=14):
     return 100 - 100 / (1 + gains / losses)
 
 
+def compute_seq_features(seq):
+    """60日リターン系列 → 7次元要約統計量"""
+    s = np.array(seq, dtype=float)
+    if len(s) < 2:
+        return [0.0] * 7
+    mean_s = s.mean(); std_s = s.std()
+    ac = float(np.corrcoef(s[:-1], s[1:])[0, 1]) if std_s > 0 else 0.0
+    if np.isnan(ac): ac = 0.0
+    skew = float(((s - mean_s) ** 3).mean() / (std_s ** 3 + 1e-10))
+    max_r = float(s.max())
+    min_r = float(s.min())
+    pos_ratio = float((s > 0).mean())
+    t = np.arange(len(s), dtype=float)
+    slope = float(np.polyfit(t, s, 1)[0])
+    mid = len(s) // 2
+    recent_vs_early = float(s[mid:].mean() - s[:mid].mean())
+    return [ac, skew, max_r, min_r, pos_ratio, slope, recent_vs_early]
+
+
 def extract_features(p, v=None, nk_rets=None):
-    """81次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列60"""
+    """28次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7"""
     if len(p) < 91 or p[-1] == 0:
         return None
     c = p[-1]
@@ -131,12 +150,13 @@ def extract_features(p, v=None, nk_rets=None):
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
 
-    seq = (np.clip(np.diff(p[-(SEQ_DAYS+1):]) / p[-(SEQ_DAYS+1):-1], -0.2, 0.2).tolist()
-           if len(p) >= SEQ_DAYS + 1 else [0.0] * SEQ_DAYS)
+    seq_raw = (np.clip(np.diff(p[-(SEQ_DAYS+1):]) / p[-(SEQ_DAYS+1):-1], -0.2, 0.2)
+               if len(p) >= SEQ_DAYS + 1 else np.zeros(SEQ_DAYS))
+    seq_feat = compute_seq_features(seq_raw)
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None

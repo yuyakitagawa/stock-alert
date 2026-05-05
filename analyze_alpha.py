@@ -19,13 +19,21 @@ import pandas as pd
 import joblib
 from datetime import datetime, date, timedelta
 
-from utils import calc_rsi, HEADERS, SEQ_DAYS
+from utils import calc_rsi, compute_seq_features, HEADERS, SEQ_DAYS
+
+import sys as _sys
 
 BACKTEST_DATE = date(2026, 2, 3)
 TODAY         = date.today()
-RANDOM_SEED   = 42
+
+if len(_sys.argv) > 1 and _sys.argv[1] == "bear":
+    BACKTEST_DATE = date(2024, 7, 1)
+    TODAY         = date(2024, 10, 1)
+    print("【下落相場テストモード: 2024年8月クラッシュ期】")
+
+RANDOM_SEED = 42
 # BACKTEST_DATE の252営業日前（≈365日）のデータが必要なため十分な日数を確保
-FETCH_DAYS    = max(500, (TODAY - BACKTEST_DATE).days + 400)
+FETCH_DAYS  = max(500, (date.today() - BACKTEST_DATE).days + 400)
 
 
 # ── 株価取得 ──────────────────────────────────
@@ -123,12 +131,12 @@ def extract_features_at(hist, target_date, nk_rets=None):
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
 
-    seq = (np.clip(np.diff(p[-(SEQ_DAYS+1):]) / p[-(SEQ_DAYS+1):-1], -0.2, 0.2).tolist()
-           if len(p) >= SEQ_DAYS + 1 else [0.0] * SEQ_DAYS)
+    seq_raw = (np.clip(np.diff(p[-(SEQ_DAYS+1):]) / p[-(SEQ_DAYS+1):-1], -0.2, 0.2)
+               if len(p) >= SEQ_DAYS + 1 else np.zeros(SEQ_DAYS))
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + compute_seq_features(seq_raw)
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
