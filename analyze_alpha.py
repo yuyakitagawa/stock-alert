@@ -19,7 +19,7 @@ import pandas as pd
 import joblib
 from datetime import datetime, date, timedelta
 
-from utils import calc_rsi, compute_seq_features, HEADERS, SEQ_DAYS
+from utils import calc_rsi, compute_seq_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 
 import sys as _sys
 
@@ -209,41 +209,44 @@ def main():
             nk_return = (float(nk_now.iloc[-1]) - float(nk_past.iloc[-1])) / float(nk_past.iloc[-1]) * 100
             print(f"日経225: {BACKTEST_DATE} → {TODAY}  {nk_return:+.2f}%")
 
-    # 各銘柄のスコアと実績取得
+    # フェーズ1: 特徴量を収集
     print(f"\n{BACKTEST_DATE}時点の特徴量・スコア計算中...")
-    results = []
+    raw_feats, raw_meta = [], []
     for i, (code, name) in enumerate(stocks):
         hist = fetch_yahoo(f"{code}.T")
         if hist is None:
-            time.sleep(0.3)
-            continue
-
+            time.sleep(0.3); continue
         feat = extract_features_at(hist, BACKTEST_DATE, nk_rets_bt)
         if feat is None:
-            time.sleep(0.3)
-            continue
-
-        # rank_stocks.py と同じフィルター
+            time.sleep(0.3); continue
         if feat[12] > 0.15 or feat[10] < -0.15:
-            time.sleep(0.3)
-            continue
-
+            time.sleep(0.3); continue
         close = hist["Close"].dropna()
         close.index = pd.to_datetime(close.index).date
         past    = close[close.index <= BACKTEST_DATE]
         present = close[close.index <= TODAY]
         if past.empty or present.empty:
-            time.sleep(0.3)
-            continue
+            time.sleep(0.3); continue
+        raw_feats.append(feat)
+        raw_meta.append((code, name, float(past.iloc[-1]), float(present.iloc[-1])))
+        if (i + 1) % 20 == 0:
+            print(f"  {i+1}/{len(stocks)} 取得済み...")
+        time.sleep(0.3)
 
-        price_then = float(past.iloc[-1])
-        price_now  = float(present.iloc[-1])
+    if not raw_feats:
+        print("ERROR: データ取得失敗"); return
+
+    # フェーズ2: クロスセクショナルランク特徴量を付加
+    feats_aug = add_cs_rank_features(np.array(raw_feats, dtype=float))
+
+    # フェーズ3: スコア計算
+    results = []
+    for idx, (code, name, price_then, price_now) in enumerate(raw_meta):
+        feat_aug  = feats_aug[idx]
         actual_ret = (price_now - price_then) / price_then * 100
-
-        rise_prob = float(rise_model.predict_proba([feat])[0][1]) * 100
-        drop_prob = float(drop_model.predict_proba([feat])[0][1]) * 100
+        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100
         net       = rise_prob - drop_prob
-
         results.append({
             "コード":         code,
             "銘柄名":         name,
@@ -252,14 +255,6 @@ def main():
             "下落確率(%)":    round(drop_prob, 1),
             "実績リターン(%)": round(actual_ret, 2),
         })
-
-        if (i + 1) % 20 == 0:
-            print(f"  {i+1}/{len(stocks)} 処理済み...")
-        time.sleep(0.3)
-
-    if not results:
-        print("ERROR: データ取得失敗")
-        return
 
     df = pd.DataFrame(results).sort_values("ネット(%)", ascending=False).reset_index(drop=True)
     print(f"有効銘柄数: {len(df)}")

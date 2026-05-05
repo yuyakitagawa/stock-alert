@@ -201,6 +201,20 @@ def main():
     X_tr=np.array(train_X); X_te=np.array(test_X)
     yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
+    # Cross-sectional rank features (rank within each sample date)
+    print("\nクロスセクショナルランク特徴量を計算中...")
+    all_X=np.vstack([X_tr,X_te]); all_dates=np.array(train_dates+test_dates)
+    RANK_FEAT=[0,1,2,6,7,9]  # ret5,ret20,ret60,rsi,vol20,pos52
+    rank_mat=np.full((len(all_X),len(RANK_FEAT)),0.5)
+    _,inv=np.unique(all_dates,return_inverse=True)
+    for d_idx in range(inv.max()+1):
+        g=np.where(inv==d_idx)[0]
+        if len(g)<2: continue
+        for j,fi in enumerate(RANK_FEAT):
+            v=all_X[g,fi]; o=np.argsort(np.argsort(v)); rank_mat[g,j]=o/(len(g)-1)
+    all_X_aug=np.hstack([all_X,rank_mat])
+    n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
+    print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
     print(f"上昇ラベル: 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     print(f"下落ラベル: 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")

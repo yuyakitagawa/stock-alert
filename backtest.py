@@ -14,7 +14,7 @@ import requests
 import io
 import numpy as np
 import pandas as pd
-from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, compute_seq_features, HEADERS, SEQ_DAYS
+from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 import joblib
 from datetime import datetime, date
 
@@ -239,15 +239,13 @@ def main():
     print("\n日経225データ取得中（特徴量用）...")
     nikkei_hist = get_nikkei_prices()
 
-    # 各銘柄の予測と実績
+    # フェーズ1: 全銘柄の特徴量を収集
     print(f"\n{BACKTEST_DATE}時点の特徴量でスコア計算中...")
-    results = []
+    raw_feats, raw_meta = [], []
     for i, (code, name) in enumerate(stocks):
         hist = get_hist_for_features(code)
         if hist is None:
-            continue
-
-        # 日経リターン計算
+            time.sleep(0.3); continue
         nk_rets_bt = None
         if nikkei_hist is not None:
             nk_c = nikkei_hist["Close"].dropna()
@@ -261,27 +259,34 @@ def main():
                 nk_rets_bt = (nk5_v, nk20_v, nk60_v)
         feat = extract_features_at(hist, BACKTEST_DATE, nk_rets_bt)
         if feat is None:
-            continue
-        # rank_stocks.pyと同一フィルター
+            time.sleep(0.3); continue
         if feat[12] > 0.15 or feat[10] < -0.15:
-            continue
-
+            time.sleep(0.3); continue
         close = hist["Close"].dropna()
         close.index = pd.to_datetime(close.index).date
-
         past    = close[close.index <= BACKTEST_DATE]
         present = close[close.index <= TODAY]
         if past.empty or present.empty:
-            continue
+            time.sleep(0.3); continue
+        raw_feats.append(feat)
+        raw_meta.append((code, name, float(past.iloc[-1]), float(present.iloc[-1])))
+        if (i + 1) % 50 == 0:
+            print(f"  {i+1}/{len(stocks)} 取得済み...")
+        time.sleep(0.3)
 
-        price_then = float(past.iloc[-1])
-        price_now  = float(present.iloc[-1])
+    # フェーズ2: クロスセクショナルランク特徴量を付加
+    if not raw_feats:
+        print("ERROR: データが取得できませんでした"); return
+    feats_aug = add_cs_rank_features(np.array(raw_feats, dtype=float))
+
+    # フェーズ3: モデルスコアと実績リターンを集計
+    results = []
+    for idx, (code, name, price_then, price_now) in enumerate(raw_meta):
+        feat_aug = feats_aug[idx]
         actual_return = (price_now - price_then) / price_then * 100
-
-        rise_prob = float(rise_model.predict_proba([feat])[0][1]) * 100
-        drop_prob = float(drop_model.predict_proba([feat])[0][1]) * 100 if drop_model else 0
+        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else 0
         net = rise_prob - drop_prob
-
         results.append({
             "コード": code,
             "銘柄名": name,
@@ -293,10 +298,6 @@ def main():
             "ネット(%)": round(net, 1),
             "予測正解": int(actual_return >= RISE_THRESHOLD),
         })
-
-        if (i + 1) % 50 == 0:
-            print(f"  {i+1}/{len(stocks)} 処理済み...")
-        time.sleep(0.3)
 
     if not results:
         print("ERROR: データが取得できませんでした")

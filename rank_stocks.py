@@ -5,7 +5,7 @@ import os
 import glob
 from datetime import datetime, timedelta
 import joblib
-from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, HEADERS, SEQ_DAYS
+from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 
 FORECAST = 63
 RISE_THRESHOLD = 15.0
@@ -62,21 +62,35 @@ def main():
     print(f"スクリーナー通過銘柄: {len(codes)} 銘柄")
     print(f"\n確率スコア計算中...")
 
-    # 各銘柄の確率を計算
-    results = []
+    # フェーズ1: 全銘柄の特徴量を収集
+    raw_data = []
     for i, code in enumerate(codes):
         prices = get_prices(code, days=400)
         if prices is None or len(prices) < 91:
-            continue
+            time.sleep(0.2); continue
         nk_rets = (nk5/100, nk20/100, nk60/100) if nk5 is not None else None
         feat = extract_features(prices["Close"].values, prices["Volume"].tolist() if "Volume" in prices.columns else None, nk_rets)
         if feat is None:
-            continue
-        # 連続下落 or 60日高値から15%超下落の銘柄を除外
+            time.sleep(0.2); continue
         if feat[12] > 0.15 or feat[10] < -0.15:
-            continue
-        rise_prob = float(rise_model.predict_proba([feat])[0][1])
-        drop_prob = float(drop_model.predict_proba([feat])[0][1]) if drop_model else None
+            time.sleep(0.2); continue
+        raw_data.append((code, prices, feat))
+        if (i + 1) % 100 == 0:
+            print(f"  {i+1}/{len(codes)} 取得済み...")
+        time.sleep(0.2)
+
+    # フェーズ2: クロスセクショナルランク特徴量を付加（同日内での相対順位）
+    if not raw_data:
+        print("ERROR: 有効銘柄なし"); return
+    feats_matrix = np.array([d[2] for d in raw_data], dtype=float)
+    feats_aug = add_cs_rank_features(feats_matrix)  # 推論時は全銘柄を同一日として扱う
+
+    # フェーズ3: モデルスコア計算
+    results = []
+    for idx, (code, prices, feat) in enumerate(raw_data):
+        feat_aug = feats_aug[idx]
+        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
         close = float(prices["Close"].iloc[-1])
         rise_pct = round(rise_prob * 100, 1)
         drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
@@ -149,9 +163,6 @@ def main():
             "相対強度": rs_score if rs_score is not None else "-",
         }
         results.append(row)
-        if (i + 1) % 100 == 0:
-            print(f"  {i+1}/{len(codes)} 処理済み...")
-        time.sleep(0.2)
 
     # ランキング（ネットスコア順）
     result_df = pd.DataFrame(results).sort_values("ネット(%)", ascending=False).reset_index(drop=True)

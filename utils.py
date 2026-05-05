@@ -76,6 +76,42 @@ def calc_rsi(prices, period=14):
     return 100 - 100 / (1 + gains / losses)
 
 
+RANK_FEAT_INDICES = [0, 1, 2, 6, 7, 9]  # ret5, ret20, ret60, rsi, vol20, pos52
+
+
+def add_cs_rank_features(X, dates=None):
+    """Add 6 cross-sectional percentile rank features to feature matrix X.
+
+    Training mode (dates provided): rank within each date group.
+    Inference mode (dates=None): rank within the current batch (single day).
+    Returns augmented matrix shape (n, n_features + 6).
+    """
+    X = np.array(X, dtype=float)
+    n = len(X)
+    rank_matrix = np.full((n, len(RANK_FEAT_INDICES)), 0.5, dtype=float)
+
+    if dates is not None:
+        dates = np.array(dates)
+        _, inverse = np.unique(dates, return_inverse=True)
+        for d_idx in range(inverse.max() + 1):
+            group = np.where(inverse == d_idx)[0]
+            cnt = len(group)
+            if cnt < 2:
+                continue
+            for j, fi in enumerate(RANK_FEAT_INDICES):
+                vals = X[group, fi]
+                order = np.argsort(np.argsort(vals))
+                rank_matrix[group, j] = order / (cnt - 1)
+    else:
+        if n >= 2:
+            for j, fi in enumerate(RANK_FEAT_INDICES):
+                vals = X[:, fi]
+                order = np.argsort(np.argsort(vals))
+                rank_matrix[:, j] = order / (n - 1)
+
+    return np.hstack([X, rank_matrix])
+
+
 def compute_seq_features(seq):
     """60日リターン系列 → 7次元要約統計量"""
     s = np.array(seq, dtype=float)
