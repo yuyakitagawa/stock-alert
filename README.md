@@ -193,7 +193,25 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
 
 ## モデル改善履歴
 
-### v7（2026-05-05）AUC 上昇0.663 / 下落0.791 ← 現在
+### v7（2026-05-05）AUC 上昇0.663 / 下落0.791 ← 現在（キャリブレーション済み: 0.663/0.790）
+
+**Task5〜7 システム改善（2026-05-05）**
+- Task5: 確率キャリブレーション（Isotonic Regression）を追加
+  - 学習データ最新20%をキャリブレーション用に分離、CalibratedClassifierCV(method="isotonic")で補正
+  - AUCは変化なし（キャリブレーションは確率値を補正するが順位は変えない）
+  - 効果: `上昇確率40%` が実際に約40%の銘柄で上昇するよう補正。ネットスコアの意味が明確化
+  - `task5_calibrate.py`: 再学習不要で既存モデルにキャリブレーションを適用するスクリプト
+- Task6: ファンダメンタル特徴量（PER/PBR/ROE）の表示を追加
+  - `utils.get_fundamentals(code)`: kabutan.jpからPER/PBR/ROEをスクレイピング（Yahoo Finance v10は401）
+  - `rank_stocks.py`: ランキング表示とCSVにPER/PBR/ROE列を追加
+  - 注意: 訓練時は先読みバイアス回避のため未使用。推論時（ランキング）のみ表示
+- Task7: サバイバーシップバイアス確認（`check_survivorship_bias.py`）
+  - 推定欠損銘柄: 約298銘柄（全上場銘柄の約6.9%）
+  - 下落ラベル率バイアス: 8.4% → 実態推定9.0%（+0.6%pt 過小評価）
+  - 倒産・整理銘柄（約69社）のデータ取得は無料ソース不可 → 文書化で対応
+  - 対策実施済み: down_streak/drawdown60フィルター・scale_pos_weightで間接的に軽減
+
+### v7（2026-05-05）AUC 上昇0.663 / 下落0.791
 
 **変更したこと**
 - クロスセクショナルランク特徴量を追加（28→34次元）
