@@ -5,7 +5,7 @@ import os
 import glob
 from datetime import datetime, timedelta
 import joblib
-from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, HEADERS, SEQ_DAYS
+from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, HEADERS, SEQ_DAYS
 
 FORECAST = 63
 RISE_THRESHOLD = 15.0
@@ -74,10 +74,11 @@ def main():
             time.sleep(0.2); continue
         if feat[12] > 0.15 or feat[10] < -0.15:
             time.sleep(0.2); continue
-        raw_data.append((code, prices, feat))
+        fund = get_fundamentals(code)
+        raw_data.append((code, prices, feat, fund))
         if (i + 1) % 100 == 0:
             print(f"  {i+1}/{len(codes)} 取得済み...")
-        time.sleep(0.2)
+        time.sleep(0.3)
 
     # フェーズ2: クロスセクショナルランク特徴量を付加（同日内での相対順位）
     if not raw_data:
@@ -87,7 +88,7 @@ def main():
 
     # フェーズ3: モデルスコア計算
     results = []
-    for idx, (code, prices, feat) in enumerate(raw_data):
+    for idx, (code, prices, feat, fund) in enumerate(raw_data):
         feat_aug = feats_aug[idx]
         rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
@@ -161,6 +162,9 @@ def main():
             "日経比20日(%)": rel20 if rel20 is not None else "-",
             "日経比60日(%)": rel60 if rel60 is not None else "-",
             "相対強度": rs_score if rs_score is not None else "-",
+            "PER": fund.get("PER") if fund else None,
+            "PBR": fund.get("PBR") if fund else None,
+            "ROE(%)": fund.get("ROE") if fund else None,
         }
         results.append(row)
 
@@ -175,11 +179,14 @@ def main():
     if is_bear:
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  {'配当':>6}  推奨")
-    print("-" * 100)
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  {'PER':>7}  {'PBR':>5}  {'ROE%':>6}  推奨")
+    print("-" * 110)
     for _, row in result_df.head(TOP_SHOW).iterrows():
         drop_str = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
-        div_str = "   N/A"
+        per_val = row.get("PER"); pbr_val = row.get("PBR"); roe_val = row.get("ROE(%)")
+        per_str = f"{per_val:>6.1f}x" if per_val is not None else "    N/A"
+        pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
+        roe_str = f"{roe_val:>5.1f}%" if roe_val is not None else "   N/A"
         print(
             f"{int(row['順位']):>4}  {row['銘柄コード']:>6}  "
             f"{str(row['銘柄名']):<18}  "
@@ -190,7 +197,9 @@ def main():
             f"{row['判定']:<12}  "
             f"{row['ボラ(%)']:>5.1f}%  "
             f"{row['ボラ水準']:<6}  "
-            f"{div_str}  "
+            f"{per_str}  "
+            f"{pbr_str}  "
+            f"{roe_str}  "
             f"{row['推奨']}"
         )
 
