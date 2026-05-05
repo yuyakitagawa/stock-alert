@@ -2,6 +2,7 @@
 utils.py - 共通関数モジュール
 rank_stocks.py / alert_email.py / backtest.py で共有
 """
+import re
 import requests
 import numpy as np
 import pandas as pd
@@ -197,3 +198,45 @@ def extract_features(p, v=None, nk_rets=None):
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
     return feat
+
+
+_KABUTAN_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept-Language": "ja,en;q=0.9",
+}
+
+def get_fundamentals(code):
+    """PER/PBR/ROE を kabutan.jp からスクレイピング"""
+    result = {"PER": None, "PBR": None, "ROE": None}
+    try:
+        # PER / PBR: メインページ
+        resp = requests.get(f"https://kabutan.jp/stock/?code={code}",
+                            headers=_KABUTAN_HEADERS, timeout=8)
+        if resp.status_code == 200:
+            text = resp.text.replace("\n", "").replace("\t", "")
+            idx = text.find('data-help="PER"')
+            if idx != -1:
+                vals = re.findall(r'<td>([\d.-]+)<span', text[idx:idx+600])
+                if len(vals) >= 1:
+                    result["PER"] = float(vals[0])
+                if len(vals) >= 2:
+                    result["PBR"] = float(vals[1])
+        # ROE: finance ページ（最新年度の値、列順: 売上/利益/ROE/ROA/...）
+        resp2 = requests.get(f"https://kabutan.jp/stock/finance/?code={code}",
+                             headers=_KABUTAN_HEADERS, timeout=8)
+        if resp2.status_code == 200:
+            text2 = resp2.text.replace(" ", "").replace("\n", "").replace("\t", "")
+            idx2 = text2.find('ROE">')
+            if idx2 != -1:
+                tbody_idx = text2.find("<tbody>", idx2)
+                rows = re.findall(r'<tr><thscope="row".*?</tr>', text2[tbody_idx:tbody_idx+1200])
+                if rows:
+                    vals = re.findall(r'<td[^>]*>([\d,.-]+)</td>', rows[0])
+                    if len(vals) >= 3:
+                        try:
+                            result["ROE"] = float(vals[2])
+                        except ValueError:
+                            pass
+    except Exception:
+        pass
+    return result
