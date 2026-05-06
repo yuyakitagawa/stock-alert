@@ -113,7 +113,7 @@ def get_hist_for_features(code):
     return _fetch_yahoo(ticker, days=FETCH_DAYS)
 
 
-def compute_screener_at(hist, target_date):
+def compute_screener_at(hist, target_date, nikkei_return_3m=None):
     """target_date時点のスクリーナーフィルタ用メトリクスを計算"""
     close = hist["Close"].dropna()
     close.index = pd.to_datetime(close.index).date
@@ -135,28 +135,39 @@ def compute_screener_at(hist, target_date):
     vol          = (np.diff(p) / p[:-1]).std() * np.sqrt(252) * 100
     close_price  = float(p[-1])
 
-    # R²（v1用）
-    x = np.arange(n)
-    y_mean = p.mean()
-    ss_tot = ((p - y_mean) ** 2).sum()
-    coef   = np.polyfit(x, p, 1)
-    ss_res = ((p - np.polyval(coef, x)) ** 2).sum()
-    r2     = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+    coef     = np.polyfit(np.arange(n), p, 1)
     slope_up = bool(coef[0] > 0)
 
+    # 出来高比（v1用）
+    vr2060 = 1.0
+    if "Volume" in hist.columns:
+        volume = hist["Volume"].dropna()
+        volume.index = pd.to_datetime(volume.index).date
+        past_vol = volume[volume.index <= target_date]
+        if len(past_vol) >= 60:
+            vols  = pd.to_numeric(past_vol, errors="coerce").fillna(0).values
+            vol20 = vols[-20:].mean()
+            vol60 = vols[-60:].mean()
+            if vol60 > 0:
+                vr2060 = vol20 / vol60
+
+    # 日経比相対強度（v1用）
+    rel_strength_3m = (return_3m - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
+
     # 52週高値からの乖離（v2用）
-    hi52         = p[-252:].max() if len(p) >= 252 else None
+    hi52          = p[-252:].max() if len(p) >= 252 else None
     high_dist_52w = (p[-1] - hi52) / hi52 if hi52 is not None else None
 
     return {
-        "return_3m":    return_3m,
-        "return_6m":    return_6m,
-        "momentum_20d": momentum_20d,
-        "vol":          vol,
-        "r2":           r2,
-        "slope_up":     slope_up,
-        "close":        close_price,
-        "high_dist_52w": high_dist_52w,
+        "return_3m":      return_3m,
+        "return_6m":      return_6m,
+        "momentum_20d":   momentum_20d,
+        "vol":            vol,
+        "vr2060":         vr2060,
+        "rel_strength_3m": rel_strength_3m,
+        "slope_up":       slope_up,
+        "close":          close_price,
+        "high_dist_52w":  high_dist_52w,
     }
 
 
@@ -168,14 +179,15 @@ def _get_screener_pass_codes(raw_screener, mode):
 
     if mode == "v1":
         mask = (
-            (sc_df["r2"]                >= _SC_R2_THRESHOLD)
-            & (sc_df["return_3m"] * 100 >= _SC_MIN_MOMENTUM)
+            (sc_df["return_3m"] * 100   >= _SC_MIN_MOMENTUM)
             & (sc_df["return_3m"] * 100 <= _SC_MAX_MOMENTUM)
             & (sc_df["momentum_20d"]    >= _SC_MIN_MOMENTUM_20D)
             & (sc_df["vol"]             >= _SC_MIN_VOLATILITY)
             & (sc_df["vol"]             <= _SC_MAX_VOLATILITY)
             & (sc_df["close"]           >= _SC_MIN_PRICE)
             & (sc_df["slope_up"])
+            & (sc_df.get("vr2060", pd.Series(1.0, index=sc_df.index)) >= 1.0)
+            & (sc_df.get("rel_strength_3m", pd.Series(0.0, index=sc_df.index)) >= 0)
         )
         return set(sc_df.loc[mask, "code"].astype(str))
 
@@ -350,6 +362,18 @@ def main():
     print("\n日経225データ取得中（特徴量用）...")
     nikkei_hist = get_nikkei_prices()
 
+    # 日経225の3ヶ月リターンをBACKTEST_DATE時点で計算（相対強度用）
+    nikkei_return_3m_sc = None
+    if nikkei_hist is not None:
+        nk_c = nikkei_hist["Close"].dropna()
+        nk_c.index = pd.to_datetime(nk_c.index).date
+        nk_past = nk_c[nk_c.index <= BACKTEST_DATE]
+        if len(nk_past) >= 64:
+            nkp = nk_past.values
+            n3  = min(63, len(nkp) - 1)
+            nikkei_return_3m_sc = (nkp[-1] - nkp[-n3 - 1]) / nkp[-n3 - 1]
+            print(f"日経225 3ヶ月リターン({BACKTEST_DATE}時点): {nikkei_return_3m_sc*100:+.1f}%")
+
     # フェーズ1: 全銘柄の特徴量・スクリーナーメトリクスを収集
     print(f"\n{BACKTEST_DATE}時点の特徴量でスコア計算中... [スクリーナー: {SCREENER_MODE}]")
     raw_feats, raw_meta, raw_screener = [], [], []
@@ -359,7 +383,7 @@ def main():
             time.sleep(0.3); continue
 
         # スクリーナーメトリクスをBACKTEST_DATE時点で計算
-        sc_metrics = compute_screener_at(hist, BACKTEST_DATE)
+        sc_metrics = compute_screener_at(hist, BACKTEST_DATE, nikkei_return_3m_sc)
 
         nk_rets_bt = None
         if nikkei_hist is not None:

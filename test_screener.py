@@ -25,17 +25,19 @@ from screener import (
     MIN_PRICE,
     MIN_VOLATILITY,
     MAX_MOMENTUM,
+    MIN_VOL_RATIO,
 )
 
 
 def _make_universe(rows):
     """テスト用の universe_df を作成するヘルパー"""
     cols = ["code", "name", "r2", "momentum", "momentum_20d", "vol", "score",
-            "close", "slope_up", "return_3m", "return_6m"]
+            "close", "slope_up", "return_3m", "return_6m", "vr2060", "rel_strength_3m"]
     defaults = {
         "code": "0000", "name": "テスト", "r2": 0.8, "momentum": 10.0,
         "momentum_20d": 0.0, "vol": 30.0, "score": 8.0, "close": 500.0,
         "slope_up": True, "return_3m": 0.10, "return_6m": 0.15,
+        "vr2060": 1.2, "rel_strength_3m": 0.02,
     }
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -267,12 +269,6 @@ class TestApplyScreenerV1(unittest.TestCase):
         result = apply_screener_v1(df)
         self.assertEqual(len(result), 1)
 
-    def test_r2_below_threshold_excluded(self):
-        """R² < 0.65 は除外される"""
-        df = _make_universe([{"code": "A", "r2": 0.64}])
-        result = apply_screener_v1(df)
-        self.assertTrue(result.empty)
-
     def test_slope_down_excluded(self):
         """slope_up=False は除外される"""
         df = _make_universe([{"code": "A", "slope_up": False}])
@@ -296,6 +292,30 @@ class TestApplyScreenerV1(unittest.TestCase):
         df = _make_universe([{"code": "A", "vol": 19.0}])
         result = apply_screener_v1(df)
         self.assertTrue(result.empty)
+
+    def test_vol_ratio_below_1_excluded(self):
+        """出来高比 < 1.0（出来高減少）は除外される"""
+        df = _make_universe([{"code": "A", "vr2060": 0.99}])
+        result = apply_screener_v1(df)
+        self.assertTrue(result.empty)
+
+    def test_vol_ratio_at_1_passes(self):
+        """出来高比 = 1.0 はちょうど通過する（境界値 >=）"""
+        df = _make_universe([{"code": "A", "vr2060": 1.0}])
+        result = apply_screener_v1(df)
+        self.assertEqual(len(result), 1)
+
+    def test_negative_relative_strength_excluded(self):
+        """日経比相対強度 < 0（日経に負けている）は除外される"""
+        df = _make_universe([{"code": "A", "rel_strength_3m": -0.01}])
+        result = apply_screener_v1(df)
+        self.assertTrue(result.empty)
+
+    def test_zero_relative_strength_passes(self):
+        """日経比相対強度 = 0（日経と同等）は通過する（境界値 >=）"""
+        df = _make_universe([{"code": "A", "rel_strength_3m": 0.0}])
+        result = apply_screener_v1(df)
+        self.assertEqual(len(result), 1)
 
 
 if __name__ == "__main__":

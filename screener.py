@@ -8,13 +8,13 @@ import argparse
 from datetime import datetime, timedelta
 
 # ── v1定数 ───────────────────────────────────
-R2_THRESHOLD     = 0.65
 MIN_MOMENTUM     = 5.0
-MAX_MOMENTUM     = 30.0   # 追加: 急騰後ミーンリバージョン銘柄を除外
-MIN_VOLATILITY   = 20.0   # 追加: +15%達成に必要な最低ボラ
+MAX_MOMENTUM     = 30.0   # 急騰後ミーンリバージョン銘柄を除外
+MIN_VOLATILITY   = 20.0   # +15%達成に必要な最低ボラ
 MAX_VOLATILITY   = 50.0
 MIN_MOMENTUM_20D = -3.0
 MIN_PRICE        = 300
+MIN_VOL_RATIO    = 1.0    # 出来高増加: 20日平均 ≥ 60日平均（上昇に出来高が伴う）
 
 # ── v2定数 ───────────────────────────────────
 RANK_6M_THRESHOLD = 0.70   # 6ヶ月リターン クロスセクション上位30%
@@ -91,30 +91,60 @@ def get_prices(code, days=180):
             .get("adjclose", [{}])[0]
             .get("adjclose", [])
         )
+        volumes = (
+            result[0].get("indicators", {})
+            .get("quote", [{}])[0]
+            .get("volume", [])
+        )
         if not timestamps or not closes:
             return None
         idx = pd.to_datetime(timestamps, unit="s", utc=True).tz_convert("Asia/Tokyo")
-        df = pd.DataFrame({"Date": idx, "Close": closes}).dropna()
+        df = pd.DataFrame({"Date": idx, "Close": closes, "Volume": volumes}).dropna(subset=["Close"])
         return df
     except Exception:
         return None
 
 
-def calc_metrics(df):
-    """R²・モメンタム・ボラティリティ・スコアを計算（v1+v2対応）"""
+def get_nikkei_3m_return():
+    """日経225の3ヶ月リターンを取得"""
+    end_ts   = int(datetime.now().timestamp())
+    start_ts = int((datetime.now() - timedelta(days=180)).timestamp())
+    url = (
+        f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
+        f"?interval=1d&period1={start_ts}&period2={end_ts}"
+    )
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        closes = (
+            result[0].get("indicators", {})
+            .get("adjclose", [{}])[0]
+            .get("adjclose", [])
+        )
+        closes = [c for c in closes if c is not None]
+        if len(closes) < 63:
+            return None
+        n3 = min(63, len(closes) - 1)
+        return (closes[-1] - closes[-n3 - 1]) / closes[-n3 - 1]
+    except Exception:
+        return None
+
+
+def calc_metrics(df, nikkei_return_3m=None):
+    """モメンタム・ボラティリティ・出来高・相対強度・スコアを計算（v1+v2対応）"""
     if df is None or len(df) < 30:
         return None
 
     prices = df["Close"].values
     n = len(prices)
-    x = np.arange(n)
 
-    # R²（線形トレンドの安定度）
-    y_mean = prices.mean()
-    ss_tot = ((prices - y_mean) ** 2).sum()
-    coef = np.polyfit(x, prices, 1)
-    ss_res = ((prices - np.polyval(coef, x)) ** 2).sum()
-    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+    # トレンド方向（slope_up）
+    coef  = np.polyfit(np.arange(n), prices, 1)
     slope = coef[0]
 
     # モメンタム（3ヶ月=63営業日、6ヶ月=126営業日、20日）
@@ -128,22 +158,37 @@ def calc_metrics(df):
     # ボラティリティ（年率換算%）
     vol = (np.diff(prices) / prices[:-1]).std() * np.sqrt(252) * 100
 
-    # 総合スコア（v1用）
-    score = r2 * momentum_3m if slope > 0 else 0
+    # 出来高比（20日平均 / 60日平均）— Volume列がある場合のみ
+    vr2060 = 1.0
+    if "Volume" in df.columns and len(df) >= 60:
+        vols = pd.to_numeric(df["Volume"], errors="coerce").fillna(0).values
+        vol20 = vols[-20:].mean()
+        vol60 = vols[-60:].mean()
+        if vol60 > 0:
+            vr2060 = vol20 / vol60
+
+    # 日経比相対強度（Nikkeiデータなければ0=条件スキップ）
+    rel_strength_3m = (momentum_3m / 100 - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
+
+    # 総合スコア = モメンタム × 出来高比（上昇トレンドのみ）
+    score = momentum_3m * vr2060 if slope > 0 else 0
 
     return {
         # v1フィールド
-        "r2":           round(r2, 3),
-        "momentum":     round(momentum_3m, 2),
-        "momentum_20d": round(momentum_20d, 2),
-        "vol":          round(vol, 2),
-        "score":        round(score, 2),
-        "close":        round(float(prices[-1]), 1),
-        "slope_up":     bool(slope > 0),
+        "momentum":         round(momentum_3m, 2),
+        "momentum_20d":     round(momentum_20d, 2),
+        "vol":              round(vol, 2),
+        "vr2060":           round(vr2060, 3),
+        "rel_strength_3m":  round(rel_strength_3m, 4),
+        "score":            round(score, 2),
+        "close":            round(float(prices[-1]), 1),
+        "slope_up":         bool(slope > 0),
         # v2フィールド
-        "return_3m":    momentum_3m / 100,
-        "return_6m":    momentum_6m / 100,
-        "prices":       prices,
+        "return_3m":        momentum_3m / 100,
+        "return_6m":        momentum_6m / 100,
+        "prices":           prices,
+        # 互換用（v2のr2計算不要になったが残す）
+        "r2":               0.0,
     }
 
 
@@ -151,14 +196,15 @@ def calc_metrics(df):
 def apply_screener_v1(universe_df):
     """v1スクリーナー"""
     mask = (
-        (universe_df["r2"]             >= R2_THRESHOLD)
-        & (universe_df["momentum"]     >= MIN_MOMENTUM)
-        & (universe_df["momentum"]     <= MAX_MOMENTUM)
-        & (universe_df["momentum_20d"] >= MIN_MOMENTUM_20D)
-        & (universe_df["vol"]          >= MIN_VOLATILITY)
-        & (universe_df["vol"]          <= MAX_VOLATILITY)
-        & (universe_df["close"]        >= MIN_PRICE)
+        (universe_df["momentum"]         >= MIN_MOMENTUM)
+        & (universe_df["momentum"]       <= MAX_MOMENTUM)
+        & (universe_df["momentum_20d"]   >= MIN_MOMENTUM_20D)
+        & (universe_df["vol"]            >= MIN_VOLATILITY)
+        & (universe_df["vol"]            <= MAX_VOLATILITY)
+        & (universe_df["close"]          >= MIN_PRICE)
         & (universe_df["slope_up"])
+        & (universe_df["vr2060"]         >= MIN_VOL_RATIO)
+        & (universe_df["rel_strength_3m"] >= 0)
     )
     return universe_df[mask].copy()
 
@@ -256,12 +302,12 @@ def write_compare_report(df_v1, df_v2, today):
 
 # ── 出力整形ヘルパー ──────────────────────────
 def _format_v1_output(df):
-    """v1をCSV用DataFrameに変換（既存スキーマ互換）"""
-    out = df[["code", "name", "close", "r2", "momentum", "vol", "score"]].rename(columns={
+    """v1をCSV用DataFrameに変換"""
+    out = df[["code", "name", "close", "vr2060", "momentum", "vol", "score"]].rename(columns={
         "code":     "銘柄コード",
         "name":     "銘柄名",
         "close":    "直近株価(円)",
-        "r2":       "R²（安定度）",
+        "vr2060":   "出来高比(20d/60d)",
         "momentum": "3ヶ月モメンタム(%)",
         "vol":      "ボラティリティ(%)",
         "score":    "総合スコア",
@@ -321,6 +367,14 @@ def main():
         print("【テストモード: 5銘柄のみ】")
     print("=" * 55)
 
+    # 日経225の3ヶ月リターンを事前取得（相対強度計算用）
+    print("日経225の3ヶ月リターン取得中...")
+    nikkei_return_3m = get_nikkei_3m_return()
+    if nikkei_return_3m is not None:
+        print(f"  日経225 3ヶ月リターン: {nikkei_return_3m*100:+.1f}%")
+    else:
+        print("  日経225データ取得失敗 → 相対強度条件をスキップ")
+
     stock_list = get_tse_stock_list()
     if stock_list is None:
         print("ERROR: 銘柄リスト取得失敗")
@@ -341,7 +395,7 @@ def main():
         name = row["name"]
 
         df     = get_prices(code, days=fetch_days)
-        result = calc_metrics(df)
+        result = calc_metrics(df, nikkei_return_3m)
 
         if result is None:
             errors += 1
@@ -350,25 +404,28 @@ def main():
             continue
 
         all_rows.append({
-            "code":         code,
-            "name":         name,
-            "r2":           result["r2"],
-            "momentum":     result["momentum"],
-            "momentum_20d": result["momentum_20d"],
-            "vol":          result["vol"],
-            "score":        result["score"],
-            "close":        result["close"],
-            "slope_up":     result["slope_up"],
-            "return_3m":    result["return_3m"],
-            "return_6m":    result["return_6m"],
+            "code":             code,
+            "name":             name,
+            "r2":               result["r2"],
+            "momentum":         result["momentum"],
+            "momentum_20d":     result["momentum_20d"],
+            "vol":              result["vol"],
+            "vr2060":           result["vr2060"],
+            "rel_strength_3m":  result["rel_strength_3m"],
+            "score":            result["score"],
+            "close":            result["close"],
+            "slope_up":         result["slope_up"],
+            "return_3m":        result["return_3m"],
+            "return_6m":        result["return_6m"],
         })
         prices_dict[code] = result["prices"]
 
         if test_mode:
             print(
                 f"  {name}({code}): "
-                f"R²={result['r2']} / モメンタム={result['momentum']:+.1f}% / "
-                f"ボラ={result['vol']:.1f}%"
+                f"モメンタム={result['momentum']:+.1f}% / "
+                f"出来高比={result['vr2060']:.2f} / "
+                f"相対強度={result['rel_strength_3m']*100:+.1f}%"
             )
 
         if not test_mode and (i + 1) % 500 == 0:
