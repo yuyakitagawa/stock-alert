@@ -15,13 +15,13 @@
 
 | ファイル | 役割 |
 |---|---|
-| screener.py | JPX全銘柄から条件通過銘柄を抽出してCSV保存 |
+| screener.py | JPX全銘柄から条件通過銘柄を抽出してCSV保存（`--mode {v1,v2,both}` で条件切替・並走可能）|
 | rf_train_v3.py | XGBoostモデルを東証全銘柄×5年データで学習 |
 | rank_stocks.py | スクリーナー通過銘柄に上昇/下落確率をつけてランキング |
 | alert_email.py | ランキング上位をGmailでメール送信 |
 | utils.py | 共通関数（get_prices, extract_features, compute_seq_features, add_cs_rank_features 等） |
 | validation.py | Purged K-Fold検証（先読みバイアス定量化）、ユニットテスト付き |
-| backtest.py | バックテスト（先読みバイアスなしモード実装済み） |
+| backtest.py | バックテスト（先読みバイアスなしモード実装済み、`--screener {v1,v2}` でスクリーナー条件切替可） |
 | analyze_alpha.py | スクリーナーとモデルのアルファ貢献度を分離分析 |
 | generate_post.py | SNS投稿用テキストを生成 |
 | sheets_helper.py | Googleスプレッドシートへの書き込みユーティリティ |
@@ -121,10 +121,15 @@
 requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread google-auth yfinance
 
 ### 手動実行
-    python3 screener.py        # スクリーニング
-    python3 rf_train_v3.py     # モデル学習（40〜70分）
-    python3 rank_stocks.py     # ランキング生成
-    python3 alert_email.py     # メール送信
+    python3 screener.py                    # スクリーニング（v1+v2並走、デフォルト）
+    python3 screener.py --mode v1          # v1条件のみ
+    python3 screener.py --mode v2          # v2条件のみ
+    python3 rf_train_v3.py                 # モデル学習（40〜70分）
+    python3 rank_stocks.py                 # ランキング生成
+    python3 alert_email.py                 # メール送信
+    python3 backtest.py                    # バックテスト（通常期、v1スクリーナー）
+    python3 backtest.py bear --screener v2 # 下落相場 × v2スクリーナー
+    python3 test_screener.py               # スクリーナーユニットテスト（26件）
 
 ---
 
@@ -133,6 +138,41 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
 - モデルの限界：AUC 0.655はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
 - フィルターの意味：下落フィルターはルールベースの除外。モデルが「買い」と言っても直近で崩れている銘柄を弾く。
 - ウォークフォワード分割の意義：将来データで学習する「先読みバイアス」を防ぐため、時系列を守って学習/テストを分割している。
+
+---
+
+## スクリーナー条件（2026-05-06 更新）
+
+### v1条件（現行）
+
+| 条件 | 値 | 追加日 |
+|---|---|---|
+| R² ≥ | 0.65 | 当初 |
+| 3ヶ月モメンタム | +5% 〜 **+30%** | +30%上限を2026-05-06追加 |
+| 20日モメンタム ≥ | -3% | 当初 |
+| 年率ボラティリティ | **20%** 〜 50% | 20%下限を2026-05-06追加 |
+| 株価 ≥ | 300円 | 当初 |
+| 上昇トレンド | slope_up=True | 当初 |
+
+### 追加条件の根拠
+
+- **モメンタム上限+30%**: 急騰後のミーンリバージョン銘柄を除外。Jegadeesh & Titman (1993) のクロスセクション優位性に基づき、過熱銘柄は短期的に反落しやすい
+- **ボラ下限20%**: +15%×3ヶ月の目標達成には一定のボラが必要。Baker (2011) のLow-vol anomalyはあるが本モデルの目標達成には不向き
+
+### A/Bテスト結果（2026-05-06）
+
+| | 旧v1 | 新v1 |
+|---|---|---|
+| 通常期 日経アルファ（2026/2→5） | -3.79% | **-0.54%** |
+| 下落相場 日経アルファ（2024/7→10） | -2.18% | **+0.49%** |
+| 通常期スクリーナー通過数（200銘柄中） | 23 | 18 |
+
+詳細: `screener_ab_test_log.md`
+
+### v2条件（実験中・本番未採用）
+
+6ヶ月クロスセクション上位30% × 3ヶ月+5%〜+30% × 52週高値-20%以内 × ボラ20%〜50%。
+下落相場（2024年8月クラッシュ期）で通過ゼロとなり本番採用を見送り。条件緩和後に再検証予定。
 
 ---
 
