@@ -14,6 +14,7 @@ import requests
 import io
 import numpy as np
 import pandas as pd
+import argparse as _argparse
 from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 import joblib
 from datetime import datetime, date
@@ -24,12 +25,22 @@ TODAY          = date.today()         # 現在日（動的）
 BEAR_START     = date(2024, 7,  1)    # 下落相場テスト（2024年8月円キャリー崩壊期）
 BEAR_END       = date(2024, 10, 1)    # 下落相場テスト終了
 
-# 実行モード: python3 backtest.py bear → 下落相場テスト
-import sys as _sys
-if len(_sys.argv) > 1 and _sys.argv[1] == 'bear':
+# 実行モード: python3 backtest.py [bear|1year] [--screener {v1,v2}]
+_parser = _argparse.ArgumentParser(add_help=False)
+_parser.add_argument("mode", nargs="?", choices=["bear", "1year"], default=None)
+_parser.add_argument("--screener", choices=["v1", "v2"], default="v1",
+                     help="スクリーナー条件（デフォルト: v1）")
+_args, _ = _parser.parse_known_args()
+
+if _args.mode == 'bear':
     BACKTEST_DATE = BEAR_START
     TODAY         = BEAR_END
     print('【下落相場テストモード: 2024年8月クラッシュ期】')
+elif _args.mode == '1year':
+    BACKTEST_DATE = date(2025, 5, 5)
+    print('【1年バックテストモード: 2025-05-05 → 今日】')
+
+SCREENER_MODE  = _args.screener      # スクリーナー条件（v1 or v2）
 RISE_THRESHOLD = 15.0                # 上昇判定閾値(%)
 NET_THRESHOLD  = 5.0                 # ネットスコアの買いシグナル閾値
 TOP_N          = 30                  # 上位N銘柄を「買い」対象に
@@ -39,6 +50,21 @@ SAMPLE_N       = 200                 # バックテスト対象銘柄数
 # BACKTEST_DATEから91営業日前（≈130日）のデータが必要なため動的計算
 # 例: bear mode (2024-07-01) → (2026-05-04 - 2024-07-01) + 180 ≈ 853日
 FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
+
+# ── スクリーナー定数（v1互換・v2共通） ─────────
+_SC_R2_THRESHOLD     = 0.65
+_SC_MIN_MOMENTUM     = 5.0
+_SC_MAX_MOMENTUM     = 30.0
+_SC_MIN_VOLATILITY   = 20.0
+_SC_MAX_VOLATILITY   = 50.0
+_SC_MIN_MOMENTUM_20D = -3.0
+_SC_MIN_PRICE        = 300
+_SC_RANK_6M          = 0.70
+_SC_MIN_RETURN_3M    = 0.05
+_SC_MAX_RETURN_3M    = 0.30
+_SC_MAX_HIGH_DIST    = -0.20
+_SC_MIN_VOL_V2       = 20.0
+_SC_MAX_VOL_V2       = 50.0
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -85,6 +111,91 @@ def get_hist_for_features(code):
     """特徴量計算用の全履歴を取得"""
     ticker = f"{code}.T"
     return _fetch_yahoo(ticker, days=FETCH_DAYS)
+
+
+def compute_screener_at(hist, target_date):
+    """target_date時点のスクリーナーフィルタ用メトリクスを計算"""
+    close = hist["Close"].dropna()
+    close.index = pd.to_datetime(close.index).date
+    past = close[close.index <= target_date]
+
+    if len(past) < 30:
+        return None
+
+    p = past.values
+    n = len(p)
+
+    n3  = min(63,  n - 1)
+    n6  = min(126, n - 1)
+    n20 = min(20,  n - 1)
+
+    return_3m    = (p[-1] - p[-n3  - 1]) / p[-n3  - 1]
+    return_6m    = (p[-1] - p[-n6  - 1]) / p[-n6  - 1]
+    momentum_20d = (p[-1] - p[-n20 - 1]) / p[-n20 - 1] * 100
+    vol          = (np.diff(p) / p[:-1]).std() * np.sqrt(252) * 100
+    close_price  = float(p[-1])
+
+    # R²（v1用）
+    x = np.arange(n)
+    y_mean = p.mean()
+    ss_tot = ((p - y_mean) ** 2).sum()
+    coef   = np.polyfit(x, p, 1)
+    ss_res = ((p - np.polyval(coef, x)) ** 2).sum()
+    r2     = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+    slope_up = bool(coef[0] > 0)
+
+    # 52週高値からの乖離（v2用）
+    hi52         = p[-252:].max() if len(p) >= 252 else None
+    high_dist_52w = (p[-1] - hi52) / hi52 if hi52 is not None else None
+
+    return {
+        "return_3m":    return_3m,
+        "return_6m":    return_6m,
+        "momentum_20d": momentum_20d,
+        "vol":          vol,
+        "r2":           r2,
+        "slope_up":     slope_up,
+        "close":        close_price,
+        "high_dist_52w": high_dist_52w,
+    }
+
+
+def _get_screener_pass_codes(raw_screener, mode):
+    """スクリーナー条件を満たす銘柄コードのセットを返す"""
+    sc_df = pd.DataFrame([s for s in raw_screener if s is not None and s.get("close") is not None])
+    if sc_df.empty:
+        return set()
+
+    if mode == "v1":
+        mask = (
+            (sc_df["r2"]                >= _SC_R2_THRESHOLD)
+            & (sc_df["return_3m"] * 100 >= _SC_MIN_MOMENTUM)
+            & (sc_df["return_3m"] * 100 <= _SC_MAX_MOMENTUM)
+            & (sc_df["momentum_20d"]    >= _SC_MIN_MOMENTUM_20D)
+            & (sc_df["vol"]             >= _SC_MIN_VOLATILITY)
+            & (sc_df["vol"]             <= _SC_MAX_VOLATILITY)
+            & (sc_df["close"]           >= _SC_MIN_PRICE)
+            & (sc_df["slope_up"])
+        )
+        return set(sc_df.loc[mask, "code"].astype(str))
+
+    if mode == "v2":
+        df = sc_df.copy()
+        df["rank_6m"] = df["return_6m"].rank(pct=True)
+        # 52週高値乖離: None（1年データなし）は除外
+        hi_ok = df["high_dist_52w"].fillna(-999) >= _SC_MAX_HIGH_DIST
+        mask = (
+            (df["return_3m"]  >= _SC_MIN_RETURN_3M)
+            & (df["return_3m"] <= _SC_MAX_RETURN_3M)
+            & (df["rank_6m"]   >= _SC_RANK_6M)
+            & (df["vol"]        >= _SC_MIN_VOL_V2)
+            & (df["vol"]        <= _SC_MAX_VOL_V2)
+            & (df["close"]      >= _SC_MIN_PRICE)
+            & hi_ok
+        )
+        return set(df.loc[mask, "code"].astype(str))
+
+    return set(sc_df["code"].astype(str))
 
 
 def get_nikkei_prices():
@@ -239,13 +350,17 @@ def main():
     print("\n日経225データ取得中（特徴量用）...")
     nikkei_hist = get_nikkei_prices()
 
-    # フェーズ1: 全銘柄の特徴量を収集
-    print(f"\n{BACKTEST_DATE}時点の特徴量でスコア計算中...")
-    raw_feats, raw_meta = [], []
+    # フェーズ1: 全銘柄の特徴量・スクリーナーメトリクスを収集
+    print(f"\n{BACKTEST_DATE}時点の特徴量でスコア計算中... [スクリーナー: {SCREENER_MODE}]")
+    raw_feats, raw_meta, raw_screener = [], [], []
     for i, (code, name) in enumerate(stocks):
         hist = get_hist_for_features(code)
         if hist is None:
             time.sleep(0.3); continue
+
+        # スクリーナーメトリクスをBACKTEST_DATE時点で計算
+        sc_metrics = compute_screener_at(hist, BACKTEST_DATE)
+
         nk_rets_bt = None
         if nikkei_hist is not None:
             nk_c = nikkei_hist["Close"].dropna()
@@ -270,9 +385,19 @@ def main():
             time.sleep(0.3); continue
         raw_feats.append(feat)
         raw_meta.append((code, name, float(past.iloc[-1]), float(present.iloc[-1])))
+        raw_screener.append({"code": code, **(sc_metrics if sc_metrics else {})})
         if (i + 1) % 50 == 0:
             print(f"  {i+1}/{len(stocks)} 取得済み...")
         time.sleep(0.3)
+
+    # フェーズ1.5: スクリーナーフィルター適用
+    if raw_screener:
+        pass_codes = _get_screener_pass_codes(raw_screener, SCREENER_MODE)
+        keep = [j for j, m in enumerate(raw_meta) if m[0] in pass_codes]
+        raw_feats    = [raw_feats[j]    for j in keep]
+        raw_meta     = [raw_meta[j]     for j in keep]
+        raw_screener = [raw_screener[j] for j in keep]
+        print(f"スクリーナー {SCREENER_MODE}: {len(pass_codes)} 銘柄通過 / {len(raw_feats)} 件処理")
 
     # フェーズ2: クロスセクショナルランク特徴量を付加
     if not raw_feats:
