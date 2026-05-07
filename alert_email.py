@@ -392,11 +392,14 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
                if nk5 is not None else "")
     bear_banner = (
-        f"<div style='background:#fff3cd;border:2px solid #f0ad4e;border-radius:8px;"
-        f"padding:12px;margin-bottom:12px'>"
-        f"<b>⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）</b><br>"
-        f"<span style='font-size:13px'>モデルスコアの信頼性が低下しています。買いシグナルは慎重に判断してください。</span>"
-        f"</div>"
+        f"<div style='background:#c0392b;border-radius:8px;padding:16px;margin-bottom:16px'>"
+        f"<div style='color:white;font-size:18px;font-weight:700;margin-bottom:6px'>"
+        f"🚨 下落相場 — 新規買いは見送り推奨</div>"
+        f"<div style='color:#fdd;font-size:13px;line-height:1.6'>"
+        f"日経225の20日リターンが {nk20:+.1f}% と急落しています。<br>"
+        f"下落相場ではモデルの精度が落ち、買いシグナルの信頼性が低下します。<br>"
+        f"<b>既存ポジションの損切りラインを確認し、新規買いは相場が落ち着くまで待ってください。</b>"
+        f"</div></div>"
     ) if is_bear else ""
 
     return f"""<html><head>
@@ -424,7 +427,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 </div>
 {_build_priority_section(priority_actions or [])}
 {sell_section}
-{_build_ranking_section(results, prev_ranking_codes)}
+{"" if is_bear else _build_ranking_section(results, prev_ranking_codes)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経比20d = 過去20日超過リターン</p>
