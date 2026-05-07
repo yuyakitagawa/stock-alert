@@ -30,7 +30,7 @@ _parser = _argparse.ArgumentParser(add_help=False)
 _parser.add_argument("mode", nargs="?", choices=["bear", "1year"], default=None)
 _parser.add_argument("--screener", choices=["v1", "v2"], default="v1",
                      help="スクリーナー条件（デフォルト: v1）")
-_parser.add_argument("--top-n",   type=int,   default=30,   help="上位N銘柄を選択（デフォルト: 30）")
+_parser.add_argument("--top-n",   type=int,   default=10,   help="上位N銘柄を選択（デフォルト: 10）")
 _parser.add_argument("--net-min", type=float, default=None, help="ネットスコア最低閾値（例: 15）")
 _parser.add_argument("--compare",  action="store_true", help="保有数×閾値を一括比較")
 _parser.add_argument("--screened", action="store_true", help="スクリーナー特化モデルを使用")

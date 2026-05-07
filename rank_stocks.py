@@ -9,7 +9,7 @@ from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, ad
 
 FORECAST = 63
 RISE_THRESHOLD = 15.0
-TOP_SHOW = 30
+TOP_SHOW = 10
 BEAR_MARKET_THRESHOLD = -5.0
 
 
