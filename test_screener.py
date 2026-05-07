@@ -37,7 +37,7 @@ def _make_universe(rows):
         "code": "0000", "name": "テスト", "r2": 0.8, "momentum": 10.0,
         "momentum_20d": 0.0, "vol": 30.0, "score": 8.0, "close": 500.0,
         "slope_up": True, "return_3m": 0.10, "return_6m": 0.15,
-        "vr2060": 1.2, "rel_strength_3m": 0.02,
+        "vr2060": 1.2, "rel_strength_3m": 0.06,
     }
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -311,11 +311,17 @@ class TestApplyScreenerV1(unittest.TestCase):
         result = apply_screener_v1(df)
         self.assertTrue(result.empty)
 
-    def test_zero_relative_strength_passes(self):
-        """日経比相対強度 = 0（日経と同等）は通過する（境界値 >=）"""
-        df = _make_universe([{"code": "A", "rel_strength_3m": 0.0}])
+    def test_at_threshold_relative_strength_passes(self):
+        """日経比相対強度 = +5%（閾値ちょうど）は通過する（境界値 >=）"""
+        df = _make_universe([{"code": "A", "rel_strength_3m": 0.05}])
         result = apply_screener_v1(df)
         self.assertEqual(len(result), 1)
+
+    def test_below_threshold_relative_strength_excluded(self):
+        """日経比相対強度 = +4%（閾値未満）は除外される"""
+        df = _make_universe([{"code": "A", "rel_strength_3m": 0.04}])
+        result = apply_screener_v1(df)
+        self.assertTrue(result.empty)
 
 
 if __name__ == "__main__":

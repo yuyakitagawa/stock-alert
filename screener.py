@@ -15,6 +15,7 @@ MAX_VOLATILITY   = 50.0
 MIN_MOMENTUM_20D = -3.0
 MIN_PRICE        = 300
 MIN_VOL_RATIO    = 1.0    # 出来高増加: 20日平均 ≥ 60日平均（上昇に出来高が伴う）
+MIN_REL_STRENGTH = 0.05   # 日経比相対強度 ≥ +5%（過去3ヶ月で日経を5%以上アウトパフォーム）
 
 # ── v2定数 ───────────────────────────────────
 RANK_6M_THRESHOLD = 0.70   # 6ヶ月リターン クロスセクション上位30%
@@ -204,7 +205,7 @@ def apply_screener_v1(universe_df):
         & (universe_df["close"]          >= MIN_PRICE)
         & (universe_df["slope_up"])
         & (universe_df["vr2060"]         >= MIN_VOL_RATIO)
-        & (universe_df["rel_strength_3m"] >= 0)
+        & (universe_df["rel_strength_3m"] >= MIN_REL_STRENGTH)
     )
     return universe_df[mask].copy()
 
