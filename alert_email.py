@@ -182,6 +182,38 @@ def _fetch_sector_kabutan(code):
     return ""
 
 
+def get_next_earnings_cached(code):
+    """次回決算発表予定日をkabutan.jpから取得してJSONキャッシュに保存。失敗時はNone。"""
+    cache_path = os.path.expanduser("~/stock-alert/earnings_cache.json")
+    today_str  = datetime.now().strftime("%Y-%m-%d")
+    cache = {}
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                cache = json.load(f)
+        except Exception:
+            pass
+    key = str(code)
+    entry = cache.get(key, {})
+    if entry.get("fetched") == today_str:
+        date_str = entry.get("date")
+        return datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else None
+    try:
+        resp = requests.get(f"https://kabutan.jp/stock/?code={code}",
+                            headers=_HEADERS, timeout=8)
+        date = None
+        if resp.status_code == 200:
+            m = re.search(r'決算発表予定日[^<]*<[^>]+>(\d{4}/\d{2}/\d{2})', resp.text)
+            if m:
+                date = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+        cache[key] = {"fetched": today_str, "date": date.isoformat() if date else None}
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+        return date
+    except Exception:
+        return None
+
+
 def get_sector_cached(code):
     """業種をキャッシュから取得（なければkabutan.jpから取得してCSVキャッシュに保存）"""
     cache_path = os.path.expanduser("~/stock-alert/sector_cache.csv")
@@ -332,6 +364,10 @@ def _build_ranking_section(results, prev_ranking_codes):
                 fund_str += f"PER{float(per):.0f}"
             if pbr and str(pbr) not in ("nan", "None", "-"):
                 fund_str += f" PBR{float(pbr):.1f}"
+            stop_val = row.get("損切り価格(円)")
+            stop_str = f"¥{int(stop_val):,}" if stop_val and str(stop_val) not in ("nan", "None") else "-"
+            stop_pct = row.get("損切り幅(%)")
+            stop_pct_str = f"({stop_pct:+.1f}%)" if stop_pct and str(stop_pct) not in ("nan", "None") else ""
             new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
             rows += (f"<tr>"
                      f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
@@ -340,6 +376,7 @@ def _build_ranking_section(results, prev_ranking_codes):
                      f"<td class='{_net_cls(net)}' style='text-align:center'>{net:+.1f}%</td>"
                      f"<td class='{_rel_cls(rel20_v)}' style='text-align:center'>{_rel_str(rel20_v)}</td>"
                      f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
+                     f"<td style='text-align:center;color:#c0392b;font-size:12px'>{stop_str}{stop_pct_str}</td>"
                      f"</tr>")
             count += 1
     if not rows:
@@ -349,19 +386,25 @@ def _build_ranking_section(results, prev_ranking_codes):
             f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
             f"ネット = 上昇確率 − 下落確率 ／ 日経比20d = 過去20日の日経225比超過リターン</p>"
             f"<table><tr style='background:#e8f0fe'>"
-            f"<th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th></tr>"
+            f"<th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th><th>損切り</th></tr>"
             f"{rows}</table></div>")
 
 
-def _build_all_rows(results):
+def _build_all_rows(results, earnings_map=None):
+    earnings_map = earnings_map or {}
     rows = ""
     for idx, r in enumerate(sorted(results, key=lambda x: x["net"], reverse=True), 1):
         drop_str   = f"{r['drop_prob']:.1f}%" if r.get("drop_prob") is not None else "-"
         spark      = build_sparkline_svg(r.get("prices_close", []))
         spark_html = f"<br>{spark}" if spark else ""
+        days = earnings_map.get(str(r["code"]))
+        earn_badge = (f"<span style='display:inline-block;background:#e74c3c;color:white;"
+                      f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
+                      f"margin-left:3px;vertical-align:middle'>決算{days}日前</span>"
+                      if days is not None else "")
         rows += (f"<tr>"
                  f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
-                 f"<td><b>{r['name']}</b>"
+                 f"<td><b>{r['name']}</b>{earn_badge}"
                  f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f}</span>"
                  f"{spark_html}</td>"
                  f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
@@ -376,10 +419,26 @@ def _build_all_rows(results):
 
 # ──────────────────────────── HTML組み立て ────────────────────────────────
 
+def build_earnings_map(codes):
+    """銘柄コードリスト → {code: days_until} の辞書。14日以内のみ返す。"""
+    today = datetime.now().date()
+    result = {}
+    for code in codes:
+        d = get_next_earnings_cached(code)
+        if d is None:
+            continue
+        days = (d - today).days
+        if 0 <= days <= 14:
+            result[str(code)] = days
+    return result
+
+
 def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
                prev_ranking_codes=None, prev_results=None, priority_actions=None):
     prev_ranking_codes = prev_ranking_codes or set()
     prev_results       = prev_results or {}
+
+    earnings_map = build_earnings_map([r["code"] for r in results])
 
     sell_result = _build_sell_section(results)
     if isinstance(sell_result, tuple):
@@ -433,7 +492,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経比20d = 過去20日超過リターン</p>
   <table>
     <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経比20d</th><th>ボラ</th></tr>
-    {_build_all_rows(results)}
+    {_build_all_rows(results, earnings_map)}
   </table>
 </div>
 {build_diff_section(results, prev_results)}
