@@ -18,6 +18,7 @@ def _make_universe(rows):
         "code": "0000", "name": "テスト", "momentum": 10.0,
         "momentum_20d": 0.0, "vol": 30.0, "score": 8.0, "close": 500.0,
         "slope_up": True, "vr2060": 1.2, "rel_strength_3m": 0.06,
+        "rsi": 55.0, "vsurge": 1.5,
     }
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -98,6 +99,37 @@ class TestApplyScreenerV1(unittest.TestCase):
         """日経比相対強度 = +4%（閾値未満）は除外される"""
         df = _make_universe([{"code": "A", "rel_strength_3m": 0.04}])
         self.assertTrue(apply_screener_v1(df).empty)
+
+    def test_rsi_below_40_excluded(self):
+        """RSI < 40（売られすぎ）は除外される"""
+        df = _make_universe([{"code": "A", "rsi": 39.9}])
+        self.assertTrue(apply_screener_v1(df).empty)
+
+    def test_rsi_above_70_excluded(self):
+        """RSI > 70（買われすぎ）は除外される"""
+        df = _make_universe([{"code": "A", "rsi": 70.1}])
+        self.assertTrue(apply_screener_v1(df).empty)
+
+    def test_rsi_at_bounds_passes(self):
+        """RSI = 40 / 70 はちょうど通過する（境界値 >=/<= ）"""
+        df = _make_universe([{"code": "L", "rsi": 40.0}, {"code": "H", "rsi": 70.0}])
+        self.assertEqual(len(apply_screener_v1(df)), 2)
+
+    def test_vsurge_below_threshold_excluded(self):
+        """直近出来高が20日平均の1.3倍未満は除外される"""
+        df = _make_universe([{"code": "A", "vsurge": 1.29}])
+        self.assertTrue(apply_screener_v1(df).empty)
+
+    def test_vsurge_at_threshold_passes(self):
+        """直近出来高 = 1.3倍ちょうどは通過する（境界値 >=）"""
+        df = _make_universe([{"code": "A", "vsurge": 1.3}])
+        self.assertEqual(len(apply_screener_v1(df)), 1)
+
+    def test_bear_market_stricter_rel_strength(self):
+        """下落相場フラグ時は相対強度閾値が0.10に引き上げられる"""
+        df = _make_universe([{"code": "A", "rel_strength_3m": 0.07}])
+        self.assertEqual(len(apply_screener_v1(df, rel_strength_min=0.05)), 1)
+        self.assertTrue(apply_screener_v1(df, rel_strength_min=0.10).empty)
 
     def test_multiple_stocks_filtered_correctly(self):
         """複数銘柄のうち条件を満たすもののみ通過する"""

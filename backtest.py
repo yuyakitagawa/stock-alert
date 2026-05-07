@@ -340,7 +340,7 @@ def main():
             print(f"日経225 3ヶ月リターン({BACKTEST_DATE}時点): {nikkei_return_3m_sc*100:+.1f}%")
 
     # フェーズ1: 全銘柄の特徴量・スクリーナーメトリクスを収集
-    print(f"\n{BACKTEST_DATE}時点の特徴量でスコア計算中... [スクリーナー: {SCREENER_MODE}]")
+    print(f"\n{BACKTEST_DATE}時点の特徴量でスコア計算中...")
     raw_feats, raw_meta, raw_screener = [], [], []
     for i, (code, name) in enumerate(stocks):
         hist = get_hist_for_features(code)
