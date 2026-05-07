@@ -6,6 +6,7 @@ import io
 import os
 import argparse
 from datetime import datetime, timedelta
+from utils import calc_rsi
 
 MIN_MOMENTUM     = 5.0
 MAX_MOMENTUM     = 30.0
@@ -14,7 +15,12 @@ MAX_VOLATILITY   = 50.0
 MIN_MOMENTUM_20D = -3.0
 MIN_PRICE        = 300
 MIN_VOL_RATIO    = 1.0
-MIN_REL_STRENGTH = 0.05
+MIN_REL_STRENGTH = 0.05   # 通常相場
+BEAR_REL_STRENGTH = 0.10  # 下落相場（日経20日 < -5%）
+MIN_RSI          = 40.0   # 売られすぎ（底割れ）を除外
+MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
+MIN_VSURGE       = 1.3    # 直近出来高 ≥ 20日平均の1.3倍（資金流入シグナル）
+BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -96,8 +102,8 @@ def get_prices(code, days=180):
         return None
 
 
-def get_nikkei_3m_return():
-    """日経225の3ヶ月リターンを取得"""
+def get_nikkei_returns():
+    """日経225の3ヶ月・20日リターンを取得。戻り値: (return_3m, return_20d) いずれもNoneあり"""
     end_ts   = int(datetime.now().timestamp())
     start_ts = int((datetime.now() - timedelta(days=180)).timestamp())
     url = (
@@ -107,23 +113,26 @@ def get_nikkei_3m_return():
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
-            return None
+            return None, None
         data = resp.json()
         result = data.get("chart", {}).get("result", [])
         if not result:
-            return None
+            return None, None
         closes = (
             result[0].get("indicators", {})
             .get("adjclose", [{}])[0]
             .get("adjclose", [])
         )
         closes = [c for c in closes if c is not None]
-        if len(closes) < 63:
-            return None
-        n3 = min(63, len(closes) - 1)
-        return (closes[-1] - closes[-n3 - 1]) / closes[-n3 - 1]
+        if len(closes) < 21:
+            return None, None
+        n3  = min(63, len(closes) - 1)
+        n20 = min(20, len(closes) - 1)
+        ret_3m  = (closes[-1] - closes[-n3  - 1]) / closes[-n3  - 1] if len(closes) >= 63 else None
+        ret_20d = (closes[-1] - closes[-n20 - 1]) / closes[-n20 - 1]
+        return ret_3m, ret_20d
     except Exception:
-        return None
+        return None, None
 
 
 def calc_metrics(df, nikkei_return_3m=None):
@@ -145,13 +154,20 @@ def calc_metrics(df, nikkei_return_3m=None):
     vol = (np.diff(prices) / prices[:-1]).std() * np.sqrt(252) * 100
 
     vr2060 = 1.0
-    if "Volume" in df.columns and len(df) >= 60:
+    vsurge = 1.0
+    if "Volume" in df.columns:
         vols = pd.to_numeric(df["Volume"], errors="coerce").fillna(0).values
-        vol20 = vols[-20:].mean()
-        vol60 = vols[-60:].mean()
-        if vol60 > 0:
-            vr2060 = vol20 / vol60
+        if len(vols) >= 60:
+            vol20 = vols[-20:].mean()
+            vol60 = vols[-60:].mean()
+            if vol60 > 0:
+                vr2060 = vol20 / vol60
+        if len(vols) >= 20:
+            vol20avg = vols[-20:].mean()
+            if vol20avg > 0:
+                vsurge = float(vols[-1]) / vol20avg
 
+    rsi = calc_rsi(prices)
     rel_strength_3m = (momentum_3m / 100 - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
     score = momentum_3m * vr2060 if slope > 0 else 0
 
@@ -160,6 +176,8 @@ def calc_metrics(df, nikkei_return_3m=None):
         "momentum_20d":    round(momentum_20d, 2),
         "vol":             round(vol, 2),
         "vr2060":          round(vr2060, 3),
+        "vsurge":          round(vsurge, 2),
+        "rsi":             round(rsi, 1),
         "rel_strength_3m": round(rel_strength_3m, 4),
         "score":           round(score, 2),
         "close":           round(float(prices[-1]), 1),
@@ -167,7 +185,7 @@ def calc_metrics(df, nikkei_return_3m=None):
     }
 
 
-def apply_screener_v1(universe_df):
+def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
     mask = (
         (universe_df["momentum"]          >= MIN_MOMENTUM)
         & (universe_df["momentum"]        <= MAX_MOMENTUM)
@@ -177,7 +195,10 @@ def apply_screener_v1(universe_df):
         & (universe_df["close"]           >= MIN_PRICE)
         & (universe_df["slope_up"])
         & (universe_df["vr2060"]          >= MIN_VOL_RATIO)
-        & (universe_df["rel_strength_3m"] >= MIN_REL_STRENGTH)
+        & (universe_df["rel_strength_3m"] >= rel_strength_min)
+        & (universe_df["rsi"]             >= MIN_RSI)
+        & (universe_df["rsi"]             <= MAX_RSI)
+        & (universe_df["vsurge"]          >= MIN_VSURGE)
     )
     return universe_df[mask].copy()
 
@@ -215,12 +236,15 @@ def main():
         print("【テストモード: 5銘柄のみ】")
     print("=" * 55)
 
-    print("日経225の3ヶ月リターン取得中...")
-    nikkei_return_3m = get_nikkei_3m_return()
+    print("日経225リターン取得中...")
+    nikkei_return_3m, nk_20d = get_nikkei_returns()
     if nikkei_return_3m is not None:
-        print(f"  日経225 3ヶ月リターン: {nikkei_return_3m*100:+.1f}%")
+        print(f"  日経225: 3ヶ月{nikkei_return_3m*100:+.1f}% / 20日{nk_20d*100:+.1f}%")
     else:
         print("  日経225データ取得失敗 → 相対強度条件をスキップ")
+    is_bear = nk_20d is not None and nk_20d * 100 < BEAR_NKK_20D
+    if is_bear:
+        print(f"  ⚠️ 下落相場（日経20日{nk_20d*100:+.1f}%）→ 相対強度閾値を{BEAR_REL_STRENGTH*100:.0f}%に引き上げ")
 
     stock_list = get_tse_stock_list()
     if stock_list is None:
@@ -256,6 +280,8 @@ def main():
             "momentum_20d":    result["momentum_20d"],
             "vol":             result["vol"],
             "vr2060":          result["vr2060"],
+            "vsurge":          result["vsurge"],
+            "rsi":             result["rsi"],
             "rel_strength_3m": result["rel_strength_3m"],
             "score":           result["score"],
             "close":           result["close"],
@@ -282,7 +308,8 @@ def main():
     universe_df = pd.DataFrame(rows)
     date_str    = datetime.now().strftime("%Y%m%d")
 
-    filtered = apply_screener_v1(universe_df)
+    rel_strength_min = BEAR_REL_STRENGTH if is_bear else MIN_REL_STRENGTH
+    filtered = apply_screener_v1(universe_df, rel_strength_min=rel_strength_min)
     if not filtered.empty:
         out      = _format_output(filtered)
         out_path = f"screener_v1_{date_str}.csv"
