@@ -313,7 +313,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 
     # ---- セクション2: 新規候補（スクリーナー上位・未保有・NEWバッジ付き） ----
     held_codes = {str(r["code"]) for r in results}
-    ranking = load_top_ranking(15)
+    ranking = load_top_ranking(10)
     new_rows = ""
     new_count = 0
     if ranking is not None:
