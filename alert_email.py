@@ -239,90 +239,87 @@ def get_judgment(net):
         return "🔴売り検討", "#c0392b"
 
 
-# ──────────────────────────── HTML組み立て ────────────────────────────────
+def _net_cls(n):
+    return "net-pos" if n >= 5 else ("net-neg" if n < -5 else "net-neu")
 
-def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
-               prev_ranking_codes=None, prev_results=None, priority_actions=None):
-    CSS = """
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-         max-width:700px;margin:0 auto;padding:16px;color:#222;background:#f5f5f5}
-    .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;
-          box-shadow:0 1px 4px rgba(0,0,0,.08)}
-    h2{margin:0 0 12px;font-size:16px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    th{background:#f0f0f0;padding:7px 5px;text-align:center;font-weight:600;
-       border-bottom:2px solid #ddd;white-space:nowrap}
-    td{padding:7px 5px;border-bottom:1px solid #eee;vertical-align:middle}
-    .net-pos{color:#0a7a0a;font-weight:700}
-    .net-neg{color:#c0392b;font-weight:700}
-    .net-neu{color:#888;font-weight:700}
-    .rel-pos{color:#0a7a0a}
-    .rel-neg{color:#c0392b}
-    .badge-new{display:inline-block;background:#ff6b35;color:white;
-               font-size:10px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px;
-               vertical-align:middle}
-    """
+def _rel_cls(r):
+    return "" if r is None else ("rel-pos" if r >= 0 else "rel-neg")
 
-    def net_cls(n):
-        return "net-pos" if n >= 5 else ("net-neg" if n < -5 else "net-neu")
+def _rel_str(r):
+    return f"{r:+.1f}%" if r is not None else "-"
 
-    def rel_cls(r):
-        return "" if r is None else ("rel-pos" if r >= 0 else "rel-neg")
 
-    def rel_str(r):
-        return f"{r:+.1f}%" if r is not None else "-"
+_EMAIL_CSS = """
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     max-width:700px;margin:0 auto;padding:16px;color:#222;background:#f5f5f5}
+.card{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;
+      box-shadow:0 1px 4px rgba(0,0,0,.08)}
+h2{margin:0 0 12px;font-size:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f0f0f0;padding:7px 5px;text-align:center;font-weight:600;
+   border-bottom:2px solid #ddd;white-space:nowrap}
+td{padding:7px 5px;border-bottom:1px solid #eee;vertical-align:middle}
+.net-pos{color:#0a7a0a;font-weight:700}
+.net-neg{color:#c0392b;font-weight:700}
+.net-neu{color:#888;font-weight:700}
+.rel-pos{color:#0a7a0a}
+.rel-neg{color:#c0392b}
+.badge-new{display:inline-block;background:#ff6b35;color:white;
+           font-size:10px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px;
+           vertical-align:middle}
+"""
 
-    prev_ranking_codes = prev_ranking_codes or set()
-    prev_results       = prev_results or {}
-    priority_actions   = priority_actions or []
 
-    # ---- 優先アクション ----
-    pa_items = ""
+# ──────────────────────────── HTMLセクション ──────────────────────────────
+
+def _build_priority_section(priority_actions):
+    if not priority_actions:
+        return ""
+    items = ""
     for a in priority_actions:
-        pa_items += (f"<div style='display:flex;align-items:flex-start;gap:10px;"
-                     f"padding:10px 0;border-bottom:1px solid #f0f0f0'>"
-                     f"<div style='font-size:20px;line-height:1.2'>{a['emoji']}</div>"
-                     f"<div><div style='font-weight:700;font-size:14px'>{a['title']}</div>"
-                     f"<div style='color:#666;font-size:12px;margin-top:2px'>{a['detail']}</div>"
-                     f"</div></div>")
-    priority_section = (f"<div class='card' style='border-left:4px solid #f39c12'>"
-                        f"<h2>🎯 今日の優先アクション</h2>{pa_items}</div>") if priority_actions else ""
+        items += (f"<div style='display:flex;align-items:flex-start;gap:10px;"
+                  f"padding:10px 0;border-bottom:1px solid #f0f0f0'>"
+                  f"<div style='font-size:20px;line-height:1.2'>{a['emoji']}</div>"
+                  f"<div><div style='font-weight:700;font-size:14px'>{a['title']}</div>"
+                  f"<div style='color:#666;font-size:12px;margin-top:2px'>{a['detail']}</div>"
+                  f"</div></div>")
+    return (f"<div class='card' style='border-left:4px solid #f39c12'>"
+            f"<h2>🎯 今日の優先アクション</h2>{items}</div>")
 
-    # ---- セクション1: 売り検討 ----
+
+def _build_sell_section(results):
     sells = sorted([r for r in results if r["signal"] == "sell"], key=lambda x: x["net"])
-    sell_rows = ""
+    if not sells:
+        return (f"<div class='card' style='border-left:4px solid #27ae60'>"
+                f"<h2>✅ 売り検討なし</h2>"
+                f"<p style='color:#666;margin:0'>全チェック銘柄がポジティブ/中立判定です。</p></div>"), sells
+    rows = ""
     for r in sells:
-        sell_rows += (f"<tr>"
-                      f"<td><b>{r['name']}</b><br>"
-                      f"<span style='color:#888;font-size:12px'>{r['code']} ¥{r['close']:,.0f}</span></td>"
-                      f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
-                      f"<td class='{rel_cls(r.get('rel20'))}' style='text-align:center'>{rel_str(r.get('rel20'))}</td>"
-                      f"<td style='text-align:center;color:#888;font-size:12px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
-                      f"</tr>")
-    sell_section = (
-        f"<div class='card' style='border-left:4px solid #c0392b'>"
-        f"<h2>🔴 売り検討 ({len(sells)}銘柄)</h2>"
-        f"<p style='color:#666;font-size:13px;margin:0 0 10px'>ネットスコアがマイナス。ニュース・決算を確認してください。</p>"
-        f"<table><tr style='background:#fde8e8'><th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th></tr>"
-        f"{sell_rows}</table></div>"
-    ) if sells else (
-        f"<div class='card' style='border-left:4px solid #27ae60'>"
-        f"<h2>✅ 売り検討なし</h2>"
-        f"<p style='color:#666;margin:0'>全チェック銘柄がポジティブ/中立判定です。</p></div>"
-    )
+        rows += (f"<tr>"
+                 f"<td><b>{r['name']}</b><br>"
+                 f"<span style='color:#888;font-size:12px'>{r['code']} ¥{r['close']:,.0f}</span></td>"
+                 f"<td class='{_net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
+                 f"<td class='{_rel_cls(r.get('rel20'))}' style='text-align:center'>{_rel_str(r.get('rel20'))}</td>"
+                 f"<td style='text-align:center;color:#888;font-size:12px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
+                 f"</tr>")
+    section = (f"<div class='card' style='border-left:4px solid #c0392b'>"
+               f"<h2>🔴 売り検討 ({len(sells)}銘柄)</h2>"
+               f"<p style='color:#666;font-size:13px;margin:0 0 10px'>ネットスコアがマイナス。ニュース・決算を確認してください。</p>"
+               f"<table><tr style='background:#fde8e8'><th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th></tr>"
+               f"{rows}</table></div>")
+    return section, sells
 
-    # ---- セクション2: 新規候補（スクリーナー上位・未保有・NEWバッジ付き） ----
+
+def _build_ranking_section(results, prev_ranking_codes):
     held_codes = {str(r["code"]) for r in results}
     ranking = load_top_ranking(10)
-    new_rows = ""
-    new_count = 0
+    rows = ""
+    count = 0
     if ranking is not None:
         for _, row in ranking.iterrows():
             code_str = str(int(row["銘柄コード"]))
-            if code_str in held_codes:
+            if code_str in held_codes or count >= 10:
                 continue
-            if new_count >= 10:
-                break
             net    = row.get("ネット(%)", row["上昇確率(%)"])
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
@@ -335,61 +332,65 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
                 fund_str += f"PER{float(per):.0f}"
             if pbr and str(pbr) not in ("nan", "None", "-"):
                 fund_str += f" PBR{float(pbr):.1f}"
-            is_new   = prev_ranking_codes and code_str not in prev_ranking_codes
-            new_badge = "<span class='badge-new'>NEW</span>" if is_new else ""
-            new_rows += (f"<tr>"
-                         f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
-                         f"<span style='color:#888;font-size:12px'>{code_str} ¥{int(row['直近株価(円)']):,}"
-                         f"{' ' + fund_str if fund_str else ''}</span></td>"
-                         f"<td class='{net_cls(net)}' style='text-align:center'>{net:+.1f}%</td>"
-                         f"<td class='{rel_cls(rel20_v)}' style='text-align:center'>{rel_str(rel20_v)}</td>"
-                         f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
-                         f"</tr>")
-            new_count += 1
-    ranking_section = (
-        f"<div class='card' style='border-left:4px solid #2980b9'>"
-        f"<h2>📈 新規候補 Top{new_count}（スクリーナー上位・未保有）</h2>"
-        f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
-        f"ネット = 上昇確率 − 下落確率 ／ 日経比20d = 過去20日の日経225比超過リターン"
-        f"</p>"
-        f"<table><tr style='background:#e8f0fe'>"
-        f"<th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th></tr>"
-        f"{new_rows}</table></div>"
-    ) if new_rows else ""
-
-    # ---- セクション3: 全チェック銘柄一覧（8列） ----
-    sorted_results = sorted(results, key=lambda x: x["net"], reverse=True)
-    all_rows = ""
-    for idx, r in enumerate(sorted_results, 1):
-        drop_str = f"{r['drop_prob']:.1f}%" if r.get("drop_prob") is not None else "-"
-        spark = build_sparkline_svg(r.get("prices_close", []))
-        # スパークラインは銘柄セル内に埋め込む（Gmailでは非表示になるが他クライアントで有効）
-        spark_html = f"<br>{spark}" if spark else ""
-        all_rows += (f"<tr>"
-                     f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
-                     f"<td><b>{r['name']}</b>"
-                     f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f}</span>"
-                     f"{spark_html}</td>"
-                     f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
-                     f"<td style='text-align:center'>{drop_str}</td>"
-                     f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
-                     f"<td style='text-align:center;font-size:11px'>{r.get('recommend', '')}</td>"
-                     f"<td class='{rel_cls(r.get('rel20'))}' style='text-align:center'>{rel_str(r.get('rel20'))}</td>"
-                     f"<td style='text-align:center;color:#888;font-size:11px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
+            new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
+            rows += (f"<tr>"
+                     f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
+                     f"<span style='color:#888;font-size:12px'>{code_str} ¥{int(row['直近株価(円)']):,}"
+                     f"{' ' + fund_str if fund_str else ''}</span></td>"
+                     f"<td class='{_net_cls(net)}' style='text-align:center'>{net:+.1f}%</td>"
+                     f"<td class='{_rel_cls(rel20_v)}' style='text-align:center'>{_rel_str(rel20_v)}</td>"
+                     f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
                      f"</tr>")
+            count += 1
+    if not rows:
+        return ""
+    return (f"<div class='card' style='border-left:4px solid #2980b9'>"
+            f"<h2>📈 新規候補 Top{count}（スクリーナー上位・未保有）</h2>"
+            f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
+            f"ネット = 上昇確率 − 下落確率 ／ 日経比20d = 過去20日の日経225比超過リターン</p>"
+            f"<table><tr style='background:#e8f0fe'>"
+            f"<th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th></tr>"
+            f"{rows}</table></div>")
+
+
+def _build_all_rows(results):
+    rows = ""
+    for idx, r in enumerate(sorted(results, key=lambda x: x["net"], reverse=True), 1):
+        drop_str   = f"{r['drop_prob']:.1f}%" if r.get("drop_prob") is not None else "-"
+        spark      = build_sparkline_svg(r.get("prices_close", []))
+        spark_html = f"<br>{spark}" if spark else ""
+        rows += (f"<tr>"
+                 f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
+                 f"<td><b>{r['name']}</b>"
+                 f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f}</span>"
+                 f"{spark_html}</td>"
+                 f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
+                 f"<td style='text-align:center'>{drop_str}</td>"
+                 f"<td class='{_net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
+                 f"<td style='text-align:center;font-size:11px'>{r.get('recommend', '')}</td>"
+                 f"<td class='{_rel_cls(r.get('rel20'))}' style='text-align:center'>{_rel_str(r.get('rel20'))}</td>"
+                 f"<td style='text-align:center;color:#888;font-size:11px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
+                 f"</tr>")
+    return rows
+
+
+# ──────────────────────────── HTML組み立て ────────────────────────────────
+
+def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
+               prev_ranking_codes=None, prev_results=None, priority_actions=None):
+    prev_ranking_codes = prev_ranking_codes or set()
+    prev_results       = prev_results or {}
+
+    sell_result = _build_sell_section(results)
+    if isinstance(sell_result, tuple):
+        sell_section, sells = sell_result
+    else:
+        sell_section, sells = sell_result, []
 
     buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith(("✅", "🔵", "⚡")))
     neu_cnt = len(results) - len(sells) - buy_cnt
-
-    # 昨日との差分
-    diff_section = build_diff_section(results, prev_results)
-
-    # セクター集中警告
-    sector_section = build_sector_warning(results)
-
-    # ヘッダー
-    nk_str = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
-              if nk5 is not None else "")
+    nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
+               if nk5 is not None else "")
     bear_banner = (
         f"<div style='background:#fff3cd;border:2px solid #f0ad4e;border-radius:8px;"
         f"padding:12px;margin-bottom:12px'>"
@@ -400,7 +401,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 
     return f"""<html><head>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<style>{CSS}</style></head>
+<style>{_EMAIL_CSS}</style></head>
 <body>
 <div style='background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;border-radius:10px;padding:18px;margin-bottom:16px'>
   <div style='font-size:20px;font-weight:700;margin-bottom:4px'>📊 チェック銘柄アラート</div>
@@ -421,19 +422,19 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     <div style='font-size:12px;color:#888'>様子見</div>
   </div>
 </div>
-{priority_section}
+{_build_priority_section(priority_actions or [])}
 {sell_section}
-{ranking_section}
+{_build_ranking_section(results, prev_ranking_codes)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経比20d = 過去20日超過リターン</p>
   <table>
     <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経比20d</th><th>ボラ</th></tr>
-    {all_rows}
+    {_build_all_rows(results)}
   </table>
 </div>
-{diff_section}
-{sector_section}
+{build_diff_section(results, prev_results)}
+{build_sector_warning(results)}
 <p style='color:#aaa;font-size:11px;text-align:center;margin-top:8px'>
   このメールは過去データに基づく参考情報です。投資判断はご自身の責任で行ってください。
 </p>

@@ -7,24 +7,14 @@ import os
 import argparse
 from datetime import datetime, timedelta
 
-# ── v1定数 ───────────────────────────────────
 MIN_MOMENTUM     = 5.0
-MAX_MOMENTUM     = 30.0   # 急騰後ミーンリバージョン銘柄を除外
-MIN_VOLATILITY   = 20.0   # +15%達成に必要な最低ボラ
+MAX_MOMENTUM     = 30.0
+MIN_VOLATILITY   = 20.0
 MAX_VOLATILITY   = 50.0
 MIN_MOMENTUM_20D = -3.0
 MIN_PRICE        = 300
-MIN_VOL_RATIO    = 1.0    # 出来高増加: 20日平均 ≥ 60日平均（上昇に出来高が伴う）
-MIN_REL_STRENGTH = 0.05   # 日経比相対強度 ≥ +5%（過去3ヶ月で日経を5%以上アウトパフォーム）
-
-# ── v2定数 ───────────────────────────────────
-RANK_6M_THRESHOLD = 0.70   # 6ヶ月リターン クロスセクション上位30%
-MIN_RETURN_3M_V2  = 0.05   # 3ヶ月リターン下限（+5%）
-MAX_RETURN_3M_V2  = 0.30   # 3ヶ月リターン上限（+30%）
-MAX_HIGH_DIST_V2  = -0.20  # 52週高値からの乖離（-20%以内）
-MIN_VOL_V2        = 20.0   # 年率ボラ下限（%）
-MAX_VOL_V2        = 50.0   # 年率ボラ上限（%）
-FETCH_DAYS_V2     = 400    # 252営業日≈365暦日+バッファ
+MIN_VOL_RATIO    = 1.0
+MIN_REL_STRENGTH = 0.05
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -33,7 +23,7 @@ HEADERS = {
 
 
 def get_tse_stock_list():
-    """JPXから全上場銘柄を取得（ETF・REIT除外、1000番台含む）"""
+    """JPXから全上場銘柄を取得（ETF・REIT除外）"""
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
     print("銘柄リストを取得中...")
     try:
@@ -70,7 +60,7 @@ def get_tse_stock_list():
 
 
 def get_prices(code, days=180):
-    """Yahoo Finance から過去N日の終値を取得"""
+    """Yahoo Finance から過去N日の終値・出来高を取得"""
     ticker = f"{code}.T"
     end_ts = int(datetime.now().timestamp())
     start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
@@ -137,29 +127,23 @@ def get_nikkei_3m_return():
 
 
 def calc_metrics(df, nikkei_return_3m=None):
-    """モメンタム・ボラティリティ・出来高・相対強度・スコアを計算（v1+v2対応）"""
+    """モメンタム・ボラティリティ・出来高・相対強度・スコアを計算"""
     if df is None or len(df) < 30:
         return None
 
     prices = df["Close"].values
     n = len(prices)
 
-    # トレンド方向（slope_up）
     coef  = np.polyfit(np.arange(n), prices, 1)
     slope = coef[0]
 
-    # モメンタム（3ヶ月=63営業日、6ヶ月=126営業日、20日）
     n3  = min(63,  n - 1)
-    n6  = min(126, n - 1)
     n20 = min(20,  n - 1)
     momentum_20d = (prices[-1] - prices[-n20 - 1]) / prices[-n20 - 1] * 100
     momentum_3m  = (prices[-1] - prices[-n3  - 1]) / prices[-n3  - 1] * 100
-    momentum_6m  = (prices[-1] - prices[-n6  - 1]) / prices[-n6  - 1] * 100
 
-    # ボラティリティ（年率換算%）
     vol = (np.diff(prices) / prices[:-1]).std() * np.sqrt(252) * 100
 
-    # 出来高比（20日平均 / 60日平均）— Volume列がある場合のみ
     vr2060 = 1.0
     if "Volume" in df.columns and len(df) >= 60:
         vols = pd.to_numeric(df["Volume"], errors="coerce").fillna(0).values
@@ -168,142 +152,37 @@ def calc_metrics(df, nikkei_return_3m=None):
         if vol60 > 0:
             vr2060 = vol20 / vol60
 
-    # 日経比相対強度（Nikkeiデータなければ0=条件スキップ）
     rel_strength_3m = (momentum_3m / 100 - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
-
-    # 総合スコア = モメンタム × 出来高比（上昇トレンドのみ）
     score = momentum_3m * vr2060 if slope > 0 else 0
 
     return {
-        # v1フィールド
-        "momentum":         round(momentum_3m, 2),
-        "momentum_20d":     round(momentum_20d, 2),
-        "vol":              round(vol, 2),
-        "vr2060":           round(vr2060, 3),
-        "rel_strength_3m":  round(rel_strength_3m, 4),
-        "score":            round(score, 2),
-        "close":            round(float(prices[-1]), 1),
-        "slope_up":         bool(slope > 0),
-        # v2フィールド
-        "return_3m":        momentum_3m / 100,
-        "return_6m":        momentum_6m / 100,
-        "prices":           prices,
-        # 互換用（v2のr2計算不要になったが残す）
-        "r2":               0.0,
+        "momentum":        round(momentum_3m, 2),
+        "momentum_20d":    round(momentum_20d, 2),
+        "vol":             round(vol, 2),
+        "vr2060":          round(vr2060, 3),
+        "rel_strength_3m": round(rel_strength_3m, 4),
+        "score":           round(score, 2),
+        "close":           round(float(prices[-1]), 1),
+        "slope_up":        bool(slope > 0),
     }
 
 
-# ── v1スクリーナー（変更禁止） ────────────────
 def apply_screener_v1(universe_df):
-    """v1スクリーナー"""
     mask = (
-        (universe_df["momentum"]         >= MIN_MOMENTUM)
-        & (universe_df["momentum"]       <= MAX_MOMENTUM)
-        & (universe_df["momentum_20d"]   >= MIN_MOMENTUM_20D)
-        & (universe_df["vol"]            >= MIN_VOLATILITY)
-        & (universe_df["vol"]            <= MAX_VOLATILITY)
-        & (universe_df["close"]          >= MIN_PRICE)
+        (universe_df["momentum"]          >= MIN_MOMENTUM)
+        & (universe_df["momentum"]        <= MAX_MOMENTUM)
+        & (universe_df["momentum_20d"]    >= MIN_MOMENTUM_20D)
+        & (universe_df["vol"]             >= MIN_VOLATILITY)
+        & (universe_df["vol"]             <= MAX_VOLATILITY)
+        & (universe_df["close"]           >= MIN_PRICE)
         & (universe_df["slope_up"])
-        & (universe_df["vr2060"]         >= MIN_VOL_RATIO)
+        & (universe_df["vr2060"]          >= MIN_VOL_RATIO)
         & (universe_df["rel_strength_3m"] >= MIN_REL_STRENGTH)
     )
     return universe_df[mask].copy()
 
 
-# ── v2スクリーナー ────────────────────────────
-def apply_momentum_v2(universe_df):
-    """v2モメンタムフィルター: 6ヶ月クロスセクション上位30% AND 3ヶ月+5%〜+30%
-
-    クロスセクション順位は渡された universe_df 全体を母集団として計算する。
-    呼び出し前に他条件でフィルターしないこと（バイアス防止）。
-    """
-    if universe_df.empty:
-        return universe_df.copy()
-    df = universe_df.copy()
-    df["rank_6m"]  = df["return_6m"].rank(pct=True)
-    cond_6m   = df["rank_6m"]   >= RANK_6M_THRESHOLD
-    cond_3m_l = df["return_3m"] >= MIN_RETURN_3M_V2
-    cond_3m_u = df["return_3m"] <= MAX_RETURN_3M_V2
-    return df[cond_6m & cond_3m_l & cond_3m_u]
-
-
-def apply_high_proximity_v2(df, prices_dict):
-    """v2: 52週高値からの乖離が-20%以内（1年データなければ除外）"""
-    keep = []
-    for _, row in df.iterrows():
-        prices = prices_dict.get(row["code"])
-        if prices is None or len(prices) < 252:
-            continue
-        high_52w = max(prices[-252:])
-        if high_52w <= 0:
-            continue
-        if (prices[-1] - high_52w) / high_52w >= MAX_HIGH_DIST_V2:
-            keep.append(row)
-    return pd.DataFrame(keep, columns=df.columns) if keep else pd.DataFrame(columns=df.columns)
-
-
-def apply_volatility_band_v2(df, prices_dict):
-    """v2: 年率ボラ20%〜50%（60日未満データなければ除外）"""
-    keep = []
-    for _, row in df.iterrows():
-        prices = prices_dict.get(row["code"])
-        if prices is None or len(prices) < 60:
-            continue
-        ann_vol = pd.Series(prices[-60:]).pct_change().dropna().std() * (252 ** 0.5) * 100
-        if MIN_VOL_V2 <= ann_vol <= MAX_VOL_V2:
-            keep.append(row)
-    return pd.DataFrame(keep, columns=df.columns) if keep else pd.DataFrame(columns=df.columns)
-
-
-def apply_price_filter(df):
-    """株価300円以上フィルター（v1・v2共通）"""
-    return df[df["close"] >= MIN_PRICE]
-
-
-def apply_screener_v2(universe_df, prices_dict):
-    """v2スクリーナー。順序: モメンタム → 52週高値 → ボラ帯 → 株価"""
-    df = apply_momentum_v2(universe_df)
-    df = apply_high_proximity_v2(df, prices_dict)
-    df = apply_volatility_band_v2(df, prices_dict)
-    df = apply_price_filter(df)
-    return df
-
-
-# ── A/B比較レポート ───────────────────────────
-def write_compare_report(df_v1, df_v2, today):
-    """v1・v2の通過銘柄を比較したMarkdownレポートを出力"""
-    v1_codes = set(df_v1["code"].astype(str))
-    v2_codes = set(df_v2["code"].astype(str))
-    overlap  = v1_codes & v2_codes
-    only_v1  = v1_codes - v2_codes
-    only_v2  = v2_codes - v1_codes
-
-    report = f"""# スクリーナー A/B比較 {today}
-
-## 通過数
-- v1（現状）: {len(v1_codes)} 銘柄
-- v2（修正版）: {len(v2_codes)} 銘柄
-
-## 重複
-- 両方通過: {len(overlap)} 銘柄
-- v1のみ: {len(only_v1)} 銘柄
-- v2のみ: {len(only_v2)} 銘柄
-
-## v1のみ通過した銘柄サンプル（最大10件）
-{', '.join(list(only_v1)[:10])}
-
-## v2のみ通過した銘柄サンプル（最大10件）
-{', '.join(list(only_v2)[:10])}
-"""
-    path = os.path.expanduser(f"~/stock-alert/screener_compare_{today}.md")
-    with open(path, "w") as f:
-        f.write(report)
-    print(f"[INFO] 比較レポート出力: {path}")
-
-
-# ── 出力整形ヘルパー ──────────────────────────
-def _format_v1_output(df):
-    """v1をCSV用DataFrameに変換"""
+def _format_output(df):
     out = df[["code", "name", "close", "vr2060", "momentum", "vol", "score"]].rename(columns={
         "code":     "銘柄コード",
         "name":     "銘柄名",
@@ -317,58 +196,25 @@ def _format_v1_output(df):
     return out
 
 
-def _format_v2_output(df):
-    """v2をCSV用DataFrameに変換"""
-    out = df[["code", "name", "close", "return_3m", "return_6m", "vol", "score"]].copy()
-    out["return_3m"] = (out["return_3m"] * 100).round(2)
-    out["return_6m"] = (out["return_6m"] * 100).round(2)
-    out = out.rename(columns={
-        "code":      "銘柄コード",
-        "name":      "銘柄名",
-        "close":     "直近株価(円)",
-        "return_3m": "3ヶ月リターン(%)",
-        "return_6m": "6ヶ月リターン(%)",
-        "vol":       "ボラティリティ(%)",
-        "score":     "総合スコア",
-    }).sort_values("3ヶ月リターン(%)", ascending=False).reset_index(drop=True)
-    out.insert(0, "順位", range(1, len(out) + 1))
-    return out
-
-
-def _print_top10(out_df, label, sort_col):
-    print(f"\n[{label}] 上位10銘柄:")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<22}  {sort_col:>14}")
+def _print_top10(out_df):
+    print(f"\n上位10銘柄:")
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<22}  {'3ヶ月モメンタム(%)':>14}")
     print("-" * 58)
     for _, r in out_df.head(10).iterrows():
-        print(f"{int(r['順位']):>4}  {r['銘柄コード']:>6}  {r['銘柄名']:<22}  {r[sort_col]:>+13.1f}%")
+        print(f"{int(r['順位']):>4}  {r['銘柄コード']:>6}  {r['銘柄名']:<22}  {r['3ヶ月モメンタム(%)']:>+13.1f}%")
 
 
-# ── メイン ───────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="TSE株価スクリーナー")
-    parser.add_argument(
-        "--mode", choices=["v1", "v2", "both"], default="both",
-        help="スクリーニングモード（デフォルト: both）",
-    )
-    parser.add_argument(
-        "--test", action="store_true",
-        help="5銘柄のみ処理するテストモード",
-    )
+    parser = argparse.ArgumentParser(description="TSE株価スクリーナー（v1）")
+    parser.add_argument("--test", action="store_true", help="5銘柄のみ処理するテストモード")
     args = parser.parse_args()
-    mode      = args.mode
-    test_mode = args.test
-
-    # v2は52週高値計算のため252営業日≈400暦日が必要
-    fetch_days = FETCH_DAYS_V2 if mode in ["v2", "both"] else 180
 
     print("=" * 55)
     print("TSE 株価スクリーナー  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
-    print(f"モード: {mode} | 取得日数: {fetch_days}日")
-    if test_mode:
+    if args.test:
         print("【テストモード: 5銘柄のみ】")
     print("=" * 55)
 
-    # 日経225の3ヶ月リターンを事前取得（相対強度計算用）
     print("日経225の3ヶ月リターン取得中...")
     nikkei_return_3m = get_nikkei_3m_return()
     if nikkei_return_3m is not None:
@@ -381,13 +227,12 @@ def main():
         print("ERROR: 銘柄リスト取得失敗")
         return
 
-    if test_mode:
+    if args.test:
         stock_list = stock_list.head(5)
 
-    total       = len(stock_list)
-    all_rows    = []
-    prices_dict = {}
-    errors      = 0
+    total  = len(stock_list)
+    rows   = []
+    errors = 0
 
     print(f"\n{total} 銘柄をスクリーニング中...")
 
@@ -395,33 +240,29 @@ def main():
         code = row["code"]
         name = row["name"]
 
-        df     = get_prices(code, days=fetch_days)
+        df     = get_prices(code, days=180)
         result = calc_metrics(df, nikkei_return_3m)
 
         if result is None:
             errors += 1
-            if test_mode:
+            if args.test:
                 print(f"  ❓ {name}({code}): データ取得失敗")
             continue
 
-        all_rows.append({
-            "code":             code,
-            "name":             name,
-            "r2":               result["r2"],
-            "momentum":         result["momentum"],
-            "momentum_20d":     result["momentum_20d"],
-            "vol":              result["vol"],
-            "vr2060":           result["vr2060"],
-            "rel_strength_3m":  result["rel_strength_3m"],
-            "score":            result["score"],
-            "close":            result["close"],
-            "slope_up":         result["slope_up"],
-            "return_3m":        result["return_3m"],
-            "return_6m":        result["return_6m"],
+        rows.append({
+            "code":            code,
+            "name":            name,
+            "momentum":        result["momentum"],
+            "momentum_20d":    result["momentum_20d"],
+            "vol":             result["vol"],
+            "vr2060":          result["vr2060"],
+            "rel_strength_3m": result["rel_strength_3m"],
+            "score":           result["score"],
+            "close":           result["close"],
+            "slope_up":        result["slope_up"],
         })
-        prices_dict[code] = result["prices"]
 
-        if test_mode:
+        if args.test:
             print(
                 f"  {name}({code}): "
                 f"モメンタム={result['momentum']:+.1f}% / "
@@ -429,49 +270,28 @@ def main():
                 f"相対強度={result['rel_strength_3m']*100:+.1f}%"
             )
 
-        if not test_mode and (i + 1) % 500 == 0:
-            print(f"  {i+1}/{total} 処理済み... (収集: {len(all_rows)}銘柄)")
+        if not args.test and (i + 1) % 500 == 0:
+            print(f"  {i+1}/{total} 処理済み... (収集: {len(rows)}銘柄)")
 
         time.sleep(0.1)
 
-    if not all_rows:
+    if not rows:
         print("\nERROR: データ取得失敗")
         return
 
-    universe_df    = pd.DataFrame(all_rows)
-    date_str       = datetime.now().strftime("%Y%m%d")
-    df_v1_filtered = None
-    df_v2_filtered = None
+    universe_df = pd.DataFrame(rows)
+    date_str    = datetime.now().strftime("%Y%m%d")
 
-    # ── v1フィルター ──
-    if mode in ["v1", "both"]:
-        df_v1_filtered = apply_screener_v1(universe_df)
-        if not df_v1_filtered.empty:
-            v1_out  = _format_v1_output(df_v1_filtered)
-            v1_path = f"screener_v1_{date_str}.csv"
-            v1_out.to_csv(v1_path, index=False, encoding="utf-8-sig")
-            # 互換維持: 既存スクリプトが参照する screener_YYYYMMDD.csv は v1 のエイリアス
-            v1_out.to_csv(f"screener_{date_str}.csv", index=False, encoding="utf-8-sig")
-            print(f"\n[v1] {len(df_v1_filtered)} 銘柄通過 → {v1_path}")
-            _print_top10(v1_out, "v1", "3ヶ月モメンタム(%)")
-        else:
-            print("\n[v1] 通過銘柄なし")
-
-    # ── v2フィルター ──
-    if mode in ["v2", "both"]:
-        df_v2_filtered = apply_screener_v2(universe_df, prices_dict)
-        if not df_v2_filtered.empty:
-            v2_out  = _format_v2_output(df_v2_filtered)
-            v2_path = f"screener_v2_{date_str}.csv"
-            v2_out.to_csv(v2_path, index=False, encoding="utf-8-sig")
-            print(f"\n[v2] {len(df_v2_filtered)} 銘柄通過 → {v2_path}")
-            _print_top10(v2_out, "v2", "3ヶ月リターン(%)")
-        else:
-            print("\n[v2] 通過銘柄なし")
-
-    # ── A/B比較レポート ──
-    if mode == "both" and df_v1_filtered is not None and df_v2_filtered is not None:
-        write_compare_report(df_v1_filtered, df_v2_filtered, date_str)
+    filtered = apply_screener_v1(universe_df)
+    if not filtered.empty:
+        out      = _format_output(filtered)
+        out_path = f"screener_v1_{date_str}.csv"
+        out.to_csv(out_path, index=False, encoding="utf-8-sig")
+        out.to_csv(f"screener_{date_str}.csv", index=False, encoding="utf-8-sig")
+        print(f"\n{len(filtered)} 銘柄通過 → {out_path}")
+        _print_top10(out)
+    else:
+        print("\n通過銘柄なし")
 
     print(f"\n{'='*55}")
     print(f"完了: 対象 {total} 銘柄 / 取得失敗 {errors} 銘柄")
