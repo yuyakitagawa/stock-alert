@@ -25,11 +25,15 @@ TODAY          = date.today()         # 現在日（動的）
 BEAR_START     = date(2024, 7,  1)    # 下落相場テスト（2024年8月円キャリー崩壊期）
 BEAR_END       = date(2024, 10, 1)    # 下落相場テスト終了
 
-# 実行モード: python3 backtest.py [bear|1year] [--screener {v1,v2}]
+# 実行モード: python3 backtest.py [bear|1year] [--screener {v1,v2}] [--top-n N] [--net-min X] [--compare]
 _parser = _argparse.ArgumentParser(add_help=False)
 _parser.add_argument("mode", nargs="?", choices=["bear", "1year"], default=None)
 _parser.add_argument("--screener", choices=["v1", "v2"], default="v1",
                      help="スクリーナー条件（デフォルト: v1）")
+_parser.add_argument("--top-n",   type=int,   default=30,   help="上位N銘柄を選択（デフォルト: 30）")
+_parser.add_argument("--net-min", type=float, default=None, help="ネットスコア最低閾値（例: 15）")
+_parser.add_argument("--compare",  action="store_true", help="保有数×閾値を一括比較")
+_parser.add_argument("--screened", action="store_true", help="スクリーナー特化モデルを使用")
 _args, _ = _parser.parse_known_args()
 
 if _args.mode == 'bear':
@@ -40,12 +44,14 @@ elif _args.mode == '1year':
     BACKTEST_DATE = date(2025, 5, 5)
     print('【1年バックテストモード: 2025-05-05 → 今日】')
 
-SCREENER_MODE  = _args.screener      # スクリーナー条件（v1 or v2）
-RISE_THRESHOLD = 15.0                # 上昇判定閾値(%)
-NET_THRESHOLD  = 5.0                 # ネットスコアの買いシグナル閾値
-TOP_N          = 30                  # 上位N銘柄を「買い」対象に
+SCREENER_MODE  = _args.screener
+RISE_THRESHOLD = 15.0
+NET_THRESHOLD  = 5.0
+TOP_N          = _args.top_n
+NET_MIN        = _args.net_min
+COMPARE_MODE   = _args.compare
 NIKKEI_CODE    = "^N225"
-SAMPLE_N       = 200                 # バックテスト対象銘柄数
+SAMPLE_N       = 200
 
 # BACKTEST_DATEから91営業日前（≈130日）のデータが必要なため動的計算
 # 例: bear mode (2024-07-01) → (2026-05-04 - 2024-07-01) + 180 ≈ 853日
@@ -187,7 +193,7 @@ def _get_screener_pass_codes(raw_screener, mode):
             & (sc_df["close"]           >= _SC_MIN_PRICE)
             & (sc_df["slope_up"])
             & (sc_df.get("vr2060", pd.Series(1.0, index=sc_df.index)) >= 1.0)
-            & (sc_df.get("rel_strength_3m", pd.Series(0.0, index=sc_df.index)) >= 0)
+            & (sc_df.get("rel_strength_3m", pd.Series(0.0, index=sc_df.index)) >= 0.05)
         )
         return set(sc_df.loc[mask, "code"].astype(str))
 
@@ -335,15 +341,16 @@ def main():
     print(f"  予測上位{TOP_N}銘柄を「買い」として検証")
     print("=" * 60)
 
-    # モデル読み込み
-    rise_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
-    drop_path = os.path.expanduser("~/stock-alert/rf_drop_model.pkl")
+    # モデル読み込み（--screened フラグでスクリーナー特化モデルを使用）
+    model_suffix = "_screened" if getattr(_args, "screened", False) else ""
+    rise_path = os.path.expanduser(f"~/stock-alert/rf_model{model_suffix}.pkl")
+    drop_path = os.path.expanduser(f"~/stock-alert/rf_drop_model{model_suffix}.pkl")
     if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pklが見つかりません")
+        print(f"ERROR: {rise_path} が見つかりません")
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
-    print("モデル読み込み完了")
+    print(f"モデル読み込み完了{'（スクリーナー特化）' if model_suffix else ''}")
 
     # 銘柄リスト：スクリーナーCSVから読み込み
     import glob
@@ -473,32 +480,84 @@ def main():
     wins = (df["実績リターン(%)"] > 0).sum()
     print(f"  勝率（プラスリターン）: {wins}/{len(df)} = {wins/len(df)*100:.1f}%")
 
-    # ── ネットスコア上位TOP_N銘柄の成績 ──
-    top_df = df.nlargest(TOP_N, "ネット(%)")
-    top_wins_15 = (top_df["実績リターン(%)"] >= RISE_THRESHOLD).sum()
-    top_wins_0  = (top_df["実績リターン(%)"] > 0).sum()
-    avg_return  = top_df["実績リターン(%)"].mean()
+    def _print_group(group_df, label, nk_ret):
+        """銘柄グループの成績サマリーを表示"""
+        n = len(group_df)
+        if n == 0:
+            print(f"\n【{label}】該当なし")
+            return
+        avg = group_df["実績リターン(%)"].mean()
+        wins_0  = (group_df["実績リターン(%)"] > 0).sum()
+        wins_15 = (group_df["実績リターン(%)"] >= RISE_THRESHOLD).sum()
+        print(f"\n{'='*60}")
+        print(f"【{label} ({n}銘柄)】")
+        print(f"  平均リターン: {avg:+.2f}%")
+        print(f"  勝率（+0%以上）: {wins_0}/{n} = {wins_0/n*100:.1f}%")
+        print(f"  大勝率（+15%以上）: {wins_15}/{n} = {wins_15/n*100:.1f}%")
+        if nk_ret is not None:
+            diff = avg - nk_ret
+            alpha_wins = (group_df["実績リターン(%)"] > nk_ret).sum()
+            print(f"  vs 日経225: {avg:+.2f}% vs {nk_ret:+.2f}% → アルファ {diff:+.2f}%")
+            print(f"  日経アルファ勝率: {alpha_wins}/{n} = {alpha_wins/n*100:.1f}%")
 
-    print(f"\n{'='*60}")
-    print(f"【ネットスコア上位{TOP_N}銘柄の実績】")
-    print(f"  平均リターン: {avg_return:+.2f}%")
-    print(f"  勝率（+0%以上）: {top_wins_0}/{TOP_N} = {top_wins_0/TOP_N*100:.1f}%")
-    print(f"  大勝率（+15%以上）: {top_wins_15}/{TOP_N} = {top_wins_15/TOP_N*100:.1f}%")
-    if nikkei_return is not None:
-        diff = avg_return - nikkei_return
-        print(f"  vs 日経225: {avg_return:+.2f}% vs {nikkei_return:+.2f}% → 差分 {diff:+.2f}%")
+    def _print_detail(group_df, label):
+        """銘柄詳細を表示"""
+        n = len(group_df)
+        print(f"\n【{label}詳細】")
+        print(f"{'コード':>6}  {'銘柄名':<20}  {'予測ネット':>10}  {'実績':>8}  結果")
+        print("-" * 60)
+        for _, row in group_df.sort_values("実績リターン(%)", ascending=False).iterrows():
+            mark = "✅" if row["実績リターン(%)"] >= RISE_THRESHOLD else ("🔵" if row["実績リターン(%)"] > 0 else "❌")
+            print(
+                f"{row['コード']:>6}  {str(row['銘柄名']):<20}  "
+                f"ネット{row['ネット(%)']:>+6.1f}%  "
+                f"実績{row['実績リターン(%)']:>+7.2f}%  {mark}"
+            )
 
-    # ── 上位銘柄の詳細 ──
-    print(f"\n【上位{TOP_N}銘柄の詳細】")
-    print(f"{'コード':>6}  {'銘柄名':<20}  {'予測ネット':>10}  {'実績':>8}  結果")
-    print("-" * 60)
-    for _, row in top_df.sort_values("実績リターン(%)", ascending=False).iterrows():
-        mark = "✅" if row["実績リターン(%)"] >= RISE_THRESHOLD else ("🔵" if row["実績リターン(%)"] > 0 else "❌")
-        print(
-            f"{row['コード']:>6}  {str(row['銘柄名']):<20}  "
-            f"ネット{row['ネット(%)']:>+6.1f}%  "
-            f"実績{row['実績リターン(%)']:>+7.2f}%  {mark}"
-        )
+    if COMPARE_MODE:
+        # ── 比較モード: 保有数×閾値を一括比較 ──
+        print(f"\n{'='*60}")
+        print("【比較モード: 保有数 × ネットスコア閾値】")
+        nk = nikkei_return if nikkei_return is not None else 0
+        header = f"{'設定':<22} {'銘柄数':>5} {'平均':>8} {'アルファ':>9} {'日経勝率':>8} {'勝率':>7} {'大勝率':>7}"
+        print(header)
+        print("-" * 70)
+        for net_min in [None, 10.0, 15.0, 20.0]:
+            for top_n in [5, 10, 15, 30]:
+                if net_min is not None:
+                    cand = df[df["ネット(%)"] >= net_min].nlargest(top_n, "ネット(%)")
+                    tag  = f"net≥{net_min:.0f} top{top_n}"
+                else:
+                    cand = df.nlargest(top_n, "ネット(%)")
+                    tag  = f"top{top_n}"
+                n = len(cand)
+                if n == 0:
+                    print(f"  {tag:<20} {'0':>5} {'N/A':>8}")
+                    continue
+                avg      = cand["実績リターン(%)"].mean()
+                alpha    = avg - nk
+                a_wins   = (cand["実績リターン(%)"] > nk).sum()
+                wins_0   = (cand["実績リターン(%)"] > 0).sum()
+                wins_15  = (cand["実績リターン(%)"] >= RISE_THRESHOLD).sum()
+                print(
+                    f"  {tag:<20} {n:>5} {avg:>+7.2f}% {alpha:>+8.2f}%"
+                    f"  {a_wins}/{n}={a_wins/n*100:.0f}%"
+                    f"  {wins_0/n*100:.0f}%  {wins_15/n*100:.0f}%"
+                )
+        # 詳細は通常モードのTOP_N設定で表示
+        top_df = df.nlargest(TOP_N, "ネット(%)")
+    else:
+        # ── 通常モード ──
+        if NET_MIN is not None:
+            top_df = df[df["ネット(%)"] >= NET_MIN].nlargest(TOP_N, "ネット(%)")
+            label  = f"ネットスコア≥{NET_MIN} 上位{len(top_df)}"
+        else:
+            top_df = df.nlargest(TOP_N, "ネット(%)")
+            label  = f"ネットスコア上位{TOP_N}"
+        _print_group(top_df, label, nikkei_return)
+
+    # ── 詳細表示 ──
+    _print_detail(top_df, f"上位{len(top_df)}")
 
     # CSV保存
     out_path = os.path.expanduser(f"~/stock-alert/backtest_{BACKTEST_DATE}_{TODAY}.csv")

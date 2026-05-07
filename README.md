@@ -127,9 +127,13 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
     python3 rf_train_v3.py                 # モデル学習（40〜70分）
     python3 rank_stocks.py                 # ランキング生成
     python3 alert_email.py                 # メール送信
-    python3 backtest.py                    # バックテスト（通常期、v1スクリーナー）
-    python3 backtest.py bear --screener v2 # 下落相場 × v2スクリーナー
-    python3 test_screener.py               # スクリーナーユニットテスト（29件）
+    python3 backtest.py                          # バックテスト（通常期、v1スクリーナー）
+    python3 backtest.py bear                     # 下落相場テスト（2024年8月クラッシュ期）
+    python3 backtest.py --compare                # top-N × net-min の一括グリッド比較
+    python3 backtest.py --screened               # スクリーナー特化モデル（rf_model_screened.pkl）で検証
+    python3 backtest.py bear --compare --screened  # bear × 比較 × 特化モデル
+    python3 rf_train_v3.py --screener-only       # スクリーナー通過時点のみで学習（→ rf_model_screened.pkl）
+    python3 test_screener.py                     # スクリーナーユニットテスト
 
 ---
 
@@ -153,7 +157,7 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
 | 株価 ≥ | 300円 | 当初 |
 | 上昇トレンド | slope_up=True | 当初 |
 | 出来高比 vr2060 ≥ | 1.0（20日平均 ≥ 60日平均） | **2026-05-06追加** |
-| 日経比相対強度 ≥ | 0（日経225を上回るリターン） | **2026-05-06追加** |
+| 日経比相対強度 ≥ | +5%（日経225を5%以上アウトパフォーム） | **2026-05-06追加 / 2026-05-07強化** |
 
 ※ R²（線形安定度）は2026-05-06に削除。MLモデルと重複し「過去が安定」を見るだけで将来予測に寄与しないため。
 
@@ -162,7 +166,7 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
 - **モメンタム上限+30%**: 急騰後のミーンリバージョン銘柄を除外
 - **ボラ下限20%**: +15%×3ヶ月の目標達成には一定のボラが必要
 - **出来高比 ≥ 1.0**: 上昇に出来高が伴っている銘柄のみ通過。出来高を伴わない上昇は持続しにくい
-- **日経比相対強度 ≥ 0**: 相場全体に負けている銘柄を除外。絶対値ではなく相対的な強さを重視
+- **日経比相対強度 ≥ +5%**: 日経を5%以上アウトパフォームしている銘柄のみ通過。0%（同等）では弱すぎるため強化（2026-05-07）
 
 ### バックテスト結果（2026-05-06）
 
@@ -237,6 +241,36 @@ requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread
 ---
 
 ## モデル改善履歴
+
+### スクリーナー特化モデル実験（2026-05-07）— 不採用
+
+**実験内容**
+
+`rf_train_v3.py --screener-only` フラグを追加し、v1スクリーナーを通過した時点のサンプルのみで学習した専用モデル（`rf_model_screened.pkl`）を作成。`backtest.py --compare --screened` で通常モデルと比較。
+
+**結果（通常モデル vs 特化モデル）**
+
+| 期間 | 設定 | 通常モデル | 特化モデル |
+|---|---|---|---|
+| 通常期（日経+8.76%） | top5 | -1.56% (α-10.3%) | +11.93% (α+3.2%) |
+| 通常期（日経+8.76%） | top10 | **+9.50% (α+0.7%)** | +5.80% (α-3.0%) |
+| 下落相場（日経-2.47%） | top5 | -3.75% (α-1.3%) | -0.00% (α+2.5%) |
+| 下落相場（日経-2.47%） | top10 | +20.83% (α+23.3%) | **+23.41% (α+25.9%)** |
+
+**不採用の理由**
+
+- AUCが大幅に低下（上昇: 0.544 / 下落: 0.609）— 学習サンプルが激減し汎化できていない
+- `net≥10` 以上の閾値で使える銘柄が激減（2〜3銘柄）— 閾値フィルターが機能しない
+- top5/top10 の優位は1〜2期間のみのデータで過学習の疑いが強い
+- 実質「同じ銘柄のランキング順が僅かに違うだけ」の差
+
+**追加されたCLIオプション（通常モデルでも利用可）**
+
+- `backtest.py --top-n N` / `--net-min X`: 選択条件をCLIで調整
+- `backtest.py --compare`: top-N × net-min のグリッドサーチ表を一括出力
+- `backtest.py --screened`: `rf_model_screened.pkl` でバックテスト
+
+---
 
 ### v7（2026-05-05）AUC 上昇0.663 / 下落0.791 ← 現在（キャリブレーション済み: 0.663/0.790）
 

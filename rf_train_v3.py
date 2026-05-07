@@ -12,6 +12,11 @@ MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 SAVE_DIR=os.path.expanduser("~/stock-alert")
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
 
+# スクリーナーフィルター定数（screener.pyと同値に保つ）
+_SC_MIN_MOM=5.0; _SC_MAX_MOM=30.0; _SC_MIN_MOM20=-3.0
+_SC_MIN_VOL=20.0; _SC_MAX_VOL=50.0; _SC_MIN_PRICE=300
+_SC_MIN_VR=1.0; _SC_MIN_REL=0.05  # 出来高比 / 日経比相対強度
+
 def get_nikkei_df(days=2200):
     """日経225の株価をDateインデックスのDataFrameで返す"""
     end_ts=int(datetime.now().timestamp())
@@ -128,7 +133,28 @@ def compute_feat(p, v=None, nk_rets=None):
     feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+compute_seq_features(seq_raw)
     return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
-def generate_samples(df, nk_df=None):
+def passes_screener_at(p, v_slice, nk_ret_3m):
+    """i時点でv1スクリーナー条件を満たすかチェック（先読みバイアスなし）"""
+    if len(p) < 64 or p[-1] < _SC_MIN_PRICE: return False
+    mom3m = (p[-1]-p[-64])/p[-64]*100
+    if not (_SC_MIN_MOM <= mom3m <= _SC_MAX_MOM): return False
+    mom20 = (p[-1]-p[-21])/p[-21]*100 if len(p)>=21 else 0
+    if mom20 < _SC_MIN_MOM20: return False
+    dr = np.diff(p[-61:])/p[-61:-1] if len(p)>=61 else np.diff(p[-21:])/p[-21:-1]
+    vol = dr.std()*np.sqrt(252)*100
+    if not (_SC_MIN_VOL <= vol <= _SC_MAX_VOL): return False
+    if np.polyfit(np.arange(len(p[-60:])), p[-60:], 1)[0] <= 0: return False
+    if v_slice is not None and len(v_slice)>=60:
+        va=np.array([x if x is not None else np.nan for x in v_slice],dtype=float)
+        va20=np.nanmean(va[-20:]); va60=np.nanmean(va[-60:])
+        if va60>0 and va20/va60 < _SC_MIN_VR: return False
+    if nk_ret_3m is not None:
+        rel=(p[-1]-p[-64])/p[-64] - nk_ret_3m
+        if rel < _SC_MIN_REL: return False
+    return True
+
+
+def generate_samples(df, nk_df=None, screener_only=False):
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
     samples=[]; start_i=max(252+SEQ_DAYS,90)
@@ -136,7 +162,7 @@ def generate_samples(df, nk_df=None):
     nk_closes=nk_df["Close"].values if nk_df is not None else np.array([])
     for i in range(start_i,n-FORECAST,SAMPLE_INTERVAL):
         v_slice=volumes[:i+1] if volumes is not None else None
-        nk_rets=None; i0=None
+        nk_rets=None; nk_ret_3m=None; i0=None
         if nk_df is not None:
             d0=dates[i]
             i0=next((j for j,d in enumerate(nk_dates) if d>=d0),None)
@@ -146,6 +172,10 @@ def generate_samples(df, nk_df=None):
                 nk20=(nk_closes[i0]-nk_closes[i20])/nk_closes[i20] if nk_closes[i20]!=0 else 0
                 nk60=(nk_closes[i0]-nk_closes[i60])/nk_closes[i60] if nk_closes[i60]!=0 else 0
                 nk_rets=(nk5,nk20,nk60)
+                i63=max(0,i0-63)
+                nk_ret_3m=(nk_closes[i0]-nk_closes[i63])/nk_closes[i63] if nk_closes[i63]!=0 else None
+        if screener_only and not passes_screener_at(closes[:i+1], v_slice, nk_ret_3m):
+            continue
         feat=compute_feat(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
@@ -170,9 +200,16 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
     return cal_m
 
 def main():
+    import argparse as _ap
+    _p=_ap.ArgumentParser(add_help=False)
+    _p.add_argument("--screener-only",action="store_true",help="スクリーナー通過時点のサンプルのみ学習")
+    _args,_=_p.parse_known_args()
+    screener_only=_args.screener_only
+
     print("="*60)
     print("rf_train_v3: TSE全銘柄 × 5年 ウォークフォワード学習")
     print(f"分割境界: {TRAIN_CUTOFF} / サンプル間隔: {SAMPLE_INTERVAL}日")
+    if screener_only: print("【スクリーナー通過時点のみ学習モード】")
     print("="*60)
     stock_list=get_tse_stock_list()
     if stock_list is None: return
@@ -190,7 +227,7 @@ def main():
         df=get_prices(row["code"])
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
-        for (sd,feat,lr,ld) in generate_samples(df, nk_df):
+        for (sd,feat,lr,ld) in generate_samples(df, nk_df, screener_only=screener_only):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld); train_dates.append(sd)
             else:
@@ -231,8 +268,9 @@ def main():
     print(f"\nキャリブレーション分割: 学習{len(X_tr_fit):,} / キャリブレーション{len(X_cal):,} (最新20%)")
     rise=train_model(X_tr_fit,yr_fit,X_te,yr_te,X_cal,yr_cal,"上昇")
     drop=train_model(X_tr_fit,yd_fit,X_te,yd_te,X_cal,yd_cal,"下落")
-    joblib.dump(rise,os.path.join(SAVE_DIR,"rf_model.pkl"))
-    joblib.dump(drop,os.path.join(SAVE_DIR,"rf_drop_model.pkl"))
+    suffix="_screened" if screener_only else ""
+    joblib.dump(rise,os.path.join(SAVE_DIR,f"rf_model{suffix}.pkl"))
+    joblib.dump(drop,os.path.join(SAVE_DIR,f"rf_drop_model{suffix}.pkl"))
     # Save all samples (train+test) with dates for purged CV validation
     npz_path=os.path.join(SAVE_DIR,"training_data.npz")
     all_X=np.vstack([X_tr,X_te]); all_yr=np.concatenate([yr_tr,yr_te]); all_yd=np.concatenate([yd_tr,yd_te])
