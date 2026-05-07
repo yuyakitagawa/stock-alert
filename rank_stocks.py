@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 import numpy as np
 import time
@@ -136,6 +137,10 @@ def main():
         else:
             recommend = "⏳ 様子見"
 
+        # 損切りライン（1.5 ATR, 20日ボラベース）
+        stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
+        stop_pct  = round((stop_loss - close) / close * 100, 1)
+
         # 日経比相対リターン
         p = prices["Close"].values
         s5  = (p[-1] - p[-6])  / p[-6]  * 100 if len(p) >= 6  else 0
@@ -162,6 +167,8 @@ def main():
             "日経比20日(%)": rel20 if rel20 is not None else "-",
             "日経比60日(%)": rel60 if rel60 is not None else "-",
             "相対強度": rs_score if rs_score is not None else "-",
+            "損切り価格(円)": stop_loss,
+            "損切り幅(%)": stop_pct,
             "PER": fund.get("PER") if fund else None,
             "PBR": fund.get("PBR") if fund else None,
             "ROE(%)": fund.get("ROE") if fund else None,
@@ -179,10 +186,11 @@ def main():
     if is_bear:
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'水準':<6}  {'PER':>7}  {'PBR':>5}  {'ROE%':>6}  推奨")
-    print("-" * 110)
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'損切り':>8}  {'PER':>7}  {'PBR':>5}  {'ROE%':>6}  推奨")
+    print("-" * 120)
     for _, row in result_df.head(TOP_SHOW).iterrows():
-        drop_str = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
+        drop_str  = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
+        stop_str  = f"¥{row['損切り価格(円)']:,.0f}({row['損切り幅(%)']:+.1f}%)"
         per_val = row.get("PER"); pbr_val = row.get("PBR"); roe_val = row.get("ROE(%)")
         per_str = f"{per_val:>6.1f}x" if per_val is not None else "    N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
@@ -196,7 +204,7 @@ def main():
             f"{row['ネット(%)']:>+6.1f}%  "
             f"{row['判定']:<12}  "
             f"{row['ボラ(%)']:>5.1f}%  "
-            f"{row['ボラ水準']:<6}  "
+            f"{stop_str:<14}  "
             f"{per_str}  "
             f"{pbr_str}  "
             f"{roe_str}  "

@@ -21,6 +21,7 @@ MIN_RSI          = 40.0   # 売られすぎ（底割れ）を除外
 MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 MIN_VSURGE       = 1.3    # 直近出来高 ≥ 20日平均の1.3倍（資金流入シグナル）
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
+MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -155,6 +156,7 @@ def calc_metrics(df, nikkei_return_3m=None):
 
     vr2060 = 1.0
     vsurge = 1.0
+    turnover_m = 0.0
     if "Volume" in df.columns:
         vols = pd.to_numeric(df["Volume"], errors="coerce").fillna(0).values
         if len(vols) >= 60:
@@ -166,6 +168,7 @@ def calc_metrics(df, nikkei_return_3m=None):
             vol20avg = vols[-20:].mean()
             if vol20avg > 0:
                 vsurge = float(vols[-1]) / vol20avg
+            turnover_m = vol20avg * float(prices[-1]) / 1_000_000
 
     rsi = calc_rsi(prices)
     rel_strength_3m = (momentum_3m / 100 - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
@@ -177,6 +180,7 @@ def calc_metrics(df, nikkei_return_3m=None):
         "vol":             round(vol, 2),
         "vr2060":          round(vr2060, 3),
         "vsurge":          round(vsurge, 2),
+        "turnover_m":      round(turnover_m, 1),
         "rsi":             round(rsi, 1),
         "rel_strength_3m": round(rel_strength_3m, 4),
         "score":           round(score, 2),
@@ -199,6 +203,7 @@ def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
         & (universe_df["rsi"]             >= MIN_RSI)
         & (universe_df["rsi"]             <= MAX_RSI)
         & (universe_df["vsurge"]          >= MIN_VSURGE)
+        & (universe_df["turnover_m"]      >= MIN_LIQUIDITY_M)
     )
     return universe_df[mask].copy()
 
@@ -281,6 +286,7 @@ def main():
             "vol":             result["vol"],
             "vr2060":          result["vr2060"],
             "vsurge":          result["vsurge"],
+            "turnover_m":      result["turnover_m"],
             "rsi":             result["rsi"],
             "rel_strength_3m": result["rel_strength_3m"],
             "score":           result["score"],

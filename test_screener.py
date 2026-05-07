@@ -18,7 +18,7 @@ def _make_universe(rows):
         "code": "0000", "name": "テスト", "momentum": 10.0,
         "momentum_20d": 0.0, "vol": 30.0, "score": 8.0, "close": 500.0,
         "slope_up": True, "vr2060": 1.2, "rel_strength_3m": 0.06,
-        "rsi": 55.0, "vsurge": 1.5,
+        "rsi": 55.0, "vsurge": 1.5, "turnover_m": 100.0,
     }
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -123,6 +123,16 @@ class TestApplyScreenerV1(unittest.TestCase):
     def test_vsurge_at_threshold_passes(self):
         """直近出来高 = 1.3倍ちょうどは通過する（境界値 >=）"""
         df = _make_universe([{"code": "A", "vsurge": 1.3}])
+        self.assertEqual(len(apply_screener_v1(df)), 1)
+
+    def test_low_liquidity_excluded(self):
+        """20日平均売買代金 < 50百万円は除外される"""
+        df = _make_universe([{"code": "A", "turnover_m": 49.9}])
+        self.assertTrue(apply_screener_v1(df).empty)
+
+    def test_liquidity_at_threshold_passes(self):
+        """20日平均売買代金 = 50百万円ちょうどは通過する"""
+        df = _make_universe([{"code": "A", "turnover_m": 50.0}])
         self.assertEqual(len(apply_screener_v1(df)), 1)
 
     def test_bear_market_stricter_rel_strength(self):
