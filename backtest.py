@@ -9,15 +9,17 @@ backtest.py
 """
 
 import os
-import time
-import requests
 import io
+import time
+import glob
+import random
+import requests
 import numpy as np
 import pandas as pd
-import argparse as _argparse
-from utils import get_prices as _get_prices, get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 import joblib
-from datetime import datetime, date
+import argparse as _argparse
+from datetime import datetime, date, timedelta
+from utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, HEADERS, SEQ_DAYS
 
 # ── パラメータ ──────────────────────────────
 BACKTEST_DATE  = date(2026, 2, 3)    # 予測基準日（約3ヶ月前=63営業日前）
@@ -25,11 +27,9 @@ TODAY          = date.today()         # 現在日（動的）
 BEAR_START     = date(2024, 7,  1)    # 下落相場テスト（2024年8月円キャリー崩壊期）
 BEAR_END       = date(2024, 10, 1)    # 下落相場テスト終了
 
-# 実行モード: python3 backtest.py [bear|1year] [--screener {v1,v2}] [--top-n N] [--net-min X] [--compare]
+# 実行モード: python3 backtest.py [bear|1year] [--top-n N] [--net-min X] [--compare] [--screened]
 _parser = _argparse.ArgumentParser(add_help=False)
 _parser.add_argument("mode", nargs="?", choices=["bear", "1year"], default=None)
-_parser.add_argument("--screener", choices=["v1", "v2"], default="v1",
-                     help="スクリーナー条件（デフォルト: v1）")
 _parser.add_argument("--top-n",   type=int,   default=10,   help="上位N銘柄を選択（デフォルト: 10）")
 _parser.add_argument("--net-min", type=float, default=None, help="ネットスコア最低閾値（例: 15）")
 _parser.add_argument("--compare",  action="store_true", help="保有数×閾値を一括比較")
@@ -44,7 +44,6 @@ elif _args.mode == '1year':
     BACKTEST_DATE = date(2025, 5, 5)
     print('【1年バックテストモード: 2025-05-05 → 今日】')
 
-SCREENER_MODE  = _args.screener
 RISE_THRESHOLD = 15.0
 NET_THRESHOLD  = 5.0
 TOP_N          = _args.top_n
@@ -57,20 +56,13 @@ SAMPLE_N       = 200
 # 例: bear mode (2024-07-01) → (2026-05-04 - 2024-07-01) + 180 ≈ 853日
 FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
 
-# ── スクリーナー定数（v1互換・v2共通） ─────────
-_SC_R2_THRESHOLD     = 0.65
+# ── スクリーナー定数（v1） ───────────────────────
 _SC_MIN_MOMENTUM     = 5.0
 _SC_MAX_MOMENTUM     = 30.0
 _SC_MIN_VOLATILITY   = 20.0
 _SC_MAX_VOLATILITY   = 50.0
 _SC_MIN_MOMENTUM_20D = -3.0
 _SC_MIN_PRICE        = 300
-_SC_RANK_6M          = 0.70
-_SC_MIN_RETURN_3M    = 0.05
-_SC_MAX_RETURN_3M    = 0.30
-_SC_MAX_HIGH_DIST    = -0.20
-_SC_MIN_VOL_V2       = 20.0
-_SC_MAX_VOL_V2       = 50.0
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -80,7 +72,6 @@ HEADERS = {
 # ── 株価取得（requests直接呼び出し）────────────
 def _fetch_yahoo(ticker, days=800):
     """Yahoo Finance APIから株価DataFrameを取得"""
-    from datetime import datetime, timedelta
     end_ts   = int(datetime.now().timestamp())
     start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
     url = (
@@ -160,60 +151,34 @@ def compute_screener_at(hist, target_date, nikkei_return_3m=None):
     # 日経比相対強度（v1用）
     rel_strength_3m = (return_3m - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
 
-    # 52週高値からの乖離（v2用）
-    hi52          = p[-252:].max() if len(p) >= 252 else None
-    high_dist_52w = (p[-1] - hi52) / hi52 if hi52 is not None else None
-
     return {
-        "return_3m":      return_3m,
-        "return_6m":      return_6m,
-        "momentum_20d":   momentum_20d,
-        "vol":            vol,
-        "vr2060":         vr2060,
+        "return_3m":       return_3m,
+        "momentum_20d":    momentum_20d,
+        "vol":             vol,
+        "vr2060":          vr2060,
         "rel_strength_3m": rel_strength_3m,
-        "slope_up":       slope_up,
-        "close":          close_price,
-        "high_dist_52w":  high_dist_52w,
+        "slope_up":        slope_up,
+        "close":           close_price,
     }
 
 
-def _get_screener_pass_codes(raw_screener, mode):
-    """スクリーナー条件を満たす銘柄コードのセットを返す"""
+def _get_screener_pass_codes(raw_screener):
+    """v1スクリーナー条件を満たす銘柄コードのセットを返す"""
     sc_df = pd.DataFrame([s for s in raw_screener if s is not None and s.get("close") is not None])
     if sc_df.empty:
         return set()
-
-    if mode == "v1":
-        mask = (
-            (sc_df["return_3m"] * 100   >= _SC_MIN_MOMENTUM)
-            & (sc_df["return_3m"] * 100 <= _SC_MAX_MOMENTUM)
-            & (sc_df["momentum_20d"]    >= _SC_MIN_MOMENTUM_20D)
-            & (sc_df["vol"]             >= _SC_MIN_VOLATILITY)
-            & (sc_df["vol"]             <= _SC_MAX_VOLATILITY)
-            & (sc_df["close"]           >= _SC_MIN_PRICE)
-            & (sc_df["slope_up"])
-            & (sc_df.get("vr2060", pd.Series(1.0, index=sc_df.index)) >= 1.0)
-            & (sc_df.get("rel_strength_3m", pd.Series(0.0, index=sc_df.index)) >= 0.05)
-        )
-        return set(sc_df.loc[mask, "code"].astype(str))
-
-    if mode == "v2":
-        df = sc_df.copy()
-        df["rank_6m"] = df["return_6m"].rank(pct=True)
-        # 52週高値乖離: None（1年データなし）は除外
-        hi_ok = df["high_dist_52w"].fillna(-999) >= _SC_MAX_HIGH_DIST
-        mask = (
-            (df["return_3m"]  >= _SC_MIN_RETURN_3M)
-            & (df["return_3m"] <= _SC_MAX_RETURN_3M)
-            & (df["rank_6m"]   >= _SC_RANK_6M)
-            & (df["vol"]        >= _SC_MIN_VOL_V2)
-            & (df["vol"]        <= _SC_MAX_VOL_V2)
-            & (df["close"]      >= _SC_MIN_PRICE)
-            & hi_ok
-        )
-        return set(df.loc[mask, "code"].astype(str))
-
-    return set(sc_df["code"].astype(str))
+    mask = (
+        (sc_df["return_3m"] * 100   >= _SC_MIN_MOMENTUM)
+        & (sc_df["return_3m"] * 100 <= _SC_MAX_MOMENTUM)
+        & (sc_df["momentum_20d"]    >= _SC_MIN_MOMENTUM_20D)
+        & (sc_df["vol"]             >= _SC_MIN_VOLATILITY)
+        & (sc_df["vol"]             <= _SC_MAX_VOLATILITY)
+        & (sc_df["close"]           >= _SC_MIN_PRICE)
+        & (sc_df["slope_up"])
+        & (sc_df.get("vr2060", pd.Series(1.0, index=sc_df.index)) >= 1.0)
+        & (sc_df.get("rel_strength_3m", pd.Series(0.0, index=sc_df.index)) >= 0.05)
+    )
+    return set(sc_df.loc[mask, "code"].astype(str))
 
 
 def get_nikkei_prices():
@@ -352,17 +317,10 @@ def main():
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
     print(f"モデル読み込み完了{'（スクリーナー特化）' if model_suffix else ''}")
 
-    # 銘柄リスト：スクリーナーCSVから読み込み
-    import glob
-    screener_files = glob.glob(os.path.expanduser("~/stock-alert/screener_*.csv"))
-    # バイアスなし: TSE全銘柄からサンプリング（スクリーナーCSVは今日時点なのでNG）
     print("TSE全銘柄リストを取得中（バイアスなし）...")
     all_stocks = fetch_tse_codes()
-    import random
     random.seed(42)
     stocks = random.sample(all_stocks, min(SAMPLE_N, len(all_stocks)))
-    if screener_files:
-        print(f"  ※ スクリーナーCSVは使用しません（ルックアヘッドバイアス回避）")
     print(f"バックテスト対象: {len(stocks)}銘柄")
 
     # 日経225データを事前取得（特徴量計算用）
@@ -423,12 +381,12 @@ def main():
 
     # フェーズ1.5: スクリーナーフィルター適用
     if raw_screener:
-        pass_codes = _get_screener_pass_codes(raw_screener, SCREENER_MODE)
+        pass_codes = _get_screener_pass_codes(raw_screener)
         keep = [j for j, m in enumerate(raw_meta) if m[0] in pass_codes]
         raw_feats    = [raw_feats[j]    for j in keep]
         raw_meta     = [raw_meta[j]     for j in keep]
         raw_screener = [raw_screener[j] for j in keep]
-        print(f"スクリーナー {SCREENER_MODE}: {len(pass_codes)} 銘柄通過 / {len(raw_feats)} 件処理")
+        print(f"スクリーナー v1: {len(pass_codes)} 銘柄通過 / {len(raw_feats)} 件処理")
 
     # フェーズ2: クロスセクショナルランク特徴量を付加
     if not raw_feats:
