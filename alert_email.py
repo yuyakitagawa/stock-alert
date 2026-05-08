@@ -337,7 +337,7 @@ def _build_sell_section(results):
     section = (f"<div class='card' style='border-left:4px solid #c0392b'>"
                f"<h2>🔴 売り検討 ({len(sells)}銘柄)</h2>"
                f"<p style='color:#666;font-size:13px;margin:0 0 10px'>ネットスコアがマイナス。ニュース・決算を確認してください。</p>"
-               f"<table><tr style='background:#fde8e8'><th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th></tr>"
+               f"<table><tr style='background:#fde8e8'><th>銘柄</th><th>ネット</th><th>日経差(20日)</th><th>ボラ</th></tr>"
                f"{rows}</table></div>")
     return section, sells
 
@@ -384,9 +384,9 @@ def _build_ranking_section(results, prev_ranking_codes):
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
             f"<h2>📈 新規候補 Top{count}（ネットスコア順・未保有）</h2>"
             f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
-            f"ネット = 上昇確率 − 下落確率 ／ 日経比20d = 過去20日の日経225比超過リターン</p>"
+            f"ネット = 上昇確率 − 下落確率 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>"
             f"<table><tr style='background:#e8f0fe'>"
-            f"<th>銘柄</th><th>ネット</th><th>日経比20d</th><th>ボラ</th><th>損切り</th></tr>"
+            f"<th>銘柄</th><th>ネット</th><th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
             f"{rows}</table></div>")
 
 
@@ -489,9 +489,9 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 {_build_ranking_section(results, prev_ranking_codes)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
-  <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経比20d = 過去20日超過リターン</p>
+  <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
   <table>
-    <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経比20d</th><th>ボラ</th></tr>
+    <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th></tr>
     {_build_all_rows(results, earnings_map)}
   </table>
 </div>
@@ -610,7 +610,7 @@ def main():
 
         dp_str   = f"{drop_prob:5.1f}%" if drop_prob is not None else "  N/A "
         rel20_str = f"{rel20:+.1f}%" if rel20 is not None else "N/A"
-        print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{dp_str} ネット{net:+.1f}% 日経比20d{rel20_str} ボラ{vol:.1f}%{vol_label}")
+        print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{dp_str} ネット{net:+.1f}% 日経差(20日){rel20_str} ボラ{vol:.1f}%{vol_label}")
 
         results.append({
             "code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob,
