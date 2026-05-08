@@ -344,13 +344,13 @@ def _build_sell_section(results):
 
 def _build_ranking_section(results, prev_ranking_codes):
     held_codes = {str(r["code"]) for r in results}
-    ranking = load_top_ranking(10)
+    ranking = load_top_ranking(5)
     rows = ""
     count = 0
     if ranking is not None:
         for _, row in ranking.iterrows():
             code_str = str(int(row["銘柄コード"]))
-            if code_str in held_codes or count >= 10:
+            if code_str in held_codes or count >= 5:
                 continue
             net    = row.get("ネット(%)", row["上昇確率(%)"])
             vol    = row.get("ボラ(%)", 0)
@@ -382,7 +382,7 @@ def _build_ranking_section(results, prev_ranking_codes):
     if not rows:
         return ""
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
-            f"<h2>📈 新規候補 Top{count}（スクリーナー上位・未保有）</h2>"
+            f"<h2>📈 新規候補 Top{count}（ネットスコア順・未保有）</h2>"
             f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
             f"ネット = 上昇確率 − 下落確率 ／ 日経比20d = 過去20日の日経225比超過リターン</p>"
             f"<table><tr style='background:#e8f0fe'>"
@@ -486,7 +486,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 </div>
 {_build_priority_section(priority_actions or [])}
 {sell_section}
-{"" if is_bear else _build_ranking_section(results, prev_ranking_codes)}
+{_build_ranking_section(results, prev_ranking_codes)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経比20d = 過去20日超過リターン</p>
