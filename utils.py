@@ -200,6 +200,18 @@ def extract_features(p, v=None, nk_rets=None):
     return feat
 
 
+class IsotonicCalibrated:
+    """joblib保存互換: XGBoost + IsotonicRegressionキャリブレーションラッパー"""
+    def __init__(self, model, iso):
+        self.model = model
+        self.iso   = iso
+
+    def predict_proba(self, X):
+        raw = self.model.predict_proba(X)[:, 1]
+        cal = self.iso.predict(raw)
+        return np.column_stack([1 - cal, cal])
+
+
 _KABUTAN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept-Language": "ja,en;q=0.9",
