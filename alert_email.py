@@ -446,7 +446,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     else:
         sell_section, sells = sell_result, []
 
-    buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith(("✅", "🔵", "⚡")))
+    buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith(("✅", "🔵")))
     neu_cnt = len(results) - len(sells) - buy_cnt
     nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
                if nk5 is not None else "")
@@ -591,18 +591,14 @@ def main():
         vol = round(feat_aug[7], 1)
         vol_label = ("🟢低" if vol < 20 else "🟡中" if vol < 40 else "🟠高" if vol < 60 else "🔴超高")
 
-        if net >= 10 and vol < 40:
-            recommend = "✅ 買い可能性あり"
-        elif net >= 5 and vol < 40:
-            recommend = "🔵 買い可能性あり"
-        elif net >= 5 and vol >= 40:
-            recommend = "⚡ 買い可能性あり（荒れ注意）"
-        elif net < -10 and vol < 40:
-            recommend = "🔴 売り可能性あり"
-        elif net < -5 and vol < 40:
-            recommend = "⚠️ 売り可能性あり"
-        elif net < -5 and vol >= 40:
-            recommend = "🌀 売り様子見"
+        if net >= 10:
+            recommend = "✅ 買い"
+        elif net >= 5:
+            recommend = "🔵 買い候補"
+        elif net < -10:
+            recommend = "🔴 売り"
+        elif net < -5:
+            recommend = "⚠️ 売り候補"
         else:
             recommend = "⏳ 様子見"
 
@@ -627,7 +623,7 @@ def main():
     save_results_for_tomorrow(results)
 
     sell_count      = sum(1 for r in results if r["signal"] == "sell")
-    buy_count       = sum(1 for r in results if r.get("recommend", "").startswith(("✅", "🔵", "⚡")))
+    buy_count       = sum(1 for r in results if r.get("recommend", "").startswith(("✅", "🔵")))
     priority_actions = build_priority_actions(results)
     bear_prefix     = "⚠️下落相場 " if is_bear else ""
     nk_str          = f"日経{nk20:+.1f}%" if nk20 is not None else ""

@@ -121,19 +121,14 @@ def main():
         else:
             judgment = "🔴売り検討"
 
-        # 総合推奨（ネット × ボラティリティ）
-        if net >= 10 and vol < 40:
-            recommend = "✅ 買い可能性あり"
-        elif net >= 5 and vol < 40:
-            recommend = "🔵 買い可能性あり"
-        elif net >= 5 and vol >= 40:
-            recommend = "⚡ 買い可能性あり（荒れ注意）"
-        elif net < -10 and vol < 40:
-            recommend = "🔴 売り可能性あり"
-        elif net < -5 and vol < 40:
-            recommend = "⚠️ 売り可能性あり"
-        elif net < -5 and vol >= 40:
-            recommend = "🌀 売り様子見"
+        if net >= 10:
+            recommend = "✅ 買い"
+        elif net >= 5:
+            recommend = "🔵 買い候補"
+        elif net < -10:
+            recommend = "🔴 売り"
+        elif net < -5:
+            recommend = "⚠️ 売り候補"
         else:
             recommend = "⏳ 様子見"
 
