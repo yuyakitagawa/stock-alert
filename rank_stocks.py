@@ -6,7 +6,7 @@ import os
 import glob
 from datetime import datetime, timedelta
 import joblib
-from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS
+from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, get_macro_snapshot, IsotonicCalibrated, HEADERS, SEQ_DAYS
 
 FORECAST = 63
 RISE_THRESHOLD = 15.0
@@ -61,6 +61,11 @@ def main():
     codes = screener_df["銘柄コード"].astype(str).tolist()
     names = dict(zip(screener_df["銘柄コード"].astype(str), screener_df["銘柄名"]))
     print(f"スクリーナー通過銘柄: {len(codes)} 銘柄")
+
+    print("\nマクロ指標取得中（USD/JPY、米10年金利、VIX）...")
+    macro_vals = get_macro_snapshot()
+    print(f"  USD/JPY 20日リターン: {macro_vals[0]*100:+.2f}% / 米10年金利: {macro_vals[1]*10:.2f}% / VIX: {macro_vals[2]*100:.1f}")
+
     print(f"\n確率スコア計算中...")
 
     # フェーズ1: 全銘柄の特徴量を収集
@@ -70,7 +75,7 @@ def main():
         if prices is None or len(prices) < 91:
             time.sleep(0.2); continue
         nk_rets = (nk5/100, nk20/100, nk60/100) if nk5 is not None else None
-        feat = extract_features(prices["Close"].values, prices["Volume"].tolist() if "Volume" in prices.columns else None, nk_rets)
+        feat = extract_features(prices["Close"].values, prices["Volume"].tolist() if "Volume" in prices.columns else None, nk_rets, macro_vals)
         if feat is None:
             time.sleep(0.2); continue
         if feat[12] > 0.15 or feat[10] < -0.15:
