@@ -66,6 +66,48 @@ def get_nikkei_returns():
         return None, None, None
 
 
+def get_macro_df(symbol, days=2200):
+    """マクロ指標の履歴を Date インデックスのDataFrameで返す。symbolの例: USDJPY=X, %5ETNX, %5EVIX"""
+    end_ts   = int(datetime.now().timestamp())
+    start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+           f"?interval=1d&period1={start_ts}&period2={end_ts}")
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        ts     = result[0].get("timestamp", [])
+        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
+        idx    = pd.to_datetime(ts, unit="s", utc=True).tz_convert("Asia/Tokyo")
+        df     = pd.DataFrame({"Close": closes}, index=idx).dropna()
+        df.index = df.index.date
+        return df
+    except Exception:
+        return None
+
+
+def get_macro_snapshot():
+    """現在のマクロ指標を返す: (usdjpy_20d_return, ust10y_level/10, vix_level/100)"""
+    usdjpy_df = get_macro_df("USDJPY=X", days=60)
+    tnx_df    = get_macro_df("%5ETNX",   days=60)
+    vix_df    = get_macro_df("%5EVIX",   days=60)
+    usdjpy_20d = 0.0
+    if usdjpy_df is not None and len(usdjpy_df) >= 21:
+        p = usdjpy_df["Close"].values
+        usdjpy_20d = (p[-1] - p[-21]) / p[-21]
+    ust10y = 0.0
+    if tnx_df is not None and len(tnx_df) >= 1:
+        ust10y = float(tnx_df["Close"].values[-1]) / 10.0  # 例: 4.5% → 0.45
+    vix = 0.0
+    if vix_df is not None and len(vix_df) >= 1:
+        vix = float(vix_df["Close"].values[-1]) / 100.0    # 例: 20 → 0.20
+    return (round(usdjpy_20d, 4), round(ust10y, 4), round(vix, 4))
+
+
 def calc_rsi(prices, period=14):
     if len(prices) < period + 1:
         return 50.0
@@ -136,8 +178,8 @@ def compute_seq_features(seq):
     return [ac, skew, max_r, min_r, pos_ratio, slope, recent_vs_early]
 
 
-def extract_features(p, v=None, nk_rets=None):
-    """28次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7"""
+def extract_features(p, v=None, nk_rets=None, macro_vals=None):
+    """31次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 海外マクロ3"""
     if len(p) < 91 or p[-1] == 0:
         return None
     c = p[-1]
@@ -191,13 +233,17 @@ def extract_features(p, v=None, nk_rets=None):
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
 
+    usdjpy_20d = macro_vals[0] if macro_vals is not None else 0.0
+    ust10y     = macro_vals[1] if macro_vals is not None else 0.0
+    vix_lvl    = macro_vals[2] if macro_vals is not None else 0.0
+
     seq_raw = (np.clip(np.diff(p[-(SEQ_DAYS+1):]) / p[-(SEQ_DAYS+1):-1], -0.2, 0.2)
                if len(p) >= SEQ_DAYS + 1 else np.zeros(SEQ_DAYS))
     seq_feat = compute_seq_features(seq_raw)
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [usdjpy_20d, ust10y, vix_lvl]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
