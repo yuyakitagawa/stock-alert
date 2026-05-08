@@ -119,7 +119,11 @@ def compute_seq_features(seq):
     if len(s) < 2:
         return [0.0] * 7
     mean_s = s.mean(); std_s = s.std()
-    ac = float(np.corrcoef(s[:-1], s[1:])[0, 1]) if std_s > 0 else 0.0
+    if std_s > 0:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ac = float(np.corrcoef(s[:-1], s[1:])[0, 1])
+    else:
+        ac = 0.0
     if np.isnan(ac): ac = 0.0
     skew = float(((s - mean_s) ** 3).mean() / (std_s ** 3 + 1e-10))
     max_r = float(s.max())
