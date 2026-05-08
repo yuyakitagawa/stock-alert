@@ -15,8 +15,9 @@ MAX_VOLATILITY   = 50.0
 MIN_MOMENTUM_20D = -3.0
 MIN_PRICE        = 300
 MIN_VOL_RATIO    = 1.0
-MIN_REL_STRENGTH = 0.05   # 通常相場
-BEAR_REL_STRENGTH = 0.10  # 下落相場（日経20日 < -5%）
+MIN_REL_STRENGTH = 0.05   # 3ヶ月相対強度（通常相場）
+BEAR_REL_STRENGTH = 0.10  # 3ヶ月相対強度（下落相場：日経20日 < -5%）
+MIN_REL_STRENGTH_20D = 0.0  # 20日相対強度（直近で日経に負けていない）
 MIN_RSI          = 40.0   # 売られすぎ（底割れ）を除外
 MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 MIN_VSURGE       = 1.3    # 直近出来高 ≥ 20日平均の1.3倍（資金流入シグナル）
@@ -136,7 +137,7 @@ def get_nikkei_returns():
         return None, None
 
 
-def calc_metrics(df, nikkei_return_3m=None):
+def calc_metrics(df, nikkei_return_3m=None, nikkei_return_20d=None):
     """モメンタム・ボラティリティ・出来高・相対強度・スコアを計算"""
     if df is None or len(df) < 30:
         return None
@@ -171,7 +172,8 @@ def calc_metrics(df, nikkei_return_3m=None):
             turnover_m = vol20avg * float(prices[-1]) / 1_000_000
 
     rsi = calc_rsi(prices)
-    rel_strength_3m = (momentum_3m / 100 - nikkei_return_3m) if nikkei_return_3m is not None else 0.0
+    rel_strength_3m  = (momentum_3m  / 100 - nikkei_return_3m)  if nikkei_return_3m  is not None else 0.0
+    rel_strength_20d = (momentum_20d / 100 - nikkei_return_20d) if nikkei_return_20d is not None else 0.0
     score = momentum_3m * vr2060 if slope > 0 else 0
 
     return {
@@ -181,8 +183,9 @@ def calc_metrics(df, nikkei_return_3m=None):
         "vr2060":          round(vr2060, 3),
         "vsurge":          round(vsurge, 2),
         "turnover_m":      round(turnover_m, 1),
-        "rsi":             round(rsi, 1),
-        "rel_strength_3m": round(rel_strength_3m, 4),
+        "rsi":              round(rsi, 1),
+        "rel_strength_3m":  round(rel_strength_3m, 4),
+        "rel_strength_20d": round(rel_strength_20d, 4),
         "score":           round(score, 2),
         "close":           round(float(prices[-1]), 1),
         "slope_up":        bool(slope > 0),
@@ -199,11 +202,12 @@ def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
         & (universe_df["close"]           >= MIN_PRICE)
         & (universe_df["slope_up"])
         & (universe_df["vr2060"]          >= MIN_VOL_RATIO)
-        & (universe_df["rel_strength_3m"] >= rel_strength_min)
-        & (universe_df["rsi"]             >= MIN_RSI)
-        & (universe_df["rsi"]             <= MAX_RSI)
-        & (universe_df["vsurge"]          >= MIN_VSURGE)
-        & (universe_df["turnover_m"]      >= MIN_LIQUIDITY_M)
+        & (universe_df["rel_strength_3m"]  >= rel_strength_min)
+        & (universe_df["rel_strength_20d"] >= MIN_REL_STRENGTH_20D)
+        & (universe_df["rsi"]              >= MIN_RSI)
+        & (universe_df["rsi"]              <= MAX_RSI)
+        & (universe_df["vsurge"]           >= MIN_VSURGE)
+        & (universe_df["turnover_m"]       >= MIN_LIQUIDITY_M)
     )
     return universe_df[mask].copy()
 
@@ -270,7 +274,7 @@ def main():
         name = row["name"]
 
         df     = get_prices(code, days=180)
-        result = calc_metrics(df, nikkei_return_3m)
+        result = calc_metrics(df, nikkei_return_3m, nk_20d)
 
         if result is None:
             errors += 1
@@ -287,9 +291,10 @@ def main():
             "vr2060":          result["vr2060"],
             "vsurge":          result["vsurge"],
             "turnover_m":      result["turnover_m"],
-            "rsi":             result["rsi"],
-            "rel_strength_3m": result["rel_strength_3m"],
-            "score":           result["score"],
+            "rsi":              result["rsi"],
+            "rel_strength_3m":  result["rel_strength_3m"],
+            "rel_strength_20d": result["rel_strength_20d"],
+            "score":            result["score"],
             "close":           result["close"],
             "slope_up":        result["slope_up"],
         })
