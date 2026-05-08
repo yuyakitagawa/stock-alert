@@ -4,18 +4,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-
-
-class _IsotonicCalibrated:
-    """cv='prefit'廃止対応: XGBoost + IsotonicRegressionキャリブレーション"""
-    def __init__(self, model, iso):
-        self.model = model
-        self.iso   = iso
-
-    def predict_proba(self, X):
-        raw = self.model.predict_proba(X)[:, 1]
-        cal = self.iso.predict(raw)
-        return np.column_stack([1 - cal, cal])
+from utils import IsotonicCalibrated
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
@@ -206,7 +195,7 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
     print(f"  テストAUC（生）: {auc_raw:.4f}")
     iso=IsotonicRegression(out_of_bounds="clip")
     iso.fit(m.predict_proba(X_cal)[:,1],y_cal)
-    cal_m=_IsotonicCalibrated(m,iso)
+    cal_m=IsotonicCalibrated(m,iso)
     auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
     print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))

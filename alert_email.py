@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features
+from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, IsotonicCalibrated
 
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
