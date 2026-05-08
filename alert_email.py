@@ -461,6 +461,25 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
         f"</div></div>"
     ) if is_bear else ""
 
+    # 個別株より日経225 ETFを推奨するバナー（新規候補が少なく、かつ日経が強い）
+    held_codes_set = {str(r["code"]) for r in results}
+    full_ranking = load_top_ranking(1000)
+    candidate_count = 0
+    if full_ranking is not None:
+        for _, row in full_ranking.iterrows():
+            if str(int(row["銘柄コード"])) not in held_codes_set:
+                candidate_count += 1
+    index_banner = (
+        f"<div style='background:#f39c12;border-radius:8px;padding:16px;margin-bottom:16px'>"
+        f"<div style='color:white;font-size:16px;font-weight:700;margin-bottom:6px'>"
+        f"💡 日経225 ETFの検討推奨</div>"
+        f"<div style='color:#fff8e1;font-size:13px;line-height:1.6'>"
+        f"新規候補が {candidate_count} 銘柄しかなく、日経225は20日で {nk20:+.1f}% と好調。<br>"
+        f"個別株が指数に追いついていない可能性があります。<br>"
+        f"<b>個別株より日経225 ETF（1321 / 1330 / 1346 等）の方が効率的かもしれません。</b>"
+        f"</div></div>"
+    ) if (not is_bear and candidate_count <= 3 and nk20 is not None and nk20 > 3.0) else ""
+
     return f"""<html><head>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <style>{_EMAIL_CSS}</style></head>
@@ -470,6 +489,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
   <div style='font-size:13px;color:#aaa'>{today} ／ {nk_str}</div>
 </div>
 {bear_banner}
+{index_banner}
 <div style='display:flex;gap:8px;margin-bottom:16px'>
   <div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.08)'>
     <div style='font-size:26px;font-weight:700;color:#c0392b'>{len(sells)}</div>
