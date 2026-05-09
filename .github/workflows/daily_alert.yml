@@ -43,9 +43,9 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-${{ github.run_number }}
+          key: ml-models-v40-weekly-${{ github.run_number }}
           restore-keys: |
-            ml-models-v37-weekly-
+            ml-models-v40-weekly-
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python screener.py
@@ -77,7 +77,7 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-${{ github.run_number }}
+          key: ml-models-v40-weekly-${{ github.run_number }}
 
       - name: ランキング結果をリポジトリに保存
         run: |

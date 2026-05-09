@@ -119,7 +119,93 @@ def calc_rsi(prices, period=14):
     return 100 - 100 / (1 + gains / losses)
 
 
-RANK_FEAT_INDICES = [0, 1, 2, 6, 7, 9]  # ret5, ret20, ret60, rsi, vol20, pos52
+RANK_FEAT_INDICES        = [0, 1, 2, 6, 7, 9]  # ret5, ret20, ret60, rsi, vol20, pos52
+SECTOR_RANK_FEAT_INDICES = [2, 7, 9]            # ret60, vol20, pos52（業種内相対）
+
+_JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+_SECTOR_CACHE = None  # プロセス内キャッシュ {code: sector}
+
+def _load_jpx_sector_map():
+    """JPX Excelから {code: 33業種区分} を一括取得してCSVキャッシュに保存"""
+    import os, io
+    cache_path = os.path.expanduser("~/stock-alert/sector_cache.csv")
+    cache = {}
+    if os.path.exists(cache_path):
+        try:
+            df = pd.read_csv(cache_path, dtype=str)
+            cache = dict(zip(df["code"], df["sector"]))
+        except Exception:
+            pass
+    if cache:
+        return cache
+    try:
+        resp = requests.get(_JPX_URL, headers=HEADERS, timeout=30)
+        df = pd.read_excel(io.BytesIO(resp.content), dtype=str)
+        df.columns = df.columns.str.strip()
+        code_col = next((c for c in df.columns if "コード" in c), None)
+        sec_col  = next((c for c in df.columns if "33業種区分" in c), None)
+        if code_col and sec_col:
+            for _, row in df.iterrows():
+                code = str(row[code_col]).strip()
+                sec  = str(row[sec_col]).strip()
+                if code and sec and sec != "nan":
+                    cache[code] = sec
+            try:
+                pd.DataFrame(list(cache.items()), columns=["code", "sector"]).to_csv(cache_path, index=False)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[WARN] JPX業種マップ取得失敗: {e}")
+    return cache
+
+
+def get_sector_cached(code):
+    """業種を取得（プロセス内キャッシュ→CSVキャッシュ→JPX一括取得）"""
+    global _SECTOR_CACHE
+    if _SECTOR_CACHE is None:
+        _SECTOR_CACHE = _load_jpx_sector_map()
+    return _SECTOR_CACHE.get(str(code), "不明")
+
+
+def add_sector_rank_features(X, sectors, dates=None):
+    """業種内パーセンタイルランク特徴量を3次元追加。
+
+    Training mode (dates provided): (date, sector) グループ内でランク化。
+    Inference mode (dates=None): sector グループ内でランク化（同日想定）。
+    Returns augmented matrix shape (n, n_features + 3).
+    """
+    X = np.array(X, dtype=float)
+    n = len(X)
+    sectors = np.array([s if s else "不明" for s in sectors])
+    rank_matrix = np.full((n, len(SECTOR_RANK_FEAT_INDICES)), 0.5, dtype=float)
+
+    if dates is not None:
+        dates = np.array(dates)
+        # (date, sector) のペアでグループ化
+        keys = np.array([f"{d}|{s}" for d, s in zip(dates, sectors)])
+        unique_keys = np.unique(keys)
+        for k in unique_keys:
+            group = np.where(keys == k)[0]
+            cnt = len(group)
+            if cnt < 3:  # 業種内3銘柄未満はランク化しない
+                continue
+            for j, fi in enumerate(SECTOR_RANK_FEAT_INDICES):
+                vals = X[group, fi]
+                order = np.argsort(np.argsort(vals))
+                rank_matrix[group, j] = order / (cnt - 1)
+    else:
+        unique_secs = np.unique(sectors)
+        for s in unique_secs:
+            group = np.where(sectors == s)[0]
+            cnt = len(group)
+            if cnt < 3:
+                continue
+            for j, fi in enumerate(SECTOR_RANK_FEAT_INDICES):
+                vals = X[group, fi]
+                order = np.argsort(np.argsort(vals))
+                rank_matrix[group, j] = order / (cnt - 1)
+
+    return np.hstack([X, rank_matrix])
 
 
 def add_cs_rank_features(X, dates=None):

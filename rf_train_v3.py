@@ -5,7 +5,7 @@ from sklearn.metrics import roc_auc_score, classification_report
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
-from utils import IsotonicCalibrated, EnsembleCalibrated
+from utils import IsotonicCalibrated, EnsembleCalibrated, get_sector_cached, add_sector_rank_features
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
@@ -275,6 +275,7 @@ def main():
     train_X,train_yr,train_yd=[],[],[]
     test_X,test_yr,test_yd=[],[],[]
     train_dates,test_dates=[],[]
+    train_codes,test_codes=[],[]
     success=0
     for i,row in stock_list.iterrows():
         df=get_prices(row["code"])
@@ -282,9 +283,9 @@ def main():
             time.sleep(0.2); continue
         for (sd,feat,lr,ld) in generate_samples(df, nk_df, screener_only=screener_only, macro_dfs=macro_dfs):
             if sd<TRAIN_CUTOFF:
-                train_X.append(feat); train_yr.append(lr); train_yd.append(ld); train_dates.append(sd)
+                train_X.append(feat); train_yr.append(lr); train_yd.append(ld); train_dates.append(sd); train_codes.append(row["code"])
             else:
-                test_X.append(feat); test_yr.append(lr); test_yd.append(ld); test_dates.append(sd)
+                test_X.append(feat); test_yr.append(lr); test_yd.append(ld); test_dates.append(sd); test_codes.append(row["code"])
         success+=1
         if success%100==0:
             print(f"  [{success}銘柄] 学習:{len(train_X):,} テスト:{len(test_X):,}")
@@ -306,8 +307,18 @@ def main():
         for j,fi in enumerate(RANK_FEAT):
             v=all_X[g,fi]; o=np.argsort(np.argsort(v)); rank_mat[g,j]=o/(len(g)-1)
     all_X_aug=np.hstack([all_X,rank_mat])
-    n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
+
+    # 業種内ランク特徴量（同日・同業種でランク化）
+    print("\n業種内ランク特徴量を計算中...")
+    all_codes=train_codes+test_codes
+    unique_codes=list(set(all_codes))
+    print(f"  {len(unique_codes)}銘柄の業種を取得中（キャッシュ利用）...")
+    sector_map={c:get_sector_cached(c) for c in unique_codes}
+    sectors_arr=[sector_map.get(c,"不明") for c in all_codes]
+    all_X_aug=add_sector_rank_features(all_X_aug,sectors_arr,dates=all_dates)
+    n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
+    print(f"  特徴量次元（業種ランク後）: {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
     print(f"上昇ラベル: 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     print(f"下落ラベル: 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")

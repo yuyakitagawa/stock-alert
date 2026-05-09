@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_macro_snapshot, IsotonicCalibrated, EnsembleCalibrated
+from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, get_macro_snapshot, IsotonicCalibrated, EnsembleCalibrated
 
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
@@ -168,20 +168,6 @@ def build_diff_section(results, prev_results):
 
 # ───────────────────────────── セクター警告 ───────────────────────────────
 
-def _fetch_sector_kabutan(code):
-    """kabutan.jpから業種文字列を取得（失敗時は空文字）"""
-    try:
-        resp = requests.get(f"https://kabutan.jp/stock/?code={code}",
-                            headers=_HEADERS, timeout=8)
-        if resp.status_code == 200:
-            m = re.search(r'業種.*?<a[^>]*>([^<]+)</a>', resp.text)
-            if m:
-                return m.group(1).strip()
-    except Exception:
-        pass
-    return ""
-
-
 def get_next_earnings_cached(code):
     """次回決算発表予定日をkabutan.jpから取得してJSONキャッシュに保存。失敗時はNone。"""
     cache_path = os.path.expanduser("~/stock-alert/earnings_cache.json")
@@ -212,28 +198,6 @@ def get_next_earnings_cached(code):
         return date
     except Exception:
         return None
-
-
-def get_sector_cached(code):
-    """業種をキャッシュから取得（なければkabutan.jpから取得してCSVキャッシュに保存）"""
-    cache_path = os.path.expanduser("~/stock-alert/sector_cache.csv")
-    cache = {}
-    if os.path.exists(cache_path):
-        try:
-            df = pd.read_csv(cache_path, dtype=str)
-            cache = dict(zip(df["code"], df["sector"]))
-        except Exception:
-            pass
-    key = str(code)
-    if key in cache:
-        return cache[key]
-    sector = _fetch_sector_kabutan(code) or "不明"
-    cache[key] = sector
-    try:
-        pd.DataFrame(list(cache.items()), columns=["code", "sector"]).to_csv(cache_path, index=False)
-    except Exception:
-        pass
-    return sector
 
 
 def build_sector_warning(results):
@@ -344,7 +308,7 @@ def _build_sell_section(results):
 
 def _build_ranking_section(results, prev_ranking_codes):
     held_codes = {str(r["code"]) for r in results}
-    ranking = load_top_ranking(5)
+    ranking = load_top_ranking(15)
     rows = ""
     count = 0
     if ranking is not None:
@@ -352,7 +316,11 @@ def _build_ranking_section(results, prev_ranking_codes):
             code_str = str(int(row["銘柄コード"]))
             if code_str in held_codes or count >= 5:
                 continue
-            net    = row.get("ネット(%)", row["上昇確率(%)"])
+            rise   = row.get("上昇確率(%)", None)
+            drop_r = row.get("下落確率(%)", None)
+            drop_v = float(drop_r) if isinstance(drop_r, (int, float)) and not isinstance(drop_r, bool) else None
+            net    = row.get("ネット(%)", rise)
+            recommend = row.get("推奨", "")
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
             rel20_r = row.get("日経比20日(%)", None)
@@ -364,29 +332,40 @@ def _build_ranking_section(results, prev_ranking_codes):
                 fund_str += f"PER{float(per):.0f}"
             if pbr and str(pbr) not in ("nan", "None", "-"):
                 fund_str += f" PBR{float(pbr):.1f}"
-            stop_val = row.get("損切り価格(円)")
-            stop_str = f"¥{int(stop_val):,}" if stop_val and str(stop_val) not in ("nan", "None") else "-"
-            stop_pct = row.get("損切り幅(%)")
-            stop_pct_str = f"({stop_pct:+.1f}%)" if stop_pct and str(stop_pct) not in ("nan", "None") else ""
+            close_val = int(row['直近株価(円)'])
+            stop_val  = row.get("損切り価格(円)")
+            stop_pct  = row.get("損切り幅(%)")
+            if stop_val and str(stop_val) not in ("nan", "None"):
+                pct_part = f" ({stop_pct:+.1f}%)" if stop_pct and str(stop_pct) not in ("nan", "None") else ""
+                stop_cell = (f"現値 ¥{close_val:,}<br>"
+                             f"<span style='color:#c0392b;font-weight:700'>↓ ¥{int(stop_val):,}</span>"
+                             f"<span style='font-size:11px;color:#c0392b'>{pct_part}</span>")
+            else:
+                stop_cell = "-"
+            drop_str = f"{drop_v:.1f}%" if drop_v is not None else "-"
             new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
             rows += (f"<tr>"
                      f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
                      f"<span style='color:#888;font-size:12px'>{code_str} ¥{int(row['直近株価(円)']):,}"
                      f"{' ' + fund_str if fund_str else ''}</span></td>"
+                     f"<td style='text-align:center'>{rise:.1f}%</td>"
+                     f"<td style='text-align:center'>{drop_str}</td>"
                      f"<td class='{_net_cls(net)}' style='text-align:center'>{net:+.1f}%</td>"
+                     f"<td style='text-align:center;font-size:11px'>{recommend}</td>"
                      f"<td class='{_rel_cls(rel20_v)}' style='text-align:center'>{_rel_str(rel20_v)}</td>"
                      f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
-                     f"<td style='text-align:center;color:#c0392b;font-size:12px'>{stop_str}{stop_pct_str}</td>"
+                     f"<td style='text-align:center;font-size:12px;line-height:1.5'>{stop_cell}</td>"
                      f"</tr>")
             count += 1
     if not rows:
         return ""
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
             f"<h2>📈 新規候補 Top{count}（ネットスコア順・未保有）</h2>"
-            f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
-            f"ネット = 上昇確率 − 下落確率 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>"
+            f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
+            f"上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
+            f"<b>損切り</b> = 現値 → ストップ目安価格（カッコ内はそこまでの下落率）。この価格を割ったら損切り検討</p>"
             f"<table><tr style='background:#e8f0fe'>"
-            f"<th>銘柄</th><th>ネット</th><th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
+            f"<th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
             f"{rows}</table></div>")
 
 
@@ -596,11 +575,13 @@ def main():
             continue
         raw_data.append((code, name, prices, feat))
 
-    # フェーズ2: クロスセクショナルランク特徴量を付加（28→34次元）
+    # フェーズ2: クロスセクショナルランク + 業種内ランク特徴量を付加（31→37→40次元）
     if not raw_data:
         print("有効銘柄なし"); return
     feats_matrix = np.array([d[3] for d in raw_data], dtype=float)
     feats_aug    = add_cs_rank_features(feats_matrix)
+    sectors      = [get_sector_cached(d[0]) for d in raw_data]
+    feats_aug    = add_sector_rank_features(feats_aug, sectors)
 
     # フェーズ3: スコア計算・結果集計
     results = []
