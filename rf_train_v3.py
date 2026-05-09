@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-from utils import IsotonicCalibrated
+from lightgbm import LGBMClassifier
+from utils import IsotonicCalibrated, EnsembleCalibrated
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
@@ -205,20 +206,39 @@ def generate_samples(df, nk_df=None, screener_only=False, macro_dfs=None):
     return samples
 
 def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
-    print(f"\n[学習] {label}モデル...")
+    print(f"\n[学習] {label}モデル（XGBoost + LightGBM アンサンブル）...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-    m=XGBClassifier(n_estimators=800,max_depth=5,learning_rate=0.04,subsample=0.8,early_stopping_rounds=50,
+
+    # XGBoost
+    print(f"  [1/2] XGBoost学習中...")
+    xgb=XGBClassifier(n_estimators=800,max_depth=5,learning_rate=0.04,subsample=0.8,early_stopping_rounds=50,
         colsample_bytree=0.7,min_child_weight=8,scale_pos_weight=spw,
         eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
-    m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
-    auc_raw=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
-    print(f"  テストAUC（生）: {auc_raw:.4f}")
+    xgb.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
+    auc_xgb=roc_auc_score(y_te,xgb.predict_proba(X_te)[:,1])
+    print(f"    XGBoost AUC: {auc_xgb:.4f}")
+
+    # LightGBM
+    print(f"  [2/2] LightGBM学習中...")
+    lgb=LGBMClassifier(n_estimators=800,max_depth=-1,num_leaves=31,learning_rate=0.04,subsample=0.8,
+        colsample_bytree=0.7,min_child_samples=20,scale_pos_weight=spw,
+        random_state=RANDOM_SEED,n_jobs=-1,verbose=-1)
+    lgb.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],callbacks=None)
+    auc_lgb=roc_auc_score(y_te,lgb.predict_proba(X_te)[:,1])
+    print(f"    LightGBM AUC: {auc_lgb:.4f}")
+
+    # アンサンブル（平均）+ キャリブレーション
+    avg_te = (xgb.predict_proba(X_te)[:,1] + lgb.predict_proba(X_te)[:,1]) / 2
+    auc_ens = roc_auc_score(y_te, avg_te)
+    print(f"  アンサンブル AUC: {auc_ens:.4f} (XGB:{auc_xgb:.4f} / LGB:{auc_lgb:.4f})")
+
+    avg_cal = (xgb.predict_proba(X_cal)[:,1] + lgb.predict_proba(X_cal)[:,1]) / 2
     iso=IsotonicRegression(out_of_bounds="clip")
-    iso.fit(m.predict_proba(X_cal)[:,1],y_cal)
-    cal_m=IsotonicCalibrated(m,iso)
-    auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
-    print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
+    iso.fit(avg_cal, y_cal)
+    cal_m=EnsembleCalibrated([xgb, lgb], iso)
+    auc_final=roc_auc_score(y_te, cal_m.predict_proba(X_te)[:,1])
+    print(f"  ✅ テストAUC（キャリブレーション後）: {auc_final:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
     return cal_m
 

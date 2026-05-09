@@ -262,6 +262,18 @@ class IsotonicCalibrated:
         return np.column_stack([1 - cal, cal])
 
 
+class EnsembleCalibrated:
+    """XGBoost + LightGBM アンサンブル + Isotonic Calibration"""
+    def __init__(self, models, iso):
+        self.models = models  # [xgb_model, lgb_model]
+        self.iso    = iso
+
+    def predict_proba(self, X):
+        probs = np.mean([m.predict_proba(X)[:, 1] for m in self.models], axis=0)
+        cal   = self.iso.predict(probs)
+        return np.column_stack([1 - cal, cal])
+
+
 _KABUTAN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept-Language": "ja,en;q=0.9",
