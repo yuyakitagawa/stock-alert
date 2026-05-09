@@ -309,9 +309,13 @@ def _build_sell_section(results):
     return section, sells
 
 
+NEW_CANDIDATE_NET_MIN = 8.0   # 新規候補のネットスコア下限
+NEW_CANDIDATE_NET_MAX = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
+
+
 def _build_ranking_section(results, prev_ranking_codes):
     held_codes = {str(r["code"]) for r in results}
-    ranking = load_top_ranking(15)
+    ranking = load_top_ranking(50)
     rows = ""
     count = 0
     if ranking is not None:
@@ -323,6 +327,13 @@ def _build_ranking_section(results, prev_ranking_codes):
             drop_r = row.get("下落確率(%)", None)
             drop_v = float(drop_r) if isinstance(drop_r, (int, float)) and not isinstance(drop_r, bool) else None
             net    = row.get("ネット(%)", rise)
+            # ネットスコア範囲フィルター（過小・過熱を回避）
+            try:
+                net_v = float(net)
+                if not (NEW_CANDIDATE_NET_MIN <= net_v <= NEW_CANDIDATE_NET_MAX):
+                    continue
+            except (TypeError, ValueError):
+                continue
             recommend = row.get("推奨", "")
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
@@ -367,7 +378,7 @@ def _build_ranking_section(results, prev_ranking_codes):
                 f"スクリーナー条件に合致する銘柄が市場に少ないか、保有銘柄と重複しています。</p>"
                 f"</div>")
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
-            f"<h2>📈 新規候補 Top{count}（ネットスコア順・未保有）</h2>"
+            f"<h2>📈 新規候補 Top{count}（ネット {int(NEW_CANDIDATE_NET_MIN)}〜{int(NEW_CANDIDATE_NET_MAX)}%・未保有）</h2>"
             f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
             f"上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
             f"<b>損切り</b> = 現値 → ストップ目安価格（カッコ内はそこまでの下落率）。この価格を割ったら損切り検討</p>"

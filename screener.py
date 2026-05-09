@@ -8,16 +8,14 @@ import argparse
 from datetime import datetime, timedelta
 from lib.utils import calc_rsi, get_sector_cached
 
-MIN_MOMENTUM     = 5.0
-MAX_MOMENTUM     = 30.0
+MIN_MOMENTUM     = 5.0    # 3ヶ月モメンタム下限（上限は撤廃しモデル判断に委ねる）
 MIN_VOLATILITY   = 20.0
 MAX_VOLATILITY   = 50.0
 MIN_MOMENTUM_20D = -3.0
 MIN_PRICE        = 300
 MIN_VOL_RATIO    = 1.0
-MIN_REL_STRENGTH = 0.05   # 3ヶ月相対強度（通常相場）
-BEAR_REL_STRENGTH = 0.10  # 3ヶ月相対強度（下落相場：日経20日 < -5%）
-MIN_REL_STRENGTH_20D = 0.0  # 20日相対強度（直近で日経に負けていない）
+MIN_REL_STRENGTH = 0.0    # 3ヶ月相対強度（通常相場）日経並みでもOK
+BEAR_REL_STRENGTH = 0.05  # 3ヶ月相対強度（下落相場：日経20日 < -5%）
 MIN_RSI          = 40.0   # 売られすぎ（底割れ）を除外
 MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
@@ -191,7 +189,6 @@ def calc_metrics(df, nikkei_return_3m=None, nikkei_return_20d=None):
 def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
     mask = (
         (universe_df["momentum"]          >= MIN_MOMENTUM)
-        & (universe_df["momentum"]        <= MAX_MOMENTUM)
         & (universe_df["momentum_20d"]    >= MIN_MOMENTUM_20D)
         & (universe_df["vol"]             >= MIN_VOLATILITY)
         & (universe_df["vol"]             <= MAX_VOLATILITY)
@@ -199,7 +196,6 @@ def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
         & (universe_df["slope_up"])
         & (universe_df["vr2060"]          >= MIN_VOL_RATIO)
         & (universe_df["rel_strength_3m"]  >= rel_strength_min)
-        & (universe_df["rel_strength_20d"] >= MIN_REL_STRENGTH_20D)
         & (universe_df["rsi"]              >= MIN_RSI)
         & (universe_df["rsi"]              <= MAX_RSI)
         & (universe_df["turnover_m"]       >= MIN_LIQUIDITY_M)
