@@ -2,11 +2,15 @@
 test_screener.py
 スクリーナー v1 条件のユニットテスト
 
-実行: python3 test_screener.py
+実行: python3 tests/test_screener.py
 """
 
+import os
+import sys
 import unittest
 import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from unittest.mock import patch
 from screener import apply_screener_v1, apply_sector_concentration_filter

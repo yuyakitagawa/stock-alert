@@ -149,8 +149,8 @@ python3 alert_email.py           # メール送信
 python3 backtest.py              # バックテスト（通常期）
 python3 backtest.py bear         # 下落相場テスト（2024年8月クラッシュ期）
 
-python3 test_screener.py         # スクリーナーユニットテスト
-python3 test_alert_email.py      # メールユニットテスト
+python3 tests/test_screener.py     # スクリーナーユニットテスト
+python3 tests/test_alert_email.py  # メールユニットテスト
 ```
 
 ---
