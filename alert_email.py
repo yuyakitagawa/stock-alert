@@ -312,12 +312,67 @@ def _build_sell_section(results):
 NEW_CANDIDATE_NET_MIN = 8.0   # 新規候補のネットスコア下限
 NEW_CANDIDATE_NET_MAX = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
 
+# セクター性質分類（観察文生成用）
+_DEFENSIVE_SECTORS = {"電気・ガス業", "食料品", "医薬品", "情報・通信業",
+                      "陸運業", "不動産業", "銀行業", "保険業", "その他金融業",
+                      "倉庫・運輸関連業", "水産・農林業", "鉱業"}
+_CYCLICAL_SECTORS = {"輸送用機器", "機械", "鉄鋼", "非鉄金属", "化学",
+                     "海運業", "金属製品", "ガラス・土石製品", "繊維製品",
+                     "石油・石炭製品", "パルプ・紙", "ゴム製品"}
+_GROWTH_SECTORS = {"電気機器", "精密機器", "サービス業", "その他製品",
+                   "卸売業", "小売業", "証券、商品先物取引業"}
+
+
+def _classify_sector(sector):
+    if sector in _DEFENSIVE_SECTORS: return "defensive"
+    if sector in _CYCLICAL_SECTORS:  return "cyclical"
+    if sector in _GROWTH_SECTORS:    return "growth"
+    return "other"
+
+
+def build_candidate_observation(candidates):
+    """新規候補リストから「今日の傾向」観察文を自動生成"""
+    if not candidates:
+        return ""
+    nets = [c["net"] for c in candidates]
+    avg_net = sum(nets) / len(nets)
+    sec_classes = [_classify_sector(c["sector"]) for c in candidates]
+    n = len(candidates)
+    cnt_def = sec_classes.count("defensive")
+    cnt_cyc = sec_classes.count("cyclical")
+    cnt_grw = sec_classes.count("growth")
+
+    # セクター傾向
+    if cnt_def >= max(3, n * 0.6):
+        sector_msg = "🛡️ <b>防御的セクター中心</b>（電力・食品・不動産など）。市場が荒れている時の典型パターン。"
+    elif cnt_cyc >= max(3, n * 0.6):
+        sector_msg = "⚙️ <b>景気敏感株中心</b>（鉄鋼・機械・化学など）。景気回復期待の表れ。"
+    elif cnt_grw >= max(3, n * 0.6):
+        sector_msg = "🚀 <b>成長株中心</b>（電気機器・精密機器・サービスなど）。リスクオン局面。"
+    else:
+        sector_msg = "🌐 <b>セクター分散</b>。特定の市場テーマなし。"
+
+    # 確信度
+    if avg_net >= 11.0:
+        conf_msg = f"📊 平均ネット {avg_net:.1f}% — モデル確信度<b>高め</b>"
+    elif avg_net >= 9.5:
+        conf_msg = f"📊 平均ネット {avg_net:.1f}% — モデル確信度<b>中</b>"
+    else:
+        conf_msg = f"📊 平均ネット {avg_net:.1f}% — モデル確信度<b>低め</b>"
+
+    return (f"<div style='background:#f0f7ff;border-left:3px solid #2980b9;"
+            f"padding:8px 12px;margin:8px 0 12px;border-radius:4px;font-size:13px;line-height:1.6'>"
+            f"<b style='color:#2980b9'>📍 今日の傾向</b><br>"
+            f"{sector_msg}<br>{conf_msg}"
+            f"</div>")
+
 
 def _build_ranking_section(results, prev_ranking_codes):
     held_codes = {str(r["code"]) for r in results}
     ranking = load_top_ranking(50)
     rows = ""
     count = 0
+    selected_candidates = []  # 観察文生成用
     if ranking is not None:
         for _, row in ranking.iterrows():
             code_str = str(int(row["銘柄コード"]))
@@ -334,6 +389,7 @@ def _build_ranking_section(results, prev_ranking_codes):
                     continue
             except (TypeError, ValueError):
                 continue
+            selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
             recommend = row.get("推奨", "")
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
@@ -377,8 +433,10 @@ def _build_ranking_section(results, prev_ranking_codes):
                 f"<p style='color:#666;margin:0;font-size:13px'>本日は条件を満たす新規候補がありません。"
                 f"スクリーナー条件に合致する銘柄が市場に少ないか、保有銘柄と重複しています。</p>"
                 f"</div>")
+    observation = build_candidate_observation(selected_candidates)
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
             f"<h2>📈 新規候補 Top{count}（ネット {int(NEW_CANDIDATE_NET_MIN)}〜{int(NEW_CANDIDATE_NET_MAX)}%・未保有）</h2>"
+            f"{observation}"
             f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
             f"上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
             f"<b>損切り</b> = 現値 → ストップ目安価格（カッコ内はそこまでの下落率）。この価格を割ったら損切り検討</p>"
