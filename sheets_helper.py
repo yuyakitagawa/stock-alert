@@ -8,9 +8,10 @@ Google Spreadsheetからwatch_list.csvの代わりにチェック銘柄を読み
 3. 「APIとサービス」→「ライブラリ」→ Google Sheets API を有効化
 4. 「APIとサービス」→「認証情報」→「サービスアカウント」を作成
 5. 作成したサービスアカウントのキー（JSON）をダウンロード
-6. ダウンロードしたJSONを ~/stock-alert/gcp_key.json に置く
+6. ダウンロードしたJSONを `gcp_key.json` としてプロジェクト直下に置く
+   （別ディレクトリを使う場合は `STOCK_ALERT_HOME` を設定）
 7. Googleスプレッドシートを新規作成し、サービスアカウントのメールアドレスを「編集者」として共有
-8. スプレッドシートのURLから SPREADSHEET_ID をコピーして .env に追加:
+8. スプレッドシートのURLから SPREADSHEET_ID をコピーして `.env` に追加:
    SPREADSHEET_ID=1aBcDeFgHiJkLmNoPqRsTuVwXyZ...
 9. スプレッドシートの1行目に「コード」「銘柄名」と入力（ヘッダー）
 10. 2行目以降に銘柄を入力（例: 9434, ソフトバンク）
@@ -28,11 +29,16 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 
-load_dotenv(os.path.expanduser("~/stock-alert/.env"))
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
+if not os.path.isdir(BASE_DIR):
+    BASE_DIR = os.path.expanduser("~/stock-alert")
+
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
-GCP_KEY_PATH   = os.path.expanduser("~/stock-alert/gcp_key.json")
-WATCH_CSV_PATH = os.path.expanduser("~/stock-alert/watch_list.csv")
+GCP_KEY_PATH   = os.path.join(BASE_DIR, "gcp_key.json")
+WATCH_CSV_PATH = os.path.join(BASE_DIR, "watch_list.csv")
 
 SCOPE = [
     "https://spreadsheets.google.com/feeds",

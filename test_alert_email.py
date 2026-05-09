@@ -2,7 +2,7 @@
 import unittest
 import os
 import sys
-sys.path.insert(0, os.path.expanduser("~/stock-alert"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from alert_email import (
     get_judgment,

@@ -129,6 +129,15 @@ rf_train_v3.py は土曜 or モデル未存在時のみ実行
 requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl gspread google-auth yfinance
 ```
 
+### パス設定（ローカル実行）
+
+各スクリプトはデフォルトで「実行中のプロジェクトディレクトリ」を参照する。  
+別ディレクトリに `.env` / モデル / CSV を置く場合は `STOCK_ALERT_HOME` を設定する。
+
+```bash
+export STOCK_ALERT_HOME=/path/to/stock-alert
+```
+
 ### 手動実行コマンド
 ```bash
 python3 screener.py              # スクリーニング（全銘柄、約30分）
