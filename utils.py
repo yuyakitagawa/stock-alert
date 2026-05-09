@@ -3,6 +3,7 @@ utils.py - 共通関数モジュール
 rank_stocks.py / alert_email.py / backtest.py で共有
 """
 import re
+import os
 import requests
 import numpy as np
 import pandas as pd
@@ -13,6 +14,10 @@ HEADERS = {
     "Accept": "application/json",
 }
 SEQ_DAYS = 60
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
+if not os.path.isdir(BASE_DIR):
+    BASE_DIR = os.path.expanduser("~/stock-alert")
 
 
 def get_prices(code, days=400):
@@ -85,8 +90,8 @@ _SECTOR_CACHE = None  # プロセス内キャッシュ {code: sector}
 
 def _load_jpx_sector_map():
     """JPX Excelから {code: 33業種区分} を一括取得してCSVキャッシュに保存"""
-    import os, io
-    cache_path = os.path.expanduser("~/stock-alert/sector_cache.csv")
+    import io
+    cache_path = os.path.join(BASE_DIR, "sector_cache.csv")
     cache = {}
     if os.path.exists(cache_path):
         try:

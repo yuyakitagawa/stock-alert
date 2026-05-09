@@ -5,10 +5,14 @@ from datetime import datetime
 
 TOP_X = 5       # X投稿に載せる銘柄数
 TOP_NOTE = 20   # note記事に載せる銘柄数
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
+if not os.path.isdir(BASE_DIR):
+    BASE_DIR = os.path.expanduser("~/stock-alert")
 
 
 def load_latest_ranking():
-    files = glob.glob(os.path.expanduser("~/stock-alert/ranking_*.csv"))
+    files = glob.glob(os.path.join(BASE_DIR, "ranking_*.csv"))
     if not files:
         print("ERROR: ranking CSVが見つかりません。先にrank_stocks.pyを実行してください")
         return None
@@ -96,8 +100,8 @@ def main():
     note_post = generate_note_post(df)
 
     date_str = datetime.now().strftime("%Y%m%d")
-    x_path = os.path.expanduser(f"~/stock-alert/post_x_{date_str}.txt")
-    note_path = os.path.expanduser(f"~/stock-alert/post_note_{date_str}.md")
+    x_path = os.path.join(BASE_DIR, f"post_x_{date_str}.txt")
+    note_path = os.path.join(BASE_DIR, f"post_note_{date_str}.md")
 
     with open(x_path, "w", encoding="utf-8") as f:
         f.write(x_post)

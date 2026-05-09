@@ -11,7 +11,8 @@ FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾�
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
-SAVE_DIR=os.path.expanduser("~/stock-alert")
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVE_DIR = PROJECT_DIR if os.path.isdir(PROJECT_DIR) else os.path.expanduser("~/stock-alert")
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
 
 # スクリーナーフィルター定数（screener.pyと同値に保つ）
@@ -314,6 +315,7 @@ def main():
     with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
         json.dump({"rise":float(rise_auc),"drop":float(drop_auc)},f)
     print(f"\nデータ保存: {npz_path}")
-    print("\n保存完了 ✅  次: python3 ~/stock-alert/validation.py  →  python3 ~/stock-alert/rank_stocks.py")
+    print("\n保存完了 ✅  次: python3 validation.py  →  python3 rank_stocks.py")
 
-main()
+if __name__ == "__main__":
+    main()

@@ -51,6 +51,10 @@ NET_MIN        = _args.net_min
 COMPARE_MODE   = _args.compare
 NIKKEI_CODE    = "^N225"
 SAMPLE_N       = 200
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
+if not os.path.isdir(BASE_DIR):
+    BASE_DIR = os.path.expanduser("~/stock-alert")
 
 # BACKTEST_DATEから91営業日前（≈130日）のデータが必要なため動的計算
 # 例: bear mode (2024-07-01) → (2026-05-04 - 2024-07-01) + 180 ≈ 853日
@@ -308,8 +312,8 @@ def main():
 
     # モデル読み込み（--screened フラグでスクリーナー特化モデルを使用）
     model_suffix = "_screened" if getattr(_args, "screened", False) else ""
-    rise_path = os.path.expanduser(f"~/stock-alert/rf_model{model_suffix}.pkl")
-    drop_path = os.path.expanduser(f"~/stock-alert/rf_drop_model{model_suffix}.pkl")
+    rise_path = os.path.join(BASE_DIR, f"rf_model{model_suffix}.pkl")
+    drop_path = os.path.join(BASE_DIR, f"rf_drop_model{model_suffix}.pkl")
     if not os.path.exists(rise_path):
         print(f"ERROR: {rise_path} が見つかりません")
         return
@@ -520,7 +524,7 @@ def main():
     _print_detail(top_df, f"上位{len(top_df)}")
 
     # CSV保存
-    out_path = os.path.expanduser(f"~/stock-alert/backtest_{BACKTEST_DATE}_{TODAY}.csv")
+    out_path = os.path.join(BASE_DIR, f"backtest_{BACKTEST_DATE}_{TODAY}.csv")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"\n全結果保存: {out_path}")
     print("完了")

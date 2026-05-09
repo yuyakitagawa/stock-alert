@@ -13,6 +13,10 @@ RISE_THRESHOLD = 15.0
 TOP_SHOW = 10
 BEAR_MARKET_THRESHOLD = -5.0
 
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
+if not os.path.isdir(BASE_DIR):
+    BASE_DIR = os.path.expanduser("~/stock-alert")
 
 
 
@@ -29,10 +33,10 @@ def main():
     print("=" * 55)
 
     # モデル読み込み（上昇・下落）
-    rise_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
-    drop_path = os.path.expanduser("~/stock-alert/rf_drop_model.pkl")
+    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
+    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
     if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pkl が見つかりません。先に rf_predict.py を実行してください")
+        print("ERROR: rf_model.pkl が見つかりません。先に rf_train_v3.py を実行してください")
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
@@ -53,7 +57,7 @@ def main():
         is_bear = False
 
     # スクリーナーCSV読み込み
-    files = glob.glob(os.path.expanduser("~/stock-alert/screener_*.csv"))
+    files = glob.glob(os.path.join(BASE_DIR, "screener_*.csv"))
     if not files:
         print("ERROR: screener CSVが見つかりません")
         return
@@ -211,7 +215,7 @@ def main():
 
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")
-    out_path = os.path.expanduser(f"~/stock-alert/ranking_{date_str}.csv")
+    out_path = os.path.join(BASE_DIR, f"ranking_{date_str}.csv")
     result_df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"\n全結果保存: {out_path}")
     print("完了")

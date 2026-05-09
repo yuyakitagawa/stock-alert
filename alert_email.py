@@ -14,7 +14,12 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, IsotonicCalibrated, EnsembleCalibrated
 
-load_dotenv(os.path.expanduser("~/stock-alert/.env"))
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
+if not os.path.isdir(BASE_DIR):
+    BASE_DIR = os.path.expanduser("~/stock-alert")
+
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 GMAIL_ADDRESS         = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD    = os.getenv("GMAIL_APP_PASSWORD")
@@ -30,12 +35,12 @@ def load_held_stocks():
     """Google SheetsまたはCSVからチェック銘柄を読み込む"""
     try:
         import sys
-        sys.path.insert(0, os.path.expanduser("~/stock-alert"))
+        sys.path.insert(0, BASE_DIR)
         from sheets_helper import load_watch_list
         return load_watch_list()
     except Exception as e:
         print(f"[WARN] sheets_helper失敗、CSVで代替: {e}")
-        csv_path = os.path.expanduser("~/stock-alert/watch_list.csv")
+        csv_path = os.path.join(BASE_DIR, "watch_list.csv")
         if not os.path.exists(csv_path):
             print("ERROR: watch_list.csvが見つかりません")
             return {}
@@ -45,7 +50,7 @@ def load_held_stocks():
 
 def load_top_ranking(n=15):
     """最新のランキングCSVから上位N銘柄を読み込む"""
-    files = glob.glob(os.path.expanduser("~/stock-alert/ranking_*.csv"))
+    files = glob.glob(os.path.join(BASE_DIR, "ranking_*.csv"))
     if not files:
         return None
     df = pd.read_csv(max(files, key=os.path.getmtime))
@@ -54,7 +59,7 @@ def load_top_ranking(n=15):
 
 def load_prev_ranking_codes():
     """前回（最新より1つ古い）のランキングCSVから銘柄コードセットを取得"""
-    files = sorted(glob.glob(os.path.expanduser("~/stock-alert/ranking_*.csv")),
+    files = sorted(glob.glob(os.path.join(BASE_DIR, "ranking_*.csv")),
                    key=os.path.getmtime)
     if len(files) < 2:
         return set()
@@ -67,7 +72,7 @@ def load_prev_ranking_codes():
 
 def load_prev_results():
     """昨日のアラート結果をJSONから読み込む（差分計算用）"""
-    path = os.path.expanduser("~/stock-alert/alert_results_prev.json")
+    path = os.path.join(BASE_DIR, "alert_results_prev.json")
     if not os.path.exists(path):
         return {}
     try:
@@ -80,7 +85,7 @@ def load_prev_results():
 
 def save_results_for_tomorrow(results):
     """今日のアラート結果をJSONで保存（明日の差分計算用）"""
-    path = os.path.expanduser("~/stock-alert/alert_results_prev.json")
+    path = os.path.join(BASE_DIR, "alert_results_prev.json")
     to_save = [{"code": r["code"], "name": r["name"], "net": round(r["net"], 2), "signal": r["signal"]}
                for r in results]
     try:
@@ -170,7 +175,7 @@ def build_diff_section(results, prev_results):
 
 def get_next_earnings_cached(code):
     """次回決算発表予定日をkabutan.jpから取得してJSONキャッシュに保存。失敗時はNone。"""
-    cache_path = os.path.expanduser("~/stock-alert/earnings_cache.json")
+    cache_path = os.path.join(BASE_DIR, "earnings_cache.json")
     today_str  = datetime.now().strftime("%Y-%m-%d")
     cache = {}
     if os.path.exists(cache_path):
@@ -532,10 +537,10 @@ def main():
         return
     print(f"チェック銘柄: {len(held_stocks)}銘柄")
 
-    rise_path = os.path.expanduser("~/stock-alert/rf_model.pkl")
-    drop_path = os.path.expanduser("~/stock-alert/rf_drop_model.pkl")
+    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
+    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
     if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pklが見つかりません。先にrf_predict.pyを実行してください")
+        print("ERROR: rf_model.pklが見つかりません。先にrf_train_v3.pyを実行してください")
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
