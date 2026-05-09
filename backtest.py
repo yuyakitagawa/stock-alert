@@ -188,7 +188,7 @@ def get_nikkei_prices():
 
 # ── 特徴量計算 ──────────────────────────────
 
-def extract_features_at(hist, target_date, nk_rets=None, macro_vals=None):
+def extract_features_at(hist, target_date, nk_rets=None):
     """target_date時点の特徴量を計算"""
     close = hist["Close"].dropna()
     close.index = pd.to_datetime(close.index).date
@@ -271,14 +271,9 @@ def extract_features_at(hist, target_date, nk_rets=None, macro_vals=None):
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
 
-    # 海外マクロ3特徴量
-    usdjpy_20d = macro_vals[0] if macro_vals is not None else 0.0
-    ust10y     = macro_vals[1] if macro_vals is not None else 0.0
-    vix_lvl    = macro_vals[2] if macro_vals is not None else 0.0
-
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [usdjpy_20d, ust10y, vix_lvl]
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
     return feat

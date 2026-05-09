@@ -93,7 +93,7 @@ def calc_rsi(p,period=14):
     d=np.diff(p[-(period+1):]); g=np.where(d>0,d,0).mean(); l=np.where(d<0,-d,0).mean()
     return 100.0 if l==0 else 100-100/(1+g/l)
 
-def compute_feat(p, v=None, nk_rets=None, macro_vals=(0.0, 0.0, 0.0)):
+def compute_feat(p, v=None, nk_rets=None):
     if len(p)<91 or p[-1]==0: return None
     c=p[-1]
     r5=(c-p[-6])/p[-6] if len(p)>=6 else 0
@@ -132,7 +132,7 @@ def compute_feat(p, v=None, nk_rets=None, macro_vals=(0.0, 0.0, 0.0)):
     nk5  = nk_rets[0] if nk_rets is not None else 0.0
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
-    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+compute_seq_features(seq_raw)+list(macro_vals)
+    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+compute_seq_features(seq_raw)
     return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
 def passes_screener_at(p, v_slice, nk_ret_3m):
@@ -156,16 +156,12 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
     return True
 
 
-def generate_samples(df, nk_df=None, screener_only=False, macro_dfs=None):
+def generate_samples(df, nk_df=None, screener_only=False):
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
     samples=[]; start_i=max(252+SEQ_DAYS,90)
     nk_dates=list(nk_df.index) if nk_df is not None else []
     nk_closes=nk_df["Close"].values if nk_df is not None else np.array([])
-    # macro_dfs: dict of {usdjpy, ust10y, vix} -> DataFrame
-    md = macro_dfs or {}
-    md_dates = {k: list(v.index) for k, v in md.items()}
-    md_close = {k: v["Close"].values for k, v in md.items()}
     for i in range(start_i,n-FORECAST,SAMPLE_INTERVAL):
         v_slice=volumes[:i+1] if volumes is not None else None
         nk_rets=None; nk_ret_3m=None; i0=None
@@ -180,26 +176,9 @@ def generate_samples(df, nk_df=None, screener_only=False, macro_dfs=None):
                 nk_rets=(nk5,nk20,nk60)
                 i63=max(0,i0-63)
                 nk_ret_3m=(nk_closes[i0]-nk_closes[i63])/nk_closes[i63] if nk_closes[i63]!=0 else None
-        # マクロ指標を該当日時点で取得
-        d0=dates[i]
-        usdjpy_20d=ust10y=vix_lvl=0.0
-        if "usdjpy" in md_close and len(md_close["usdjpy"])>0:
-            j=next((k for k,d in enumerate(md_dates["usdjpy"]) if d>=d0),None)
-            if j is not None and j>=20:
-                p=md_close["usdjpy"]
-                usdjpy_20d=(p[j]-p[j-20])/p[j-20] if p[j-20]!=0 else 0.0
-        if "ust10y" in md_close and len(md_close["ust10y"])>0:
-            j=next((k for k,d in enumerate(md_dates["ust10y"]) if d>=d0),None)
-            if j is not None:
-                ust10y=float(md_close["ust10y"][j])/10.0
-        if "vix" in md_close and len(md_close["vix"])>0:
-            j=next((k for k,d in enumerate(md_dates["vix"]) if d>=d0),None)
-            if j is not None:
-                vix_lvl=float(md_close["vix"][j])/100.0
-        macro_vals=(round(usdjpy_20d,4), round(ust10y,4), round(vix_lvl,4))
         if screener_only and not passes_screener_at(closes[:i+1], v_slice, nk_ret_3m):
             continue
-        feat=compute_feat(closes[:i+1], v_slice, nk_rets, macro_vals)
+        feat=compute_feat(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
         samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
@@ -261,16 +240,6 @@ def main():
     nk_df=get_nikkei_df()
     if nk_df is not None: print(f"  日経225: {len(nk_df)}日分取得")
     else: print("  日経225取得失敗 → 絶対リターンで学習")
-    print("\nマクロ指標データ取得中（USD/JPY、米10年金利、VIX）...")
-    from utils import get_macro_df
-    macro_dfs={}
-    for key,sym in [("usdjpy","USDJPY=X"), ("ust10y","%5ETNX"), ("vix","%5EVIX")]:
-        d=get_macro_df(sym, days=2200)
-        if d is not None:
-            macro_dfs[key]=d
-            print(f"  {key}: {len(d)}日分取得")
-        else:
-            print(f"  {key}: 取得失敗")
     print(f"\n株価取得中（30〜60分かかります）...")
     train_X,train_yr,train_yd=[],[],[]
     test_X,test_yr,test_yd=[],[],[]
@@ -281,7 +250,7 @@ def main():
         df=get_prices(row["code"])
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
-        for (sd,feat,lr,ld) in generate_samples(df, nk_df, screener_only=screener_only, macro_dfs=macro_dfs):
+        for (sd,feat,lr,ld) in generate_samples(df, nk_df, screener_only=screener_only):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld); train_dates.append(sd); train_codes.append(row["code"])
             else:

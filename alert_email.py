@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, get_macro_snapshot, IsotonicCalibrated, EnsembleCalibrated
+from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, IsotonicCalibrated, EnsembleCalibrated
 
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
@@ -551,10 +551,6 @@ def main():
     prev_ranking_codes = load_prev_ranking_codes()
     prev_results       = load_prev_results()
 
-    print("マクロ指標取得中（USD/JPY、米10年金利、VIX）...")
-    macro_vals = get_macro_snapshot()
-    print(f"  USD/JPY 20日リターン: {macro_vals[0]*100:+.2f}% / 米10年金利: {macro_vals[1]*10:.2f}% / VIX: {macro_vals[2]*100:.1f}")
-
     # フェーズ1: 全銘柄の特徴量を収集
     raw_data = []
     for code, name in held_stocks.items():
@@ -567,7 +563,6 @@ def main():
             prices["Close"].values,
             prices["Volume"].tolist() if "Volume" in prices.columns else None,
             nk_rets,
-            macro_vals,
         )
         if feat is None:
             continue
