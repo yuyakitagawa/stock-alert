@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests pandas numpy scikit-learn joblib \
-            python-dotenv openpyxl xlrd xgboost \
+            python-dotenv openpyxl xlrd xgboost lightgbm \
             gspread google-auth yfinance
 
       - name: Link repo to ~/stock-alert
