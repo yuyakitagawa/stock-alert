@@ -6,7 +6,7 @@ import os
 import glob
 from datetime import datetime, timedelta
 import joblib
-from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, get_macro_snapshot, IsotonicCalibrated, EnsembleCalibrated, HEADERS, SEQ_DAYS
+from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, get_fundamentals, get_macro_snapshot, IsotonicCalibrated, EnsembleCalibrated, HEADERS, SEQ_DAYS
 
 FORECAST = 63
 RISE_THRESHOLD = 15.0
@@ -86,11 +86,14 @@ def main():
             print(f"  {i+1}/{len(codes)} 取得済み...")
         time.sleep(0.3)
 
-    # フェーズ2: クロスセクショナルランク特徴量を付加（同日内での相対順位）
+    # フェーズ2: クロスセクショナルランク + 業種内ランク特徴量を付加
     if not raw_data:
         print("ERROR: 有効銘柄なし"); return
     feats_matrix = np.array([d[2] for d in raw_data], dtype=float)
     feats_aug = add_cs_rank_features(feats_matrix)  # 推論時は全銘柄を同一日として扱う
+    print("業種データ取得中...")
+    sectors = [get_sector_cached(d[0]) for d in raw_data]
+    feats_aug = add_sector_rank_features(feats_aug, sectors)
 
     # フェーズ3: モデルスコア計算
     results = []

@@ -15,6 +15,5 @@ post_*.md
 watch_list.csv
 gcp_key.json
 alert_results_prev.json
-sector_cache.csv
 earnings_cache.json
 results/
