@@ -6,7 +6,7 @@ import io
 import os
 import argparse
 from datetime import datetime, timedelta
-from utils import calc_rsi
+from utils import calc_rsi, get_sector_cached
 
 MIN_MOMENTUM     = 5.0
 MAX_MOMENTUM     = 30.0
@@ -23,6 +23,7 @@ MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 MIN_VSURGE       = 1.3    # 直近出来高 ≥ 20日平均の1.3倍（資金流入シグナル）
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
+MAX_SECTOR_COUNT = 2      # 同セクター通過上限（3銘柄以上集まったらバブル兆候とみなしセクター全除外）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -212,6 +213,23 @@ def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
     return universe_df[mask].copy()
 
 
+def apply_sector_concentration_filter(df, max_count=MAX_SECTOR_COUNT):
+    """同セクター通過数が max_count を超えたら、そのセクター全銘柄を除外。
+    バブル兆候の回避（特定セクターが過熱した時の一斉崩壊リスクを抑える）。"""
+    if df.empty or "code" not in df.columns:
+        return df, []
+    sectors = [get_sector_cached(c) for c in df["code"]]
+    df = df.copy()
+    df["sector"] = sectors
+    sec_counts = df["sector"].value_counts()
+    over = sec_counts[sec_counts > max_count].index.tolist()
+    if not over:
+        return df.drop(columns=["sector"]), []
+    excluded = df[df["sector"].isin(over)]
+    kept = df[~df["sector"].isin(over)]
+    return kept.drop(columns=["sector"]), [(s, int(sec_counts[s])) for s in over]
+
+
 def _format_output(df):
     out = df[["code", "name", "close", "vr2060", "momentum", "vol", "score"]].rename(columns={
         "code":     "銘柄コード",
@@ -321,6 +339,10 @@ def main():
 
     rel_strength_min = BEAR_REL_STRENGTH if is_bear else MIN_REL_STRENGTH
     filtered = apply_screener_v1(universe_df, rel_strength_min=rel_strength_min)
+    filtered, excluded_sectors = apply_sector_concentration_filter(filtered)
+    if excluded_sectors:
+        secs_str = " / ".join([f"{s}({n}銘柄)" for s, n in excluded_sectors])
+        print(f"\n⚠️ セクター集中除外: {secs_str}")
     if not filtered.empty:
         out      = _format_output(filtered)
         out_path = f"screener_v1_{date_str}.csv"

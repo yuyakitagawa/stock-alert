@@ -8,7 +8,8 @@ test_screener.py
 import unittest
 import pandas as pd
 
-from screener import apply_screener_v1
+from unittest.mock import patch
+from screener import apply_screener_v1, apply_sector_concentration_filter
 
 
 def _make_universe(rows):
@@ -163,6 +164,35 @@ class TestApplyScreenerV1(unittest.TestCase):
         result = apply_screener_v1(df)
         self.assertEqual(len(result), 1)
         self.assertEqual(result.iloc[0]["code"], "OK")
+
+
+class TestSectorConcentrationFilter(unittest.TestCase):
+
+    def test_under_threshold_keeps_all(self):
+        """同セクター2銘柄は除外しない（閾値以下）"""
+        df = pd.DataFrame([{"code": "A"}, {"code": "B"}, {"code": "C"}])
+        with patch("screener.get_sector_cached",
+                   side_effect=lambda c: {"A": "機械", "B": "機械", "C": "電気機器"}[c]):
+            kept, excluded = apply_sector_concentration_filter(df)
+        self.assertEqual(len(kept), 3)
+        self.assertEqual(excluded, [])
+
+    def test_three_in_same_sector_excludes_all(self):
+        """同セクター3銘柄が出たら、そのセクター全銘柄を除外"""
+        df = pd.DataFrame([{"code": "A"}, {"code": "B"}, {"code": "C"}, {"code": "D"}])
+        with patch("screener.get_sector_cached",
+                   side_effect=lambda c: {"A": "不動産業", "B": "不動産業", "C": "不動産業", "D": "機械"}[c]):
+            kept, excluded = apply_sector_concentration_filter(df)
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept.iloc[0]["code"], "D")
+        self.assertEqual(excluded, [("不動産業", 3)])
+
+    def test_empty_input(self):
+        """空のDataFrameは何もせず返す"""
+        df = pd.DataFrame(columns=["code"])
+        kept, excluded = apply_sector_concentration_filter(df)
+        self.assertTrue(kept.empty)
+        self.assertEqual(excluded, [])
 
 
 if __name__ == "__main__":
