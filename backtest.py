@@ -19,7 +19,7 @@ import pandas as pd
 import joblib
 import argparse as _argparse
 from datetime import datetime, date, timedelta
-from utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, IsotonicCalibrated, HEADERS, SEQ_DAYS
+from lib.utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, IsotonicCalibrated, HEADERS, SEQ_DAYS
 
 # ── パラメータ ──────────────────────────────
 BACKTEST_DATE  = date(2026, 2, 3)    # 予測基準日（約3ヶ月前=63営業日前）

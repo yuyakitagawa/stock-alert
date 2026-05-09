@@ -6,7 +6,7 @@ import os
 import glob
 from datetime import datetime, timedelta
 import joblib
-from utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS
 
 FORECAST = 63
 RISE_THRESHOLD = 15.0
