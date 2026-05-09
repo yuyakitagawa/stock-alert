@@ -14,7 +14,7 @@ HEADERS = {
     "Accept": "application/json",
 }
 SEQ_DAYS = 60
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
 if not os.path.isdir(BASE_DIR):
     BASE_DIR = os.path.expanduser("~/stock-alert")

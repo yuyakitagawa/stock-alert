@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, IsotonicCalibrated
+from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, IsotonicCalibrated
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
@@ -34,9 +34,7 @@ _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit
 def load_held_stocks():
     """Google SheetsまたはCSVからチェック銘柄を読み込む"""
     try:
-        import sys
-        sys.path.insert(0, BASE_DIR)
-        from sheets_helper import load_watch_list
+        from lib.sheets_helper import load_watch_list
         return load_watch_list()
     except Exception as e:
         print(f"[WARN] sheets_helper失敗、CSVで代替: {e}")

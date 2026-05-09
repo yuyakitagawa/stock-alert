@@ -6,7 +6,7 @@ import io
 import os
 import argparse
 from datetime import datetime, timedelta
-from utils import calc_rsi, get_sector_cached
+from lib.utils import calc_rsi, get_sector_cached
 
 MIN_MOMENTUM     = 5.0
 MAX_MOMENTUM     = 30.0
