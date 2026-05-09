@@ -56,14 +56,9 @@ class TestApplyScreenerV1(unittest.TestCase):
         df = _make_universe([{"code": "A", "momentum": 4.9}])
         self.assertTrue(apply_screener_v1(df).empty)
 
-    def test_momentum_above_30pct_excluded(self):
-        """3ヶ月モメンタム > +30% は除外される（急騰後ミーンリバージョン防止）"""
-        df = _make_universe([{"code": "A", "momentum": 31.0}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_momentum_at_upper_bound_passes(self):
-        """3ヶ月モメンタム = +30% はちょうど通過する（境界値 <=）"""
-        df = _make_universe([{"code": "A", "momentum": 30.0}])
+    def test_momentum_above_30pct_passes(self):
+        """3ヶ月モメンタム > +30% も通過（上限撤廃、モデル判断に委ねる）"""
+        df = _make_universe([{"code": "A", "momentum": 50.0}])
         self.assertEqual(len(apply_screener_v1(df)), 1)
 
     def test_vol_below_20pct_excluded(self):
@@ -92,19 +87,14 @@ class TestApplyScreenerV1(unittest.TestCase):
         self.assertEqual(len(apply_screener_v1(df)), 1)
 
     def test_negative_relative_strength_excluded(self):
-        """日経比相対強度 < 0 は除外される"""
+        """日経比相対強度 < 0 は除外される（日経に負けている銘柄）"""
         df = _make_universe([{"code": "A", "rel_strength_3m": -0.01}])
         self.assertTrue(apply_screener_v1(df).empty)
 
-    def test_at_threshold_relative_strength_passes(self):
-        """日経比相対強度 = +5%（閾値ちょうど）は通過する（境界値 >=）"""
-        df = _make_universe([{"code": "A", "rel_strength_3m": 0.05}])
+    def test_zero_relative_strength_passes(self):
+        """日経比相対強度 = 0（日経並み）はちょうど通過する"""
+        df = _make_universe([{"code": "A", "rel_strength_3m": 0.0}])
         self.assertEqual(len(apply_screener_v1(df)), 1)
-
-    def test_below_threshold_relative_strength_excluded(self):
-        """日経比相対強度 = +4%（閾値未満）は除外される"""
-        df = _make_universe([{"code": "A", "rel_strength_3m": 0.04}])
-        self.assertTrue(apply_screener_v1(df).empty)
 
     def test_rsi_below_40_excluded(self):
         """RSI < 40（売られすぎ）は除外される"""
@@ -120,16 +110,6 @@ class TestApplyScreenerV1(unittest.TestCase):
         """RSI = 40 / 70 はちょうど通過する（境界値 >=/<= ）"""
         df = _make_universe([{"code": "L", "rsi": 40.0}, {"code": "H", "rsi": 70.0}])
         self.assertEqual(len(apply_screener_v1(df)), 2)
-
-    def test_negative_20d_relative_strength_excluded(self):
-        """直近20日で日経225より負けている銘柄は除外される"""
-        df = _make_universe([{"code": "A", "rel_strength_20d": -0.001}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_zero_20d_relative_strength_passes(self):
-        """20日相対強度 = 0（日経と同等）はちょうど通過する"""
-        df = _make_universe([{"code": "A", "rel_strength_20d": 0.0}])
-        self.assertEqual(len(apply_screener_v1(df)), 1)
 
     def test_low_liquidity_excluded(self):
         """20日平均売買代金 < 50百万円は除外される"""
@@ -151,9 +131,9 @@ class TestApplyScreenerV1(unittest.TestCase):
         """複数銘柄のうち条件を満たすもののみ通過する"""
         df = _make_universe([
             {"code": "OK",  "momentum": 10.0, "vol": 30.0, "close": 500.0},
-            {"code": "NG1", "momentum": 35.0},
-            {"code": "NG2", "vol": 10.0},
-            {"code": "NG3", "close": 200.0},
+            {"code": "NG1", "momentum": 4.0},  # モメンタム下限未満
+            {"code": "NG2", "vol": 10.0},      # ボラ下限未満
+            {"code": "NG3", "close": 200.0},   # 株価下限未満
         ])
         result = apply_screener_v1(df)
         self.assertEqual(len(result), 1)
