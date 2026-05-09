@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, IsotonicCalibrated, EnsembleCalibrated
+from utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, IsotonicCalibrated
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
@@ -575,13 +575,11 @@ def main():
             continue
         raw_data.append((code, name, prices, feat))
 
-    # フェーズ2: クロスセクショナルランク + 業種内ランク特徴量を付加（31→37→40次元）
+    # フェーズ2: クロスセクショナルランク特徴量を付加（28→34次元）
     if not raw_data:
         print("有効銘柄なし"); return
     feats_matrix = np.array([d[3] for d in raw_data], dtype=float)
     feats_aug    = add_cs_rank_features(feats_matrix)
-    sectors      = [get_sector_cached(d[0]) for d in raw_data]
-    feats_aug    = add_sector_rank_features(feats_aug, sectors)
 
     # フェーズ3: スコア計算・結果集計
     results = []

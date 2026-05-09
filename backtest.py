@@ -19,7 +19,7 @@ import pandas as pd
 import joblib
 import argparse as _argparse
 from datetime import datetime, date, timedelta
-from utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, add_sector_rank_features, get_sector_cached, IsotonicCalibrated, EnsembleCalibrated, HEADERS, SEQ_DAYS
+from utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, IsotonicCalibrated, HEADERS, SEQ_DAYS
 
 # ── パラメータ ──────────────────────────────
 BACKTEST_DATE  = date(2026, 2, 3)    # 予測基準日（約3ヶ月前=63営業日前）
@@ -392,12 +392,10 @@ def main():
         raw_screener = [raw_screener[j] for j in keep]
         print(f"スクリーナー v1: {len(pass_codes)} 銘柄通過 / {len(raw_feats)} 件処理")
 
-    # フェーズ2: クロスセクショナルランク + 業種内ランク特徴量を付加
+    # フェーズ2: クロスセクショナルランク特徴量を付加
     if not raw_feats:
         print("ERROR: データが取得できませんでした"); return
     feats_aug = add_cs_rank_features(np.array(raw_feats, dtype=float))
-    sectors   = [get_sector_cached(m[0]) for m in raw_meta]
-    feats_aug = add_sector_rank_features(feats_aug, sectors)
 
     # フェーズ3: モデルスコアと実績リターンを集計
     results = []
