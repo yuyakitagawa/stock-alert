@@ -8,8 +8,6 @@ screener_*.csv
 ranking_*.csv
 backtest_*.csv
 alpha_analysis_*.csv
-post_*.txt
-post_*.md
 *.pyc
 .DS_Store
 watch_list.csv

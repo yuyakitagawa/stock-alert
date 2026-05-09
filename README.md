@@ -25,7 +25,6 @@ rf_train_v3.py は土曜 or モデル未存在時のみ実行
 | `alert_email.py` | チェック銘柄の評価＋新規候補をGmailで送信 |
 | `utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features 等）|
 | `backtest.py` | バックテスト（先読みバイアスなし）|
-| `generate_post.py` | SNS投稿用テキスト生成 |
 | `sheets_helper.py` | Googleスプレッドシート連携 |
 | `test_screener.py` | スクリーナー条件のユニットテスト（23件）|
 | `test_alert_email.py` | メール生成ヘルパーのユニットテスト（20件）|

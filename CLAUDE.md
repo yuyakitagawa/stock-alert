@@ -9,7 +9,7 @@
 - `utils.py`: 特徴量定義(34次元) & 共通関数。※変更時は要申告。
 - `rf_train_v3.py`: XGBoost学習(上昇/下落)。※土曜以外は触らない。
 - `screener.py` -> `rank_stocks.py`: 抽出 & ネットスコア計算。
-- `alert_email.py` / `generate_post.py`: 出力系。
+- `alert_email.py`: 出力系（Gmail送信）。
 - `backtest.py`: 検証。`bear`モード（2024/08下落相場）をテスト基準とする。
 
 ## 2. Model & Strategy (規律)
