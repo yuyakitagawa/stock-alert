@@ -363,7 +363,11 @@ def _build_ranking_section(results, prev_ranking_codes):
                      f"</tr>")
             count += 1
     if not rows:
-        return ""
+        return (f"<div class='card' style='border-left:4px solid #2980b9'>"
+                f"<h2>📈 新規候補</h2>"
+                f"<p style='color:#666;margin:0;font-size:13px'>本日は条件を満たす新規候補がありません。"
+                f"スクリーナー条件に合致する銘柄が市場に少ないか、保有銘柄と重複しています。</p>"
+                f"</div>")
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
             f"<h2>📈 新規候補 Top{count}（ネットスコア順・未保有）</h2>"
             f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
