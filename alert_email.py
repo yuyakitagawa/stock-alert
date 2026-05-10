@@ -47,8 +47,10 @@ def load_held_stocks():
 
 
 def load_top_ranking(n=15):
-    """最新のランキングCSVから上位N銘柄を読み込む"""
+    """最新のランキングCSVから上位N銘柄を読み込む（BASE_DIR → results/ の順で探す）"""
     files = glob.glob(os.path.join(BASE_DIR, "ranking_*.csv"))
+    if not files:
+        files = glob.glob(os.path.join(BASE_DIR, "results", "ranking_*.csv"))
     if not files:
         return None
     df = pd.read_csv(max(files, key=os.path.getmtime))
@@ -57,8 +59,9 @@ def load_top_ranking(n=15):
 
 def load_prev_ranking_codes():
     """前回（最新より1つ古い）のランキングCSVから銘柄コードセットを取得"""
-    files = sorted(glob.glob(os.path.join(BASE_DIR, "ranking_*.csv")),
-                   key=os.path.getmtime)
+    files = sorted(glob.glob(os.path.join(BASE_DIR, "ranking_*.csv")), key=os.path.getmtime)
+    if not files:
+        files = sorted(glob.glob(os.path.join(BASE_DIR, "results", "ranking_*.csv")), key=os.path.getmtime)
     if len(files) < 2:
         return set()
     try:
