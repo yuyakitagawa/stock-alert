@@ -125,16 +125,18 @@ def main():
         else:
             judgment = "🔴売り検討"
 
-        if net >= 10:
+        if net > 13:
+            recommend = "🟡 高値警戒"
+        elif net >= 8:
             recommend = "✅ 買い"
         elif net >= 5:
-            recommend = "🔵 買い候補"
+            recommend = "🔵 様子見"
         elif net < -10:
-            recommend = "🔴 売り"
+            recommend = "🔴 下降シグナル"
         elif net < -5:
-            recommend = "⚠️ 売り候補"
+            recommend = "⚠️ 弱気シグナル"
         else:
-            recommend = "⏳ 様子見"
+            recommend = "⏳ 方向感なし"
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
