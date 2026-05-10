@@ -47,6 +47,14 @@ jobs:
           restore-keys: |
             ml-models-v34baseline-weekly-
 
+      - name: Restore alert prev results
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/alert_results_prev.json
+          key: alert-prev-${{ github.run_number }}
+          restore-keys: |
+            alert-prev-
+
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python screener.py
 
@@ -75,6 +83,13 @@ jobs:
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
           key: ml-models-v34baseline-weekly-${{ github.run_number }}
+
+      - name: Save alert prev results
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/alert_results_prev.json
+          key: alert-prev-${{ github.run_number }}
 
       - name: ランキング結果をリポジトリに保存
         run: |
