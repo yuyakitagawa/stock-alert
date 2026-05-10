@@ -597,6 +597,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 {_build_priority_section(priority_actions or [])}
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes)}
+{build_sector_warning(results)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
@@ -606,7 +607,6 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
   </table>
 </div>
 {build_diff_section(results, prev_results)}
-{build_sector_warning(results)}
 <p style='color:#aaa;font-size:11px;text-align:center;margin-top:8px'>
   このメールは過去データに基づく参考情報です。投資判断はご自身の責任で行ってください。
 </p>
