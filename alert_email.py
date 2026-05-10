@@ -129,7 +129,7 @@ def build_priority_actions(results):
         dp = r.get("drop_prob")
         detail = f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%" if dp is not None else f"ネット {r['net']:+.1f}%"
         actions.append({"emoji": "🔴", "title": f"{r['name']}（{r['code']}）を売り検討", "detail": detail})
-    for r in sorted([r for r in results if r["net"] >= 15], key=lambda x: -x["net"]):
+    for r in sorted([r for r in results if r["net"] >= 13], key=lambda x: -x["net"]):
         if len(actions) >= 3:
             break
         actions.append({"emoji": "🟢",
@@ -670,9 +670,9 @@ def main():
         vol = round(feat_aug[7], 1)
         vol_label = ("🟢低" if vol < 20 else "🟡中" if vol < 40 else "🟠高" if vol < 60 else "🔴超高")
 
-        if net >= 10:
+        if net >= 13:
             recommend = "✅ 買い"
-        elif net >= 5:
+        elif net >= 8:
             recommend = "🔵 買い候補"
         elif net < -10:
             recommend = "🔴 売り"
