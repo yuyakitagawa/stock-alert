@@ -442,6 +442,7 @@ def _build_ranking_section(results, prev_ranking_codes):
             f"{observation}"
             f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
             f"上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
+            f"<b>PER</b> = 株価÷1株利益（低いほど割安）／ <b>PBR</b> = 株価÷1株純資産（1倍割れで資産価値以下）<br>"
             f"<b>損切り</b> = 現値 → ストップ目安価格（カッコ内はそこまでの下落率）。この価格を割ったら損切り検討</p>"
             f"<table><tr style='background:#e8f0fe'>"
             f"<th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
