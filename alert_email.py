@@ -441,7 +441,7 @@ def _build_ranking_section(results, prev_ranking_codes):
             f"<h2>📈 新規候補 Top{count}（ネット {int(NEW_CANDIDATE_NET_MIN)}〜{int(NEW_CANDIDATE_NET_MAX)}%・未保有）</h2>"
             f"{observation}"
             f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
-            f"上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
+            f"上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
             f"<b>PER</b> = 株価÷1株利益（低いほど割安）／ <b>PBR</b> = 株価÷1株純資産（1倍割れで資産価値以下）<br>"
             f"<b>損切り</b> = 現値 → ストップ目安価格（カッコ内はそこまでの下落率）。この価格を割ったら損切り検討</p>"
             f"<table><tr style='background:#e8f0fe'>"
@@ -568,7 +568,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 {_build_ranking_section(results, prev_ranking_codes)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
-  <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = モデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
+  <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
   <table>
     <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th></tr>
     {_build_all_rows(results, earnings_map)}
