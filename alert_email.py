@@ -122,18 +122,19 @@ def build_sparkline_svg(prices_close, width=80, height=28):
 # ───────────────────────────── 優先アクション ─────────────────────────────
 
 def build_priority_actions(results):
-    """今日の優先アクション（最大3件）: 売り検討→強気買い の順で選出"""
+    """今日の優先アクション（最大3件）: 弱気/下降→買い の順で選出"""
     actions = []
     sells = sorted([r for r in results if r["signal"] == "sell"], key=lambda x: x["net"])
     for r in sells[:2]:
         dp = r.get("drop_prob")
+        label = "下降シグナル" if r["net"] < -10 else "弱気シグナル"
         detail = f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%" if dp is not None else f"ネット {r['net']:+.1f}%"
-        actions.append({"emoji": "🔴", "title": f"{r['name']}（{r['code']}）を売り検討", "detail": detail})
+        actions.append({"emoji": "🔴", "title": f"{r['name']}（{r['code']}）— {label}", "detail": detail})
     for r in sorted([r for r in results if 8 <= r["net"] <= 13], key=lambda x: -x["net"]):
         if len(actions) >= 3:
             break
-        actions.append({"emoji": "🟢",
-                         "title": f"{r['name']}（{r['code']}）は強気シグナル",
+        actions.append({"emoji": "✅",
+                         "title": f"{r['name']}（{r['code']}）— 買いシグナル",
                          "detail": f"ネット {r['net']:+.1f}%　ボラ {r.get('vol', 0):.0f}%"})
     return actions[:3]
 
