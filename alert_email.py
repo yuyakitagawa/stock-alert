@@ -122,20 +122,38 @@ def build_sparkline_svg(prices_close, width=80, height=28):
 # ───────────────────────────── 優先アクション ─────────────────────────────
 
 def build_priority_actions(results):
-    """今日の優先アクション（最大3件）: 弱気/下降→買い の順で選出"""
+    """今日の優先アクション: 保有株の売りシグナル + 新規候補の買いシグナル"""
     actions = []
+
+    # 保有株の売りシグナル（ネット昇順）
     sells = sorted([r for r in results if r["signal"] == "sell"], key=lambda x: x["net"])
     for r in sells[:2]:
         dp = r.get("drop_prob")
         label = "下降シグナル" if r["net"] < -10 else "弱気シグナル"
         detail = f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%" if dp is not None else f"ネット {r['net']:+.1f}%"
         actions.append({"emoji": "🔴", "title": f"{r['name']}（{r['code']}）— {label}", "detail": detail})
-    for r in sorted([r for r in results if 8 <= r["net"] <= 13], key=lambda x: -x["net"]):
-        if len(actions) >= 3:
-            break
-        actions.append({"emoji": "✅",
-                         "title": f"{r['name']}（{r['code']}）— 買いシグナル",
-                         "detail": f"ネット {r['net']:+.1f}%　ボラ {r.get('vol', 0):.0f}%"})
+
+    # 新規候補の買いシグナル（ランキングCSVからnet 8〜13%、未保有）
+    if len(actions) < 3:
+        held_codes = {str(r["code"]) for r in results}
+        ranking = load_top_ranking(50)
+        if ranking is not None:
+            for _, row in ranking.iterrows():
+                if len(actions) >= 3:
+                    break
+                code_str = str(int(row["銘柄コード"]))
+                if code_str in held_codes:
+                    continue
+                try:
+                    net_v = float(row.get("ネット(%)", 0))
+                except (TypeError, ValueError):
+                    continue
+                if not (8 <= net_v <= 13):
+                    continue
+                actions.append({"emoji": "✅",
+                                 "title": f"{row['銘柄名']}（{code_str}）— 新規買いシグナル",
+                                 "detail": f"ネット {net_v:+.1f}%　ボラ {row.get('ボラ(%)', 0):.1f}%"})
+
     return actions[:3]
 
 
