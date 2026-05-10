@@ -92,6 +92,10 @@ def load_watch_list() -> dict:
         try:
             df = _load_from_sheets()
             print(f"[INFO] Google Sheetsからチェック銘柄を読み込みました ({len(df)}銘柄)")
+            try:
+                df.to_csv(WATCH_CSV_PATH, index=False, encoding="utf-8-sig")
+            except Exception:
+                pass
             return dict(zip(df["コード"], df["銘柄名"]))
         except Exception as e:
             print(f"[WARN] Google Sheets読み込み失敗、CSVにフォールバック: {e}")
