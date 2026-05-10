@@ -412,7 +412,19 @@ def _build_ranking_section(results, prev_ranking_codes):
             except (TypeError, ValueError):
                 continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
-            recommend = row.get("推奨", "")
+            # CSVの古いラベルに依存せずnet値から常に最新ラベルを算出
+            if net_v > 13:
+                recommend = "🟡 高値警戒"
+            elif net_v >= 8:
+                recommend = "✅ 買い"
+            elif net_v >= 5:
+                recommend = "🔵 様子見"
+            elif net_v < -10:
+                recommend = "🔴 下降シグナル"
+            elif net_v < -5:
+                recommend = "⚠️ 弱気シグナル"
+            else:
+                recommend = "⏳ 方向感なし"
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
             rel20_r = row.get("日経比20日(%)", None)
