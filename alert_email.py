@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, IsotonicCalibrated
+from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
@@ -25,11 +25,20 @@ GMAIL_ADDRESS         = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD    = os.getenv("GMAIL_APP_PASSWORD")
 NET_SELL_THRESHOLD    = -5
 BEAR_MARKET_THRESHOLD = -5.0
+NEW_CANDIDATE_NET_MIN = 8.0   # 新規候補のネットスコア下限
+NEW_CANDIDATE_NET_MAX = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "ja,en;q=0.9"}
 
 
 # ───────────────────────────── データ読み込み ──────────────────────────────
+
+def _ranking_glob_files():
+    files = glob.glob(os.path.join(BASE_DIR, "ranking_*.csv"))
+    if not files:
+        files = glob.glob(os.path.join(BASE_DIR, "results", "ranking_*.csv"))
+    return files
+
 
 def load_held_stocks():
     """Google SheetsまたはCSVからチェック銘柄を読み込む"""
@@ -48,9 +57,7 @@ def load_held_stocks():
 
 def load_top_ranking(n=15):
     """最新のランキングCSVから上位N銘柄を読み込む（BASE_DIR → results/ の順で探す）"""
-    files = glob.glob(os.path.join(BASE_DIR, "ranking_*.csv"))
-    if not files:
-        files = glob.glob(os.path.join(BASE_DIR, "results", "ranking_*.csv"))
+    files = _ranking_glob_files()
     if not files:
         return None
     df = pd.read_csv(max(files, key=os.path.getmtime))
@@ -59,9 +66,7 @@ def load_top_ranking(n=15):
 
 def load_prev_ranking_codes():
     """前回（最新より1つ古い）のランキングCSVから銘柄コードセットを取得"""
-    files = sorted(glob.glob(os.path.join(BASE_DIR, "ranking_*.csv")), key=os.path.getmtime)
-    if not files:
-        files = sorted(glob.glob(os.path.join(BASE_DIR, "results", "ranking_*.csv")), key=os.path.getmtime)
+    files = sorted(_ranking_glob_files(), key=os.path.getmtime)
     if len(files) < 2:
         return set()
     try:
@@ -148,7 +153,7 @@ def build_priority_actions(results):
                     net_v = float(row.get("ネット(%)", 0))
                 except (TypeError, ValueError):
                     continue
-                if not (8 <= net_v <= 13):
+                if not (NEW_CANDIDATE_NET_MIN <= net_v <= NEW_CANDIDATE_NET_MAX):
                     continue
                 actions.append({"emoji": "✅",
                                  "title": f"{row['銘柄名']}（{code_str}）— 新規買いシグナル",
@@ -260,6 +265,21 @@ def get_judgment(net):
         return "🔴売り検討", "#c0392b"
 
 
+def recommend_from_net(net):
+    """ランキング・保有スコア共通の推奨ラベル（CSV表記に依存しない）"""
+    if net > 13:
+        return "🟡 高値警戒"
+    if net >= 8:
+        return "✅ 買い"
+    if net >= 5:
+        return "🔵 様子見"
+    if net < -10:
+        return "🔴 下降シグナル"
+    if net < -5:
+        return "⚠️ 弱気シグナル"
+    return "⏳ 方向感なし"
+
+
 def _net_cls(n):
     return "net-pos" if n >= 5 else ("net-neg" if n < -5 else "net-neu")
 
@@ -331,9 +351,6 @@ def _build_sell_section(results):
     return section, sells
 
 
-NEW_CANDIDATE_NET_MIN = 8.0   # 新規候補のネットスコア下限
-NEW_CANDIDATE_NET_MAX = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
-
 # セクター性質分類（観察文生成用）
 _DEFENSIVE_SECTORS = {"電気・ガス業", "食料品", "医薬品", "情報・通信業",
                       "陸運業", "不動産業", "銀行業", "保険業", "その他金融業",
@@ -389,9 +406,9 @@ def build_candidate_observation(candidates):
             f"</div>")
 
 
-def _build_ranking_section(results, prev_ranking_codes):
+def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
     held_codes = {str(r["code"]) for r in results}
-    ranking = load_top_ranking(50)
+    ranking = (ranking_df.head(50) if ranking_df is not None else load_top_ranking(50))
     rows = ""
     count = 0
     selected_candidates = []  # 観察文生成用
@@ -412,19 +429,7 @@ def _build_ranking_section(results, prev_ranking_codes):
             except (TypeError, ValueError):
                 continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
-            # CSVの古いラベルに依存せずnet値から常に最新ラベルを算出
-            if net_v > 13:
-                recommend = "🟡 高値警戒"
-            elif net_v >= 8:
-                recommend = "✅ 買い"
-            elif net_v >= 5:
-                recommend = "🔵 様子見"
-            elif net_v < -10:
-                recommend = "🔴 下降シグナル"
-            elif net_v < -5:
-                recommend = "⚠️ 弱気シグナル"
-            else:
-                recommend = "⏳ 方向感なし"
+            recommend = recommend_from_net(net_v)
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
             rel20_r = row.get("日経比20日(%)", None)
@@ -454,7 +459,7 @@ def _build_ranking_section(results, prev_ranking_codes):
                      f"{' ' + fund_str if fund_str else ''}</span></td>"
                      f"<td style='text-align:center'>{rise:.1f}%</td>"
                      f"<td style='text-align:center'>{drop_str}</td>"
-                     f"<td class='{_net_cls(net)}' style='text-align:center'>{net:+.1f}%</td>"
+                     f"<td class='{_net_cls(net_v)}' style='text-align:center'>{net_v:+.1f}%</td>"
                      f"<td style='text-align:center;font-size:11px'>{recommend}</td>"
                      f"<td class='{_rel_cls(rel20_v)}' style='text-align:center'>{_rel_str(rel20_v)}</td>"
                      f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
@@ -528,13 +533,26 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     prev_ranking_codes = prev_ranking_codes or set()
     prev_results       = prev_results or {}
 
+    ranking_df = load_top_ranking(1000)
+
     earnings_map = build_earnings_map([r["code"] for r in results])
 
-    sell_result = _build_sell_section(results)
-    if isinstance(sell_result, tuple):
-        sell_section, sells = sell_result
-    else:
-        sell_section, sells = sell_result, []
+    # セクター警告用: 新規候補（net 8-13%・未保有）のリストを作成
+    held_codes_set = {str(r["code"]) for r in results}
+    _candidates_for_sector = []
+    if ranking_df is not None:
+        for _, _row in ranking_df.head(100).iterrows():
+            _code = str(int(_row["銘柄コード"]))
+            if _code in held_codes_set:
+                continue
+            try:
+                _net = float(_row.get("ネット(%)", 0))
+            except (TypeError, ValueError):
+                continue
+            if NEW_CANDIDATE_NET_MIN <= _net <= NEW_CANDIDATE_NET_MAX:
+                _candidates_for_sector.append({"code": _code, "name": _row["銘柄名"]})
+
+    sell_section, sells = _build_sell_section(results)
 
     buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith("✅"))
     neu_cnt = len(results) - len(sells) - buy_cnt
@@ -552,11 +570,9 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     ) if is_bear else ""
 
     # 個別株より日経225 ETFを推奨するバナー（新規候補が少なく、かつ日経が強い）
-    held_codes_set = {str(r["code"]) for r in results}
-    full_ranking = load_top_ranking(1000)
     candidate_count = 0
-    if full_ranking is not None:
-        for _, row in full_ranking.iterrows():
+    if ranking_df is not None:
+        for _, row in ranking_df.iterrows():
             if str(int(row["銘柄コード"])) not in held_codes_set:
                 candidate_count += 1
     index_banner = (
@@ -596,8 +612,8 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 </div>
 {_build_priority_section(priority_actions or [])}
 {sell_section}
-{_build_ranking_section(results, prev_ranking_codes)}
-{build_sector_warning(results)}
+{_build_ranking_section(results, prev_ranking_codes, ranking_df)}
+{build_sector_warning(_candidates_for_sector)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
@@ -701,18 +717,7 @@ def main():
         vol = round(feat_aug[7], 1)
         vol_label = ("🟢低" if vol < 20 else "🟡中" if vol < 40 else "🟠高" if vol < 60 else "🔴超高")
 
-        if net > 13:
-            recommend = "🟡 高値警戒"
-        elif net >= 8:
-            recommend = "✅ 買い"
-        elif net >= 5:
-            recommend = "🔵 様子見"
-        elif net < -10:
-            recommend = "🔴 下降シグナル"
-        elif net < -5:
-            recommend = "⚠️ 弱気シグナル"
-        else:
-            recommend = "⏳ 方向感なし"
+        recommend = recommend_from_net(net)
 
         p   = prices["Close"].values
         s5  = (p[-1] - p[-6])  / p[-6]  * 100 if len(p) >= 6  else 0
