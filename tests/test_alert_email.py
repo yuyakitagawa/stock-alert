@@ -2,6 +2,7 @@
 import unittest
 import os
 import sys
+import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from alert_email import (
@@ -83,28 +84,33 @@ class TestBuildSparklineSvg(unittest.TestCase):
 
 
 class TestBuildPriorityActions(unittest.TestCase):
+    """ランキングCSVは環境依存のため ranking_df で注入して決定的にする。"""
+
     def test_sell_comes_first(self):
         results = [
             _make_result("1111", "売り株", net=-8.0, signal="sell", drop_prob=45.0),
             _make_result("2222", "強気株", net=18.0, signal="hold"),
         ]
-        actions = build_priority_actions(results)
+        actions = build_priority_actions(results, ranking_df=pd.DataFrame())
         self.assertEqual(actions[0]["emoji"], "🔴")
 
     def test_max_3_actions(self):
         results = [_make_result(str(i), f"株{i}", net=-8.0, signal="sell") for i in range(10)]
-        actions = build_priority_actions(results)
+        actions = build_priority_actions(results, ranking_df=pd.DataFrame())
         self.assertLessEqual(len(actions), 3)
 
-    def test_strong_buy_included(self):
-        results = [_make_result("3333", "強気株", net=20.0, signal="hold")]
-        actions = build_priority_actions(results)
+    def test_ranking_buy_when_no_sells(self):
+        results = [_make_result("3333", "保有のみ", net=20.0, signal="hold")]
+        ranking = pd.DataFrame([
+            {"銘柄コード": 9999, "銘柄名": "スクリーン候補", "ネット(%)": 10.0, "ボラ(%)": 22.0},
+        ])
+        actions = build_priority_actions(results, ranking_df=ranking)
         self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0]["emoji"], "🟢")
+        self.assertEqual(actions[0]["emoji"], "✅")
 
     def test_empty_when_no_signals(self):
         results = [_make_result("4444", "普通株", net=2.0, signal="hold")]
-        actions = build_priority_actions(results)
+        actions = build_priority_actions(results, ranking_df=pd.DataFrame())
         self.assertEqual(actions, [])
 
 
