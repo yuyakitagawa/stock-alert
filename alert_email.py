@@ -8,7 +8,7 @@ import joblib
 import requests
 import pandas as pd
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
@@ -29,6 +29,93 @@ NEW_CANDIDATE_NET_MIN = 8.0   # 新規候補のネットスコア下限
 NEW_CANDIDATE_NET_MAX = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "ja,en;q=0.9"}
+
+
+def _held_codes(results):
+    return {str(r["code"]) for r in results}
+
+
+def _row_code_str(row):
+    return str(int(row["銘柄コード"]))
+
+
+def _safe_float(val):
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    return None
+
+
+def _row_net_percent(row, *, use_rise_fallback):
+    """ランキング行のネット(%)を数値化。欠損時は use_rise_fallback に応じて上昇確率 or 0 を使う。"""
+    if use_rise_fallback:
+        raw = row.get("ネット(%)", row.get("上昇確率(%)"))
+    else:
+        raw = row.get("ネット(%)", 0)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _net_in_candidate_band(net):
+    return NEW_CANDIDATE_NET_MIN <= net <= NEW_CANDIDATE_NET_MAX
+
+
+def volatility_label(vol):
+    if vol < 20:
+        return "🟢低"
+    if vol < 40:
+        return "🟡中"
+    if vol < 60:
+        return "🟠高"
+    return "🔴超高"
+
+
+def _fundamentals_suffix(row):
+    parts = []
+    per, pbr = row.get("PER"), row.get("PBR")
+    if per and str(per) not in ("nan", "None", "-"):
+        parts.append(f"PER{float(per):.0f}")
+    if pbr and str(pbr) not in ("nan", "None", "-"):
+        parts.append(f"PBR{float(pbr):.1f}")
+    return " ".join(parts)
+
+
+def _stop_loss_cell_html(row, close_val):
+    stop_val = row.get("損切り価格(円)")
+    stop_pct = row.get("損切り幅(%)")
+    if not stop_val or str(stop_val) in ("nan", "None"):
+        return "-"
+    pct_part = f" ({stop_pct:+.1f}%)" if stop_pct and str(stop_pct) not in ("nan", "None") else ""
+    return (f"現値 ¥{close_val:,}<br>"
+            f"<span style='color:#c0392b;font-weight:700'>↓ ¥{int(stop_val):,}</span>"
+            f"<span style='font-size:11px;color:#c0392b'>{pct_part}</span>")
+
+
+def _unheld_ranking_row_count(ranking_df, held_codes):
+    if ranking_df is None:
+        return 0
+    n = 0
+    for _, row in ranking_df.iterrows():
+        if _row_code_str(row) not in held_codes:
+            n += 1
+    return n
+
+
+def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
+    """セクター集中警告用: 新規候補レンジかつ未保有の銘柄リスト。"""
+    out = []
+    if ranking_df is None:
+        return out
+    for _, row in ranking_df.head(max_rows).iterrows():
+        code = _row_code_str(row)
+        if code in held_codes:
+            continue
+        net = _row_net_percent(row, use_rise_fallback=False)
+        if net is None or not _net_in_candidate_band(net):
+            continue
+        out.append({"code": code, "name": row["銘柄名"]})
+    return out
 
 
 # ───────────────────────────── データ読み込み ──────────────────────────────
@@ -126,7 +213,7 @@ def build_sparkline_svg(prices_close, width=80, height=28):
 
 # ───────────────────────────── 優先アクション ─────────────────────────────
 
-def build_priority_actions(results):
+def build_priority_actions(results, ranking_df=None):
     """今日の優先アクション: 保有株の売りシグナル + 新規候補の買いシグナル"""
     actions = []
 
@@ -140,20 +227,17 @@ def build_priority_actions(results):
 
     # 新規候補の買いシグナル（ランキングCSVからnet 8〜13%、未保有）
     if len(actions) < 3:
-        held_codes = {str(r["code"]) for r in results}
-        ranking = load_top_ranking(50)
+        held_codes = _held_codes(results)
+        ranking = ranking_df.head(50) if ranking_df is not None else load_top_ranking(50)
         if ranking is not None:
             for _, row in ranking.iterrows():
                 if len(actions) >= 3:
                     break
-                code_str = str(int(row["銘柄コード"]))
+                code_str = _row_code_str(row)
                 if code_str in held_codes:
                     continue
-                try:
-                    net_v = float(row.get("ネット(%)", 0))
-                except (TypeError, ValueError):
-                    continue
-                if not (NEW_CANDIDATE_NET_MIN <= net_v <= NEW_CANDIDATE_NET_MAX):
+                net_v = _row_net_percent(row, use_rise_fallback=False)
+                if net_v is None or not _net_in_candidate_band(net_v):
                     continue
                 actions.append({"emoji": "✅",
                                  "title": f"{row['銘柄名']}（{code_str}）— 新規買いシグナル",
@@ -363,9 +447,12 @@ _GROWTH_SECTORS = {"電気機器", "精密機器", "サービス業", "その他
 
 
 def _classify_sector(sector):
-    if sector in _DEFENSIVE_SECTORS: return "defensive"
-    if sector in _CYCLICAL_SECTORS:  return "cyclical"
-    if sector in _GROWTH_SECTORS:    return "growth"
+    if sector in _DEFENSIVE_SECTORS:
+        return "defensive"
+    if sector in _CYCLICAL_SECTORS:
+        return "cyclical"
+    if sector in _GROWTH_SECTORS:
+        return "growth"
     return "other"
 
 
@@ -407,50 +494,29 @@ def build_candidate_observation(candidates):
 
 
 def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
-    held_codes = {str(r["code"]) for r in results}
+    held_codes = _held_codes(results)
     ranking = (ranking_df.head(50) if ranking_df is not None else load_top_ranking(50))
     rows = ""
     count = 0
     selected_candidates = []  # 観察文生成用
     if ranking is not None:
         for _, row in ranking.iterrows():
-            code_str = str(int(row["銘柄コード"]))
+            code_str = _row_code_str(row)
             if code_str in held_codes or count >= 5:
                 continue
-            rise   = row.get("上昇確率(%)", None)
-            drop_r = row.get("下落確率(%)", None)
-            drop_v = float(drop_r) if isinstance(drop_r, (int, float)) and not isinstance(drop_r, bool) else None
-            net    = row.get("ネット(%)", rise)
-            # ネットスコア範囲フィルター（過小・過熱を回避）
-            try:
-                net_v = float(net)
-                if not (NEW_CANDIDATE_NET_MIN <= net_v <= NEW_CANDIDATE_NET_MAX):
-                    continue
-            except (TypeError, ValueError):
+            rise = row.get("上昇確率(%)", None)
+            drop_v = _safe_float(row.get("下落確率(%)", None))
+            net_v = _row_net_percent(row, use_rise_fallback=True)
+            if net_v is None or not _net_in_candidate_band(net_v):
                 continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
             recommend = recommend_from_net(net_v)
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
-            rel20_r = row.get("日経比20日(%)", None)
-            rel20_v = (float(rel20_r) if isinstance(rel20_r, (int, float))
-                       and not isinstance(rel20_r, bool) else None)
-            per = row.get("PER"); pbr = row.get("PBR")
-            fund_str = ""
-            if per and str(per) not in ("nan", "None", "-"):
-                fund_str += f"PER{float(per):.0f}"
-            if pbr and str(pbr) not in ("nan", "None", "-"):
-                fund_str += f" PBR{float(pbr):.1f}"
-            close_val = int(row['直近株価(円)'])
-            stop_val  = row.get("損切り価格(円)")
-            stop_pct  = row.get("損切り幅(%)")
-            if stop_val and str(stop_val) not in ("nan", "None"):
-                pct_part = f" ({stop_pct:+.1f}%)" if stop_pct and str(stop_pct) not in ("nan", "None") else ""
-                stop_cell = (f"現値 ¥{close_val:,}<br>"
-                             f"<span style='color:#c0392b;font-weight:700'>↓ ¥{int(stop_val):,}</span>"
-                             f"<span style='font-size:11px;color:#c0392b'>{pct_part}</span>")
-            else:
-                stop_cell = "-"
+            rel20_v = _safe_float(row.get("日経比20日(%)", None))
+            fund_str = _fundamentals_suffix(row)
+            close_val = int(row["直近株価(円)"])
+            stop_cell = _stop_loss_cell_html(row, close_val)
             drop_str = f"{drop_v:.1f}%" if drop_v is not None else "-"
             new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
             rows += (f"<tr>"
@@ -528,37 +594,10 @@ def build_earnings_map(codes):
     return result
 
 
-def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
-               prev_ranking_codes=None, prev_results=None, priority_actions=None):
-    prev_ranking_codes = prev_ranking_codes or set()
-    prev_results       = prev_results or {}
-
-    ranking_df = load_top_ranking(1000)
-
-    earnings_map = build_earnings_map([r["code"] for r in results])
-
-    # セクター警告用: 新規候補（net 8-13%・未保有）のリストを作成
-    held_codes_set = {str(r["code"]) for r in results}
-    _candidates_for_sector = []
-    if ranking_df is not None:
-        for _, _row in ranking_df.head(100).iterrows():
-            _code = str(int(_row["銘柄コード"]))
-            if _code in held_codes_set:
-                continue
-            try:
-                _net = float(_row.get("ネット(%)", 0))
-            except (TypeError, ValueError):
-                continue
-            if NEW_CANDIDATE_NET_MIN <= _net <= NEW_CANDIDATE_NET_MAX:
-                _candidates_for_sector.append({"code": _code, "name": _row["銘柄名"]})
-
-    sell_section, sells = _build_sell_section(results)
-
-    buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith("✅"))
-    neu_cnt = len(results) - len(sells) - buy_cnt
-    nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
-               if nk5 is not None else "")
-    bear_banner = (
+def _bear_market_banner_html(is_bear, nk20):
+    if not is_bear or nk20 is None:
+        return ""
+    return (
         f"<div style='background:#c0392b;border-radius:8px;padding:16px;margin-bottom:16px'>"
         f"<div style='color:white;font-size:18px;font-weight:700;margin-bottom:6px'>"
         f"🚨 下落相場 — 新規買いは見送り推奨</div>"
@@ -567,15 +606,13 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
         f"下落相場ではモデルの精度が落ち、買いシグナルの信頼性が低下します。<br>"
         f"<b>既存ポジションの損切りラインを確認し、新規買いは相場が落ち着くまで待ってください。</b>"
         f"</div></div>"
-    ) if is_bear else ""
+    )
 
-    # 個別株より日経225 ETFを推奨するバナー（新規候補が少なく、かつ日経が強い）
-    candidate_count = 0
-    if ranking_df is not None:
-        for _, row in ranking_df.iterrows():
-            if str(int(row["銘柄コード"])) not in held_codes_set:
-                candidate_count += 1
-    index_banner = (
+
+def _index_etf_banner_html(is_bear, candidate_count, nk20):
+    if is_bear or nk20 is None or nk20 <= 3.0 or candidate_count > 3:
+        return ""
+    return (
         f"<div style='background:#f39c12;border-radius:8px;padding:16px;margin-bottom:16px'>"
         f"<div style='color:white;font-size:16px;font-weight:700;margin-bottom:6px'>"
         f"💡 日経225 ETFの検討推奨</div>"
@@ -584,7 +621,46 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
         f"個別株が指数に追いついていない可能性があります。<br>"
         f"<b>個別株より日経225 ETF（1321 / 1330 / 1346 等）の方が効率的かもしれません。</b>"
         f"</div></div>"
-    ) if (not is_bear and candidate_count <= 3 and nk20 is not None and nk20 > 3.0) else ""
+    )
+
+
+def _summary_stat_cards_html(n_sell, n_buy, n_neu):
+    box = ("<div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;"
+           "box-shadow:0 1px 4px rgba(0,0,0,.08)'>"
+           "<div style='font-size:26px;font-weight:700;color:{color}'>{val}</div>"
+           "<div style='font-size:12px;color:#888'>{label}</div></div>")
+    return (
+        "<div style='display:flex;gap:8px;margin-bottom:16px'>"
+        + box.format(val=n_sell, label="売り検討", color="#c0392b")
+        + box.format(val=n_buy, label="買い可能性", color="#0a7a0a")
+        + box.format(val=n_neu, label="様子見", color="#888")
+        + "</div>"
+    )
+
+
+def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
+               prev_ranking_codes=None, prev_results=None, priority_actions=None,
+               ranking_df=None):
+    prev_ranking_codes = prev_ranking_codes or set()
+    prev_results       = prev_results or {}
+
+    if ranking_df is None:
+        ranking_df = load_top_ranking(1000)
+
+    earnings_map = build_earnings_map([r["code"] for r in results])
+
+    held_codes_set = _held_codes(results)
+    _candidates_for_sector = _new_candidates_for_sector_warning(ranking_df, held_codes_set)
+
+    sell_section, sells = _build_sell_section(results)
+
+    buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith("✅"))
+    neu_cnt = len(results) - len(sells) - buy_cnt
+    nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
+               if nk5 is not None else "")
+    bear_banner = _bear_market_banner_html(is_bear, nk20)
+    candidate_count = _unheld_ranking_row_count(ranking_df, held_codes_set)
+    index_banner = _index_etf_banner_html(is_bear, candidate_count, nk20)
 
     return f"""<html><head>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -596,20 +672,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 </div>
 {bear_banner}
 {index_banner}
-<div style='display:flex;gap:8px;margin-bottom:16px'>
-  <div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.08)'>
-    <div style='font-size:26px;font-weight:700;color:#c0392b'>{len(sells)}</div>
-    <div style='font-size:12px;color:#888'>売り検討</div>
-  </div>
-  <div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.08)'>
-    <div style='font-size:26px;font-weight:700;color:#0a7a0a'>{buy_cnt}</div>
-    <div style='font-size:12px;color:#888'>買い可能性</div>
-  </div>
-  <div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.08)'>
-    <div style='font-size:26px;font-weight:700;color:#888'>{neu_cnt}</div>
-    <div style='font-size:12px;color:#888'>様子見</div>
-  </div>
-</div>
+{_summary_stat_cards_html(len(sells), buy_cnt, neu_cnt)}
 {_build_priority_section(priority_actions or [])}
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes, ranking_df)}
@@ -644,6 +707,74 @@ def send_email(subject, html_body):
 
 # ──────────────────────────── メイン処理 ──────────────────────────────────
 
+def _load_alert_models_or_exit():
+    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
+    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    if not os.path.exists(rise_path):
+        print("ERROR: rf_model.pklが見つかりません。先にrf_train_v3.pyを実行してください")
+        return None, None
+    rise_model = joblib.load(rise_path)
+    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    return rise_model, drop_model
+
+
+def _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60):
+    raw_data = []
+    for code, name in held_stocks.items():
+        prices = get_prices(code, days=400)
+        if prices is None or len(prices) < 91:
+            print(f"  ❓ {name}({code}): データ取得失敗")
+            continue
+        nk_rets = (nk5 / 100, nk20 / 100, nk60 / 100) if nk5 is not None else None
+        feat = extract_features(
+            prices["Close"].values,
+            prices["Volume"].tolist() if "Volume" in prices.columns else None,
+            nk_rets,
+        )
+        if feat is None:
+            continue
+        if feat[12] > 0.15 or feat[10] < -0.15:
+            continue
+        raw_data.append((code, name, prices, feat))
+    return raw_data
+
+
+def _augmented_feature_matrix(raw_data):
+    feats_matrix = np.array([d[3] for d in raw_data], dtype=float)
+    return add_cs_rank_features(feats_matrix)
+
+
+def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20):
+    results = []
+    for idx, (code, name, prices, feat) in enumerate(raw_data):
+        feat_aug = feats_aug[idx]
+        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else None
+        close = float(prices["Close"].iloc[-1])
+        net = rise_prob - drop_prob if drop_prob is not None else rise_prob
+        signal = "sell" if net < NET_SELL_THRESHOLD else "hold"
+        judgment, _ = get_judgment(net)
+        vol = round(feat_aug[7], 1)
+        vol_label = volatility_label(vol)
+        recommend = recommend_from_net(net)
+        p = prices["Close"].values
+        s5 = (p[-1] - p[-6]) / p[-6] * 100 if len(p) >= 6 else 0
+        s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
+        rel5 = round(s5 - nk5, 1) if nk5 is not None else None
+        rel20 = round(s20 - nk20, 1) if nk20 is not None else None
+        dp_str = f"{drop_prob:5.1f}%" if drop_prob is not None else "  N/A "
+        rel20_str = f"{rel20:+.1f}%" if rel20 is not None else "N/A"
+        print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{dp_str} ネット{net:+.1f}% 日経差(20日){rel20_str} ボラ{vol:.1f}%{vol_label}")
+        results.append({
+            "code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob,
+            "net": net, "close": close, "signal": signal,
+            "vol": vol, "vol_label": vol_label, "recommend": recommend,
+            "rel5": rel5, "rel20": rel20,
+            "prices_close": prices["Close"].values.tolist(),
+        })
+    return results
+
+
 def main():
     today = datetime.now().strftime("%Y年%m月%d日")
     print("=" * 50)
@@ -659,13 +790,9 @@ def main():
         return
     print(f"チェック銘柄: {len(held_stocks)}銘柄")
 
-    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
-    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
-    if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pklが見つかりません。先にrf_train_v3.pyを実行してください")
+    rise_model, drop_model = _load_alert_models_or_exit()
+    if rise_model is None:
         return
-    rise_model = joblib.load(rise_path)
-    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
 
     print("日経225リターン取得中...")
     nk5, nk20, nk60 = get_nikkei_returns()
@@ -678,70 +805,18 @@ def main():
     prev_ranking_codes = load_prev_ranking_codes()
     prev_results       = load_prev_results()
 
-    # フェーズ1: 全銘柄の特徴量を収集
-    raw_data = []
-    for code, name in held_stocks.items():
-        prices = get_prices(code, days=400)
-        if prices is None or len(prices) < 91:
-            print(f"  ❓ {name}({code}): データ取得失敗")
-            continue
-        nk_rets = (nk5/100, nk20/100, nk60/100) if nk5 is not None else None
-        feat = extract_features(
-            prices["Close"].values,
-            prices["Volume"].tolist() if "Volume" in prices.columns else None,
-            nk_rets,
-        )
-        if feat is None:
-            continue
-        if feat[12] > 0.15 or feat[10] < -0.15:
-            continue
-        raw_data.append((code, name, prices, feat))
-
-    # フェーズ2: クロスセクショナルランク特徴量を付加（28→34次元）
+    raw_data = _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60)
     if not raw_data:
         print("有効銘柄なし"); return
-    feats_matrix = np.array([d[3] for d in raw_data], dtype=float)
-    feats_aug    = add_cs_rank_features(feats_matrix)
-
-    # フェーズ3: スコア計算・結果集計
-    results = []
-    for idx, (code, name, prices, feat) in enumerate(raw_data):
-        feat_aug  = feats_aug[idx]
-        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
-        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else None
-        close     = float(prices["Close"].iloc[-1])
-        net       = rise_prob - drop_prob if drop_prob is not None else rise_prob
-        signal    = "sell" if net < NET_SELL_THRESHOLD else "hold"
-        judgment, _ = get_judgment(net)
-
-        vol = round(feat_aug[7], 1)
-        vol_label = ("🟢低" if vol < 20 else "🟡中" if vol < 40 else "🟠高" if vol < 60 else "🔴超高")
-
-        recommend = recommend_from_net(net)
-
-        p   = prices["Close"].values
-        s5  = (p[-1] - p[-6])  / p[-6]  * 100 if len(p) >= 6  else 0
-        s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
-        rel5  = round(s5  - nk5,  1) if nk5  is not None else None
-        rel20 = round(s20 - nk20, 1) if nk20 is not None else None
-
-        dp_str   = f"{drop_prob:5.1f}%" if drop_prob is not None else "  N/A "
-        rel20_str = f"{rel20:+.1f}%" if rel20 is not None else "N/A"
-        print(f"  {judgment}  {name}({code}): 上昇{rise_prob:5.1f}% 下落{dp_str} ネット{net:+.1f}% 日経差(20日){rel20_str} ボラ{vol:.1f}%{vol_label}")
-
-        results.append({
-            "code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob,
-            "net": net, "close": close, "signal": signal,
-            "vol": vol, "vol_label": vol_label, "recommend": recommend,
-            "rel5": rel5, "rel20": rel20,
-            "prices_close": prices["Close"].values.tolist(),
-        })
+    feats_aug = _augmented_feature_matrix(raw_data)
+    results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20)
 
     save_results_for_tomorrow(results)
 
+    ranking_df = load_top_ranking(1000)
     sell_count      = sum(1 for r in results if r["signal"] == "sell")
     buy_count       = sum(1 for r in results if r.get("recommend", "").startswith("✅"))
-    priority_actions = build_priority_actions(results)
+    priority_actions = build_priority_actions(results, ranking_df=ranking_df)
     bear_prefix     = "⚠️下落相場 " if is_bear else ""
     nk_str          = f"日経{nk20:+.1f}%" if nk20 is not None else ""
     priority_str    = f"優先{len(priority_actions)} / " if priority_actions else ""
@@ -752,6 +827,7 @@ def main():
         prev_ranking_codes=prev_ranking_codes,
         prev_results=prev_results,
         priority_actions=priority_actions,
+        ranking_df=ranking_df,
     )
 
     print(f"\nGmail送信中 → {GMAIL_ADDRESS}")
