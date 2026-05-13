@@ -33,6 +33,7 @@ jobs:
           echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
           echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
           echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+
       - name: Create gcp_key.json from secret
         run: |
           echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
@@ -47,13 +48,13 @@ jobs:
           restore-keys: |
             ml-models-v34baseline-weekly-
 
-      - name: Restore alert prev results
+      - name: Restore DB cache
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/alert_results_prev.json
-          key: alert-prev-${{ github.run_number }}
+          path: ${{ github.workspace }}/stock_alert.db
+          key: stock-alert-db-${{ github.run_number }}
           restore-keys: |
-            alert-prev-
+            stock-alert-db-
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python screener.py
@@ -84,27 +85,12 @@ jobs:
             ${{ github.workspace }}/rf_drop_model.pkl
           key: ml-models-v34baseline-weekly-${{ github.run_number }}
 
-      - name: Save alert prev results
+      - name: Save DB cache
         if: always()
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/alert_results_prev.json
-          key: alert-prev-${{ github.run_number }}
-
-      - name: ランキング結果をリポジトリに保存
-        run: |
-          cd $GITHUB_WORKSPACE
-          mkdir -p results
-          cp ~/stock-alert/ranking_*.csv results/ 2>/dev/null || true
-          cp ~/stock-alert/screener_*.csv results/ 2>/dev/null || true
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git add -f results/
-          git diff --cached --quiet || git commit -m "daily results $(date +%Y-%m-%d)"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ github.workspace }}/stock_alert.db
+          key: stock-alert-db-${{ github.run_number }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4
@@ -112,6 +98,6 @@ jobs:
         with:
           name: daily-results-${{ github.run_number }}
           path: |
-            screener_*.csv
-            ranking_*.csv
+            data/rankings/ranking_*.csv
+            data/screeners/screener_*.csv
           retention-days: 7
