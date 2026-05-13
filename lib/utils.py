@@ -88,16 +88,10 @@ _JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001
 _SECTOR_CACHE = None  # プロセス内キャッシュ {code: sector}
 
 def _load_jpx_sector_map():
-    """JPX Excelから {code: 33業種区分} を一括取得してCSVキャッシュに保存"""
+    """JPX Excelから {code: 33業種区分} を一括取得してDBキャッシュに保存"""
+    from lib.db import get_all_sectors, save_all_sectors
     import io
-    cache_path = os.path.join(BASE_DIR, "sector_cache.csv")
-    cache = {}
-    if os.path.exists(cache_path):
-        try:
-            df = pd.read_csv(cache_path, dtype=str)
-            cache = dict(zip(df["code"], df["sector"]))
-        except Exception:
-            pass
+    cache = get_all_sectors()
     if cache:
         return cache
     try:
@@ -113,7 +107,7 @@ def _load_jpx_sector_map():
                 if code and sec and sec != "nan":
                     cache[code] = sec
             try:
-                pd.DataFrame(list(cache.items()), columns=["code", "sector"]).to_csv(cache_path, index=False)
+                save_all_sectors(cache)
             except Exception:
                 pass
     except Exception as e:
