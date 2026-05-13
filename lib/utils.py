@@ -110,7 +110,7 @@ def _load_jpx_sector_map():
                 save_all_sectors(cache)
             except Exception:
                 pass
-    except Exception as e:
+    except (requests.RequestException, ValueError, OSError) as e:
         print(f"[WARN] JPX業種マップ取得失敗: {e}")
     return cache
 
@@ -296,6 +296,6 @@ def get_fundamentals(code):
                             result["ROE"] = float(vals[2])
                         except ValueError:
                             pass
-    except Exception:
+    except (requests.RequestException, ValueError, IndexError):
         pass
     return result

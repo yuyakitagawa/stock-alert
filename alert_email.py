@@ -183,7 +183,7 @@ def load_prev_ranking_codes():
     try:
         df = pd.read_csv(files[-2])
         return set(df["銘柄コード"].astype(str).tolist())
-    except Exception:
+    except (OSError, pd.errors.ParserError, KeyError):
         return set()
 
 
@@ -312,7 +312,7 @@ def get_next_earnings_cached(code):
                 date = datetime.strptime(m.group(1), "%Y/%m/%d").date()
         set_earnings_cache(code, today_str, date.isoformat() if date else None)
         return date
-    except Exception:
+    except (requests.RequestException, ValueError):
         return None
 
 
@@ -850,7 +850,7 @@ def main():
     try:
         send_email(subject, html)
         print("送信完了 ✅")
-    except Exception as e:
+    except smtplib.SMTPException as e:
         print(f"送信失敗: {e}")
 
 
