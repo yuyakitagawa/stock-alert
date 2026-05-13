@@ -151,6 +151,25 @@ def _ranking_glob_files():
     return files
 
 
+def _db_ranking_to_df(rows):
+    """DB行リスト → ranking CSV と同じ列名のDataFrame"""
+    if not rows:
+        return None
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = df.rename(columns={
+        "code": "銘柄コード", "name": "銘柄名", "close": "直近株価(円)",
+        "rise_prob": "上昇確率(%)", "drop_prob": "下落確率(%)", "net": "ネット(%)",
+        "vol": "ボラ(%)", "recommend": "推奨", "rel20": "日経比20日(%)",
+        "stop_loss": "損切り価格(円)", "per": "PER", "pbr": "PBR",
+    })
+    df["ボラ水準"] = df["ボラ(%)"].apply(volatility_label)
+    valid = df["損切り価格(円)"].notna() & df["直近株価(円)"].notna() & (df["直近株価(円)"] != 0)
+    df.loc[valid, "損切り幅(%)"] = (
+        (df.loc[valid, "損切り価格(円)"] - df.loc[valid, "直近株価(円)"]) / df.loc[valid, "直近株価(円)"] * 100
+    ).round(1)
+    return df
+
+
 def load_held_stocks():
     """Google SheetsまたはCSVからチェック銘柄を読み込む"""
     try:
@@ -167,24 +186,40 @@ def load_held_stocks():
 
 
 def load_top_ranking(n=15):
-    """最新のランキングCSVから上位N銘柄を読み込む（BASE_DIR → results/ の順で探す）"""
+    """最新ランキングをDBから取得。DBにデータがなければCSVにフォールバック。"""
+    import sqlite3
+    from lib.db import DB_PATH, init_db
+    init_db()
+    with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT MAX(date) FROM daily_ranking").fetchone()
+        if row and row[0]:
+            rows = con.execute(
+                "SELECT * FROM daily_ranking WHERE date=? ORDER BY net DESC LIMIT ?",
+                (row[0], n)
+            ).fetchall()
+            df = _db_ranking_to_df(rows)
+            if df is not None:
+                return df
     files = _ranking_glob_files()
     if not files:
         return None
-    df = pd.read_csv(max(files, key=os.path.getmtime))
-    return df.head(n)
+    return pd.read_csv(max(files, key=os.path.getmtime)).head(n)
 
 
 def load_prev_ranking_codes():
-    """前回（最新より1つ古い）のランキングCSVから銘柄コードセットを取得"""
-    files = sorted(_ranking_glob_files(), key=os.path.getmtime)
-    if len(files) < 2:
-        return set()
-    try:
-        df = pd.read_csv(files[-2])
-        return set(df["銘柄コード"].astype(str).tolist())
-    except (OSError, pd.errors.ParserError, KeyError):
-        return set()
+    """前回ランキングの銘柄コードセットをDBから取得。"""
+    import sqlite3
+    from lib.db import DB_PATH, init_db
+    init_db()
+    with sqlite3.connect(DB_PATH) as con:
+        dates = con.execute(
+            "SELECT DISTINCT date FROM daily_ranking ORDER BY date DESC LIMIT 2"
+        ).fetchall()
+        if len(dates) < 2:
+            return set()
+        rows = con.execute("SELECT code FROM daily_ranking WHERE date=?", (dates[1][0],)).fetchall()
+        return {r[0] for r in rows}
 
 
 

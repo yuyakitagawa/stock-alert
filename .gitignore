@@ -12,8 +12,6 @@ alpha_analysis_*.csv
 .DS_Store
 watch_list.csv
 gcp_key.json
-alert_results_prev.json
-earnings_cache.json
 baseline_auc.json
 results/
 stock_alert.db
