@@ -8,6 +8,20 @@ _BASE_DIR = os.getenv("STOCK_ALERT_HOME", _PROJECT_DIR)
 DB_PATH = os.path.join(_BASE_DIR, "stock_alert.db")
 
 _DDL = """
+CREATE TABLE IF NOT EXISTS simulation_results (
+    run_date     TEXT NOT NULL,
+    entry_date   TEXT NOT NULL,
+    code         TEXT NOT NULL,
+    name         TEXT,
+    label        TEXT,
+    entry_price  REAL,
+    current_price REAL,
+    return_pct   REAL,
+    holding_days INTEGER,
+    net_at_entry REAL,
+    drop_prob_at_entry REAL,
+    PRIMARY KEY (run_date, entry_date, code)
+);
 CREATE TABLE IF NOT EXISTS daily_ranking (
     date              TEXT NOT NULL,
     code              TEXT NOT NULL,
@@ -150,6 +164,37 @@ def get_all_sectors():
     with _conn() as con:
         rows = con.execute("SELECT code, sector FROM sector_cache").fetchall()
         return {r["code"]: r["sector"] for r in rows}
+
+
+def save_simulation_results(run_date, rows):
+    """rows: list of dicts with keys matching simulation_results columns"""
+    init_db()
+    sql = """INSERT OR REPLACE INTO simulation_results
+             (run_date,entry_date,code,name,label,entry_price,current_price,return_pct,holding_days,net_at_entry,drop_prob_at_entry)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?)"""
+    with _conn() as con:
+        con.executemany(sql, [
+            (run_date, r["entry_date"], r["code"], r.get("name"), r.get("label"),
+             r.get("entry_price"), r.get("current_price"), r.get("return_pct"),
+             r.get("holding_days"), r.get("net_at_entry"), r.get("drop_prob_at_entry"))
+            for r in rows
+        ])
+
+
+def load_simulation_results(run_date=None):
+    """run_dateを指定すればその日の結果、Noneなら全件"""
+    init_db()
+    with _conn() as con:
+        if run_date:
+            rows = con.execute(
+                "SELECT * FROM simulation_results WHERE run_date=? ORDER BY entry_date, return_pct DESC",
+                (run_date,)
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM simulation_results ORDER BY run_date, entry_date, return_pct DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def save_all_sectors(sector_map):
