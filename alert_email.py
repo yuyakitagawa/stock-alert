@@ -25,8 +25,10 @@ GMAIL_ADDRESS         = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD    = os.getenv("GMAIL_APP_PASSWORD")
 NET_SELL_THRESHOLD    = -5
 BEAR_MARKET_THRESHOLD = -5.0
-NEW_CANDIDATE_NET_MIN = 8.0   # 新規候補のネットスコア下限
-NEW_CANDIDATE_NET_MAX = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
+NEW_CANDIDATE_NET_MIN        = 8.0   # 新規候補のネットスコア下限
+NEW_CANDIDATE_NET_MAX        = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
+CANDIDATE_EARNINGS_SKIP_DAYS = 14   # 決算N日以内の新規候補を除外
+CANDIDATE_DROP_PROB_MAX      = 8.0   # 下落確率N%超の新規候補を除外（【回避】ライン）
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "ja,en;q=0.9"}
 
@@ -59,6 +61,18 @@ def _row_net_percent(row, *, use_rise_fallback):
 
 def _net_in_candidate_band(net):
     return NEW_CANDIDATE_NET_MIN <= net <= NEW_CANDIDATE_NET_MAX
+
+
+def _is_new_candidate_skipped(code_str, drop_v):
+    """新規候補スキップ判定: 高下落確率 or 決算前"""
+    if drop_v is not None and drop_v > CANDIDATE_DROP_PROB_MAX:
+        return True
+    d = get_next_earnings_cached(code_str)
+    if d is not None:
+        days = (d - datetime.now().date()).days
+        if 0 <= days <= CANDIDATE_EARNINGS_SKIP_DAYS:
+            return True
+    return False
 
 
 def volatility_label(vol):
@@ -113,6 +127,9 @@ def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
             continue
         net = _row_net_percent(row, use_rise_fallback=False)
         if net is None or not _net_in_candidate_band(net):
+            continue
+        drop_v = _safe_float(row.get("下落確率(%)", None))
+        if _is_new_candidate_skipped(code, drop_v):
             continue
         out.append({"code": code, "name": row["銘柄名"]})
     return out
@@ -214,12 +231,22 @@ def build_sparkline_svg(prices_close, width=80, height=28):
 # ───────────────────────────── 優先アクション ─────────────────────────────
 
 def build_priority_actions(results, ranking_df=None):
-    """今日の優先アクション: 保有株の売りシグナル + 新規候補の買いシグナル"""
+    """今日の優先アクション: 即切 > 売りシグナル > 新規候補の買いシグナル"""
     actions = []
 
+    # 【即切】: 20日リターン < -10%（最優先）
+    cuts = sorted([r for r in results if r.get("ret20", 0) < -10.0], key=lambda x: x.get("ret20", 0))
+    for r in cuts[:2]:
+        actions.append({"emoji": "⚡",
+                         "title": f"{r['name']}（{r['code']}）— 即切シグナル",
+                         "detail": f"20日リターン {r['ret20']:+.1f}%　ネット {r['net']:+.1f}%"})
+
     # 保有株の売りシグナル（ネット昇順）
-    sells = sorted([r for r in results if r["signal"] == "sell"], key=lambda x: x["net"])
+    sells = sorted([r for r in results if r["signal"] == "sell" and r.get("ret20", 0) >= -10.0],
+                   key=lambda x: x["net"])
     for r in sells[:2]:
+        if len(actions) >= 3:
+            break
         dp = r.get("drop_prob")
         label = "下降シグナル" if r["net"] < -10 else "弱気シグナル"
         detail = f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%" if dp is not None else f"ネット {r['net']:+.1f}%"
@@ -238,6 +265,9 @@ def build_priority_actions(results, ranking_df=None):
                     continue
                 net_v = _row_net_percent(row, use_rise_fallback=False)
                 if net_v is None or not _net_in_candidate_band(net_v):
+                    continue
+                drop_v = _safe_float(row.get("下落確率(%)", None))
+                if _is_new_candidate_skipped(code_str, drop_v):
                     continue
                 actions.append({"emoji": "✅",
                                  "title": f"{row['銘柄名']}（{code_str}）— 新規買いシグナル",
@@ -362,6 +392,13 @@ def recommend_from_net(net):
     if net < -5:
         return "⚠️ 弱気シグナル"
     return "⏳ 方向感なし"
+
+
+def recommend_from_scores(net, drop_prob=None):
+    """drop_prob も考慮した推奨ラベル。【推奨】条件: drop_prob<6% かつ net>=10%"""
+    if drop_prob is not None and drop_prob < 6.0 and net >= 10.0:
+        return "🌟 推奨"
+    return recommend_from_net(net)
 
 
 def _net_cls(n):
@@ -509,8 +546,10 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
             net_v = _row_net_percent(row, use_rise_fallback=True)
             if net_v is None or not _net_in_candidate_band(net_v):
                 continue
+            if _is_new_candidate_skipped(code_str, drop_v):
+                continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
-            recommend = recommend_from_net(net_v)
+            recommend = recommend_from_scores(net_v, drop_v)
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
             rel20_v = _safe_float(row.get("日経比20日(%)", None))
@@ -563,9 +602,13 @@ def _build_all_rows(results, earnings_map=None):
                       f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
                       f"margin-left:3px;vertical-align:middle'>決算{days}日前</span>"
                       if days is not None else "")
+        cut_badge = (f"<span style='display:inline-block;background:#6c3483;color:white;"
+                     f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
+                     f"margin-left:3px;vertical-align:middle'>⚡即切</span>"
+                     if r.get("ret20", 0) < -10.0 else "")
         rows += (f"<tr>"
                  f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
-                 f"<td><b>{r['name']}</b>{earn_badge}"
+                 f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}"
                  f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f}</span>"
                  f"{spark_html}</td>"
                  f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
@@ -756,7 +799,7 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
         judgment, _ = get_judgment(net)
         vol = round(feat_aug[7], 1)
         vol_label = volatility_label(vol)
-        recommend = recommend_from_net(net)
+        recommend = recommend_from_scores(net, drop_prob)
         p = prices["Close"].values
         s5 = (p[-1] - p[-6]) / p[-6] * 100 if len(p) >= 6 else 0
         s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
@@ -769,7 +812,7 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
             "code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob,
             "net": net, "close": close, "signal": signal,
             "vol": vol, "vol_label": vol_label, "recommend": recommend,
-            "rel5": rel5, "rel20": rel20,
+            "rel5": rel5, "rel20": rel20, "ret20": round(s20, 1),
             "prices_close": prices["Close"].values.tolist(),
         })
     return results
