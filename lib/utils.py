@@ -299,3 +299,26 @@ def get_fundamentals(code):
     except (requests.RequestException, ValueError, IndexError):
         pass
     return result
+
+
+# ── 推奨ラベル（rank_stocks / alert_email 共通） ───────────────────────────
+
+def recommend_from_net(net):
+    if net > 13:
+        return "🟡 高値警戒"
+    if net >= 8:
+        return "✅ 買い"
+    if net >= 5:
+        return "🔵 様子見"
+    if net < -10:
+        return "🔴 下降シグナル"
+    if net < -5:
+        return "⚠️ 弱気シグナル"
+    return "⏳ 方向感なし"
+
+
+def recommend_from_scores(net, drop_prob=None):
+    """drop_prob<6% かつ net>=10% で🌟推奨、それ以外は recommend_from_net に委譲"""
+    if drop_prob is not None and drop_prob < 6.0 and net >= 10.0:
+        return "🌟 推奨"
+    return recommend_from_net(net)

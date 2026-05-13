@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import os
 import glob
@@ -11,24 +12,23 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached
-from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
-if not os.path.isdir(BASE_DIR):
-    BASE_DIR = os.path.expanduser("~/stock-alert")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
+from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS
+from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, NET_SELL_THRESHOLD,
+                    NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
+                    CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS)
 
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-GMAIL_ADDRESS         = os.getenv("GMAIL_ADDRESS")
-GMAIL_APP_PASSWORD    = os.getenv("GMAIL_APP_PASSWORD")
-NET_SELL_THRESHOLD    = -5
-BEAR_MARKET_THRESHOLD = -5.0
-NEW_CANDIDATE_NET_MIN        = 8.0   # 新規候補のネットスコア下限
-NEW_CANDIDATE_NET_MAX        = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
-CANDIDATE_EARNINGS_SKIP_DAYS = 7    # 決算N日以内の新規候補を除外
-CANDIDATE_DROP_PROB_MAX      = 10.0  # 下落確率N%超の新規候補を除外（【回避】ライン）
+GMAIL_ADDRESS      = os.getenv("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "ja,en;q=0.9"}
 
@@ -157,10 +157,10 @@ def load_held_stocks():
         from lib.sheets_helper import load_watch_list
         return load_watch_list()
     except Exception as e:
-        print(f"[WARN] sheets_helper失敗、CSVで代替: {e}")
+        logger.warning("sheets_helper失敗、CSVで代替: %s", e)
         csv_path = os.path.join(BASE_DIR, "watch_list.csv")
         if not os.path.exists(csv_path):
-            print("ERROR: watch_list.csvが見つかりません")
+            logger.error("watch_list.csvが見つかりません")
             return {}
         df = pd.read_csv(csv_path, dtype=str)
         return dict(zip(df["コード"].str.strip(), df["銘柄名"].str.strip()))
@@ -350,27 +350,6 @@ def get_judgment(net):
     else:
         return "🔴売り検討", "#c0392b"
 
-
-def recommend_from_net(net):
-    """ランキング・保有スコア共通の推奨ラベル（CSV表記に依存しない）"""
-    if net > 13:
-        return "🟡 高値警戒"
-    if net >= 8:
-        return "✅ 買い"
-    if net >= 5:
-        return "🔵 様子見"
-    if net < -10:
-        return "🔴 下降シグナル"
-    if net < -5:
-        return "⚠️ 弱気シグナル"
-    return "⏳ 方向感なし"
-
-
-def recommend_from_scores(net, drop_prob=None):
-    """drop_prob も考慮した推奨ラベル。【推奨】条件: drop_prob<6% かつ net>=10%"""
-    if drop_prob is not None and drop_prob < 6.0 and net >= 10.0:
-        return "🌟 推奨"
-    return recommend_from_net(net)
 
 
 def _net_cls(n):
@@ -726,7 +705,7 @@ def _load_alert_models_or_exit():
     rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
     drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
     if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pklが見つかりません。先にrf_train_v3.pyを実行してください")
+        logger.error("rf_model.pklが見つかりません。先にrf_train_v3.pyを実行してください")
         return None, None
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
@@ -738,7 +717,7 @@ def _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60):
     for code, name in held_stocks.items():
         prices = get_prices(code, days=400)
         if prices is None or len(prices) < 91:
-            print(f"  ❓ {name}({code}): データ取得失敗")
+            logger.warning("データ取得失敗: %s(%s)", name, code)
             continue
         nk_rets = (nk5 / 100, nk20 / 100, nk60 / 100) if nk5 is not None else None
         feat = extract_features(
@@ -792,38 +771,35 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
 
 def main():
     today = datetime.now().strftime("%Y年%m月%d日")
-    print("=" * 50)
-    print(f"チェック銘柄アラート  {today}")
-    print("=" * 50)
+    logger.info("チェック銘柄アラート開始  %s", today)
 
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        print("ERROR: .envにGMAIL_ADDRESSとGMAIL_APP_PASSWORDを設定してください")
+        logger.error(".envにGMAIL_ADDRESSとGMAIL_APP_PASSWORDを設定してください")
         return
 
     held_stocks = load_held_stocks()
     if not held_stocks:
         return
-    print(f"チェック銘柄: {len(held_stocks)}銘柄")
+    logger.info("チェック銘柄: %d銘柄", len(held_stocks))
     today_date_str = datetime.now().strftime("%Y-%m-%d")
 
     rise_model, drop_model = _load_alert_models_or_exit()
     if rise_model is None:
         return
 
-    print("日経225リターン取得中...")
     nk5, nk20, nk60 = get_nikkei_returns()
     is_bear = nk20 is not None and nk20 < BEAR_MARKET_THRESHOLD
     if nk5 is not None:
-        print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
+        logger.info("日経225: 5日%+.2f%% / 20日%+.2f%% / 60日%+.2f%%", nk5, nk20, nk60)
         if is_bear:
-            print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
+            logger.warning("下落相場検知（日経20日: %+.1f%%）: 買いシグナルの信頼性低下", nk20)
 
     prev_ranking_codes = load_prev_ranking_codes()
     prev_results       = load_prev_held_scores(today_date_str)
 
     raw_data = _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60)
     if not raw_data:
-        print("有効銘柄なし"); return
+        logger.warning("有効銘柄なし"); return
     feats_aug = _augmented_feature_matrix(raw_data)
     results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20)
 
@@ -846,12 +822,12 @@ def main():
         ranking_df=ranking_df,
     )
 
-    print(f"\nGmail送信中 → {GMAIL_ADDRESS}")
+    logger.info("Gmail送信中 → %s", GMAIL_ADDRESS)
     try:
         send_email(subject, html)
-        print("送信完了 ✅")
+        logger.info("送信完了")
     except smtplib.SMTPException as e:
-        print(f"送信失敗: {e}")
+        logger.error("送信失敗: %s", e)
 
 
 if __name__ == "__main__":
