@@ -334,9 +334,9 @@ def main():
         print(f"\n⚠️ セクター集中除外: {secs_str}")
     if not filtered.empty:
         out      = _format_output(filtered)
-        out_path = f"screener_v1_{date_str}.csv"
+        os.makedirs("data/screeners", exist_ok=True)
+        out_path = f"data/screeners/screener_{date_str}.csv"
         out.to_csv(out_path, index=False, encoding="utf-8-sig")
-        out.to_csv(f"screener_{date_str}.csv", index=False, encoding="utf-8-sig")
         print(f"\n{len(filtered)} 銘柄通過 → {out_path}")
         _print_top10(out)
     else:
