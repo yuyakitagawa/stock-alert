@@ -8,16 +8,11 @@ import argparse
 import os
 import glob
 import time
-import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from config import BASE_DIR, NEW_CANDIDATE_NET_MIN, CANDIDATE_DROP_PROB_MAX
 from lib.db import save_simulation_results
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-}
+from lib.utils import get_prices, get_price_at_date
 
 
 def classify(net, drop_prob):
@@ -30,71 +25,12 @@ def classify(net, drop_prob):
     return "🥈 A買い"
 
 
-def get_price_at_date(code, target_date):
-    """target_date前後の最も近い終値を返す（±5営業日範囲で探索）"""
-    ticker = f"{code}.T"
-    start_ts = int((target_date - timedelta(days=14)).timestamp())
-    end_ts   = int((target_date + timedelta(days=14)).timestamp())
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval=1d&period1={start_ts}&period2={end_ts}"
-    )
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        closes = (
-            result[0].get("indicators", {})
-            .get("adjclose", [{}])[0]
-            .get("adjclose", [])
-        )
-        if not timestamps or not closes:
-            return None
-        # target_dateに最も近い有効な価格を返す
-        target_ts = target_date.timestamp()
-        best_price, best_diff = None, float("inf")
-        for ts, c in zip(timestamps, closes):
-            if c is None:
-                continue
-            diff = abs(ts - target_ts)
-            if diff < best_diff:
-                best_diff = diff
-                best_price = c
-        return best_price
-    except Exception:
+def __get_current_price(code):
+    df = get_prices(code, days=10)
+    if df is None or df.empty:
         return None
-
-
-def get_current_price(code):
-    end_ts   = int(datetime.now().timestamp())
-    start_ts = int((datetime.now() - timedelta(days=10)).timestamp())
-    ticker = f"{code}.T"
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval=1d&period1={start_ts}&period2={end_ts}"
-    )
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        closes = (
-            result[0].get("indicators", {})
-            .get("adjclose", [{}])[0]
-            .get("adjclose", [])
-        )
-        closes = [c for c in closes if c is not None]
-        return closes[-1] if closes else None
-    except Exception:
-        return None
+    closes = df["Close"].dropna()
+    return float(closes.iloc[-1]) if len(closes) > 0 else None
 
 
 def load_30d_data():
@@ -233,7 +169,7 @@ def main():
             target_dt = entry_dt + timedelta(days=90)
             # 未来は現在価格で代用
             if target_dt.date() >= today:
-                p = get_current_price(str(row["code"]))
+                p = _get_current_price(str(row["code"]))
             else:
                 p = get_price_at_date(str(row["code"]), target_dt)
             if p is not None and pd.notna(row["entry_price"]) and row["entry_price"] > 0:
@@ -247,7 +183,7 @@ def main():
         if need_fetch.any():
             print(f"\n現在価格取得中... ({need_fetch.sum()}銘柄)")
             for i, (idx, row) in enumerate(df[need_fetch].iterrows()):
-                p = get_current_price(str(row["code"]))
+                p = _get_current_price(str(row["code"]))
                 if p is not None and pd.notna(row["entry_price"]) and row["entry_price"] > 0:
                     df.at[idx, "current_return"] = (p - row["entry_price"]) / row["entry_price"] * 100
                     df.at[idx, "current_price"] = p
