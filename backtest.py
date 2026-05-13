@@ -68,12 +68,6 @@ _SC_MAX_VOLATILITY   = 50.0
 _SC_MIN_MOMENTUM_20D = -3.0
 _SC_MIN_PRICE        = 300
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-}
-
-# ── 株価取得（requests直接呼び出し）────────────
 def _fetch_yahoo(ticker, days=800):
     """Yahoo Finance APIから株価DataFrameを取得"""
     end_ts   = int(datetime.now().timestamp())
@@ -127,11 +121,9 @@ def compute_screener_at(hist, target_date, nikkei_return_3m=None):
     n = len(p)
 
     n3  = min(63,  n - 1)
-    n6  = min(126, n - 1)
     n20 = min(20,  n - 1)
 
     return_3m    = (p[-1] - p[-n3  - 1]) / p[-n3  - 1]
-    return_6m    = (p[-1] - p[-n6  - 1]) / p[-n6  - 1]
     momentum_20d = (p[-1] - p[-n20 - 1]) / p[-n20 - 1] * 100
     vol          = (np.diff(p) / p[:-1]).std() * np.sqrt(252) * 100
     close_price  = float(p[-1])
@@ -463,8 +455,6 @@ def main():
             print(f"  日経アルファ勝率: {alpha_wins}/{n} = {alpha_wins/n*100:.1f}%")
 
     def _print_detail(group_df, label):
-        """銘柄詳細を表示"""
-        n = len(group_df)
         print(f"\n【{label}詳細】")
         print(f"{'コード':>6}  {'銘柄名':<20}  {'予測ネット':>10}  {'実績':>8}  結果")
         print("-" * 60)
