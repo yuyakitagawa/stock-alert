@@ -50,9 +50,9 @@ def main():
         is_bear = False
 
     # スクリーナーCSV読み込み
-    files = glob.glob(os.path.join(BASE_DIR, "screener_*.csv"))
+    files = glob.glob(os.path.join(BASE_DIR, "data", "screeners", "screener_*.csv"))
     if not files:
-        print("ERROR: screener CSVが見つかりません")
+        print("ERROR: screener CSVが見つかりません (data/screeners/)")
         return
     screener_df = pd.read_csv(max(files, key=os.path.getmtime))
     codes = screener_df["銘柄コード"].astype(str).tolist()
@@ -196,7 +196,8 @@ def main():
 
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")
-    out_path = os.path.join(BASE_DIR, f"ranking_{date_str}.csv")
+    os.makedirs(os.path.join(BASE_DIR, "data", "rankings"), exist_ok=True)
+    out_path = os.path.join(BASE_DIR, "data", "rankings", f"ranking_{date_str}.csv")
     result_df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"\n全結果保存: {out_path}")
 

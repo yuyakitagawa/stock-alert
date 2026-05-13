@@ -145,10 +145,7 @@ def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
 # ───────────────────────────── データ読み込み ──────────────────────────────
 
 def _ranking_glob_files():
-    files = glob.glob(os.path.join(BASE_DIR, "ranking_*.csv"))
-    if not files:
-        files = glob.glob(os.path.join(BASE_DIR, "results", "ranking_*.csv"))
-    return files
+    return glob.glob(os.path.join(BASE_DIR, "data", "rankings", "ranking_*.csv"))
 
 
 def _db_ranking_to_df(rows):
