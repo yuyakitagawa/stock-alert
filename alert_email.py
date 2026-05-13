@@ -27,8 +27,8 @@ NET_SELL_THRESHOLD    = -5
 BEAR_MARKET_THRESHOLD = -5.0
 NEW_CANDIDATE_NET_MIN        = 8.0   # 新規候補のネットスコア下限
 NEW_CANDIDATE_NET_MAX        = 13.0  # 新規候補のネットスコア上限（過熱銘柄を回避）
-CANDIDATE_EARNINGS_SKIP_DAYS = 14   # 決算N日以内の新規候補を除外
-CANDIDATE_DROP_PROB_MAX      = 8.0   # 下落確率N%超の新規候補を除外（【回避】ライン）
+CANDIDATE_EARNINGS_SKIP_DAYS = 7    # 決算N日以内の新規候補を除外
+CANDIDATE_DROP_PROB_MAX      = 10.0  # 下落確率N%超の新規候補を除外（【回避】ライン）
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "ja,en;q=0.9"}
 
