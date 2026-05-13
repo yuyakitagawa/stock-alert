@@ -6,17 +6,10 @@ import os
 import glob
 from datetime import datetime, timedelta
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net
+from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
 
-FORECAST = 63
-RISE_THRESHOLD = 15.0
 TOP_SHOW = 10
-BEAR_MARKET_THRESHOLD = -5.0
-
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
-if not os.path.isdir(BASE_DIR):
-    BASE_DIR = os.path.expanduser("~/stock-alert")
 
 
 
@@ -125,18 +118,7 @@ def main():
         else:
             judgment = "🔴売り検討"
 
-        if net > 13:
-            recommend = "🟡 高値警戒"
-        elif net >= 8:
-            recommend = "✅ 買い"
-        elif net >= 5:
-            recommend = "🔵 様子見"
-        elif net < -10:
-            recommend = "🔴 下降シグナル"
-        elif net < -5:
-            recommend = "⚠️ 弱気シグナル"
-        else:
-            recommend = "⏳ 方向感なし"
+        recommend = recommend_from_net(net)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
