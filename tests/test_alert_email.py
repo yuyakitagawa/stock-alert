@@ -5,12 +5,16 @@ import sys
 import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import math
 from alert_email import (
     get_judgment,
     build_sparkline_svg,
     build_priority_actions,
     build_diff_section,
     build_sector_warning,
+    _row_code_str,
+    _row_net_percent,
+    _safe_float,
 )
 
 
@@ -138,6 +142,78 @@ class TestBuildDiffSection(unittest.TestCase):
         prev    = {"1234": {"net": 5.0, "code": "1234", "name": "株", "signal": "hold"}}
         html = build_diff_section(results, prev)
         self.assertIn("▼", html)
+
+
+class TestRowCodeStr(unittest.TestCase):
+    def test_normal_int(self):
+        self.assertEqual(_row_code_str({"銘柄コード": 1234}), "1234")
+
+    def test_normal_float(self):
+        self.assertEqual(_row_code_str({"銘柄コード": 1234.0}), "1234")
+
+    def test_string_numeric(self):
+        self.assertEqual(_row_code_str({"銘柄コード": "1234"}), "1234")
+
+    def test_nan_returns_none(self):
+        self.assertIsNone(_row_code_str({"銘柄コード": float("nan")}))
+
+    def test_none_returns_none(self):
+        self.assertIsNone(_row_code_str({"銘柄コード": None}))
+
+    def test_non_numeric_string_returns_none(self):
+        self.assertIsNone(_row_code_str({"銘柄コード": "ABC"}))
+
+    def test_empty_string_returns_none(self):
+        self.assertIsNone(_row_code_str({"銘柄コード": ""}))
+
+
+class TestAbnormalDataRobustness(unittest.TestCase):
+    """異常値を含むranking DataFrameでクラッシュしないことを確認"""
+
+    def _make_ranking(self, rows):
+        return pd.DataFrame(rows)
+
+    def test_priority_actions_with_nan_code(self):
+        results = [_make_result("1111", "保有株", net=5.0, signal="hold")]
+        ranking = self._make_ranking([
+            {"銘柄コード": float("nan"), "銘柄名": "欠損コード株", "ネット(%)": 10.0, "ボラ(%)": 22.0, "下落確率(%)": 5.0},
+            {"銘柄コード": 9999, "銘柄名": "正常株", "ネット(%)": 10.0, "ボラ(%)": 22.0, "下落確率(%)": 5.0},
+        ])
+        actions = build_priority_actions(results, ranking_df=ranking)
+        # NaNコードでクラッシュせず、正常な行は処理される
+        self.assertIsInstance(actions, list)
+
+    def test_priority_actions_with_non_numeric_code(self):
+        results = [_make_result("1111", "保有株", net=5.0, signal="hold")]
+        ranking = self._make_ranking([
+            {"銘柄コード": "INVALID", "銘柄名": "不正コード株", "ネット(%)": 10.0, "ボラ(%)": 22.0, "下落確率(%)": 5.0},
+        ])
+        actions = build_priority_actions(results, ranking_df=ranking)
+        self.assertIsInstance(actions, list)
+
+    def test_priority_actions_with_missing_net(self):
+        results = [_make_result("1111", "保有株", net=5.0, signal="hold")]
+        ranking = self._make_ranking([
+            {"銘柄コード": 9999, "銘柄名": "ネット欠損株", "ネット(%)": None, "ボラ(%)": 22.0, "下落確率(%)": 5.0},
+        ])
+        actions = build_priority_actions(results, ranking_df=ranking)
+        self.assertEqual(actions, [])
+
+    def test_priority_actions_with_string_drop_prob(self):
+        results = [_make_result("1111", "保有株", net=5.0, signal="hold")]
+        ranking = self._make_ranking([
+            {"銘柄コード": 9999, "銘柄名": "下落確率文字列", "ネット(%)": 10.0, "ボラ(%)": 22.0, "下落確率(%)": "-"},
+        ])
+        # _safe_float("-") → None として扱われ、クラッシュしない
+        actions = build_priority_actions(results, ranking_df=ranking)
+        self.assertIsInstance(actions, list)
+
+    def test_safe_float_with_invalid(self):
+        self.assertIsNone(_safe_float("-"))
+        self.assertIsNone(_safe_float(None))
+        self.assertIsNone(_safe_float("N/A"))
+        self.assertEqual(_safe_float(3.14), 3.14)
+        self.assertEqual(_safe_float(5), 5.0)
 
 
 if __name__ == "__main__":

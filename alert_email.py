@@ -38,7 +38,13 @@ def _held_codes(results):
 
 
 def _row_code_str(row):
-    return str(int(row["銘柄コード"]))
+    val = row.get("銘柄コード") if hasattr(row, "get") else row["銘柄コード"]
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    try:
+        return str(int(float(val)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _safe_float(val):
@@ -111,7 +117,8 @@ def _unheld_ranking_row_count(ranking_df, held_codes):
         return 0
     n = 0
     for _, row in ranking_df.iterrows():
-        if _row_code_str(row) not in held_codes:
+        code = _row_code_str(row)
+        if code is not None and code not in held_codes:
             n += 1
     return n
 
@@ -123,7 +130,7 @@ def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
         return out
     for _, row in ranking_df.head(max_rows).iterrows():
         code = _row_code_str(row)
-        if code in held_codes:
+        if code is None or code in held_codes:
             continue
         net = _row_net_percent(row, use_rise_fallback=False)
         if net is None or not _net_in_candidate_band(net):
@@ -238,7 +245,7 @@ def build_priority_actions(results, ranking_df=None):
                 if len(actions) >= 3:
                     break
                 code_str = _row_code_str(row)
-                if code_str in held_codes:
+                if code_str is None or code_str in held_codes:
                     continue
                 net_v = _row_net_percent(row, use_rise_fallback=False)
                 if net_v is None or not _net_in_candidate_band(net_v):
@@ -504,7 +511,7 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
     if ranking is not None:
         for _, row in ranking.iterrows():
             code_str = _row_code_str(row)
-            if code_str in held_codes or count >= 5:
+            if code_str is None or code_str in held_codes or count >= 5:
                 continue
             rise = row.get("上昇確率(%)", None)
             drop_v = _safe_float(row.get("下落確率(%)", None))
