@@ -48,6 +48,36 @@ def get_prices(code, days=400):
         return None
 
 
+def get_price_at_date(code, target_date):
+    """target_date前後の最も近い終値を返す（±14日範囲で探索）"""
+    start_ts = int((target_date - timedelta(days=14)).timestamp())
+    end_ts   = int((target_date + timedelta(days=14)).timestamp())
+    ticker = f"{code}.T"
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+           f"?interval=1d&period1={start_ts}&period2={end_ts}")
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        timestamps = result[0].get("timestamp", [])
+        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
+        target_ts = target_date.timestamp()
+        best_price, best_diff = None, float("inf")
+        for ts, c in zip(timestamps, closes):
+            if c is None:
+                continue
+            diff = abs(ts - target_ts)
+            if diff < best_diff:
+                best_diff, best_price = diff, c
+        return best_price
+    except Exception:
+        return None
+
+
 def get_nikkei_returns():
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
            f"?interval=1d&period1={int((datetime.now()-timedelta(days=400)).timestamp())}"

@@ -6,7 +6,7 @@ import io
 import os
 import argparse
 from datetime import datetime, timedelta
-from lib.utils import calc_rsi, get_sector_cached
+from lib.utils import calc_rsi, get_sector_cached, get_prices, get_nikkei_returns, HEADERS
 
 MIN_MOMENTUM     = 5.0    # 3ヶ月モメンタム下限（上限は撤廃しモデル判断に委ねる）
 MIN_VOLATILITY   = 20.0
@@ -21,11 +21,6 @@ MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
 MAX_SECTOR_COUNT = 2      # 同セクター通過上限（3銘柄以上集まったらバブル兆候とみなしセクター全除外）
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-}
 
 
 def get_tse_stock_list():
@@ -63,76 +58,6 @@ def get_tse_stock_list():
     except Exception as e:
         print(f"銘柄リスト取得失敗: {e}")
         return None
-
-
-def get_prices(code, days=180):
-    """Yahoo Finance から過去N日の終値・出来高を取得"""
-    ticker = f"{code}.T"
-    end_ts = int(datetime.now().timestamp())
-    start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval=1d&period1={start_ts}&period2={end_ts}"
-    )
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        closes = (
-            result[0].get("indicators", {})
-            .get("adjclose", [{}])[0]
-            .get("adjclose", [])
-        )
-        volumes = (
-            result[0].get("indicators", {})
-            .get("quote", [{}])[0]
-            .get("volume", [])
-        )
-        if not timestamps or not closes:
-            return None
-        idx = pd.to_datetime(timestamps, unit="s", utc=True).tz_convert("Asia/Tokyo")
-        df = pd.DataFrame({"Date": idx, "Close": closes, "Volume": volumes}).dropna(subset=["Close"])
-        return df
-    except Exception:
-        return None
-
-
-def get_nikkei_returns():
-    """日経225の3ヶ月・20日リターンを取得。戻り値: (return_3m, return_20d) いずれもNoneあり"""
-    end_ts   = int(datetime.now().timestamp())
-    start_ts = int((datetime.now() - timedelta(days=180)).timestamp())
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
-        f"?interval=1d&period1={start_ts}&period2={end_ts}"
-    )
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return None, None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None, None
-        closes = (
-            result[0].get("indicators", {})
-            .get("adjclose", [{}])[0]
-            .get("adjclose", [])
-        )
-        closes = [c for c in closes if c is not None]
-        if len(closes) < 21:
-            return None, None
-        n3  = min(63, len(closes) - 1)
-        n20 = min(20, len(closes) - 1)
-        ret_3m  = (closes[-1] - closes[-n3  - 1]) / closes[-n3  - 1] if len(closes) >= 63 else None
-        ret_20d = (closes[-1] - closes[-n20 - 1]) / closes[-n20 - 1]
-        return ret_3m, ret_20d
-    except Exception:
-        return None, None
 
 
 def calc_metrics(df, nikkei_return_3m=None, nikkei_return_20d=None):
@@ -254,14 +179,17 @@ def main():
     print("=" * 55)
 
     print("日経225リターン取得中...")
-    nikkei_return_3m, nk_20d = get_nikkei_returns()
-    if nikkei_return_3m is not None:
-        print(f"  日経225: 3ヶ月{nikkei_return_3m*100:+.1f}% / 20日{nk_20d*100:+.1f}%")
+    nk5, nk20, nk60 = get_nikkei_returns()
+    if nk5 is not None:
+        print(f"  日経225: 3ヶ月{nk60:+.1f}% / 20日{nk20:+.1f}%")
     else:
         print("  日経225データ取得失敗 → 相対強度条件をスキップ")
-    is_bear = nk_20d is not None and nk_20d * 100 < BEAR_NKK_20D
+    is_bear = nk20 is not None and nk20 < BEAR_NKK_20D
     if is_bear:
-        print(f"  ⚠️ 下落相場（日経20日{nk_20d*100:+.1f}%）→ 相対強度閾値を{BEAR_REL_STRENGTH*100:.0f}%に引き上げ")
+        print(f"  ⚠️ 下落相場（日経20日{nk20:+.1f}%）→ 相対強度閾値を{BEAR_REL_STRENGTH*100:.0f}%に引き上げ")
+    # nikkei_return を小数（fraction）に変換して calc_metrics に渡す
+    nikkei_return_3m  = nk60 / 100 if nk60 is not None else None
+    nikkei_return_20d = nk20 / 100 if nk20 is not None else None
 
     stock_list = get_tse_stock_list()
     if stock_list is None:
@@ -282,7 +210,7 @@ def main():
         name = row["name"]
 
         df     = get_prices(code, days=180)
-        result = calc_metrics(df, nikkei_return_3m, nk_20d)
+        result = calc_metrics(df, nikkei_return_3m, nikkei_return_20d)
 
         if result is None:
             errors += 1
