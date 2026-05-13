@@ -217,6 +217,29 @@ def main():
     out_path = os.path.join(BASE_DIR, f"ranking_{date_str}.csv")
     result_df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"\n全結果保存: {out_path}")
+
+    # DB保存
+    from lib.db import save_daily_ranking
+    db_date_str = datetime.now().strftime("%Y-%m-%d")
+    db_rows = [
+        {
+            "code": str(row["銘柄コード"]),
+            "name": row["銘柄名"],
+            "close": row["直近株価(円)"],
+            "rise_prob": row["上昇確率(%)"],
+            "drop_prob": row["下落確率(%)"] if row["下落確率(%)"] != "-" else None,
+            "net": row["ネット(%)"],
+            "vol": row["ボラ(%)"],
+            "recommend": row["推奨"],
+            "rel20": row["日経比20日(%)"] if row["日経比20日(%)"] != "-" else None,
+            "stop_loss": row["損切り価格(円)"],
+            "per": row.get("PER"),
+            "pbr": row.get("PBR"),
+        }
+        for _, row in result_df.iterrows()
+    ]
+    save_daily_ranking(db_date_str, db_rows)
+    print(f"DB保存: {len(db_rows)}件 → stock_alert.db")
     print("完了")
 
 

@@ -2,7 +2,6 @@ import numpy as np
 import os
 import glob
 import re
-import json
 import smtplib
 import joblib
 import requests
@@ -13,6 +12,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached
+from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
@@ -180,29 +180,6 @@ def load_prev_ranking_codes():
         return set()
 
 
-def load_prev_results():
-    """昨日のアラート結果をJSONから読み込む（差分計算用）"""
-    path = os.path.join(BASE_DIR, "alert_results_prev.json")
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            items = json.load(f)
-        return {str(r["code"]): r for r in items}
-    except Exception:
-        return {}
-
-
-def save_results_for_tomorrow(results):
-    """今日のアラート結果をJSONで保存（明日の差分計算用）"""
-    path = os.path.join(BASE_DIR, "alert_results_prev.json")
-    to_save = [{"code": r["code"], "name": r["name"], "net": round(r["net"], 2), "signal": r["signal"]}
-               for r in results]
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(to_save, f, ensure_ascii=False)
-    except Exception as e:
-        print(f"[WARN] 結果保存失敗: {e}")
 
 
 # ───────────────────────────── スパークライン ──────────────────────────────
@@ -313,21 +290,11 @@ def build_diff_section(results, prev_results):
 # ───────────────────────────── セクター警告 ───────────────────────────────
 
 def get_next_earnings_cached(code):
-    """次回決算発表予定日をkabutan.jpから取得してJSONキャッシュに保存。失敗時はNone。"""
-    cache_path = os.path.join(BASE_DIR, "earnings_cache.json")
-    today_str  = datetime.now().strftime("%Y-%m-%d")
-    cache = {}
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, encoding="utf-8") as f:
-                cache = json.load(f)
-        except Exception:
-            pass
-    key = str(code)
-    entry = cache.get(key, {})
-    if entry.get("fetched") == today_str:
-        date_str = entry.get("date")
-        return datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else None
+    """次回決算発表予定日をkabutan.jpから取得してDBキャッシュに保存。失敗時はNone。"""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cached = get_earnings_cache(code, today_str)
+    if cached is not CACHE_MISS:
+        return datetime.strptime(cached, "%Y-%m-%d").date() if cached else None
     try:
         resp = requests.get(f"https://kabutan.jp/stock/?code={code}",
                             headers=_HEADERS, timeout=8)
@@ -336,9 +303,7 @@ def get_next_earnings_cached(code):
             m = re.search(r'決算発表予定日[^<]*<[^>]+>(\d{4}/\d{2}/\d{2})', resp.text)
             if m:
                 date = datetime.strptime(m.group(1), "%Y/%m/%d").date()
-        cache[key] = {"fetched": today_str, "date": date.isoformat() if date else None}
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(cache, f, ensure_ascii=False)
+        set_earnings_cache(code, today_str, date.isoformat() if date else None)
         return date
     except Exception:
         return None
@@ -832,6 +797,7 @@ def main():
     if not held_stocks:
         return
     print(f"チェック銘柄: {len(held_stocks)}銘柄")
+    today_date_str = datetime.now().strftime("%Y-%m-%d")
 
     rise_model, drop_model = _load_alert_models_or_exit()
     if rise_model is None:
@@ -846,7 +812,7 @@ def main():
             print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
 
     prev_ranking_codes = load_prev_ranking_codes()
-    prev_results       = load_prev_results()
+    prev_results       = load_prev_held_scores(today_date_str)
 
     raw_data = _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60)
     if not raw_data:
@@ -854,7 +820,7 @@ def main():
     feats_aug = _augmented_feature_matrix(raw_data)
     results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20)
 
-    save_results_for_tomorrow(results)
+    save_held_scores(today_date_str, results)
 
     ranking_df = load_top_ranking(1000)
     sell_count      = sum(1 for r in results if r["signal"] == "sell")
