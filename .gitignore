@@ -16,3 +16,4 @@ alert_results_prev.json
 earnings_cache.json
 baseline_auc.json
 results/
+stock_alert.db
