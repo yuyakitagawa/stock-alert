@@ -22,7 +22,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost \
-            gspread google-auth yfinance
+            gspread google-auth yfinance pytest
 
       - name: Run tests
         run: |
