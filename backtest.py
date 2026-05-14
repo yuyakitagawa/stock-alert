@@ -528,7 +528,9 @@ def main():
 
     # CSV保存
     df["日経リターン(%)"] = nikkei_return
-    out_path = os.path.join(BASE_DIR, f"backtest_{BACKTEST_DATE}_{TODAY}.csv")
+    out_dir = os.path.join(BASE_DIR, "simulations", "backtests")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"backtest_{BACKTEST_DATE}_{TODAY}.csv")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"\n全結果保存: {out_path}")
     print("完了")
