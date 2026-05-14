@@ -2,7 +2,7 @@ name: Daily Stock Alert
 
 on:
   schedule:
-    - cron: '0 20 * * *'  # 毎日20:00 UTC = 毎日5:00 AM JST（メール6:00着想定）
+    - cron: '0 7 * * *'   # 毎日07:00 UTC = 毎日16:00 JST（市場閉場後30分）
   workflow_dispatch:       # 手動実行ボタン
 
 env:
