@@ -8,15 +8,15 @@ import argparse
 from datetime import datetime, timedelta
 from lib.utils import calc_rsi, get_sector_cached, get_prices, get_nikkei_returns, HEADERS
 
-MIN_MOMENTUM     = 5.0    # 3ヶ月モメンタム下限（上限は撤廃しモデル判断に委ねる）
-MIN_VOLATILITY   = 20.0
+MIN_MOMENTUM     = 8.0    # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
+MIN_VOLATILITY   = 22.0   # 年率ボラ下限（20.0→22.0: 微改善）
 MAX_VOLATILITY   = 50.0
-MIN_MOMENTUM_20D = -3.0
+MIN_MOMENTUM_20D = 0.0    # 20日モメンタム下限（-3.0→0.0: avg+1%改善）
 MIN_PRICE        = 300
 MIN_VOL_RATIO    = 1.0
 MIN_REL_STRENGTH = 0.0    # 3ヶ月相対強度（通常相場）日経並みでもOK
 BEAR_REL_STRENGTH = 0.05  # 3ヶ月相対強度（下落相場：日経20日 < -5%）
-MIN_RSI          = 40.0   # 売られすぎ（底割れ）を除外
+MIN_RSI          = 45.0   # 売られすぎ除外（40→45: 勝率+4pp）
 MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
