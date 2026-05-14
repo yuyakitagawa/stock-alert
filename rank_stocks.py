@@ -12,6 +12,71 @@ from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
 TOP_SHOW = 10
 
 
+def _volatility_label(vol):
+    if vol < 20:
+        return "🟢低"
+    if vol < 40:
+        return "🟡中"
+    if vol < 60:
+        return "🟠高"
+    return "🔴超高"
+
+
+def _judgment_from_net(net):
+    if net >= 15:
+        return "🟢強気買い"
+    if net >= 5:
+        return "🔵やや強気"
+    if net >= -5:
+        return "🟡中立    "
+    if net >= -15:
+        return "🟠やや弱気"
+    return "🔴売り検討"
+
+
+def _relative_returns(prices, nk5, nk20, nk60):
+    p = prices["Close"].values
+    stock_returns = [
+        ((p[-1] - p[-6]) / p[-6] * 100) if len(p) >= 6 else 0,
+        ((p[-1] - p[-21]) / p[-21] * 100) if len(p) >= 21 else 0,
+        ((p[-1] - p[-61]) / p[-61] * 100) if len(p) >= 61 else 0,
+    ]
+    nikkei_returns = [nk5, nk20, nk60]
+    rels = [
+        round(stock - nikkei, 2)
+        for stock, nikkei in zip(stock_returns, nikkei_returns)
+        if nikkei is not None
+    ]
+    rel5, rel20, rel60 = (rels + [None] * 3)[:3] if rels else (None, None, None)
+    rs_score = round(sum(rels) / len(rels), 2) if rels else None
+    return rel5, rel20, rel60, rs_score
+
+
+def _build_result_row(code, name, close, rise_pct, drop_pct, net, vol, recommend, rels, stop_loss, stop_pct, fund):
+    rel5, rel20, rel60, rs_score = rels
+    return {
+        "銘柄コード": code,
+        "銘柄名": name,
+        "直近株価(円)": round(close, 1),
+        "上昇確率(%)": rise_pct,
+        "下落確率(%)": drop_pct if drop_pct is not None else "-",
+        "ネット(%)": net,
+        "判定": _judgment_from_net(net),
+        "ボラ(%)": vol,
+        "ボラ水準": _volatility_label(vol),
+        "推奨": recommend,
+        "日経比5日(%)": rel5 if rel5 is not None else "-",
+        "日経比20日(%)": rel20 if rel20 is not None else "-",
+        "日経比60日(%)": rel60 if rel60 is not None else "-",
+        "相対強度": rs_score if rs_score is not None else "-",
+        "損切り価格(円)": stop_loss,
+        "損切り幅(%)": stop_pct,
+        "PER": fund.get("PER") if fund else None,
+        "PBR": fund.get("PBR") if fund else None,
+        "ROE(%)": fund.get("ROE") if fund else None,
+    }
+
+
 
 
 
@@ -95,67 +160,28 @@ def main():
         drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
         net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
 
-        # ボラティリティ（feat[7] = vol20, 年率換算%）
         vol = round(feat[7], 1)
-        if vol < 20:
-            vol_label = "🟢低"
-        elif vol < 40:
-            vol_label = "🟡中"
-        elif vol < 60:
-            vol_label = "🟠高"
-        else:
-            vol_label = "🔴超高"
-
-        # ネットスコア判定
-        if net >= 15:
-            judgment = "🟢強気買い"
-        elif net >= 5:
-            judgment = "🔵やや強気"
-        elif net >= -5:
-            judgment = "🟡中立    "
-        elif net >= -15:
-            judgment = "🟠やや弱気"
-        else:
-            judgment = "🔴売り検討"
-
         recommend = recommend_from_net(net)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
         stop_pct  = round((stop_loss - close) / close * 100, 1)
 
-        # 日経比相対リターン
-        p = prices["Close"].values
-        s5  = (p[-1] - p[-6])  / p[-6]  * 100 if len(p) >= 6  else 0
-        s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
-        s60 = (p[-1] - p[-61]) / p[-61] * 100 if len(p) >= 61 else 0
-        rel5  = round(s5  - nk5,  2) if nk5  is not None else None
-        rel20 = round(s20 - nk20, 2) if nk20 is not None else None
-        rel60 = round(s60 - nk60, 2) if nk60 is not None else None
-        rels = [r for r in [rel5, rel20, rel60] if r is not None]
-        rs_score = round(sum(rels) / len(rels), 2) if rels else None
-
-        row = {
-            "銘柄コード": code,
-            "銘柄名": names.get(code, ""),
-            "直近株価(円)": round(close, 1),
-            "上昇確率(%)": rise_pct,
-            "下落確率(%)": drop_pct if drop_pct is not None else "-",
-            "ネット(%)": net,
-            "判定": judgment,
-            "ボラ(%)": vol,
-            "ボラ水準": vol_label,
-            "推奨": recommend,
-            "日経比5日(%)": rel5 if rel5 is not None else "-",
-            "日経比20日(%)": rel20 if rel20 is not None else "-",
-            "日経比60日(%)": rel60 if rel60 is not None else "-",
-            "相対強度": rs_score if rs_score is not None else "-",
-            "損切り価格(円)": stop_loss,
-            "損切り幅(%)": stop_pct,
-            "PER": fund.get("PER") if fund else None,
-            "PBR": fund.get("PBR") if fund else None,
-            "ROE(%)": fund.get("ROE") if fund else None,
-        }
+        rels = _relative_returns(prices, nk5, nk20, nk60)
+        row = _build_result_row(
+            code=code,
+            name=names.get(code, ""),
+            close=close,
+            rise_pct=rise_pct,
+            drop_pct=drop_pct,
+            net=net,
+            vol=vol,
+            recommend=recommend,
+            rels=rels,
+            stop_loss=stop_loss,
+            stop_pct=stop_pct,
+            fund=fund,
+        )
         results.append(row)
 
     # ランキング（ネットスコア順）
