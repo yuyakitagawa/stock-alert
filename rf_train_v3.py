@@ -15,9 +15,10 @@ SAVE_DIR = PROJECT_DIR if os.path.isdir(PROJECT_DIR) else os.path.expanduser("~/
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
 
 # スクリーナーフィルター定数（screener.pyと同値に保つ）
-_SC_MIN_MOM=5.0; _SC_MAX_MOM=30.0; _SC_MIN_MOM20=-3.0
-_SC_MIN_VOL=20.0; _SC_MAX_VOL=50.0; _SC_MIN_PRICE=300
+_SC_MIN_MOM=8.0; _SC_MAX_MOM=30.0; _SC_MIN_MOM20=0.0
+_SC_MIN_VOL=22.0; _SC_MAX_VOL=50.0; _SC_MIN_PRICE=300
 _SC_MIN_VR=1.0; _SC_MIN_REL=0.05  # 出来高比 / 日経比相対強度
+_SC_MIN_RSI=45.0; _SC_MAX_RSI=70.0
 
 def get_nikkei_df(days=2200):
     """日経225の株価をDateインデックスのDataFrameで返す"""
@@ -153,6 +154,8 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
     if nk_ret_3m is not None:
         rel=(p[-1]-p[-64])/p[-64] - nk_ret_3m
         if rel < _SC_MIN_REL: return False
+    rsi = calc_rsi(p)
+    if not (_SC_MIN_RSI <= rsi <= _SC_MAX_RSI): return False
     return True
 
 

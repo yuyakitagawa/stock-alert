@@ -76,12 +76,14 @@ if not os.path.isdir(BASE_DIR):
 FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
 
 # ── スクリーナー定数（v1） ───────────────────────
-_SC_MIN_MOMENTUM     = 5.0
+_SC_MIN_MOMENTUM     = 8.0
 _SC_MAX_MOMENTUM     = 30.0
-_SC_MIN_VOLATILITY   = 20.0
+_SC_MIN_VOLATILITY   = 22.0
 _SC_MAX_VOLATILITY   = 50.0
-_SC_MIN_MOMENTUM_20D = -3.0
+_SC_MIN_MOMENTUM_20D = 0.0
 _SC_MIN_PRICE        = 300
+_SC_MIN_RSI          = 45.0
+_SC_MAX_RSI          = 70.0
 
 def _fetch_yahoo(ticker, days=800):
     """Yahoo Finance APIから株価DataFrameを取得"""
@@ -142,6 +144,7 @@ def compute_screener_at(hist, target_date, nikkei_return_3m=None):
     momentum_20d = (p[-1] - p[-n20 - 1]) / p[-n20 - 1] * 100
     vol          = (np.diff(p) / p[:-1]).std() * np.sqrt(252) * 100
     close_price  = float(p[-1])
+    rsi          = calc_rsi(p)
 
     coef     = np.polyfit(np.arange(n), p, 1)
     slope_up = bool(coef[0] > 0)
@@ -166,6 +169,7 @@ def compute_screener_at(hist, target_date, nikkei_return_3m=None):
         "return_3m":       return_3m,
         "momentum_20d":    momentum_20d,
         "vol":             vol,
+        "rsi":             rsi,
         "vr2060":          vr2060,
         "rel_strength_3m": rel_strength_3m,
         "slope_up":        slope_up,
@@ -188,6 +192,8 @@ def _get_screener_pass_codes(raw_screener):
         & (sc_df["slope_up"])
         & (sc_df.get("vr2060", pd.Series(1.0, index=sc_df.index)) >= 1.0)
         & (sc_df.get("rel_strength_3m", pd.Series(0.0, index=sc_df.index)) >= 0.05)
+        & (sc_df.get("rsi", pd.Series(50.0, index=sc_df.index)) >= _SC_MIN_RSI)
+        & (sc_df.get("rsi", pd.Series(50.0, index=sc_df.index)) <= _SC_MAX_RSI)
     )
     return set(sc_df.loc[mask, "code"].astype(str))
 
@@ -399,6 +405,8 @@ def main():
         raw_screener = [raw_screener[j] for j in keep]
         print(f"スクリーナー v1: {len(pass_codes)} 銘柄通過 / {len(raw_feats)} 件処理")
 
+    sc_map = {s["code"]: s for s in raw_screener}
+
     # フェーズ2: クロスセクショナルランク特徴量を付加
     if not raw_feats:
         print("ERROR: データが取得できませんでした"); return
@@ -412,6 +420,7 @@ def main():
         rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else 0
         net = rise_prob - drop_prob
+        sc = sc_map.get(code, {})
         results.append({
             "コード": code,
             "銘柄名": name,
@@ -421,6 +430,11 @@ def main():
             "上昇確率(%)": round(rise_prob, 1),
             "下落確率(%)": round(drop_prob, 1),
             "ネット(%)": round(net, 1),
+            "モメンタム3M(%)": round(sc["return_3m"] * 100, 1) if sc.get("return_3m") is not None else None,
+            "モメンタム20d(%)": round(sc["momentum_20d"], 1) if sc.get("momentum_20d") is not None else None,
+            "ボラ(%)": round(sc["vol"], 1) if sc.get("vol") is not None else None,
+            "RSI": round(sc["rsi"], 1) if sc.get("rsi") is not None else None,
+            "相対強度3M(%)": round(sc["rel_strength_3m"] * 100, 1) if sc.get("rel_strength_3m") is not None else None,
             "予測正解": int(actual_return >= RISE_THRESHOLD),
         })
 
