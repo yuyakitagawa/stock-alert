@@ -20,11 +20,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
-from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS
+from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
 from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, NET_SELL_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
                     CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
-                    CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN)
+                    CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN,
+                    SELL_DAYS_MID, SELL_DAYS_LATE,
+                    NET_SELL_THRESHOLD_MID, NET_SELL_THRESHOLD_LATE)
 from lib.email_html import (
     EMAIL_CSS as _EMAIL_CSS,
     volatility_label, get_judgment,
@@ -50,6 +52,18 @@ _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit
 
 def _held_codes(results):
     return {str(r["code"]) for r in results}
+
+
+def _tiered_sell_signal(net, holding_days):
+    """保有日数に応じて売り閾値を段階的に引き締める。
+    63日超: net<6% で売り（モデルホライズン外、新鮮なシグナルがなければ撤退）
+    31-63日: net<0% で売り（モデル予測が中盤、中立化したら撤退）
+    0-30日: net<-5% で売り（通常閾値）"""
+    if holding_days is not None and holding_days > SELL_DAYS_LATE:
+        return "sell" if net < NET_SELL_THRESHOLD_LATE else "hold"
+    if holding_days is not None and holding_days > SELL_DAYS_MID:
+        return "sell" if net < NET_SELL_THRESHOLD_MID else "hold"
+    return "sell" if net < NET_SELL_THRESHOLD else "hold"
 
 
 def _row_code_str(row):
@@ -521,7 +535,9 @@ def _augmented_feature_matrix(raw_data):
     return add_cs_rank_features(feats_matrix)
 
 
-def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20):
+def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20,
+                               holding_days_map=None):
+    holding_days_map = holding_days_map or {}
     results = []
     for idx, (code, name, prices, feat) in enumerate(raw_data):
         feat_aug = feats_aug[idx]
@@ -529,7 +545,8 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else None
         close = float(prices["Close"].iloc[-1])
         net = rise_prob - drop_prob if drop_prob is not None else rise_prob
-        signal = "sell" if net < NET_SELL_THRESHOLD else "hold"
+        holding_days = holding_days_map.get(str(code))
+        signal = _tiered_sell_signal(net, holding_days)
         judgment, _ = get_judgment(net)
         vol = round(feat_aug[7], 1)
         vol_label = volatility_label(vol)
@@ -548,6 +565,7 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
             "vol": vol, "vol_label": vol_label, "recommend": recommend,
             "rel5": rel5, "rel20": rel20, "ret20": round(s20, 1),
             "prices_close": prices["Close"].values.tolist(),
+            "holding_days": holding_days,
         })
     return results
 
@@ -584,7 +602,9 @@ def main():
     if not raw_data:
         logger.warning("有効銘柄なし"); return
     feats_aug = _augmented_feature_matrix(raw_data)
-    results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20)
+    holding_days_map = get_holding_days(list(held_stocks.keys()), today_date_str)
+    results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20,
+                                        holding_days_map)
 
     save_held_scores(today_date_str, results)
 

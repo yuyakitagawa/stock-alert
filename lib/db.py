@@ -197,6 +197,27 @@ def load_simulation_results(run_date=None):
         return [dict(r) for r in rows]
 
 
+def get_holding_days(codes, today_str):
+    """held_scores の MIN(date) から各コードの推定保有日数を返す。
+    DBに記録がないコード（新規追加銘柄）はキーなしで返る。"""
+    if not codes:
+        return {}
+    from datetime import datetime as _dt
+    today = _dt.strptime(today_str, "%Y-%m-%d").date()
+    init_db()
+    result = {}
+    with _conn() as con:
+        for code in codes:
+            row = con.execute(
+                "SELECT MIN(date) AS first_date FROM held_scores WHERE code=?",
+                (str(code),)
+            ).fetchone()
+            if row and row["first_date"]:
+                first = _dt.strptime(row["first_date"], "%Y-%m-%d").date()
+                result[str(code)] = (today - first).days
+    return result
+
+
 def save_all_sectors(sector_map):
     from datetime import date
     today_str = date.today().isoformat()
