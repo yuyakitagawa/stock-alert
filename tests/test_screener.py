@@ -96,9 +96,9 @@ class TestApplyScreenerV1(unittest.TestCase):
         df = _make_universe([{"code": "A", "rel_strength_3m": 0.0}])
         self.assertEqual(len(apply_screener_v1(df)), 1)
 
-    def test_rsi_below_40_excluded(self):
-        """RSI < 40（売られすぎ）は除外される"""
-        df = _make_universe([{"code": "A", "rsi": 39.9}])
+    def test_rsi_below_45_excluded(self):
+        """RSI < 45（売られすぎ）は除外される"""
+        df = _make_universe([{"code": "A", "rsi": 44.9}])
         self.assertTrue(apply_screener_v1(df).empty)
 
     def test_rsi_above_70_excluded(self):
@@ -107,8 +107,8 @@ class TestApplyScreenerV1(unittest.TestCase):
         self.assertTrue(apply_screener_v1(df).empty)
 
     def test_rsi_at_bounds_passes(self):
-        """RSI = 40 / 70 はちょうど通過する（境界値 >=/<= ）"""
-        df = _make_universe([{"code": "L", "rsi": 40.0}, {"code": "H", "rsi": 70.0}])
+        """RSI = 45 / 70 はちょうど通過する（境界値 >=/<= ）"""
+        df = _make_universe([{"code": "L", "rsi": 45.0}, {"code": "H", "rsi": 70.0}])
         self.assertEqual(len(apply_screener_v1(df)), 2)
 
     def test_low_liquidity_excluded(self):
