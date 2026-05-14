@@ -46,7 +46,7 @@ def apply_filter(df, cfg):
 
 
 def run_period(start, end, skip_run=False):
-    out_path = os.path.join(BASE_DIR, f"backtest_{start}_{end}.csv")
+    out_path = os.path.join(BASE_DIR, "simulations", "backtests", f"backtest_{start}_{end}.csv")
     if os.path.exists(out_path):
         print(f"  [{start}→{end}] キャッシュ済み")
         return out_path
