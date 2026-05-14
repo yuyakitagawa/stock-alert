@@ -172,18 +172,45 @@ def _db_ranking_to_df(rows):
 
 
 def load_held_stocks():
-    """Google SheetsまたはCSVからチェック銘柄を読み込む"""
+    """
+    Google SheetsまたはCSVからチェック銘柄を読み込む。
+    戻り値: (held_stocks, buy_date_map, qty_map)
+      - held_stocks : {コード: 銘柄名}
+      - buy_date_map: {コード: "YYYY-MM-DD"} — 購入日列がある場合のみ
+      - qty_map     : {コード: int}          — 数量列がある場合のみ
+    """
     try:
-        from lib.sheets_helper import load_watch_list
-        return load_watch_list()
+        from lib.sheets_helper import load_watch_list_df
+        df = load_watch_list_df()
     except Exception as e:
         logger.warning("sheets_helper失敗、CSVで代替: %s", e)
         csv_path = os.path.join(BASE_DIR, "watch_list.csv")
         if not os.path.exists(csv_path):
             logger.error("watch_list.csvが見つかりません")
-            return {}
+            return {}, {}, {}
         df = pd.read_csv(csv_path, dtype=str)
-        return dict(zip(df["コード"].str.strip(), df["銘柄名"].str.strip()))
+        df.columns = df.columns.str.strip()
+        df["コード"] = df["コード"].str.strip().str.zfill(4)
+        df["銘柄名"] = df["銘柄名"].str.strip()
+
+    held_stocks = dict(zip(df["コード"], df["銘柄名"]))
+
+    buy_date_map = {}
+    if "購入日" in df.columns:
+        for _, row in df.iterrows():
+            val = str(row["購入日"]).strip()
+            if val and val.lower() not in ("nan", ""):
+                buy_date_map[row["コード"]] = val
+
+    qty_map = {}
+    if "数量" in df.columns:
+        for _, row in df.iterrows():
+            try:
+                qty_map[row["コード"]] = int(float(str(row["数量"]).strip()))
+            except (ValueError, TypeError):
+                pass
+
+    return held_stocks, buy_date_map, qty_map
 
 
 def load_top_ranking(n=15):
@@ -578,7 +605,7 @@ def main():
         logger.error(".envにGMAIL_ADDRESSとGMAIL_APP_PASSWORDを設定してください")
         return
 
-    held_stocks = load_held_stocks()
+    held_stocks, buy_date_map, qty_map = load_held_stocks()
     if not held_stocks:
         return
     logger.info("チェック銘柄: %d銘柄", len(held_stocks))
@@ -602,9 +629,32 @@ def main():
     if not raw_data:
         logger.warning("有効銘柄なし"); return
     feats_aug = _augmented_feature_matrix(raw_data)
-    holding_days_map = get_holding_days(list(held_stocks.keys()), today_date_str)
+
+    # 購入日が取得できた銘柄は正確な保有日数を使用、それ以外はDBから推定
+    if buy_date_map:
+        from datetime import date as _date
+        today_d = _date.fromisoformat(today_date_str)
+        holding_days_map = {}
+        for code in held_stocks:
+            if code in buy_date_map:
+                try:
+                    buy_d = _date.fromisoformat(buy_date_map[code])
+                    holding_days_map[code] = (today_d - buy_d).days
+                except ValueError:
+                    pass
+        # 購入日がない銘柄はDBで補完
+        missing = [c for c in held_stocks if c not in holding_days_map]
+        if missing:
+            holding_days_map.update(get_holding_days(missing, today_date_str))
+    else:
+        holding_days_map = get_holding_days(list(held_stocks.keys()), today_date_str)
+
     results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20,
                                         holding_days_map)
+
+    # 数量を結果に付加
+    for r in results:
+        r["qty"] = qty_map.get(str(r["code"]))
 
     save_held_scores(today_date_str, results)
 

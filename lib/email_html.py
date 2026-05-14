@@ -231,10 +231,12 @@ def build_all_rows(results, earnings_map=None):
             hold_badge = (f"<span style='display:inline-block;background:#e67e22;color:white;"
                           f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
                           f"margin-left:3px;vertical-align:middle'>{hd}d</span>")
+        qty = r.get("qty")
+        qty_str = f"<span style='color:#555;font-size:10px'>×{qty:,}株</span>" if qty else ""
         rows += (f"<tr>"
                  f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
                  f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}{hold_badge}"
-                 f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f}</span>"
+                 f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f} {qty_str}</span>"
                  f"{spark_html}</td>"
                  f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
                  f"<td style='text-align:center'>{drop_str}</td>"

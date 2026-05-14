@@ -46,6 +46,16 @@ SCOPE = [
 ]
 
 
+def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    """列名正規化と必須列の型変換。数量・購入日は存在すれば保持。"""
+    df.columns = df.columns.str.strip()
+    df["コード"]  = df["コード"].str.strip().str.zfill(4)
+    df["銘柄名"] = df["銘柄名"].str.strip()
+    optional = ["数量", "購入日"]
+    keep = ["コード", "銘柄名"] + [c for c in optional if c in df.columns]
+    return df[keep]
+
+
 def _load_from_sheets():
     """Google Sheetsからチェック銘柄を読み込む"""
     try:
@@ -55,14 +65,10 @@ def _load_from_sheets():
         creds = Credentials.from_service_account_file(GCP_KEY_PATH, scopes=SCOPE)
         gc    = gspread.authorize(creds)
         sh    = gc.open_by_key(SPREADSHEET_ID)
-        ws    = sh.get_worksheet(0)          # 1枚目のシート
-        data  = ws.get_all_records()         # ヘッダー行を自動認識
+        ws    = sh.get_worksheet(0)
+        data  = ws.get_all_records()
         df = pd.DataFrame(data, dtype=str)
-        # 列名を正規化（前後スペース除去）
-        df.columns = df.columns.str.strip()
-        df["コード"]  = df["コード"].str.strip().str.zfill(4)
-        df["銘柄名"] = df["銘柄名"].str.strip()
-        return df[["コード", "銘柄名"]]
+        return _normalize_df(df)
     except ImportError:
         raise ImportError("gspread / google-auth が未インストールです: pip install gspread google-auth")
     except Exception as e:
@@ -74,15 +80,19 @@ def _load_from_csv():
     if not os.path.exists(WATCH_CSV_PATH):
         raise FileNotFoundError(f"watch_list.csv が見つかりません: {WATCH_CSV_PATH}")
     df = pd.read_csv(WATCH_CSV_PATH, dtype=str)
-    df.columns = df.columns.str.strip()
-    df["コード"]  = df["コード"].str.strip().str.zfill(4)
-    df["銘柄名"] = df["銘柄名"].str.strip()
-    return df[["コード", "銘柄名"]]
+    return _normalize_df(df)
 
 
 def load_watch_list() -> dict:
+    """後方互換: {コード: 銘柄名} の辞書を返す。"""
+    df = load_watch_list_df()
+    return dict(zip(df["コード"], df["銘柄名"]))
+
+
+def load_watch_list_df() -> pd.DataFrame:
     """
-    チェック銘柄を {コード: 銘柄名} の辞書で返す。
+    チェック銘柄を DataFrame で返す（コード・銘柄名・数量・購入日）。
+    数量・購入日は存在する場合のみ含まれる。
     - SPREADSHEET_ID が設定済み + gcp_key.json が存在 → Google Sheets を使用
     - それ以外 → watch_list.csv にフォールバック
     """
@@ -96,13 +106,13 @@ def load_watch_list() -> dict:
                 df.to_csv(WATCH_CSV_PATH, index=False, encoding="utf-8-sig")
             except Exception:
                 pass
-            return dict(zip(df["コード"], df["銘柄名"]))
+            return df
         except Exception as e:
             print(f"[WARN] Google Sheets読み込み失敗、CSVにフォールバック: {e}")
 
     df = _load_from_csv()
     print(f"[INFO] watch_list.csvからチェック銘柄を読み込みました ({len(df)}銘柄)")
-    return dict(zip(df["コード"], df["銘柄名"]))
+    return df
 
 
 # 動作確認用
