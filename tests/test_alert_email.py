@@ -216,5 +216,63 @@ class TestAbnormalDataRobustness(unittest.TestCase):
         self.assertEqual(_safe_float(5), 5.0)
 
 
+class TestCandidateFilters(unittest.TestCase):
+    """net_min/drop_max/conflict除外 フィルタの動作確認"""
+
+    def _ranking(self, rows):
+        return pd.DataFrame(rows)
+
+    def _titles(self, actions):
+        return [a["title"] for a in actions]
+
+    def test_conflict_excluded(self):
+        """net≥10 かつ drop≥5 のコンフリクト銘柄は除外される"""
+        ranking = self._ranking([
+            {"銘柄コード": 9001, "銘柄名": "コンフリクト株", "ネット(%)": 12.0, "ボラ(%)": 25.0, "下落確率(%)": 6.0},
+        ])
+        actions = build_priority_actions([], ranking_df=ranking)
+        self.assertFalse(any("コンフリクト株" in t for t in self._titles(actions)))
+
+    def test_high_net_low_drop_included(self):
+        """net≥10 かつ drop<5 はコンフリクトではなく候補に残る"""
+        ranking = self._ranking([
+            {"銘柄コード": 9002, "銘柄名": "高net低drop株", "ネット(%)": 12.0, "ボラ(%)": 25.0, "下落確率(%)": 4.0},
+        ])
+        actions = build_priority_actions([], ranking_df=ranking)
+        self.assertTrue(any("高net低drop株" in t for t in self._titles(actions)))
+
+    def test_net_at_new_min_included(self):
+        """net=6.0（新下限ちょうど）は候補に含まれる"""
+        ranking = self._ranking([
+            {"銘柄コード": 9003, "銘柄名": "ネット6株", "ネット(%)": 6.0, "ボラ(%)": 25.0, "下落確率(%)": 3.0},
+        ])
+        actions = build_priority_actions([], ranking_df=ranking)
+        self.assertTrue(any("ネット6株" in t for t in self._titles(actions)))
+
+    def test_net_below_min_excluded(self):
+        """net=5.9（下限未満）は除外される"""
+        ranking = self._ranking([
+            {"銘柄コード": 9004, "銘柄名": "ネット低株", "ネット(%)": 5.9, "ボラ(%)": 25.0, "下落確率(%)": 3.0},
+        ])
+        actions = build_priority_actions([], ranking_df=ranking)
+        self.assertFalse(any("ネット低株" in t for t in self._titles(actions)))
+
+    def test_drop_prob_below_new_max_included(self):
+        """drop_prob=11.9%（新上限未満）は除外されない"""
+        ranking = self._ranking([
+            {"銘柄コード": 9005, "銘柄名": "drop11株", "ネット(%)": 7.0, "ボラ(%)": 25.0, "下落確率(%)": 11.9},
+        ])
+        actions = build_priority_actions([], ranking_df=ranking)
+        self.assertTrue(any("drop11株" in t for t in self._titles(actions)))
+
+    def test_drop_prob_above_new_max_excluded(self):
+        """drop_prob=12.1%（新上限超過）は除外される"""
+        ranking = self._ranking([
+            {"銘柄コード": 9006, "銘柄名": "drop13株", "ネット(%)": 7.0, "ボラ(%)": 25.0, "下落確率(%)": 12.1},
+        ])
+        actions = build_priority_actions([], ranking_df=ranking)
+        self.assertFalse(any("drop13株" in t for t in self._titles(actions)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

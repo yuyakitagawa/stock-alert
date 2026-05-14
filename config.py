@@ -16,7 +16,10 @@ RISE_THRESHOLD  = 15.0          # 上昇判定の閾値（%）
 NET_SELL_THRESHOLD = -5.0       # 保有株の売りシグナル閾値
 
 # ── 新規候補フィルター ─────────────────────────────────────────────────────
-NEW_CANDIDATE_NET_MIN        = 8.0   # ネットスコア下限
+NEW_CANDIDATE_NET_MIN        = 6.0   # ネットスコア下限（8.0→6.0）
 NEW_CANDIDATE_NET_MAX        = 13.0  # ネットスコア上限（過熱回避）
-CANDIDATE_DROP_PROB_MAX      = 10.0  # 下落確率上限（【回避】ライン）
+CANDIDATE_DROP_PROB_MAX      = 12.0  # 下落確率上限（10.0→12.0）
 CANDIDATE_EARNINGS_SKIP_DAYS = 7     # 決算N日以内の新規候補を除外
+# conflict除外: net高くてdrop_probも無視できない「矛盾シグナル」を除外
+CANDIDATE_CONFLICT_NET_MIN   = 10.0  # net がこれ以上かつ
+CANDIDATE_CONFLICT_DROP_MIN  =  5.0  # drop_prob がこれ以上なら候補から除外

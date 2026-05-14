@@ -10,7 +10,8 @@ import glob
 import time
 import pandas as pd
 from datetime import datetime, timedelta
-from config import BASE_DIR, NEW_CANDIDATE_NET_MIN, CANDIDATE_DROP_PROB_MAX
+from config import (BASE_DIR, NEW_CANDIDATE_NET_MIN, CANDIDATE_DROP_PROB_MAX,
+                    CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN)
 from lib.db import save_simulation_results
 from lib.utils import get_prices, get_price_at_date
 
@@ -20,6 +21,10 @@ def classify(net, drop_prob):
         return "除外(高リスク)"
     if net < NEW_CANDIDATE_NET_MIN:
         return "除外(ネット低)"
+    if (drop_prob is not None
+            and net >= CANDIDATE_CONFLICT_NET_MIN
+            and drop_prob >= CANDIDATE_CONFLICT_DROP_MIN):
+        return "除外(コンフリクト)"
     if drop_prob is not None and drop_prob < 6.0 and net >= 10.0:
         return "🥇 S買い"
     return "🥈 A買い"

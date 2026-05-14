@@ -23,7 +23,8 @@ from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_r
 from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS
 from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, NET_SELL_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
-                    CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS)
+                    CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
+                    CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN)
 from lib.email_html import (
     EMAIL_CSS as _EMAIL_CSS,
     volatility_label, get_judgment,
@@ -83,9 +84,13 @@ def _net_in_candidate_band(net):
     return NEW_CANDIDATE_NET_MIN <= net <= NEW_CANDIDATE_NET_MAX
 
 
-def _is_new_candidate_skipped(code_str, drop_v):
-    """新規候補スキップ判定: 高下落確率 or 決算前"""
+def _is_new_candidate_skipped(code_str, net, drop_v):
+    """新規候補スキップ判定: 高下落確率 or コンフリクト or 決算前"""
     if drop_v is not None and drop_v > CANDIDATE_DROP_PROB_MAX:
+        return True
+    if (drop_v is not None and net is not None
+            and net >= CANDIDATE_CONFLICT_NET_MIN
+            and drop_v >= CANDIDATE_CONFLICT_DROP_MIN):
         return True
     d = get_next_earnings_cached(code_str)
     if d is not None:
@@ -121,7 +126,7 @@ def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
         if net is None or not _net_in_candidate_band(net):
             continue
         drop_v = _safe_float(row.get("下落確率(%)", None))
-        if _is_new_candidate_skipped(code, drop_v):
+        if _is_new_candidate_skipped(code, net, drop_v):
             continue
         out.append({"code": code, "name": row["銘柄名"]})
     return out
@@ -247,7 +252,7 @@ def build_priority_actions(results, ranking_df=None):
                 if net_v is None or not _net_in_candidate_band(net_v):
                     continue
                 drop_v = _safe_float(row.get("下落確率(%)", None))
-                if _is_new_candidate_skipped(code_str, drop_v):
+                if _is_new_candidate_skipped(code_str, net_v, drop_v):
                     continue
                 actions.append({"emoji": "✅",
                                  "title": f"{row['銘柄名']}（{code_str}）— 新規買いシグナル",
@@ -350,7 +355,7 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
             net_v = _row_net_percent(row, use_rise_fallback=True)
             if net_v is None or not _net_in_candidate_band(net_v):
                 continue
-            if _is_new_candidate_skipped(code_str, drop_v):
+            if _is_new_candidate_skipped(code_str, net_v, drop_v):
                 continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
             recommend = recommend_from_scores(net_v, drop_v)
