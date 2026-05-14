@@ -5,6 +5,9 @@ on:
     - cron: '0 20 * * *'  # 毎日20:00 UTC = 毎日5:00 AM JST（メール6:00着想定）
   workflow_dispatch:       # 手動実行ボタン
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
