@@ -38,12 +38,38 @@ def _held_codes(results):
 
 
 def _row_code_str(row):
-    return str(int(row["銘柄コード"]))
+    """ランキング行の銘柄コードを安全に文字列化。変換不能なら None。"""
+    raw = row.get("銘柄コード") if hasattr(row, "get") else None
+    if raw is None or pd.isna(raw):
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.endswith(".0"):
+        text = text[:-2]
+    if text.isdigit():
+        return text
+    try:
+        return str(int(float(text)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _safe_float(val):
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        if pd.isna(val):
+            return None
         return float(val)
+    if isinstance(val, str):
+        text = val.strip()
+        if not text or text.lower() in ("nan", "none", "-"):
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
     return None
 
 
@@ -111,7 +137,10 @@ def _unheld_ranking_row_count(ranking_df, held_codes):
         return 0
     n = 0
     for _, row in ranking_df.iterrows():
-        if _row_code_str(row) not in held_codes:
+        code = _row_code_str(row)
+        if code is None:
+            continue
+        if code not in held_codes:
             n += 1
     return n
 
@@ -123,7 +152,7 @@ def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
         return out
     for _, row in ranking_df.head(max_rows).iterrows():
         code = _row_code_str(row)
-        if code in held_codes:
+        if code is None or code in held_codes:
             continue
         net = _row_net_percent(row, use_rise_fallback=False)
         if net is None or not _net_in_candidate_band(net):
@@ -261,7 +290,7 @@ def build_priority_actions(results, ranking_df=None):
                 if len(actions) >= 3:
                     break
                 code_str = _row_code_str(row)
-                if code_str in held_codes:
+                if code_str is None or code_str in held_codes:
                     continue
                 net_v = _row_net_percent(row, use_rise_fallback=False)
                 if net_v is None or not _net_in_candidate_band(net_v):

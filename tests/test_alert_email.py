@@ -3,6 +3,7 @@ import unittest
 import os
 import sys
 import pandas as pd
+from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from alert_email import (
@@ -107,6 +108,28 @@ class TestBuildPriorityActions(unittest.TestCase):
         actions = build_priority_actions(results, ranking_df=ranking)
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0]["emoji"], "✅")
+
+
+    def test_skips_invalid_code_rows(self):
+        results = [_make_result("3333", "保有のみ", net=20.0, signal="hold")]
+        ranking = pd.DataFrame([
+            {"銘柄コード": "", "銘柄名": "空コード", "ネット(%)": 10.0, "ボラ(%)": 22.0},
+            {"銘柄コード": "ABCD", "銘柄名": "文字コード", "ネット(%)": 10.0, "ボラ(%)": 22.0},
+            {"銘柄コード": 9999, "銘柄名": "有効コード", "ネット(%)": 10.0, "ボラ(%)": 22.0},
+        ])
+        with patch("alert_email.get_next_earnings_cached", return_value=None):
+            actions = build_priority_actions(results, ranking_df=ranking)
+        self.assertEqual(len(actions), 1)
+        self.assertIn("9999", actions[0]["title"])
+
+    def test_string_drop_prob_still_skips_candidate(self):
+        results = [_make_result("3333", "保有のみ", net=20.0, signal="hold")]
+        ranking = pd.DataFrame([
+            {"銘柄コード": 9999, "銘柄名": "回避候補", "ネット(%)": 10.0, "下落確率(%)": "11.5", "ボラ(%)": 22.0},
+        ])
+        with patch("alert_email.get_next_earnings_cached", return_value=None):
+            actions = build_priority_actions(results, ranking_df=ranking)
+        self.assertEqual(actions, [])
 
     def test_empty_when_no_signals(self):
         results = [_make_result("4444", "普通株", net=2.0, signal="hold")]
