@@ -165,6 +165,19 @@ def build_priority_section(priority_actions):
             f"<h2>🎯 今日の優先アクション</h2>{items}</div>")
 
 
+def _holding_days_cell(holding_days):
+    """保有日数を色付きセルで返す。閾値を超えると警告色。"""
+    if holding_days is None:
+        return "<span style='color:#aaa'>-</span>"
+    if holding_days > 63:
+        return (f"<span style='color:#c0392b;font-weight:700'>{holding_days}d</span>"
+                f"<br><span style='font-size:10px;color:#c0392b'>期限超</span>")
+    if holding_days > 30:
+        return (f"<span style='color:#b05000;font-weight:700'>{holding_days}d</span>"
+                f"<br><span style='font-size:10px;color:#b05000'>中期</span>")
+    return f"<span style='color:#888'>{holding_days}d</span>"
+
+
 def build_sell_section(results):
     sells = sorted([r for r in results if r["signal"] == "sell"], key=lambda x: x["net"])
     if not sells:
@@ -173,17 +186,21 @@ def build_sell_section(results):
                 f"<p style='color:#666;margin:0'>全チェック銘柄がポジティブ/中立判定です。</p></div>"), sells
     rows = ""
     for r in sells:
+        hd_cell = _holding_days_cell(r.get("holding_days"))
         rows += (f"<tr>"
                  f"<td><b>{r['name']}</b><br>"
                  f"<span style='color:#888;font-size:12px'>{r['code']} ¥{r['close']:,.0f}</span></td>"
                  f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
                  f"<td class='{rel_cls(r.get('rel20'))}' style='text-align:center'>{rel_str(r.get('rel20'))}</td>"
                  f"<td style='text-align:center;color:#888;font-size:12px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
+                 f"<td style='text-align:center;font-size:12px'>{hd_cell}</td>"
                  f"</tr>")
     section = (f"<div class='card' style='border-left:4px solid #c0392b'>"
                f"<h2>🔴 売り検討 ({len(sells)}銘柄)</h2>"
-               f"<p style='color:#666;font-size:13px;margin:0 0 10px'>ネットスコアがマイナス。ニュース・決算を確認してください。</p>"
-               f"<table><tr style='background:#fde8e8'><th>銘柄</th><th>ネット</th><th>日経差(20日)</th><th>ボラ</th></tr>"
+               f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
+               f"ネット低下または保有期限超過。理由を確認してください。</p>"
+               f"<table><tr style='background:#fde8e8'>"
+               f"<th>銘柄</th><th>ネット</th><th>日経差(20日)</th><th>ボラ</th><th>保有</th></tr>"
                f"{rows}</table></div>")
     return section, sells
 
@@ -204,9 +221,19 @@ def build_all_rows(results, earnings_map=None):
                      f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
                      f"margin-left:3px;vertical-align:middle'>⚡即切</span>"
                      if r.get("ret20", 0) < -10.0 else "")
+        hd = r.get("holding_days")
+        hold_badge = ""
+        if hd is not None and hd > 63:
+            hold_badge = (f"<span style='display:inline-block;background:#c0392b;color:white;"
+                          f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
+                          f"margin-left:3px;vertical-align:middle'>⏰{hd}d</span>")
+        elif hd is not None and hd > 30:
+            hold_badge = (f"<span style='display:inline-block;background:#e67e22;color:white;"
+                          f"font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;"
+                          f"margin-left:3px;vertical-align:middle'>{hd}d</span>")
         rows += (f"<tr>"
                  f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
-                 f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}"
+                 f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}{hold_badge}"
                  f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f}</span>"
                  f"{spark_html}</td>"
                  f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
