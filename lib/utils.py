@@ -336,7 +336,7 @@ def get_fundamentals(code):
 def recommend_from_net(net):
     if net > 13:
         return "🟡 高値警戒"
-    if net >= 8:
+    if net >= 6:
         return "🥈 A買い"
     if net >= 5:
         return "🔵 様子見"
