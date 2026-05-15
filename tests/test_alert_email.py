@@ -221,19 +221,19 @@ class TestTieredSellSignal(unittest.TestCase):
     """保有日数別段階的売りシグナルのテスト"""
 
     def test_early_phase_normal_threshold(self):
-        """0-20日: net<-5%のみ売り"""
-        self.assertEqual(_tiered_sell_signal(-5.1, 15), "sell")
-        self.assertEqual(_tiered_sell_signal(-4.9, 15), "hold")
-        self.assertEqual(_tiered_sell_signal(0.0,  15), "hold")
+        """0-3日: net<-5%のみ売り"""
+        self.assertEqual(_tiered_sell_signal(-5.1, 2), "sell")
+        self.assertEqual(_tiered_sell_signal(-4.9, 2), "hold")
+        self.assertEqual(_tiered_sell_signal(0.0,  2), "hold")
 
     def test_mid_phase_tighter_threshold(self):
-        """21-63日: net<3%で売り"""
+        """4-63日: net<3%で売り"""
         self.assertEqual(_tiered_sell_signal(2.9,  45), "sell")
         self.assertEqual(_tiered_sell_signal(3.0,  45), "hold")
         self.assertEqual(_tiered_sell_signal(5.0,  45), "hold")
         # 通常なら hold のままだが中期では sell になるケース
         self.assertEqual(_tiered_sell_signal(1.0,  45), "sell")
-        self.assertEqual(_tiered_sell_signal(1.0,  20), "hold")
+        self.assertEqual(_tiered_sell_signal(1.0,   3), "hold")
 
     def test_late_phase_tightest_threshold(self):
         """63日超: net<6%で売り（モデルホライズン外）"""
@@ -251,9 +251,9 @@ class TestTieredSellSignal(unittest.TestCase):
         self.assertEqual(_tiered_sell_signal(3.0,  None), "hold")
 
     def test_boundary_days(self):
-        """境界日数の確認（20日以下は通常、21日から中期、63日以下は中期、64日から後期）"""
-        self.assertEqual(_tiered_sell_signal(1.0,  20), "hold")   # 20日は通常
-        self.assertEqual(_tiered_sell_signal(1.0,  21), "sell")   # 21日から中期
+        """境界日数の確認（3日以下は通常、4日から中期、63日以下は中期、64日から後期）"""
+        self.assertEqual(_tiered_sell_signal(1.0,   3), "hold")   # 3日は通常
+        self.assertEqual(_tiered_sell_signal(1.0,   4), "sell")   # 4日から中期
         self.assertEqual(_tiered_sell_signal(5.9,  63), "hold")   # 63日は中期
         self.assertEqual(_tiered_sell_signal(5.9,  64), "sell")   # 64日から後期
 
