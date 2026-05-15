@@ -4,13 +4,13 @@
 
 ## システム概要
 
-毎朝8時（JST）にGitHub Actionsで自動実行される。
+平日16:07（JST）にGitHub Actionsで自動実行される。
 
 ```
 screener.py → rank_stocks.py → alert_email.py
-  (毎日)          (毎日)           (毎日)
+  (平日)          (平日)           (平日)
 
-rf_train_v3.py は土曜 or モデル未存在時のみ実行
+rf_train_v3.py は金曜 or モデル未存在時のみ実行
 ```
 
 ---
@@ -20,7 +20,7 @@ rf_train_v3.py は土曜 or モデル未存在時のみ実行
 | ファイル | 役割 |
 |---|---|
 | `screener.py` | JPX全銘柄から条件通過銘柄を抽出して `data/screeners/` に保存 |
-| `rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（土曜のみ） |
+| `rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ） |
 | `rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存 |
 | `alert_email.py` | チェック銘柄の評価＋新規候補をGmailで送信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
