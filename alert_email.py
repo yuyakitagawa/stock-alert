@@ -499,7 +499,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
   <table>
-    <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th></tr>
+    <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>騰落(20日)</th><th>騰落(60日)</th><th>日経差(20日)</th><th>ボラ</th></tr>
     {_build_all_rows(results, earnings_map)}
   </table>
 </div>
@@ -581,6 +581,7 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
         p = prices["Close"].values
         s5 = (p[-1] - p[-6]) / p[-6] * 100 if len(p) >= 6 else 0
         s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0
+        s60 = (p[-1] - p[-61]) / p[-61] * 100 if len(p) >= 61 else 0
         rel5 = round(s5 - nk5, 1) if nk5 is not None else None
         rel20 = round(s20 - nk20, 1) if nk20 is not None else None
         dp_str = f"{drop_prob:5.1f}%" if drop_prob is not None else "  N/A "
@@ -590,7 +591,7 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
             "code": code, "name": name, "prob": rise_prob, "drop_prob": drop_prob,
             "net": net, "close": close, "signal": signal,
             "vol": vol, "vol_label": vol_label, "recommend": recommend,
-            "rel5": rel5, "rel20": rel20, "ret20": round(s20, 1),
+            "rel5": rel5, "rel20": rel20, "ret20": round(s20, 1), "ret60": round(s60, 1),
             "prices_close": prices["Close"].values.tolist(),
             "holding_days": holding_days,
         })
