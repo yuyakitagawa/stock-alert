@@ -20,8 +20,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
-from lib.db import save_held_scores, load_prev_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
-from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, NET_SELL_THRESHOLD,
+from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
+from config import (BASE_DIR, BEAR_MARKET_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
                     CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
                     CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN,
@@ -55,15 +55,11 @@ def _held_codes(results):
 
 
 def _tiered_sell_signal(net, holding_days):
-    """保有日数に応じて売り閾値を段階的に引き締める。
-    63日超: net<6% で売り（モデルホライズン外、新鮮なシグナルがなければ撤退）
-    31-63日: net<0% で売り（モデル予測が中盤、中立化したら撤退）
-    0-30日: net<-5% で売り（通常閾値）"""
+    """保有日数によらず net<6% で売り（様子見=A買い水準未満は即撤退）。
+    63日超も同じ閾値（モデルホライズン外）。"""
     if holding_days is not None and holding_days > SELL_DAYS_LATE:
         return "sell" if net < NET_SELL_THRESHOLD_LATE else "hold"
-    if holding_days is not None and holding_days > SELL_DAYS_MID:
-        return "sell" if net < NET_SELL_THRESHOLD_MID else "hold"
-    return "sell" if net < NET_SELL_THRESHOLD else "hold"
+    return "sell" if net < NET_SELL_THRESHOLD_MID else "hold"
 
 
 def _row_code_str(row):
@@ -302,40 +298,6 @@ def build_priority_actions(results, ranking_df=None):
     return actions[:3]
 
 
-# ───────────────────────────── 差分セクション ─────────────────────────────
-
-def build_diff_section(results, prev_results):
-    """昨日からネットスコアが±3%以上変動した銘柄を表示"""
-    if not prev_results:
-        return ""
-    significant = []
-    for r in results:
-        prev = prev_results.get(str(r["code"]))
-        if prev is None:
-            continue
-        delta = r["net"] - prev.get("net", 0)
-        if abs(delta) >= 3:
-            significant.append((r, prev.get("net", 0), delta))
-    significant.sort(key=lambda x: abs(x[2]), reverse=True)
-    if not significant:
-        return ""
-    rows = ""
-    for r, prev_net, delta in significant[:6]:
-        arrow = "▲" if delta > 0 else "▼"
-        color = "#0a7a0a" if delta > 0 else "#c0392b"
-        rows += (f"<tr>"
-                 f"<td>{r['name']}（{r['code']}）</td>"
-                 f"<td style='text-align:center'>{prev_net:+.1f}%</td>"
-                 f"<td style='text-align:center;color:{color};font-weight:700'>{delta:+.1f}% {arrow}</td>"
-                 f"<td style='text-align:center'>{r['net']:+.1f}%</td>"
-                 f"</tr>")
-    return (f"<div class='card' style='border-left:4px solid #8e44ad'>"
-            f"<h2>📅 昨日との差分（±3%以上変動）</h2>"
-            f"<table><tr style='background:#f5eef8'>"
-            f"<th>銘柄</th><th>昨日</th><th>変化</th><th>今日</th></tr>{rows}</table>"
-            f"</div>")
-
-
 # ───────────────────────────── セクター警告 ───────────────────────────────
 
 def get_next_earnings_cached(code):
@@ -457,10 +419,9 @@ def build_earnings_map(codes):
 
 
 def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
-               prev_ranking_codes=None, prev_results=None, priority_actions=None,
+               prev_ranking_codes=None, priority_actions=None,
                ranking_df=None):
     prev_ranking_codes = prev_ranking_codes or set()
-    prev_results       = prev_results or {}
 
     if ranking_df is None:
         ranking_df = load_top_ranking(1000)
@@ -503,7 +464,6 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     {_build_all_rows(results, earnings_map)}
   </table>
 </div>
-{build_diff_section(results, prev_results)}
 <p style='color:#aaa;font-size:11px;text-align:center;margin-top:8px'>
   このメールは過去データに基づく参考情報です。投資判断はご自身の責任で行ってください。
 </p>
@@ -623,7 +583,6 @@ def main():
             logger.warning("下落相場検知（日経20日: %+.1f%%）: 買いシグナルの信頼性低下", nk20)
 
     prev_ranking_codes = load_prev_ranking_codes()
-    prev_results       = load_prev_held_scores(today_date_str)
 
     raw_data = _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60)
     if not raw_data:
@@ -703,7 +662,6 @@ def main():
     html = build_html(
         results, today, is_bear=is_bear, nk5=nk5, nk20=nk20, nk60=nk60,
         prev_ranking_codes=prev_ranking_codes,
-        prev_results=prev_results,
         priority_actions=priority_actions,
         ranking_df=ranking_df,
     )

@@ -10,7 +10,6 @@ from alert_email import (
     get_judgment,
     build_sparkline_svg,
     build_priority_actions,
-    build_diff_section,
     build_sector_warning,
     _row_code_str,
     _row_net_percent,
@@ -119,31 +118,6 @@ class TestBuildPriorityActions(unittest.TestCase):
         self.assertEqual(actions, [])
 
 
-class TestBuildDiffSection(unittest.TestCase):
-    def test_shows_significant_change(self):
-        results = [_make_result("1234", "テスト株", net=10.0)]
-        prev    = {"1234": {"net": 5.0, "code": "1234", "name": "テスト株", "signal": "hold"}}
-        html = build_diff_section(results, prev)
-        self.assertIn("▲", html)
-        self.assertIn("テスト株", html)
-
-    def test_empty_when_no_prev(self):
-        results = [_make_result("1234", net=10.0)]
-        html = build_diff_section(results, {})
-        self.assertEqual(html, "")
-
-    def test_empty_when_small_change(self):
-        results = [_make_result("1234", net=5.1)]
-        prev    = {"1234": {"net": 4.0, "code": "1234", "name": "株", "signal": "hold"}}
-        html = build_diff_section(results, prev)
-        self.assertEqual(html, "")  # 1.1% < 3% threshold
-
-    def test_decline_shown_with_down_arrow(self):
-        results = [_make_result("1234", net=-5.0)]
-        prev    = {"1234": {"net": 5.0, "code": "1234", "name": "株", "signal": "hold"}}
-        html = build_diff_section(results, prev)
-        self.assertIn("▼", html)
-
 
 class TestRowCodeStr(unittest.TestCase):
     def test_normal_int(self):
@@ -220,42 +194,20 @@ class TestAbnormalDataRobustness(unittest.TestCase):
 class TestTieredSellSignal(unittest.TestCase):
     """保有日数別段階的売りシグナルのテスト"""
 
-    def test_early_phase_normal_threshold(self):
-        """0-3日: net<-5%のみ売り"""
-        self.assertEqual(_tiered_sell_signal(-5.1, 2), "sell")
-        self.assertEqual(_tiered_sell_signal(-4.9, 2), "hold")
-        self.assertEqual(_tiered_sell_signal(0.0,  2), "hold")
-
-    def test_mid_phase_tighter_threshold(self):
-        """4-63日: net<6%で売り（A買い基準を下回ったら乗り換え）"""
-        self.assertEqual(_tiered_sell_signal(5.9,  45), "sell")
-        self.assertEqual(_tiered_sell_signal(6.0,  45), "hold")
-        # 通常なら hold のままだが中期では sell になるケース
-        self.assertEqual(_tiered_sell_signal(1.0,  45), "sell")
-        self.assertEqual(_tiered_sell_signal(1.0,   3), "hold")
+    def test_universal_threshold(self):
+        """保有日数に関わらず net<6% で売り（様子見=A買い水準未満は即撤退）"""
+        for hd in [None, 0, 1, 3, 4, 30, 62]:
+            with self.subTest(holding_days=hd):
+                self.assertEqual(_tiered_sell_signal(5.9,  hd), "sell")
+                self.assertEqual(_tiered_sell_signal(6.0,  hd), "hold")
+                self.assertEqual(_tiered_sell_signal(0.0,  hd), "sell")
+                self.assertEqual(_tiered_sell_signal(-5.0, hd), "sell")
 
     def test_late_phase_tightest_threshold(self):
-        """63日超: net<6%で売り（モデルホライズン外）"""
+        """63日超: net<6%で売り（モデルホライズン外、同じ閾値）"""
         self.assertEqual(_tiered_sell_signal(5.9,  70), "sell")
         self.assertEqual(_tiered_sell_signal(6.0,  70), "hold")
         self.assertEqual(_tiered_sell_signal(3.0,  70), "sell")
-        # 中期も後期も同じ閾値(net<6%)
-        self.assertEqual(_tiered_sell_signal(5.9,  45), "sell")
-        self.assertEqual(_tiered_sell_signal(5.9,  70), "sell")
-
-    def test_none_holding_days_uses_normal(self):
-        """holding_days=None（新規）は通常閾値を使う"""
-        self.assertEqual(_tiered_sell_signal(-5.1, None), "sell")
-        self.assertEqual(_tiered_sell_signal(-4.9, None), "hold")
-        self.assertEqual(_tiered_sell_signal(3.0,  None), "hold")
-
-    def test_boundary_days(self):
-        """境界日数の確認（3日以下は通常、4日から中期、63日以下は中期、64日から後期）"""
-        self.assertEqual(_tiered_sell_signal(1.0,   3), "hold")   # 3日は通常
-        self.assertEqual(_tiered_sell_signal(1.0,   4), "sell")   # 4日から中期(net<6%で売り)
-        self.assertEqual(_tiered_sell_signal(6.0,  63), "hold")   # 63日は中期(net=6.0はhold)
-        self.assertEqual(_tiered_sell_signal(5.9,  63), "sell")   # 63日は中期(net<6.0はsell)
-        self.assertEqual(_tiered_sell_signal(5.9,  64), "sell")   # 64日から後期
 
 
 class TestCandidateFilters(unittest.TestCase):
