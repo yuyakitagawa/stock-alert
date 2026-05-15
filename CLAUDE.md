@@ -7,7 +7,7 @@
 
 ## 1. File Map (Core Only)
 - `utils.py`: 特徴量定義(34次元) & 共通関数。※変更時は要申告。
-- `rf_train_v3.py`: XGBoost学習(上昇/下落)。※土曜以外は触らない。
+- `rf_train_v3.py`: XGBoost学習(上昇/下落)。※金曜(再学習日)以外は触らない。
 - `screener.py` -> `rank_stocks.py`: 抽出 & ネットスコア計算。
 - `alert_email.py`: 出力系（Gmail送信）。
 - `backtest.py`: 検証。`bear`モード（2024/08下落相場）をテスト基準とする。
@@ -26,7 +26,7 @@
 - Deep Test: `python3 backtest.py bear` (暴落耐性チェック)
 
 ## 4. Context & Workflow
-- **CI/CD**: GitHub Actions (Daily 08:00 JST).
+- **CI/CD**: GitHub Actions (平日 16:07 JST / 07:07 UTC、金曜に再学習).
 - **Env**: GMAIL, GCP_KEY_JSON, SPREADSHEET_ID が必須。
 - **Dev Cycle**: 
   1. 修正 2. `backtest.py bear` で性能確認 3. `dev_log.md` 追記 4. Commit

@@ -2,7 +2,7 @@ name: Daily Stock Alert
 
 on:
   schedule:
-    - cron: '0 7 * * *'   # 毎日07:00 UTC = 毎日16:00 JST（市場閉場後30分）
+    - cron: '7 7 * * 1-5'  # 平日07:07 UTC = 平日16:07 JST（市場閉場後37分）
   workflow_dispatch:       # 手動実行ボタン
 
 env:
@@ -62,11 +62,11 @@ jobs:
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python screener.py
 
-      - name: Step 2 - モデル学習（土曜 or 初回のみ）
+      - name: Step 2 - モデル学習（金曜 or 初回のみ）
         run: |
           DAY=$(date +%u)
           MODEL_PATH=~/stock-alert/rf_model.pkl
-          if [ "$DAY" = "6" ] || [ ! -f "$MODEL_PATH" ]; then
+          if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
             echo "▶ モデル学習を実行します"
             cd ~/stock-alert && python rf_train_v3.py
           else
