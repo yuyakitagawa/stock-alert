@@ -187,10 +187,14 @@ def build_sell_section(results):
     rows = ""
     for r in sells:
         hd_cell = _holding_days_cell(r.get("holding_days"))
+        drop_str = f"{r['drop_prob']:.1f}%" if r.get("drop_prob") is not None else "-"
         rows += (f"<tr>"
                  f"<td><b>{r['name']}</b><br>"
                  f"<span style='color:#888;font-size:12px'>{r['code']} ¥{r['close']:,.0f}</span></td>"
+                 f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
+                 f"<td style='text-align:center'>{drop_str}</td>"
                  f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
+                 f"<td style='text-align:center;font-size:11px'>{r.get('recommend','')}</td>"
                  f"<td class='{rel_cls(r.get('rel20'))}' style='text-align:center'>{rel_str(r.get('rel20'))}</td>"
                  f"<td style='text-align:center;color:#888;font-size:12px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
                  f"<td style='text-align:center;font-size:12px'>{hd_cell}</td>"
@@ -200,7 +204,7 @@ def build_sell_section(results):
                f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
                f"ネット低下または保有期限超過。理由を確認してください。</p>"
                f"<table><tr style='background:#fde8e8'>"
-               f"<th>銘柄</th><th>ネット</th><th>日経差(20日)</th><th>ボラ</th><th>保有</th></tr>"
+               f"<th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th><th>保有</th></tr>"
                f"{rows}</table></div>")
     return section, sells
 
