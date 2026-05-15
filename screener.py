@@ -5,6 +5,7 @@ import time
 import io
 import os
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from lib.utils import calc_rsi, get_sector_cached, get_prices, get_nikkei_returns, HEADERS
 
@@ -21,6 +22,14 @@ MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
 MAX_SECTOR_COUNT = 2      # 同セクター通過上限（3銘柄以上集まったらバブル兆候とみなしセクター全除外）
+FETCH_WORKERS    = 5      # 並列取得ワーカー数（レートリミット配慮）
+
+
+def _fetch_stock(task):
+    code, name, nk_return_3m, nk_return_20d = task
+    time.sleep(0.1)
+    df = get_prices(code, days=180)
+    return code, name, calc_metrics(df, nk_return_3m, nk_return_20d)
 
 
 def get_tse_stock_list():
@@ -205,47 +214,46 @@ def main():
 
     print(f"\n{total} 銘柄をスクリーニング中...")
 
-    for i, row in stock_list.iterrows():
-        code = row["code"]
-        name = row["name"]
+    tasks = [
+        (row["code"], row["name"], nikkei_return_3m, nikkei_return_20d)
+        for _, row in stock_list.iterrows()
+    ]
+    processed = 0
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
+        for code, name, result in ex.map(_fetch_stock, tasks):
+            processed += 1
+            if result is None:
+                errors += 1
+                if args.test:
+                    print(f"  ❓ {name}({code}): データ取得失敗")
+                continue
 
-        df     = get_prices(code, days=180)
-        result = calc_metrics(df, nikkei_return_3m, nikkei_return_20d)
+            rows.append({
+                "code":            code,
+                "name":            name,
+                "momentum":        result["momentum"],
+                "momentum_20d":    result["momentum_20d"],
+                "vol":             result["vol"],
+                "vr2060":          result["vr2060"],
+                "turnover_m":      result["turnover_m"],
+                "rsi":              result["rsi"],
+                "rel_strength_3m":  result["rel_strength_3m"],
+                "rel_strength_20d": result["rel_strength_20d"],
+                "score":            result["score"],
+                "close":           result["close"],
+                "slope_up":        result["slope_up"],
+            })
 
-        if result is None:
-            errors += 1
             if args.test:
-                print(f"  ❓ {name}({code}): データ取得失敗")
-            continue
+                print(
+                    f"  {name}({code}): "
+                    f"モメンタム={result['momentum']:+.1f}% / "
+                    f"出来高比={result['vr2060']:.2f} / "
+                    f"相対強度={result['rel_strength_3m']*100:+.1f}%"
+                )
 
-        rows.append({
-            "code":            code,
-            "name":            name,
-            "momentum":        result["momentum"],
-            "momentum_20d":    result["momentum_20d"],
-            "vol":             result["vol"],
-            "vr2060":          result["vr2060"],
-            "turnover_m":      result["turnover_m"],
-            "rsi":              result["rsi"],
-            "rel_strength_3m":  result["rel_strength_3m"],
-            "rel_strength_20d": result["rel_strength_20d"],
-            "score":            result["score"],
-            "close":           result["close"],
-            "slope_up":        result["slope_up"],
-        })
-
-        if args.test:
-            print(
-                f"  {name}({code}): "
-                f"モメンタム={result['momentum']:+.1f}% / "
-                f"出来高比={result['vr2060']:.2f} / "
-                f"相対強度={result['rel_strength_3m']*100:+.1f}%"
-            )
-
-        if not args.test and (i + 1) % 500 == 0:
-            print(f"  {i+1}/{total} 処理済み... (収集: {len(rows)}銘柄)")
-
-        time.sleep(0.1)
+            if not args.test and processed % 500 == 0:
+                print(f"  {processed}/{total} 処理済み... (収集: {len(rows)}銘柄)")
 
     if not rows:
         print("\nERROR: データ取得失敗")
