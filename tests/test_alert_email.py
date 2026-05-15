@@ -24,7 +24,7 @@ def _make_result(code="1234", name="テスト株", net=0.0, signal="hold",
     return {
         "code": code, "name": name, "prob": 40.0 + net, "drop_prob": drop_prob,
         "net": net, "close": 1000.0, "signal": signal,
-        "vol": vol, "vol_label": "🟡中", "recommend": "⏳ 様子見",
+        "vol": vol, "vol_label": "🟡中", "recommend": "⏳ 方向感なし",
         "rel5": None, "rel20": rel20,
         "prices_close": prices_close or list(range(100, 160)),
     }
