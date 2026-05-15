@@ -233,10 +233,20 @@ def build_all_rows(results, earnings_map=None):
                           f"margin-left:3px;vertical-align:middle'>{hd}d</span>")
         qty = r.get("qty")
         qty_str = f"<span style='color:#555;font-size:10px'>×{qty:,}株</span>" if qty else ""
+        pnl     = r.get("pnl")
+        pnl_pct = r.get("pnl_pct")
+        if pnl is not None and pnl_pct is not None:
+            pnl_color = "#27ae60" if pnl >= 0 else "#e74c3c"
+            pnl_sign  = "+" if pnl >= 0 else ""
+            pnl_str   = (f"<span style='color:{pnl_color};font-size:10px;font-weight:700'>"
+                         f"{pnl_sign}¥{pnl:,.0f} ({pnl_sign}{pnl_pct:.1f}%)</span>")
+        else:
+            pnl_str = ""
         rows += (f"<tr>"
                  f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
                  f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}{hold_badge}"
                  f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f} {qty_str}</span>"
+                 f"{pnl_str}"
                  f"{spark_html}</td>"
                  f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
                  f"<td style='text-align:center'>{drop_str}</td>"

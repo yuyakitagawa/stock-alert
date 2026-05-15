@@ -65,7 +65,7 @@ TOP_N          = _args.top_n
 NET_MIN        = _args.net_min
 COMPARE_MODE   = _args.compare
 NIKKEI_CODE    = "^N225"
-SAMPLE_N       = 200
+SAMPLE_N       = 0     # 0 = 全銘柄
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
 if not os.path.isdir(BASE_DIR):
@@ -336,8 +336,11 @@ def main():
 
     print("TSE全銘柄リストを取得中（バイアスなし）...")
     all_stocks = fetch_tse_codes()
-    random.seed(42)
-    stocks = random.sample(all_stocks, min(SAMPLE_N, len(all_stocks)))
+    if SAMPLE_N > 0:
+        random.seed(42)
+        stocks = random.sample(all_stocks, min(SAMPLE_N, len(all_stocks)))
+    else:
+        stocks = all_stocks
     print(f"バックテスト対象: {len(stocks)}銘柄")
 
     # 日経225データを事前取得（特徴量計算用）

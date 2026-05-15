@@ -652,9 +652,42 @@ def main():
     results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20,
                                         holding_days_map)
 
-    # 数量を結果に付加
+    # 数量・含み損益を結果に付加
+    prices_cache = {str(code): prices for code, name, prices, feat in raw_data}
     for r in results:
-        r["qty"] = qty_map.get(str(r["code"]))
+        code_str = str(r["code"])
+        r["qty"] = qty_map.get(code_str)
+        buy_date_str = buy_date_map.get(code_str)
+        buy_price = None
+        if buy_date_str and code_str in prices_cache:
+            try:
+                import pandas as pd
+                # YY/MM/DD と YYYY-MM-DD の両形式を吸収
+                parts = str(buy_date_str).strip().split("/")
+                if len(parts) == 3:
+                    y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                    if y < 100:
+                        y += 2000
+                    buy_ts = pd.Timestamp(f"{y}-{m:02d}-{d:02d}")
+                else:
+                    buy_ts = pd.Timestamp(buy_date_str)
+                hist = prices_cache[code_str]
+                idx = hist.index
+                # タイムゾーン有無を吸収
+                cmp_ts = buy_ts.tz_localize(idx.tz) if idx.tz is not None else buy_ts
+                after = hist[idx >= cmp_ts]
+                if not after.empty:
+                    buy_price = float(after["Close"].iloc[0])
+            except Exception:
+                pass
+        r["buy_price"] = buy_price
+        qty = r["qty"]
+        close = r.get("close")
+        if buy_price and qty and close:
+            r["pnl"]     = (close - buy_price) * qty
+            r["pnl_pct"] = (close - buy_price) / buy_price * 100
+        else:
+            r["pnl"] = r["pnl_pct"] = None
 
     save_held_scores(today_date_str, results)
 
