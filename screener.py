@@ -5,6 +5,8 @@ import time
 import io
 import os
 import argparse
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from lib.utils import calc_rsi, get_sector_cached, get_prices, get_nikkei_returns, HEADERS
 
@@ -21,6 +23,7 @@ MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
 BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
 MAX_SECTOR_COUNT = 2      # 同セクター通過上限（3銘柄以上集まったらバブル兆候とみなしセクター全除外）
+MAX_FROM_HI20    = -8.0   # 直近20日高値からの下落率上限（急騰→急落パターン除外）
 
 
 def get_tse_stock_list():
@@ -205,20 +208,30 @@ def main():
 
     print(f"\n{total} 銘柄をスクリーニング中...")
 
-    for i, row in stock_list.iterrows():
+    lock = threading.Lock()
+    done_count = [0]
+
+    def fetch_one(row):
         code = row["code"]
         name = row["name"]
-
         df     = get_prices(code, days=180)
         result = calc_metrics(df, nikkei_return_3m, nikkei_return_20d)
-
+        with lock:
+            done_count[0] += 1
+            if not args.test and done_count[0] % 500 == 0:
+                print(f"  {done_count[0]}/{total} 処理済み... (収集: {len(rows)}銘柄)")
         if result is None:
-            errors += 1
             if args.test:
                 print(f"  ❓ {name}({code}): データ取得失敗")
-            continue
-
-        rows.append({
+            return None
+        if args.test:
+            print(
+                f"  {name}({code}): "
+                f"モメンタム={result['momentum']:+.1f}% / "
+                f"出来高比={result['vr2060']:.2f} / "
+                f"相対強度={result['rel_strength_3m']*100:+.1f}%"
+            )
+        return {
             "code":            code,
             "name":            name,
             "momentum":        result["momentum"],
@@ -232,24 +245,24 @@ def main():
             "score":            result["score"],
             "close":           result["close"],
             "slope_up":        result["slope_up"],
-        })
+        }
 
-        if args.test:
-            print(
-                f"  {name}({code}): "
-                f"モメンタム={result['momentum']:+.1f}% / "
-                f"出来高比={result['vr2060']:.2f} / "
-                f"相対強度={result['rel_strength_3m']*100:+.1f}%"
-            )
-
-        if not args.test and (i + 1) % 500 == 0:
-            print(f"  {i+1}/{total} 処理済み... (収集: {len(rows)}銘柄)")
-
-        time.sleep(0.1)
+    max_workers = 1 if args.test else 20
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_one, row): row for _, row in stock_list.iterrows()}
+        for future in as_completed(futures):
+            result = future.result()
+            if result is None:
+                errors += 1
+            else:
+                rows.append(result)
 
     if not rows:
         print("\nERROR: データ取得失敗")
         return
+
+    fetch_rate = len(rows) / total * 100 if total > 0 else 0
+    print(f"\n[データ品質] 取得成功: {len(rows)}/{total} ({fetch_rate:.1f}%)  失敗: {errors}件")
 
     universe_df = pd.DataFrame(rows)
     date_str    = datetime.now().strftime("%Y%m%d")

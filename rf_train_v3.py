@@ -1,10 +1,10 @@
 
 import requests, pandas as pd, numpy as np, time, os, io, joblib, json
 from datetime import datetime, timedelta, date
-from sklearn.metrics import roc_auc_score, classification_report
+from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-from lib.utils import IsotonicCalibrated
+from lib.utils import IsotonicCalibrated, extract_features, compute_seq_features, calc_rsi
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
@@ -75,66 +75,6 @@ def get_prices(code,days=HISTORY_DAYS):
         return df
     except: return None
 
-def compute_seq_features(seq):
-    """60日リターン系列 → 7次元要約統計量"""
-    s=np.array(seq,dtype=float)
-    if len(s)<2: return [0.0]*7
-    mean_s=s.mean(); std_s=s.std()
-    ac=float(np.corrcoef(s[:-1],s[1:])[0,1]) if std_s>0 else 0.0
-    if np.isnan(ac): ac=0.0
-    skew=float(((s-mean_s)**3).mean()/(std_s**3+1e-10))
-    max_r=float(s.max()); min_r=float(s.min())
-    pos_ratio=float((s>0).mean())
-    t=np.arange(len(s),dtype=float); slope=float(np.polyfit(t,s,1)[0])
-    mid=len(s)//2; recent_vs_early=float(s[mid:].mean()-s[:mid].mean())
-    return [ac,skew,max_r,min_r,pos_ratio,slope,recent_vs_early]
-
-def calc_rsi(p,period=14):
-    if len(p)<period+1: return 50.0
-    d=np.diff(p[-(period+1):]); g=np.where(d>0,d,0).mean(); l=np.where(d<0,-d,0).mean()
-    return 100.0 if l==0 else 100-100/(1+g/l)
-
-def compute_feat(p, v=None, nk_rets=None):
-    if len(p)<91 or p[-1]==0: return None
-    c=p[-1]
-    r5=(c-p[-6])/p[-6] if len(p)>=6 else 0
-    r20=(c-p[-21])/p[-21] if len(p)>=21 else 0
-    r60=(c-p[-61])/p[-61] if len(p)>=61 else 0
-    r90=(c-p[-91])/p[-91]
-    ma5=p[-5:].mean(); ma25=p[-25:].mean() if len(p)>=25 else p.mean()
-    ma75=p[-75:].mean() if len(p)>=75 else p.mean()
-    m525=ma5/ma25-1 if ma25>0 else 0; m2575=ma25/ma75-1 if ma75>0 else 0
-    rsi=calc_rsi(p)
-    v20=np.diff(p[-21:])/p[-21:-1] if len(p)>=21 else np.array([0])
-    v60=np.diff(p[-61:])/p[-61:-1] if len(p)>=61 else np.array([0])
-    vol20=v20.std()*np.sqrt(252)*100; vol60=v60.std()*np.sqrt(252)*100
-    w=p[-252:] if len(p)>=252 else p; hi,lo=w.max(),w.min()
-    pos52=(c-lo)/(hi-lo) if hi>lo else 0.5
-    seq_raw=np.clip(np.diff(p[-(SEQ_DAYS+1):])/p[-(SEQ_DAYS+1):-1],-0.2,0.2) if len(p)>=SEQ_DAYS+1 else np.zeros(SEQ_DAYS)
-    rhi=p[-60:].max() if len(p)>=60 else p.max(); ddown60=(c-rhi)/rhi
-    hi52=p[-252:].max() if len(p)>=252 else p.max(); fhi52=(c-hi52)/hi52
-    stk=0
-    for j in range(1,min(21,len(p))):
-        if p[-j]<p[-j-1]: stk+=1
-        else: break
-    dstreak=stk/20.0; maccel=r5-(r20/4)
-    ma5a=p[-10:-5].mean() if len(p)>=10 else ma5; ma25a=p[-30:-5].mean() if len(p)>=30 else ma25
-    cprev=ma5a/ma25a-1 if ma25a>0 else 0; mcdir=m525-cprev
-    if v is not None and len(v)>=20:
-        va=np.array([x if x is not None else np.nan for x in v],dtype=float)
-        va5=np.nanmean(va[-5:]) if len(va)>=5 else 1
-        va20=np.nanmean(va[-20:]) if len(va)>=20 else 1
-        va60=np.nanmean(va[-60:]) if len(va)>=60 else va20
-        vr520=va5/va20 if va20>0 else 1.0
-        vr2060=va20/va60 if va60>0 else 1.0
-        vsurge=va[-1]/va20 if va20>0 and not np.isnan(va[-1]) else 1.0
-    else:
-        vr520,vr2060,vsurge=1.0,1.0,1.0
-    nk5  = nk_rets[0] if nk_rets is not None else 0.0
-    nk20 = nk_rets[1] if nk_rets is not None else 0.0
-    nk60 = nk_rets[2] if nk_rets is not None else 0.0
-    feat=[r5,r20,r60,r90,m525,m2575,rsi,vol20,vol60,pos52,ddown60,fhi52,dstreak,maccel,mcdir,vr520,vr2060,vsurge,nk5,nk20,nk60]+compute_seq_features(seq_raw)
-    return None if any(np.isnan(feat[:10])+np.isinf(feat[:10])) else feat
 
 def passes_screener_at(p, v_slice, nk_ret_3m):
     """i時点でv1スクリーナー条件を満たすかチェック（先読みバイアスなし）"""
@@ -181,7 +121,7 @@ def generate_samples(df, nk_df=None, screener_only=False):
                 nk_ret_3m=(nk_closes[i0]-nk_closes[i63])/nk_closes[i63] if nk_closes[i63]!=0 else None
         if screener_only and not passes_screener_at(closes[:i+1], v_slice, nk_ret_3m):
             continue
-        feat=compute_feat(closes[:i+1], v_slice, nk_rets)
+        feat=extract_features(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
         samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
@@ -286,6 +226,31 @@ def main():
     drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te)[:,1])
     with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
         json.dump({"rise":float(rise_auc),"drop":float(drop_auc)},f)
+
+    # C-1: 特徴量重要度を保存
+    feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
+                  "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
+                  "vr520","vr2060","vsurge","nk5","nk20","nk60",
+                  "ac","skew","max_ret","min_ret","pos_ratio","trend_slope","recent_vs_early",
+                  "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52"]
+    imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
+           "drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}
+    with open(os.path.join(SAVE_DIR,"feature_importance.json"),"w") as f:
+        json.dump(imp, f, indent=2, ensure_ascii=False)
+    print("  特徴量重要度: feature_importance.json")
+
+    # C-2: F1最大化閾値を保存（クラス不均衡対応）
+    thresholds = {}
+    for label, model, y_te_lbl in [("rise", rise, yr_te), ("drop", drop, yd_te)]:
+        probs = model.predict_proba(X_te)[:, 1]
+        pre, rec, thr = precision_recall_curve(y_te_lbl, probs)
+        f1 = 2 * pre * rec / (pre + rec + 1e-10)
+        best_thr = float(thr[f1[:-1].argmax()])
+        thresholds[label] = best_thr
+        print(f"  {label}モデル最適閾値: {best_thr:.3f} (F1={f1[:-1].max():.3f})")
+    with open(os.path.join(SAVE_DIR,"optimal_thresholds.json"),"w") as f:
+        json.dump(thresholds, f, indent=2)
+
     print(f"\nデータ保存: {npz_path}")
     print("\n保存完了 ✅  次: python3 validation.py  →  python3 rank_stocks.py")
 

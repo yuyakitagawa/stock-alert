@@ -4,6 +4,7 @@ rank_stocks.py / alert_email.py / backtest.py で共有
 """
 import re
 import os
+import functools
 import requests
 import numpy as np
 import pandas as pd
@@ -78,6 +79,7 @@ def get_price_at_date(code, target_date):
         return None
 
 
+@functools.lru_cache(maxsize=1)
 def get_nikkei_returns():
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
            f"?interval=1d&period1={int((datetime.now()-timedelta(days=400)).timestamp())}"

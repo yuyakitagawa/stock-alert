@@ -35,7 +35,8 @@ _parser.add_argument("mode", nargs="?", choices=["bear", "1year", "q2_2025"], de
 _parser.add_argument("--top-n",   type=int,   default=10,   help="上位N銘柄を選択（デフォルト: 10）")
 _parser.add_argument("--net-min", type=float, default=None, help="ネットスコア最低閾値（例: 15）")
 _parser.add_argument("--compare",  action="store_true", help="保有数×閾値を一括比較")
-_parser.add_argument("--screened", action="store_true", help="スクリーナー特化モデルを使用")
+_parser.add_argument("--screened",    action="store_true", help="スクリーナー特化モデルを使用")
+_parser.add_argument("--no-screener", action="store_true", help="スクリーナーをスキップして全銘柄をモデルで評価")
 _parser.add_argument("--start",   type=str,   default=None, help="開始日 YYYY-MM-DD")
 _parser.add_argument("--end",     type=str,   default=None, help="終了日 YYYY-MM-DD")
 _args, _ = _parser.parse_known_args()
@@ -64,6 +65,7 @@ NET_THRESHOLD  = 5.0
 TOP_N          = _args.top_n
 NET_MIN        = _args.net_min
 COMPARE_MODE   = _args.compare
+NO_SCREENER    = _args.no_screener
 NIKKEI_CODE    = "^N225"
 SAMPLE_N       = 0     # 0 = 全銘柄
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -400,7 +402,9 @@ def main():
         time.sleep(0.3)
 
     # フェーズ1.5: スクリーナーフィルター適用
-    if raw_screener:
+    if NO_SCREENER:
+        print(f"スクリーナースキップ（--no-screener）: {len(raw_feats)} 件全評価")
+    elif raw_screener:
         pass_codes = _get_screener_pass_codes(raw_screener)
         keep = [j for j, m in enumerate(raw_meta) if m[0] in pass_codes]
         raw_feats    = [raw_feats[j]    for j in keep]
