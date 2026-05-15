@@ -233,6 +233,8 @@ def build_all_rows(results, earnings_map=None):
                           f"margin-left:3px;vertical-align:middle'>{hd}d</span>")
         qty = r.get("qty")
         qty_str = f"<span style='color:#555;font-size:10px'>×{qty:,}株</span>" if qty else ""
+        ret20_v = r.get("ret20") or 0
+        ret60_v = r.get("ret60") or 0
         rows += (f"<tr>"
                  f"<td style='text-align:center;color:#aaa;font-size:12px'>{idx}</td>"
                  f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}{hold_badge}"
@@ -242,6 +244,8 @@ def build_all_rows(results, earnings_map=None):
                  f"<td style='text-align:center'>{drop_str}</td>"
                  f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
                  f"<td style='text-align:center;font-size:11px'>{r.get('recommend', '')}</td>"
+                 f"<td class='{rel_cls(ret20_v)}' style='text-align:center;font-weight:700'>{ret20_v:+.1f}%</td>"
+                 f"<td class='{rel_cls(ret60_v)}' style='text-align:center'>{ret60_v:+.1f}%</td>"
                  f"<td class='{rel_cls(r.get('rel20'))}' style='text-align:center'>{rel_str(r.get('rel20'))}</td>"
                  f"<td style='text-align:center;color:#888;font-size:11px'>{r.get('vol',0):.0f}%{r.get('vol_label','')}</td>"
                  f"</tr>")
