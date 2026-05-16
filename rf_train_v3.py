@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-from lib.utils import IsotonicCalibrated, extract_features, compute_seq_features, calc_rsi
+from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
