@@ -18,6 +18,8 @@ SELL_DAYS_MID           =  3    # これを超えると中期閾値へ（30→3:
 SELL_DAYS_LATE          = 63    # これを超えるとモデルホライズン外（予測期限切れ）
 NET_SELL_THRESHOLD_MID  =  6.0  # 4-63日: net<6%で売り（A買い基準を下回ったら乗り換え）
 NET_SELL_THRESHOLD_LATE =  6.0  # 63日超: netが新規買い水準(8%)未満で売り
+HARD_STOP_PCT           = -10.0  # 買値から-10%以下で即売り（モデル判断より優先）
+TRAILING_STOP_PCT       = -10.0  # ピーク比-10%以下で即売り（利益取り逃がし防止）
 
 # ── スクリーナー条件（screener.py / backtest.py / rf_train_v3.py と同値に保つ） ──
 SCREENER_MOM_3M_MIN   =  8.0   # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
@@ -29,9 +31,9 @@ SCREENER_RSI_MIN      = 45.0   # RSI下限（40→45: 勝率+4pp）
 SCREENER_RSI_MAX      = 70.0
 
 # ── 新規候補フィルター ─────────────────────────────────────────────────────
-NEW_CANDIDATE_NET_MIN        = 8.0   # ネットスコア下限（6.0→8.0: 売り閾値6%との2%バッファ）
+NEW_CANDIDATE_NET_MIN        = 10.0  # ネットスコア下限（8.0→10.0: 弱い帯を除外）
 NEW_CANDIDATE_NET_MAX        = 13.0  # ネットスコア上限（過熱回避）
-CANDIDATE_DROP_PROB_MAX      = 12.0  # 下落確率上限（10.0→12.0）
+CANDIDATE_DROP_PROB_MAX      =  8.0  # 下落確率上限（12.0→8.0: 高リスク帯を除外）
 CANDIDATE_EARNINGS_SKIP_DAYS = 7     # 決算N日以内の新規候補を除外
 # conflict除外: net高くてdrop_probも無視できない「矛盾シグナル」を除外
 CANDIDATE_CONFLICT_NET_MIN   = 10.0  # net がこれ以上かつ

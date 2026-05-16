@@ -26,7 +26,8 @@ from config import (BASE_DIR, BEAR_MARKET_THRESHOLD,
                     CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
                     CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN,
                     SELL_DAYS_MID, SELL_DAYS_LATE,
-                    NET_SELL_THRESHOLD_MID, NET_SELL_THRESHOLD_LATE)
+                    NET_SELL_THRESHOLD_MID, NET_SELL_THRESHOLD_LATE,
+                    HARD_STOP_PCT, TRAILING_STOP_PCT)
 from lib.email_html import (
     EMAIL_CSS as _EMAIL_CSS,
     volatility_label, get_judgment,
@@ -633,6 +634,7 @@ def main():
             r["signal"] = "hold"
         buy_date_str = buy_date_map.get(code_str)
         buy_price = None
+        after_since_buy = None
         if buy_date_str and code_str in prices_cache:
             try:
                 import pandas as pd
@@ -649,9 +651,9 @@ def main():
                 idx = hist.index
                 # タイムゾーン有無を吸収
                 cmp_ts = buy_ts.tz_localize(idx.tz) if idx.tz is not None else buy_ts
-                after = hist[idx >= cmp_ts]
-                if not after.empty:
-                    buy_price = float(after["Close"].iloc[0])
+                after_since_buy = hist[idx >= cmp_ts]
+                if not after_since_buy.empty:
+                    buy_price = float(after_since_buy["Close"].iloc[0])
             except Exception:
                 pass
         r["buy_price"] = buy_price
@@ -662,6 +664,16 @@ def main():
             r["pnl_pct"] = (close - buy_price) / buy_price * 100
         else:
             r["pnl"] = r["pnl_pct"] = None
+
+        # ハードストップ・トレーリングストップ（保有株のみ・0株除外済み）
+        if qty and qty > 0 and buy_price and close:
+            pnl_pct = r["pnl_pct"]
+            if pnl_pct is not None and pnl_pct < HARD_STOP_PCT:
+                r["signal"] = "sell"
+            elif after_since_buy is not None and len(after_since_buy) > 1:
+                peak = float(after_since_buy["Close"].max())
+                if close < peak * (1 + TRAILING_STOP_PCT / 100):
+                    r["signal"] = "sell"
 
     save_held_scores(today_date_str, results)
 
