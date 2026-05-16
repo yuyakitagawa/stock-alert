@@ -629,6 +629,8 @@ def main():
     for r in results:
         code_str = str(r["code"])
         r["qty"] = qty_map.get(code_str)
+        if r["qty"] == 0:
+            r["signal"] = "hold"
         buy_date_str = buy_date_map.get(code_str)
         buy_price = None
         if buy_date_str and code_str in prices_cache:
