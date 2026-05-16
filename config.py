@@ -18,7 +18,6 @@ SELL_DAYS_MID           =  3    # これを超えると中期閾値へ（30→3:
 SELL_DAYS_LATE          = 63    # これを超えるとモデルホライズン外（予測期限切れ）
 NET_SELL_THRESHOLD_MID  =  6.0  # 4-63日: net<6%で売り（A買い基準を下回ったら乗り換え）
 NET_SELL_THRESHOLD_LATE =  6.0  # 63日超: netが新規買い水準(8%)未満で売り
-HARD_STOP_PCT           = -10.0  # 買値から-10%以下で即売り（モデル判断より優先）
 
 # ── スクリーナー条件（screener.py / backtest.py / rf_train_v3.py と同値に保つ） ──
 SCREENER_MOM_3M_MIN   =  8.0   # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
