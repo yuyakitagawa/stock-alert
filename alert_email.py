@@ -433,8 +433,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 
     sell_section, sells = _build_sell_section(results)
 
-    buy_cnt = sum(1 for r in results if r.get("recommend", "").startswith("✅"))
-    neu_cnt = len(results) - len(sells) - buy_cnt
+    buy_cnt = len(results) - len(sells)
     nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
                if nk5 is not None else "")
     bear_banner = _bear_market_banner_html(is_bear, nk20)
@@ -451,7 +450,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
 </div>
 {bear_banner}
 {index_banner}
-{_summary_stat_cards_html(len(sells), buy_cnt, neu_cnt)}
+{_summary_stat_cards_html(len(sells), buy_cnt)}
 {_build_priority_section(priority_actions or [])}
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes, ranking_df)}
@@ -666,7 +665,7 @@ def main():
 
     ranking_df = load_top_ranking(1000)
     sell_count      = sum(1 for r in results if r["signal"] == "sell")
-    buy_count       = sum(1 for r in results if r.get("recommend", "").startswith("✅"))
+    buy_count       = len(results) - sell_count
     priority_actions = build_priority_actions(results, ranking_df=ranking_df)
     bear_prefix     = "⚠️下落相場 " if is_bear else ""
     nk_str          = f"日経{nk20:+.1f}%" if nk20 is not None else ""

@@ -290,7 +290,7 @@ def index_etf_banner_html(is_bear, candidate_count, nk20):
     )
 
 
-def summary_stat_cards_html(n_sell, n_buy, n_neu):
+def summary_stat_cards_html(n_sell, n_buy):
     box = ("<div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;"
            "box-shadow:0 1px 4px rgba(0,0,0,.08)'>"
            "<div style='font-size:26px;font-weight:700;color:{color}'>{val}</div>"
@@ -298,7 +298,6 @@ def summary_stat_cards_html(n_sell, n_buy, n_neu):
     return (
         "<div style='display:flex;gap:8px;margin-bottom:16px'>"
         + box.format(val=n_sell, label="売り検討", color="#c0392b")
-        + box.format(val=n_buy, label="買い可能性", color="#0a7a0a")
-        + box.format(val=n_neu, label="様子見", color="#888")
+        + box.format(val=n_buy, label="買い継続", color="#0a7a0a")
         + "</div>"
     )
