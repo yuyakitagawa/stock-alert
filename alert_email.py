@@ -27,7 +27,7 @@ from config import (BASE_DIR, BEAR_MARKET_THRESHOLD,
                     CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN,
                     SELL_DAYS_MID, SELL_DAYS_LATE,
                     NET_SELL_THRESHOLD_MID, NET_SELL_THRESHOLD_LATE,
-                    HARD_STOP_PCT, TRAILING_STOP_PCT)
+                    HARD_STOP_PCT)
 from lib.email_html import (
     EMAIL_CSS as _EMAIL_CSS,
     volatility_label, get_judgment,
@@ -665,15 +665,11 @@ def main():
         else:
             r["pnl"] = r["pnl_pct"] = None
 
-        # ハードストップ・トレーリングストップ（保有株のみ・0株除外済み）
+        # ハードストップ（保有株のみ・0株除外済み）
         if qty and qty > 0 and buy_price and close:
             pnl_pct = r["pnl_pct"]
             if pnl_pct is not None and pnl_pct < HARD_STOP_PCT:
                 r["signal"] = "sell"
-            elif after_since_buy is not None and len(after_since_buy) > 1:
-                peak = float(after_since_buy["Close"].max())
-                if close < peak * (1 + TRAILING_STOP_PCT / 100):
-                    r["signal"] = "sell"
 
     save_held_scores(today_date_str, results)
 
