@@ -30,6 +30,7 @@
 - **Env**: GMAIL, GCP_KEY_JSON, SPREADSHEET_ID が必須。
 - **Dev Cycle**: 
   1. 修正 2. `backtest.py bear` で性能確認 3. `dev_log.md` 追記 4. Commit
+- **改善マージ規律**: 改善案はシミュレーション or バックテストで効果を数値確認してからコミットせよ。平均リターン・勝率・大勝率のいずれも改善しない変更はマージ禁止。
 
 ## 5. Skills Check (AIができること)
 - [x] 特徴量抽出ロジックの最適化
