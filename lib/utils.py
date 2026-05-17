@@ -348,7 +348,7 @@ def recommend_from_net(net):
 
 
 def recommend_from_scores(net, drop_prob=None):
-    """drop_prob<8% かつ net>=8% でS買い、それ以外は recommend_from_net に委譲"""
-    if drop_prob is not None and drop_prob < 8.0 and net >= 8.0:
+    """drop_prob<4% かつ net>=10% でS買い、それ以外は recommend_from_net に委譲"""
+    if drop_prob is not None and drop_prob < 4.0 and net >= 10.0:
         return "🥇 S買い"
     return recommend_from_net(net)
