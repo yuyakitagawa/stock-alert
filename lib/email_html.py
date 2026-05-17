@@ -290,6 +290,21 @@ def index_etf_banner_html(is_bear, candidate_count, nk20):
     )
 
 
+def hot_market_banner_html(is_hot, nk60):
+    if not is_hot or nk60 is None:
+        return ""
+    return (
+        f"<div style='background:#e67e22;border-radius:8px;padding:16px;margin-bottom:16px'>"
+        f"<div style='color:white;font-size:18px;font-weight:700;margin-bottom:6px'>"
+        f"🚀 日経急騰中 — 新規エントリーは慎重に</div>"
+        f"<div style='color:#fef9e7;font-size:13px;line-height:1.6'>"
+        f"日経225の60日リターンが {nk60:+.1f}% と急騰しています。<br>"
+        f"大型株主導の急騰相場では中小型株主体のモデル候補が指数に追いつけない傾向があります。<br>"
+        f"<b>新規候補は参考程度に留め、個別株より日経225 ETF（1321/1330/1346）も選択肢として検討してください。</b>"
+        f"</div></div>"
+    )
+
+
 def summary_stat_cards_html(n_sell, n_buy):
     box = ("<div style='flex:1;background:#fff;border-radius:8px;padding:12px;text-align:center;"
            "box-shadow:0 1px 4px rgba(0,0,0,.08)'>"

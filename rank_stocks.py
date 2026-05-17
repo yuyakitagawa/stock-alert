@@ -135,6 +135,8 @@ def main():
         rels = [r for r in [rel5, rel20, rel60] if r is not None]
         rs_score = round(sum(rels) / len(rels), 2) if rels else None
 
+        cs_vol20_rank = round(float(feat_aug[32]) * 100, 0)  # ボラティリティのCS相対ランク(0-100%)
+
         row = {
             "銘柄コード": code,
             "銘柄名": names.get(code, ""),
@@ -145,6 +147,7 @@ def main():
             "判定": judgment,
             "ボラ(%)": vol,
             "ボラ水準": vol_label,
+            "ボラランク(%)": cs_vol20_rank,
             "推奨": recommend,
             "日経比5日(%)": rel5 if rel5 is not None else "-",
             "日経比20日(%)": rel20 if rel20 is not None else "-",

@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
 from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
-from config import (BASE_DIR, BEAR_MARKET_THRESHOLD,
+from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
                     CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
                     CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN,
@@ -38,6 +38,7 @@ from lib.email_html import (
     build_sell_section as _build_sell_section,
     build_all_rows as _build_all_rows,
     bear_market_banner_html as _bear_market_banner_html,
+    hot_market_banner_html as _hot_market_banner_html,
     index_etf_banner_html as _index_etf_banner_html,
     summary_stat_cards_html as _summary_stat_cards_html,
 )
@@ -364,16 +365,19 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
             recommend = recommend_from_scores(net_v, drop_v)
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
+            vol_rank = _safe_float(row.get("ボラランク(%)", None))
             rel20_v = _safe_float(row.get("日経比20日(%)", None))
             fund_str = _fundamentals_suffix(row)
             close_val = int(row["直近株価(円)"])
             stop_cell = _stop_loss_cell_html(row, close_val)
             drop_str = f"{drop_v:.1f}%" if drop_v is not None else "-"
+            vrank_str = (f"<span style='font-size:10px;color:#666'>ボラランク {vol_rank:.0f}%ile</span>"
+                         if vol_rank is not None else "")
             new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
             rows += (f"<tr>"
                      f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
                      f"<span style='color:#888;font-size:12px'>{code_str} ¥{int(row['直近株価(円)']):,}"
-                     f"{' ' + fund_str if fund_str else ''}</span></td>"
+                     f"{' ' + fund_str if fund_str else ''}</span><br>{vrank_str}</td>"
                      f"<td style='text-align:center'>{rise:.1f}%</td>"
                      f"<td style='text-align:center'>{drop_str}</td>"
                      f"<td class='{_net_cls(net_v)}' style='text-align:center'>{net_v:+.1f}%</td>"
@@ -418,7 +422,7 @@ def build_earnings_map(codes):
     return result
 
 
-def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
+def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None, nk60=None,
                prev_ranking_codes=None, priority_actions=None,
                ranking_df=None):
     prev_ranking_codes = prev_ranking_codes or set()
@@ -437,6 +441,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
     nk_str  = (f"日経225: 5日{nk5:+.1f}% / 20日{nk20:+.1f}% / 60日{nk60:+.1f}%"
                if nk5 is not None else "")
     bear_banner = _bear_market_banner_html(is_bear, nk20)
+    hot_banner  = _hot_market_banner_html(is_hot, nk60)
     candidate_count = _unheld_ranking_row_count(ranking_df, held_codes_set)
     index_banner = _index_etf_banner_html(is_bear, candidate_count, nk20)
 
@@ -449,6 +454,7 @@ def build_html(results, today, is_bear=False, nk5=None, nk20=None, nk60=None,
   <div style='font-size:13px;color:#aaa'>{today} ／ {nk_str}</div>
 </div>
 {bear_banner}
+{hot_banner}
 {index_banner}
 {_summary_stat_cards_html(len(sells), buy_cnt)}
 {_build_priority_section(priority_actions or [])}
@@ -590,10 +596,13 @@ def main():
 
     nk5, nk20, nk60 = get_nikkei_returns()
     is_bear = nk20 is not None and nk20 < BEAR_MARKET_THRESHOLD
+    is_hot  = nk60 is not None and nk60 >= HOT_MARKET_THRESHOLD
     if nk5 is not None:
         logger.info("日経225: 5日%+.2f%% / 20日%+.2f%% / 60日%+.2f%%", nk5, nk20, nk60)
         if is_bear:
             logger.warning("下落相場検知（日経20日: %+.1f%%）: 買いシグナルの信頼性低下", nk20)
+        if is_hot:
+            logger.warning("急騰相場検知（日経60日: %+.1f%%）: 中小型株は指数に追いつけない可能性あり", nk60)
 
     prev_ranking_codes = load_prev_ranking_codes()
 
@@ -671,13 +680,13 @@ def main():
     sell_count      = sum(1 for r in results if r["signal"] == "sell")
     buy_count       = len(results) - sell_count
     priority_actions = build_priority_actions(results, ranking_df=ranking_df)
-    bear_prefix     = "⚠️下落相場 " if is_bear else ""
+    bear_prefix     = "⚠️下落相場 " if is_bear else ("🚀急騰相場 " if is_hot else "")
     nk_str          = f"日経{nk20:+.1f}%" if nk20 is not None else ""
     priority_str    = f"優先{len(priority_actions)} / " if priority_actions else ""
     subject = f"{bear_prefix}[{today[5:]}] {priority_str}売り{sell_count} / 買い候補{buy_count} / {nk_str} {len(results)}銘柄"
 
     html = build_html(
-        results, today, is_bear=is_bear, nk5=nk5, nk20=nk20, nk60=nk60,
+        results, today, is_bear=is_bear, is_hot=is_hot, nk5=nk5, nk20=nk20, nk60=nk60,
         prev_ranking_codes=prev_ranking_codes,
         priority_actions=priority_actions,
         ranking_df=ranking_df,
