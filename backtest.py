@@ -39,6 +39,7 @@ _parser.add_argument("--screened",    action="store_true", help="スクリーナ
 _parser.add_argument("--no-screener", action="store_true", help="スクリーナーをスキップして全銘柄をモデルで評価")
 _parser.add_argument("--start",   type=str,   default=None, help="開始日 YYYY-MM-DD")
 _parser.add_argument("--end",     type=str,   default=None, help="終了日 YYYY-MM-DD")
+_parser.add_argument("--model-cutoff", type=str, default=None, help="使用するモデルのcutoff日 YYYY-MM-DD")
 _args, _ = _parser.parse_known_args()
 
 if _args.mode == 'bear':
@@ -122,9 +123,21 @@ def _fetch_yahoo(ticker, days=800):
 
 
 def get_hist_for_features(code):
-    """特徴量計算用の全履歴を取得"""
+    """特徴量計算用の全履歴を取得（DBキャッシュ優先）"""
+    from lib.db import get_price_cache_coverage, get_price_cache, save_price_cache
+    code_str = str(code)
+    required_start = (date.today() - timedelta(days=FETCH_DAYS)).isoformat()
+    required_end   = TODAY.isoformat()
+
+    coverage = get_price_cache_coverage(code_str)
+    if coverage and coverage[0] <= required_start and coverage[1] >= required_end:
+        return get_price_cache(code_str, required_start, date.today().isoformat())
+
     ticker = f"{code}.T"
-    return _fetch_yahoo(ticker, days=FETCH_DAYS)
+    df = _fetch_yahoo(ticker, days=FETCH_DAYS)
+    if df is not None:
+        save_price_cache(code_str, df)
+    return df
 
 
 def compute_screener_at(hist, target_date, nikkei_return_3m=None):
@@ -327,14 +340,15 @@ def main():
 
     # モデル読み込み（--screened フラグでスクリーナー特化モデルを使用）
     model_suffix = "_screened" if getattr(_args, "screened", False) else ""
-    rise_path = os.path.join(BASE_DIR, f"rf_model{model_suffix}.pkl")
-    drop_path = os.path.join(BASE_DIR, f"rf_drop_model{model_suffix}.pkl")
+    model_cutoff_tag = f"_{_args.model_cutoff}" if getattr(_args, "model_cutoff", None) else ""
+    rise_path = os.path.join(BASE_DIR, f"rf_model{model_suffix}{model_cutoff_tag}.pkl")
+    drop_path = os.path.join(BASE_DIR, f"rf_drop_model{model_suffix}{model_cutoff_tag}.pkl")
     if not os.path.exists(rise_path):
         print(f"ERROR: {rise_path} が見つかりません")
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
-    print(f"モデル読み込み完了{'（スクリーナー特化）' if model_suffix else ''}")
+    print(f"モデル読み込み完了{f' (cutoff:{_args.model_cutoff})' if model_cutoff_tag else ''}{'（スクリーナー特化）' if model_suffix else ''}")
 
     print("TSE全銘柄リストを取得中（バイアスなし）...")
     all_stocks = fetch_tse_codes()

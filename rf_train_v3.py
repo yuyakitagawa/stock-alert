@@ -146,11 +146,16 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
     return cal_m
 
 def main():
+    global TRAIN_CUTOFF
     import argparse as _ap
     _p=_ap.ArgumentParser(add_help=False)
     _p.add_argument("--screener-only",action="store_true",help="スクリーナー通過時点のサンプルのみ学習")
+    _p.add_argument("--cutoff",type=str,default=None,help="学習cutoff日 YYYY-MM-DD（デフォルト: 2025-01-01）")
     _args,_=_p.parse_known_args()
     screener_only=_args.screener_only
+    if _args.cutoff:
+        TRAIN_CUTOFF = date.fromisoformat(_args.cutoff)
+        print(f"カスタム cutoff: {TRAIN_CUTOFF}")
 
     print("="*60)
     print("rf_train_v3: TSE全銘柄 × 5年 ウォークフォワード学習")
@@ -214,9 +219,10 @@ def main():
     print(f"\nキャリブレーション分割: 学習{len(X_tr_fit):,} / キャリブレーション{len(X_cal):,} (最新20%)")
     rise=train_model(X_tr_fit,yr_fit,X_te,yr_te,X_cal,yr_cal,"上昇")
     drop=train_model(X_tr_fit,yd_fit,X_te,yd_te,X_cal,yd_cal,"下落")
+    cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
     suffix="_screened" if screener_only else ""
-    joblib.dump(rise,os.path.join(SAVE_DIR,f"rf_model{suffix}.pkl"))
-    joblib.dump(drop,os.path.join(SAVE_DIR,f"rf_drop_model{suffix}.pkl"))
+    joblib.dump(rise,os.path.join(SAVE_DIR,f"rf_model{suffix}{cutoff_tag}.pkl"))
+    joblib.dump(drop,os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}.pkl"))
     # Save all samples (train+test) with dates for purged CV validation
     npz_path=os.path.join(SAVE_DIR,"training_data.npz")
     all_X=np.vstack([X_tr,X_te]); all_yr=np.concatenate([yr_tr,yr_te]); all_yd=np.concatenate([yd_tr,yd_te])

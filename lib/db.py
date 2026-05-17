@@ -8,6 +8,13 @@ _BASE_DIR = os.getenv("STOCK_ALERT_HOME", _PROJECT_DIR)
 DB_PATH = os.path.join(_BASE_DIR, "stock_alert.db")
 
 _DDL = """
+CREATE TABLE IF NOT EXISTS price_cache (
+    code    TEXT NOT NULL,
+    date    TEXT NOT NULL,
+    close   REAL,
+    volume  INTEGER,
+    PRIMARY KEY (code, date)
+);
 CREATE TABLE IF NOT EXISTS simulation_results (
     run_date     TEXT NOT NULL,
     entry_date   TEXT NOT NULL,
@@ -216,6 +223,62 @@ def get_holding_days(codes, today_str):
                 first = _dt.strptime(row["first_date"], "%Y-%m-%d").date()
                 result[str(code)] = (today - first).days
     return result
+
+
+# ── price_cache ────────────────────────────────────────────────────────────
+
+def get_price_cache_coverage(code):
+    """キャッシュの (min_date_str, max_date_str) を返す。未キャッシュは None。"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT MIN(date) AS mn, MAX(date) AS mx FROM price_cache WHERE code=?",
+            (str(code),)
+        ).fetchone()
+    if row and row["mn"]:
+        return row["mn"], row["mx"]
+    return None
+
+
+def get_price_cache(code, start_date_str, end_date_str):
+    """キャッシュから DataFrame(Close, Volume) を返す。データ不足なら None。"""
+    import pandas as pd
+    from datetime import date as _date
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT date, close, volume FROM price_cache "
+            "WHERE code=? AND date>=? AND date<=? ORDER BY date",
+            (str(code), start_date_str, end_date_str)
+        ).fetchall()
+    if len(rows) < 100:
+        return None
+    dates  = [r["date"]  for r in rows]
+    closes = [r["close"] for r in rows]
+    vols   = [r["volume"] for r in rows]
+    idx = [_date.fromisoformat(d) for d in dates]
+    return pd.DataFrame({"Close": closes, "Volume": vols}, index=idx)
+
+
+def save_price_cache(code, df):
+    """DataFrame を price_cache に INSERT OR IGNORE で保存。"""
+    import math
+    init_db()
+    rows = []
+    for idx, row in df.iterrows():
+        d = idx.isoformat() if hasattr(idx, "isoformat") else str(idx)
+        cv = row.get("Close")
+        vv = row.get("Volume")
+        c = float(cv) if cv is not None and not (isinstance(cv, float) and math.isnan(cv)) else None
+        v = int(vv)   if vv is not None and not (isinstance(vv, float) and math.isnan(vv)) else None
+        rows.append((str(code), d, c, v))
+    if not rows:
+        return
+    with _conn() as con:
+        con.executemany(
+            "INSERT OR IGNORE INTO price_cache (code, date, close, volume) VALUES (?,?,?,?)",
+            rows
+        )
 
 
 def save_all_sectors(sector_map):

@@ -20,15 +20,15 @@ rf_train_v3.py は金曜 or モデル未存在時のみ実行
 | ファイル | 役割 |
 |---|---|
 | `screener.py` | JPX全銘柄から条件通過銘柄を抽出して `data/screeners/` に保存 |
-| `rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ） |
+| `rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存 |
 | `alert_email.py` | チェック銘柄の評価＋新規候補をGmailで送信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_net 等）|
-| `lib/db.py` | SQLite操作（daily_ranking / held_scores / earnings_cache / sector_cache）|
+| `lib/db.py` | SQLite操作（daily_ranking / held_scores / earnings_cache / sector_cache / price_cache）|
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
-| `backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存 |
-| `multi_backtest.py` | 10期間一括バックテスト＋フィルター比較分析 |
+| `backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存。`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
+| `multi_backtest.py` | 33期間一括バックテスト＋フィルター比較分析（ウォークフォワード対応） |
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（23件）|
 | `tests/test_alert_email.py` | メール生成ヘルパーのユニットテスト（65件）|
 
@@ -67,7 +67,7 @@ rf_train_v3.py は金曜 or モデル未存在時のみ実行
 - ⏳ 方向感なし: ネット 6〜10%（様子見。新規候補には表示されない）
 - 🔴即切: 20日リターン < −10%（損切りライン割れ）
 
-バックテスト（12期間: 2025/01〜2025/10、全銘柄）: A買い avg+11.9% / 日経アルファ+6.6%
+バックテスト（33期間ウォークフォワード: 2021〜2025年）: 現行フィルター avg+6.7% / 日経アルファ+4.4%（有効16/33期間）
 
 ### シミュレーション実績（2025/05〜11月エントリー組・2026-05-16時点）
 
@@ -90,7 +90,7 @@ rf_train_v3.py は金曜 or モデル未存在時のみ実行
 - 対象：東証プライム・スタンダード全銘柄（約3,500〜4,000銘柄）
 - 期間：過去5年分（約1,800日）
 - サンプリング：20営業日ごと（自己相関低減）
-- 分割：2025-01-01より前→学習 / 以降→テスト（ウォークフォワード）
+- 分割：cutoff日より前→学習 / 以降→テスト（ウォークフォワード）
 
 ### 特徴量（34次元 = 28次元 + クロスセクション6次元）
 
@@ -110,11 +110,16 @@ rf_train_v3.py は金曜 or モデル未存在時のみ実行
 - 上昇モデル：63日後（約3ヶ月）に+15%以上
 - 下落モデル：63日後（約3ヶ月）に-15%以下
 
-### モデル精度
-| モデル | テストAUC |
-|---|---|
-| 上昇 | 0.663 |
-| 下落 | 0.791 |
+### ウォークフォワードモデル
+
+先読みバイアスなしのバックテストのため、期間開始日に応じて学習済みモデルを切り替える。
+
+| 期間開始日 | 使用モデル（cutoff） | テストAUC（上昇/下落）|
+|---|---|---|
+| ≥ 2025-07-01 | rf_model_2025-07-01.pkl | 0.655 / 0.818 |
+| ≥ 2025-05-01 | rf_model_2025-05-01.pkl | 0.646 / 0.803 |
+| ≥ 2025-03-01 | rf_model_2025-03-01.pkl | 0.645 / 0.806 |
+| < 2025-03-01 | rf_model.pkl（cutoff 2025-01-01）| 0.663 / 0.791 |
 
 キャリブレーション：IsotonicRegression で確率値を実績頻度に補正済み
 
@@ -165,6 +170,7 @@ rf_train_v3.py は金曜 or モデル未存在時のみ実行
 | `held_scores` | 保有銘柄の前日スコア（昨日比差分計算用）|
 | `earnings_cache` | 決算日キャッシュ（kabutan.jpから取得、日次更新）|
 | `sector_cache` | 業種分類キャッシュ（JPX Excelから取得）|
+| `price_cache` | 株価履歴キャッシュ（Yahoo Finance、バックテスト高速化用）|
 
 ランキングCSV（`data/rankings/`）と スクリーナーCSV（`data/screeners/`）も日付付きで保存されるがgitignore対象。
 
@@ -200,14 +206,16 @@ export STOCK_ALERT_HOME=/path/to/stock-alert
 python3 screener.py              # スクリーニング（全銘柄、約30分）
 python3 screener.py --test       # テストモード（5銘柄のみ）
 python3 rf_train_v3.py           # モデル学習（40〜70分）
+python3 rf_train_v3.py --cutoff 2025-07-01  # ウォークフォワード用モデル学習
 python3 rank_stocks.py           # ランキング生成
 python3 alert_email.py           # メール送信
 
 python3 backtest.py              # バックテスト（通常期）→ simulations/backtests/ に保存
 python3 backtest.py bear         # 下落相場テスト（2024年8月クラッシュ期）
 python3 backtest.py --start 2025-01-01 --end 2025-04-01  # 任意期間指定
+python3 backtest.py --start 2025-03-01 --end 2025-06-01 --model-cutoff 2025-03-01  # ウォークフォワード指定
 
-python3 multi_backtest.py        # 10期間一括バックテスト＋フィルター比較
+python3 multi_backtest.py        # 33期間一括バックテスト＋フィルター比較（ウォークフォワード）
 python3 multi_backtest.py --skip-run  # 既存CSVのみ集計（バックテスト実行なし）
 
 python3 tests/test_screener.py     # スクリーナーユニットテスト
@@ -221,3 +229,4 @@ python3 tests/test_alert_email.py  # メールユニットテスト
 - **モデルの限界**：AUC 0.663（上昇）/ 0.791（下落）はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
 - **2段階構造が必須**：モデル単体を全銘柄に適用しても効果なし。スクリーナー→モデル→ネット範囲フィルターの順で使うことでアルファが出る。
 - **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告。3ヶ月相対強度閾値も自動引き上げ。
+- **日経急騰時の限界**：大型株主導の急騰相場（例：2025年7月 日経+21%超）では中小型株主体の選定が相対的に不利。急騰期のアルファは期待しない。

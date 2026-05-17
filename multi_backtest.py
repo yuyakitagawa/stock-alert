@@ -1,5 +1,5 @@
 """
-12期間マルチバックテスト + フィルタ比較分析
+30期間マルチバックテスト + フィルタ比較分析（5年間ランダムサンプリング）
 
 実行: python3 multi_backtest.py
   --skip-run   : バックテスト実行をスキップ（既存CSVのみ分析）
@@ -16,6 +16,7 @@ from config import BASE_DIR
 PYTHON = sys.executable
 
 PERIODS = [
+    # 既存（2025年）
     ("2025-01-01", "2025-04-01", "2025冬春"),
     ("2025-01-15", "2025-04-15", "2025冬春B"),
     ("2025-02-01", "2025-05-01", "2025冬春C"),
@@ -28,14 +29,73 @@ PERIODS = [
     ("2025-05-14", "2025-08-14", "2025夏B"),
     ("2025-06-01", "2025-09-01", "2025夏C"),
     ("2025-07-01", "2025-10-01", "2025夏D"),
+    # 既存（2024年暴落）
+    ("2024-07-01", "2024-10-01", "2024暴落"),
+    # ランダム追加（seed=42, 5年間）
+    ("2021-07-07", "2021-10-06", "2021夏A"),
+    ("2021-07-19", "2021-10-18", "2021夏B"),
+    ("2021-07-21", "2021-10-20", "2021夏C"),
+    ("2021-11-11", "2022-02-10", "2021秋冬"),
+    ("2021-11-24", "2022-02-23", "2021秋冬B"),
+    ("2021-12-13", "2022-03-14", "2021冬A"),
+    ("2021-12-31", "2022-04-01", "2021冬B"),
+    ("2022-02-28", "2022-05-30", "2022春"),
+    ("2022-08-08", "2022-11-07", "2022夏"),
+    ("2022-08-17", "2022-11-16", "2022夏B"),
+    ("2022-09-30", "2022-12-30", "2022秋"),
+    ("2022-12-01", "2023-03-02", "2022冬"),
+    ("2023-09-28", "2023-12-28", "2023秋"),
+    ("2024-06-06", "2024-09-05", "2024初夏"),
+    ("2024-09-09", "2024-12-09", "2024秋"),
+    ("2024-12-16", "2025-03-17", "2024冬"),
+    ("2025-03-03", "2025-06-02", "2025春D"),
+    ("2025-07-03", "2025-10-02", "2025夏E"),
+    ("2025-07-11", "2025-10-10", "2025夏F"),
+    ("2025-07-14", "2025-10-13", "2025夏G"),
 ]
 
 CONFIGS = {
-    "A現行      ": dict(net_min=8.0, drop_max=10.0, conflict_net=None,  conflict_drop=None),
-    "B提案      ": dict(net_min=6.0, drop_max=12.0, conflict_net=10.0,  conflict_drop=5.0),
-    "Cnet緩和   ": dict(net_min=6.0, drop_max=10.0, conflict_net=None,  conflict_drop=None),
-    "Dconflict除": dict(net_min=8.0, drop_max=10.0, conflict_net=10.0,  conflict_drop=5.0),
+    "現行(10/8) ": dict(net_min=10.0, drop_max=8.0,  conflict_net=10.0, conflict_drop=5.0),
+    "旧(8/12)  ": dict(net_min=8.0,  drop_max=12.0, conflict_net=None,  conflict_drop=None),
+    "緩(8/8)   ": dict(net_min=8.0,  drop_max=8.0,  conflict_net=None,  conflict_drop=None),
+    "厳(12/6)  ": dict(net_min=12.0, drop_max=6.0,  conflict_net=None,  conflict_drop=None),
 }
+
+# ウォークフォワード: 期間開始日が以下以上のときcutoffモデルを使用
+# None = デフォルトモデル (rf_model.pkl, 学習cutoff=2025-01-01)
+CUTOFF_SCHEDULE = [
+    ("2025-07-01", "2025-07-01"),
+    ("2025-05-01", "2025-05-01"),
+    ("2025-03-01", "2025-03-01"),
+]
+
+def get_model_cutoff(start_date_str):
+    """期間開始日に対応するモデルcutoff日を返す。None=デフォルト"""
+    for threshold, cutoff in CUTOFF_SCHEDULE:
+        if start_date_str >= threshold:
+            return cutoff
+    return None
+
+
+def ensure_model(cutoff):
+    """cutoff指定モデルが存在しなければ学習して作成。成功でTrue。"""
+    if cutoff is None:
+        return True
+    rise_path = os.path.join(BASE_DIR, f"rf_model_{cutoff}.pkl")
+    if os.path.exists(rise_path):
+        print(f"  [モデル] cutoff={cutoff} 既存")
+        return True
+    print(f"\n{'='*60}")
+    print(f"  [モデル学習] cutoff={cutoff} 学習開始...")
+    print(f"{'='*60}")
+    proc = subprocess.run(
+        [PYTHON, "rf_train_v3.py", "--cutoff", cutoff],
+        cwd=BASE_DIR,
+    )
+    if proc.returncode != 0:
+        print(f"  ERROR: モデル学習失敗 (cutoff={cutoff})")
+        return False
+    return os.path.exists(rise_path)
 
 
 def apply_filter(df, cfg):
@@ -46,7 +106,7 @@ def apply_filter(df, cfg):
     return df[mask]
 
 
-def run_period(start, end, skip_run=False):
+def run_period(start, end, cutoff=None, skip_run=False):
     out_path = os.path.join(BASE_DIR, "simulations", "backtests", f"backtest_{start}_{end}.csv")
     if os.path.exists(out_path):
         print(f"  [{start}→{end}] キャッシュ済み")
@@ -55,10 +115,10 @@ def run_period(start, end, skip_run=False):
         print(f"  [{start}→{end}] CSVなし、スキップ")
         return None
     print(f"\n  [{start}→{end}] バックテスト実行中...")
-    proc = subprocess.run(
-        [PYTHON, "backtest.py", "--start", start, "--end", end],
-        cwd=BASE_DIR,
-    )
+    cmd = [PYTHON, "backtest.py", "--start", start, "--end", end]
+    if cutoff:
+        cmd += ["--model-cutoff", cutoff]
+    proc = subprocess.run(cmd, cwd=BASE_DIR)
     if proc.returncode != 0:
         print(f"  ERROR: {start}→{end} 失敗（終了コード {proc.returncode}）")
         return None
@@ -71,13 +131,32 @@ def main():
     args = parser.parse_args()
 
     print("=" * 70)
-    print("マルチバックテスト + フィルタ比較（10期間）")
+    print(f"マルチバックテスト + フィルタ比較（{len(PERIODS)}期間）")
     print("=" * 70)
 
-    # ── 1. 各期間のバックテスト実行 ──
+    # ウォークフォワード対象期間の既存CSVを削除（モデルが変わるため再実行）
+    if not args.skip_run:
+        for start, end, label in PERIODS:
+            if get_model_cutoff(start) is not None:
+                csv_path = os.path.join(BASE_DIR, "simulations", "backtests", f"backtest_{start}_{end}.csv")
+                if os.path.exists(csv_path):
+                    os.remove(csv_path)
+                    print(f"  [{start}] 旧CSV削除（ウォークフォワード再実行）")
+
+    # ── 1. モデルの事前学習（ウォークフォワード） ──
+    needed_cutoffs = set()
+    for start, end, label in PERIODS:
+        c = get_model_cutoff(start)
+        if c:
+            needed_cutoffs.add(c)
+    for cutoff in sorted(needed_cutoffs):
+        ensure_model(cutoff)
+
+    # ── 2. 各期間のバックテスト実行 ──
     csv_map = {}
     for start, end, label in PERIODS:
-        path = run_period(start, end, skip_run=args.skip_run)
+        cutoff = get_model_cutoff(start)
+        path = run_period(start, end, cutoff=cutoff, skip_run=args.skip_run)
         if path:
             csv_map[(start, end)] = (label, path)
 
@@ -162,9 +241,11 @@ def main():
     print("\n" + "=" * 70)
     print("パラメータ感度サマリー")
     print("=" * 70)
-    print(f"  net_min 8→6 の効果:  A({summary.get('A現行      ', float('nan')):+.1f}%) → C({summary.get('Cnet緩和   ', float('nan')):+.1f}%)")
-    print(f"  conflict除外の効果:  A({summary.get('A現行      ', float('nan')):+.1f}%) → D({summary.get('Dconflict除', float('nan')):+.1f}%)")
-    print(f"  両方合わせた効果:    A({summary.get('A現行      ', float('nan')):+.1f}%) → B({summary.get('B提案      ', float('nan')):+.1f}%)")
+    base = summary.get('現行(10/8) ', float('nan'))
+    print(f"  現行(net10/drop8) ベース:  {base:+.1f}%")
+    print(f"  旧(net8/drop12)との差:     {summary.get('旧(8/12)  ', float('nan')) - base:+.1f}%")
+    print(f"  緩(net8/drop8)との差:      {summary.get('緩(8/8)   ', float('nan')) - base:+.1f}%")
+    print(f"  厳(net12/drop6)との差:     {summary.get('厳(12/6)  ', float('nan')) - base:+.1f}%")
 
 
 if __name__ == "__main__":
