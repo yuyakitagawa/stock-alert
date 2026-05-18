@@ -8,6 +8,7 @@ import argparse
 import os
 import subprocess
 import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 
@@ -89,7 +90,7 @@ def ensure_model(cutoff):
     print(f"  [モデル学習] cutoff={cutoff} 学習開始...")
     print(f"{'='*60}")
     proc = subprocess.run(
-        [PYTHON, "rf_train_v3.py", "--cutoff", cutoff],
+        [PYTHON, "core/rf_train_v3.py", "--cutoff", cutoff],
         cwd=BASE_DIR,
     )
     if proc.returncode != 0:
@@ -115,7 +116,7 @@ def run_period(start, end, cutoff=None, skip_run=False):
         print(f"  [{start}→{end}] CSVなし、スキップ")
         return None
     print(f"\n  [{start}→{end}] バックテスト実行中...")
-    cmd = [PYTHON, "backtest.py", "--start", start, "--end", end]
+    cmd = [PYTHON, "tools/backtest.py", "--start", start, "--end", end]
     if cutoff:
         cmd += ["--model-cutoff", cutoff]
     proc = subprocess.run(cmd, cwd=BASE_DIR)

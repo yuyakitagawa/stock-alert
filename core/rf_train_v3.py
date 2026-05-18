@@ -1,5 +1,8 @@
 
-import requests, pandas as pd, numpy as np, time, os, io, joblib, json
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import requests, pandas as pd, numpy as np, time, io, joblib, json
 from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression

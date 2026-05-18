@@ -8,7 +8,9 @@ backtest.py
       過学習の影響を受ける可能性がある。参考値として見ること。
 """
 
-import os
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import io
 import time
 import glob

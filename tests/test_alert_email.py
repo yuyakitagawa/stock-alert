@@ -3,7 +3,9 @@ import unittest
 import os
 import sys
 import pandas as pd
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "email"))
 
 import math
 from alert_email import (
@@ -236,12 +238,12 @@ class TestCandidateFilters(unittest.TestCase):
         self.assertTrue(any("高net低drop株" in t for t in self._titles(actions)))
 
     def test_net_at_new_min_included(self):
-        """net=6.0（新下限ちょうど）は候補に含まれる"""
+        """net=10.0（下限ちょうど）は候補に含まれる"""
         ranking = self._ranking([
-            {"銘柄コード": 9003, "銘柄名": "ネット6株", "ネット(%)": 6.0, "ボラ(%)": 25.0, "下落確率(%)": 3.0},
+            {"銘柄コード": 9003, "銘柄名": "ネット10株", "ネット(%)": 10.0, "ボラ(%)": 25.0, "下落確率(%)": 3.0},
         ])
         actions = build_priority_actions([], ranking_df=ranking)
-        self.assertTrue(any("ネット6株" in t for t in self._titles(actions)))
+        self.assertTrue(any("ネット10株" in t for t in self._titles(actions)))
 
     def test_net_below_min_excluded(self):
         """net=5.9（下限未満）は除外される"""
@@ -252,12 +254,12 @@ class TestCandidateFilters(unittest.TestCase):
         self.assertFalse(any("ネット低株" in t for t in self._titles(actions)))
 
     def test_drop_prob_below_new_max_included(self):
-        """drop_prob=11.9%（新上限未満）は除外されない"""
+        """drop_prob=4.9%（上限未満かつコンフリクト閾値未満）かつnet>=10%は除外されない"""
         ranking = self._ranking([
-            {"銘柄コード": 9005, "銘柄名": "drop11株", "ネット(%)": 7.0, "ボラ(%)": 25.0, "下落確率(%)": 11.9},
+            {"銘柄コード": 9005, "銘柄名": "drop4株", "ネット(%)": 10.5, "ボラ(%)": 25.0, "下落確率(%)": 4.9},
         ])
         actions = build_priority_actions([], ranking_df=ranking)
-        self.assertTrue(any("drop11株" in t for t in self._titles(actions)))
+        self.assertTrue(any("drop4株" in t for t in self._titles(actions)))
 
     def test_drop_prob_above_new_max_excluded(self):
         """drop_prob=12.1%（新上限超過）は除外される"""

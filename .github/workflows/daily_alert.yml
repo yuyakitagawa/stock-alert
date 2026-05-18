@@ -26,7 +26,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost \
-            gspread google-auth yfinance
+            gspread google-auth yfinance anthropic
 
       - name: Link repo to ~/stock-alert
         run: ln -s $GITHUB_WORKSPACE ~/stock-alert
@@ -36,6 +36,11 @@ jobs:
           echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
           echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
           echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
+          echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
+          echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
 
       - name: Create gcp_key.json from secret
         run: |
@@ -60,7 +65,7 @@ jobs:
             stock-alert-db-
 
       - name: Step 1 - スクリーニング
-        run: cd ~/stock-alert && python screener.py
+        run: cd ~/stock-alert && python core/screener.py
 
       - name: Step 2 - モデル学習（金曜 or 初回のみ）
         run: |
@@ -68,16 +73,22 @@ jobs:
           MODEL_PATH=~/stock-alert/rf_model.pkl
           if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
             echo "▶ モデル学習を実行します"
-            cd ~/stock-alert && python rf_train_v3.py
+            cd ~/stock-alert && python core/rf_train_v3.py
           else
             echo "⏭ モデルが存在するためスキップします"
           fi
 
       - name: Step 3 - ランキング生成
-        run: cd ~/stock-alert && python rank_stocks.py
+        run: cd ~/stock-alert && python core/rank_stocks.py
 
       - name: Step 4 - メールアラート送信
-        run: cd ~/stock-alert && python alert_email.py
+        run: cd ~/stock-alert && python email/alert_email.py
+
+      - name: Step 5 - Webエクスポート（Supabase）
+        run: cd ~/stock-alert && python web/export_to_web.py
+
+      - name: Step 6 - ユーザーアラートメール送信
+        run: cd ~/stock-alert && python web/send_user_alerts.py
 
       - name: Save model cache
         if: always()

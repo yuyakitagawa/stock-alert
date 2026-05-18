@@ -1,6 +1,9 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import logging
 import numpy as np
-import os
 import glob
 import re
 import smtplib
@@ -27,7 +30,7 @@ from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD,
                     CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN,
                     SELL_DAYS_MID, SELL_DAYS_LATE,
                     NET_SELL_THRESHOLD_MID, NET_SELL_THRESHOLD_LATE)
-from lib.email_html import (
+from email_html import (
     EMAIL_CSS as _EMAIL_CSS,
     volatility_label, get_judgment,
     net_cls as _net_cls, rel_cls as _rel_cls, rel_str as _rel_str,
@@ -39,7 +42,7 @@ from lib.email_html import (
     build_all_rows as _build_all_rows,
     bear_market_banner_html as _bear_market_banner_html,
     hot_market_banner_html as _hot_market_banner_html,
-    index_etf_banner_html as _index_etf_banner_html,
+    index_etf_banner_html as _index_etf_banner_html,  # noqa: E501
     summary_stat_cards_html as _summary_stat_cards_html,
 )
 

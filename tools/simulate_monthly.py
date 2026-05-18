@@ -4,8 +4,10 @@
 --horizon 30  : 現在までのリターン（デフォルト、past_month_matches.csv使用）
 --horizon 90  : 3ヶ月後リターン（loose_model_simulation.csv使用、Yahoo Financeから取得）
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import argparse
-import os
 import glob
 import time
 import pandas as pd
