@@ -51,6 +51,22 @@ def _upsert(table: str, rows: list[dict]) -> None:
             print(f"[export_to_web] {table}: {len(batch)} 行 upsert 完了")
 
 
+_EMOJI_MAP = {
+    "🥇 S買い":      "S買い",
+    "🥈 A買い":      "A買い",
+    "🟡 高値警戒":   "高値警戒",
+    "⏳ 方向感なし": "方向感なし",
+    "🔴 下降シグナル": "下降シグナル",
+    "⚠️ 弱気シグナル": "弱気シグナル",
+    "🔴売り検討":    "売り検討",
+    "🔴 売り検討":   "売り検討",
+}
+
+
+def _clean_recommend(value: str) -> str:
+    return _EMOJI_MAP.get(value, value)
+
+
 def export_rankings(today: str) -> list[dict]:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
@@ -76,7 +92,7 @@ def export_rankings(today: str) -> list[dict]:
             "drop_prob":  r["drop_prob"],
             "net":        r["net"],
             "vol":        r["vol"],
-            "recommend":  r["recommend"],
+            "recommend":  _clean_recommend(r["recommend"]),
             "rel20":      r["rel20"],
             "stop_loss":  r["stop_loss"],
             "per":        r["per"],
