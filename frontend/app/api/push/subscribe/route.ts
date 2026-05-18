@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SB_KEY = process.env.SUPABASE_SERVICE_KEY!;
+
+function sbHeaders() {
+  return {
+    apikey: SB_KEY,
+    Authorization: `Bearer ${SB_KEY}`,
+    "Content-Type": "application/json",
+    Prefer: "resolution=merge-duplicates",
+  };
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -9,15 +20,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
 
-  const sb = supabaseAdmin();
-  const { error } = await sb.from("push_subscriptions").upsert(
-    { endpoint, keys, enabled: true },
-    { onConflict: "endpoint" }
-  );
+  const res = await fetch(`${SB_URL}/rest/v1/push_subscriptions`, {
+    method: "POST",
+    headers: sbHeaders(),
+    body: JSON.stringify({ endpoint, keys, enabled: true }),
+  });
 
-  if (error) {
-    console.error("[push/subscribe]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("[push/subscribe]", text);
+    return NextResponse.json({ error: text }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

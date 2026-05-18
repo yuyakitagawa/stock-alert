@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
-import { supabaseAdmin } from "@/lib/supabase";
 
 webpush.setVapidDetails(
   `mailto:${process.env.VAPID_CONTACT_EMAIL ?? "admin@example.com"}`,
@@ -8,76 +7,80 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SB_KEY = process.env.SUPABASE_SERVICE_KEY!;
+
+function sbHeaders(extra: Record<string, string> = {}) {
+  return {
+    apikey: SB_KEY,
+    Authorization: `Bearer ${SB_KEY}`,
+    "Content-Type": "application/json",
+    ...extra,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-internal-secret");
   if (secret !== process.env.INTERNAL_SEND_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const sb = supabaseAdmin();
-
   // 最新日付を取得
-  const { data: latest } = await sb
-    .from("web_rankings")
-    .select("date")
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
+  const latestRes = await fetch(
+    `${SB_URL}/rest/v1/web_rankings?select=date&order=date.desc&limit=1`,
+    { headers: sbHeaders() }
+  );
+  const latest = latestRes.ok ? await latestRes.json() : [];
+  if (!latest.length) return NextResponse.json({ sent: 0, skipped: 0 });
+  const date = latest[0].date;
 
-  if (!latest) return NextResponse.json({ sent: 0, skipped: 0 });
+  // シグナル取得
+  const rankRes = await fetch(
+    `${SB_URL}/rest/v1/web_rankings?date=eq.${date}&select=name,code,recommend,net`,
+    { headers: sbHeaders() }
+  );
+  const rankings = rankRes.ok ? await rankRes.json() : [];
 
-  // 当日のシグナルを取得
-  const { data: rankings } = await sb
-    .from("web_rankings")
-    .select("name, code, recommend, net")
-    .eq("date", latest.date)
-    .in("recommend", ["S買い", "A買い", "売り検討"]);
-
-  const sBuy  = rankings?.filter((r) => r.recommend === "S買い")  ?? [];
-  const aBuy  = rankings?.filter((r) => r.recommend === "A買い")  ?? [];
-  const sells = rankings?.filter((r) => r.recommend === "売り検討") ?? [];
+  const sBuy  = rankings.filter((r: { recommend: string }) => r.recommend.includes("S買い"));
+  const aBuy  = rankings.filter((r: { recommend: string }) => r.recommend.includes("A買い"));
+  const sells = rankings.filter((r: { recommend: string }) => r.recommend.includes("売り"));
 
   const lines: string[] = [];
   if (sBuy.length)  lines.push(`🟢 S買い ${sBuy.length}銘柄`);
   if (aBuy.length)  lines.push(`🟩 A買い ${aBuy.length}銘柄`);
   if (sells.length) lines.push(`🔴 売り検討 ${sells.length}銘柄`);
 
-  if (lines.length === 0) {
-    return NextResponse.json({ sent: 0, skipped: 0 });
-  }
+  if (lines.length === 0) return NextResponse.json({ sent: 0, skipped: 0 });
 
   const payload = JSON.stringify({
-    title: `📈 StockSignal ${latest.date}`,
+    title: `📈 StockSignal ${date}`,
     body:  lines.join(" / "),
     url:   process.env.NEXT_PUBLIC_SITE_URL ?? "/",
   });
 
   // サブスクリプション取得
-  const { data: subs } = await sb
-    .from("push_subscriptions")
-    .select("endpoint, keys")
-    .eq("enabled", true);
-
-  if (!subs || subs.length === 0) {
-    return NextResponse.json({ sent: 0, skipped: 0 });
-  }
+  const subsRes = await fetch(
+    `${SB_URL}/rest/v1/push_subscriptions?enabled=eq.true&select=endpoint,keys`,
+    { headers: sbHeaders() }
+  );
+  const subs = subsRes.ok ? await subsRes.json() : [];
+  if (!subs.length) return NextResponse.json({ sent: 0, skipped: 0 });
 
   let sent = 0;
   let skipped = 0;
 
   await Promise.all(
-    subs.map(async (sub) => {
+    subs.map(async (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) => {
       try {
-        await webpush.sendNotification(
-          { endpoint: sub.endpoint, keys: sub.keys as { p256dh: string; auth: string } },
-          payload
-        );
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload);
         sent++;
       } catch (err: unknown) {
         const status = (err as { statusCode?: number }).statusCode;
         if (status === 410 || status === 404) {
-          // 期限切れ登録を削除
-          await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+          await fetch(
+            `${SB_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
+            { method: "DELETE", headers: sbHeaders() }
+          );
         }
         skipped++;
       }

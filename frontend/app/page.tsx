@@ -1,29 +1,36 @@
-import { supabaseAdmin } from "@/lib/supabase";
 import type { Ranking } from "@/lib/types";
 import RankingsTable from "@/components/RankingsTable";
 import PushButton from "@/components/PushButton";
 
 export const revalidate = 3600;
 
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SB_KEY = process.env.SUPABASE_SERVICE_KEY!;
+
+function sbHeaders() {
+  return {
+    apikey: SB_KEY,
+    Authorization: `Bearer ${SB_KEY}`,
+  };
+}
+
 async function fetchRankings(): Promise<{ date: string; rows: Ranking[] }> {
-  const sb = supabaseAdmin();
+  const latestRes = await fetch(
+    `${SB_URL}/rest/v1/web_rankings?select=date&order=date.desc&limit=1`,
+    { headers: sbHeaders(), next: { revalidate: 3600 } }
+  );
+  if (!latestRes.ok) return { date: "", rows: [] };
+  const latest = await latestRes.json();
+  if (!latest.length) return { date: "", rows: [] };
 
-  const { data: latest } = await sb
-    .from("web_rankings")
-    .select("date")
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!latest) return { date: "", rows: [] };
-
-  const { data } = await sb
-    .from("web_rankings")
-    .select("*")
-    .eq("date", latest.date)
-    .order("rank", { ascending: true });
-
-  return { date: latest.date, rows: (data as Ranking[]) ?? [] };
+  const date = latest[0].date;
+  const rowsRes = await fetch(
+    `${SB_URL}/rest/v1/web_rankings?date=eq.${date}&order=rank.asc`,
+    { headers: sbHeaders(), next: { revalidate: 3600 } }
+  );
+  if (!rowsRes.ok) return { date, rows: [] };
+  const rows = await rowsRes.json();
+  return { date, rows: rows as Ranking[] };
 }
 
 function SummaryCard({
