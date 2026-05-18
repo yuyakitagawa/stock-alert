@@ -6,6 +6,8 @@ import {
   fetchStockMeta,
   fetchEarnings,
   fetchAiAnalysis,
+  fetchCompanyProfile,
+  fetchRecentEarnings,
 } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -43,6 +45,14 @@ function formatDate(date: string | null | undefined) {
     year: "numeric", month: "long", day: "numeric",
   });
 }
+function fmtJPY(n: number | null): string {
+  if (n == null) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `${(n / 1e12).toFixed(1)}兆円`;
+  if (abs >= 1e8)  return `${(n / 1e8).toFixed(0)}億円`;
+  if (abs >= 1e4)  return `${(n / 1e4).toFixed(0)}万円`;
+  return `${n.toLocaleString()}円`;
+}
 
 interface MetricCardProps {
   label: string;
@@ -64,11 +74,13 @@ function MetricCard({ label, value, sub, colorClass = "text-white" }: MetricCard
 export default async function StockDetailPage({ params }: Props) {
   const { code } = await params;
 
-  const [ranking, meta, earnings, ai] = await Promise.all([
+  const [ranking, meta, earnings, ai, profile, recentEarnings] = await Promise.all([
     fetchStockRanking(code),
     fetchStockMeta(code),
     fetchEarnings(code),
     fetchAiAnalysis(code),
+    fetchCompanyProfile(code),
+    fetchRecentEarnings(code),
   ]);
 
   if (!ranking) notFound();
@@ -97,7 +109,7 @@ export default async function StockDetailPage({ params }: Props) {
                 <h1 className="text-2xl font-bold text-white">{ranking.name}</h1>
                 <RecommendBadge value={ranking.recommend} size="md" />
               </div>
-              <div className="flex items-center gap-3 text-sm text-gray-500">
+              <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
                 <span className="font-mono font-semibold text-gray-400">{ranking.code}</span>
                 {meta?.sector && <span>{meta.sector}</span>}
                 {meta?.market && (
@@ -105,6 +117,11 @@ export default async function StockDetailPage({ params }: Props) {
                     <span className="text-gray-700">·</span>
                     <span>{meta.market}</span>
                   </>
+                )}
+                {profile.employees && (
+                  <span className="text-gray-600">
+                    {profile.employees.toLocaleString()}人
+                  </span>
                 )}
               </div>
             </div>
@@ -125,6 +142,82 @@ export default async function StockDetailPage({ params }: Props) {
           <StockChart code={code} />
         </section>
 
+        {/* Company Overview */}
+        {(profile.description || profile.website) && (
+          <section className="space-y-4">
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">会社概要</h2>
+
+            {profile.description && (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <p className="text-gray-400 text-sm leading-relaxed">{profile.description}</p>
+              </div>
+            )}
+
+            {/* IR Links */}
+            <div>
+              <p className="text-xs text-gray-600 mb-2 font-semibold">IR・開示情報</p>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={`https://irbank.net/${code}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
+                >
+                  IR Bank
+                  <span className="text-gray-600">↗</span>
+                </a>
+                <a
+                  href={`https://www.release.tdnet.info/inbs/I_main_00.html?code=${code}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
+                >
+                  TDnet 適時開示
+                  <span className="text-gray-600">↗</span>
+                </a>
+                {profile.website && (
+                  <a
+                    href={profile.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
+                  >
+                    会社HP
+                    <span className="text-gray-600">↗</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* IR links only if no profile description */}
+        {!profile.description && !profile.website && (
+          <section>
+            <p className="text-xs text-gray-600 mb-2 font-semibold">IR・開示情報</p>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={`https://irbank.net/${code}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
+              >
+                IR Bank
+                <span className="text-gray-600">↗</span>
+              </a>
+              <a
+                href={`https://www.release.tdnet.info/inbs/I_main_00.html?code=${code}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
+              >
+                TDnet 適時開示
+                <span className="text-gray-600">↗</span>
+              </a>
+            </div>
+          </section>
+        )}
+
         {/* Score metrics */}
         <section>
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">AIスコア</h2>
@@ -134,8 +227,8 @@ export default async function StockDetailPage({ params }: Props) {
               value={signFmt(ranking.net)}
               colorClass={ranking.net >= 0 ? "text-green-400" : "text-red-400"}
             />
-            <MetricCard label="上昇確率"   value={`${fmt(ranking.rise_prob)}%`} colorClass="text-green-400" />
-            <MetricCard label="下落確率"   value={`${fmt(ranking.drop_prob)}%`} colorClass="text-red-400" />
+            <MetricCard label="上昇確率"     value={`${fmt(ranking.rise_prob)}%`} colorClass="text-green-400" />
+            <MetricCard label="下落確率"     value={`${fmt(ranking.drop_prob)}%`} colorClass="text-red-400" />
             <MetricCard
               label="日経比 20日"
               value={signFmt(ranking.rel20)}
@@ -164,6 +257,45 @@ export default async function StockDetailPage({ params }: Props) {
             )}
           </div>
         </section>
+
+        {/* Recent Earnings */}
+        {recentEarnings.length > 0 && (
+          <section>
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">
+              最新決算（直近{recentEarnings.length}四半期）
+            </h2>
+            <div className="overflow-hidden rounded-xl border border-gray-800">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-900/80 text-gray-500 text-left border-b border-gray-800">
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">期間</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-right">売上高</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-right">純利益</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/60">
+                  {recentEarnings.map((q, i) => (
+                    <tr key={i} className="bg-gray-900">
+                      <td className="px-4 py-2.5 font-mono text-gray-300 text-xs">{q.period}</td>
+                      <td className="px-4 py-2.5 font-mono text-gray-200 text-sm text-right">
+                        {fmtJPY(q.revenue)}
+                      </td>
+                      <td className={`px-4 py-2.5 font-mono text-sm font-bold text-right ${
+                        q.netIncome == null ? "text-gray-500"
+                        : q.netIncome >= 0 ? "text-green-400" : "text-red-400"
+                      }`}>
+                        {fmtJPY(q.netIncome)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-xs text-gray-700 px-4 py-2 bg-gray-900/50 border-t border-gray-800">
+                出典: Yahoo Finance
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* Stop loss */}
         {ranking.stop_loss != null && (

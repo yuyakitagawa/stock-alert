@@ -1,5 +1,6 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
+import { yfQuoteSummary } from "./yahoo";
 
 const CACHE: RequestInit = { next: { revalidate: 3600 } };
 
@@ -94,6 +95,38 @@ export async function fetchSectorMap(): Promise<Record<string, string>> {
   return Object.fromEntries(
     all.filter(r => r.sector).map(r => [r.code, r.sector!])
   );
+}
+
+export async function fetchCompanyProfile(code: string): Promise<CompanyProfile> {
+  try {
+    const result = await yfQuoteSummary(code, "assetProfile");
+    if (!result) return { description: null, website: null, employees: null };
+    const p = result.assetProfile as Record<string, unknown> | undefined;
+    return {
+      description: (p?.longBusinessSummary as string) ?? null,
+      website:     (p?.website as string) ?? null,
+      employees:   (p?.fullTimeEmployees as number) ?? null,
+    };
+  } catch {
+    return { description: null, website: null, employees: null };
+  }
+}
+
+export async function fetchRecentEarnings(code: string): Promise<QuarterlyEarning[]> {
+  try {
+    const result = await yfQuoteSummary(code, "incomeStatementHistoryQuarterly");
+    if (!result) return [];
+    const history = (result.incomeStatementHistoryQuarterly as Record<string, unknown>)
+      ?.incomeStatementHistory;
+    if (!Array.isArray(history)) return [];
+    return (history as Record<string, unknown>[]).slice(0, 4).map(q => ({
+      period:    (q.endDate as Record<string, unknown>)?.fmt as string ?? "—",
+      revenue:   (q.totalRevenue as Record<string, unknown>)?.raw as number ?? null,
+      netIncome: (q.netIncome as Record<string, unknown>)?.raw as number ?? null,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchSparkline(code: string): Promise<number[]> {

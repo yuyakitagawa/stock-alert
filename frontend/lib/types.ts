@@ -49,3 +49,15 @@ export interface AiAnalysis {
   bear_points:   string[];
   model_version: string;
 }
+
+export interface CompanyProfile {
+  description: string | null;
+  website:     string | null;
+  employees:   number | null;
+}
+
+export interface QuarterlyEarning {
+  period:    string;
+  revenue:   number | null;
+  netIncome: number | null;
+}
