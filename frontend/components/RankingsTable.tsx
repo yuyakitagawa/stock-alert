@@ -4,6 +4,8 @@ import Link from "next/link";
 import type { Ranking } from "@/lib/types";
 import RecommendBadge from "./RecommendBadge";
 import { FILTER_TABS } from "@/lib/signals";
+import { useLang } from "@/contexts/LanguageContext";
+import { UI } from "@/lib/i18n";
 
 type SortKey = "rank" | "net" | "rise_prob" | "drop_prob" | "rel20" | "close";
 
@@ -21,9 +23,18 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
   return <span className="ml-1 text-green-400">{dir === "asc" ? "↑" : "↓"}</span>;
 }
 
-export default function RankingsTable({ rows }: { rows: Ranking[] }) {
-  const [tab,    setTab]    = useState<string>("all");
-  const [search, setSearch] = useState("");
+interface Props {
+  rows: Ranking[];
+  sectorMap?: Record<string, string>;
+}
+
+export default function RankingsTable({ rows, sectorMap }: Props) {
+  const { lang } = useLang();
+  const ui = UI[lang];
+
+  const [tab,     setTab]     = useState<string>("all");
+  const [search,  setSearch]  = useState("");
+  const [sector,  setSector]  = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -36,9 +47,17 @@ export default function RankingsTable({ rows }: { rows: Ranking[] }) {
     }
   }
 
+  const sectors = useMemo(() => {
+    if (!sectorMap) return [];
+    const set = new Set<string>();
+    rows.forEach(r => { const s = sectorMap[r.code]; if (s) set.add(s); });
+    return Array.from(set).sort();
+  }, [rows, sectorMap]);
+
   const filtered = useMemo(() => {
     let r = rows;
     if (tab !== "all") r = r.filter(x => x.recommend === tab);
+    if (sector) r = r.filter(x => sectorMap?.[x.code] === sector);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       r = r.filter(x =>
@@ -50,7 +69,7 @@ export default function RankingsTable({ rows }: { rows: Ranking[] }) {
       const bv = b[sortKey] ?? (sortDir === "asc" ? Infinity : -Infinity);
       return sortDir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
     });
-  }, [rows, tab, search, sortKey, sortDir]);
+  }, [rows, tab, sector, search, sortKey, sortDir, sectorMap]);
 
   function tabCount(value: string) {
     if (value === "all") return rows.length;
@@ -69,30 +88,46 @@ export default function RankingsTable({ rows }: { rows: Ranking[] }) {
 
   return (
     <div className="space-y-4">
-      {/* Filter tabs + Search */}
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex gap-1.5 flex-wrap">
-          {FILTER_TABS.map(t => (
-            <button
-              key={t.value}
-              onClick={() => setTab(t.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                tab === t.value
-                  ? "bg-green-700 text-white"
-                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              {t.label}
-              <span className="ml-1.5 opacity-60">({tabCount(t.value)})</span>
-            </button>
-          ))}
-        </div>
+      {/* Signal filter tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        {FILTER_TABS.map(t => (
+          <button
+            key={t.value}
+            onClick={() => setTab(t.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              tab === t.value
+                ? "bg-green-700 text-white"
+                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
+            }`}
+          >
+            {t.label}
+            <span className="ml-1.5 opacity-60">({tabCount(t.value)})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Sector + Search */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        {sectors.length > 0 && (
+          <select
+            value={sector}
+            onChange={e => setSector(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/30 sm:w-52"
+            suppressHydrationWarning
+          >
+            <option value="" suppressHydrationWarning>{ui.allSectors}</option>
+            {sectors.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        )}
         <input
           type="search"
-          placeholder="銘柄名・コードで検索"
+          placeholder={ui.searchPlaceholder}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full sm:w-52 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/30"
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/30"
+          suppressHydrationWarning
         />
       </div>
 
@@ -115,15 +150,17 @@ export default function RankingsTable({ rows }: { rows: Ranking[] }) {
           </thead>
           <tbody className="divide-y divide-gray-800/60">
             {filtered.map(r => (
-              <tr
-                key={r.code}
-                className="hover:bg-gray-800/50 transition-colors group"
-              >
+              <tr key={r.code} className="hover:bg-gray-800/50 transition-colors group">
                 <td className="px-3 py-2.5 text-center text-gray-600 font-mono text-xs">{r.rank}</td>
                 <td className="px-3 py-2.5">
                   <Link href={`/stocks/${r.code}`} className="group-hover:text-green-400 transition-colors">
                     <div className="font-semibold text-white">{r.name}</div>
-                    <div className="text-xs text-gray-500 font-mono">{r.code}</div>
+                    <div className="text-xs text-gray-500 font-mono">
+                      {r.code}
+                      {sectorMap?.[r.code] && (
+                        <span className="ml-2 text-gray-600">{sectorMap[r.code]}</span>
+                      )}
+                    </div>
                   </Link>
                 </td>
                 <td className="px-3 py-2.5">
@@ -177,9 +214,12 @@ export default function RankingsTable({ rows }: { rows: Ranking[] }) {
                 <span className="font-semibold text-sm text-white">{r.name}</span>
                 <RecommendBadge value={r.recommend} />
               </div>
-              <div className="flex gap-3 text-xs font-mono mt-0.5 text-gray-500">
+              <div className="flex gap-2 text-xs font-mono mt-0.5 text-gray-500 flex-wrap">
                 <span>{r.code}</span>
                 <span className="text-gray-400">¥{r.close?.toLocaleString()}</span>
+                {sectorMap?.[r.code] && (
+                  <span className="text-gray-600">{sectorMap[r.code]}</span>
+                )}
               </div>
             </div>
             <div className="text-right shrink-0">

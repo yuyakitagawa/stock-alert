@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchRankings } from "@/lib/data";
+import { fetchRankings, fetchSectorMap } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RankingsTable from "@/components/RankingsTable";
@@ -7,8 +7,8 @@ import RankingsTable from "@/components/RankingsTable";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "ランキング",
-  description: "日本株AIシグナルのランキング一覧。S買い・A買い・高値警戒・売り検討でフィルタリング可能。",
+  title: "ランキング — 日本株シグナル",
+  description: "日本株AIシグナルのランキング一覧。S買い・A買い・高値警戒・売り検討・業種でフィルタリング可能。",
 };
 
 function formatDate(date: string) {
@@ -19,7 +19,10 @@ function formatDate(date: string) {
 }
 
 export default async function RankingsPage() {
-  const { date, rows } = await fetchRankings();
+  const [{ date, rows }, sectorMap] = await Promise.all([
+    fetchRankings(),
+    fetchSectorMap(),
+  ]);
   const dateLabel = formatDate(date);
 
   return (
@@ -28,7 +31,9 @@ export default async function RankingsPage() {
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white">シグナルランキング</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">
+            日本株 シグナルランキング
+          </h1>
           <p className="text-sm text-gray-600 mt-1">
             {date ? `${dateLabel} 時点のAIスコア順` : "データを取得中..."}
           </p>
@@ -41,7 +46,7 @@ export default async function RankingsPage() {
             <p className="text-sm">平日16時以降に更新されます</p>
           </div>
         ) : (
-          <RankingsTable rows={rows} />
+          <RankingsTable rows={rows} sectorMap={sectorMap} />
         )}
       </main>
 

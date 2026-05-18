@@ -3,7 +3,6 @@ import { anonHeaders, sbUrl } from "./supabase";
 
 const CACHE: RequestInit = { next: { revalidate: 3600 } };
 
-/** Fetch the latest date in web_rankings */
 export async function fetchLatestDate(): Promise<string | null> {
   const res = await fetch(
     sbUrl("web_rankings?select=date&order=date.desc&limit=1"),
@@ -14,24 +13,30 @@ export async function fetchLatestDate(): Promise<string | null> {
   return rows[0]?.date ?? null;
 }
 
-/** Fetch all rankings for the latest date */
 export async function fetchRankings(): Promise<{ date: string; rows: Ranking[] }> {
   const date = await fetchLatestDate();
   if (!date) return { date: "", rows: [] };
 
-  const res = await fetch(
-    sbUrl(`web_rankings?date=eq.${date}&order=rank.asc`),
-    { headers: anonHeaders(), ...CACHE }
-  );
-  if (!res.ok) return { date, rows: [] };
-  return { date, rows: (await res.json()) as Ranking[] };
+  const all: Ranking[] = [];
+  const pageSize = 1000;
+  let offset = 0;
+  for (;;) {
+    const res = await fetch(
+      sbUrl(`web_rankings?date=eq.${date}&order=rank.asc&limit=${pageSize}&offset=${offset}`),
+      { headers: anonHeaders(), ...CACHE }
+    );
+    if (!res.ok) break;
+    const rows: Ranking[] = await res.json();
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { date, rows: all };
 }
 
-/** Fetch a single stock ranking by code */
 export async function fetchStockRanking(code: string): Promise<Ranking | null> {
   const date = await fetchLatestDate();
   if (!date) return null;
-
   const res = await fetch(
     sbUrl(`web_rankings?date=eq.${date}&code=eq.${code}&limit=1`),
     { headers: anonHeaders(), ...CACHE }
@@ -41,7 +46,6 @@ export async function fetchStockRanking(code: string): Promise<Ranking | null> {
   return (rows[0] as Ranking) ?? null;
 }
 
-/** Fetch stock metadata */
 export async function fetchStockMeta(code: string): Promise<StockMeta | null> {
   const res = await fetch(
     sbUrl(`web_stock_meta?code=eq.${code}&limit=1`),
@@ -52,7 +56,6 @@ export async function fetchStockMeta(code: string): Promise<StockMeta | null> {
   return (rows[0] as StockMeta) ?? null;
 }
 
-/** Fetch earnings date */
 export async function fetchEarnings(code: string): Promise<Earnings | null> {
   const res = await fetch(
     sbUrl(`web_earnings?code=eq.${code}&limit=1`),
@@ -63,7 +66,6 @@ export async function fetchEarnings(code: string): Promise<Earnings | null> {
   return (rows[0] as Earnings) ?? null;
 }
 
-/** Fetch AI analysis */
 export async function fetchAiAnalysis(code: string): Promise<AiAnalysis | null> {
   const res = await fetch(
     sbUrl(`ai_analyses?code=eq.${code}&order=date.desc&limit=1`),
@@ -72,4 +74,40 @@ export async function fetchAiAnalysis(code: string): Promise<AiAnalysis | null> 
   if (!res.ok) return null;
   const rows = await res.json();
   return (rows[0] as AiAnalysis) ?? null;
+}
+
+export async function fetchSectorMap(): Promise<Record<string, string>> {
+  const all: { code: string; sector: string | null }[] = [];
+  const pageSize = 1000;
+  let offset = 0;
+  for (;;) {
+    const res = await fetch(
+      sbUrl(`web_stock_meta?select=code,sector&limit=${pageSize}&offset=${offset}`),
+      { headers: anonHeaders(), next: { revalidate: 86400 } }
+    );
+    if (!res.ok) break;
+    const rows: { code: string; sector: string | null }[] = await res.json();
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+  return Object.fromEntries(
+    all.filter(r => r.sector).map(r => [r.code, r.sector!])
+  );
+}
+
+export async function fetchSparkline(code: string): Promise<number[]> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=1mo&interval=1d`;
+    const res = await fetch(url, {
+      next: { revalidate: 3600 },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const closes: (number | null)[] = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
+    return closes.filter((v): v is number => v !== null);
+  } catch {
+    return [];
+  }
 }

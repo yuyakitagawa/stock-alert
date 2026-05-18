@@ -10,6 +10,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RecommendBadge from "@/components/RecommendBadge";
+import StockChart from "@/components/StockChart";
 import { signalStyle } from "@/lib/signals";
 
 export const revalidate = 3600;
@@ -23,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const ranking = await fetchStockRanking(code);
   if (!ranking) return { title: `${code} — StockSignal` };
   return {
-    title: `${ranking.name} (${code})`,
+    title: `${ranking.name} (${code}) — 日本株`,
     description: `${ranking.name}のAIシグナル: ${ranking.recommend}。ネットスコア ${ranking.net.toFixed(1)}%。`,
   };
 }
@@ -81,7 +82,7 @@ export default async function StockDetailPage({ params }: Props) {
       <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-8 space-y-8">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-gray-600">
-          <Link href="/" className="hover:text-gray-400 transition-colors">ホーム</Link>
+          <Link href="/" className="hover:text-gray-400 transition-colors">TOP</Link>
           <span>/</span>
           <Link href="/rankings" className="hover:text-gray-400 transition-colors">ランキング</Link>
           <span>/</span>
@@ -118,6 +119,12 @@ export default async function StockDetailPage({ params }: Props) {
           </div>
         </header>
 
+        {/* Price Chart */}
+        <section>
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">株価チャート</h2>
+          <StockChart code={code} />
+        </section>
+
         {/* Score metrics */}
         <section>
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">AIスコア</h2>
@@ -127,16 +134,8 @@ export default async function StockDetailPage({ params }: Props) {
               value={signFmt(ranking.net)}
               colorClass={ranking.net >= 0 ? "text-green-400" : "text-red-400"}
             />
-            <MetricCard
-              label="上昇確率"
-              value={`${fmt(ranking.rise_prob)}%`}
-              colorClass="text-green-400"
-            />
-            <MetricCard
-              label="下落確率"
-              value={`${fmt(ranking.drop_prob)}%`}
-              colorClass="text-red-400"
-            />
+            <MetricCard label="上昇確率"   value={`${fmt(ranking.rise_prob)}%`} colorClass="text-green-400" />
+            <MetricCard label="下落確率"   value={`${fmt(ranking.drop_prob)}%`} colorClass="text-red-400" />
             <MetricCard
               label="日経比 20日"
               value={signFmt(ranking.rel20)}
@@ -153,14 +152,8 @@ export default async function StockDetailPage({ params }: Props) {
         <section>
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">バリュエーション</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <MetricCard
-              label="PER"
-              value={ranking.per != null ? `${fmt(ranking.per)}x` : "—"}
-            />
-            <MetricCard
-              label="PBR"
-              value={ranking.pbr != null ? `${fmt(ranking.pbr)}x` : "—"}
-            />
+            <MetricCard label="PER" value={ranking.per != null ? `${fmt(ranking.per)}x` : "—"} />
+            <MetricCard label="PBR" value={ranking.pbr != null ? `${fmt(ranking.pbr)}x` : "—"} />
             {earnings && (
               <div className="col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-1">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">次回決算日</p>
@@ -192,14 +185,11 @@ export default async function StockDetailPage({ params }: Props) {
               <span className="text-xs text-gray-700 font-mono">{formatDate(ai.date)}</span>
             </div>
 
-            {/* Summary */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <p className="text-gray-300 text-sm leading-relaxed">{ai.summary}</p>
             </div>
 
-            {/* Bull / Bear */}
             <div className="grid sm:grid-cols-2 gap-4">
-              {/* Bull points */}
               {ai.bull_points?.length > 0 && (
                 <div className="bg-green-950/20 border border-green-900/30 rounded-xl p-5 space-y-3">
                   <h3 className="text-xs font-bold text-green-500 uppercase tracking-wide">強気ポイント</h3>
@@ -213,8 +203,6 @@ export default async function StockDetailPage({ params }: Props) {
                   </ul>
                 </div>
               )}
-
-              {/* Bear points */}
               {ai.bear_points?.length > 0 && (
                 <div className="bg-red-950/20 border border-red-900/30 rounded-xl p-5 space-y-3">
                   <h3 className="text-xs font-bold text-red-500 uppercase tracking-wide">弱気ポイント</h3>
