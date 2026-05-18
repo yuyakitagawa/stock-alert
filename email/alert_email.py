@@ -257,7 +257,7 @@ def load_prev_ranking_codes():
 # ───────────────────────────── 優先アクション ─────────────────────────────
 
 def build_priority_actions(results, ranking_df=None):
-    """今日の優先アクション: 即切 > 売りシグナル > 新規候補の買いシグナル"""
+    """今日の優先アクション: 即切 > 売りシグナル > 買い増し > 新規候補の買いシグナル"""
     actions = []
 
     # 【即切】: 20日リターン < -10%（最優先）
@@ -277,6 +277,23 @@ def build_priority_actions(results, ranking_df=None):
         label = "下降シグナル" if r["net"] < -10 else "弱気シグナル"
         detail = f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%" if dp is not None else f"ネット {r['net']:+.1f}%"
         actions.append({"emoji": "🔴", "title": f"{r['name']}（{r['code']}）— {label}", "detail": detail})
+
+    # 【買い増し】: 保有株かつ S買い（drop_prob<4% & net≥10%）
+    if len(actions) < 3:
+        add_candidates = sorted(
+            [r for r in results
+             if r["signal"] == "hold"
+             and r.get("recommend", "").startswith("🥇")
+             and (r.get("qty") is None or r.get("qty", 0) > 0)],
+            key=lambda x: -x["net"]
+        )
+        for r in add_candidates:
+            if len(actions) >= 3:
+                break
+            dp = r.get("drop_prob")
+            actions.append({"emoji": "🟢",
+                             "title": f"{r['name']}（{r['code']}）— 買い増しシグナル",
+                             "detail": f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%"})
 
     # 新規候補の買いシグナル（ランキングCSVからnet 8〜13%、未保有）
     if len(actions) < 3:
