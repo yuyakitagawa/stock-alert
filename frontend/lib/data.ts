@@ -129,6 +129,46 @@ export async function fetchRecentEarnings(code: string): Promise<QuarterlyEarnin
   }
 }
 
+export async function fetchDailyQuote(code: string): Promise<import("./types").DailyQuote | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=5d&interval=1d`;
+    const res = await fetch(url, {
+      next: { revalidate: 3600 },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return null;
+
+    const meta = result.meta ?? {};
+    const timestamps: number[] = result.timestamp ?? [];
+    const q = result.indicators?.quote?.[0] ?? {};
+    const n = timestamps.length - 1;
+    if (n < 0) return null;
+
+    const price = (meta.regularMarketPrice as number) ?? null;
+    const prev  = (meta.chartPreviousClose as number) ?? null;
+
+    return {
+      date:             timestamps[n] ? new Date(timestamps[n] * 1000).toISOString().split("T")[0] : null,
+      price,
+      open:             (q.open?.[n]   as number) ?? null,
+      high:             (q.high?.[n]   as number) ?? null,
+      low:              (q.low?.[n]    as number) ?? null,
+      close:            (q.close?.[n]  as number) ?? null,
+      volume:           (q.volume?.[n] as number) ?? null,
+      prevClose:        prev,
+      change:           price != null && prev != null ? price - prev : null,
+      changePct:        price != null && prev != null ? ((price - prev) / prev) * 100 : null,
+      fiftyTwoWeekHigh: (meta.fiftyTwoWeekHigh as number) ?? null,
+      fiftyTwoWeekLow:  (meta.fiftyTwoWeekLow  as number) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchSparkline(code: string): Promise<number[]> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=1mo&interval=1d`;

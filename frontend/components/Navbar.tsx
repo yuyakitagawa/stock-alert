@@ -1,7 +1,6 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import PushButton from "./PushButton";
 import { useLang } from "@/contexts/LanguageContext";
 import { UI } from "@/lib/i18n";
 
@@ -60,7 +59,6 @@ export default function Navbar({ dateLabel }: Props) {
           >
             {lang === "ja" ? "EN" : "JP"}
           </button>
-          <PushButton />
         </div>
       </div>
     </header>

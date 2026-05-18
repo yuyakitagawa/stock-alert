@@ -61,3 +61,18 @@ export interface QuarterlyEarning {
   revenue:   number | null;
   netIncome: number | null;
 }
+
+export interface DailyQuote {
+  date:             string | null;
+  price:            number | null;
+  open:             number | null;
+  high:             number | null;
+  low:              number | null;
+  close:            number | null;
+  volume:           number | null;
+  prevClose:        number | null;
+  change:           number | null;
+  changePct:        number | null;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow:  number | null;
+}

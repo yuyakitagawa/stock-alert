@@ -8,6 +8,7 @@ import {
   fetchAiAnalysis,
   fetchCompanyProfile,
   fetchRecentEarnings,
+  fetchDailyQuote,
 } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -45,6 +46,13 @@ function formatDate(date: string | null | undefined) {
     year: "numeric", month: "long", day: "numeric",
   });
 }
+function fmtVolume(v: number | null): string {
+  if (v == null) return "—";
+  if (v >= 100_000_000) return `${(v / 100_000_000).toFixed(1)}億株`;
+  if (v >= 10_000)      return `${(v / 10_000).toFixed(0)}万株`;
+  return `${v.toLocaleString()}株`;
+}
+
 function fmtJPY(n: number | null): string {
   if (n == null) return "—";
   const abs = Math.abs(n);
@@ -74,13 +82,14 @@ function MetricCard({ label, value, sub, colorClass = "text-white" }: MetricCard
 export default async function StockDetailPage({ params }: Props) {
   const { code } = await params;
 
-  const [ranking, meta, earnings, ai, profile, recentEarnings] = await Promise.all([
+  const [ranking, meta, earnings, ai, profile, recentEarnings, quote] = await Promise.all([
     fetchStockRanking(code),
     fetchStockMeta(code),
     fetchEarnings(code),
     fetchAiAnalysis(code),
     fetchCompanyProfile(code),
     fetchRecentEarnings(code),
+    fetchDailyQuote(code),
   ]);
 
   if (!ranking) notFound();
@@ -136,11 +145,96 @@ export default async function StockDetailPage({ params }: Props) {
           </div>
         </header>
 
-        {/* Price Chart */}
+        {/* Price Chart — central element */}
         <section>
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">株価チャート</h2>
           <StockChart code={code} />
         </section>
+
+        {/* Today's market data */}
+        {quote && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">本日の市場データ</h2>
+              {quote.date && (
+                <span className="text-xs text-gray-600 font-mono">{quote.date}</span>
+              )}
+            </div>
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              {/* Day change highlight */}
+              {quote.changePct != null && (
+                <div className={`px-5 py-3 border-b border-gray-800 flex items-center gap-3 ${
+                  quote.changePct >= 0 ? "bg-green-950/20" : "bg-red-950/20"
+                }`}>
+                  <span className={`font-mono text-xl font-bold ${
+                    quote.changePct >= 0 ? "text-green-400" : "text-red-400"
+                  }`}>
+                    {quote.changePct >= 0 ? "+" : ""}{quote.changePct.toFixed(2)}%
+                  </span>
+                  {quote.change != null && (
+                    <span className={`font-mono text-sm ${
+                      quote.change >= 0 ? "text-green-600" : "text-red-600"
+                    }`}>
+                      ({quote.change >= 0 ? "+" : ""}¥{quote.change.toLocaleString("ja-JP", { maximumFractionDigits: 0 })})
+                    </span>
+                  )}
+                  {quote.prevClose != null && (
+                    <span className="text-xs text-gray-600 ml-auto">
+                      前日終値 ¥{quote.prevClose.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* OHLCV grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-gray-800/60">
+                {[
+                  { label: "始値",  val: quote.open  != null ? `¥${quote.open.toLocaleString("ja-JP",  { maximumFractionDigits: 0 })}` : "—" },
+                  { label: "高値",  val: quote.high  != null ? `¥${quote.high.toLocaleString("ja-JP",  { maximumFractionDigits: 0 })}` : "—", color: "text-green-400" },
+                  { label: "安値",  val: quote.low   != null ? `¥${quote.low.toLocaleString("ja-JP",   { maximumFractionDigits: 0 })}` : "—", color: "text-red-400" },
+                  { label: "出来高", val: fmtVolume(quote.volume) },
+                ].map(({ label, val, color }) => (
+                  <div key={label} className="px-4 py-3">
+                    <div className="text-xs text-gray-500 mb-1">{label}</div>
+                    <div className={`font-mono text-sm font-bold ${color ?? "text-white"}`}>{val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 52-week range */}
+              {(quote.fiftyTwoWeekLow != null || quote.fiftyTwoWeekHigh != null) && (
+                <div className="px-5 py-3 border-t border-gray-800/60 flex items-center gap-4 text-xs">
+                  <span className="text-gray-500">52週レンジ</span>
+                  <span className="font-mono text-red-400">
+                    安値 {quote.fiftyTwoWeekLow != null
+                      ? `¥${quote.fiftyTwoWeekLow.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                      : "—"}
+                  </span>
+                  {quote.fiftyTwoWeekLow != null && quote.fiftyTwoWeekHigh != null && quote.price != null && (
+                    <div className="flex-1 flex items-center gap-1">
+                      <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full"
+                          style={{
+                            width: `${Math.max(0, Math.min(100,
+                              ((quote.price - quote.fiftyTwoWeekLow) /
+                               (quote.fiftyTwoWeekHigh - quote.fiftyTwoWeekLow)) * 100
+                            ))}%`
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <span className="font-mono text-green-400">
+                    高値 {quote.fiftyTwoWeekHigh != null
+                      ? `¥${quote.fiftyTwoWeekHigh.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                      : "—"}
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Company Overview */}
         {(profile.description || profile.website) && (
