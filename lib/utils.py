@@ -36,15 +36,18 @@ def get_prices(code, days=400):
         if not result:
             return None
         timestamps = result[0].get("timestamp", [])
-        closes  = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        volumes = result[0].get("indicators", {}).get("quote",    [{}])[0].get("volume",   [])
-        if not timestamps or not closes:
+        adjcloses  = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
+        raw_closes = result[0].get("indicators", {}).get("quote",    [{}])[0].get("close",    [])
+        volumes    = result[0].get("indicators", {}).get("quote",    [{}])[0].get("volume",   [])
+        if not timestamps or not adjcloses:
             return None
+        # adjcloseがNoneの行はraw closeで補完（市場終了直後の計算ラグ対策）
+        closes = [a if a is not None else r for a, r in zip(adjcloses, raw_closes)]
         df = pd.DataFrame(
             {"Close": closes, "Volume": volumes},
             index=pd.to_datetime(timestamps, unit="s", utc=True)
         )
-        return df.dropna()
+        return df.dropna(subset=["Close"])
     except Exception:
         return None
 
