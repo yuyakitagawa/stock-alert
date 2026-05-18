@@ -1,51 +1,37 @@
-import type { Ranking } from "@/lib/types";
-import RankingsTable from "@/components/RankingsTable";
-import PushButton from "@/components/PushButton";
+import type { Metadata } from "next";
+import { fetchRankings } from "@/lib/data";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import StockCard from "@/components/StockCard";
+import RecommendBadge from "@/components/RecommendBadge";
+import Link from "next/link";
 
 export const revalidate = 3600;
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SB_KEY = process.env.SUPABASE_SERVICE_KEY!;
+export const metadata: Metadata = {
+  title: "ホーム — StockSignal 日本株AIシグナル",
+};
 
-function sbHeaders() {
-  return {
-    apikey: SB_KEY,
-    Authorization: `Bearer ${SB_KEY}`,
-  };
+function formatDate(date: string) {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("ja-JP", {
+    year: "numeric", month: "long", day: "numeric", weekday: "short",
+  });
 }
 
-async function fetchRankings(): Promise<{ date: string; rows: Ranking[] }> {
-  const latestRes = await fetch(
-    `${SB_URL}/rest/v1/web_rankings?select=date&order=date.desc&limit=1`,
-    { headers: sbHeaders(), next: { revalidate: 3600 } }
-  );
-  if (!latestRes.ok) return { date: "", rows: [] };
-  const latest = await latestRes.json();
-  if (!latest.length) return { date: "", rows: [] };
-
-  const date = latest[0].date;
-  const rowsRes = await fetch(
-    `${SB_URL}/rest/v1/web_rankings?date=eq.${date}&order=rank.asc`,
-    { headers: sbHeaders(), next: { revalidate: 3600 } }
-  );
-  if (!rowsRes.ok) return { date, rows: [] };
-  const rows = await rowsRes.json();
-  return { date, rows: rows as Ranking[] };
-}
-
-function SummaryCard({
-  label,
-  count,
-  color,
-}: {
+interface SummaryCardProps {
   label: string;
   count: number;
-  color: string;
-}) {
+  colorClass: string;
+  borderClass: string;
+  change?: number;
+}
+
+function SummaryCard({ label, count, colorClass, borderClass }: SummaryCardProps) {
   return (
-    <div className={`bg-gray-800 rounded-lg p-4 border-l-4 ${color}`}>
-      <div className="text-2xl font-bold">{count}</div>
-      <div className="text-sm text-gray-400 mt-1">{label}</div>
+    <div className={`bg-gray-900 rounded-xl border ${borderClass} p-5`}>
+      <div className={`text-3xl font-bold font-mono ${colorClass}`}>{count}</div>
+      <div className="text-sm text-gray-500 mt-1.5">{label}</div>
     </div>
   );
 }
@@ -53,56 +39,134 @@ function SummaryCard({
 export default async function HomePage() {
   const { date, rows } = await fetchRankings();
 
-  const sBuy   = rows.filter((r) => r.recommend === "S買い").length;
-  const aBuy   = rows.filter((r) => r.recommend === "A買い").length;
-  const sell   = rows.filter((r) => r.recommend === "売り検討").length;
-  const hold   = rows.filter((r) => r.recommend === "買い継続" || r.recommend === "買い増し").length;
+  const sBuy    = rows.filter(r => r.recommend === "S買い");
+  const aBuy    = rows.filter(r => r.recommend === "A買い");
+  const caution = rows.filter(r => r.recommend === "高値警戒");
+  const sell    = rows.filter(r => r.recommend === "売り検討");
 
-  const dateLabel = date
-    ? new Date(date).toLocaleDateString("ja-JP", {
-        year: "numeric", month: "long", day: "numeric",
-      })
-    : "—";
+  const featured = [...sBuy, ...aBuy].slice(0, 12);
+  const dateLabel = formatDate(date);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
-      {/* ヘッダー */}
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-green-400">📈 StockSignal</h1>
-            <p className="text-xs text-gray-500">{dateLabel}</p>
-          </div>
-          <PushButton />
-        </div>
-      </header>
+    <div className="min-h-screen flex flex-col">
+      <Navbar dateLabel={dateLabel} />
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 space-y-10">
         {rows.length === 0 ? (
-          <div className="text-center py-20 text-gray-500">
-            <p className="text-4xl mb-4">📊</p>
-            <p>本日のデータはまだありません</p>
-            <p className="text-sm mt-2">平日16時以降に更新されます</p>
+          <div className="flex flex-col items-center justify-center py-32 text-gray-600 space-y-3">
+            <span className="text-5xl">📊</span>
+            <p className="text-lg font-medium text-gray-500">本日のデータはまだありません</p>
+            <p className="text-sm">平日16時以降に更新されます</p>
           </div>
         ) : (
           <>
-            {/* サマリーカード */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <SummaryCard label="S買い"   count={sBuy} color="border-green-500" />
-              <SummaryCard label="A買い"   count={aBuy} color="border-green-700" />
-              <SummaryCard label="保有継続" count={hold} color="border-blue-600" />
-              <SummaryCard label="売り検討" count={sell} color="border-red-600" />
-            </div>
+            {/* Hero section */}
+            <section>
+              <div className="flex items-baseline gap-3 mb-5">
+                <h1 className="text-xl sm:text-2xl font-bold text-white">今日のシグナル概要</h1>
+                <span className="text-sm text-gray-600 font-mono">{dateLabel}</span>
+              </div>
 
-            {/* ランキングテーブル */}
-            <RankingsTable rows={rows} />
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <SummaryCard
+                  label="S買い"
+                  count={sBuy.length}
+                  colorClass="text-green-400"
+                  borderClass="border-green-900"
+                />
+                <SummaryCard
+                  label="A買い"
+                  count={aBuy.length}
+                  colorClass="text-green-500"
+                  borderClass="border-green-900/50"
+                />
+                <SummaryCard
+                  label="高値警戒"
+                  count={caution.length}
+                  colorClass="text-yellow-400"
+                  borderClass="border-yellow-900/50"
+                />
+                <SummaryCard
+                  label="売り検討"
+                  count={sell.length}
+                  colorClass="text-red-400"
+                  borderClass="border-red-900/50"
+                />
+              </div>
+            </section>
+
+            {/* Featured stocks */}
+            {featured.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-white">注目銘柄</h2>
+                  <Link
+                    href="/rankings"
+                    className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium"
+                  >
+                    全銘柄を見る →
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {featured.map(r => (
+                    <StockCard key={r.code} r={r} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Sell signals section */}
+            {sell.length > 0 && (
+              <section>
+                <h2 className="text-lg font-bold text-white mb-4">売り検討</h2>
+                <div className="bg-red-950/20 border border-red-900/30 rounded-xl divide-y divide-gray-800/60 overflow-hidden">
+                  {sell.slice(0, 6).map(r => (
+                    <Link
+                      key={r.code}
+                      href={`/stocks/${r.code}`}
+                      className="flex items-center gap-4 px-4 py-3 hover:bg-red-950/30 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <span className="font-semibold text-sm text-white">{r.name}</span>
+                        <span className="ml-2 text-xs text-gray-600 font-mono">{r.code}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <RecommendBadge value={r.recommend} />
+                        <span className="font-mono text-sm font-bold text-red-400">
+                          {(r.net >= 0 ? "+" : "") + r.net.toFixed(1)}%
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+                {sell.length > 6 && (
+                  <p className="text-xs text-gray-600 mt-2 text-right">
+                    他 {sell.length - 6} 銘柄 →{" "}
+                    <Link href="/rankings?tab=売り検討" className="text-red-500 hover:underline">
+                      全て見る
+                    </Link>
+                  </p>
+                )}
+              </section>
+            )}
+
+            {/* Signal guide */}
+            <section className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
+              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-3">シグナル凡例</h2>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  "S買い", "A買い", "高値警戒", "方向感なし",
+                  "弱気シグナル", "下降シグナル", "売り検討",
+                ].map(v => (
+                  <RecommendBadge key={v} value={v} />
+                ))}
+              </div>
+            </section>
           </>
         )}
       </main>
 
-      <footer className="mt-12 pb-8 text-center text-xs text-gray-700">
-        本サービスは投資助言ではありません。投資判断はご自身の責任で行ってください。
-      </footer>
+      <Footer />
     </div>
   );
 }

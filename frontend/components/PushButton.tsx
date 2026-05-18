@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!;
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -22,6 +22,7 @@ export default function PushButton() {
   }, []);
 
   async function subscribe() {
+    if (!VAPID_PUBLIC_KEY) return;
     const reg = await navigator.serviceWorker.register("/sw.js");
     const existing = await reg.pushManager.getSubscription();
     if (existing) { setState("subscribed"); return; }
@@ -41,18 +42,21 @@ export default function PushButton() {
 
   if (state === "unsupported") return null;
   if (state === "denied") return (
-    <span className="text-xs text-gray-500">通知がブロックされています</span>
+    <span className="text-xs text-gray-500">通知ブロック中</span>
   );
   if (state === "subscribed") return (
-    <span className="text-xs text-green-400">🔔 通知ON</span>
+    <span className="flex items-center gap-1 text-xs text-green-400 font-medium">
+      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+      通知ON
+    </span>
   );
 
   return (
     <button
       onClick={subscribe}
-      className="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded transition"
+      className="text-xs bg-green-700 hover:bg-green-600 active:bg-green-800 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
     >
-      🔔 シグナル通知を受け取る
+      通知を受け取る
     </button>
   );
 }

@@ -1,18 +1,19 @@
+import { signalStyle } from "@/lib/signals";
 import type { Recommend } from "@/lib/types";
 
-const styles: Record<string, string> = {
-  "S買い":   "bg-green-600 text-white",
-  "A買い":   "bg-green-700 text-white",
-  "買い継続": "bg-emerald-800 text-emerald-200",
-  "買い増し": "bg-teal-700 text-white",
-  "売り検討": "bg-red-700 text-white",
-  "様子見":  "bg-gray-600 text-gray-200",
-};
+interface Props {
+  value: Recommend;
+  size?: "sm" | "md";
+}
 
-export default function RecommendBadge({ value }: { value: Recommend }) {
-  const cls = styles[value] ?? "bg-gray-700 text-gray-300";
+export default function RecommendBadge({ value, size = "sm" }: Props) {
+  const s = signalStyle(value);
+  const pad = size === "md" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs";
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full font-bold border ${pad} ${s.bg} ${s.text} ${s.border}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
       {value}
     </span>
   );
