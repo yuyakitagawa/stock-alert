@@ -28,7 +28,7 @@ export default function StockCard({ r, sparkline }: Props) {
       {/* Chart hero — top of card */}
       {sparkline && sparkline.length >= 2 ? (
         <div className="border-b border-gray-800/60">
-          <Sparkline prices={sparkline} showLabel />
+          <Sparkline prices={sparkline} color={s.color} showLabel />
         </div>
       ) : (
         <div className="h-1 bg-gray-800/40" />

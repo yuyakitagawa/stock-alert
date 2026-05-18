@@ -1,9 +1,12 @@
 interface Props {
   prices: number[];
+  color?: string;
   showLabel?: boolean;
 }
 
-export default function Sparkline({ prices, showLabel = false }: Props) {
+const DEFAULT_COLOR = "#22c55e";
+
+export default function Sparkline({ prices, color = DEFAULT_COLOR, showLabel = false }: Props) {
   if (prices.length < 2) return null;
 
   const min = Math.min(...prices);
@@ -20,14 +23,19 @@ export default function Sparkline({ prices, showLabel = false }: Props) {
   }));
 
   const line = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  const area = `${pts[0].x.toFixed(1)},${H} ` +
+  const area =
+    `${pts[0].x.toFixed(1)},${H} ` +
     pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") +
     ` ${pts[pts.length - 1].x.toFixed(1)},${H}`;
 
-  const isUp = prices[prices.length - 1] >= prices[0];
-  const stroke = isUp ? "#22c55e" : "#ef4444";
-  const fill   = isUp ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)";
   const pct = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+
+  // Parse hex to rgba for fill
+  const hex = color.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const fill = `rgba(${r},${g},${b},0.15)`;
 
   return (
     <div>
@@ -41,7 +49,7 @@ export default function Sparkline({ prices, showLabel = false }: Props) {
         <polyline
           points={line}
           fill="none"
-          stroke={stroke}
+          stroke={color}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -50,11 +58,14 @@ export default function Sparkline({ prices, showLabel = false }: Props) {
           cx={pts[pts.length - 1].x}
           cy={pts[pts.length - 1].y}
           r="2.5"
-          fill={stroke}
+          fill={color}
         />
       </svg>
       {showLabel && (
-        <div className={`text-xs font-mono font-bold text-right px-2 -mt-1 ${isUp ? "text-green-400" : "text-red-400"}`}>
+        <div
+          className="text-xs font-mono font-bold text-right px-2 -mt-1"
+          style={{ color }}
+        >
           1M {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
         </div>
       )}
