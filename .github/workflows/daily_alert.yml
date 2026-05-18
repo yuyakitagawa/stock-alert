@@ -88,6 +88,7 @@ jobs:
         run: cd ~/stock-alert && python web/export_to_web.py
 
       - name: Step 6 - ユーザーアラートメール送信
+        continue-on-error: true
         run: cd ~/stock-alert && python web/send_user_alerts.py
 
       - name: Save model cache
