@@ -2,7 +2,7 @@ import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, Quarterl
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary } from "./yahoo";
 
-const CACHE: RequestInit = { next: { revalidate: 3600 } };
+const CACHE: RequestInit = { cache: "no-store" };
 
 export async function fetchLatestDate(): Promise<string | null> {
   const res = await fetch(

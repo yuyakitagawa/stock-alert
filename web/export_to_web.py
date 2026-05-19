@@ -10,6 +10,7 @@ import sqlite3
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date
+from lib.utils import recommend_from_scores
 
 import requests
 from dotenv import load_dotenv
@@ -92,7 +93,7 @@ def export_rankings(today: str) -> list[dict]:
             "drop_prob":  r["drop_prob"],
             "net":        r["net"],
             "vol":        r["vol"],
-            "recommend":  _clean_recommend(r["recommend"]),
+            "recommend":  recommend_from_scores(r["net"], r["drop_prob"]).split(" ")[-1],
             "rel20":      r["rel20"],
             "stop_loss":  r["stop_loss"],
             "per":        r["per"],
