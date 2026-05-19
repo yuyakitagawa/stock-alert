@@ -93,7 +93,7 @@ def export_rankings(today: str) -> list[dict]:
             "drop_prob":  r["drop_prob"],
             "net":        r["net"],
             "vol":        r["vol"],
-            "recommend":  recommend_from_scores(r["net"], r["drop_prob"]).split(" ")[-1],
+            "recommend":  _clean_recommend(r["recommend"]),
             "rel20":      r["rel20"],
             "stop_loss":  r["stop_loss"],
             "per":        r["per"],
