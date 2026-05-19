@@ -88,7 +88,10 @@ export default async function HomePage() {
             {/* Featured stocks */}
             <section>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-white">注目銘柄</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-white">注目銘柄</h2>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-900/60 text-green-400 border border-green-800">S買い</span>
+                </div>
                 <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium">
                   全銘柄を見る →
                 </Link>
