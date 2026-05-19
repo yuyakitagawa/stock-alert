@@ -46,9 +46,12 @@ export default async function HomePage() {
   const sBuy    = rows.filter(r => r.recommend === "S買い");
   const aBuy    = rows.filter(r => r.recommend === "A買い");
   const caution = rows.filter(r => r.recommend === "高値警戒");
+  const neutral = rows.filter(r => r.recommend === "方向感なし");
+  const weak    = rows.filter(r => r.recommend === "弱気シグナル");
+  const down    = rows.filter(r => r.recommend === "下降シグナル");
   const sell    = rows.filter(r => r.recommend === "売り検討");
 
-  const featured = [...sBuy, ...aBuy].slice(0, 12);
+  const featured = sBuy.slice(0, 24);
   const dateLabel = formatDate(date);
 
   const sparklines = await Promise.all(featured.map(r => fetchSparkline(r.code)));
@@ -73,12 +76,16 @@ export default async function HomePage() {
                 <h1 className="text-xl sm:text-2xl font-bold text-white">日本株 シグナル概要</h1>
                 <span className="text-sm text-gray-600 font-mono">{dateLabel}</span>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <SummaryCard label="S買い"   count={sBuy.length}    colorClass="text-green-400"  borderClass="border-green-900" />
-                <SummaryCard label="A買い"   count={aBuy.length}    colorClass="text-green-500"  borderClass="border-green-900/50" />
-                <SummaryCard label="高値警戒" count={caution.length} colorClass="text-yellow-400" borderClass="border-yellow-900/50" />
-                <SummaryCard label="売り検討" count={sell.length}    colorClass="text-red-400"    borderClass="border-red-900/50" />
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                <SummaryCard label="S買い"      count={sBuy.length}    colorClass="text-green-400"   borderClass="border-green-900" />
+                <SummaryCard label="A買い"      count={aBuy.length}    colorClass="text-green-500"   borderClass="border-green-900/50" />
+                <SummaryCard label="高値警戒"   count={caution.length} colorClass="text-yellow-400"  borderClass="border-yellow-900/50" />
+                <SummaryCard label="方向感なし" count={neutral.length} colorClass="text-gray-400"    borderClass="border-gray-700" />
+                <SummaryCard label="弱気"       count={weak.length}    colorClass="text-orange-400"  borderClass="border-orange-900/50" />
+                <SummaryCard label="下降"       count={down.length}    colorClass="text-red-500"     borderClass="border-red-900/50" />
+                <SummaryCard label="売り検討"   count={sell.length}    colorClass="text-red-400"     borderClass="border-red-900/50" />
               </div>
+              <p className="text-xs text-gray-700 text-right mt-2 font-mono">合計 {rows.length.toLocaleString()} 銘柄</p>
             </section>
 
             {/* Featured stocks */}
