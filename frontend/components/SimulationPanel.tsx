@@ -31,7 +31,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
-          AIが「S買い」シグナルを出した日に各銘柄を100株購入し、「売り検討」シグナルが出るまで保有し続けた場合の
+          AIが「S買い」シグナルを出した日に各銘柄を100株購入し、「下降シグナル」が出るまで保有し続けた場合の
           仮想成績です。手数料・税金は含みません。過去の成績は将来を保証するものではありません。
         </p>
       </div>
@@ -154,7 +154,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-gray-400">保有中 ({held.length}銘柄)</h3>
-              <span className="text-xs text-gray-700">S買いシグナル日に買付、まだ売り検討シグナルが出ていない</span>
+              <span className="text-xs text-gray-700">S買いシグナル日に買付、まだ下降シグナルが出ていない</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800">
               <table className="w-full text-xs font-mono">
@@ -204,7 +204,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-gray-600">売却済み ({sold.length}銘柄)</h3>
-              <span className="text-xs text-gray-700">売り検討シグナルが出た日に売却したと仮定 ※上記の成績には含まず</span>
+              <span className="text-xs text-gray-700">下降シグナルが出た日に売却したと仮定 ※上記の成績には含まず</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800/50">
               <table className="w-full text-xs font-mono opacity-60">

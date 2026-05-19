@@ -4,6 +4,15 @@ import { yfQuoteSummary } from "./yahoo";
 
 const CACHE: RequestInit = { next: { revalidate: 3600 } };
 
+const RECOMMEND_REMAP: Record<string, string> = {
+  "高値警戒": "方向感なし",
+  "売り検討": "下降シグナル",
+};
+function remapRecommend(r: Ranking): Ranking {
+  const mapped = RECOMMEND_REMAP[r.recommend];
+  return mapped ? { ...r, recommend: mapped } : r;
+}
+
 export async function fetchLatestDate(): Promise<string | null> {
   const res = await fetch(
     sbUrl("web_rankings?select=date&order=date.desc&limit=1"),
@@ -32,7 +41,7 @@ export async function fetchRankings(): Promise<{ date: string; rows: Ranking[] }
     if (rows.length < pageSize) break;
     offset += pageSize;
   }
-  return { date, rows: all };
+  return { date, rows: all.map(remapRecommend) };
 }
 
 export async function fetchStockRanking(code: string): Promise<Ranking | null> {
@@ -44,7 +53,7 @@ export async function fetchStockRanking(code: string): Promise<Ranking | null> {
   );
   if (!res.ok) return null;
   const rows = await res.json();
-  return (rows[0] as Ranking) ?? null;
+  return rows[0] ? remapRecommend(rows[0] as Ranking) : null;
 }
 
 export async function fetchStockMeta(code: string): Promise<StockMeta | null> {

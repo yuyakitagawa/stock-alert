@@ -24,11 +24,13 @@ interface Props {
 }
 
 export default function StockLivePanel({ code, name, sector }: Props) {
-  const [quote, setQuote]     = useState<DailyQuote | null>(null);
-  const [profile, setProfile] = useState<CompanyProfile | null>(null);
-  const [earnings, setEarnings] = useState<QuarterlyEarning[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [quote, setQuote]           = useState<DailyQuote | null>(null);
+  const [profile, setProfile]       = useState<CompanyProfile | null>(null);
+  const [earnings, setEarnings]     = useState<QuarterlyEarning[]>([]);
+  const [description, setDescription] = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [descLoading, setDescLoading] = useState(true);
+  const [expanded, setExpanded]     = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -42,12 +44,39 @@ export default function StockLivePanel({ code, name, sector }: Props) {
       setEarnings(e ?? []);
       setLoading(false);
     }
-    load();
-  }, [code]);
 
-  const description = profile?.description ?? null;
-  const website     = profile?.website ?? null;
-  const employees   = profile?.employees ?? null;
+    async function loadDescription() {
+      // localStorage キャッシュ確認（7日間有効）
+      const cacheKey = `desc:${code}`;
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const { text, ts } = JSON.parse(cached);
+          if (Date.now() - ts < 7 * 86400 * 1000) {
+            setDescription(text);
+            setDescLoading(false);
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+
+      const params = new URLSearchParams({ name, sector: sector ?? "" });
+      const res = await fetch(`/api/stock/${code}/description?${params}`);
+      const data = res.ok ? await res.json() : { description: null };
+      const text = data.description ?? null;
+      setDescription(text);
+      setDescLoading(false);
+      if (text) {
+        try { localStorage.setItem(cacheKey, JSON.stringify({ text, ts: Date.now() })); } catch { /* ignore */ }
+      }
+    }
+
+    load();
+    loadDescription();
+  }, [code, name, sector]);
+
+  const website  = profile?.website ?? null;
+  const employees = profile?.employees ?? null;
   const TRUNCATE    = 200;
 
   return (
@@ -65,7 +94,7 @@ export default function StockLivePanel({ code, name, sector }: Props) {
           )}
         </div>
 
-        {loading ? (
+        {(loading || descLoading) ? (
           <div className="space-y-2 animate-pulse">
             <div className="h-3 bg-gray-800 rounded w-full" />
             <div className="h-3 bg-gray-800 rounded w-5/6" />

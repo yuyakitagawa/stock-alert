@@ -6,20 +6,16 @@ const SIGNALS = {
   ja: [
     { signal: "S買い",        desc: "ネットスコア最高 + 底値実績あり" },
     { signal: "A買い",        desc: "上昇確率が高く買い推奨" },
-    { signal: "高値警戒",    desc: "上昇中だが過熱感あり、利確検討" },
     { signal: "方向感なし",  desc: "上昇・下落どちらでもない中立状態" },
     { signal: "弱気シグナル", desc: "やや下落傾向、慎重に" },
     { signal: "下降シグナル", desc: "強い下落圧力あり" },
-    { signal: "売り検討",    desc: "ネットスコア低値、利確・損切りを検討" },
   ],
   en: [
     { signal: "S買い",        desc: "Highest net score + proven bottom" },
     { signal: "A買い",        desc: "High rise probability — buy" },
-    { signal: "高値警戒",    desc: "Overbought — consider taking profit" },
     { signal: "方向感なし",  desc: "Neutral — no clear direction" },
     { signal: "弱気シグナル", desc: "Slight downward trend — caution" },
     { signal: "下降シグナル", desc: "Strong downtrend" },
-    { signal: "売り検討",    desc: "Low net score — consider selling" },
   ],
 };
 

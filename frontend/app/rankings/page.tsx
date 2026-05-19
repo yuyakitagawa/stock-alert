@@ -8,7 +8,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "ランキング — 日本株シグナル",
-  description: "日本株AIシグナルのランキング一覧。S買い・A買い・高値警戒・売り検討・業種でフィルタリング可能。",
+  description: "日本株AIシグナルのランキング一覧。S買い・A買い・方向感なし・弱気・下降シグナル・業種でフィルタリング可能。",
 };
 
 function formatDate(date: string) {

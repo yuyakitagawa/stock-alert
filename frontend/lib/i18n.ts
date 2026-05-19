@@ -3,11 +3,9 @@ export type Lang = "ja" | "en";
 export const SIGNAL_LABELS: Record<string, { ja: string; en: string }> = {
   "S買い":        { ja: "S買い",        en: "Strong Buy" },
   "A買い":        { ja: "A買い",        en: "Buy" },
-  "高値警戒":     { ja: "高値警戒",     en: "Overbought" },
   "方向感なし":   { ja: "方向感なし",   en: "Neutral" },
   "弱気シグナル": { ja: "弱気シグナル", en: "Weak Signal" },
   "下降シグナル": { ja: "下降シグナル", en: "Downtrend" },
-  "売り検討":     { ja: "売り検討",     en: "Sell" },
   "買い継続":     { ja: "買い継続",     en: "Hold" },
   "買い増し":     { ja: "買い増し",     en: "Add" },
 };
