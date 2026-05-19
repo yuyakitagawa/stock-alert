@@ -142,7 +142,7 @@ def main():
         else:
             judgment = "🔴売り検討"
 
-        recommend = recommend_from_scores(net, drop_prob)
+        recommend = recommend_from_scores(net, drop_pct)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)

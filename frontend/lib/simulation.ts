@@ -1,9 +1,18 @@
 import { anonHeaders, sbUrl } from "./supabase";
 import { fetchLatestDate } from "./data";
 
-const SINCE = "2026-01-01";
 const SHARES = 100;
 const PAGE = 1000;
+
+async function fetchEarliestDate(): Promise<string> {
+  const res = await fetch(
+    sbUrl("web_rankings?select=date&order=date.asc&limit=1"),
+    { headers: anonHeaders(), next: { revalidate: 3600 } }
+  );
+  if (!res.ok) return "2026-01-01";
+  const rows = await res.json();
+  return rows[0]?.date ?? "2026-01-01";
+}
 
 interface RawRow {
   code: string;
@@ -35,6 +44,7 @@ export interface SimSummary {
   heldCount:    number;
   soldCount:    number;
   winCount:     number;
+  since:        string;
 }
 
 async function fetchAll(path: string): Promise<RawRow[]> {
@@ -61,10 +71,11 @@ export async function fetchSimulation(): Promise<{
   const sBuyEnc  = encodeURIComponent("S買い");
   const sellEnc  = encodeURIComponent("売り検討");
 
-  const [buyRows, sellRows, latestDate] = await Promise.all([
-    fetchAll(`web_rankings?recommend=eq.${sBuyEnc}&date=gte.${SINCE}&order=date.asc&select=code,name,close,date`),
-    fetchAll(`web_rankings?recommend=eq.${sellEnc}&date=gte.${SINCE}&order=date.asc&select=code,close,date`),
+  const [buyRows, sellRows, latestDate, since] = await Promise.all([
+    fetchAll(`web_rankings?recommend=eq.${sBuyEnc}&order=date.asc&select=code,name,close,date`),
+    fetchAll(`web_rankings?recommend=eq.${sellEnc}&order=date.asc&select=code,close,date`),
     fetchLatestDate(),
+    fetchEarliestDate(),
   ]);
 
   // Latest prices for held stocks
@@ -142,6 +153,7 @@ export async function fetchSimulation(): Promise<{
       heldCount:   held.length,
       soldCount:   sold.length,
       winCount:    held.filter(p => p.pnl > 0).length,
+      since,
     },
   };
 }

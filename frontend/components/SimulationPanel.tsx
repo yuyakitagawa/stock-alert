@@ -27,7 +27,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
     <section className="space-y-6">
       <div className="flex items-baseline gap-3">
         <h2 className="text-lg font-bold text-white">シミュレーション</h2>
-        <span className="text-xs text-gray-600">2026年1月〜 / S買い銘柄 100株ずつ</span>
+        <span className="text-xs text-gray-600">{summary.since}〜 / S買い銘柄 100株ずつ</span>
       </div>
 
       {noData && (
