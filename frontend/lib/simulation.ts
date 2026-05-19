@@ -7,7 +7,7 @@ const PAGE = 1000;
 async function fetchEarliestDate(): Promise<string> {
   const res = await fetch(
     sbUrl("web_rankings?select=date&order=date.asc&limit=1"),
-    { headers: anonHeaders(), cache: "no-store" }
+    { headers: anonHeaders(), next: { revalidate: 60 } }
   );
   if (!res.ok) return "2026-01-01";
   const rows = await res.json();
@@ -53,7 +53,7 @@ async function fetchAll(path: string): Promise<RawRow[]> {
   for (;;) {
     const res = await fetch(
       sbUrl(`${path}&limit=${PAGE}&offset=${offset}`),
-      { headers: anonHeaders(), cache: "no-store" }
+      { headers: anonHeaders(), next: { revalidate: 60 } }
     );
     if (!res.ok) break;
     const rows: RawRow[] = await res.json();
