@@ -4,7 +4,6 @@ import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockCard from "@/components/StockCard";
-import RecommendBadge from "@/components/RecommendBadge";
 import SimulationPanel from "@/components/SimulationPanel";
 import Link from "next/link";
 
@@ -48,8 +47,6 @@ export default async function HomePage() {
   const neutral = rows.filter(r => r.recommend === "方向感なし");
   const weak    = rows.filter(r => r.recommend === "弱気シグナル");
   const down    = rows.filter(r => r.recommend === "下降シグナル");
-  const sell    = rows.filter(r => r.recommend === "売り検討");
-
   const featured = sBuy.slice(0, 24);
   const dateLabel = formatDate(date);
 
@@ -109,38 +106,6 @@ export default async function HomePage() {
               )}
             </section>
 
-            {/* Sell signals */}
-            {sell.length > 0 && (
-              <section>
-                <h2 className="text-lg font-bold text-white mb-4">売り検討</h2>
-                <div className="bg-red-950/20 border border-red-900/30 rounded-xl divide-y divide-gray-800/60 overflow-hidden">
-                  {sell.slice(0, 6).map(r => (
-                    <Link
-                      key={r.code}
-                      href={`/stocks/${r.code}`}
-                      className="flex items-center gap-4 px-4 py-3 hover:bg-red-950/30 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="font-semibold text-sm text-white">{r.name}</span>
-                        <span className="ml-2 text-xs text-gray-600 font-mono">{r.code}</span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <RecommendBadge value={r.recommend} />
-                        <span className="font-mono text-sm font-bold text-red-400">
-                          {(r.net >= 0 ? "+" : "") + r.net.toFixed(1)}%
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-                {sell.length > 6 && (
-                  <p className="text-xs text-gray-600 mt-2 text-right">
-                    他 {sell.length - 6} 銘柄 →{" "}
-                    <Link href="/rankings?tab=売り検討" className="text-red-500 hover:underline">全て見る</Link>
-                  </p>
-                )}
-              </section>
-            )}
           </>
         )}
 

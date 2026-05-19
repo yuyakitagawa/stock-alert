@@ -21,13 +21,19 @@ export default function SimulationPanel({ positions, summary }: Props) {
   const noData = positions.length === 0;
 
   const pnlColor = summary.totalPnl >= 0 ? "text-green-400" : "text-red-400";
-  const pnlPctColor = summary.totalPnlPct >= 0 ? "text-green-400" : "text-red-400";
 
   return (
     <section className="space-y-6">
-      <div className="flex items-baseline gap-3">
-        <h2 className="text-lg font-bold text-white">シミュレーション</h2>
-        <span className="text-xs text-gray-600">{summary.since}〜 / S買い銘柄 100株ずつ</span>
+      {/* Header */}
+      <div className="space-y-1">
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-lg font-bold text-white">シミュレーション</h2>
+          <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
+        </div>
+        <p className="text-xs text-gray-600 leading-relaxed">
+          AIが「S買い」シグナルを出した日に各銘柄を100株購入し、「売り検討」シグナルが出るまで保有し続けた場合の
+          仮想成績です。手数料・税金は含みません。過去の成績は将来を保証するものではありません。
+        </p>
       </div>
 
       {noData && (
@@ -37,187 +43,219 @@ export default function SimulationPanel({ positions, summary }: Props) {
       )}
 
       {!noData && (
-      <>{/* Accuracy summary */}
-      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
-        <div className="text-xs text-gray-500 mb-4 font-semibold tracking-wide uppercase">シグナル精度（全 {summary.allCount} シグナル）</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {/* Win rate gauge */}
-          <div className="space-y-2">
-            <div className="text-xs text-gray-500">勝率</div>
-            <div className="text-2xl font-bold font-mono text-white">
-              {summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}
-              <span className="text-base text-gray-500">%</span>
-            </div>
-            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-500 rounded-full transition-all"
-                style={{ width: `${summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}%` }}
-              />
-            </div>
-            <div className="text-xs text-gray-600">{summary.allWinCount}/{summary.allCount} 勝</div>
+      <>
+        {/* Accuracy summary */}
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500 font-semibold tracking-wide uppercase">シグナル精度</span>
+            <span className="text-xs text-gray-700">全 {summary.allCount} シグナル（保有中 {summary.heldCount} + 売却済 {summary.soldCount}）</span>
           </div>
-          {/* Avg return */}
-          <div className="space-y-2">
-            <div className="text-xs text-gray-500">平均騰落率</div>
-            <div className={`text-2xl font-bold font-mono ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(2)}
-              <span className="text-base text-gray-500">%</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {/* Win rate */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">勝率</span>
+                <span className="text-xs text-gray-700" title="買付時より現在値または売値が高い銘柄の割合">(?)</span>
+              </div>
+              <div className="text-2xl font-bold font-mono text-white">
+                {summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}
+                <span className="text-base text-gray-500">%</span>
+              </div>
+              <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full transition-all"
+                  style={{ width: `${summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}%` }}
+                />
+              </div>
+              <div className="text-xs text-gray-600">{summary.allWinCount} 勝 / {summary.allCount - summary.allWinCount} 負</div>
             </div>
-            <div className="h-1.5 bg-gray-800 rounded-full" />
-            <div className="text-xs text-gray-600">S買い後の平均</div>
-          </div>
-          {/* Max gain */}
-          <div className="space-y-2">
-            <div className="text-xs text-gray-500">最大利益</div>
-            <div className="text-2xl font-bold font-mono text-green-400">
-              +{summary.maxGainPct.toFixed(2)}
-              <span className="text-base text-gray-500">%</span>
-            </div>
-            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-green-800 rounded-full w-full" />
-            </div>
-            <div className="text-xs text-gray-600">ベストパフォーマー</div>
-          </div>
-          {/* Max loss */}
-          <div className="space-y-2">
-            <div className="text-xs text-gray-500">最大損失</div>
-            <div className="text-2xl font-bold font-mono text-red-400">
-              {summary.maxLossPct.toFixed(2)}
-              <span className="text-base text-gray-500">%</span>
-            </div>
-            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-red-900 rounded-full w-full" />
-            </div>
-            <div className="text-xs text-gray-600">ワーストパフォーマー</div>
-          </div>
-        </div>
-      </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <div className="text-xs text-gray-500 mb-1">投資額（保有）</div>
-          <div className="font-mono font-bold text-white text-sm">
-            {summary.totalCost.toLocaleString("ja-JP")}円
-          </div>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <div className="text-xs text-gray-500 mb-1">評価額</div>
-          <div className="font-mono font-bold text-white text-sm">
-            {summary.totalValue.toLocaleString("ja-JP")}円
-          </div>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <div className="text-xs text-gray-500 mb-1">評価損益</div>
-          <div className={`font-mono font-bold text-sm ${pnlColor}`}>
-            {fmtYen(summary.totalPnl)}
-          </div>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <div className="text-xs text-gray-500 mb-1">含み勝率（保有中）</div>
-          <div className="font-mono font-bold text-white text-sm">
-            {summary.heldCount > 0
-              ? `${summary.winCount}/${summary.heldCount} (${Math.round(summary.winCount / summary.heldCount * 100)}%)`
-              : "—"}
-          </div>
-        </div>
-      </div>
+            {/* Avg return */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">平均騰落率</span>
+                <span className="text-xs text-gray-700" title="全ポジションの騰落率の単純平均">(?)</span>
+              </div>
+              <div className={`text-2xl font-bold font-mono ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(2)}
+                <span className="text-base text-gray-500">%</span>
+              </div>
+              <div className="h-1.5 bg-gray-800 rounded-full" />
+              <div className="text-xs text-gray-600">S買いシグナル後の平均</div>
+            </div>
 
-      {/* Held positions */}
-      {held.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-gray-400 mb-2">保有中 ({held.length})</h3>
-          <div className="overflow-x-auto rounded-xl border border-gray-800">
-            <table className="w-full text-xs font-mono">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-600">
-                  <th className="text-left px-3 py-2 font-medium">銘柄</th>
-                  <th className="text-right px-3 py-2 font-medium">買付日</th>
-                  <th className="text-right px-3 py-2 font-medium">買値</th>
-                  <th className="text-right px-3 py-2 font-medium">現在値</th>
-                  <th className="text-right px-3 py-2 font-medium">損益</th>
-                  <th className="text-right px-3 py-2 font-medium">騰落</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/50">
-                {held
-                  .sort((a, b) => b.pnlPct - a.pnlPct)
-                  .map(p => {
-                    const up = p.pnl >= 0;
-                    return (
-                      <tr key={p.code} className="hover:bg-gray-800/40 transition-colors">
-                        <td className="px-3 py-2">
-                          <Link href={`/stocks/${p.code}`} className="hover:text-green-400 transition-colors">
-                            <span className="text-white font-semibold">{p.name}</span>
-                            <span className="text-gray-600 ml-1.5">{p.code}</span>
-                          </Link>
-                        </td>
-                        <td className="text-right px-3 py-2 text-gray-500">{p.buyDate}</td>
-                        <td className="text-right px-3 py-2 text-gray-400">{p.buyPrice.toLocaleString()}</td>
-                        <td className="text-right px-3 py-2 text-gray-300">{p.currentPrice?.toLocaleString() ?? "—"}</td>
-                        <td className={`text-right px-3 py-2 font-bold ${up ? "text-green-400" : "text-red-400"}`}>
-                          {fmtYen(p.pnl)}
-                        </td>
-                        <td className={`text-right px-3 py-2 font-bold ${up ? "text-green-400" : "text-red-400"}`}>
-                          {fmtPct(p.pnlPct)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+            {/* Max gain */}
+            <div className="space-y-2">
+              <div className="text-xs text-gray-500">最大利益</div>
+              <div className="text-2xl font-bold font-mono text-green-400">
+                +{summary.maxGainPct.toFixed(2)}
+                <span className="text-base text-gray-500">%</span>
+              </div>
+              <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-green-800 rounded-full w-full" />
+              </div>
+              <div className="text-xs text-gray-600">ベストパフォーマー</div>
+            </div>
 
-      {/* Sold positions */}
-      {sold.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-gray-600 mb-2">売却済み ({sold.length})　※成績に含まず</h3>
-          <div className="overflow-x-auto rounded-xl border border-gray-800/50">
-            <table className="w-full text-xs font-mono opacity-60">
-              <thead>
-                <tr className="border-b border-gray-800/50 text-gray-600">
-                  <th className="text-left px-3 py-2 font-medium">銘柄</th>
-                  <th className="text-right px-3 py-2 font-medium">買付日</th>
-                  <th className="text-right px-3 py-2 font-medium">売却日</th>
-                  <th className="text-right px-3 py-2 font-medium">買値</th>
-                  <th className="text-right px-3 py-2 font-medium">売値</th>
-                  <th className="text-right px-3 py-2 font-medium">損益</th>
-                  <th className="text-right px-3 py-2 font-medium">騰落</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/30">
-                {sold
-                  .sort((a, b) => (b.sellDate ?? "").localeCompare(a.sellDate ?? ""))
-                  .map(p => {
-                    const up = p.pnl >= 0;
-                    return (
-                      <tr key={p.code}>
-                        <td className="px-3 py-2">
-                          <Link href={`/stocks/${p.code}`} className="hover:opacity-100 transition-opacity">
-                            <span className="text-gray-400">{p.name}</span>
-                            <span className="text-gray-600 ml-1.5">{p.code}</span>
-                          </Link>
-                        </td>
-                        <td className="text-right px-3 py-2 text-gray-600">{p.buyDate}</td>
-                        <td className="text-right px-3 py-2 text-gray-600">{p.sellDate}</td>
-                        <td className="text-right px-3 py-2 text-gray-600">{p.buyPrice.toLocaleString()}</td>
-                        <td className="text-right px-3 py-2 text-gray-600">{p.sellPrice?.toLocaleString() ?? "—"}</td>
-                        <td className={`text-right px-3 py-2 ${up ? "text-green-600" : "text-red-600"}`}>
-                          {fmtYen(p.pnl)}
-                        </td>
-                        <td className={`text-right px-3 py-2 ${up ? "text-green-600" : "text-red-600"}`}>
-                          {fmtPct(p.pnlPct)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
+            {/* Max loss */}
+            <div className="space-y-2">
+              <div className="text-xs text-gray-500">最大損失</div>
+              <div className="text-2xl font-bold font-mono text-red-400">
+                {summary.maxLossPct.toFixed(2)}
+                <span className="text-base text-gray-500">%</span>
+              </div>
+              <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-red-900 rounded-full w-full" />
+              </div>
+              <div className="text-xs text-gray-600">ワーストパフォーマー</div>
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Portfolio summary */}
+        <div className="space-y-2">
+          <p className="text-xs text-gray-600">保有中ポジションの時価評価（売却済みは含まず）</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 mb-1">投資額</div>
+              <div className="font-mono font-bold text-white text-sm">
+                {summary.totalCost.toLocaleString("ja-JP")}円
+              </div>
+              <div className="text-xs text-gray-700 mt-1">買付価格 × 100株の合計</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 mb-1">評価額</div>
+              <div className="font-mono font-bold text-white text-sm">
+                {summary.totalValue.toLocaleString("ja-JP")}円
+              </div>
+              <div className="text-xs text-gray-700 mt-1">現在値 × 100株の合計</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 mb-1">評価損益</div>
+              <div className={`font-mono font-bold text-sm ${pnlColor}`}>
+                {fmtYen(summary.totalPnl)}
+              </div>
+              <div className="text-xs text-gray-700 mt-1">評価額 − 投資額</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 mb-1">含み勝率</div>
+              <div className="font-mono font-bold text-white text-sm">
+                {summary.heldCount > 0
+                  ? `${summary.winCount}/${summary.heldCount} (${Math.round(summary.winCount / summary.heldCount * 100)}%)`
+                  : "—"}
+              </div>
+              <div className="text-xs text-gray-700 mt-1">現在含み益の銘柄数</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Held positions */}
+        {held.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-sm font-semibold text-gray-400">保有中 ({held.length}銘柄)</h3>
+              <span className="text-xs text-gray-700">S買いシグナル日に買付、まだ売り検討シグナルが出ていない</span>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-800">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-gray-800 text-gray-600">
+                    <th className="text-left px-3 py-2 font-medium">銘柄</th>
+                    <th className="text-right px-3 py-2 font-medium">買付日</th>
+                    <th className="text-right px-3 py-2 font-medium">買値</th>
+                    <th className="text-right px-3 py-2 font-medium">現在値</th>
+                    <th className="text-right px-3 py-2 font-medium">損益 (100株)</th>
+                    <th className="text-right px-3 py-2 font-medium">騰落率</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/50">
+                  {held
+                    .sort((a, b) => b.pnlPct - a.pnlPct)
+                    .map(p => {
+                      const up = p.pnl >= 0;
+                      return (
+                        <tr key={p.code} className="hover:bg-gray-800/40 transition-colors">
+                          <td className="px-3 py-2">
+                            <Link href={`/stocks/${p.code}`} className="hover:text-green-400 transition-colors">
+                              <span className="text-white font-semibold">{p.name}</span>
+                              <span className="text-gray-600 ml-1.5">{p.code}</span>
+                            </Link>
+                          </td>
+                          <td className="text-right px-3 py-2 text-gray-500">{p.buyDate}</td>
+                          <td className="text-right px-3 py-2 text-gray-400">{p.buyPrice.toLocaleString()}</td>
+                          <td className="text-right px-3 py-2 text-gray-300">{p.currentPrice?.toLocaleString() ?? "—"}</td>
+                          <td className={`text-right px-3 py-2 font-bold ${up ? "text-green-400" : "text-red-400"}`}>
+                            {fmtYen(p.pnl)}
+                          </td>
+                          <td className={`text-right px-3 py-2 font-bold ${up ? "text-green-400" : "text-red-400"}`}>
+                            {fmtPct(p.pnlPct)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Sold positions */}
+        {sold.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-sm font-semibold text-gray-600">売却済み ({sold.length}銘柄)</h3>
+              <span className="text-xs text-gray-700">売り検討シグナルが出た日に売却したと仮定 ※上記の成績には含まず</span>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-800/50">
+              <table className="w-full text-xs font-mono opacity-60">
+                <thead>
+                  <tr className="border-b border-gray-800/50 text-gray-600">
+                    <th className="text-left px-3 py-2 font-medium">銘柄</th>
+                    <th className="text-right px-3 py-2 font-medium">買付日</th>
+                    <th className="text-right px-3 py-2 font-medium">売却日</th>
+                    <th className="text-right px-3 py-2 font-medium">買値</th>
+                    <th className="text-right px-3 py-2 font-medium">売値</th>
+                    <th className="text-right px-3 py-2 font-medium">損益 (100株)</th>
+                    <th className="text-right px-3 py-2 font-medium">騰落率</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/30">
+                  {sold
+                    .sort((a, b) => (b.sellDate ?? "").localeCompare(a.sellDate ?? ""))
+                    .map(p => {
+                      const up = p.pnl >= 0;
+                      return (
+                        <tr key={p.code}>
+                          <td className="px-3 py-2">
+                            <Link href={`/stocks/${p.code}`} className="hover:opacity-100 transition-opacity">
+                              <span className="text-gray-400">{p.name}</span>
+                              <span className="text-gray-600 ml-1.5">{p.code}</span>
+                            </Link>
+                          </td>
+                          <td className="text-right px-3 py-2 text-gray-600">{p.buyDate}</td>
+                          <td className="text-right px-3 py-2 text-gray-600">{p.sellDate}</td>
+                          <td className="text-right px-3 py-2 text-gray-600">{p.buyPrice.toLocaleString()}</td>
+                          <td className="text-right px-3 py-2 text-gray-600">{p.sellPrice?.toLocaleString() ?? "—"}</td>
+                          <td className={`text-right px-3 py-2 ${up ? "text-green-600" : "text-red-600"}`}>
+                            {fmtYen(p.pnl)}
+                          </td>
+                          <td className={`text-right px-3 py-2 ${up ? "text-green-600" : "text-red-600"}`}>
+                            {fmtPct(p.pnlPct)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Disclaimer */}
+        <p className="text-xs text-gray-700 border-t border-gray-800/60 pt-4">
+          ※ 本シミュレーションは参考情報です。実際の投資判断はご自身の責任で行ってください。
+          売買タイミングはシグナル発生日の終値を使用。手数料・スリッページ・税金は考慮していません。
+        </p>
       </>)}
     </section>
   );
