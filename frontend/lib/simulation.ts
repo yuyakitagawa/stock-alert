@@ -45,6 +45,11 @@ export interface SimSummary {
   soldCount:    number;
   winCount:     number;
   since:        string;
+  allCount:     number;
+  allWinCount:  number;
+  avgReturnPct: number;
+  maxGainPct:   number;
+  maxLossPct:   number;
 }
 
 async function fetchAll(path: string): Promise<RawRow[]> {
@@ -143,6 +148,13 @@ export async function fetchSimulation(): Promise<{
   const totalValue = held.reduce((s, p) => s + (p.currentPrice ?? p.buyPrice) * SHARES, 0);
   const totalPnl   = totalValue - totalCost;
 
+  const allWinCount  = positions.filter(p => p.pnl > 0).length;
+  const avgReturnPct = positions.length > 0
+    ? positions.reduce((s, p) => s + p.pnlPct, 0) / positions.length
+    : 0;
+  const maxGainPct = positions.length > 0 ? Math.max(...positions.map(p => p.pnlPct)) : 0;
+  const maxLossPct = positions.length > 0 ? Math.min(...positions.map(p => p.pnlPct)) : 0;
+
   return {
     positions,
     summary: {
@@ -154,6 +166,11 @@ export async function fetchSimulation(): Promise<{
       soldCount:   sold.length,
       winCount:    held.filter(p => p.pnl > 0).length,
       since,
+      allCount:     positions.length,
+      allWinCount,
+      avgReturnPct,
+      maxGainPct,
+      maxLossPct,
     },
   };
 }

@@ -37,7 +37,63 @@ export default function SimulationPanel({ positions, summary }: Props) {
       )}
 
       {!noData && (
-      <>{/* Summary cards */}
+      <>{/* Accuracy summary */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <div className="text-xs text-gray-500 mb-4 font-semibold tracking-wide uppercase">シグナル精度（全 {summary.allCount} シグナル）</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* Win rate gauge */}
+          <div className="space-y-2">
+            <div className="text-xs text-gray-500">勝率</div>
+            <div className="text-2xl font-bold font-mono text-white">
+              {summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}
+              <span className="text-base text-gray-500">%</span>
+            </div>
+            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 rounded-full transition-all"
+                style={{ width: `${summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}%` }}
+              />
+            </div>
+            <div className="text-xs text-gray-600">{summary.allWinCount}/{summary.allCount} 勝</div>
+          </div>
+          {/* Avg return */}
+          <div className="space-y-2">
+            <div className="text-xs text-gray-500">平均騰落率</div>
+            <div className={`text-2xl font-bold font-mono ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
+              {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(2)}
+              <span className="text-base text-gray-500">%</span>
+            </div>
+            <div className="h-1.5 bg-gray-800 rounded-full" />
+            <div className="text-xs text-gray-600">S買い後の平均</div>
+          </div>
+          {/* Max gain */}
+          <div className="space-y-2">
+            <div className="text-xs text-gray-500">最大利益</div>
+            <div className="text-2xl font-bold font-mono text-green-400">
+              +{summary.maxGainPct.toFixed(2)}
+              <span className="text-base text-gray-500">%</span>
+            </div>
+            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-full bg-green-800 rounded-full w-full" />
+            </div>
+            <div className="text-xs text-gray-600">ベストパフォーマー</div>
+          </div>
+          {/* Max loss */}
+          <div className="space-y-2">
+            <div className="text-xs text-gray-500">最大損失</div>
+            <div className="text-2xl font-bold font-mono text-red-400">
+              {summary.maxLossPct.toFixed(2)}
+              <span className="text-base text-gray-500">%</span>
+            </div>
+            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-full bg-red-900 rounded-full w-full" />
+            </div>
+            <div className="text-xs text-gray-600">ワーストパフォーマー</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div className="text-xs text-gray-500 mb-1">投資額（保有）</div>
@@ -58,7 +114,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           </div>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <div className="text-xs text-gray-500 mb-1">勝率（保有中）</div>
+          <div className="text-xs text-gray-500 mb-1">含み勝率（保有中）</div>
           <div className="font-mono font-bold text-white text-sm">
             {summary.heldCount > 0
               ? `${summary.winCount}/${summary.heldCount} (${Math.round(summary.winCount / summary.heldCount * 100)}%)`
