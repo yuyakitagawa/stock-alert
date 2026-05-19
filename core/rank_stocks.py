@@ -2,15 +2,18 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import math
+import threading
 import pandas as pd
 import numpy as np
 import time
 import os
 import glob
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
 from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
+from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 
@@ -52,34 +55,55 @@ def main():
         print("  日経225: 取得失敗（相対リターンはN/A）")
         is_bear = False
 
-    # スクリーナーCSV読み込み
-    files = glob.glob(os.path.join(BASE_DIR, "data", "screeners", "screener_*.csv"))
-    if not files:
-        print("ERROR: screener CSVが見つかりません (data/screeners/)")
+    # 全TSE銘柄リスト取得（JPX直読み）
+    stock_list = get_tse_stock_list()
+    if stock_list is None:
+        print("ERROR: 銘柄リスト取得失敗")
         return
-    screener_df = pd.read_csv(max(files, key=os.path.getmtime))
-    codes = screener_df["銘柄コード"].astype(str).tolist()
-    names = dict(zip(screener_df["銘柄コード"].astype(str), screener_df["銘柄名"]))
-    print(f"スクリーナー通過銘柄: {len(codes)} 銘柄")
-    print(f"\n確率スコア計算中...")
+    codes = stock_list["code"].tolist()
+    names = dict(zip(stock_list["code"], stock_list["name"]))
+    print(f"全銘柄スキャン: {len(codes)} 銘柄")
+    print(f"\n確率スコア計算中（並列処理）...")
 
-    # フェーズ1: 全銘柄の特徴量を収集
+    # フェーズ1: 全銘柄の特徴量を収集（並列）
+    nk_rets = (nk5/100, nk20/100, nk60/100) if nk5 is not None else None
     raw_data = []
-    for i, code in enumerate(codes):
+    lock = threading.Lock()
+    done_count = [0]
+    total = len(codes)
+
+    def fetch_one(code):
         prices = get_prices(code, days=400)
+        with lock:
+            done_count[0] += 1
+            if done_count[0] % 500 == 0:
+                print(f"  {done_count[0]}/{total} 取得済み... (有効: {len(raw_data)}銘柄)")
         if prices is None or len(prices) < 91:
-            time.sleep(0.2); continue
-        nk_rets = (nk5/100, nk20/100, nk60/100) if nk5 is not None else None
-        feat = extract_features(prices["Close"].values, prices["Volume"].tolist() if "Volume" in prices.columns else None, nk_rets)
+            time.sleep(0.1)
+            return None
+        feat = extract_features(
+            prices["Close"].values,
+            prices["Volume"].tolist() if "Volume" in prices.columns else None,
+            nk_rets,
+        )
         if feat is None:
-            time.sleep(0.2); continue
+            time.sleep(0.1)
+            return None
         if feat[12] > 0.15 or feat[10] < -0.15:
-            time.sleep(0.2); continue
-        fund = get_fundamentals(code)
-        raw_data.append((code, prices, feat, fund))
-        if (i + 1) % 100 == 0:
-            print(f"  {i+1}/{len(codes)} 取得済み...")
-        time.sleep(0.3)
+            time.sleep(0.1)
+            return None
+        time.sleep(0.2)
+        return (code, prices, feat)
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {executor.submit(fetch_one, c): c for c in codes}
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                with lock:
+                    raw_data.append(result)
+
+    print(f"有効銘柄: {len(raw_data)} 件")
 
     # フェーズ2: クロスセクショナルランク特徴量を付加（同日内での相対順位）
     if not raw_data:
@@ -89,7 +113,7 @@ def main():
 
     # フェーズ3: モデルスコア計算
     results = []
-    for idx, (code, prices, feat, fund) in enumerate(raw_data):
+    for idx, (code, prices, feat) in enumerate(raw_data):
         feat_aug = feats_aug[idx]
         rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
@@ -158,9 +182,9 @@ def main():
             "相対強度": rs_score if rs_score is not None else "-",
             "損切り価格(円)": stop_loss,
             "損切り幅(%)": stop_pct,
-            "PER": fund.get("PER") if fund else None,
-            "PBR": fund.get("PBR") if fund else None,
-            "ROE(%)": fund.get("ROE") if fund else None,
+            "PER": None,
+            "PBR": None,
+            "ROE(%)": None,
         }
         results.append(row)
 
@@ -168,6 +192,18 @@ def main():
     result_df = pd.DataFrame(results).sort_values("ネット(%)", ascending=False).reset_index(drop=True)
     result_df.index += 1
     result_df.insert(0, "順位", result_df.index)
+
+    # フェーズ4: 上位100銘柄のみ PER/PBR/ROE を取得
+    TOP_FUND = 100
+    print(f"\n上位{TOP_FUND}銘柄のファンダメンタルズ取得中...")
+    for i, (idx, row) in enumerate(result_df.head(TOP_FUND).iterrows()):
+        fund = get_fundamentals(str(row["銘柄コード"]))
+        if fund:
+            result_df.at[idx, "PER"]    = fund.get("PER")
+            result_df.at[idx, "PBR"]    = fund.get("PBR")
+            result_df.at[idx, "ROE(%)"] = fund.get("ROE")
+        if (i + 1) % 20 == 0:
+            print(f"  {i+1}/{TOP_FUND} 完了...")
 
     # 表示
     print(f"\n{'='*90}")

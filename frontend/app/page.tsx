@@ -134,9 +134,7 @@ export default async function HomePage() {
         )}
 
         {/* Simulation */}
-        {sim.positions.length > 0 && (
-          <SimulationPanel positions={sim.positions} summary={sim.summary} />
-        )}
+        <SimulationPanel positions={sim.positions} summary={sim.summary} />
       </main>
 
       <Footer />

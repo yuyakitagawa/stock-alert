@@ -18,6 +18,8 @@ export default function SimulationPanel({ positions, summary }: Props) {
   const held = positions.filter(p => p.status === "held");
   const sold = positions.filter(p => p.status === "sold");
 
+  const noData = positions.length === 0;
+
   const pnlColor = summary.totalPnl >= 0 ? "text-green-400" : "text-red-400";
   const pnlPctColor = summary.totalPnlPct >= 0 ? "text-green-400" : "text-red-400";
 
@@ -28,7 +30,14 @@ export default function SimulationPanel({ positions, summary }: Props) {
         <span className="text-xs text-gray-600">2026年1月〜 / S買い銘柄 100株ずつ</span>
       </div>
 
-      {/* Summary cards */}
+      {noData && (
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-6 text-center text-gray-600 text-sm">
+          S買いシグナルが発生したら実績が表示されます
+        </div>
+      )}
+
+      {!noData && (
+      <>{/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div className="text-xs text-gray-500 mb-1">投資額（保有）</div>
@@ -153,6 +162,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           </div>
         </div>
       )}
+      </>)}
     </section>
   );
 }
