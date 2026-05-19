@@ -126,7 +126,7 @@ export default async function StockDetailPage({ params }: Props) {
         </section>
 
         {/* Live data (market quote, company overview, earnings) — client-side */}
-        <StockLivePanel code={code} website={meta?.sector ? undefined : undefined} />
+        <StockLivePanel code={code} name={ranking.name} sector={meta?.sector} />
 
         {/* Score metrics */}
         <section>
