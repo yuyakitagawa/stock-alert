@@ -210,7 +210,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
 
         try:
             msg = client.messages.create(
-                model="claude-haiku-4-5",
+                model="claude-opus-4-7",
                 max_tokens=512,
                 system=[
                     {
@@ -233,7 +233,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
             "summary":       parsed.get("summary"),
             "bull_points":   parsed.get("bull_points", []),
             "bear_points":   parsed.get("bear_points", []),
-            "model_version": "haiku-4-5",
+            "model_version": "opus-4-7",
         })
         print(f"[export_to_web] {code}: AI解析完了")
 
