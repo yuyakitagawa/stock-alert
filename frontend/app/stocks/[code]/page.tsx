@@ -247,68 +247,20 @@ export default async function StockDetailPage({ params }: Props) {
               </div>
             )}
 
-            {/* IR Links */}
-            <div>
-              <p className="text-xs text-gray-600 mb-2 font-semibold">IR・開示情報</p>
-              <div className="flex flex-wrap gap-2">
+            {profile.website && (
+              <div>
+                <p className="text-xs text-gray-600 mb-2 font-semibold">IR</p>
                 <a
-                  href={`https://irbank.net/${code}`}
+                  href={profile.website}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
                 >
-                  IR Bank
+                  {profile.website}
                   <span className="text-gray-600">↗</span>
                 </a>
-                <a
-                  href={`https://www.release.tdnet.info/inbs/I_main_00.html?code=${code}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
-                >
-                  TDnet 適時開示
-                  <span className="text-gray-600">↗</span>
-                </a>
-                {profile.website && (
-                  <a
-                    href={profile.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
-                  >
-                    会社HP
-                    <span className="text-gray-600">↗</span>
-                  </a>
-                )}
               </div>
-            </div>
-          </section>
-        )}
-
-        {/* IR links only if no profile description */}
-        {!profile.description && !profile.website && (
-          <section>
-            <p className="text-xs text-gray-600 mb-2 font-semibold">IR・開示情報</p>
-            <div className="flex flex-wrap gap-2">
-              <a
-                href={`https://irbank.net/${code}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
-              >
-                IR Bank
-                <span className="text-gray-600">↗</span>
-              </a>
-              <a
-                href={`https://www.release.tdnet.info/inbs/I_main_00.html?code=${code}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors font-medium"
-              >
-                TDnet 適時開示
-                <span className="text-gray-600">↗</span>
-              </a>
-            </div>
+            )}
           </section>
         )}
 
