@@ -18,9 +18,10 @@ export function signalStyle(recommend: Recommend) {
 
 /** rank signals by importance for tab filtering */
 export const FILTER_TABS = [
-  { label: "全銘柄",    value: "all"       },
-  { label: "S買い",    value: "S買い"      },
-  { label: "A買い",    value: "A買い"      },
-  { label: "高値警戒", value: "高値警戒"   },
-  { label: "売り検討", value: "売り検討"   },
+  { label: "全銘柄",    value: "all"         },
+  { label: "S買い",    value: "S買い"        },
+  { label: "A買い",    value: "A買い"        },
+  { label: "方向感なし", value: "方向感なし" },
+  { label: "弱気",     value: "弱気シグナル" },
+  { label: "下降",     value: "下降シグナル" },
 ] as const;
