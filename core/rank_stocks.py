@@ -89,9 +89,6 @@ def main():
         if feat is None:
             time.sleep(0.1)
             return None
-        if feat[12] > 0.15 or feat[10] < -0.15:
-            time.sleep(0.1)
-            return None
         time.sleep(0.2)
         return (code, prices, feat)
 
