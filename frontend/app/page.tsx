@@ -89,21 +89,25 @@ export default async function HomePage() {
             </section>
 
             {/* Featured stocks */}
-            {featured.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-white">注目銘柄</h2>
-                  <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium">
-                    全銘柄を見る →
-                  </Link>
-                </div>
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white">注目銘柄</h2>
+                <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium">
+                  全銘柄を見る →
+                </Link>
+              </div>
+              {featured.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {featured.map(r => (
                     <StockCard key={r.code} r={r} sparkline={sparklineMap[r.code]} />
                   ))}
                 </div>
-              </section>
-            )}
+              ) : (
+                <div className="bg-gray-900 border border-gray-800 rounded-xl px-6 py-8 text-center text-gray-600 text-sm">
+                  現在S買いシグナルの銘柄はありません
+                </div>
+              )}
+            </section>
 
             {/* Sell signals */}
             {sell.length > 0 && (
