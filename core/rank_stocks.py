@@ -17,6 +17,29 @@ from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 
+MIN_LIQUIDITY_M = 50.0  # 20日平均売買代金(百万円)
+
+
+def passes_buy_filter(feat, close, volumes):
+    """S買い・A買いラベルを付与できる品質フィルター（元のスクリーナー基準）"""
+    if feat[12] > 0.15:           return False  # down_streak > 3日
+    if feat[10] < -0.15:          return False  # drawdown60 < -15%
+    if feat[2] * 100 < 8.0:       return False  # 3ヶ月モメンタム < 8%
+    if feat[1] * 100 < 0.0:       return False  # 20日モメンタム < 0%
+    if feat[6] < 45.0:            return False  # RSI < 45
+    if feat[6] > 70.0:            return False  # RSI > 70
+    if feat[7] < 22.0:            return False  # ボラ < 22%
+    if feat[7] > 50.0:            return False  # ボラ > 50%
+    if feat[4] <= 0:              return False  # slope_up: MA5 ≤ MA25
+    if feat[16] < 1.0:            return False  # vr2060 < 1.0
+    if volumes and len(volumes) >= 20:
+        valid = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
+        if valid:
+            va20 = np.mean(valid)
+            if va20 * close / 1e6 < MIN_LIQUIDITY_M:
+                return False
+    return True
+
 
 
 
@@ -142,7 +165,9 @@ def main():
         else:
             judgment = "🔴売り検討"
 
-        recommend = recommend_from_scores(net, drop_pct)
+        volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
+        buy_ok = passes_buy_filter(feat, close, volumes)
+        recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)

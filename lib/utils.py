@@ -338,11 +338,11 @@ def get_fundamentals(code):
 
 # ── 推奨ラベル（rank_stocks / alert_email 共通） ───────────────────────────
 
-def recommend_from_net(net):
+def recommend_from_net(net, allow_buy=True):
     if net > 13:
         return "🟡 高値警戒"
     if net >= 6:
-        return "🥈 A買い"
+        return "🥈 A買い" if allow_buy else "🟡 高値警戒"
     if net < -15:
         return "🔴売り検討"
     if net < -10:
@@ -352,8 +352,8 @@ def recommend_from_net(net):
     return "⏳ 方向感なし"
 
 
-def recommend_from_scores(net, drop_prob=None):
+def recommend_from_scores(net, drop_prob=None, allow_buy=True):
     """drop_prob<4% かつ net>=10% でS買い、それ以外は recommend_from_net に委譲"""
-    if drop_prob is not None and drop_prob < 4.0 and net >= 10.0:
+    if allow_buy and drop_prob is not None and drop_prob < 4.0 and net >= 10.0:
         return "🥇 S買い"
-    return recommend_from_net(net)
+    return recommend_from_net(net, allow_buy=allow_buy)
