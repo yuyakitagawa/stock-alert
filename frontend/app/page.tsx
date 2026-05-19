@@ -8,7 +8,7 @@ import RecommendBadge from "@/components/RecommendBadge";
 import SimulationPanel from "@/components/SimulationPanel";
 import Link from "next/link";
 
-export const revalidate = 0;
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "StockSignal — 日本株AIシグナル",
