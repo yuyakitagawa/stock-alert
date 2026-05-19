@@ -4,7 +4,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RankingsTable from "@/components/RankingsTable";
 
-export const revalidate = 3600;
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "ランキング — 日本株シグナル",
