@@ -343,6 +343,8 @@ def recommend_from_net(net):
         return "🟡 高値警戒"
     if net >= 6:
         return "🥈 A買い"
+    if net < -15:
+        return "🔴売り検討"
     if net < -10:
         return "🔴 下降シグナル"
     if net < -5:

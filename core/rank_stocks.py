@@ -11,7 +11,7 @@ import glob
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
 from core.screener import get_tse_stock_list
 
@@ -142,7 +142,7 @@ def main():
         else:
             judgment = "🔴売り検討"
 
-        recommend = recommend_from_net(net)
+        recommend = recommend_from_scores(net, drop_prob)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
