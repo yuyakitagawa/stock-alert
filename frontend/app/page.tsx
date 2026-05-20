@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchRankings, fetchSparkline, fetchSectorPerformance } from "@/lib/data";
+import { fetchRankings, fetchSparkline, fetchSectorMap } from "@/lib/data";
 import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -38,11 +38,26 @@ function SummaryCard({ label, count, colorClass, borderClass }: SummaryCardProps
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sim, sectorStats] = await Promise.all([
+  const [{ date, rows }, sim, sectorMap] = await Promise.all([
     fetchRankings(),
     fetchSimulation(),
-    fetchSectorPerformance(),
+    fetchSectorMap(),
   ]);
+
+  // 業種別成績（本日データ）
+  const sectorBuckets = new Map<string, number[]>();
+  for (const r of rows) {
+    const sector = sectorMap[r.code] ?? "その他";
+    if (!sectorBuckets.has(sector)) sectorBuckets.set(sector, []);
+    sectorBuckets.get(sector)!.push(r.net);
+  }
+  const sectorStats = Array.from(sectorBuckets.entries())
+    .map(([sector, nets]) => ({
+      sector,
+      count: nets.length,
+      avgNet: nets.reduce((s, n) => s + n, 0) / nets.length,
+    }))
+    .sort((a, b) => b.avgNet - a.avgNet);
 
   const sBuy    = rows.filter(r => r.recommend === "S買い");
   const aBuy    = rows.filter(r => r.recommend === "A買い");
@@ -112,7 +127,7 @@ export default async function HomePage() {
         )}
 
         {/* Sector performance */}
-        <SectorPerformancePanel stats={sectorStats} />
+        <SectorPerformancePanel stats={sectorStats} date={dateLabel} />
 
         {/* Simulation */}
         <SimulationPanel positions={sim.positions} summary={sim.summary} />

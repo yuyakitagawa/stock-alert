@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Daily Alert (alert_email)",
+      "runtimeExecutable": "venv/bin/python3",
+      "runtimeArgs": ["alert_email.py"],
+      "port": null
+    },
+    {
+      "name": "Screener",
+      "runtimeExecutable": "venv/bin/python3",
+      "runtimeArgs": ["screener.py"],
+      "port": null
+    },
+    {
+      "name": "Rank Stocks",
+      "runtimeExecutable": "venv/bin/python3",
+      "runtimeArgs": ["rank_stocks.py"],
+      "port": null
+    },
+    {
+      "name": "Backtest (bear mode)",
+      "runtimeExecutable": "venv/bin/python3",
+      "runtimeArgs": ["backtest.py", "bear"],
+      "port": null
+    },
+    {
+      "name": "Train Model",
+      "runtimeExecutable": "venv/bin/python3",
+      "runtimeArgs": ["rf_train_v3.py"],
+      "port": null
+    }
+  ]
+}

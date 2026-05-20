@@ -16,3 +16,4 @@ baseline_auc.json
 results/
 stock_alert.db
 simulations/
+.vercel
