@@ -229,11 +229,11 @@ def main():
             net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
             vol = round(feat[7], 1)
 
-            buy_ok = passes_buy_filter(feat, close, volumes or [])
+            nk20_pct = round(nk[1] * 100, 2) if nk else None
+            buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct)
             recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok)
 
             stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
-            nk20_pct = round(nk[1] * 100, 2) if nk else None
             p = closes
             s20 = (p[-1]-p[-21])/p[-21]*100 if len(p)>=21 else 0
             rel20 = round(s20 - nk20_pct, 2) if nk20_pct is not None else None

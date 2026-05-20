@@ -575,7 +575,7 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
         vol = round(feat_aug[7], 1)
         vol_label = volatility_label(vol)
         volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
-        buy_ok = passes_buy_filter(feat, close, volumes)
+        buy_ok = passes_buy_filter(feat, close, volumes, nk20=nk20)
         recommend = recommend_from_scores(net, drop_prob, allow_buy=buy_ok)
         p = prices["Close"].values
         s5 = (p[-1] - p[-6]) / p[-6] * 100 if len(p) >= 6 else 0
