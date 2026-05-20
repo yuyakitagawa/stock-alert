@@ -23,6 +23,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
+from core.rank_stocks import passes_buy_filter
 from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
 from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
@@ -382,7 +383,8 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
             if _is_new_candidate_skipped(code_str, net_v, drop_v):
                 continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
-            recommend = recommend_from_scores(net_v, drop_v)
+            allow_buy = "S買い" in (row.get("推奨", "") or "")
+            recommend = recommend_from_scores(net_v, drop_v, allow_buy=allow_buy)
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
             vol_rank = _safe_float(row.get("ボラランク(%)", None))
@@ -563,7 +565,9 @@ def _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, 
         judgment, _ = get_judgment(net)
         vol = round(feat_aug[7], 1)
         vol_label = volatility_label(vol)
-        recommend = recommend_from_scores(net, drop_prob)
+        volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
+        buy_ok = passes_buy_filter(feat, close, volumes)
+        recommend = recommend_from_scores(net, drop_prob, allow_buy=buy_ok)
         p = prices["Close"].values
         s5 = (p[-1] - p[-6]) / p[-6] * 100 if len(p) >= 6 else 0
         s20 = (p[-1] - p[-21]) / p[-21] * 100 if len(p) >= 21 else 0

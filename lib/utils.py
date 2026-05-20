@@ -350,6 +350,6 @@ def recommend_from_net(net, allow_buy=True):
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True):
     """drop_prob<4% かつ net>=10% でS買い、それ以外は recommend_from_net に委譲"""
-    if allow_buy and drop_prob is not None and drop_prob < 4.0 and net >= 10.0:
+    if allow_buy and drop_prob is not None and drop_prob < 4.0 and net >= 13.0:
         return "🥇 S買い"
     return recommend_from_net(net, allow_buy=allow_buy)
