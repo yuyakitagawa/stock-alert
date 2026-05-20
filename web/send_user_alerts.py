@@ -18,7 +18,7 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-SITE_URL = os.getenv("SITE_URL", "https://stocksignal.jp")
+SITE_URL = os.getenv("SITE_URL", "https://stock-alert-web.vercel.app")
 INTERNAL_SEND_SECRET = os.getenv("INTERNAL_SEND_SECRET", "")
 DRY_RUN = "--dry-run" in sys.argv
 
