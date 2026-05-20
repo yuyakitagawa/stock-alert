@@ -73,13 +73,14 @@ export async function fetchSimulation(): Promise<{
   positions: SimPosition[];
   summary: SimSummary;
 }> {
-  const sBuyEnc  = encodeURIComponent("S買い");
-  const weakEnc  = encodeURIComponent("弱気シグナル");
-  const downEnc  = encodeURIComponent("下降シグナル");
+  const sBuyEnc      = encodeURIComponent("S買い");
+  const neutralEnc   = encodeURIComponent("方向感なし");
+  const weakEnc      = encodeURIComponent("弱気シグナル");
+  const downEnc      = encodeURIComponent("下降シグナル");
 
   const [buyRows, sellRows, latestDate, since] = await Promise.all([
     fetchAll(`web_rankings?recommend=eq.${sBuyEnc}&order=date.asc&select=code,name,close,date`),
-    fetchAll(`web_rankings?recommend=in.(${weakEnc},${downEnc})&order=date.asc&select=code,close,date`),
+    fetchAll(`web_rankings?recommend=in.(${neutralEnc},${weakEnc},${downEnc})&order=date.asc&select=code,close,date`),
     fetchLatestDate(),
     fetchEarliestDate(),
   ]);
@@ -99,7 +100,7 @@ export async function fetchSimulation(): Promise<{
     if (!firstBuy.has(row.code)) firstBuy.set(row.code, row);
   }
 
-  // First 弱気/下降シグナル after buy date per code
+  // First 方向感なし/弱気/下降シグナル after buy date per code (net<6 = メール売り基準)
   const firstSell = new Map<string, RawRow>();
   for (const row of sellRows) {
     const buy = firstBuy.get(row.code);
