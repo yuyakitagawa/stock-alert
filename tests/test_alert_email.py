@@ -108,7 +108,7 @@ class TestBuildPriorityActions(unittest.TestCase):
     def test_ranking_buy_when_no_sells(self):
         results = [_make_result("3333", "保有のみ", net=20.0, signal="hold")]
         ranking = pd.DataFrame([
-            {"銘柄コード": 9999, "銘柄名": "スクリーン候補", "ネット(%)": 10.0, "ボラ(%)": 22.0},
+            {"銘柄コード": 9999, "銘柄名": "スクリーン候補", "ネット(%)": 10.0, "ボラ(%)": 22.0, "推奨": "🥈 A買い"},
         ])
         actions = build_priority_actions(results, ranking_df=ranking)
         self.assertEqual(len(actions), 1)
@@ -232,7 +232,7 @@ class TestCandidateFilters(unittest.TestCase):
     def test_high_net_low_drop_included(self):
         """net≥10 かつ drop<5 はコンフリクトではなく候補に残る"""
         ranking = self._ranking([
-            {"銘柄コード": 9002, "銘柄名": "高net低drop株", "ネット(%)": 12.0, "ボラ(%)": 25.0, "下落確率(%)": 4.0},
+            {"銘柄コード": 9002, "銘柄名": "高net低drop株", "ネット(%)": 12.0, "ボラ(%)": 25.0, "下落確率(%)": 4.0, "推奨": "🥇 S買い"},
         ])
         actions = build_priority_actions([], ranking_df=ranking)
         self.assertTrue(any("高net低drop株" in t for t in self._titles(actions)))
@@ -240,7 +240,7 @@ class TestCandidateFilters(unittest.TestCase):
     def test_net_at_new_min_included(self):
         """net=10.0（下限ちょうど）は候補に含まれる"""
         ranking = self._ranking([
-            {"銘柄コード": 9003, "銘柄名": "ネット10株", "ネット(%)": 10.0, "ボラ(%)": 25.0, "下落確率(%)": 3.0},
+            {"銘柄コード": 9003, "銘柄名": "ネット10株", "ネット(%)": 10.0, "ボラ(%)": 25.0, "下落確率(%)": 3.0, "推奨": "🥈 A買い"},
         ])
         actions = build_priority_actions([], ranking_df=ranking)
         self.assertTrue(any("ネット10株" in t for t in self._titles(actions)))
@@ -256,7 +256,7 @@ class TestCandidateFilters(unittest.TestCase):
     def test_drop_prob_below_new_max_included(self):
         """drop_prob=4.9%（上限未満かつコンフリクト閾値未満）かつnet>=10%は除外されない"""
         ranking = self._ranking([
-            {"銘柄コード": 9005, "銘柄名": "drop4株", "ネット(%)": 10.5, "ボラ(%)": 25.0, "下落確率(%)": 4.9},
+            {"銘柄コード": 9005, "銘柄名": "drop4株", "ネット(%)": 10.5, "ボラ(%)": 25.0, "下落確率(%)": 4.9, "推奨": "🥈 A買い"},
         ])
         actions = build_priority_actions([], ranking_df=ranking)
         self.assertTrue(any("drop4株" in t for t in self._titles(actions)))
