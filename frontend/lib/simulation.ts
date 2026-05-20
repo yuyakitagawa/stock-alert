@@ -100,13 +100,11 @@ export async function fetchSimulation(): Promise<{
     if (!firstBuy.has(row.code)) firstBuy.set(row.code, row);
   }
 
-  // First 方向感なし/弱気/下降シグナル after buy date per code (net<6 = メール売り基準、最低5日保有)
+  // First 方向感なし/弱気/下降シグナル after buy date per code (net<6 = メール売り基準)
   const firstSell = new Map<string, RawRow>();
   for (const row of sellRows) {
     const buy = firstBuy.get(row.code);
-    if (!buy || firstSell.has(row.code)) continue;
-    const holdDays = (new Date(row.date).getTime() - new Date(buy.date).getTime()) / 86400000;
-    if (holdDays >= 5 && row.date > buy.date) {
+    if (buy && row.date > buy.date && !firstSell.has(row.code)) {
       firstSell.set(row.code, row);
     }
   }
