@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { fetchRankings, fetchSparkline } from "@/lib/data";
+import { fetchRankings, fetchSparkline, fetchSectorPerformance } from "@/lib/data";
 import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockCard from "@/components/StockCard";
 import SimulationPanel from "@/components/SimulationPanel";
+import SectorPerformancePanel from "@/components/SectorPerformancePanel";
 import Link from "next/link";
 
 export const revalidate = 3600;
@@ -37,9 +38,10 @@ function SummaryCard({ label, count, colorClass, borderClass }: SummaryCardProps
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sim] = await Promise.all([
+  const [{ date, rows }, sim, sectorStats] = await Promise.all([
     fetchRankings(),
     fetchSimulation(),
+    fetchSectorPerformance(),
   ]);
 
   const sBuy    = rows.filter(r => r.recommend === "S買い");
@@ -108,6 +110,9 @@ export default async function HomePage() {
 
           </>
         )}
+
+        {/* Sector performance */}
+        <SectorPerformancePanel stats={sectorStats} />
 
         {/* Simulation */}
         <SimulationPanel positions={sim.positions} summary={sim.summary} />
