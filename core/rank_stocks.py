@@ -2,13 +2,15 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import math
+import re
 import threading
 import pandas as pd
 import numpy as np
 import time
 import os
 import glob
-from datetime import datetime, timedelta
+import requests as _requests
+from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
 from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores
@@ -16,8 +18,31 @@ from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
 from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
+MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
+EARNINGS_SKIP_DAYS = 14   # 決算発表N日以内のS買いを降格
 
-MIN_LIQUIDITY_M = 50.0  # 20日平均売買代金(百万円)
+_KABUTAN_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)"}
+
+
+def _get_next_earnings(code: str) -> "_date | None":
+    """kabutan.jp から次回決算発表予定日を取得。取得失敗時は None。"""
+    from lib.db import get_earnings_cache, set_earnings_cache, CACHE_MISS
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cached = get_earnings_cache(code, today_str)
+    if cached is not CACHE_MISS:
+        return datetime.strptime(cached, "%Y-%m-%d").date() if cached else None
+    try:
+        resp = _requests.get(f"https://kabutan.jp/stock/?code={code}",
+                             headers=_KABUTAN_HEADERS, timeout=8)
+        d = None
+        if resp.status_code == 200:
+            m = re.search(r'決算発表予定日[^<]*<[^>]+>(\d{4}/\d{2}/\d{2})', resp.text)
+            if m:
+                d = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+        set_earnings_cache(code, today_str, d.isoformat() if d else None)
+        return d
+    except Exception:
+        return None
 
 
 def passes_buy_filter(feat, close, volumes, nk20=None):
@@ -32,7 +57,7 @@ def passes_buy_filter(feat, close, volumes, nk20=None):
     if feat[7] > 50.0:            return False  # ボラ > 50%
     if feat[4] <= 0:              return False  # slope_up: MA5 ≤ MA25
     if feat[16] < 1.0:            return False  # vr2060 < 1.0
-    if nk20 is not None and nk20 < 2.0: return False  # 日経20日リターン < 2%（下降/横ばい相場）
+    if nk20 is not None and nk20 < 3.0: return False  # 日経20日リターン < 3%（下降/横ばい相場）
     if volumes and len(volumes) >= 20:
         valid = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
         if valid:
@@ -258,6 +283,22 @@ def main():
             f"{roe_str}  "
             f"{row['推奨']}"
         )
+
+    # フェーズ5: S買い銘柄の決算チェック（14日以内ならA買いに降格）
+    sbuy_mask = result_df["推奨"] == "🥇 S買い"
+    sbuy_codes = result_df.loc[sbuy_mask, "銘柄コード"].astype(str).tolist()
+    if sbuy_codes:
+        print(f"\n決算日チェック中（S買い {len(sbuy_codes)}銘柄）...")
+        today = datetime.now().date()
+        for code in sbuy_codes:
+            d = _get_next_earnings(code)
+            if d is not None:
+                days_to = (d - today).days
+                if 0 <= days_to <= EARNINGS_SKIP_DAYS:
+                    idx = result_df[result_df["銘柄コード"].astype(str) == code].index
+                    result_df.loc[idx, "推奨"] = "🥈 A買い"
+                    name = result_df.loc[idx, "銘柄名"].values[0]
+                    print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → S買いをA買いに降格")
 
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")
