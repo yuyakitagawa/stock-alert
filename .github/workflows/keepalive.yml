@@ -2,7 +2,7 @@ name: Keepalive
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # 毎週月曜 06:00 UTC（daily_alertの1時間前）
+    - cron: '0 6 * * 1-5'  # 平日毎朝 06:00 UTC（daily_alertの2時間前）
   workflow_dispatch:
 
 jobs:
