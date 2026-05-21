@@ -19,7 +19,7 @@ from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
-EARNINGS_SKIP_DAYS = 30   # 決算発表N日以内のS買いを降格
+EARNINGS_SKIP_DAYS = 14   # 決算発表N日以内のS買いを降格
 
 _KABUTAN_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)"}
 
