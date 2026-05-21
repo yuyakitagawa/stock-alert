@@ -348,8 +348,9 @@ def recommend_from_net(net, allow_buy=True):
     return "⏳ 方向感なし"
 
 
-def recommend_from_scores(net, drop_prob=None, allow_buy=True):
-    """drop_prob<4% かつ 17<=net<=24 でS買い、それ以外は recommend_from_net に委譲"""
+def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None):
+    """drop_prob<4% かつ 17<=net<=24 かつ vol<=25% でS買い、それ以外は recommend_from_net に委譲"""
     if allow_buy and drop_prob is not None and drop_prob < 4.0 and 17.0 <= net <= 24.0:
-        return "🥇 S買い"
+        if vol is None or vol <= 25.0:
+            return "🥇 S買い"
     return recommend_from_net(net, allow_buy=allow_buy)

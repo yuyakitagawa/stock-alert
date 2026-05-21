@@ -231,7 +231,7 @@ def main():
 
             nk20_pct = round(nk[1] * 100, 2) if nk else None
             buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct)
-            recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok)
+            recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
             stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
             p = closes
@@ -255,6 +255,12 @@ def main():
 
         # ネットスコア順にソートして rank 付け
         db_rows.sort(key=lambda r: r["net"], reverse=True)
+
+        # S買い1日最大3件（net降順で4件目以降はA買いに降格）
+        sbuy_rows = [r for r in db_rows if "S買い" in r["recommend"]]
+        if len(sbuy_rows) > 3:
+            for r in sbuy_rows[3:]:
+                r["recommend"] = "🥈 A買い"
 
         # DB 保存
         save_daily_ranking(date_str, db_rows)

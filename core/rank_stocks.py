@@ -19,7 +19,7 @@ from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
-EARNINGS_SKIP_DAYS = 14   # 決算発表N日以内のS買いを降格
+EARNINGS_SKIP_DAYS = 21   # 決算発表N日以内のS買いを降格
 
 _KABUTAN_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)"}
 
@@ -193,7 +193,7 @@ def main():
 
         volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
         buy_ok = passes_buy_filter(feat, close, volumes, nk20=nk20)
-        recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok)
+        recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
@@ -299,6 +299,15 @@ def main():
                     result_df.loc[idx, "推奨"] = "🥈 A買い"
                     name = result_df.loc[idx, "銘柄名"].values[0]
                     print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → S買いをA買いに降格")
+
+    # フェーズ6: S買い1日最大3件（net降順で4件目以降はA買いに降格）
+    sbuy_all = result_df[result_df["推奨"] == "🥇 S買い"].sort_values("ネット(%)", ascending=False)
+    if len(sbuy_all) > 3:
+        cap_codes = sbuy_all.iloc[3:]["銘柄コード"].astype(str).tolist()
+        for code in cap_codes:
+            idx = result_df[result_df["銘柄コード"].astype(str) == code].index
+            result_df.loc[idx, "推奨"] = "🥈 A買い"
+        print(f"\n1日最大3件制限: {len(cap_codes)}件をA買いに降格（上位3件を残す）")
 
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")
