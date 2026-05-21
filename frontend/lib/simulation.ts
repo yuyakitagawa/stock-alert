@@ -79,7 +79,7 @@ export async function fetchSimulation(): Promise<{
   const downEnc      = encodeURIComponent("下降シグナル");
 
   const [buyRows, sellRows, latestDate, since] = await Promise.all([
-    fetchAll(`web_rankings?recommend=eq.${sBuyEnc}&order=date.asc&select=code,name,close,date`),
+    fetchAll(`web_rankings?recommend=eq.${sBuyEnc}&net=gte.17&net=lte.24&drop_prob=lt.4&order=date.asc&select=code,name,close,date`),
     fetchAll(`web_rankings?recommend=in.(${neutralEnc},${weakEnc},${downEnc})&order=date.asc&select=code,close,date`),
     fetchLatestDate(),
     fetchEarliestDate(),
