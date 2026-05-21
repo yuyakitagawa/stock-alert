@@ -31,7 +31,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
-          AIが「S買い」シグナルを出した日に各銘柄を100株購入し、A買い水準（net<6%）を下回るまで（メールと同じ基準）保有し続けた場合の
+          AIが「S買い」シグナルを出した日に各銘柄を100株購入し、A買い水準（net&lt;6%）を下回るまで（メールと同じ基準）保有し続けた場合の
           仮想成績です。手数料・税金は含みません。過去の成績は将来を保証するものではありません。
         </p>
       </div>
