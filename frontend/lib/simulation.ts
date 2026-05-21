@@ -36,19 +36,21 @@ export interface SimPosition {
 }
 
 export interface SimSummary {
-  totalCost:    number;
-  totalValue:   number;
-  totalPnl:     number;
-  totalPnlPct:  number;
-  heldCount:    number;
-  soldCount:    number;
-  winCount:     number;
-  since:        string;
-  allCount:     number;
-  allWinCount:  number;
-  avgReturnPct: number;
-  maxGainPct:   number;
-  maxLossPct:   number;
+  totalCost:          number;
+  totalValue:         number;
+  totalPnl:           number;
+  totalPnlPct:        number;
+  heldCount:          number;
+  soldCount:          number;
+  winCount:           number;
+  since:              string;
+  allCount:           number;
+  allWinCount:        number;
+  avgReturnPct:       number;
+  maxGainPct:         number;
+  maxLossPct:         number;
+  compoundReturnPct:  number;
+  annualizedReturnPct:number;
 }
 
 // 特定コードの買い日以降の最初の売りシグナルを取得
@@ -160,22 +162,36 @@ export async function fetchSimulation(): Promise<{
   const maxGainPct = positions.length > 0 ? Math.max(...positions.map(p => p.pnlPct)) : 0;
   const maxLossPct = positions.length > 0 ? Math.min(...positions.map(p => p.pnlPct)) : 0;
 
+  // 複利リターン: 各トレードのリターンを順次複利で合算
+  const compoundMult = positions.reduce((acc, p) => acc * (1 + p.pnlPct / 100), 1.0);
+  const compoundReturnPct = (compoundMult - 1) * 100;
+
+  // 年率換算: 観測期間(カレンダー日)から年率複利を計算
+  const sinceMs   = new Date(since).getTime();
+  const latestMs  = new Date(latestDate ?? since).getTime();
+  const calDays   = Math.max(1, (latestMs - sinceMs) / (1000 * 60 * 60 * 24));
+  const annualizedReturnPct = positions.length > 0
+    ? (Math.pow(compoundMult, 365 / calDays) - 1) * 100
+    : 0;
+
   return {
     positions,
     summary: {
-      totalCost:    allCost,
-      totalValue:   allCost + allPnl,
-      totalPnl:     allPnl,
-      totalPnlPct:  allCost > 0 ? (allPnl / allCost) * 100 : 0,
-      heldCount:    held.length,
-      soldCount:    sold.length,
-      winCount:     held.filter(p => p.pnl > 0).length,
+      totalCost:           allCost,
+      totalValue:          allCost + allPnl,
+      totalPnl:            allPnl,
+      totalPnlPct:         allCost > 0 ? (allPnl / allCost) * 100 : 0,
+      heldCount:           held.length,
+      soldCount:           sold.length,
+      winCount:            held.filter(p => p.pnl > 0).length,
       since,
-      allCount:     positions.length,
+      allCount:            positions.length,
       allWinCount,
       avgReturnPct,
       maxGainPct,
       maxLossPct,
+      compoundReturnPct,
+      annualizedReturnPct,
     },
   };
 }
