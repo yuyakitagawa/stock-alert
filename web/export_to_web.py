@@ -265,6 +265,16 @@ def main() -> None:
     top_rows = [r for r in ranking_rows if r.get("recommend") in ("S買い", "A買い")][:AI_TOP_N]
     generate_ai_analyses(today, top_rows)
 
+    # 5. Next.js ISRキャッシュを即時無効化
+    site_url = os.getenv("SITE_URL", "")
+    secret = os.getenv("INTERNAL_SEND_SECRET", "")
+    if site_url and secret:
+        try:
+            r = requests.get(f"{site_url}/api/revalidate?secret={secret}", timeout=15)
+            print(f"[export_to_web] キャッシュ無効化: {r.status_code}")
+        except Exception as e:
+            print(f"[export_to_web] キャッシュ無効化失敗（無視）: {e}")
+
     print("[export_to_web] エクスポート完了")
 
 
