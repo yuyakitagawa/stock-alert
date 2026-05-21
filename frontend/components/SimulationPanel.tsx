@@ -114,31 +114,31 @@ export default function SimulationPanel({ positions, summary }: Props) {
 
         {/* Portfolio summary */}
         <div className="space-y-2">
-          <p className="text-xs text-gray-600">保有中ポジションの時価評価（売却済みは含まず）</p>
+          <p className="text-xs text-gray-600">全シグナルの損益合計（保有中の含み損益 + 売却済みの確定損益）</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">投資額</div>
+              <div className="text-xs text-gray-500 mb-1">総投資額</div>
               <div className="font-mono font-bold text-white text-sm">
                 {summary.totalCost.toLocaleString("ja-JP")}円
               </div>
-              <div className="text-xs text-gray-700 mt-1">買付価格 × 100株の合計</div>
+              <div className="text-xs text-gray-700 mt-1">全買付価格 × 100株の合計</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">評価額</div>
-              <div className="font-mono font-bold text-white text-sm">
-                {summary.totalValue.toLocaleString("ja-JP")}円
-              </div>
-              <div className="text-xs text-gray-700 mt-1">現在値 × 100株の合計</div>
-            </div>
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">評価損益</div>
+              <div className="text-xs text-gray-500 mb-1">損益合計</div>
               <div className={`font-mono font-bold text-sm ${pnlColor}`}>
                 {fmtYen(summary.totalPnl)}
               </div>
-              <div className="text-xs text-gray-700 mt-1">評価額 − 投資額</div>
+              <div className="text-xs text-gray-700 mt-1">確定 + 含み損益の合計</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">含み勝率</div>
+              <div className="text-xs text-gray-500 mb-1">トータルリターン</div>
+              <div className={`font-mono font-bold text-sm ${pnlColor}`}>
+                {fmtPct(summary.totalPnlPct)}
+              </div>
+              <div className="text-xs text-gray-700 mt-1">損益合計 ÷ 総投資額</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 mb-1">保有中含み勝率</div>
               <div className="font-mono font-bold text-white text-sm">
                 {summary.heldCount > 0
                   ? `${summary.winCount}/${summary.heldCount} (${Math.round(summary.winCount / summary.heldCount * 100)}%)`
