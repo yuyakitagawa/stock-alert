@@ -129,7 +129,6 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
     if feat[12] > 0.15:           return False  # down_streak > 3日
     if feat[10] < -0.15:          return False  # drawdown60 < -15%
     if feat[2] * 100 < 8.0:       return False  # 3ヶ月モメンタム < 8%
-    if feat[1] * 100 < 0.0:       return False  # 20日モメンタム < 0%
     if feat[6] < 45.0:            return False  # RSI < 45
     if feat[6] > 70.0:            return False  # RSI > 70
     if feat[7] < 22.0:            return False  # ボラ < 22%
