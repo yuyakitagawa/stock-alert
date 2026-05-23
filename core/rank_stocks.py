@@ -19,7 +19,7 @@ from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
 from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
-MIN_LIQUIDITY_M  = 100.0  # 20日平均売買代金(百万円)
+MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
 EARNINGS_SKIP_DAYS = 21   # 決算発表N日以内のS買いを降格
 
 # 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
