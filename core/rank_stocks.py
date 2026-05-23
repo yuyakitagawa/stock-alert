@@ -380,15 +380,14 @@ def main():
                     name = result_df.loc[idx, "銘柄名"].values[0]
                     print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → {current}を{new_sig}に降格")
 
-    # フェーズ6: S買い・A買いそれぞれ1日最大3件（net降順で4件目以降は降格）
-    for sig, demote in [("🥇 S買い", "🥈 A買い"), ("🥈 A買い", "⏳ 方向感なし")]:
-        top_all = result_df[result_df["推奨"] == sig].sort_values("ネット(%)", ascending=False)
-        if len(top_all) > 3:
-            cap_codes = top_all.iloc[3:]["銘柄コード"].astype(str).tolist()
-            for code in cap_codes:
-                idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                result_df.loc[idx, "推奨"] = demote
-            print(f"\n{sig}1日最大3件制限: {len(cap_codes)}件を{demote}に降格")
+    # フェーズ6: S買い上位3件→S買い、4件目以降→A買い
+    sbuy_all = result_df[result_df["推奨"] == "🥇 S買い"].sort_values("ネット(%)", ascending=False)
+    if len(sbuy_all) > 3:
+        cap_codes = sbuy_all.iloc[3:]["銘柄コード"].astype(str).tolist()
+        for code in cap_codes:
+            idx = result_df[result_df["銘柄コード"].astype(str) == code].index
+            result_df.loc[idx, "推奨"] = "🥈 A買い"
+        print(f"\nS買い1日3件制限: {len(cap_codes)}件をA買いに降格")
 
     # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
     # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→A買い、A買い→方向感なし に降格

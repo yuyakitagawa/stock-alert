@@ -22,25 +22,25 @@ const SIGNALS = {
 // S買い / A買い 条件表（条件変更時はここを更新）
 const CONDITIONS = {
   ja: [
-    { label: "ネットスコア (上昇確率−下落確率)",  s: "17% ≤ net ≤ 24%", a: "15% ≤ net ≤ 24%" },
+    { label: "ネットスコア (上昇確率−下落確率)",  s: "17% ≤ net ≤ 24%", a: "17% ≤ net ≤ 24%" },
     { label: "下落確率",                        s: "< 4%",              a: "< 4%" },
     { label: "年率ボラティリティ",               s: "≤ 25%",            a: "≤ 25%" },
     { label: "連続下落日数",                    s: "≤ 3日",             a: "≤ 3日" },
     { label: "60日ドローダウン",                s: "≥ −15%",           a: "≥ −15%" },
     { label: "流動性 (20日平均売買代金)",        s: "≥ 5,000万円/日",   a: "≥ 5,000万円/日" },
     { label: "次回決算まで",                    s: "22日以上先",        a: "22日以上先" },
-    { label: "1日の発令件数",                   s: "上位3件まで",       a: "上位3件まで" },
+    { label: "1日の発令件数",                   s: "上位3件",           a: "4件目以降" },
     { label: "対応ETF前日リターン (XLK/XLF/XLI/XLB/XLV/XLY)", s: "プラスのみ", a: "プラスのみ" },
   ],
   en: [
-    { label: "Net Score (Rise prob − Drop prob)",      s: "17% ≤ net ≤ 24%",    a: "15% ≤ net ≤ 24%" },
+    { label: "Net Score (Rise prob − Drop prob)",      s: "17% ≤ net ≤ 24%",    a: "17% ≤ net ≤ 24%" },
     { label: "Drop probability",                       s: "< 4%",                a: "< 4%" },
     { label: "Annualized volatility",                  s: "≤ 25%",               a: "≤ 25%" },
     { label: "Consecutive down days",                  s: "≤ 3 days",            a: "≤ 3 days" },
     { label: "60-day drawdown",                        s: "≥ −15%",              a: "≥ −15%" },
     { label: "Liquidity (20-day avg turnover)",        s: "≥ ¥50M/day",          a: "≥ ¥50M/day" },
     { label: "Days until next earnings",               s: "≥ 22 days",           a: "≥ 22 days" },
-    { label: "Signals per day",                        s: "Top 3 only",          a: "Top 3 only" },
+    { label: "Signals per day",                        s: "Top 3",               a: "4th and below" },
     { label: "US sector ETF prev-day return (XLK/XLF/XLI/XLB/XLV/XLY)", s: "Positive only", a: "Positive only" },
   ],
 };
