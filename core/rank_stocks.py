@@ -388,18 +388,18 @@ def main():
         print(f"\n1日最大3件制限: {len(cap_codes)}件をA買いに降格（上位3件を残す）")
 
     # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
-    # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買いをA買いに降格
-    sbuy_mask = result_df["推奨"] == "🥇 S買い"
-    sbuy_codes = result_df.loc[sbuy_mask, "銘柄コード"].astype(str).tolist()
-    if sbuy_codes:
-        print(f"\n米国ETFリードラグフィルター中（S買い {len(sbuy_codes)}銘柄）...")
+    # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→A買い、A買い→方向感なし に降格
+    buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
+    buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
+    if buy_codes:
+        print(f"\n米国ETFリードラグフィルター中（S買い+A買い {len(buy_codes)}銘柄）...")
         _load_sector_cache()
         etf_rets = fetch_us_sector_etf_returns()
         if etf_rets:
             ret_str = " ".join(f"{k}:{v:+.1f}%" for k, v in sorted(etf_rets.items()))
             print(f"  前営業日ETFリターン: {ret_str}")
             degraded = []
-            for code in sbuy_codes:
+            for code in buy_codes:
                 etf = get_sector_etf(code)
                 if etf not in STRONG_EFFECT_ETFS:
                     continue
@@ -407,13 +407,15 @@ def main():
                 if ret is not None and ret < 0:
                     idx = result_df[result_df["銘柄コード"].astype(str) == code].index
                     name = result_df.loc[idx, "銘柄名"].values[0]
-                    result_df.loc[idx, "推奨"] = "🥈 A買い"
-                    degraded.append(f"{name}({code})[{etf}:{ret:+.1f}%]")
+                    current = result_df.loc[idx, "推奨"].values[0]
+                    new_sig = "⏳ 方向感なし" if current == "🥈 A買い" else "🥈 A買い"
+                    result_df.loc[idx, "推奨"] = new_sig
+                    degraded.append(f"{name}({code})[{etf}:{ret:+.1f}%] {current}→{new_sig}")
             _save_sector_cache()
             if degraded:
-                print(f"  ⚠️ ETF前日マイナスのためA買いに降格: {', '.join(degraded)}")
+                print(f"  ⚠️ ETF前日マイナスのため降格: {', '.join(degraded)}")
             else:
-                print(f"  ✅ 全S買い銘柄のETFは前日プラス（フィルター通過）")
+                print(f"  ✅ 全買いシグナル銘柄のETFは前日プラス（フィルター通過）")
         else:
             print(f"  ETFデータ取得失敗: フィルタースキップ")
 

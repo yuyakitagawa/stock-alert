@@ -303,14 +303,18 @@ def main():
                 r["recommend"] = "🥈 A買い"
 
         # 米国セクターETFリードラグフィルター（強相関セクターでの前日マイナスを降格）
-        sbuy_now = [r for r in db_rows if "S買い" in r["recommend"]]
-        for r in sbuy_now:
+        # S買い→A買い、A買い→方向感なし
+        buy_now = [r for r in db_rows if "S買い" in r["recommend"] or "A買い" in r["recommend"]]
+        for r in buy_now:
             etf = get_sector_etf(str(r["code"]))
             if etf not in STRONG_EFFECT_ETFS:
                 continue
             ret = etf_prev_ret(etf_hist, etf, date_str)
             if ret is not None and ret < 0:
-                r["recommend"] = "🥈 A買い"
+                if "S買い" in r["recommend"]:
+                    r["recommend"] = "🥈 A買い"
+                else:
+                    r["recommend"] = "⏳ 方向感なし"
         _save_sector_cache()
 
         # DB 保存
