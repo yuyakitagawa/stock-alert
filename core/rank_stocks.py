@@ -123,7 +123,7 @@ def _get_next_earnings(code: str) -> "_date | None":
         return None
 
 
-def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None):
+def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None):
     """S買い・A買いラベルを付与できる品質フィルター（元のスクリーナー基準）"""
     if close < 300:               return False  # 株価 < 300円（低位株除外）
     if feat[12] > 0.15:           return False  # down_streak > 3日
@@ -136,7 +136,8 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None):
     if feat[7] > 50.0:            return False  # ボラ > 50%
     if feat[4] <= 0:              return False  # slope_up: MA5 ≤ MA25
     if feat[16] < 1.0:            return False  # vr2060 < 1.0
-    if ret_504 is not None and ret_504 < 0: return False  # 2年モメンタム < 0
+    if ret_504 is not None and ret_504 < 0:    return False  # 2年モメンタム < 0
+    if r2_504 is not None and r2_504 < 0.4:   return False  # 2年トレンドR² < 0.4
     if nk20 is not None and nk20 < 3.0: return False  # 日経20日リターン < 3%（下降/横ばい相場）
     if volumes and len(volumes) >= 20:
         valid = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
@@ -274,7 +275,14 @@ def main():
         volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
         p_arr = prices["Close"].values
         ret_504 = float((p_arr[-1]-p_arr[-505])/p_arr[-505]) if len(p_arr) >= 505 else None
-        buy_ok = passes_buy_filter(feat, close, volumes, nk20=nk20, ret_504=ret_504)
+        p504 = p_arr[-504:] if len(p_arr) >= 504 else p_arr
+        t504 = np.arange(len(p504), dtype=float)
+        _coef504 = np.polyfit(t504, p504, 1)
+        _pred504 = np.polyval(_coef504, t504)
+        _ss_res504 = float(np.sum((p504 - _pred504)**2))
+        _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
+        r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
+        buy_ok = passes_buy_filter(feat, close, volumes, nk20=nk20, ret_504=ret_504, r2_504=r2_504)
         recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）

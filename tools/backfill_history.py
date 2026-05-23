@@ -272,7 +272,14 @@ def main():
             nk20_pct = round(nk[1] * 100, 2) if nk else None
             p = closes
             ret_504 = float((p[-1]-p[-505])/p[-505]) if len(p) >= 505 else None
-            buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct, ret_504=ret_504)
+            p504 = p[-504:] if len(p) >= 504 else p
+            t504 = np.arange(len(p504), dtype=float)
+            _coef504 = np.polyfit(t504, p504, 1)
+            _pred504 = np.polyval(_coef504, t504)
+            _ss_res504 = float(np.sum((p504 - _pred504)**2))
+            _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
+            r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
+            buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct, ret_504=ret_504, r2_504=r2_504)
             recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
             stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
