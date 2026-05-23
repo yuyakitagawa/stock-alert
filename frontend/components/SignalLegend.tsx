@@ -29,7 +29,7 @@ const CONDITIONS = {
     { label: "60日ドローダウン",                s: "≥ −15%",           a: "≥ −15%" },
     { label: "流動性 (20日平均売買代金)",        s: "≥ 5,000万円/日",   a: "≥ 5,000万円/日" },
     { label: "次回決算まで",                    s: "22日以上先",        a: "22日以上先" },
-    { label: "1日の発令件数",                   s: "制限なし",          a: "上位3件まで" },
+    { label: "1日の発令件数",                   s: "上位3件まで",       a: "上位3件まで" },
     { label: "対応ETF前日リターン (XLK/XLF/XLI/XLB/XLV/XLY)", s: "プラスのみ", a: "プラスのみ" },
   ],
   en: [
@@ -40,7 +40,7 @@ const CONDITIONS = {
     { label: "60-day drawdown",                        s: "≥ −15%",              a: "≥ −15%" },
     { label: "Liquidity (20-day avg turnover)",        s: "≥ ¥50M/day",          a: "≥ ¥50M/day" },
     { label: "Days until next earnings",               s: "≥ 22 days",           a: "≥ 22 days" },
-    { label: "Signals per day",                        s: "No limit",            a: "Top 3 only" },
+    { label: "Signals per day",                        s: "Top 3 only",          a: "Top 3 only" },
     { label: "US sector ETF prev-day return (XLK/XLF/XLI/XLB/XLV/XLY)", s: "Positive only", a: "Positive only" },
   ],
 };
