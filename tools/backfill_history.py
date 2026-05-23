@@ -296,11 +296,11 @@ def main():
         # ネットスコア順にソートして rank 付け
         db_rows.sort(key=lambda r: r["net"], reverse=True)
 
-        # S買い1日最大3件（net降順で4件目以降はA買いに降格）
-        sbuy_rows = [r for r in db_rows if "S買い" in r["recommend"]]
-        if len(sbuy_rows) > 3:
-            for r in sbuy_rows[3:]:
-                r["recommend"] = "🥈 A買い"
+        # A買い1日最大3件（net降順で4件目以降は方向感なしに降格）
+        abuy_rows = sorted([r for r in db_rows if "A買い" in r["recommend"]], key=lambda r: r["net"], reverse=True)
+        if len(abuy_rows) > 3:
+            for r in abuy_rows[3:]:
+                r["recommend"] = "⏳ 方向感なし"
 
         # 米国セクターETFリードラグフィルター（強相関セクターでの前日マイナスを降格）
         # S買い→A買い、A買い→方向感なし
