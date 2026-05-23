@@ -4,14 +4,14 @@ import { useLang } from "@/contexts/LanguageContext";
 
 const SIGNALS = {
   ja: [
-    { signal: "S買い",        desc: "ネットスコア最高 + 底値実績あり" },
+    { signal: "S買い",        desc: "ネットスコア最高 + 下落確率<4% + 米国ETFフィルター通過" },
     { signal: "A買い",        desc: "上昇確率が高く買い推奨" },
     { signal: "方向感なし",  desc: "上昇・下落どちらでもない中立状態" },
     { signal: "弱気シグナル", desc: "やや下落傾向、慎重に" },
     { signal: "下降シグナル", desc: "強い下落圧力あり" },
   ],
   en: [
-    { signal: "S買い",        desc: "Highest net score + proven bottom" },
+    { signal: "S買い",        desc: "Top net score + drop prob <4% + US sector ETF filter passed" },
     { signal: "A買い",        desc: "High rise probability — buy" },
     { signal: "方向感なし",  desc: "Neutral — no clear direction" },
     { signal: "弱気シグナル", desc: "Slight downward trend — caution" },
@@ -55,8 +55,8 @@ export default function SignalLegend() {
         {/* Prediction logic brief */}
         <p className="text-xs text-gray-600 leading-relaxed">
           {lang === "ja"
-            ? "予測ロジック: AIモデル（XGBoost）が34の特徴量から63日後の株価変動確率を予測。ネットスコア（上昇確率－下落確率）でシグナルを判定。"
-            : "Logic: XGBoost AI predicts the probability of 63-day price movement using 34 features. Signals are determined by Net Score (Rise Prob − Drop Prob)."}
+            ? "予測ロジック: AIモデル（XGBoost）が34の特徴量から63日後の株価変動確率を予測。ネットスコア（上昇確率－下落確率）でシグナルを判定。S買いはさらに米国セクターETF（XLK/XLF/XLI等）の前日リターンがプラスの時のみ発動（リードラグ効果）。"
+            : "Logic: XGBoost AI predicts the probability of 63-day price movement using 34 features. Signals are determined by Net Score (Rise Prob − Drop Prob). S買い additionally requires the prior-day US sector ETF return to be positive (lead-lag effect)."}
         </p>
       </div>
     </div>

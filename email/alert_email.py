@@ -23,7 +23,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
-from core.rank_stocks import passes_buy_filter
+from core.rank_stocks import passes_buy_filter, fetch_us_sector_etf_returns, get_sector_etf, _load_sector_cache, STRONG_EFFECT_ETFS
 from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
 from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
@@ -53,6 +53,23 @@ GMAIL_ADDRESS      = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "ja,en;q=0.9"}
+
+
+def _etf_badge_html(code_str, etf_rets):
+    """S買い候補の米国ETFリードラグバッジHTMLを返す（強相関セクターのみ）"""
+    if not etf_rets:
+        return ""
+    etf = get_sector_etf(str(code_str))
+    if not etf or etf not in STRONG_EFFECT_ETFS:
+        return ""
+    ret = etf_rets.get(etf)
+    if ret is None:
+        return ""
+    bg  = "#e8f8f0" if ret >= 0 else "#fdf0f0"
+    clr = "#1e8449" if ret >= 0 else "#c0392b"
+    return (f"<span style='font-size:10px;color:{clr};background:{bg};"
+            f"border:1px solid {clr}33;border-radius:3px;padding:1px 5px;margin-left:4px;"
+            f"white-space:nowrap'>🇺🇸{etf}{ret:+.1f}%</span>")
 
 
 def _held_codes(results):
@@ -260,7 +277,7 @@ def load_prev_ranking_codes():
 
 # ───────────────────────────── 優先アクション ─────────────────────────────
 
-def build_priority_actions(results, ranking_df=None):
+def build_priority_actions(results, ranking_df=None, etf_rets=None):
     """今日の優先アクション: 即切 > 売りシグナル > 買い増し > 新規候補の買いシグナル"""
     actions = []
 
@@ -319,9 +336,16 @@ def build_priority_actions(results, ranking_df=None):
                 drop_v = _safe_float(row.get("下落確率(%)", None))
                 if _is_new_candidate_skipped(code_str, net_v, drop_v):
                     continue
+                etf_str = ""
+                if etf_rets:
+                    etf = get_sector_etf(code_str)
+                    if etf and etf in STRONG_EFFECT_ETFS:
+                        ret = etf_rets.get(etf)
+                        if ret is not None:
+                            etf_str = f"　🇺🇸{etf}{ret:+.1f}%"
                 actions.append({"emoji": "✅",
                                  "title": f"{row['銘柄名']}（{code_str}）— 新規買いシグナル",
-                                 "detail": f"ネット {net_v:+.1f}%　ボラ {row.get('ボラ(%)', 0):.1f}%"})
+                                 "detail": f"ネット {net_v:+.1f}%　ボラ {row.get('ボラ(%)', 0):.1f}%{etf_str}"})
 
     return actions[:3]
 
@@ -370,7 +394,7 @@ def build_sector_warning(results):
 
 
 
-def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
+def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_rets=None):
     held_codes = _held_codes(results)
     ranking = (ranking_df.head(50) if ranking_df is not None else load_top_ranking(50))
     rows = ""
@@ -405,6 +429,7 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
             vrank_str = (f"<span style='font-size:10px;color:#666'>ボラランク {vol_rank:.0f}%ile</span>"
                          if vol_rank is not None else "")
             new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
+            etf_badge = _etf_badge_html(code_str, etf_rets) if allow_buy else ""
             rows += (f"<tr>"
                      f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
                      f"<span style='color:#888;font-size:12px'>{code_str} ¥{int(row['直近株価(円)']):,}"
@@ -412,7 +437,7 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None):
                      f"<td style='text-align:center'>{rise:.1f}%</td>"
                      f"<td style='text-align:center'>{drop_str}</td>"
                      f"<td class='{_net_cls(net_v)}' style='text-align:center'>{net_v:+.1f}%</td>"
-                     f"<td style='text-align:center;font-size:11px'>{recommend}</td>"
+                     f"<td style='text-align:center;font-size:11px'>{recommend}{etf_badge}</td>"
                      f"<td class='{_rel_cls(rel20_v)}' style='text-align:center'>{_rel_str(rel20_v)}</td>"
                      f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
                      f"<td style='text-align:center;font-size:12px;line-height:1.5'>{stop_cell}</td>"
@@ -455,7 +480,7 @@ def build_earnings_map(codes):
 
 def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None, nk60=None,
                prev_ranking_codes=None, priority_actions=None,
-               ranking_df=None):
+               ranking_df=None, etf_rets=None):
     prev_ranking_codes = prev_ranking_codes or set()
 
     if ranking_df is None:
@@ -490,7 +515,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
 {_summary_stat_cards_html(len(sells), buy_cnt)}
 {_build_priority_section(priority_actions or [])}
 {sell_section}
-{_build_ranking_section(results, prev_ranking_codes, ranking_df)}
+{_build_ranking_section(results, prev_ranking_codes, ranking_df, etf_rets=etf_rets)}
 {build_sector_warning(_candidates_for_sector)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
@@ -697,9 +722,16 @@ def main():
     save_held_scores(today_date_str, results)
 
     ranking_df = load_top_ranking(1000)
+
+    # 米国セクターETFリードラグ情報（メール表示用）
+    _load_sector_cache()
+    etf_rets = fetch_us_sector_etf_returns()
+    if etf_rets:
+        logger.info("US ETF: " + " ".join(f"{k}{v:+.1f}%" for k, v in sorted(etf_rets.items()) if k in STRONG_EFFECT_ETFS))
+
     sell_count      = sum(1 for r in results if r["signal"] == "sell")
     buy_count       = len(results) - sell_count
-    priority_actions = build_priority_actions(results, ranking_df=ranking_df)
+    priority_actions = build_priority_actions(results, ranking_df=ranking_df, etf_rets=etf_rets)
     bear_prefix     = "⚠️下落相場 " if is_bear else ("🚀急騰相場 " if is_hot else "")
     nk_str          = f"日経{nk20:+.1f}%" if nk20 is not None else ""
     priority_str    = f"優先{len(priority_actions)} / " if priority_actions else ""
@@ -710,6 +742,7 @@ def main():
         prev_ranking_codes=prev_ranking_codes,
         priority_actions=priority_actions,
         ranking_df=ranking_df,
+        etf_rets=etf_rets,
     )
 
     logger.info("Gmail送信中 → %s", GMAIL_ADDRESS)
