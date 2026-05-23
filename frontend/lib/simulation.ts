@@ -94,13 +94,18 @@ export async function fetchSimulation(): Promise<{
   // 最新価格マップ
   let latestMap = new Map<string, RawRow>();
   if (latestDate) {
-    const res = await fetch(
-      sbUrl(`web_rankings?date=eq.${latestDate}&select=code,close,recommend`),
-      { headers: anonHeaders(), next: { revalidate: 300 } }
-    );
-    if (res.ok) {
+    const pageSize = 1000;
+    let offset = 0;
+    for (;;) {
+      const res = await fetch(
+        sbUrl(`web_rankings?date=eq.${latestDate}&select=code,close,recommend&order=rank.asc&limit=${pageSize}&offset=${offset}`),
+        { headers: anonHeaders(), next: { revalidate: 300 } }
+      );
+      if (!res.ok) break;
       const rows: RawRow[] = await res.json();
-      latestMap = new Map(rows.map(r => [r.code, r]));
+      for (const r of rows) latestMap.set(r.code, r);
+      if (rows.length < pageSize) break;
+      offset += pageSize;
     }
   }
 
