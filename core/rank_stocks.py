@@ -134,7 +134,6 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
     if feat[6] > 70.0:            return False  # RSI > 70
     if feat[7] < 22.0:            return False  # ボラ < 22%
     if feat[7] > 50.0:            return False  # ボラ > 50%
-    if feat[4] <= 0:              return False  # slope_up: MA5 ≤ MA25
     if feat[16] < 1.0:            return False  # vr2060 < 1.0
     if ret_504 is not None and ret_504 < 0:    return False  # 2年モメンタム < 0
     if r2_504 is not None and r2_504 < 0.4:   return False  # 2年トレンドR² < 0.4
