@@ -362,21 +362,23 @@ def main():
             f"{row['推奨']}"
         )
 
-    # フェーズ5: S買い銘柄の決算チェック（14日以内ならA買いに降格）
-    sbuy_mask = result_df["推奨"] == "🥇 S買い"
-    sbuy_codes = result_df.loc[sbuy_mask, "銘柄コード"].astype(str).tolist()
-    if sbuy_codes:
-        print(f"\n決算日チェック中（S買い {len(sbuy_codes)}銘柄）...")
+    # フェーズ5: 買いシグナル銘柄の決算チェック（S買い→A買い、A買い→方向感なし に降格）
+    buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
+    buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
+    if buy_codes:
+        print(f"\n決算日チェック中（S買い+A買い {len(buy_codes)}銘柄）...")
         today = datetime.now().date()
-        for code in sbuy_codes:
+        for code in buy_codes:
             d = _get_next_earnings(code)
             if d is not None:
                 days_to = (d - today).days
                 if 0 <= days_to <= EARNINGS_SKIP_DAYS:
                     idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                    result_df.loc[idx, "推奨"] = "🥈 A買い"
+                    current = result_df.loc[idx, "推奨"].values[0]
+                    new_sig = "🥈 A買い" if current == "🥇 S買い" else "⏳ 方向感なし"
+                    result_df.loc[idx, "推奨"] = new_sig
                     name = result_df.loc[idx, "銘柄名"].values[0]
-                    print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → S買いをA買いに降格")
+                    print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → {current}を{new_sig}に降格")
 
     # フェーズ6: S買い1日最大3件（net降順で4件目以降はA買いに降格）
     sbuy_all = result_df[result_df["推奨"] == "🥇 S買い"].sort_values("ネット(%)", ascending=False)
