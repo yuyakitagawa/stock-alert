@@ -6,7 +6,7 @@ const SHARES = 100;
 async function fetchEarliestDate(): Promise<string> {
   const res = await fetch(
     sbUrl("web_rankings?select=date&order=date.asc&limit=1"),
-    { headers: anonHeaders(), next: { revalidate: 3600 } }
+    { headers: anonHeaders(), next: { revalidate: 300 } }
   );
   if (!res.ok) return "2026-01-01";
   const rows = await res.json();
@@ -59,7 +59,7 @@ async function fetchFirstSell(code: string, afterDate: string): Promise<RawRow |
     .map(r => encodeURIComponent(r)).join(",");
   const res = await fetch(
     sbUrl(`web_rankings?code=eq.${code}&date=gt.${afterDate}&recommend=in.(${sellRecs})&order=date.asc&limit=1&select=code,close,date`),
-    { headers: anonHeaders(), next: { revalidate: 3600 } }
+    { headers: anonHeaders(), next: { revalidate: 300 } }
   );
   if (!res.ok) return null;
   const rows: RawRow[] = await res.json();
@@ -76,7 +76,7 @@ export async function fetchSimulation(): Promise<{
     (async () => {
       const res = await fetch(
         sbUrl(`web_rankings?recommend=eq.${sBuyEnc}&net=gte.17&net=lte.24&drop_prob=lt.4&vol=lte.25&order=date.asc&select=code,name,close,date`),
-        { headers: anonHeaders(), next: { revalidate: 3600 } }
+        { headers: anonHeaders(), next: { revalidate: 300 } }
       );
       if (!res.ok) return [] as RawRow[];
       return res.json() as Promise<RawRow[]>;
@@ -96,7 +96,7 @@ export async function fetchSimulation(): Promise<{
   if (latestDate) {
     const res = await fetch(
       sbUrl(`web_rankings?date=eq.${latestDate}&select=code,close,recommend`),
-      { headers: anonHeaders(), next: { revalidate: 3600 } }
+      { headers: anonHeaders(), next: { revalidate: 300 } }
     );
     if (res.ok) {
       const rows: RawRow[] = await res.json();

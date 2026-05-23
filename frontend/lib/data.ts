@@ -2,7 +2,7 @@ import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, Quarterl
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary } from "./yahoo";
 
-const CACHE: RequestInit = { next: { revalidate: 3600 } };
+const CACHE: RequestInit = { next: { revalidate: 300 } };
 
 const RECOMMEND_REMAP: Record<string, string> = {
   "高値警戒": "方向感なし",

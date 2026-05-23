@@ -268,7 +268,7 @@ def main() -> None:
     # 5. Next.js ISRキャッシュを即時無効化
     site_url = os.getenv("SITE_URL", "")
     secret = os.getenv("INTERNAL_SEND_SECRET", "")
-    if site_url and secret:
+    if site_url:
         try:
             r = requests.get(f"{site_url}/api/revalidate?secret={secret}", timeout=15)
             print(f"[export_to_web] キャッシュ無効化: {r.status_code}")

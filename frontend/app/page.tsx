@@ -8,7 +8,7 @@ import SimulationPanel from "@/components/SimulationPanel";
 import SectorPerformancePanel from "@/components/SectorPerformancePanel";
 import Link from "next/link";
 
-export const revalidate = 3600;
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "StockSignal — 日本株AIシグナル",
