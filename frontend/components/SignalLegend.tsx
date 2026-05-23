@@ -22,7 +22,7 @@ const SIGNALS = {
 // S買い / A買い 条件表（条件変更時はここを更新）
 const CONDITIONS = {
   ja: [
-    { label: "ネットスコア (上昇確率−下落確率)",  s: "17% ≤ net ≤ 24%", a: "6% ≤ net < 15%" },
+    { label: "ネットスコア (上昇確率−下落確率)",  s: "17% ≤ net ≤ 24%", a: "15% ≤ net ≤ 24%" },
     { label: "下落確率",                        s: "< 4%",              a: "< 4%" },
     { label: "年率ボラティリティ",               s: "≤ 25%",            a: "≤ 25%" },
     { label: "連続下落日数",                    s: "≤ 3日",             a: "≤ 3日" },
@@ -33,7 +33,7 @@ const CONDITIONS = {
     { label: "対応ETF前日リターン (XLK/XLF/XLI/XLB/XLV/XLY)", s: "プラスのみ", a: "プラスのみ" },
   ],
   en: [
-    { label: "Net Score (Rise prob − Drop prob)",      s: "17% ≤ net ≤ 24%",    a: "6% ≤ net < 15%" },
+    { label: "Net Score (Rise prob − Drop prob)",      s: "17% ≤ net ≤ 24%",    a: "15% ≤ net ≤ 24%" },
     { label: "Drop probability",                       s: "< 4%",                a: "< 4%" },
     { label: "Annualized volatility",                  s: "≤ 25%",               a: "≤ 25%" },
     { label: "Consecutive down days",                  s: "≤ 3 days",            a: "≤ 3 days" },

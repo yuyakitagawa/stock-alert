@@ -350,11 +350,11 @@ def recommend_from_net(net, allow_buy=True):
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None):
     """S買い: 17<=net<=24 かつ drop_prob<4% かつ vol<=25%
-    A買い: 6<=net<15 かつ drop_prob<4% かつ vol<=25%"""
+    A買い: 15<=net<=24 かつ drop_prob<4% かつ vol<=25%（S買い条件外のもの）"""
     if allow_buy and drop_prob is not None and drop_prob < 4.0 and 17.0 <= net <= 24.0:
         if vol is None or vol <= 25.0:
             return "🥇 S買い"
-    if allow_buy and 6.0 <= net < 15.0:
+    if allow_buy and 15.0 <= net <= 24.0:
         if vol is not None and vol > 25.0:
             return "⏳ 方向感なし"
         if drop_prob is not None and drop_prob >= 4.0:
