@@ -33,7 +33,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
           AIが「S買い」シグナルを出した銘柄を100株購入し、方向感なし・弱気・下降シグナルが出た日に売却した場合の仮想成績です。
-          手数料・税金は含みません。過去の成績は将来を保証するものではありません。
+          米国セクターETF（XLK/XLF/XLI等）の前日リターンがマイナスのシグナルはA買いに降格済み。手数料・税金は含みません。
         </p>
       </div>
 
