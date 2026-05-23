@@ -1,6 +1,7 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import json
 import math
 import re
 import threading
@@ -20,6 +21,83 @@ from core.screener import get_tse_stock_list
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
 EARNINGS_SKIP_DAYS = 21   # 決算発表N日以内のS買いを降格
+
+# 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
+SECTOR_TO_ETF = {
+    "Technology":             "XLK",
+    "Financial Services":     "XLF",
+    "Financials":             "XLF",
+    "Industrials":            "XLI",
+    "Basic Materials":        "XLB",
+    "Materials":              "XLB",
+    "Healthcare":             "XLV",
+    "Consumer Cyclical":      "XLY",
+    "Consumer Defensive":     "XLP",
+    "Real Estate":            "XLRE",
+    "Communication Services": "XLC",
+    "Energy":                 "XLE",
+    "Utilities":              "XLU",
+}
+# 相関係数 > 0.15 の強相関セクターのみフィルター対象（2023-2026 21,416サンプル検証済み）
+STRONG_EFFECT_ETFS = {"XLK", "XLF", "XLI", "XLB", "XLV", "XLY"}
+
+_SECTOR_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "sector_map.json")
+_sector_cache: dict = {}
+
+
+def _load_sector_cache():
+    global _sector_cache
+    if os.path.exists(_SECTOR_CACHE_PATH):
+        try:
+            with open(_SECTOR_CACHE_PATH, "r") as f:
+                _sector_cache = json.load(f)
+        except Exception:
+            _sector_cache = {}
+
+
+def _save_sector_cache():
+    try:
+        os.makedirs(os.path.dirname(_SECTOR_CACHE_PATH), exist_ok=True)
+        with open(_SECTOR_CACHE_PATH, "w") as f:
+            json.dump(_sector_cache, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def get_sector_etf(code: str) -> "str | None":
+    """JPX銘柄コードを米国セクターETFティッカーに変換（sector_map.jsonでキャッシュ）"""
+    import yfinance as yf
+    if code in _sector_cache:
+        return _sector_cache[code]
+    try:
+        info = yf.Ticker(f"{code}.T").info
+        sector = info.get("sector", "")
+        etf = SECTOR_TO_ETF.get(sector)
+        _sector_cache[code] = etf
+        return etf
+    except Exception:
+        _sector_cache[code] = None
+        return None
+
+
+def fetch_us_sector_etf_returns() -> dict:
+    """前営業日の米国セクターETF Close-to-Close リターン(%)を返す"""
+    import yfinance as yf
+    etfs = sorted(set(SECTOR_TO_ETF.values()))
+    try:
+        data = yf.download(etfs, period="5d", auto_adjust=True, progress=False)["Close"]
+        result = {}
+        for e in etfs:
+            col = data[e] if e in data.columns else None
+            if col is None:
+                continue
+            vals = col.dropna()
+            if len(vals) >= 2:
+                result[e] = float((vals.iloc[-1] - vals.iloc[-2]) / vals.iloc[-2] * 100)
+        return result
+    except Exception as ex:
+        print(f"  米国ETF取得失敗: {ex}")
+        return {}
 
 _KABUTAN_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)"}
 
@@ -308,6 +386,36 @@ def main():
             idx = result_df[result_df["銘柄コード"].astype(str) == code].index
             result_df.loc[idx, "推奨"] = "🥈 A買い"
         print(f"\n1日最大3件制限: {len(cap_codes)}件をA買いに降格（上位3件を残す）")
+
+    # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
+    # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買いをA買いに降格
+    sbuy_mask = result_df["推奨"] == "🥇 S買い"
+    sbuy_codes = result_df.loc[sbuy_mask, "銘柄コード"].astype(str).tolist()
+    if sbuy_codes:
+        print(f"\n米国ETFリードラグフィルター中（S買い {len(sbuy_codes)}銘柄）...")
+        _load_sector_cache()
+        etf_rets = fetch_us_sector_etf_returns()
+        if etf_rets:
+            ret_str = " ".join(f"{k}:{v:+.1f}%" for k, v in sorted(etf_rets.items()))
+            print(f"  前営業日ETFリターン: {ret_str}")
+            degraded = []
+            for code in sbuy_codes:
+                etf = get_sector_etf(code)
+                if etf not in STRONG_EFFECT_ETFS:
+                    continue
+                ret = etf_rets.get(etf)
+                if ret is not None and ret < 0:
+                    idx = result_df[result_df["銘柄コード"].astype(str) == code].index
+                    name = result_df.loc[idx, "銘柄名"].values[0]
+                    result_df.loc[idx, "推奨"] = "🥈 A買い"
+                    degraded.append(f"{name}({code})[{etf}:{ret:+.1f}%]")
+            _save_sector_cache()
+            if degraded:
+                print(f"  ⚠️ ETF前日マイナスのためA買いに降格: {', '.join(degraded)}")
+            else:
+                print(f"  ✅ 全S買い銘柄のETFは前日プラス（フィルター通過）")
+        else:
+            print(f"  ETFデータ取得失敗: フィルタースキップ")
 
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")

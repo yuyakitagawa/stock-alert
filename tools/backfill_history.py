@@ -27,7 +27,7 @@ from lib.utils import get_prices, extract_features, add_cs_rank_features, HEADER
 from lib.db import save_daily_ranking, DB_PATH, init_db
 from config import BASE_DIR
 from core.screener import get_tse_stock_list
-from core.rank_stocks import passes_buy_filter, MIN_LIQUIDITY_M
+from core.rank_stocks import passes_buy_filter, MIN_LIQUIDITY_M, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
 import sqlite3
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -101,6 +101,40 @@ def fetch_nikkei_history():
         return {}
 
 
+def fetch_etf_history():
+    """米国セクターETFの終値履歴を {etf: {date_str: close}} で返す（約500日分）"""
+    import yfinance as yf
+    etfs = sorted(set(SECTOR_TO_ETF.values()))
+    try:
+        data = yf.download(etfs, period="600d", auto_adjust=True, progress=False)["Close"]
+        out = {e: {} for e in etfs}
+        for e in etfs:
+            col = data[e] if e in data.columns else None
+            if col is None:
+                continue
+            for dt, val in col.dropna().items():
+                out[e][dt.strftime("%Y-%m-%d")] = float(val)
+        return out
+    except Exception as ex:
+        print(f"  ETF履歴取得失敗: {ex}")
+        return {}
+
+
+def etf_prev_ret(etf_hist, etf, date_str):
+    """date_str 時点での etf の前日比リターン(%)を返す。データ不足なら None。"""
+    closes = etf_hist.get(etf, {})
+    sorted_dates = sorted(closes.keys())
+    try:
+        idx = sorted_dates.index(date_str)
+    except ValueError:
+        return None
+    if idx < 1:
+        return None
+    prev_close = closes[sorted_dates[idx - 1]]
+    curr_close = closes[date_str]
+    return (curr_close - prev_close) / prev_close * 100
+
+
 def nk_rets_at(nk_hist, trading_dates, target_date_str):
     """target_date_str 時点の nk_rets (fractions) を返す"""
     idx = trading_dates.index(target_date_str) if target_date_str in trading_dates else -1
@@ -153,6 +187,12 @@ def main():
     nk_hist = fetch_nikkei_history()
     nk_dates = sorted(nk_hist.keys())
     print(f"  日経営業日: {len(nk_dates)} 日")
+
+    # 米国セクターETF 履歴
+    print("米国セクターETF履歴取得中...")
+    etf_hist = fetch_etf_history()
+    _load_sector_cache()
+    print(f"  ETF取得完了: {len(etf_hist)} セクター")
 
     # 対象営業日（START_DATE〜END_DATE）
     target_dates = [d for d in nk_dates if START_DATE.isoformat() <= d <= END_DATE.isoformat()]
@@ -261,6 +301,17 @@ def main():
         if len(sbuy_rows) > 3:
             for r in sbuy_rows[3:]:
                 r["recommend"] = "🥈 A買い"
+
+        # 米国セクターETFリードラグフィルター（強相関セクターでの前日マイナスを降格）
+        sbuy_now = [r for r in db_rows if "S買い" in r["recommend"]]
+        for r in sbuy_now:
+            etf = get_sector_etf(str(r["code"]))
+            if etf not in STRONG_EFFECT_ETFS:
+                continue
+            ret = etf_prev_ret(etf_hist, etf, date_str)
+            if ret is not None and ret < 0:
+                r["recommend"] = "🥈 A買い"
+        _save_sector_cache()
 
         # DB 保存
         save_daily_ranking(date_str, db_rows)
