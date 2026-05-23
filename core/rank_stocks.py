@@ -19,7 +19,7 @@ from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
 from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
-MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
+MIN_LIQUIDITY_M  = 100.0  # 20日平均売買代金(百万円)
 EARNINGS_SKIP_DAYS = 21   # 決算発表N日以内のS買いを降格
 
 # 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
@@ -129,10 +129,7 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
     if feat[12] > 0.15:           return False  # down_streak > 3日
     if feat[10] < -0.15:          return False  # drawdown60 < -15%
     if feat[2] * 100 < 8.0:       return False  # 3ヶ月モメンタム < 8%
-    if feat[6] < 45.0:            return False  # RSI < 45
-    if feat[6] > 70.0:            return False  # RSI > 70
-    if feat[7] < 22.0:            return False  # ボラ < 22%
-    if feat[7] > 50.0:            return False  # ボラ > 50%
+    if feat[6] >= 75.0:            return False  # RSI ≥ 75（過熱）
     if feat[16] < 1.0:            return False  # vr2060 < 1.0
     if ret_504 is not None and ret_504 < 0:    return False  # 2年モメンタム < 0
     if r2_504 is not None and r2_504 < 0.4:   return False  # 2年トレンドR² < 0.4
