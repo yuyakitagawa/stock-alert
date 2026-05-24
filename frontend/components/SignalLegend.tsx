@@ -36,7 +36,7 @@ const CONDITIONS = {
     { label: "流動性 (20日平均売買代金)",                s: "≥ 5,000万円/日",    a: "≥ 5,000万円/日" },
     { label: "日経225 20日リターン",                    s: "≥ 3%",              a: "≥ 3%" },
     { label: "次回決算まで",                            s: "22日以上先",         a: "22日以上先" },
-    { label: "1日の発令件数",                           s: "上位3件",            a: "4件目以降" },
+    { label: "1日の発令件数",                           s: "上位3件",            a: "上位1件" },
     { label: "対応ETF前日リターン (XLK/XLF/XLI/XLB/XLV/XLY)", s: "プラスのみ", a: "プラスのみ" },
   ],
   en: [
@@ -54,7 +54,7 @@ const CONDITIONS = {
     { label: "Liquidity (20-day avg turnover)",         s: "≥ ¥50M/day",       a: "≥ ¥50M/day" },
     { label: "Nikkei 225 20-day return",                s: "≥ 3%",             a: "≥ 3%" },
     { label: "Days until next earnings",                s: "≥ 22 days",        a: "≥ 22 days" },
-    { label: "Signals per day",                         s: "Top 3",            a: "4th and below" },
+    { label: "Signals per day",                         s: "Top 3",            a: "Top 1" },
     { label: "US sector ETF prev-day return (XLK/XLF/XLI/XLB/XLV/XLY)", s: "Positive only", a: "Positive only" },
   ],
 };
