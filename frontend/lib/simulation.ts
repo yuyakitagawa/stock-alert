@@ -70,12 +70,12 @@ export async function fetchSimulation(): Promise<{
   positions: SimPosition[];
   summary: SimSummary;
 }> {
-  const sBuyEnc = encodeURIComponent("S買い");
+  const recFilter = `in.(${encodeURIComponent("S買い")},${encodeURIComponent("A買い")})`;
 
   const [buyRows, latestDate, since] = await Promise.all([
     (async () => {
       const res = await fetch(
-        sbUrl(`web_rankings?recommend=eq.${sBuyEnc}&net=gte.17&net=lte.24&drop_prob=lt.4&vol=lte.25&order=date.asc&select=code,name,close,date`),
+        sbUrl(`web_rankings?recommend=${recFilter}&net=gte.17&drop_prob=lt.4&order=date.asc&select=code,name,close,date`),
         { headers: anonHeaders(), next: { revalidate: 300 } }
       );
       if (!res.ok) return [] as RawRow[];
