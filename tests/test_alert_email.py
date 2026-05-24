@@ -197,19 +197,19 @@ class TestTieredSellSignal(unittest.TestCase):
     """保有日数別段階的売りシグナルのテスト"""
 
     def test_universal_threshold(self):
-        """保有日数に関わらず net<6% で売り（様子見=A買い水準未満は即撤退）"""
+        """保有日数に関わらず net<-10（下降シグナル基準）で売り"""
         for hd in [None, 0, 1, 3, 4, 30, 62]:
             with self.subTest(holding_days=hd):
-                self.assertEqual(_tiered_sell_signal(5.9,  hd), "sell")
-                self.assertEqual(_tiered_sell_signal(6.0,  hd), "hold")
-                self.assertEqual(_tiered_sell_signal(0.0,  hd), "sell")
-                self.assertEqual(_tiered_sell_signal(-5.0, hd), "sell")
+                self.assertEqual(_tiered_sell_signal(-10.1, hd), "sell")
+                self.assertEqual(_tiered_sell_signal(-10.0, hd), "hold")
+                self.assertEqual(_tiered_sell_signal(0.0,   hd), "hold")
+                self.assertEqual(_tiered_sell_signal(-5.0,  hd), "hold")
 
     def test_late_phase_tightest_threshold(self):
-        """63日超: net<6%で売り（モデルホライズン外、同じ閾値）"""
-        self.assertEqual(_tiered_sell_signal(5.9,  70), "sell")
-        self.assertEqual(_tiered_sell_signal(6.0,  70), "hold")
-        self.assertEqual(_tiered_sell_signal(3.0,  70), "sell")
+        """63日超: net<-10で売り（下降シグナル基準、モデルホライズン外も同じ）"""
+        self.assertEqual(_tiered_sell_signal(-10.1, 70), "sell")
+        self.assertEqual(_tiered_sell_signal(-10.0, 70), "hold")
+        self.assertEqual(_tiered_sell_signal(-5.0,  70), "hold")
 
 
 class TestCandidateFilters(unittest.TestCase):
