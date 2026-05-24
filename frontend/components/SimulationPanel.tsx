@@ -58,8 +58,8 @@ export default function SimulationPanel({ positions, summary }: Props) {
                 <span className="text-2xl text-gray-500">%</span>
               </div>
               <div className="text-xs text-gray-500 mt-1.5">
-                期間複利リターン {summary.compoundReturnPct >= 0 ? "+" : ""}{summary.compoundReturnPct.toFixed(1)}%
-                <span className="text-gray-700 ml-2">を {summary.since} 〜 今日まで年率換算</span>
+                期間リターン {summary.compoundReturnPct >= 0 ? "+" : ""}{summary.compoundReturnPct.toFixed(1)}%
+                <span className="text-gray-700 ml-2">（損益合計÷総投資額）を {summary.since} 〜 今日まで年率換算</span>
               </div>
             </div>
             <div className="text-right space-y-2 shrink-0 pt-1">
@@ -282,7 +282,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
         {/* Disclaimer */}
         <p className="text-xs text-gray-700 border-t border-gray-800/60 pt-4">
           ※ 本シミュレーションは参考情報です。実際の投資判断はご自身の責任で行ってください。
-          年率換算は観測期間のリターンを複利換算したもので、将来の成果を保証するものではありません。
+          年率換算は「損益合計÷総投資額」を観測期間から年率換算したもので、将来の成果を保証するものではありません。
           売買タイミングはシグナル発生日の終値を使用。手数料・スリッページ・税金は考慮していません。
         </p>
       </>)}
