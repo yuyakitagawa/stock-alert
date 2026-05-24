@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
 from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores
-from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD
+from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20
 from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
@@ -131,6 +131,7 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
     if feat[2] * 100 < 8.0:       return False  # 3ヶ月モメンタム < 8%
     if feat[6] >= 75.0:            return False  # RSI ≥ 75（過熱）
     if feat[16] < 1.0:            return False  # vr2060 < 1.0
+    if feat[7] > MAX_BUY_VOL20:               return False  # vol20 > 22%（高ボラ時は見送り）
     if ret_504 is not None and ret_504 < 0:    return False  # 2年モメンタム < 0
     if r2_504 is not None and r2_504 < 0.4:   return False  # 2年トレンドR² < 0.4
     if nk20 is not None and nk20 < 3.0: return False  # 日経20日リターン < 3%（下降/横ばい相場）
