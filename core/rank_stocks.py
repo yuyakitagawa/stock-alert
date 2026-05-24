@@ -397,15 +397,6 @@ def main():
             result_df.loc[idx, "推奨"] = "🥈 A買い"
         print(f"\nS買い1日3件制限: {len(cap_codes)}件をA買いに降格")
 
-    # フェーズ6b: A買い上位1件→A買い、2件目以降→方向感なし
-    abuy_all = result_df[result_df["推奨"] == "🥈 A買い"].sort_values("ネット(%)", ascending=False)
-    if len(abuy_all) > 1:
-        cap_codes_a = abuy_all.iloc[1:]["銘柄コード"].astype(str).tolist()
-        for code in cap_codes_a:
-            idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-            result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
-        print(f"\nA買い1日1件制限: {len(cap_codes_a)}件を方向感なしに降格")
-
     # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
     # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→A買い、A買い→方向感なし に降格
     buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
