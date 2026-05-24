@@ -32,7 +32,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
-          AIが「S買い」「A買い」シグナルを出した銘柄を100株購入し、方向感なし・弱気・下降シグナルが出た日に売却した場合の仮想成績です。
+          AIが「S買い」「A買い」シグナルを出した銘柄を100株購入し、下降シグナルが出た日に売却した場合の仮想成績です。
           手数料・税金は含みません。
         </p>
       </div>
@@ -232,7 +232,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-gray-600">売却済み ({sold.length}銘柄)</h3>
-              <span className="text-xs text-gray-700">方向感なし・弱気・下降シグナルが出た日に売却したと仮定</span>
+              <span className="text-xs text-gray-700">下降シグナルが出た日に売却したと仮定</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800/50">
               <table className="w-full text-xs font-mono opacity-60">

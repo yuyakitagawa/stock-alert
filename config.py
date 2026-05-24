@@ -14,11 +14,11 @@ HOT_MARKET_THRESHOLD  = 15.0   # 日経60日リターンがこれ以上で急騰
 # ── モデル出力 ─────────────────────────────────────────────────────────────
 FORECAST        = 63            # 予測ホライズン（営業日）
 RISE_THRESHOLD  = 15.0          # 上昇判定の閾値（%）
-# 保有日数別の段階的売りシグナル閾値（モデルホライズン=63営業日に基づく）
-SELL_DAYS_MID           =  3    # これを超えると中期閾値へ（30→3: 早期撤退）
-SELL_DAYS_LATE          = 63    # これを超えるとモデルホライズン外（予測期限切れ）
-NET_SELL_THRESHOLD_MID  =  6.0  # 4-63日: net<6%で売り（A買い基準を下回ったら乗り換え）
-NET_SELL_THRESHOLD_LATE =  6.0  # 63日超: netが新規買い水準(8%)未満で売り
+# 保有株売りシグナル閾値（下降シグナル=net<-10に統一。バックテスト75%勝率+9.4%）
+SELL_DAYS_MID           =  3    # 使用継続（将来拡張用）
+SELL_DAYS_LATE          = 63    # 使用継続（将来拡張用）
+NET_SELL_THRESHOLD_MID  = -10.0  # 下降シグナル基準（net<-10）
+NET_SELL_THRESHOLD_LATE = -10.0  # 同上
 
 # ── スクリーナー条件（screener.py / backtest.py / rf_train_v3.py と同値に保つ） ──
 SCREENER_MOM_3M_MIN   =  8.0   # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）

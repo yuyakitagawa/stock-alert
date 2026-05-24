@@ -77,8 +77,7 @@ def _held_codes(results):
 
 
 def _tiered_sell_signal(net, holding_days):
-    """保有日数によらず net<6% で売り（様子見=A買い水準未満は即撤退）。
-    63日超も同じ閾値（モデルホライズン外）。"""
+    """下降シグナル基準（net<-10）でのみ売り。BTで75%勝率+9.4%。"""
     if holding_days is not None and holding_days > SELL_DAYS_LATE:
         return "sell" if net < NET_SELL_THRESHOLD_LATE else "hold"
     return "sell" if net < NET_SELL_THRESHOLD_MID else "hold"

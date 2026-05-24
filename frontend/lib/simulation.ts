@@ -55,8 +55,7 @@ export interface SimSummary {
 
 // 特定コードの買い日以降の最初の売りシグナルを取得
 async function fetchFirstSell(code: string, afterDate: string): Promise<RawRow | null> {
-  const sellRecs = ["方向感なし", "弱気シグナル", "下降シグナル"]
-    .map(r => encodeURIComponent(r)).join(",");
+  const sellRecs = encodeURIComponent("下降シグナル");
   const res = await fetch(
     sbUrl(`web_rankings?code=eq.${code}&date=gt.${afterDate}&recommend=in.(${sellRecs})&order=date.asc&limit=1&select=code,close,date`),
     { headers: anonHeaders(), next: { revalidate: 300 } }
