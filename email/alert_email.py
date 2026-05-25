@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
 from core.rank_stocks import passes_buy_filter, fetch_us_sector_etf_returns, get_sector_etf, _load_sector_cache, STRONG_EFFECT_ETFS
-from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days
+from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days, get_yutai_cache
 from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
                     CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
@@ -393,6 +393,77 @@ def build_sector_warning(results):
 
 
 
+def build_yutai_rebound_section(today_str: str) -> str:
+    """権利落ち後0〜14日のリバウンドチャンス銘柄をHTMLで返す。なければ空文字。"""
+    import calendar
+    from lib.db import DB_PATH, init_db
+    import sqlite3
+    today = datetime.strptime(today_str, "%Y-%m-%d").date()
+
+    init_db()
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    try:
+        # yutai_cacheから権利確定月ごとに権利落ち日を計算し、0〜14日後の銘柄を抽出
+        yutai_rows = con.execute(
+            "SELECT code, record_month FROM yutai_cache WHERE has_yutai=1 AND record_month IS NOT NULL"
+        ).fetchall()
+    finally:
+        con.close()
+
+    rebound_codes = []
+    for row in yutai_rows:
+        rm = row["record_month"]
+        for yr in [today.year - 1, today.year]:
+            last_day = calendar.monthrange(yr, rm)[1]
+            ex_date = datetime(yr, rm, last_day).date() - __import__("datetime").timedelta(days=2)
+            days_since = (today - ex_date).days
+            if 0 <= days_since <= 14:
+                rebound_codes.append((row["code"], days_since))
+                break
+
+    if not rebound_codes:
+        return ""
+
+    # daily_rankingから今日の銘柄スコアを取得
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    try:
+        rows_html = ""
+        for code, days_since in sorted(rebound_codes, key=lambda x: x[1]):
+            rec = con.execute(
+                "SELECT name, close, net, drop_prob, vol FROM daily_ranking WHERE date=? AND code=? LIMIT 1",
+                (today_str, str(code))
+            ).fetchone()
+            if rec is None:
+                continue
+            net_color = "#27ae60" if rec["net"] >= 5 else "#e74c3c" if rec["net"] < 0 else "#888"
+            rows_html += (
+                f"<tr>"
+                f"<td>{rec['name']} <span style='color:#666;font-size:11px'>({code})</span></td>"
+                f"<td style='text-align:right'>{int(rec['close']):,}円</td>"
+                f"<td style='text-align:right;color:{net_color};font-weight:bold'>{rec['net']:+.1f}%</td>"
+                f"<td style='text-align:right;color:#888'>{days_since}日前</td>"
+                f"</tr>"
+            )
+    finally:
+        con.close()
+
+    if not rows_html:
+        return ""
+
+    return (
+        "<div class='card' style='border-left:4px solid #9b59b6'>"
+        "<h2>🔄 優待リバウンドチャンス</h2>"
+        "<p style='color:#666;font-size:12px;margin:0 0 10px'>"
+        "権利落ち後0〜14日以内の銘柄。優待クロス解消による反発が期待できます。購入前にファンダメンタルズを確認してください。</p>"
+        "<table>"
+        "<tr style='background:#f5eef8'><th>銘柄</th><th>株価</th><th>ネット</th><th>権利落ち</th></tr>"
+        f"{rows_html}"
+        "</table></div>"
+    )
+
+
 def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_rets=None):
     held_codes = _held_codes(results)
     ranking = (ranking_df.head(50) if ranking_df is not None else load_top_ranking(50))
@@ -516,6 +587,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes, ranking_df, etf_rets=etf_rets)}
 {build_sector_warning(_candidates_for_sector)}
+{build_yutai_rebound_section(today)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>

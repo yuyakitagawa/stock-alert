@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS sector_cache (
     sector       TEXT,
     fetched_date TEXT
 );
+CREATE TABLE IF NOT EXISTS yutai_cache (
+    code          TEXT PRIMARY KEY,
+    record_month  INTEGER,
+    has_yutai     INTEGER,
+    fetched_date  TEXT
+);
 """
 
 @contextmanager
@@ -161,6 +167,29 @@ def set_earnings_cache(code, today_str, next_date_str):
         con.execute(
             "INSERT OR REPLACE INTO earnings_cache (code,next_date,fetched_date) VALUES(?,?,?)",
             (str(code), next_date_str, today_str)
+        )
+
+
+# ── yutai_cache ────────────────────────────────────────────────────────────
+
+def get_yutai_cache(code, today_str):
+    """今日キャッシュ済みなら (has_yutai, record_month) を返す。未キャッシュは CACHE_MISS。"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT has_yutai, record_month, fetched_date FROM yutai_cache WHERE code=?", (str(code),)
+        ).fetchone()
+    if row and row["fetched_date"] == today_str:
+        return (bool(row["has_yutai"]), row["record_month"])
+    return CACHE_MISS
+
+
+def set_yutai_cache(code, today_str, has_yutai, record_month):
+    init_db()
+    with _conn() as con:
+        con.execute(
+            "INSERT OR REPLACE INTO yutai_cache (code,record_month,has_yutai,fetched_date) VALUES(?,?,?,?)",
+            (str(code), record_month, int(has_yutai), today_str)
         )
 
 

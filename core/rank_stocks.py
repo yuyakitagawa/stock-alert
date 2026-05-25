@@ -123,6 +123,54 @@ def _get_next_earnings(code: str) -> "_date | None":
         return None
 
 
+YUTAI_SKIP_DAYS = 21  # 権利落ち日N日前からS/A買いを除外
+
+
+def _get_yutai_record_month(code: str):
+    """kabutan.jp から株主優待の権利確定月を取得。優待なし→None、取得失敗→None。"""
+    from lib.db import get_yutai_cache, set_yutai_cache, CACHE_MISS
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cached = get_yutai_cache(code, today_str)
+    if cached is not CACHE_MISS:
+        has_yutai, record_month = cached
+        return record_month if has_yutai else None
+    try:
+        resp = _requests.get(f"https://kabutan.jp/stock/yutai?code={code}",
+                             headers=_KABUTAN_HEADERS, timeout=8)
+        record_month = None
+        has_yutai = False
+        if resp.status_code == 200:
+            m = re.search(r'権利確定月は(\d{1,2})月', resp.text)
+            if m:
+                record_month = int(m.group(1))
+                has_yutai = True
+        set_yutai_cache(code, today_str, has_yutai, record_month)
+        return record_month if has_yutai else None
+    except Exception:
+        return None
+
+
+def _days_to_yutai_record(code: str, today=None) -> "int | None":
+    """権利落ち日（権利確定月の最終営業日-1）までの日数。優待なし→None。"""
+    record_month = _get_yutai_record_month(code)
+    if record_month is None:
+        return None
+    if today is None:
+        today = datetime.now().date()
+    year = today.year
+    # 権利確定月の月末日を求め、そこから2営業日前を権利落ち日と近似
+    import calendar
+    last_day = calendar.monthrange(year, record_month)[1]
+    ex_date = _date(year, record_month, last_day) - timedelta(days=2)
+    # 来年分も考慮
+    delta = (ex_date - today).days
+    if delta < -7:
+        last_day2 = calendar.monthrange(year + 1, record_month)[1]
+        ex_date2 = _date(year + 1, record_month, last_day2) - timedelta(days=2)
+        delta = (ex_date2 - today).days
+    return delta
+
+
 def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None):
     """S買い・A買いラベルを付与できる品質フィルター（元のスクリーナー基準）"""
     if close < 300:               return False  # 株価 < 300円（低位株除外）
@@ -387,6 +435,22 @@ def main():
                     result_df.loc[idx, "推奨"] = new_sig
                     name = result_df.loc[idx, "銘柄名"].values[0]
                     print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → {current}を{new_sig}に降格")
+
+    # フェーズ5b: 株主優待権利落ち日チェック（権利落ち日21日前以内は除外）
+    buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
+    buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
+    if buy_codes:
+        print(f"\n株主優待権利落ちチェック中（S買い+A買い {len(buy_codes)}銘柄）...")
+        today = datetime.now().date()
+        for code in buy_codes:
+            days = _days_to_yutai_record(code, today)
+            if days is not None and 0 <= days <= YUTAI_SKIP_DAYS:
+                idx = result_df[result_df["銘柄コード"].astype(str) == code].index
+                current = result_df.loc[idx, "推奨"].values[0]
+                new_sig = "🥈 A買い" if current == "🥇 S買い" else "⏳ 方向感なし"
+                result_df.loc[idx, "推奨"] = new_sig
+                name = result_df.loc[idx, "銘柄名"].values[0]
+                print(f"  ⚠️ {name}({code}): 優待権利落ち{days}日前 → {current}を{new_sig}に降格")
 
     # フェーズ6: S買い上位3件→S買い、4件目以降→A買い
     sbuy_all = result_df[result_df["推奨"] == "🥇 S買い"].sort_values("ネット(%)", ascending=False)
