@@ -209,15 +209,16 @@ def fund_manager_stock_advice(signals):
         for s in signals
     )
     prompt = f"""あなたは株式ファンドマネージャーです。
-今日のS買いシグナル銘柄を評価し、個人投資家が実際に買うべき銘柄を選んでください。
+オーナーの目標: 株式運用で3年以内に1億円を作り、家を買う。
+この目標のために、今日のS買いシグナル銘柄の中から実際に買うべき銘柄を選んでください。
 
 【S買いシグナル一覧】
 {rows}
 
-評価基準:
-- ネットスコアが高い（リターン期待値が大きい）
-- ボラティリティが低い（リスクが小さい）
-- 下落確率が低い
+評価基準（優先順）:
+1. 期待リターンが最大（ネットスコアが高い）
+2. 下落リスクが低い（下落確率・ボラが小さい）
+3. 損切り幅が許容範囲内（-10%以内が理想）
 
 上位1〜3銘柄を選び、それぞれ1〜2文で「なぜ買うべきか」を説明してください。
 最後に「今日の一押し」を1つ選んで太字で示してください。
@@ -293,43 +294,68 @@ def analyst(metrics, baseline):
     print(f"  → 検索完了: {research[:80].strip()}...")
 
     prompt = f"""あなたは株式予測モデルのアナリストです。
-最新研究の知見とcurrent config.pyを踏まえ、bear modeバックテストを改善する変更を1つ提案してください。
+オーナーの目標: 株式運用で3年以内に1億円を作る。モデルの改善はその手段。
 
-【現在】avg={metrics.get('avg_return')}% win={metrics.get('win_rate')}% big={metrics.get('big_win_rate')}%
-【ベースライン】avg={bsl.get('avg_return')}% win={bsl.get('win_rate')}% big={bsl.get('big_win_rate')}%
+現在のバックテスト（複数期間平均）:
+  avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%
+ベースライン（これまでの最良値）:
+  avg={bsl.get('avg_return')}%  win={bsl.get('win_rate')}%  big={bsl.get('big_win_rate')}%
 
-【config.py】
+【config.py 全文】
 {config}
 
-【特徴量重要度（参考）】
+【特徴量重要度（上位）】
 {fi[:600]}
 
 【最新研究からの知見】
 {research}
 
-制約:
-- config.pyの数値定数を1つだけ変更（コメント行は除く）
-- 変更幅は現在値の±25%以内
-- 変更禁止: BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD
+改善提案のルール:
+- config.py の数値定数を変更する（最大3つまで同時変更可）
+- 変更幅の制限なし（大胆な仮説も歓迎）
+- 変更禁止: BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD（市場分類の根幹のため）
+- コメント行は変更しない
 
-JSON1行のみで回答: {{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}"""
-    return parse_json(call_claude("claude-sonnet-4-6", prompt, 400))
+JSON のみで回答（変更が1つでも複数でも同じ形式）:
+{{"changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}"""
+
+    raw = call_claude("claude-sonnet-4-6", prompt, 600)
+    parsed = parse_json(raw)
+    if parsed and "changes" in parsed:
+        return parsed  # 複数変更形式
+    # フォールバック: 旧形式（1つだけ）を新形式に変換
+    if parsed and "param_name" in parsed:
+        return {"changes": [parsed]}
+    return None
 
 
 def engineer(proposal, before_metrics, baseline):
-    cfg  = BASE_DIR / "config.py"
-    orig = cfg.read_text('utf-8')
-    p    = proposal['param_name']
-    nv   = proposal['new_value']
+    """proposal = {"changes": [{param_name, old_value, new_value, reason}, ...]}"""
+    cfg     = BASE_DIR / "config.py"
+    orig    = cfg.read_text('utf-8')
+    changes = proposal.get('changes', [])
 
-    # 行頭のパラメータ代入を置換（どんな数値でも対応）
-    pat = rf'^({re.escape(p)}\s*=\s*)[\d.+\-]+'
-    new = re.sub(pat, rf'\g<1>{nv}', orig, flags=re.MULTILINE)
+    if not changes:
+        return False, "変更リストが空"
 
-    if new == orig:
-        return False, f"{p} の値が見つからず変更失敗"
+    # 全変更を一括適用
+    new_text = orig
+    applied  = []
+    for ch in changes:
+        p  = ch['param_name']
+        nv = ch['new_value']
+        pat = rf'^({re.escape(p)}\s*=\s*)[\d.+\-]+'
+        replaced = re.sub(pat, rf'\g<1>{nv}', new_text, flags=re.MULTILINE)
+        if replaced != new_text:
+            applied.append(ch)
+            new_text = replaced
+        else:
+            print(f"  [WARN] {p} が見つからずスキップ")
 
-    cfg.write_text(new, 'utf-8')
+    if not applied:
+        return False, "すべてのパラメータが見つからず変更失敗"
+
+    cfg.write_text(new_text, 'utf-8')
     after, _ = run_backtest()
 
     if not after:
@@ -343,25 +369,29 @@ def engineer(proposal, before_metrics, baseline):
         after.get('big_win_rate',      0) > bsl.get('big_win_rate',      0),
     ])
 
+    change_summary = " / ".join(
+        f"{c['param_name']} {c.get('old_value','?')}→{c['new_value']}" for c in applied
+    )
+
     if improved:
         save_baseline(after)
-        ov = proposal.get('old_value', '?')
         msg = (
-            f"pdca: {p} {ov}→{nv} | "
+            f"pdca: {change_summary} | "
             f"avg {bsl.get('avg_return','?')}→{after.get('avg_return','?')}% "
             f"win {bsl.get('win_rate','?')}→{after.get('win_rate','?')}% [skip ci]"
         )
         git_commit_push(['config.py', 'pdca/baseline_metrics.json'], msg)
         return True, (
-            f"✅ 採用: avg {bsl.get('avg_return')}%→{after.get('avg_return')}%  "
+            f"✅ 採用: {change_summary} | "
+            f"avg {bsl.get('avg_return')}%→{after.get('avg_return')}%  "
             f"win {bsl.get('win_rate')}%→{after.get('win_rate')}%  "
             f"big {bsl.get('big_win_rate')}%→{after.get('big_win_rate')}%"
         )
     else:
         cfg.write_text(orig, 'utf-8')
         return False, (
-            f"❌ 改善なし: avg {after.get('avg_return')}% "
-            f"(bsl {bsl.get('avg_return')}%)、revert"
+            f"❌ 改善なし: {change_summary} | "
+            f"avg {after.get('avg_return')}% (bsl {bsl.get('avg_return')}%)、revert"
         )
 
 
@@ -430,7 +460,8 @@ def main():
     prop = analyst(metrics, baseline)
     if not prop:
         log("- analyst: parse error"); push_log(); return
-    print(f"  → {prop['param_name']}: {prop.get('old_value')}→{prop['new_value']}  ({prop['reason']})")
+    for ch in prop.get('changes', []):
+        print(f"  → {ch['param_name']}: {ch.get('old_value')}→{ch['new_value']}  ({ch.get('reason','')})")
     log(f"- analyst: {json.dumps(prop, ensure_ascii=False)}")
 
     # Step4: Engineer（変更→backtest→commit or revert）
