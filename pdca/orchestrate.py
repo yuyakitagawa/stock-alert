@@ -2,9 +2,10 @@
 """PDCA Orchestrator: 1日1サイクルの自律改善ループ
    Fund Manager (haiku) → Analyst (sonnet) → Engineer (python) → commit/push
 """
-import sys, os, re, json, subprocess
+import sys, os, re, json, subprocess, smtplib, glob
 from pathlib import Path
 from datetime import date
+from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -93,6 +94,8 @@ def git_commit_push(files, msg):
 
 # ── 各エージェント ──────────────────────────────────────────────────────────
 
+NOTIFY_TO   = "dosankoure@gmail.com"
+
 GOAL_AVG    = 3.0   # 改善目標: avg_return > 3%
 GOAL_WIN    = 45.0  # 改善目標: win_rate > 45%
 GOAL_BIGWIN = 20.0  # 改善目標: big_win_rate > 20%
@@ -129,6 +132,90 @@ avg_return={bsl.get('avg_return','N/A')}%  win_rate={bsl.get('win_rate','N/A')}%
 JSON1行のみで回答: {{"action":"improve"|"skip","reason":"..."}}"""
     result = parse_json(call_claude("claude-haiku-4-5-20251001", prompt, 200))
     return result or {"action": "improve", "reason": "parse error → fallback improve"}
+
+
+def load_today_signals():
+    """最新ランキング CSV から S買いシグナル銘柄を返す"""
+    try:
+        import pandas as pd
+        csvs = sorted(glob.glob(str(BASE_DIR / "data/rankings/ranking_*.csv")))
+        if not csvs:
+            return []
+        df = pd.read_csv(csvs[-1], encoding='utf-8-sig')
+        sbuy = df[df['推奨'] == '🥇 S買い'].copy()
+        if sbuy.empty:
+            return []
+        cols = ['順位', '銘柄コード', '銘柄名', '直近株価(円)',
+                'ネット(%)', '上昇確率(%)', '下落確率(%)', 'ボラ(%)', '損切り幅(%)']
+        cols = [c for c in cols if c in sbuy.columns]
+        return sbuy[cols].to_dict(orient='records')
+    except Exception as e:
+        print(f"  [signal load error] {e}")
+        return []
+
+
+def fund_manager_stock_advice(signals):
+    """S買いシグナル銘柄をFund Managerが評価して購入推奨コメントを返す"""
+    rows = "\n".join(
+        f"  {s.get('銘柄コード')} {s.get('銘柄名')}  "
+        f"net={s.get('ネット(%)')}%  rise={s.get('上昇確率(%)')}%  "
+        f"drop={s.get('下落確率(%)')}%  vol={s.get('ボラ(%)')}%  "
+        f"損切={s.get('損切り幅(%)')}%"
+        for s in signals
+    )
+    prompt = f"""あなたは株式ファンドマネージャーです。
+今日のS買いシグナル銘柄を評価し、個人投資家が実際に買うべき銘柄を選んでください。
+
+【S買いシグナル一覧】
+{rows}
+
+評価基準:
+- ネットスコアが高い（リターン期待値が大きい）
+- ボラティリティが低い（リスクが小さい）
+- 下落確率が低い
+
+上位1〜3銘柄を選び、それぞれ1〜2文で「なぜ買うべきか」を説明してください。
+最後に「今日の一押し」を1つ選んで太字で示してください。
+読みやすい日本語テキストで回答してください（JSONは不要）。"""
+    try:
+        return call_claude("claude-haiku-4-5-20251001", prompt, 600)
+    except Exception as e:
+        return f"評価エラー: {e}"
+
+
+def send_buy_notification(signals, advice):
+    """購入推奨をGmailで通知"""
+    gmail_addr = os.getenv("GMAIL_ADDRESS")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    if not gmail_addr or not gmail_pass:
+        print("  [通知スキップ] GMAIL_ADDRESS / GMAIL_APP_PASSWORD 未設定")
+        return
+
+    codes = ", ".join(f"{s.get('銘柄コード')} {s.get('銘柄名')}" for s in signals)
+    body = f"""📈 本日の S買いシグナル銘柄が出ました
+
+{codes}
+
+━━━━━━━━━━━━━━━━
+Fund Manager のコメント
+━━━━━━━━━━━━━━━━
+{advice}
+
+━━━━━━━━━━━━━━━━
+※ 投資判断は自己責任でお願いします。損切り価格を必ず確認してから購入してください。
+"""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = f"📈 S買いシグナル {len(signals)}銘柄 — {TODAY}"
+    msg["From"]    = gmail_addr
+    msg["To"]      = NOTIFY_TO
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_addr, gmail_pass)
+            server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
+        print(f"  → 購入通知メールを送信: {NOTIFY_TO}")
+    except Exception as e:
+        print(f"  [メール送信エラー] {e}")
 
 
 def _research_papers():
@@ -265,6 +352,19 @@ def main():
         baseline = metrics
         log("- 初回実行: baseline設定")
         print("  初回: baselineを現在値で設定")
+
+    # Step1.5: S買いシグナル銘柄チェック → 購入通知
+    print("Step1.5: S買いシグナル 確認中...")
+    signals = load_today_signals()
+    if signals:
+        print(f"  → {len(signals)}銘柄 発見: {[s.get('銘柄コード') for s in signals]}")
+        advice = fund_manager_stock_advice(signals)
+        print(f"  → Fund Manager コメント:\n{advice}")
+        send_buy_notification(signals, advice)
+        log(f"- signals: {len(signals)}銘柄 通知済み ({[s.get('銘柄コード') for s in signals]})")
+    else:
+        print("  → 本日S買いシグナルなし")
+        log("- signals: なし")
 
     # Step2: Fund Manager
     print("Step2: Fund Manager 評価中...")
