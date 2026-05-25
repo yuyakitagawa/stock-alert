@@ -11,7 +11,7 @@ from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
-TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60
+TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_DIR = PROJECT_DIR if os.path.isdir(PROJECT_DIR) else os.path.expanduser("~/stock-alert")
