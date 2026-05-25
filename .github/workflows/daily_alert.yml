@@ -91,9 +91,9 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/send_user_alerts.py
 
-      - name: Step 7 - S買いシグナル記事生成
+      - name: Step 7 - S買いシグナル記事生成（SEOパイプライン）
         continue-on-error: true
-        run: cd ~/stock-alert && python web/generate_articles.py
+        run: cd ~/stock-alert && python web/seo/orchestrate.py daily
 
       - name: Save model cache
         if: always()

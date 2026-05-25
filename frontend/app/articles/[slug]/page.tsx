@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { fetchArticle, fetchArticles } from "@/lib/data";
 import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
 
 export const revalidate = 3600;
 
@@ -21,7 +20,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const article = await fetchArticle(slug);
   if (!article) return { title: "記事が見つかりません | StockSignal" };
 
-  const description = `${article.name}（${article.code}）にS買いシグナル。最新ニュースと投資ポイントを解説。ネットスコア ${article.net_score?.toFixed(1) ?? "—"}%。`;
+  const description = article.meta_description
+    ?? `${article.name}（${article.code}）にS買いシグナル。最新ニュースと投資ポイントを解説。ネットスコア ${article.net_score?.toFixed(1) ?? "—"}%。`;
 
   return {
     title: article.title,
@@ -115,16 +115,21 @@ export default async function ArticlePage({ params }: Props) {
           <MarkdownBody body={article.body} />
         </article>
 
-        <div className="mt-10 pt-6 border-t border-gray-800">
+        <div className="mt-10 pt-6 border-t border-gray-800 flex items-center justify-between">
           <Link
             href={`/stocks/${article.code}`}
             className="inline-block bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm hover:border-gray-500 transition-colors"
           >
             {article.name}（{article.code}）の詳細チャートを見る →
           </Link>
+          <Link href="/articles" className="text-xs text-gray-600 hover:text-gray-400">
+            ← 記事一覧
+          </Link>
         </div>
       </main>
-      <Footer />
+      <footer className="border-t border-gray-900 mt-16 py-6 text-center text-xs text-gray-700">
+        © 2026 StockSignal
+      </footer>
     </div>
   );
 }

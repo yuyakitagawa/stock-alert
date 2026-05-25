@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { fetchArticles } from "@/lib/data";
 import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
 
 export const revalidate = 3600;
 
@@ -64,7 +63,9 @@ export default async function ArticlesPage() {
           </ul>
         )}
       </main>
-      <Footer />
+      <footer className="border-t border-gray-900 mt-16 py-6 text-center text-xs text-gray-700">
+        © 2026 StockSignal
+      </footer>
     </div>
   );
 }

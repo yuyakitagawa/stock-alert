@@ -75,13 +75,17 @@ export interface DailyQuote {
 }
 
 export interface Article {
-  id:           number;
-  slug:         string;
-  code:         string;
-  name:         string;
-  title:        string;
-  body:         string;
-  signal_date:  string;
-  net_score:    number | null;
-  published_at: string;
+  id:               number;
+  slug:             string;
+  code:             string;
+  name:             string;
+  title:            string;
+  body:             string;
+  signal_date:      string;
+  net_score:        number | null;
+  published_at:     string;
+  target_keyword?:  string | null;
+  meta_description?: string | null;
+  seo_score?:       number | null;
+  rewrite_count?:   number | null;
 }
