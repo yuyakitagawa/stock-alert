@@ -93,12 +93,30 @@ def git_commit_push(files, msg):
 
 # ── 各エージェント ──────────────────────────────────────────────────────────
 
+GOAL_AVG    = 3.0   # 改善目標: avg_return > 3%
+GOAL_WIN    = 45.0  # 改善目標: win_rate > 45%
+GOAL_BIGWIN = 20.0  # 改善目標: big_win_rate > 20%
+
 def fund_manager(metrics, baseline, feedback):
     bsl = baseline or metrics
+
+    # 目標未達なら問答無用で improve（LLM 判断に頼らない）
+    avg  = metrics.get('avg_return',  -9999)
+    win  = metrics.get('win_rate',        0)
+    big  = metrics.get('big_win_rate',    0)
+    if avg < GOAL_AVG or win < GOAL_WIN or big < GOAL_BIGWIN:
+        return {
+            "action": "improve",
+            "reason": (
+                f"目標未達 (avg={avg}%<{GOAL_AVG}% / win={win}%<{GOAL_WIN}% / "
+                f"big={big}%<{GOAL_BIGWIN}%) → 強制 improve"
+            )
+        }
+
     prompt = f"""あなたは株式予測モデルのファンドマネージャーです。
 
 【今日のbacktest(bear mode: 2024年8月下落相場)】
-avg_return={metrics.get('avg_return','N/A')}%  win_rate={metrics.get('win_rate','N/A')}%  big_win_rate={metrics.get('big_win_rate','N/A')}%
+avg_return={avg}%  win_rate={win}%  big_win_rate={big}%
 
 【ベースライン（これまでの最良値）】
 avg_return={bsl.get('avg_return','N/A')}%  win_rate={bsl.get('win_rate','N/A')}%  big_win_rate={bsl.get('big_win_rate','N/A')}%
@@ -106,10 +124,11 @@ avg_return={bsl.get('avg_return','N/A')}%  win_rate={bsl.get('win_rate','N/A')}%
 【人間フィードバック】
 {feedback}
 
-今日config.pyの1パラメータを調整して改善を試みるべきか？
+改善目標(avg>{GOAL_AVG}% / win>{GOAL_WIN}% / big>{GOAL_BIGWIN}%)はすべて達成済み。
+今日さらにパラメータを調整すべきか、現状維持か判断してください。
 JSON1行のみで回答: {{"action":"improve"|"skip","reason":"..."}}"""
     result = parse_json(call_claude("claude-haiku-4-5-20251001", prompt, 200))
-    return result or {"action": "skip", "reason": "parse error"}
+    return result or {"action": "improve", "reason": "parse error → fallback improve"}
 
 
 def _research_papers():
