@@ -1,0 +1,48 @@
+name: Daily PDCA Cycle
+
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'  # 平日09:00 UTC = 18:00 JST（アラート送信30分後）
+  workflow_dispatch:         # 手動実行ボタン
+
+permissions:
+  contents: write            # git push に必要
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  pdca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost \
+            gspread google-auth yfinance anthropic
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Configure git
+        run: |
+          git config user.email "pdca-bot@github-actions"
+          git config user.name "PDCA Bot"
+
+      - name: Run PDCA cycle
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          STOCK_ALERT_HOME: ${{ github.workspace }}
+        run: python3 pdca/orchestrate.py

@@ -4,14 +4,18 @@
 
 ## システム概要
 
-平日16:07（JST）にGitHub Actionsで自動実行される。
+平日に2本のGitHub Actionsが自動実行される。
 
 ```
+【17:30 JST】アラートパイプライン
 core/screener.py → core/rank_stocks.py → email/alert_email.py
-      (平日)              (平日)                  (平日)
-
 core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
 web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
+
+【18:00 JST】PDCA自律改善ループ（pdca/orchestrate.py）
+Fund Manager (haiku) → Analyst (sonnet) → Engineer
+  ↳ config.pyパラメータを1つ変更 → backtest.py bear で検証
+  ↳ 改善したらcommit/push、ダメなら即revert
 ```
 
 ---
