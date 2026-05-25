@@ -587,7 +587,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes, ranking_df, etf_rets=etf_rets)}
 {build_sector_warning(_candidates_for_sector)}
-{build_yutai_rebound_section(today)}
+{build_yutai_rebound_section(datetime.now().strftime("%Y-%m-%d"))}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
