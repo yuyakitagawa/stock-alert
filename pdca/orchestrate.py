@@ -27,23 +27,68 @@ except ImportError:
 
 # ── ユーティリティ ─────────────────────────────────────────────────────────
 
-def run_backtest():
+# ── バックテスト期間定義 ──────────────────────────────────────────────────
+# データが揃い次第 periods リストに追加していく
+BACKTEST_PERIODS = [
+    # (ラベル, 開始日, 終了日) — データが存在する期間のみ有効
+    ("bear_2024",    "2024-07-01", "2024-10-01"),   # 2024年8月円キャリー崩壊
+    ("q2_2025",      "2025-05-14", "2025-08-14"),   # 1年前の3ヶ月
+]
+# 10年データ取得後に追加予定:
+# ("covid_crash",  "2020-02-01", "2020-05-01"),
+# ("covid_bull",   "2020-06-01", "2021-12-31"),
+# ("rate_hike",    "2022-01-01", "2022-12-31"),
+# ("bull_2023",    "2023-01-01", "2024-06-30"),
+
+
+def _run_one_backtest(start, end):
+    """1期間のバックテストを実行してメトリクス dict を返す"""
     r = subprocess.run(
-        [PYTHON, "tools/backtest.py", "bear"],
+        [PYTHON, "tools/backtest.py", "--start", start, "--end", end],
         capture_output=True, text=True, cwd=str(BASE_DIR), timeout=1800,
         env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
     )
     out = r.stdout + r.stderr
     m = {}
     for pat, key in [
-        (r'平均リターン: ([+-]?\d+\.?\d*)%',                  'avg_return'),
-        (r'勝率（\+0%以上）: \d+/\d+ = (\d+\.?\d*)%',         'win_rate'),
-        (r'大勝率（\+15%以上）: \d+/\d+ = (\d+\.?\d*)%',      'big_win_rate'),
+        (r'平均リターン: ([+-]?\d+\.?\d*)%',             'avg_return'),
+        (r'勝率（\+0%以上）: \d+/\d+ = (\d+\.?\d*)%',    'win_rate'),
+        (r'大勝率（\+15%以上）: \d+/\d+ = (\d+\.?\d*)%', 'big_win_rate'),
     ]:
         found = re.search(pat, out)
         if found:
             m[key] = float(found.group(1))
-    return m, out
+    return m
+
+
+def run_backtest():
+    """全期間を実行して平均メトリクスを返す。1期間でも成功すれば継続。"""
+    all_results = {}
+    for label, start, end in BACKTEST_PERIODS:
+        print(f"  [{label}] {start} → {end} ...")
+        m = _run_one_backtest(start, end)
+        if m:
+            all_results[label] = m
+            print(f"    avg={m.get('avg_return')}%  win={m.get('win_rate')}%  big={m.get('big_win_rate')}%")
+        else:
+            print(f"    [スキップ] データ不足または失敗")
+
+    if not all_results:
+        return {}, ""
+
+    # 全期間の平均を複合スコアとして使用
+    keys = ['avg_return', 'win_rate', 'big_win_rate']
+    composite = {}
+    for k in keys:
+        vals = [v[k] for v in all_results.values() if k in v]
+        composite[k] = round(sum(vals) / len(vals), 2) if vals else None
+
+    # 期間別の詳細も保持
+    composite['periods'] = {
+        label: m for label, m in all_results.items()
+    }
+    raw_summary = json.dumps({label: m for label, m in all_results.items()}, ensure_ascii=False)
+    return composite, raw_summary
 
 
 def load_baseline():
@@ -343,8 +388,9 @@ def main():
     if not metrics:
         msg = "ERROR: backtest失敗（メトリクス取得不可）"
         print(msg); log(f"- {msg}"); push_log(); sys.exit(1)
-    print(f"  avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%")
-    log(f"- metrics: {json.dumps(metrics)}")
+    periods_info = metrics.pop('periods', {})
+    print(f"  複合スコア: avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%")
+    log(f"- metrics: {json.dumps(metrics)}  periods: {json.dumps(periods_info, ensure_ascii=False)}")
 
     baseline = load_baseline()
     if not baseline:
