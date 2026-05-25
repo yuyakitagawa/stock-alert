@@ -145,7 +145,7 @@ def _unheld_ranking_row_count(ranking_df, held_codes):
 
 
 def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
-    """セクター集中警告用: 新規候補レンジかつ未保有、推奨がS買い/A買いの銘柄リスト。"""
+    """セクター集中警告用: 新規候補レンジかつ未保有、推奨がS買いの銘柄リスト。"""
     out = []
     if ranking_df is None:
         return out
@@ -154,7 +154,7 @@ def _new_candidates_for_sector_warning(ranking_df, held_codes, max_rows=100):
         if code is None or code in held_codes:
             continue
         rec_str = row.get("推奨", "") or ""
-        if not any(s in rec_str for s in ("S買い", "A買い")):
+        if "S買い" not in rec_str:
             continue
         net = _row_net_percent(row, use_rise_fallback=False)
         if net is None or not _net_in_candidate_band(net):
@@ -315,7 +315,7 @@ def build_priority_actions(results, ranking_df=None, etf_rets=None):
                              "title": f"{r['name']}（{r['code']}）— 買い増しシグナル",
                              "detail": f"ネット {r['net']:+.1f}%　下落確率 {dp:.1f}%"})
 
-    # 新規候補の買いシグナル（ランキングCSVからnet 8〜13%、未保有、推奨がS買い/A買いのみ）
+    # 新規候補の買いシグナル（ランキングCSVからnet 8〜13%、未保有、推奨がS買いのみ）
     if len(actions) < 3:
         held_codes = _held_codes(results)
         ranking = ranking_df.head(50) if ranking_df is not None else load_top_ranking(50)
@@ -327,7 +327,7 @@ def build_priority_actions(results, ranking_df=None, etf_rets=None):
                 if code_str is None or code_str in held_codes:
                     continue
                 rec_str = row.get("推奨", "") or ""
-                if not any(s in rec_str for s in ("S買い", "A買い")):
+                if "S買い" not in rec_str:
                     continue
                 net_v = _row_net_percent(row, use_rise_fallback=False)
                 if net_v is None or not _net_in_candidate_band(net_v):
@@ -483,11 +483,10 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_ret
             if _is_new_candidate_skipped(code_str, net_v, drop_v):
                 continue
             rec_str = row.get("推奨", "") or ""
-            if not any(s in rec_str for s in ("S買い", "A買い")):
+            if "S買い" not in rec_str:
                 continue
             selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
-            allow_buy = "S買い" in rec_str
-            recommend = recommend_from_scores(net_v, drop_v, allow_buy=allow_buy)
+            recommend = recommend_from_scores(net_v, drop_v, allow_buy=True)
             vol    = row.get("ボラ(%)", 0)
             vol_lb = row.get("ボラ水準", "")
             vol_rank = _safe_float(row.get("ボラランク(%)", None))

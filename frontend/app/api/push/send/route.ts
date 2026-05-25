@@ -42,12 +42,10 @@ export async function POST(req: NextRequest) {
   const rankings = rankRes.ok ? await rankRes.json() : [];
 
   const sBuy  = rankings.filter((r: { recommend: string }) => r.recommend.includes("S買い"));
-  const aBuy  = rankings.filter((r: { recommend: string }) => r.recommend.includes("A買い"));
   const sells = rankings.filter((r: { recommend: string }) => r.recommend.includes("売り"));
 
   const lines: string[] = [];
   if (sBuy.length)  lines.push(`🟢 S買い ${sBuy.length}銘柄`);
-  if (aBuy.length)  lines.push(`🟩 A買い ${aBuy.length}銘柄`);
   if (sells.length) lines.push(`🔴 売り検討 ${sells.length}銘柄`);
 
   if (lines.length === 0) return NextResponse.json({ sent: 0, skipped: 0 });

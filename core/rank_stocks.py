@@ -123,7 +123,7 @@ def _get_next_earnings(code: str) -> "_date | None":
         return None
 
 
-YUTAI_SKIP_DAYS = 21  # 権利落ち日N日前からS/A買いを除外
+YUTAI_SKIP_DAYS = 21  # 権利落ち日N日前からS買いを除外
 
 
 def _get_yutai_record_month(code: str):
@@ -172,7 +172,7 @@ def _days_to_yutai_record(code: str, today=None) -> "int | None":
 
 
 def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None):
-    """S買い・A買いラベルを付与できる品質フィルター（元のスクリーナー基準）"""
+    """S買いラベルを付与できる品質フィルター（元のスクリーナー基準）"""
     if close < 300:               return False  # 株価 < 300円（低位株除外）
     if feat[12] > 0.15:           return False  # down_streak > 3日
     if feat[10] < -0.15:          return False  # drawdown60 < -15%
@@ -418,11 +418,11 @@ def main():
             f"{row['推奨']}"
         )
 
-    # フェーズ5: 買いシグナル銘柄の決算チェック（S買い→A買い、A買い→方向感なし に降格）
-    buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
+    # フェーズ5: S買い銘柄の決算チェック（S買い→方向感なし に降格）
+    buy_mask = result_df["推奨"] == "🥇 S買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
-        print(f"\n決算日チェック中（S買い+A買い {len(buy_codes)}銘柄）...")
+        print(f"\n決算日チェック中（S買い {len(buy_codes)}銘柄）...")
         today = datetime.now().date()
         for code in buy_codes:
             d = _get_next_earnings(code)
@@ -430,43 +430,39 @@ def main():
                 days_to = (d - today).days
                 if 0 <= days_to <= EARNINGS_SKIP_DAYS:
                     idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                    current = result_df.loc[idx, "推奨"].values[0]
-                    new_sig = "🥈 A買い" if current == "🥇 S買い" else "⏳ 方向感なし"
-                    result_df.loc[idx, "推奨"] = new_sig
+                    result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
                     name = result_df.loc[idx, "銘柄名"].values[0]
-                    print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → {current}を{new_sig}に降格")
+                    print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → S買いを方向感なしに降格")
 
     # フェーズ5b: 株主優待権利落ち日チェック（権利落ち日21日前以内は除外）
-    buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
+    buy_mask = result_df["推奨"] == "🥇 S買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
-        print(f"\n株主優待権利落ちチェック中（S買い+A買い {len(buy_codes)}銘柄）...")
+        print(f"\n株主優待権利落ちチェック中（S買い {len(buy_codes)}銘柄）...")
         today = datetime.now().date()
         for code in buy_codes:
             days = _days_to_yutai_record(code, today)
             if days is not None and 0 <= days <= YUTAI_SKIP_DAYS:
                 idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                current = result_df.loc[idx, "推奨"].values[0]
-                new_sig = "🥈 A買い" if current == "🥇 S買い" else "⏳ 方向感なし"
-                result_df.loc[idx, "推奨"] = new_sig
+                result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
                 name = result_df.loc[idx, "銘柄名"].values[0]
-                print(f"  ⚠️ {name}({code}): 優待権利落ち{days}日前 → {current}を{new_sig}に降格")
+                print(f"  ⚠️ {name}({code}): 優待権利落ち{days}日前 → S買いを方向感なしに降格")
 
-    # フェーズ6: S買い上位3件→S買い、4件目以降→A買い
+    # フェーズ6: S買い上位3件のみ残し、4件目以降は方向感なしに降格
     sbuy_all = result_df[result_df["推奨"] == "🥇 S買い"].sort_values("ネット(%)", ascending=False)
     if len(sbuy_all) > 3:
         cap_codes = sbuy_all.iloc[3:]["銘柄コード"].astype(str).tolist()
         for code in cap_codes:
             idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-            result_df.loc[idx, "推奨"] = "🥈 A買い"
-        print(f"\nS買い1日3件制限: {len(cap_codes)}件をA買いに降格")
+            result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
+        print(f"\nS買い1日3件制限: {len(cap_codes)}件を方向感なしに降格")
 
     # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
-    # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→A買い、A買い→方向感なし に降格
-    buy_mask = result_df["推奨"].isin(["🥇 S買い", "🥈 A買い"])
+    # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→方向感なし に降格
+    buy_mask = result_df["推奨"] == "🥇 S買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
-        print(f"\n米国ETFリードラグフィルター中（S買い+A買い {len(buy_codes)}銘柄）...")
+        print(f"\n米国ETFリードラグフィルター中（S買い {len(buy_codes)}銘柄）...")
         _load_sector_cache()
         etf_rets = fetch_us_sector_etf_returns()
         if etf_rets:
@@ -481,15 +477,13 @@ def main():
                 if ret is not None and ret < 0:
                     idx = result_df[result_df["銘柄コード"].astype(str) == code].index
                     name = result_df.loc[idx, "銘柄名"].values[0]
-                    current = result_df.loc[idx, "推奨"].values[0]
-                    new_sig = "⏳ 方向感なし" if current == "🥈 A買い" else "🥈 A買い"
-                    result_df.loc[idx, "推奨"] = new_sig
-                    degraded.append(f"{name}({code})[{etf}:{ret:+.1f}%] {current}→{new_sig}")
+                    result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
+                    degraded.append(f"{name}({code})[{etf}:{ret:+.1f}%] S買い→方向感なし")
             _save_sector_cache()
             if degraded:
                 print(f"  ⚠️ ETF前日マイナスのため降格: {', '.join(degraded)}")
             else:
-                print(f"  ✅ 全買いシグナル銘柄のETFは前日プラス（フィルター通過）")
+                print(f"  ✅ 全S買い銘柄のETFは前日プラス（フィルター通過）")
         else:
             print(f"  ETFデータ取得失敗: フィルタースキップ")
 

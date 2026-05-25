@@ -27,9 +27,7 @@ def classify(net, drop_prob):
             and net >= CANDIDATE_CONFLICT_NET_MIN
             and drop_prob >= CANDIDATE_CONFLICT_DROP_MIN):
         return "除外(コンフリクト)"
-    if drop_prob is not None and drop_prob < 6.0 and net >= 10.0:
-        return "🥇 S買い"
-    return "🥈 A買い"
+    return "🥇 S買い"
 
 
 def __get_current_price(code):
@@ -93,8 +91,7 @@ def load_90d_data():
 
 
 def _print_summary(df, horizon_label):
-    buy_labels = ["🥇 S買い", "🥈 A買い"]
-    all_buy = df[df["label"].isin(buy_labels)].copy()
+    all_buy = df[df["label"] == "🥇 S買い"].copy()
     ret = all_buy["current_return"].dropna()
 
     print(f"\n{'='*60}")

@@ -60,7 +60,6 @@ export default async function HomePage() {
     .sort((a, b) => b.avgNet - a.avgNet);
 
   const sBuy    = rows.filter(r => r.recommend === "S買い");
-  const aBuy    = rows.filter(r => r.recommend === "A買い");
   const neutral = rows.filter(r => r.recommend === "方向感なし");
   const weak    = rows.filter(r => r.recommend === "弱気シグナル");
   const down    = rows.filter(r => r.recommend === "下降シグナル");
@@ -89,9 +88,8 @@ export default async function HomePage() {
                 <h1 className="text-xl sm:text-2xl font-bold text-white">日本株 シグナル概要</h1>
                 <span className="text-sm text-gray-600 font-mono">{dateLabel}</span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 <SummaryCard label="S買い"      count={sBuy.length}    colorClass="text-green-400"   borderClass="border-green-900" />
-                <SummaryCard label="A買い"      count={aBuy.length}    colorClass="text-green-500"   borderClass="border-green-900/50" />
                 <SummaryCard label="方向感なし" count={neutral.length} colorClass="text-gray-400"    borderClass="border-gray-700" />
                 <SummaryCard label="弱気"       count={weak.length}    colorClass="text-orange-400"  borderClass="border-orange-900/50" />
                 <SummaryCard label="下降"       count={down.length}    colorClass="text-red-500"     borderClass="border-red-900/50" />

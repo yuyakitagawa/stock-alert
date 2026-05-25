@@ -5,66 +5,103 @@ import { useLang } from "@/contexts/LanguageContext";
 const SIGNALS = {
   ja: [
     { signal: "S買い",        desc: "全条件クリアの最優先買いシグナル" },
-    { signal: "A買い",        desc: "上昇確率が高く買い推奨" },
     { signal: "方向感なし",  desc: "上昇・下落どちらでもない中立状態" },
     { signal: "弱気シグナル", desc: "やや下落傾向、慎重に" },
     { signal: "下降シグナル", desc: "強い下落圧力あり" },
   ],
   en: [
     { signal: "S買い",        desc: "All conditions met — top priority buy" },
-    { signal: "A買い",        desc: "High rise probability — buy" },
     { signal: "方向感なし",  desc: "Neutral — no clear direction" },
     { signal: "弱気シグナル", desc: "Slight downward trend — caution" },
     { signal: "下降シグナル", desc: "Strong downtrend" },
   ],
 };
 
-// S買い / A買い 条件表（条件変更時はここを更新）
+// S買い 条件表（条件変更時はここを更新）
 const CONDITIONS = {
   ja: [
-    { label: "ネットスコア (上昇確率−下落確率)",        s: "17% ≤ net ≤ 24%",  a: "17% ≤ net ≤ 24%" },
-    { label: "下落確率",                               s: "< 4%",              a: "< 4%" },
-    { label: "株価",                                   s: "≥ 300円",           a: "≥ 300円" },
-    { label: "3ヶ月モメンタム",                         s: "≥ 8%",              a: "≥ 8%" },
-    { label: "2年モメンタム",                           s: "プラス",            a: "プラス" },
-    { label: "2年トレンド決定係数 R²（504日）",          s: "≥ 0.4",             a: "≥ 0.4" },
-    { label: "RSI (14日)",                             s: "< 75",              a: "< 75" },
-    { label: "出来高比 (20日/60日)",                    s: "≥ 1.0",             a: "≥ 1.0" },
-    { label: "直近20日ボラティリティ",                  s: "≤ 22%",             a: "≤ 22%" },
-    { label: "連続下落日数",                            s: "≤ 3日",             a: "≤ 3日" },
-    { label: "60日ドローダウン",                        s: "≥ −15%",            a: "≥ −15%" },
-    { label: "流動性 (20日平均売買代金)",                s: "≥ 5,000万円/日",    a: "≥ 5,000万円/日" },
-    { label: "日経225 20日リターン",                    s: "≥ 3%",              a: "≥ 3%" },
-    { label: "次回決算まで",                            s: "22日以上先",         a: "22日以上先" },
-    { label: "株主優待権利落ち日まで",                   s: "22日以上先",         a: "22日以上先" },
-    { label: "1日の発令件数",                           s: "上位3件",            a: "4件目以降" },
-    { label: "対応ETF前日リターン (XLK/XLF/XLI/XLB/XLV/XLY)", s: "プラスのみ", a: "プラスのみ" },
+    { label: "ネットスコア (上昇確率−下落確率)" },
+    { label: "下落確率" },
+    { label: "株価" },
+    { label: "3ヶ月モメンタム" },
+    { label: "2年モメンタム" },
+    { label: "2年トレンド決定係数 R²（504日）" },
+    { label: "RSI (14日)" },
+    { label: "出来高比 (20日/60日)" },
+    { label: "直近20日ボラティリティ" },
+    { label: "連続下落日数" },
+    { label: "60日ドローダウン" },
+    { label: "流動性 (20日平均売買代金)" },
+    { label: "日経225 20日リターン" },
+    { label: "次回決算まで" },
+    { label: "株主優待権利落ち日まで" },
+    { label: "1日の発令件数" },
+    { label: "対応ETF前日リターン (XLK/XLF/XLI/XLB/XLV/XLY)" },
+  ],
+  values: [
+    "17% ≤ net ≤ 24%",
+    "< 4%",
+    "≥ 300円",
+    "≥ 8%",
+    "プラス",
+    "≥ 0.4",
+    "< 75",
+    "≥ 1.0",
+    "≤ 22%",
+    "≤ 3日",
+    "≥ −15%",
+    "≥ 5,000万円/日",
+    "≥ 3%",
+    "22日以上先",
+    "22日以上先",
+    "上位3件",
+    "プラスのみ",
   ],
   en: [
-    { label: "Net Score (Rise prob − Drop prob)",       s: "17% ≤ net ≤ 24%", a: "17% ≤ net ≤ 24%" },
-    { label: "Drop probability",                        s: "< 4%",             a: "< 4%" },
-    { label: "Stock price",                             s: "≥ ¥300",           a: "≥ ¥300" },
-    { label: "3-month momentum",                        s: "≥ 8%",             a: "≥ 8%" },
-    { label: "2-year momentum",                         s: "Positive",         a: "Positive" },
-    { label: "2-year trend R² (504-day)",               s: "≥ 0.4",            a: "≥ 0.4" },
-    { label: "RSI (14-day)",                            s: "< 75",             a: "< 75" },
-    { label: "Volume ratio (20d/60d)",                  s: "≥ 1.0",            a: "≥ 1.0" },
-    { label: "20-day realized volatility",              s: "≤ 22%",            a: "≤ 22%" },
-    { label: "Consecutive down days",                   s: "≤ 3 days",         a: "≤ 3 days" },
-    { label: "60-day drawdown",                         s: "≥ −15%",           a: "≥ −15%" },
-    { label: "Liquidity (20-day avg turnover)",         s: "≥ ¥50M/day",       a: "≥ ¥50M/day" },
-    { label: "Nikkei 225 20-day return",                s: "≥ 3%",             a: "≥ 3%" },
-    { label: "Days until next earnings",                s: "≥ 22 days",        a: "≥ 22 days" },
-    { label: "Days until shareholder benefit ex-date", s: "≥ 22 days",        a: "≥ 22 days" },
-    { label: "Signals per day",                         s: "Top 3",            a: "4th and below" },
-    { label: "US sector ETF prev-day return (XLK/XLF/XLI/XLB/XLV/XLY)", s: "Positive only", a: "Positive only" },
+    { label: "Net Score (Rise prob − Drop prob)" },
+    { label: "Drop probability" },
+    { label: "Stock price" },
+    { label: "3-month momentum" },
+    { label: "2-year momentum" },
+    { label: "2-year trend R² (504-day)" },
+    { label: "RSI (14-day)" },
+    { label: "Volume ratio (20d/60d)" },
+    { label: "20-day realized volatility" },
+    { label: "Consecutive down days" },
+    { label: "60-day drawdown" },
+    { label: "Liquidity (20-day avg turnover)" },
+    { label: "Nikkei 225 20-day return" },
+    { label: "Days until next earnings" },
+    { label: "Days until shareholder benefit ex-date" },
+    { label: "Signals per day" },
+    { label: "US sector ETF prev-day return (XLK/XLF/XLI/XLB/XLV/XLY)" },
+  ],
+  values_en: [
+    "17% ≤ net ≤ 24%",
+    "< 4%",
+    "≥ ¥300",
+    "≥ 8%",
+    "Positive",
+    "≥ 0.4",
+    "< 75",
+    "≥ 1.0",
+    "≤ 22%",
+    "≤ 3 days",
+    "≥ −15%",
+    "≥ ¥50M/day",
+    "≥ 3%",
+    "≥ 22 days",
+    "≥ 22 days",
+    "Top 3",
+    "Positive only",
   ],
 };
 
 export default function SignalLegend() {
   const { lang } = useLang();
   const sigs = SIGNALS[lang];
-  const conds = CONDITIONS[lang];
+  const labels = CONDITIONS[lang];
+  const values = lang === "ja" ? CONDITIONS.values : CONDITIONS.values_en;
 
   return (
     <div className="border-t border-gray-800/60 pt-8 pb-6 px-4 sm:px-6">
@@ -85,7 +122,7 @@ export default function SignalLegend() {
           ))}
         </div>
 
-        {/* Buy signal conditions table */}
+        {/* S買い conditions table */}
         <div className="overflow-x-auto rounded-lg border border-gray-800/60">
           <table className="w-full text-xs">
             <thead>
@@ -98,19 +135,13 @@ export default function SignalLegend() {
                     <RecommendBadge value="S買い" />
                   </span>
                 </th>
-                <th className="text-center px-3 py-2 font-medium">
-                  <span className="inline-flex items-center gap-1">
-                    <RecommendBadge value="A買い" />
-                  </span>
-                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/40">
-              {conds.map(({ label, s, a }) => (
+              {labels.map(({ label }, i) => (
                 <tr key={label} className="hover:bg-gray-800/20 transition-colors">
                   <td className="px-3 py-2 text-gray-500">{label}</td>
-                  <td className="px-3 py-2 text-center text-gray-300 font-mono">{s}</td>
-                  <td className="px-3 py-2 text-center text-gray-500 font-mono">{a}</td>
+                  <td className="px-3 py-2 text-center text-gray-300 font-mono">{values[i]}</td>
                 </tr>
               ))}
             </tbody>

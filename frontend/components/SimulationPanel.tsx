@@ -32,14 +32,14 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
-          AIが「S買い」「A買い」シグナルを出した銘柄を100株購入し、下降シグナルが出た日に売却した場合の仮想成績です。
+          AIが「S買い」シグナルを出した銘柄を100株購入し、下降シグナルが出た日に売却した場合の仮想成績です。
           手数料・税金は含みません。
         </p>
       </div>
 
       {noData && (
         <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-6 text-center text-gray-600 text-sm">
-          S買い・A買いシグナルが発生したら実績が表示されます
+          S買いシグナルが発生したら実績が表示されます
         </div>
       )}
 

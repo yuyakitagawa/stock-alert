@@ -347,8 +347,7 @@ def recommend_from_net(net, allow_buy=True):
 
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None):
-    """S買い候補: 17<=net<=24 かつ drop_prob<4% かつ vol<=25%
-    上位3件がS買い、4件目以降がA買いになる（rank_stocks.pyのフェーズ6で振り分け）"""
+    """S買い: 17<=net<=24 かつ drop_prob<4% かつ vol<=25%。上位3件まで（rank_stocks.pyフェーズ6）"""
     if allow_buy and drop_prob is not None and drop_prob < 4.0 and 17.0 <= net <= 24.0:
         if vol is None or vol <= 25.0:
             return "🥇 S買い"

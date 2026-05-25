@@ -54,7 +54,6 @@ def _upsert(table: str, rows: list[dict]) -> None:
 
 _EMOJI_MAP = {
     "🥇 S買い":        "S買い",
-    "🥈 A買い":        "A買い",
     "⏳ 方向感なし":   "方向感なし",
     "🔴 下降シグナル": "下降シグナル",
     "⚠️ 弱気シグナル": "弱気シグナル",
@@ -262,7 +261,7 @@ def main() -> None:
     export_earnings(codes)
 
     # 4. AI解析（上位 N 銘柄）
-    top_rows = [r for r in ranking_rows if r.get("recommend") in ("S買い", "A買い")][:AI_TOP_N]
+    top_rows = [r for r in ranking_rows if r.get("recommend") == "S買い"][:AI_TOP_N]
     generate_ai_analyses(today, top_rows)
 
     # 5. Next.js ISRキャッシュを即時無効化
