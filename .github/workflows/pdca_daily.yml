@@ -36,6 +36,35 @@ jobs:
       - name: Link repo to ~/stock-alert
         run: ln -s $GITHUB_WORKSPACE ~/stock-alert
 
+      - name: Create .env from secrets
+        run: |
+          echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
+          echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
+          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
+          echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
+          echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
+
+      - name: Restore model cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-v34baseline-weekly-${{ github.run_number }}
+          restore-keys: |
+            ml-models-v34baseline-weekly-
+
+      - name: Restore DB cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/stock_alert.db
+          key: stock-alert-db-${{ github.run_number }}
+          restore-keys: |
+            stock-alert-db-
+
       - name: Configure git
         run: |
           git config user.email "pdca-bot@github-actions"
