@@ -15,7 +15,7 @@ LOG      = PDCA_DIR / "pdca_log.md"
 BASELINE = PDCA_DIR / "baseline_metrics.json"
 TODAY    = date.today().isoformat()
 
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env", override=True)
 
 try:
     import anthropic
