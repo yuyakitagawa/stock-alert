@@ -73,3 +73,15 @@ export interface DailyQuote {
   fiftyTwoWeekHigh: number | null;
   fiftyTwoWeekLow:  number | null;
 }
+
+export interface Article {
+  id:           number;
+  slug:         string;
+  code:         string;
+  name:         string;
+  title:        string;
+  body:         string;
+  signal_date:  string;
+  net_score:    number | null;
+  published_at: string;
+}

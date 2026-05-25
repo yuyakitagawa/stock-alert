@@ -30,6 +30,12 @@
       "runtimeExecutable": "venv/bin/python3",
       "runtimeArgs": ["rf_train_v3.py"],
       "port": null
+    },
+    {
+      "name": "Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 3000
     }
   ]
 }
