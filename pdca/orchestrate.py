@@ -5,6 +5,7 @@
 import sys, os, re, json, subprocess
 from pathlib import Path
 from datetime import date
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PDCA_DIR = Path(__file__).resolve().parent
@@ -13,6 +14,8 @@ FEEDBACK = PDCA_DIR / "feedback.md"
 LOG      = PDCA_DIR / "pdca_log.md"
 BASELINE = PDCA_DIR / "baseline_metrics.json"
 TODAY    = date.today().isoformat()
+
+load_dotenv(BASE_DIR / ".env")
 
 try:
     import anthropic
