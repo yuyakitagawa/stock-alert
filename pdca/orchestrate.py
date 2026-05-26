@@ -199,8 +199,8 @@ def load_today_signals():
         return []
 
 
-def fund_manager_stock_advice(signals):
-    """S買いシグナル銘柄をFund Managerが評価して購入推奨コメントを返す"""
+def fund_manager_stock_advice(signals, reports):
+    """アナリストレポートを読んでFund Managerが最終的な購入推奨を決定する"""
     rows = "\n".join(
         f"  {s.get('銘柄コード')} {s.get('銘柄名')}  "
         f"net={s.get('ネット(%)')}%  rise={s.get('上昇確率(%)')}%  "
@@ -208,23 +208,33 @@ def fund_manager_stock_advice(signals):
         f"損切={s.get('損切り幅(%)')}%"
         for s in signals
     )
-    prompt = f"""あなたは株式ファンドマネージャーです。
+    reports_text = "\n\n".join(
+        f"【{code} アナリストレポート】\n{report}"
+        for code, report in reports.items()
+    )
+    prompt = f"""あなたはファンドマネージャーです。
 オーナーの目標: 株式運用で3年以内に1億円を作り、家を買う。
-この目標のために、今日のS買いシグナル銘柄の中から実際に買うべき銘柄を選んでください。
 
-【S買いシグナル一覧】
+アナリストが各銘柄を徹底調査し、以下のレポートを提出しました。
+モデルのシグナルとアナリストの見解を総合して、実際に買うべき銘柄を決定してください。
+
+【モデル S買いシグナル一覧】
 {rows}
 
-評価基準（優先順）:
-1. 期待リターンが最大（ネットスコアが高い）
-2. 下落リスクが低い（下落確率・ボラが小さい）
-3. 損切り幅が許容範囲内（-10%以内が理想）
+【アナリストレポート】
+{reports_text}
 
-上位1〜3銘柄を選び、それぞれ1〜2文で「なぜ買うべきか」を説明してください。
-最後に「今日の一押し」を1つ選んで太字で示してください。
-読みやすい日本語テキストで回答してください（JSONは不要）。"""
+判断基準:
+1. アナリストが「買い推奨」で、モデルのネットスコアも高い銘柄を優先
+2. リスク（ボラ・損切り幅）が許容範囲内か確認
+3. アナリストが「売り推奨」や重大なリスクを指摘した銘柄は除外
+
+上位1〜3銘柄を選び、「なぜ買うべきか（モデル+ファンダメンタルズの両面から）」を
+それぞれ2〜3文で説明してください。
+最後に「今日の一押し」を1つ選んで明示してください。
+日本語テキストで回答（JSON不要）。"""
     try:
-        return call_claude("claude-haiku-4-5-20251001", prompt, 600)
+        return call_claude("claude-haiku-4-5-20251001", prompt, 800)
     except Exception as e:
         return f"評価エラー: {e}"
 
@@ -264,6 +274,62 @@ Fund Manager のコメント
         print(f"  [メール送信エラー] {e}")
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  証券アナリスト（Analyst）
+#  企業の財務状況・経営戦略・業界動向を調査し、FM へ推奨レポートを提出
+# ══════════════════════════════════════════════════════════════════════
+
+def analyst_research_stock(code, name, net_score, vol):
+    """1銘柄を徹底調査して買い/売り推奨レポートを返す（web検索×3回）"""
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1200,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+            messages=[{"role": "user", "content": f"""あなたは証券アナリストです。
+企業の財務状況、経営戦略、業界動向などを徹底的に調査・分析する専門家として、
+以下の銘柄をIR取材レベルで調査し、ファンドマネージャーへの推奨レポートを作成してください。
+
+【調査対象】{code} {name}
+【モデルスコア】ネットスコア={net_score}%  ボラティリティ={vol}%
+
+以下の観点で web 検索して調査してください:
+1. 財務状況 — 直近の決算、売上高・利益の成長率、PER/PBR/ROE、キャッシュフロー
+2. 経営戦略・IR — 経営者コメント、中期経営計画、直近のプレスリリース・IR資料
+3. 業界動向 — セクターのトレンド、競合他社との比較、逆風・追い風要因
+4. リスク要因 — 決算ミス、地政学リスク、法規制変更など
+
+【レポート形式】
+- 各観点を2〜3文で要約
+- 総合評価: 「強く買い推奨」「買い推奨」「中立」「売り推奨」のいずれかを明記
+- 推奨理由を1〜2文で結論として書く
+"""}],
+        )
+        texts = [b.text for b in response.content if hasattr(b, 'text') and b.text]
+        return '\n'.join(texts) if texts else "（調査結果なし）"
+    except Exception as e:
+        return f"（調査エラー: {type(e).__name__}）"
+
+
+def analyst_reports(signals):
+    """S買いシグナル銘柄をアナリストが全件調査してレポート dict を返す"""
+    reports = {}
+    for s in signals:
+        code = s.get('銘柄コード', '')
+        name = s.get('銘柄名', '')
+        net  = s.get('ネット(%)', '')
+        vol  = s.get('ボラ(%)', '')
+        print(f"  → アナリスト調査中: {code} {name} ...")
+        reports[code] = analyst_research_stock(code, name, net, vol)
+        print(f"    完了")
+    return reports
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  数量アナリスト（Quant Analyst）
+#  モデルパラメータの改善提案 — config.py を毎日チューニング
+# ══════════════════════════════════════════════════════════════════════
+
 def _research_papers():
     """最新の量的金融・機械学習論文を web 検索してサマリーを返す（失敗しても継続）"""
     try:
@@ -284,7 +350,8 @@ def _research_papers():
         return f"（論文検索スキップ: {type(e).__name__}）"
 
 
-def analyst(metrics, baseline):
+def quant_analyst(metrics, baseline):
+    """数量アナリスト: 最新論文×backtest結果をもとに config.py 改善案を提案"""
     bsl    = baseline or metrics
     config = (BASE_DIR / "config.py").read_text('utf-8')
     fi     = (BASE_DIR / "feature_importance.json").read_text('utf-8')
@@ -293,12 +360,13 @@ def analyst(metrics, baseline):
     research = _research_papers()
     print(f"  → 検索完了: {research[:80].strip()}...")
 
-    prompt = f"""あなたは株式予測モデルのアナリストです。
-オーナーの目標: 株式運用で3年以内に1億円を作る。モデルの改善はその手段。
+    prompt = f"""あなたは数量アナリスト（クオンツ）です。
+XGBoostベースの日本株63日予測モデルを改善するため、最新研究とbacktest結果を分析してください。
+オーナーの目標: 株式運用で3年以内に1億円を作る。
 
 現在のバックテスト（複数期間平均）:
   avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%
-ベースライン（これまでの最良値）:
+ベースライン:
   avg={bsl.get('avg_return')}%  win={bsl.get('win_rate')}%  big={bsl.get('big_win_rate')}%
 
 【config.py 全文】
@@ -310,20 +378,19 @@ def analyst(metrics, baseline):
 【最新研究からの知見】
 {research}
 
-改善提案のルール:
+提案ルール:
 - config.py の数値定数を変更する（最大3つまで同時変更可）
 - 変更幅の制限なし（大胆な仮説も歓迎）
-- 変更禁止: BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD（市場分類の根幹のため）
+- 変更禁止: BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD
 - コメント行は変更しない
 
-JSON のみで回答（変更が1つでも複数でも同じ形式）:
+JSON のみで回答:
 {{"changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}"""
 
-    raw = call_claude("claude-sonnet-4-6", prompt, 600)
+    raw    = call_claude("claude-sonnet-4-6", prompt, 600)
     parsed = parse_json(raw)
     if parsed and "changes" in parsed:
-        return parsed  # 複数変更形式
-    # フォールバック: 旧形式（1つだけ）を新形式に変換
+        return parsed
     if parsed and "param_name" in parsed:
         return {"changes": [parsed]}
     return None
@@ -429,15 +496,19 @@ def main():
         log("- 初回実行: baseline設定")
         print("  初回: baselineを現在値で設定")
 
-    # Step1.5: S買いシグナル銘柄チェック → 購入通知
+    # Step1.5: S買いシグナル銘柄チェック → アナリスト調査 → FM判断 → 購入通知
     print("Step1.5: S買いシグナル 確認中...")
     signals = load_today_signals()
     if signals:
-        print(f"  → {len(signals)}銘柄 発見: {[s.get('銘柄コード') for s in signals]}")
-        advice = fund_manager_stock_advice(signals)
-        print(f"  → Fund Manager コメント:\n{advice}")
+        codes = [s.get('銘柄コード') for s in signals]
+        print(f"  → {len(signals)}銘柄 発見: {codes}")
+        print("Step1.5a: アナリスト 各銘柄を調査中...")
+        reports = analyst_reports(signals)
+        print("Step1.5b: Fund Manager レポートを読んで推奨銘柄を決定中...")
+        advice = fund_manager_stock_advice(signals, reports)
+        print(f"  → FM推奨:\n{advice}")
         send_buy_notification(signals, advice)
-        log(f"- signals: {len(signals)}銘柄 通知済み ({[s.get('銘柄コード') for s in signals]})")
+        log(f"- signals: {len(signals)}銘柄 通知済み {codes}")
     else:
         print("  → 本日S買いシグナルなし")
         log("- signals: なし")
@@ -455,9 +526,9 @@ def main():
         push_log()
         return
 
-    # Step3: Analyst
-    print("Step3: Analyst 分析中...")
-    prop = analyst(metrics, baseline)
+    # Step3: 数量アナリスト（Quant Analyst） — モデルパラメータ改善
+    print("Step3: Quant Analyst 分析中...")
+    prop = quant_analyst(metrics, baseline)
     if not prop:
         log("- analyst: parse error"); push_log(); return
     for ch in prop.get('changes', []):
