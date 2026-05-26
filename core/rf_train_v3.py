@@ -9,7 +9,9 @@ from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
-FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値(%)
+FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値（fallback用）
+ALPHA_THRESHOLD=5.0      # 日経比アルファ上昇閾値(%) — 日経を5%上回ったら「上昇」
+DROP_ALPHA_THRESHOLD=5.0 # 日経比アルファ下落閾値(%) — 日経を5%下回ったら「下落」
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
@@ -127,7 +129,19 @@ def generate_samples(df, nk_df=None, screener_only=False):
         feat=extract_features(closes[:i+1], v_slice, nk_rets)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
-        samples.append((dates[i],feat,int(chg>=RISE_THRESHOLD),int(chg<=-DROP_THRESHOLD)))
+
+        # アルファラベル: 日経比相対リターンで学習（絶対リターンより意味のある指標）
+        if nk_df is not None and i0 is not None and i0+FORECAST < len(nk_closes) and nk_closes[i0]!=0:
+            nk_future_ret=(nk_closes[i0+FORECAST]-nk_closes[i0])/nk_closes[i0]*100
+            alpha=chg-nk_future_ret
+            label_rise=int(alpha>=ALPHA_THRESHOLD)
+            label_drop=int(alpha<=-DROP_ALPHA_THRESHOLD)
+        else:
+            # 日経データなし → 絶対リターンで fallback
+            label_rise=int(chg>=RISE_THRESHOLD)
+            label_drop=int(chg<=-DROP_THRESHOLD)
+
+        samples.append((dates[i],feat,label_rise,label_drop))
     return samples
 
 def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
@@ -210,8 +224,8 @@ def main():
     n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
-    print(f"上昇ラベル: 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
-    print(f"下落ラベル: 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
+    print(f"上昇ラベル(α≥+{ALPHA_THRESHOLD}%): 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
+    print(f"下落ラベル(α≤-{DROP_ALPHA_THRESHOLD}%): 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
     # キャリブレーション用: 学習データを日付順に並べ、最新20%をキャリブレーション用に分離
     sort_idx=np.argsort(np.array(train_dates))
     X_tr_s=X_tr[sort_idx]; yr_s=yr_tr[sort_idx]; yd_s=yd_tr[sort_idx]
