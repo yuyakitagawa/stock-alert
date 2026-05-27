@@ -145,6 +145,94 @@ GOAL_AVG    = 3.0   # 改善目標: avg_return > 3%
 GOAL_WIN    = 45.0  # 改善目標: win_rate > 45%
 GOAL_BIGWIN = 20.0  # 改善目標: big_win_rate > 20%
 
+# ── 投資ステージ管理 ──────────────────────────────────────────────────────
+# Phase 0: モデル改善中（ETFに入れておく）
+# Phase 1: 目標達成 → 少額でモデルに従う
+INVEST_STAGE_FILE = PDCA_DIR / "invest_stage.json"
+
+def get_invest_stage():
+    if INVEST_STAGE_FILE.exists():
+        return json.loads(INVEST_STAGE_FILE.read_text())
+    return {"phase": 0, "first_achieved": None}
+
+def check_and_notify_stage_change(metrics):
+    """目標値を全て超えたら Phase 1 に移行し、メールで通知"""
+    avg = metrics.get('avg_return', -9999)
+    win = metrics.get('win_rate', 0)
+    big = metrics.get('big_win_rate', 0)
+    goals_met = avg >= GOAL_AVG and win >= GOAL_WIN and big >= GOAL_BIGWIN
+
+    stage = get_invest_stage()
+    if goals_met and stage['phase'] == 0:
+        stage = {"phase": 1, "first_achieved": TODAY,
+                 "avg": avg, "win": win, "big": big}
+        INVEST_STAGE_FILE.write_text(json.dumps(stage, indent=2))
+        _send_stage_notification(stage)
+        return True
+    elif not goals_met and stage['phase'] == 1:
+        # 目標を下回ったら Phase 0 に戻す
+        stage = {"phase": 0, "first_achieved": None,
+                 "avg": avg, "win": win, "big": big}
+        INVEST_STAGE_FILE.write_text(json.dumps(stage, indent=2))
+        _send_stage_notification(stage)
+        return False
+    return goals_met
+
+def _send_stage_notification(stage):
+    gmail_addr = os.getenv("GMAIL_ADDRESS")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    if not gmail_addr or not gmail_pass:
+        return
+    phase = stage['phase']
+    if phase == 1:
+        subject = f"🎉 モデル目標達成！投資フェーズ移行 — {TODAY}"
+        body = f"""モデルが目標値を初めて達成しました！
+
+【達成スコア】
+  平均リターン: {stage.get('avg')}%  (目標: >{GOAL_AVG}%)
+  勝率:         {stage.get('win')}%  (目標: >{GOAL_WIN}%)
+  大勝率:       {stage.get('big')}%  (目標: >{GOAL_BIGWIN}%)
+
+━━━━━━━━━━━━━━━━
+📌 次のアクション
+━━━━━━━━━━━━━━━━
+モデルのパフォーマンスが十分なレベルに達しました。
+
+【投資フェーズ 1 移行推奨】
+・まず少額（例: 30〜50万円）をモデルシグナルに従い試運転
+・S買いシグナルが出たら1銘柄あたり10〜15万円で購入
+・損切りラインを必ず設定する（シグナルメールに記載）
+・ETF枠はそのまま維持（リスク分散）
+
+継続して目標を上回り続けることを確認してから増額してください。
+"""
+    else:
+        subject = f"⚠️ モデル性能が目標を下回りました — {TODAY}"
+        body = f"""モデルのパフォーマンスが目標値を下回りました。
+
+【現在のスコア】
+  平均リターン: {stage.get('avg')}%  (目標: >{GOAL_AVG}%)
+  勝率:         {stage.get('win')}%  (目標: >{GOAL_WIN}%)
+  大勝率:       {stage.get('big')}%  (目標: >{GOAL_BIGWIN}%)
+
+【推奨アクション】
+・モデルシグナルによる新規購入は一時停止
+・保有中の銘柄は損切りラインを守りつつ管理を継続
+・PDCAループで改善中 — 目標再達成時に再通知します
+"""
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = gmail_addr
+    msg["To"] = NOTIFY_TO
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_addr, gmail_pass)
+            server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
+        print(f"  → 投資ステージ変更通知を送信: Phase {phase}")
+    except Exception as e:
+        print(f"  [ステージ通知エラー] {e}")
+
 def fund_manager(metrics, baseline, feedback):
     bsl = baseline or metrics
 
@@ -239,7 +327,7 @@ def fund_manager_stock_advice(signals, reports):
         return f"評価エラー: {e}"
 
 
-def send_buy_notification(signals, advice):
+def send_buy_notification(signals, advice, metrics=None):
     """購入推奨をGmailで通知"""
     gmail_addr = os.getenv("GMAIL_ADDRESS")
     gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
@@ -247,10 +335,29 @@ def send_buy_notification(signals, advice):
         print("  [通知スキップ] GMAIL_ADDRESS / GMAIL_APP_PASSWORD 未設定")
         return
 
+    stage = get_invest_stage()
+    phase = stage.get('phase', 0)
+    if phase == 1:
+        phase_text = "✅ 投資フェーズ 1（モデルに従って購入OK）"
+    else:
+        avg = (metrics or {}).get('avg_return', '?')
+        win = (metrics or {}).get('win_rate', '?')
+        big = (metrics or {}).get('big_win_rate', '?')
+        phase_text = (
+            f"⏳ 投資フェーズ 0（モデル改善中 — ETF待機を推奨）\n"
+            f"   現在スコア: avg={avg}% / win={win}% / big={big}%\n"
+            f"   目標: avg>{GOAL_AVG}% / win>{GOAL_WIN}% / big>{GOAL_BIGWIN}%"
+        )
+
     codes = ", ".join(f"{s.get('銘柄コード')} {s.get('銘柄名')}" for s in signals)
     body = f"""📈 本日の S買いシグナル銘柄が出ました
 
 {codes}
+
+━━━━━━━━━━━━━━━━
+投資ステージ
+━━━━━━━━━━━━━━━━
+{phase_text}
 
 ━━━━━━━━━━━━━━━━
 Fund Manager のコメント
@@ -562,18 +669,25 @@ def main():
         log("- 初回実行: baseline設定")
         print("  初回: baselineを現在値で設定")
 
-    # Step1.5: S買いシグナル銘柄チェック → アナリスト調査 → FM判断 → 購入通知
-    print("Step1.5: S買いシグナル 確認中...")
+    # Step1.5: 投資ステージチェック（目標達成 → Phase 1 通知）
+    stage_changed = check_and_notify_stage_change(metrics)
+    stage = get_invest_stage()
+    phase_label = f"Phase {stage.get('phase', 0)}"
+    print(f"  投資ステージ: {phase_label} (avg>{GOAL_AVG}% win>{GOAL_WIN}% big>{GOAL_BIGWIN}% {'✅達成' if stage.get('phase') == 1 else '⏳未達'})")
+    log(f"- invest_stage: {phase_label}")
+
+    # Step1.6: S買いシグナル銘柄チェック → アナリスト調査 → FM判断 → 購入通知
+    print("Step1.6: S買いシグナル 確認中...")
     signals = load_today_signals()
     if signals:
         codes = [s.get('銘柄コード') for s in signals]
         print(f"  → {len(signals)}銘柄 発見: {codes}")
-        print("Step1.5a: アナリスト 各銘柄を調査中...")
+        print("Step1.6a: アナリスト 各銘柄を調査中...")
         reports = analyst_reports(signals)
-        print("Step1.5b: Fund Manager レポートを読んで推奨銘柄を決定中...")
+        print("Step1.6b: Fund Manager レポートを読んで推奨銘柄を決定中...")
         advice = fund_manager_stock_advice(signals, reports)
         print(f"  → FM推奨:\n{advice}")
-        send_buy_notification(signals, advice)
+        send_buy_notification(signals, advice, metrics)
         log(f"- signals: {len(signals)}銘柄 通知済み {codes}")
     else:
         print("  → 本日S買いシグナルなし")
