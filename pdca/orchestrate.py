@@ -414,7 +414,7 @@ JSON のみで回答（fileフィールドで対象ファイルを指定）:
 または
 {{"file":"rf_train_v3.py","changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}"""
 
-    raw    = call_claude("claude-sonnet-4-6", prompt, 800)
+    raw    = call_claude("claude-opus-4-5", prompt, 1200)
     parsed = parse_json(raw)
     if parsed and "changes" in parsed:
         return parsed
