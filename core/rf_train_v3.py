@@ -16,7 +16,7 @@ SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-SAVE_DIR = PROJECT_DIR if os.path.isdir(PROJECT_DIR) else os.path.expanduser("~/stock-alert")
+SAVE_DIR = os.path.dirname(PROJECT_DIR)  # repo root (stock-alert/)
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
 
 # スクリーナーフィルター定数（screener.pyと同値に保つ）
