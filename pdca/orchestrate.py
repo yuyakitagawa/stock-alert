@@ -44,7 +44,7 @@ BACKTEST_PERIODS = [
 def _run_one_backtest(start, end):
     """1期間のバックテストを実行してメトリクス dict を返す（ローリング5日モード）"""
     r = subprocess.run(
-        [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "5"],
+        [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "21"],
         capture_output=True, text=True, cwd=str(BASE_DIR), timeout=3600,
         env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
     )
@@ -141,10 +141,10 @@ def git_commit_push(files, msg):
 
 NOTIFY_TO   = "dosankoure@gmail.com"
 
-GOAL_AVG    = 1.0   # 投資開始ゲート: avg_return > 1%/5日（年率換算52%）
+GOAL_AVG    = 2.0   # 投資開始ゲート: avg_return > 2%/21日（年率換算26%）
 GOAL_WIN    = 50.0  # 投資開始ゲート: win_rate > 50%
-GOAL_BIGWIN = 25.0  # 投資開始ゲート: big_win_rate > 25%（+5%/5日）
-# 最終目標: 元本300万円 → 10年で1億円（年率42% ≈ 5日1%を50回/年）
+GOAL_BIGWIN = 20.0  # 投資開始ゲート: big_win_rate > 20%（+8%/21日）
+# 最終目標: 元本300万円 → 10年で1億円（3%/月 × 120ヶ月 = 34倍）
 
 # ── 投資ステージ管理 ──────────────────────────────────────────────────────
 # Phase 0: モデル改善中（ETFに入れておく）

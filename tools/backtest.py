@@ -65,9 +65,9 @@ if _args.end:
 if _args.start or _args.end:
     print(f'【カスタム期間: {BACKTEST_DATE} → {TODAY}】')
 
-FORECAST_DAYS  = _args.forecast_days if hasattr(_args, 'forecast_days') else 5
-RISE_THRESHOLD = 2.0 if FORECAST_DAYS <= 10 else 15.0  # 5日モデル=2%, 63日モデル=15%
-BIG_WIN_THRESHOLD = 5.0 if FORECAST_DAYS <= 10 else 15.0
+FORECAST_DAYS  = _args.forecast_days if hasattr(_args, 'forecast_days') else 21
+RISE_THRESHOLD = 5.0 if FORECAST_DAYS <= 30 else 15.0   # 21日モデル=5%, 63日モデル=15%
+BIG_WIN_THRESHOLD = 8.0 if FORECAST_DAYS <= 30 else 15.0  # 21日で+8%=大勝
 NET_THRESHOLD  = 5.0
 TOP_N          = _args.top_n
 NET_MIN        = _args.net_min

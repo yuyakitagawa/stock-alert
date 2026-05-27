@@ -9,10 +9,10 @@ from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
-FORECAST=5; RISE_THRESHOLD=2.0; DROP_THRESHOLD=2.0  # 5日（1週間）±2%で学習
+FORECAST=21; RISE_THRESHOLD=5.0; DROP_THRESHOLD=5.0  # 21日（1ヶ月）±5%で学習
 ALPHA_THRESHOLD=3.0      # 将来用（現在未使用）
 DROP_ALPHA_THRESHOLD=3.0 # 将来用（現在未使用）
-SAMPLE_INTERVAL=5; HISTORY_DAYS=1800  # 5日ごとにサンプル（FORECASTに合わせる）
+SAMPLE_INTERVAL=21; HISTORY_DAYS=1800  # 21日ごとにサンプル（FORECASTに合わせる）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
