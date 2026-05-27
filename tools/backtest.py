@@ -42,6 +42,8 @@ _parser.add_argument("--no-screener", action="store_true", help="スクリーナ
 _parser.add_argument("--start",   type=str,   default=None, help="開始日 YYYY-MM-DD")
 _parser.add_argument("--end",     type=str,   default=None, help="終了日 YYYY-MM-DD")
 _parser.add_argument("--model-cutoff", type=str, default=None, help="使用するモデルのcutoff日 YYYY-MM-DD")
+_parser.add_argument("--rolling",       action="store_true",  help="ローリング5日バックテストモード")
+_parser.add_argument("--forecast-days", type=int, default=5,  help="保有日数（ローリングモード用、デフォルト5）")
 _args, _ = _parser.parse_known_args()
 
 if _args.mode == 'bear':
@@ -63,7 +65,9 @@ if _args.end:
 if _args.start or _args.end:
     print(f'【カスタム期間: {BACKTEST_DATE} → {TODAY}】')
 
-RISE_THRESHOLD = 15.0
+FORECAST_DAYS  = _args.forecast_days if hasattr(_args, 'forecast_days') else 5
+RISE_THRESHOLD = 2.0 if FORECAST_DAYS <= 10 else 15.0  # 5日モデル=2%, 63日モデル=15%
+BIG_WIN_THRESHOLD = 5.0 if FORECAST_DAYS <= 10 else 15.0
 NET_THRESHOLD  = 5.0
 TOP_N          = _args.top_n
 NET_MIN        = _args.net_min
@@ -500,12 +504,12 @@ def main():
             return
         avg = group_df["実績リターン(%)"].mean()
         wins_0  = (group_df["実績リターン(%)"] > 0).sum()
-        wins_15 = (group_df["実績リターン(%)"] >= RISE_THRESHOLD).sum()
+        wins_big = (group_df["実績リターン(%)"] >= BIG_WIN_THRESHOLD).sum()
         print(f"\n{'='*60}")
         print(f"【{label} ({n}銘柄)】")
         print(f"  平均リターン: {avg:+.2f}%")
         print(f"  勝率（+0%以上）: {wins_0}/{n} = {wins_0/n*100:.1f}%")
-        print(f"  大勝率（+15%以上）: {wins_15}/{n} = {wins_15/n*100:.1f}%")
+        print(f"  大勝率（+{BIG_WIN_THRESHOLD:.0f}%以上）: {wins_big}/{n} = {wins_big/n*100:.1f}%")
         if nk_ret is not None:
             diff = avg - nk_ret
             alpha_wins = (group_df["実績リターン(%)"] > nk_ret).sum()
@@ -517,7 +521,7 @@ def main():
         print(f"{'コード':>6}  {'銘柄名':<20}  {'予測ネット':>10}  {'実績':>8}  結果")
         print("-" * 60)
         for _, row in group_df.sort_values("実績リターン(%)", ascending=False).iterrows():
-            mark = "✅" if row["実績リターン(%)"] >= RISE_THRESHOLD else ("🔵" if row["実績リターン(%)"] > 0 else "❌")
+            mark = "✅" if row["実績リターン(%)"] >= BIG_WIN_THRESHOLD else ("🔵" if row["実績リターン(%)"] > 0 else "❌")
             print(
                 f"{row['コード']:>6}  {str(row['銘柄名']):<20}  "
                 f"ネット{row['ネット(%)']:>+6.1f}%  "
@@ -548,11 +552,11 @@ def main():
                 alpha    = avg - nk
                 a_wins   = (cand["実績リターン(%)"] > nk).sum()
                 wins_0   = (cand["実績リターン(%)"] > 0).sum()
-                wins_15  = (cand["実績リターン(%)"] >= RISE_THRESHOLD).sum()
+                wins_big = (cand["実績リターン(%)"] >= BIG_WIN_THRESHOLD).sum()
                 print(
                     f"  {tag:<20} {n:>5} {avg:>+7.2f}% {alpha:>+8.2f}%"
                     f"  {a_wins}/{n}={a_wins/n*100:.0f}%"
-                    f"  {wins_0/n*100:.0f}%  {wins_15/n*100:.0f}%"
+                    f"  {wins_0/n*100:.0f}%  {wins_big/n*100:.0f}%"
                 )
         # 詳細は通常モードのTOP_N設定で表示
         top_df = df.nlargest(TOP_N, "ネット(%)")
@@ -579,5 +583,155 @@ def main():
     print("完了")
 
 
+def run_rolling_main():
+    """ローリング N 日バックテスト: 期間内を FORECAST_DAYS ごとに分割して評価"""
+    fd = FORECAST_DAYS
+    print("=" * 60)
+    print(f"  ローリング{fd}日バックテスト: {BACKTEST_DATE} → {TODAY}")
+    print(f"  上位{TOP_N}銘柄 × 各ラウンド")
+    print("=" * 60)
+
+    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
+    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    if not os.path.exists(rise_path):
+        print(f"ERROR: {rise_path} が見つかりません"); return
+    rise_model = joblib.load(rise_path)
+    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    print("モデル読み込み完了")
+
+    print("TSE全銘柄リストを取得中...")
+    all_stocks = fetch_tse_codes()
+
+    print("日経225データ取得中...")
+    nikkei_hist = get_nikkei_prices()
+    if nikkei_hist is None:
+        print("ERROR: 日経データ取得失敗"); return
+    nk_c = nikkei_hist["Close"].dropna()
+    nk_c.index = pd.to_datetime(nk_c.index).date
+    trading_dates = sorted(d for d in nk_c.index if BACKTEST_DATE <= d <= TODAY)
+    if len(trading_dates) < fd + 1:
+        print("ERROR: 期間内の営業日が不足"); return
+    entry_dates = trading_dates[::fd]
+
+    # 株価データを一括取得
+    print(f"株価データ取得中（{len(all_stocks)}銘柄）...")
+    stocks_hist = {}
+    for i, (code, name) in enumerate(all_stocks):
+        h = get_hist_for_features(code)
+        if h is not None:
+            stocks_hist[code] = (h, name)
+        if (i + 1) % 200 == 0:
+            print(f"  {i+1}/{len(all_stocks)} 取得済み...")
+        time.sleep(0.05)
+
+    # 初回エントリー日でスクリーナーフィルターを一度だけ適用
+    nikkei_return_3m_sc = None
+    nk_past0 = nk_c[nk_c.index <= BACKTEST_DATE]
+    if len(nk_past0) >= 64:
+        nkp0 = nk_past0.values
+        nikkei_return_3m_sc = (nkp0[-1] - nkp0[-64]) / nkp0[-64]
+    screener_raw = []
+    for code, (h, name) in stocks_hist.items():
+        sc = compute_screener_at(h, BACKTEST_DATE, nikkei_return_3m_sc)
+        screener_raw.append({"code": code, **(sc if sc else {})})
+    pass_codes = set(_get_screener_pass_codes(screener_raw))
+    screened = {c: v for c, v in stocks_hist.items() if c in pass_codes}
+    print(f"スクリーナー通過: {len(screened)} 銘柄")
+
+    per_round_avgs = []
+    all_trades = []
+
+    for ri, entry_date in enumerate(entry_dates):
+        ei = trading_dates.index(entry_date)
+        if ei + fd >= len(trading_dates):
+            break
+        exit_date = trading_dates[ei + fd]
+
+        # 日経リターン（エントリー日時点）
+        nk_at = nk_c[nk_c.index <= entry_date]
+        if len(nk_at) < 61:
+            continue
+        nkp = nk_at.values
+        nkr = ((nkp[-1]-nkp[-6])/nkp[-6] if len(nkp)>=6 else 0,
+                (nkp[-1]-nkp[-21])/nkp[-21] if len(nkp)>=21 else 0,
+                (nkp[-1]-nkp[-61])/nkp[-61] if len(nkp)>=61 else 0)
+
+        raw_feats, raw_meta = [], []
+        for code, (h, name) in screened.items():
+            feat = extract_features_at(h, entry_date, nkr)
+            if feat is None:
+                continue
+            cl = h["Close"].dropna()
+            cl.index = pd.to_datetime(cl.index).date
+            ep = cl[cl.index <= entry_date]
+            xp = cl[cl.index <= exit_date]
+            if ep.empty or xp.empty:
+                continue
+            raw_feats.append(feat)
+            raw_meta.append((code, name, float(ep.iloc[-1]), float(xp.iloc[-1])))
+
+        if not raw_feats:
+            continue
+
+        fa = add_cs_rank_features(np.array(raw_feats, dtype=float))
+        scores = []
+        for idx, (code, name, pe, px) in enumerate(raw_meta):
+            rp = float(rise_model.predict_proba([fa[idx]])[0][1]) * 100
+            dp = float(drop_model.predict_proba([fa[idx]])[0][1]) * 100 if drop_model else 0
+            ret = (px - pe) / pe * 100
+            scores.append((code, name, rp - dp, ret))
+
+        scores.sort(key=lambda x: -x[2])
+        top = scores[:TOP_N]
+        rets = [r[3] for r in top]
+        avg_r = float(np.mean(rets))
+        per_round_avgs.append(avg_r)
+        for code, name, net, ret in top:
+            all_trades.append({"ラウンド": ri+1, "entry": str(entry_date),
+                                "exit": str(exit_date), "code": code,
+                                "銘柄名": name, "net": round(net,1), "return": round(ret,2)})
+
+        # 日経同期間リターン
+        nk_entry = nk_c[nk_c.index <= entry_date]
+        nk_exit  = nk_c[nk_c.index <= exit_date]
+        nk_ret = (float(nk_exit.iloc[-1]) - float(nk_entry.iloc[-1])) / float(nk_entry.iloc[-1]) * 100 \
+                 if not nk_entry.empty and not nk_exit.empty else 0
+        wins_r = sum(1 for r in rets if r > 0)
+        print(f"  R{ri+1:02d} [{entry_date}→{exit_date}] avg={avg_r:+.2f}%  "
+              f"日経={nk_ret:+.2f}%  勝率={wins_r}/{len(rets)}")
+
+    if not per_round_avgs:
+        print("ERROR: 有効ラウンドなし"); return
+
+    n_rounds = len(per_round_avgs)
+    avg  = float(np.mean(per_round_avgs))
+    wins = sum(1 for x in per_round_avgs if x > 0)
+    bigs = sum(1 for x in per_round_avgs if x >= BIG_WIN_THRESHOLD)
+    print(f"\n{'='*60}")
+    print(f"【ローリング{fd}日 複合結果: {n_rounds}ラウンド】")
+    print(f"  平均リターン: {avg:+.2f}%")
+    print(f"  勝率（+0%以上）: {wins}/{n_rounds} = {wins/n_rounds*100:.1f}%")
+    print(f"  大勝率（+{BIG_WIN_THRESHOLD:.0f}%以上）: {bigs}/{n_rounds} = {bigs/n_rounds*100:.1f}%")
+
+    # 日経ベンチマーク
+    nk_s = nk_c[nk_c.index <= BACKTEST_DATE]
+    nk_e = nk_c[nk_c.index <= TODAY]
+    if not nk_s.empty and not nk_e.empty:
+        nk_total = (float(nk_e.iloc[-1]) - float(nk_s.iloc[-1])) / float(nk_s.iloc[-1]) * 100
+        print(f"  日経225 期間合計: {nk_total:+.2f}% ({BACKTEST_DATE}→{TODAY})")
+
+    # CSV保存
+    if all_trades:
+        out_dir = os.path.join(BASE_DIR, "simulations", "backtests")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"rolling{fd}d_{BACKTEST_DATE}_{TODAY}.csv")
+        pd.DataFrame(all_trades).to_csv(out_path, index=False, encoding="utf-8-sig")
+        print(f"\n全結果保存: {out_path}")
+    print("完了")
+
+
 if __name__ == "__main__":
-    main()
+    if getattr(_args, 'rolling', False):
+        run_rolling_main()
+    else:
+        main()

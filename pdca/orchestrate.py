@@ -42,18 +42,18 @@ BACKTEST_PERIODS = [
 
 
 def _run_one_backtest(start, end):
-    """1期間のバックテストを実行してメトリクス dict を返す"""
+    """1期間のバックテストを実行してメトリクス dict を返す（ローリング5日モード）"""
     r = subprocess.run(
-        [PYTHON, "tools/backtest.py", "--start", start, "--end", end],
-        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=1800,
+        [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "5"],
+        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=3600,
         env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
     )
     out = r.stdout + r.stderr
     m = {}
     for pat, key in [
-        (r'平均リターン: ([+-]?\d+\.?\d*)%',             'avg_return'),
-        (r'勝率（\+0%以上）: \d+/\d+ = (\d+\.?\d*)%',    'win_rate'),
-        (r'大勝率（\+15%以上）: \d+/\d+ = (\d+\.?\d*)%', 'big_win_rate'),
+        (r'平均リターン: ([+-]?\d+\.?\d*)%',              'avg_return'),
+        (r'勝率（\+0%以上）: \d+/\d+ = (\d+\.?\d*)%',     'win_rate'),
+        (r'大勝率（\+\d+%以上）: \d+/\d+ = (\d+\.?\d*)%', 'big_win_rate'),
     ]:
         found = re.search(pat, out)
         if found:
@@ -141,10 +141,10 @@ def git_commit_push(files, msg):
 
 NOTIFY_TO   = "dosankoure@gmail.com"
 
-GOAL_AVG    = 3.0   # 投資開始ゲート: avg_return > 3%（最終目標は9%/四半期）
-GOAL_WIN    = 45.0  # 投資開始ゲート: win_rate > 45%
-GOAL_BIGWIN = 20.0  # 投資開始ゲート: big_win_rate > 20%
-# 最終目標: 元本300万円 → 10年で1億円（必要年率42%、四半期9%）
+GOAL_AVG    = 1.0   # 投資開始ゲート: avg_return > 1%/5日（年率換算52%）
+GOAL_WIN    = 50.0  # 投資開始ゲート: win_rate > 50%
+GOAL_BIGWIN = 25.0  # 投資開始ゲート: big_win_rate > 25%（+5%/5日）
+# 最終目標: 元本300万円 → 10年で1億円（年率42% ≈ 5日1%を50回/年）
 
 # ── 投資ステージ管理 ──────────────────────────────────────────────────────
 # Phase 0: モデル改善中（ETFに入れておく）
