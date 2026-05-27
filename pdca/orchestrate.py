@@ -141,9 +141,10 @@ def git_commit_push(files, msg):
 
 NOTIFY_TO   = "dosankoure@gmail.com"
 
-GOAL_AVG    = 3.0   # 改善目標: avg_return > 3%
-GOAL_WIN    = 45.0  # 改善目標: win_rate > 45%
-GOAL_BIGWIN = 20.0  # 改善目標: big_win_rate > 20%
+GOAL_AVG    = 3.0   # 投資開始ゲート: avg_return > 3%（最終目標は9%/四半期）
+GOAL_WIN    = 45.0  # 投資開始ゲート: win_rate > 45%
+GOAL_BIGWIN = 20.0  # 投資開始ゲート: big_win_rate > 20%
+# 最終目標: 元本300万円 → 10年で1億円（必要年率42%、四半期9%）
 
 # ── 投資ステージ管理 ──────────────────────────────────────────────────────
 # Phase 0: モデル改善中（ETFに入れておく）
@@ -301,7 +302,7 @@ def fund_manager_stock_advice(signals, reports):
         for code, report in reports.items()
     )
     prompt = f"""あなたはファンドマネージャーです。
-オーナーの目標: 株式運用で3年以内に1億円を作り、家を買う。
+オーナーの目標: 元本300万円を株式運用で10年以内に1億円にし、家を買う。（必要年率42%）
 
 アナリストが各銘柄を徹底調査し、以下のレポートを提出しました。
 モデルのシグナルとアナリストの見解を総合して、実際に買うべき銘柄を決定してください。
@@ -483,7 +484,7 @@ def quant_analyst(metrics, baseline):
     print(f"  → 検索完了: {research[:80].strip()}...")
 
     prompt = f"""あなたは世界トップレベルのクオンツ研究者です。
-日本株XGBoostモデルを「3年で1億円を稼ぐ」レベルまで引き上げてください。
+日本株XGBoostモデルを「元本300万円を10年で1億円（年率42%、四半期9%）」を達成できるレベルまで引き上げてください。
 
 【現在のモデル性能】
 バックテスト複合スコア: avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%
