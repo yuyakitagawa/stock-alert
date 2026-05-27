@@ -351,82 +351,144 @@ def _research_papers():
 
 
 def quant_analyst(metrics, baseline):
-    """数量アナリスト: 最新論文×backtest結果をもとに config.py 改善案を提案"""
+    """数量アナリスト（上位版）: config.py・rf_train_v3.py の両方を改善対象にできる"""
     bsl    = baseline or metrics
     config = (BASE_DIR / "config.py").read_text('utf-8')
-    fi     = (BASE_DIR / "feature_importance.json").read_text('utf-8')
+    train  = (BASE_DIR / "core" / "rf_train_v3.py").read_text('utf-8')
+    fi_raw = (BASE_DIR / "feature_importance.json").read_text('utf-8')
+    fi     = json.loads(fi_raw)
+    # 重要度上位10特徴量を整形
+    rise_top = sorted(fi.get('rise', {}).items(), key=lambda x: -x[1])[:10]
+    drop_top = sorted(fi.get('drop', {}).items(), key=lambda x: -x[1])[:10]
+    fi_str = "上昇モデル: " + ", ".join(f"{k}={v:.3f}" for k, v in rise_top)
+    fi_str += "\n下落モデル: " + ", ".join(f"{k}={v:.3f}" for k, v in drop_top)
+
+    # AUC スコアを読む
+    auc_str = "不明"
+    try:
+        auc = json.loads((BASE_DIR / "baseline_auc.json").read_text('utf-8'))
+        auc_str = f"上昇AUC={auc.get('rise',0):.4f}  下落AUC={auc.get('drop',0):.4f}"
+    except Exception:
+        pass
 
     print("  → 最新論文を検索中...")
     research = _research_papers()
     print(f"  → 検索完了: {research[:80].strip()}...")
 
-    prompt = f"""あなたは数量アナリスト（クオンツ）です。
-XGBoostベースの日本株63日予測モデルを改善するため、最新研究とbacktest結果を分析してください。
-オーナーの目標: 株式運用で3年以内に1億円を作る。
+    prompt = f"""あなたは世界トップレベルのクオンツ研究者です。
+日本株XGBoostモデルを「3年で1億円を稼ぐ」レベルまで引き上げてください。
 
-現在のバックテスト（複数期間平均）:
-  avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%
-ベースライン:
-  avg={bsl.get('avg_return')}%  win={bsl.get('win_rate')}%  big={bsl.get('big_win_rate')}%
+【現在のモデル性能】
+バックテスト複合スコア: avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%
+ベースライン:          avg={bsl.get('avg_return')}%  win={bsl.get('win_rate')}%  big={bsl.get('big_win_rate')}%
+モデルAUC: {auc_str}
 
-【config.py 全文】
-{config}
-
-【特徴量重要度（上位）】
-{fi[:600]}
+【特徴量重要度】
+{fi_str}
 
 【最新研究からの知見】
 {research}
 
-提案ルール:
-- config.py の数値定数を変更する（最大3つまで同時変更可）
-- 変更幅の制限なし（大胆な仮説も歓迎）
-- 変更禁止: BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD
-- コメント行は変更しない
+【config.py（スクリーニング・フィルター定数）】
+{config}
 
-JSON のみで回答:
-{{"changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}"""
+【rf_train_v3.py（モデル学習コード）抜粋】
+{train[train.find('def train_model'):train.find('def main')]}
 
-    raw    = call_claude("claude-sonnet-4-6", prompt, 600)
+改善の方向性（自由に判断せよ）:
+- XGBoostのハイパーパラメータ調整（n_estimators, max_depth, learning_rate, subsample, colsample_bytree, min_child_weight など）
+- スクリーニング条件の見直し（config.py）
+- ALPHA_THRESHOLD / DROP_ALPHA_THRESHOLD の調整（rf_train_v3.py の定数）
+- 特徴量重要度が低い特徴量のweight調整アイデア
+
+変更禁止:
+- BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD（市場分類の根幹）
+- コメント行
+
+変更できるファイル: "config.py" または "rf_train_v3.py"
+※ rf_train_v3.py を変更した場合、モデル再学習（30〜60分）が必要になります。
+  それでも効果が大きいと判断した場合は迷わず提案してください。
+
+JSON のみで回答（fileフィールドで対象ファイルを指定）:
+{{"file":"config.py","changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}
+または
+{{"file":"rf_train_v3.py","changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}"""
+
+    raw    = call_claude("claude-sonnet-4-6", prompt, 800)
     parsed = parse_json(raw)
     if parsed and "changes" in parsed:
         return parsed
     if parsed and "param_name" in parsed:
-        return {"changes": [parsed]}
+        return {"file": "config.py", "changes": [parsed]}
     return None
 
 
-def engineer(proposal, before_metrics, baseline):
-    """proposal = {"changes": [{param_name, old_value, new_value, reason}, ...]}"""
-    cfg     = BASE_DIR / "config.py"
-    orig    = cfg.read_text('utf-8')
-    changes = proposal.get('changes', [])
-
-    if not changes:
-        return False, "変更リストが空"
-
-    # 全変更を一括適用
+def _apply_changes(file_path, changes):
+    """ファイルにパラメータ変更を一括適用。(new_text, applied_list) を返す"""
+    orig     = file_path.read_text('utf-8')
     new_text = orig
     applied  = []
     for ch in changes:
         p  = ch['param_name']
         nv = ch['new_value']
-        pat = rf'^({re.escape(p)}\s*=\s*)[\d.+\-]+'
+        pat      = rf'^({re.escape(p)}\s*=\s*)[\d.+\-]+'
         replaced = re.sub(pat, rf'\g<1>{nv}', new_text, flags=re.MULTILINE)
         if replaced != new_text:
             applied.append(ch)
             new_text = replaced
         else:
             print(f"  [WARN] {p} が見つからずスキップ")
+    return orig, new_text, applied
+
+
+def _retrain_model():
+    """rf_train_v3.py を実行してモデルを再学習（30〜60分）"""
+    print("  → モデル再学習中（30〜60分かかります）...")
+    r = subprocess.run(
+        [PYTHON, "-u", "core/rf_train_v3.py"],
+        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=7200,
+        env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
+    )
+    out = r.stdout + r.stderr
+    success = "保存完了" in out or "✅" in out
+    print(f"  → 再学習{'成功' if success else '失敗'}")
+    return success, out
+
+
+def engineer(proposal, before_metrics, baseline):
+    """
+    proposal = {
+      "file": "config.py" | "rf_train_v3.py",
+      "changes": [{param_name, old_value, new_value, reason}, ...]
+    }
+    rf_train_v3.py の場合は変更後にモデル再学習を実行する。
+    """
+    target_name = proposal.get('file', 'config.py')
+    target_path = BASE_DIR / target_name if target_name == 'config.py' \
+                  else BASE_DIR / 'core' / 'rf_train_v3.py'
+    changes = proposal.get('changes', [])
+
+    if not changes:
+        return False, "変更リストが空"
+
+    orig, new_text, applied = _apply_changes(target_path, changes)
 
     if not applied:
-        return False, "すべてのパラメータが見つからず変更失敗"
+        return False, f"{target_name}: すべてのパラメータが見つからず変更失敗"
 
-    cfg.write_text(new_text, 'utf-8')
+    target_path.write_text(new_text, 'utf-8')
+
+    # rf_train_v3.py 変更時はモデル再学習が必要
+    if target_name == 'rf_train_v3.py':
+        ok, train_out = _retrain_model()
+        if not ok:
+            target_path.write_text(orig, 'utf-8')
+            return False, f"rf_train_v3.py 変更後の再学習失敗、revert"
+
     after, _ = run_backtest()
 
     if not after:
-        cfg.write_text(orig, 'utf-8')
+        target_path.write_text(orig, 'utf-8')
         return False, "backtest失敗、revert"
 
     bsl = baseline if baseline else before_metrics
@@ -439,25 +501,29 @@ def engineer(proposal, before_metrics, baseline):
     change_summary = " / ".join(
         f"{c['param_name']} {c.get('old_value','?')}→{c['new_value']}" for c in applied
     )
+    commit_files = [target_name if target_name == 'config.py' else f'core/{target_name}',
+                    'pdca/baseline_metrics.json']
+    if target_name == 'rf_train_v3.py':
+        commit_files += ['rf_model.pkl', 'rf_drop_model.pkl']
 
     if improved:
         save_baseline(after)
         msg = (
-            f"pdca: {change_summary} | "
+            f"pdca: [{target_name}] {change_summary} | "
             f"avg {bsl.get('avg_return','?')}→{after.get('avg_return','?')}% "
             f"win {bsl.get('win_rate','?')}→{after.get('win_rate','?')}% [skip ci]"
         )
-        git_commit_push(['config.py', 'pdca/baseline_metrics.json'], msg)
+        git_commit_push([f for f in commit_files if (BASE_DIR / f).exists() or '/' in f], msg)
         return True, (
-            f"✅ 採用: {change_summary} | "
+            f"✅ 採用 [{target_name}]: {change_summary} | "
             f"avg {bsl.get('avg_return')}%→{after.get('avg_return')}%  "
             f"win {bsl.get('win_rate')}%→{after.get('win_rate')}%  "
             f"big {bsl.get('big_win_rate')}%→{after.get('big_win_rate')}%"
         )
     else:
-        cfg.write_text(orig, 'utf-8')
+        target_path.write_text(orig, 'utf-8')
         return False, (
-            f"❌ 改善なし: {change_summary} | "
+            f"❌ 改善なし [{target_name}]: {change_summary} | "
             f"avg {after.get('avg_return')}% (bsl {bsl.get('avg_return')}%)、revert"
         )
 
