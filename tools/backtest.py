@@ -305,9 +305,15 @@ def extract_features_at(hist, target_date, nk_rets=None):
     nk20 = nk_rets[1] if nk_rets is not None else 0.0
     nk60 = nk_rets[2] if nk_rets is not None else 0.0
 
+    # 日経相対アルファ4特徴量（nk5/nk20/nk60 はフラクション単位 — rf_train_v3 と揃える）
+    rel5  = ret5  - nk5
+    rel20 = ret20 - nk20
+    rel60 = ret60 - nk60
+    alpha_momentum = rel5 - rel20 / 4
+
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum]
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
     return feat

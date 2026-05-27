@@ -10,10 +10,10 @@ from xgboost import XGBClassifier
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 絶対リターン閾値（fallback用）
-ALPHA_THRESHOLD=5.0      # 日経比アルファ上昇閾値(%) — 日経を5%上回ったら「上昇」
-DROP_ALPHA_THRESHOLD=5.0 # 日経比アルファ下落閾値(%) — 日経を5%下回ったら「下落」
+ALPHA_THRESHOLD=3.0      # 日経比アルファ上昇閾値(%) — 日経を3%上回ったら「上昇」（5→3: ラベル比率改善）
+DROP_ALPHA_THRESHOLD=3.0 # 日経比アルファ下落閾値(%) — 日経を3%下回ったら「下落」（5→3: ラベル比率改善）
 SAMPLE_INTERVAL=20; HISTORY_DAYS=1800
-TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
+TRAIN_CUTOFF=date(2025,1,1); RANDOM_SEED=42; SEQ_DAYS=60  # 2026→2025: 直近1年でテスト、分布シフト軽減
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_DIR = os.path.dirname(PROJECT_DIR)  # repo root (stock-alert/)

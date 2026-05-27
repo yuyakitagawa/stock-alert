@@ -215,7 +215,7 @@ def compute_seq_features(seq):
 
 
 def extract_features(p, v=None, nk_rets=None):
-    """28次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7"""
+    """32次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4"""
     if len(p) < 91 or p[-1] == 0:
         return None
     c = p[-1]
@@ -273,9 +273,15 @@ def extract_features(p, v=None, nk_rets=None):
                if len(p) >= SEQ_DAYS + 1 else np.zeros(SEQ_DAYS))
     seq_feat = compute_seq_features(seq_raw)
 
+    # 日経相対アルファ4特徴量（nk5/nk20/nk60 は % 単位なので 0.01 倍して fraction に揃える）
+    rel5  = ret5  - nk5  * 0.01
+    rel20 = ret20 - nk20 * 0.01
+    rel60 = ret60 - nk60 * 0.01
+    alpha_momentum = rel5 - rel20 / 4  # アルファ加速度
+
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
