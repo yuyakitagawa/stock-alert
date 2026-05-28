@@ -77,7 +77,7 @@ def run_backtest():
         return {}, ""
 
     # 全期間の平均を複合スコアとして使用
-    keys = ['avg_return', 'win_rate', 'big_win_rate']
+    keys = ['avg_return', 'win_rate', 'big_win_rate', 'nk_avg', 'nk_alpha']
     composite = {}
     for k in keys:
         vals = [v[k] for v in all_results.values() if k in v]
@@ -581,18 +581,38 @@ JSON のみで回答（fileフィールドで対象ファイルを指定）:
 
 
 def _apply_changes(file_path, changes):
-    """ファイルにパラメータ変更を一括適用。(new_text, applied_list) を返す"""
+    """ファイルにパラメータ変更を一括適用。(orig, new_text, applied_list) を返す"""
     orig     = file_path.read_text('utf-8')
     new_text = orig
     applied  = []
     for ch in changes:
         p  = ch['param_name']
         nv = ch['new_value']
-        pat      = rf'^({re.escape(p)}\s*=\s*)[\d.+\-]+'
-        replaced = re.sub(pat, rf'\g<1>{nv}', new_text, flags=re.MULTILINE)
+
+        # ① 行頭の定数（RISE_THRESHOLD = 5.0 など）
+        pat_top = rf'^({re.escape(p)}\s*=\s*)[\d.+\-]+'
+        replaced = re.sub(pat_top, rf'\g<1>{nv}', new_text, flags=re.MULTILINE)
         if replaced != new_text:
             applied.append(ch)
             new_text = replaced
+            continue
+
+        # ② XGBClassifier/dict 内の引数（n_estimators=800 など）
+        pat_arg = rf'({re.escape(p)}\s*=\s*)[\d.+\-]+'
+        replaced = re.sub(pat_arg, rf'\g<1>{nv}', new_text)
+        if replaced != new_text:
+            applied.append(ch)
+            new_text = replaced
+            continue
+
+        # ③ 新規パラメータ → XGBClassifier 呼び出しの scale_pos_weight の直前に注入
+        if 'XGBClassifier(' in new_text:
+            new_text = new_text.replace(
+                'scale_pos_weight=spw,',
+                f'{p}={nv},scale_pos_weight=spw,'
+            )
+            applied.append(ch)
+            print(f"  [NEW PARAM] {p}={nv} を XGBClassifier に追加")
         else:
             print(f"  [WARN] {p} が見つからずスキップ")
     return orig, new_text, applied
@@ -835,7 +855,10 @@ def main():
     print("Step3: Quant Analyst 分析中...")
     prop = quant_analyst(metrics, baseline)
     if not prop:
-        log("- analyst: parse error"); push_log(); return
+        print("  → parse error、1回リトライ...")
+        prop = quant_analyst(metrics, baseline)
+    if not prop:
+        log("- analyst: parse error × 2、スキップ"); push_log(); return
     for ch in prop.get('changes', []):
         print(f"  → {ch['param_name']}: {ch.get('old_value')}→{ch['new_value']}  ({ch.get('reason','')})")
     log(f"- analyst: {json.dumps(prop, ensure_ascii=False)}")
