@@ -41,3 +41,12 @@
 - signals: なし
 - FM: improve | avg=1.29%<2.0% / big=0.0%<20.0% / 日経アルファ=-9999%≤0%（日経に負け） → 強制 improve
 - analyst: parse error
+
+## 2026-05-29
+- metrics: {"avg_return": 1.29, "win_rate": 68.66, "big_win_rate": 0.0, "nk_avg": 2.01, "nk_alpha": -0.72}  periods: {"rate_hike_2022": {"avg_return": 0.47, "win_rate": 33.3, "big_win_rate": 0.0, "nk_avg": 0.32, "nk_alpha": 0.15}, "bull_2023": {"avg_return": 2.78, "win_rate": 80.0, "big_win_rate": 0.0, "nk_avg": 3.26, "nk_alpha": -0.48}, "q1_2024": {"avg_return": 1.91, "win_rate": 80.0, "big_win_rate": 0.0, "nk_avg": 3.35, "nk_alpha": -1.44}, "bear_2024": {"avg_return": -2.39, "win_rate": 50.0, "big_win_rate": 0.0, "nk_avg": -1.25, "nk_alpha": -1.14}, "q2_2025": {"avg_return": 3.67, "win_rate": 100.0, "big_win_rate": 0.0, "nk_avg": 4.38, "nk_alpha": -0.71}}
+- invest_stage: Phase 0
+- signals: なし
+- FM: improve | avg=1.29%<2.0% / big=0.0%<20.0% / 日経アルファ=-0.72%≤0%（日経に負け） → 強制 improve
+- analyst: {"file": "rf_train_v3.py", "changes": [{"param_name": "RISE_THRESHOLD（目的変数の閾値）", "old_value": 15.0, "new_value": 12.0, "reason": "現在のbig_win=0%は閾値が高すぎて正例が極端に少ないことを示唆。12%に下げることで正例数を増やしモデルの学習効率を向上。年率42%目標には四半期9%=63日で約12%リターンが整合的"}, {"param_name": "DROP_ALPHA_THRESHOLD（下落判定閾値）", "old_value": -10.0, "new_value": -8.0, "reason": "下落AUC=0.6731と高性能。閾値を緩和し正例を増やすことで下落予測の汎化性能を維持しつつリスク回避精度を向上"}, {"param_name": "n_estimators", "old_value": 800, "new_value": 1200, "reason": "early_stopping=50があるため過学習リスクは低い。木の数を増やし複雑なパターン学習を強化"}, {"param_name": "max_depth", "old_value": 5, "new_value": 6, "reason": "特徴量重要度でvol60/nk系が支配的。深さを1増やし特徴量間の交互作用（ボラ×モメンタム等）を捕捉"}, {"param_name": "learning_rate", "old_value": 0.04, "new_value": 0.025, "reason": "n_estimators増加に合わせ学習率を下げ、より細かい勾配更新で汎化性能向上"}, {"param_name": "min_child_weight", "old_value": 8, "new_value": 12, "reason": "ノイズの多い株価データに対し葉ノードの最小サンプル数を増やし過学習を抑制"}, {"param_name": "colsample_bytree", "old_value": 0.7, "new_value": 0.6, "reason": "特徴量のランダムサンプリングを強化し、vol60への過度な依存を軽減。多様な特徴量の活用を促進"}, {"param_name": "reg_alpha（新規追加）", "old_value": 0, "new_value": 0.1, "reason": "L1正則化を追加し重要度の低い特徴量の影響を抑制。スパース性向上でモデル解釈性も改善"}, {"param_name": "reg_lambda（新規追加）", "old_value": 1, "new_value": 2.0, "reason": "L2正則化を強化し過学習を防止。特に長期予測（63日）では汎化性能が重要"}, {"param_name": "gamma（新規追加）", "old_value": 0, "new_value": 0.1, "reason": "分割に必要な最小損失減少量を設定し、ノイズによる無意味な分割を抑制"}]}
+- engineer: rf_train_v3.py: すべてのパラメータが見つからず変更失敗
+- stagnation: 1サイクル
