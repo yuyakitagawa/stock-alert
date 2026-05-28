@@ -32,3 +32,12 @@
 
 ## 2026-05-28
 - ERROR: backtest失敗（メトリクス取得不可）
+
+## 2026-05-28
+
+## 2026-05-28
+- metrics: {"avg_return": 1.29, "win_rate": 68.66, "big_win_rate": 0.0}  periods: {"rate_hike_2022": {"avg_return": 0.46, "win_rate": 33.3, "big_win_rate": 0.0, "nk_avg": 0.32, "nk_alpha": 0.13}, "bull_2023": {"avg_return": 2.78, "win_rate": 80.0, "big_win_rate": 0.0, "nk_avg": 3.26, "nk_alpha": -0.48}, "q1_2024": {"avg_return": 1.91, "win_rate": 80.0, "big_win_rate": 0.0, "nk_avg": 3.35, "nk_alpha": -1.44}, "bear_2024": {"avg_return": -2.39, "win_rate": 50.0, "big_win_rate": 0.0, "nk_avg": -1.25, "nk_alpha": -1.14}, "q2_2025": {"avg_return": 3.67, "win_rate": 100.0, "big_win_rate": 0.0, "nk_avg": 4.38, "nk_alpha": -0.71}}
+- invest_stage: Phase 0
+- signals: なし
+- FM: improve | avg=1.29%<2.0% / big=0.0%<20.0% / 日経アルファ=-9999%≤0%（日経に負け） → 強制 improve
+- analyst: parse error
