@@ -54,6 +54,8 @@ def _run_one_backtest(start, end):
         (r'平均リターン: ([+-]?\d+\.?\d*)%',              'avg_return'),
         (r'勝率（\+0%以上）: \d+/\d+ = (\d+\.?\d*)%',     'win_rate'),
         (r'大勝率（\+\d+%以上）: \d+/\d+ = (\d+\.?\d*)%', 'big_win_rate'),
+        (r'日経平均リターン: ([+-]?\d+\.?\d*)%',           'nk_avg'),
+        (r'日経アルファ: ([+-]?\d+\.?\d*)%',              'nk_alpha'),
     ]:
         found = re.search(pat, out)
         if found:
@@ -108,12 +110,54 @@ def log(text):
         f.write(text + '\n')
 
 
+def _send_credit_alert(detail):
+    """クレジット残高不足・レート制限時にメール通知"""
+    gmail_addr = os.getenv("GMAIL_ADDRESS")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    if not gmail_addr or not gmail_pass:
+        return
+    subject = f"🚨 Anthropic APIクレジット警告 — PDCAループ停止 ({TODAY})"
+    body = f"""PDCAループがAnthropicのAPIレート制限またはクレジット不足で停止しました。
+
+【エラー詳細】
+{detail}
+
+━━━━━━━━━━━━━━━━
+対処方法
+━━━━━━━━━━━━━━━━
+1. https://console.anthropic.com でクレジット残高を確認
+2. 必要に応じてクレジットを追加購入
+3. クレジット追加後、PDCAループは次回スケジュール時に自動再開
+
+PDCAループは停止しています。クレジット追加後に再起動してください。
+"""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"]    = gmail_addr
+    msg["To"]      = NOTIFY_TO
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_addr, gmail_pass)
+            server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
+        print(f"  → クレジット警告メールを送信")
+    except Exception as e:
+        print(f"  [クレジット警告メールエラー] {e}")
+
+
 def call_claude(model, prompt, max_tokens=256):
-    r = client.messages.create(
-        model=model, max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return r.content[0].text
+    try:
+        r = client.messages.create(
+            model=model, max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return r.content[0].text
+    except anthropic.RateLimitError as e:
+        _send_credit_alert(f"RateLimitError: {e}")
+        raise
+    except anthropic.APIStatusError as e:
+        if e.status_code in (429, 529):
+            _send_credit_alert(f"APIStatusError {e.status_code}: {e.message}")
+        raise
 
 
 def parse_json(text):
@@ -141,10 +185,12 @@ def git_commit_push(files, msg):
 
 NOTIFY_TO   = "dosankoure@gmail.com"
 
-GOAL_AVG    = 2.0   # 投資開始ゲート: avg_return > 2%/21日（年率換算26%）
-GOAL_WIN    = 50.0  # 投資開始ゲート: win_rate > 50%
-GOAL_BIGWIN = 20.0  # 投資開始ゲート: big_win_rate > 20%（+8%/21日）
+GOAL_AVG          = 2.0   # 投資開始ゲート: avg_return > 2%/21日（年率換算26%）
+GOAL_WIN          = 50.0  # 投資開始ゲート: win_rate > 50%
+GOAL_BIGWIN       = 20.0  # 投資開始ゲート: big_win_rate > 20%（+8%/21日）
+GOAL_NIKKEI_ALPHA = 0.0   # 日経225に勝つこと（alpha > 0 が必須条件）
 # 最終目標: 元本300万円 → 10年で1億円（3%/月 × 120ヶ月 = 34倍）
+# 日経に勝てないならETFの方が良い → alpha > 0 は投資フェーズ移行の必要条件
 
 # ── 投資ステージ管理 ──────────────────────────────────────────────────────
 # Phase 0: モデル改善中（ETFに入れておく）
@@ -158,10 +204,12 @@ def get_invest_stage():
 
 def check_and_notify_stage_change(metrics):
     """目標値を全て超えたら Phase 1 に移行し、メールで通知"""
-    avg = metrics.get('avg_return', -9999)
-    win = metrics.get('win_rate', 0)
-    big = metrics.get('big_win_rate', 0)
-    goals_met = avg >= GOAL_AVG and win >= GOAL_WIN and big >= GOAL_BIGWIN
+    avg      = metrics.get('avg_return', -9999)
+    win      = metrics.get('win_rate', 0)
+    big      = metrics.get('big_win_rate', 0)
+    nk_alpha = metrics.get('nk_alpha', -9999)
+    goals_met = (avg >= GOAL_AVG and win >= GOAL_WIN and big >= GOAL_BIGWIN
+                 and nk_alpha > GOAL_NIKKEI_ALPHA)
 
     stage = get_invest_stage()
     if goals_met and stage['phase'] == 0:
@@ -238,16 +286,19 @@ def fund_manager(metrics, baseline, feedback):
     bsl = baseline or metrics
 
     # 目標未達なら問答無用で improve（LLM 判断に頼らない）
-    avg  = metrics.get('avg_return',  -9999)
-    win  = metrics.get('win_rate',        0)
-    big  = metrics.get('big_win_rate',    0)
-    if avg < GOAL_AVG or win < GOAL_WIN or big < GOAL_BIGWIN:
+    avg      = metrics.get('avg_return',  -9999)
+    win      = metrics.get('win_rate',        0)
+    big      = metrics.get('big_win_rate',    0)
+    nk_alpha = metrics.get('nk_alpha',    -9999)
+    if avg < GOAL_AVG or win < GOAL_WIN or big < GOAL_BIGWIN or nk_alpha <= GOAL_NIKKEI_ALPHA:
+        reasons = []
+        if avg      < GOAL_AVG:          reasons.append(f"avg={avg}%<{GOAL_AVG}%")
+        if win      < GOAL_WIN:          reasons.append(f"win={win}%<{GOAL_WIN}%")
+        if big      < GOAL_BIGWIN:       reasons.append(f"big={big}%<{GOAL_BIGWIN}%")
+        if nk_alpha <= GOAL_NIKKEI_ALPHA: reasons.append(f"日経アルファ={nk_alpha}%≤0%（日経に負け）")
         return {
             "action": "improve",
-            "reason": (
-                f"目標未達 (avg={avg}%<{GOAL_AVG}% / win={win}%<{GOAL_WIN}% / "
-                f"big={big}%<{GOAL_BIGWIN}%) → 強制 improve"
-            )
+            "reason": " / ".join(reasons) + " → 強制 improve"
         }
 
     prompt = f"""あなたは株式予測モデルのファンドマネージャーです。
@@ -636,6 +687,77 @@ def engineer(proposal, before_metrics, baseline):
         )
 
 
+# ── スタグネーション（改善停滞）検出 ──────────────────────────────────────────
+STAGNATION_FILE = PDCA_DIR / "stagnation.json"
+STAGNATION_N    = 7   # 7サイクル連続で日経に負け続けたら方向性変更アラート
+
+
+def _load_stagnation():
+    if STAGNATION_FILE.exists():
+        try:
+            return json.loads(STAGNATION_FILE.read_text())
+        except Exception:
+            pass
+    return {"consecutive": 0, "last_alert": None}
+
+
+def update_stagnation(nk_alpha):
+    """日経アルファが0以下なら連続カウント増加。0超えたらリセット。閾値超えでメール送信。"""
+    data = _load_stagnation()
+    if nk_alpha is None or nk_alpha <= GOAL_NIKKEI_ALPHA:
+        data["consecutive"] = data.get("consecutive", 0) + 1
+    else:
+        data["consecutive"] = 0
+    data["last_checked"] = TODAY
+    STAGNATION_FILE.write_text(json.dumps(data, indent=2))
+    cnt = data["consecutive"]
+    if cnt >= STAGNATION_N:
+        last = data.get("last_alert")
+        # 同日に複数回アラートを送らない
+        if last != TODAY:
+            data["last_alert"] = TODAY
+            STAGNATION_FILE.write_text(json.dumps(data, indent=2))
+            _send_stagnation_alert(cnt)
+    return cnt
+
+
+def _send_stagnation_alert(n):
+    gmail_addr = os.getenv("GMAIL_ADDRESS")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    if not gmail_addr or not gmail_pass:
+        return
+    subject = f"⚠️ モデル改善停滞 {n}サイクル — 方向性変更を検討してください ({TODAY})"
+    body = f"""モデルが {n} サイクル連続で日経225を下回っています。
+
+【現状】
+・日経アルファがゼロ以下のまま改善されていません
+・日経に勝てないなら日経ETFの方が優れています
+・このまま改善が見込めない場合は方向性変更が必要です
+
+━━━━━━━━━━━━━━━━
+方向性変更の選択肢
+━━━━━━━━━━━━━━━━
+1. 特徴量の根本見直し（38次元 → 別の指標体系）
+2. 予測期間の変更（21日 → 5日または63日）
+3. モデルアーキテクチャ変更（XGBoost → LightGBM / Neural Net）
+4. ターゲット変更（絶対リターン → 日経アウトパフォーム直接予測）
+5. しばらく日経ETFで待機し、データ・アイデアが揃ってから再挑戦
+
+PDCAループは継続中ですが、抜本的な見直しをご検討ください。
+"""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"]    = gmail_addr
+    msg["To"]      = NOTIFY_TO
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_addr, gmail_pass)
+            server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
+        print(f"  → 停滞アラートを送信: {n}サイクル連続で日経に負け")
+    except Exception as e:
+        print(f"  [停滞アラートエラー] {e}")
+
+
 # ── メイン ─────────────────────────────────────────────────────────────────
 
 def push_log():
@@ -704,6 +826,10 @@ def main():
     if fm['action'] == 'skip':
         print("今日は改善スキップ")
         log("- skip")
+        # スキップ時もスタグネーション更新（目標達成=alphaがプラスならresetしてよい）
+        cnt = update_stagnation(metrics.get('nk_alpha', -9999))
+        if cnt > 0:
+            log(f"- stagnation: {cnt}サイクル（skip中）")
         push_log()
         return
 
@@ -721,6 +847,16 @@ def main():
     ok, detail = engineer(prop, metrics, baseline)
     print(f"  → {detail}")
     log(f"- engineer: {detail}")
+
+    # Step5: スタグネーション更新（改善後の最新メトリクスで判定）
+    latest_metrics = load_baseline() if ok else metrics
+    nk_alpha_latest = latest_metrics.get('nk_alpha', metrics.get('nk_alpha', -9999))
+    cnt = update_stagnation(nk_alpha_latest)
+    if cnt > 0:
+        print(f"  → 日経アルファ停滞: {cnt}サイクル連続（閾値: {STAGNATION_N}）")
+        log(f"- stagnation: {cnt}サイクル")
+    else:
+        log("- stagnation: reset（日経に勝った）")
 
     push_log()
     print("=== 完了 ===")

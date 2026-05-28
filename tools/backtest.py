@@ -639,6 +639,7 @@ def run_rolling_main():
     print(f"スクリーナー通過: {len(screened)} 銘柄")
 
     per_round_avgs = []
+    per_round_nk   = []
     all_trades = []
 
     for ri, entry_date in enumerate(entry_dates):
@@ -696,6 +697,7 @@ def run_rolling_main():
         nk_exit  = nk_c[nk_c.index <= exit_date]
         nk_ret = (float(nk_exit.iloc[-1]) - float(nk_entry.iloc[-1])) / float(nk_entry.iloc[-1]) * 100 \
                  if not nk_entry.empty and not nk_exit.empty else 0
+        per_round_nk.append(nk_ret)
         wins_r = sum(1 for r in rets if r > 0)
         print(f"  R{ri+1:02d} [{entry_date}→{exit_date}] avg={avg_r:+.2f}%  "
               f"日経={nk_ret:+.2f}%  勝率={wins_r}/{len(rets)}")
@@ -707,13 +709,18 @@ def run_rolling_main():
     avg  = float(np.mean(per_round_avgs))
     wins = sum(1 for x in per_round_avgs if x > 0)
     bigs = sum(1 for x in per_round_avgs if x >= BIG_WIN_THRESHOLD)
+    nk_avg = float(np.mean(per_round_nk)) if per_round_nk else 0.0
+    alpha  = avg - nk_avg
+
     print(f"\n{'='*60}")
     print(f"【ローリング{fd}日 複合結果: {n_rounds}ラウンド】")
     print(f"  平均リターン: {avg:+.2f}%")
     print(f"  勝率（+0%以上）: {wins}/{n_rounds} = {wins/n_rounds*100:.1f}%")
     print(f"  大勝率（+{BIG_WIN_THRESHOLD:.0f}%以上）: {bigs}/{n_rounds} = {bigs/n_rounds*100:.1f}%")
+    print(f"  日経平均リターン: {nk_avg:+.2f}%")
+    print(f"  日経アルファ: {alpha:+.2f}%")
 
-    # 日経ベンチマーク
+    # 日経ベンチマーク（期間合計）
     nk_s = nk_c[nk_c.index <= BACKTEST_DATE]
     nk_e = nk_c[nk_c.index <= TODAY]
     if not nk_s.empty and not nk_e.empty:
