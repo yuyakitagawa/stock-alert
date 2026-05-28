@@ -29,3 +29,6 @@
 - analyst: {"param_name": "CANDIDATE_DROP_PROB_MAX", "old_value": 6.0, "new_value": 4.5, "reason": "bear modeでは下落確率の高い銘柄が損失を拡大させる主因。特徴量重要度でvol60(0.090)・vol20(0.046)が上位を占め、高ボラ局面ではdrop_prob上昇銘柄の下落加速が顕著。閾値を6.0→4.5(-25%)に厳格化することで矛盾シグナル除外と合わせて高リスク帯を二重遮断し、win率改善とavgリターンの底上げを狙う。"}
 - engineer: ❌ 改善なし: avg -3.48% (bsl -3.48%)、revert
 - engineer: ❌ 改善なし: avg -3.48% (bsl -3.48%)、revert
+
+## 2026-05-28
+- ERROR: backtest失敗（メトリクス取得不可）
