@@ -295,7 +295,8 @@ def save_price_cache(code, df):
     init_db()
     rows = []
     for idx, row in df.iterrows():
-        d = idx.isoformat() if hasattr(idx, "isoformat") else str(idx)
+        # 日付を YYYY-MM-DD 形式に統一（Timestamp の isoformat は時刻付きになるため）
+        d = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
         cv = row.get("Close")
         vv = row.get("Volume")
         c = float(cv) if cv is not None and not (isinstance(cv, float) and math.isnan(cv)) else None
