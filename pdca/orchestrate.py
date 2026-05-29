@@ -159,6 +159,14 @@ def call_claude(model, prompt, max_tokens=256):
 
 
 def parse_json(text):
+    # まずコードブロック内の JSON を探す（```json {...} ``` 形式）
+    cb = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if cb:
+        try:
+            return json.loads(cb.group(1))
+        except json.JSONDecodeError:
+            pass
+    # フォールバック: テキスト中の最初の { ... } を探す
     m = re.search(r'\{.*\}', text, re.DOTALL)
     try:
         return json.loads(m.group()) if m else None
@@ -566,10 +574,12 @@ def quant_analyst(metrics, baseline):
 ※ rf_train_v3.py を変更した場合、モデル再学習（30〜60分）が必要になります。
   それでも効果が大きいと判断した場合は迷わず提案してください。
 
-JSON のみで回答（fileフィールドで対象ファイルを指定）:
-{{"file":"config.py","changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}
+⚠️ 重要: 以下の純粋なJSONのみを出力すること。説明文・マークダウン・コードブロック・改行は一切不要。
+param_nameはコード上の変数名のみ（日本語説明は不要）。old_valueは現在のコードの値を正確に記載すること。
+
+{{"file":"config.py","changes":[{{"param_name":"VARIABLE_NAME","old_value":現在値,"new_value":新値,"reason":"理由"}}]}}
 または
-{{"file":"rf_train_v3.py","changes":[{{"param_name":"...","old_value":...,"new_value":...,"reason":"..."}}]}}"""
+{{"file":"rf_train_v3.py","changes":[{{"param_name":"VARIABLE_NAME","old_value":現在値,"new_value":新値,"reason":"理由"}}]}}"""
 
     raw    = call_claude("claude-opus-4-5", prompt, 1200)
     parsed = parse_json(raw)
@@ -586,7 +596,8 @@ def _apply_changes(file_path, changes):
     new_text = orig
     applied  = []
     for ch in changes:
-        p  = ch['param_name']
+        # param_name から日本語説明を除去: "RISE_THRESHOLD（説明）" → "RISE_THRESHOLD"
+        p  = re.sub(r'[（(].*', '', ch['param_name']).strip()
         nv = ch['new_value']
 
         # ① 行頭の定数（RISE_THRESHOLD = 5.0 など）
