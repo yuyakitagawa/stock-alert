@@ -34,7 +34,7 @@ Q2_2025_END    = date(2025, 8, 14)   # 1年前の3ヶ月テスト終了
 # 実行モード: python3 backtest.py [bear|1year|q2_2025] [--start DATE] [--end DATE] [--top-n N] ...
 _parser = _argparse.ArgumentParser(add_help=False)
 _parser.add_argument("mode", nargs="?", choices=["bear", "1year", "q2_2025"], default=None)
-_parser.add_argument("--top-n",   type=int,   default=10,   help="上位N銘柄を選択（デフォルト: 10）")
+_parser.add_argument("--top-n",   type=int,   default=5,    help="上位N銘柄を選択（デフォルト: 5）")
 _parser.add_argument("--net-min", type=float, default=None, help="ネットスコア最低閾値（例: 15）")
 _parser.add_argument("--compare",  action="store_true", help="保有数×閾値を一括比較")
 _parser.add_argument("--screened",    action="store_true", help="スクリーナー特化モデルを使用")
@@ -651,6 +651,16 @@ def run_rolling_main():
         # 日経リターン（エントリー日時点）
         nk_at = nk_c[nk_c.index <= entry_date]
         if len(nk_at) < 61:
+            continue
+
+        # ── 市場タイミングフィルター ──────────────────────────────────────
+        # 日経が63日SMAを下回る or 20日リターン < -3% → このラウンドをスキップ
+        nk_vals = nk_at.values
+        nk_sma63 = nk_vals[-63:].mean() if len(nk_vals) >= 63 else None
+        nk_20d   = (nk_vals[-1] - nk_vals[-21]) / nk_vals[-21] * 100 if len(nk_vals) >= 21 else 0
+        is_bear  = (nk_sma63 is not None and float(nk_at.iloc[-1]) < nk_sma63) or nk_20d < -3.0
+        if is_bear:
+            print(f"  R{ri+1:02d} [{entry_date}] SKIP: 市場タイミング（SMA63比 {float(nk_at.iloc[-1])/nk_sma63*100-100:+.1f}%、日経20d {nk_20d:+.1f}%）")
             continue
         nkp = nk_at.values
         nkr = ((nkp[-1]-nkp[-6])/nkp[-6] if len(nkp)>=6 else 0,

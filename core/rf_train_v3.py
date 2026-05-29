@@ -9,9 +9,12 @@ from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
-FORECAST=21; RISE_THRESHOLD=5.0; DROP_THRESHOLD=5.0  # 21日（1ヶ月）±5%で学習
-ALPHA_THRESHOLD=3.0      # 将来用（現在未使用）
-DROP_ALPHA_THRESHOLD=3.0 # 将来用（現在未使用）
+FORECAST=21; RISE_THRESHOLD=3.0; DROP_THRESHOLD=3.0  # 日経超過リターン±3%で学習（絶対→相対ラベル）
+# ラベル: label_rise = int(stock_return - nikkei_return >= +3%)
+#         label_drop = int(stock_return - nikkei_return <= -3%)
+# 日経に+3%以上勝つ銘柄を「上昇」、3%以上負ける銘柄を「下落」と定義
+ALPHA_THRESHOLD=3.0      # RISE_THRESHOLD に統合済み
+DROP_ALPHA_THRESHOLD=3.0 # DROP_THRESHOLD に統合済み
 SAMPLE_INTERVAL=21; HISTORY_DAYS=1800  # 21日ごとにサンプル（FORECASTに合わせる）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
@@ -130,10 +133,16 @@ def generate_samples(df, nk_df=None, screener_only=False):
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
 
-        # 絶対リターンラベル: ±15%で学習
-        # ※ rel5/rel20/rel60特徴量により日経相対情報は入力として学習済み
-        label_rise=int(chg>=RISE_THRESHOLD)
-        label_drop=int(chg<=-DROP_THRESHOLD)
+        # 日経超過リターンラベル: stock_return - nikkei_return で判定
+        # → モデルがアルファ生成を直接最適化するようになる
+        nk_ret_forecast=0.0
+        if nk_df is not None and i0 is not None:
+            i_fwd=next((j for j,d in enumerate(nk_dates) if d>=dates[i+FORECAST]),None)
+            if i_fwd is not None and nk_closes[i0]!=0:
+                nk_ret_forecast=(nk_closes[i_fwd]-nk_closes[i0])/nk_closes[i0]*100
+        rel_chg=chg-nk_ret_forecast  # 日経超過リターン（アルファ）
+        label_rise=int(rel_chg>=RISE_THRESHOLD)   # 日経+3%超
+        label_drop=int(rel_chg<=-DROP_THRESHOLD)  # 日経-3%以下
 
         samples.append((dates[i],feat,label_rise,label_drop))
     return samples

@@ -42,7 +42,7 @@ BACKTEST_PERIODS = [
 def _run_one_backtest(start, end):
     """1期間のバックテストを実行してメトリクス dict を返す（ローリング5日モード）"""
     r = subprocess.run(
-        [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "21"],
+        [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "21", "--top-n", "5"],
         capture_output=True, text=True, cwd=str(BASE_DIR), timeout=3600,
         env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
     )
