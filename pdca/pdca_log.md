@@ -57,3 +57,6 @@
 - signals: なし
 - FM: improve | avg=1.29%<2.0% / big=0.0%<20.0% / 日経アルファ=-0.72%≤0%（日経に負け） → 強制 improve
 - analyst: parse error × 2、スキップ
+
+## 2026-05-29
+- ERROR: backtest失敗（メトリクス取得不可）
