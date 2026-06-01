@@ -700,8 +700,6 @@ def main():
         return
 
     held_stocks, buy_date_map, qty_map = load_held_stocks()
-    if not held_stocks:
-        return
     logger.info("チェック銘柄: %d銘柄", len(held_stocks))
     today_date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -723,7 +721,24 @@ def main():
 
     raw_data = _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60)
     if not raw_data:
-        logger.warning("有効銘柄なし"); return
+        # 保有銘柄なし → ランキングのみのサマリーを送信
+        logger.info("保有銘柄なし — 日次サマリーのみ送信")
+        ranking_df = load_top_ranking(1000)
+        etf_rets = fetch_us_sector_etf_returns()
+        _load_sector_cache()
+        bear_prefix = "⚠️下落相場 " if is_bear else ("🚀急騰相場 " if is_hot else "")
+        nk_str = f"日経{nk20:+.1f}%" if nk20 is not None else ""
+        subject = f"{bear_prefix}[{today[5:]}] 保有なし / {nk_str}"
+        html = build_html(
+            [], today, is_bear=is_bear, is_hot=is_hot, nk5=nk5, nk20=nk20, nk60=nk60,
+            prev_ranking_codes=load_prev_ranking_codes(),
+            priority_actions=[],
+            ranking_df=ranking_df,
+            etf_rets=etf_rets,
+        )
+        send_email(subject, html)
+        logger.info("日次サマリー送信完了")
+        return
     feats_aug = _augmented_feature_matrix(raw_data)
 
     # 購入日が取得できた銘柄は正確な保有日数を使用、それ以外はDBから推定
