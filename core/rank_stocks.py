@@ -214,9 +214,14 @@ def main():
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    alpha_rise_path = os.path.join(BASE_DIR, "rf_alpha_model.pkl")
+    alpha_drop_path = os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl")
+    alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
+    alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
+    ensemble = alpha_rise_model is not None and alpha_drop_model is not None
     print(f"\n上昇モデル読み込み: {rise_path}")
-    if drop_model:
-        print(f"下落モデル読み込み: {drop_path}")
+    if drop_model:   print(f"下落モデル読み込み: {drop_path}")
+    if ensemble:     print("アルファモデル読み込み完了（4モデルアンサンブル）")
 
     # 日経225リターン取得
     print("\n日経225リターン取得中...")
@@ -299,7 +304,13 @@ def main():
         close = float(prices["Close"].iloc[-1])
         rise_pct = round(rise_prob * 100, 1)
         drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
-        net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
+        # アンサンブル: 絶対スコア + 相対スコア（アルファ）
+        if ensemble:
+            arp = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) * 100
+            adp = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) * 100
+            net = round((rise_pct - drop_pct) + (arp - adp), 1) if drop_pct is not None else rise_pct
+        else:
+            net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
 
         # ボラティリティ（feat[7] = vol20, 年率換算%）
         vol = round(feat[7], 1)

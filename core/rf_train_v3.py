@@ -9,12 +9,13 @@ from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 
-FORECAST=21; RISE_THRESHOLD=3.0; DROP_THRESHOLD=3.0  # 日経超過リターン±3%で学習（絶対→相対ラベル）
-# ラベル: label_rise = int(stock_return - nikkei_return >= +3%)
-#         label_drop = int(stock_return - nikkei_return <= -3%)
-# 日経に+3%以上勝つ銘柄を「上昇」、3%以上負ける銘柄を「下落」と定義
-ALPHA_THRESHOLD=3.0      # RISE_THRESHOLD に統合済み
-DROP_ALPHA_THRESHOLD=3.0 # DROP_THRESHOLD に統合済み
+FORECAST=21; RISE_THRESHOLD=5.0; DROP_THRESHOLD=5.0   # 絶対リターン±5%ラベル（識別力重視）
+ALPHA_THRESHOLD=3.0      # 相対ラベル: stock - nikkei >= +3% → alpha_rise=1
+DROP_ALPHA_THRESHOLD=3.0 # 相対ラベル: stock - nikkei <= -3% → alpha_drop=1
+# 4モデルアンサンブル:
+#   net = (rise_abs - drop_abs) + (rise_rel - drop_rel)
+#   絶対モデルが「どれが上がるか」を担当（AUC高い）
+#   相対モデルが「日経超過を狙う」を担当（アルファ最適化）
 SAMPLE_INTERVAL=21; HISTORY_DAYS=1800  # 21日ごとにサンプル（FORECASTに合わせる）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
@@ -133,18 +134,21 @@ def generate_samples(df, nk_df=None, screener_only=False):
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
 
-        # 日経超過リターンラベル: stock_return - nikkei_return で判定
-        # → モデルがアルファ生成を直接最適化するようになる
+        # 絶対ラベル（識別力重視）
+        label_rise=int(chg>=RISE_THRESHOLD)   # +5%以上
+        label_drop=int(chg<=-DROP_THRESHOLD)  # -5%以下
+
+        # 相対ラベル（アルファ最適化）
         nk_ret_forecast=0.0
         if nk_df is not None and i0 is not None:
             i_fwd=next((j for j,d in enumerate(nk_dates) if d>=dates[i+FORECAST]),None)
             if i_fwd is not None and nk_closes[i0]!=0:
                 nk_ret_forecast=(nk_closes[i_fwd]-nk_closes[i0])/nk_closes[i0]*100
-        rel_chg=chg-nk_ret_forecast  # 日経超過リターン（アルファ）
-        label_rise=int(rel_chg>=RISE_THRESHOLD)   # 日経+3%超
-        label_drop=int(rel_chg<=-DROP_THRESHOLD)  # 日経-3%以下
+        rel_chg=chg-nk_ret_forecast
+        alpha_rise=int(rel_chg>=ALPHA_THRESHOLD)      # 日経+3%超
+        alpha_drop=int(rel_chg<=-DROP_ALPHA_THRESHOLD) # 日経-3%以下
 
-        samples.append((dates[i],feat,label_rise,label_drop))
+        samples.append((dates[i],feat,label_rise,label_drop,alpha_rise,alpha_drop))
     return samples
 
 def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
@@ -190,19 +194,21 @@ def main():
     if nk_df is not None: print(f"  日経225: {len(nk_df)}日分取得")
     else: print("  日経225取得失敗 → 絶対リターンで学習")
     print(f"\n株価取得中（30〜60分かかります）...")
-    train_X,train_yr,train_yd=[],[],[]
-    test_X,test_yr,test_yd=[],[],[]
+    train_X,train_yr,train_yd,train_ar,train_ad=[],[],[],[],[]
+    test_X,test_yr,test_yd,test_ar,test_ad=[],[],[],[],[]
     train_dates,test_dates=[],[]
     success=0
     for i,row in stock_list.iterrows():
         df=get_prices(row["code"])
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
-        for (sd,feat,lr,ld) in generate_samples(df, nk_df, screener_only=screener_only):
+        for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only):
             if sd<TRAIN_CUTOFF:
-                train_X.append(feat); train_yr.append(lr); train_yd.append(ld); train_dates.append(sd)
+                train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
+                train_ar.append(ar); train_ad.append(ad); train_dates.append(sd)
             else:
-                test_X.append(feat); test_yr.append(lr); test_yd.append(ld); test_dates.append(sd)
+                test_X.append(feat); test_yr.append(lr); test_yd.append(ld)
+                test_ar.append(ar); test_ad.append(ad); test_dates.append(sd)
         success+=1
         if success%100==0:
             print(f"  [{success}銘柄] 学習:{len(train_X):,} テスト:{len(test_X):,}")
@@ -212,6 +218,8 @@ def main():
     X_tr=np.array(train_X); X_te=np.array(test_X)
     yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
+    ar_tr=np.array(train_ar); ar_te=np.array(test_ar)
+    ad_tr=np.array(train_ad); ad_te=np.array(test_ad)
     # Cross-sectional rank features (rank within each sample date)
     print("\nクロスセクショナルランク特徴量を計算中...")
     all_X=np.vstack([X_tr,X_te]); all_dates=np.array(train_dates+test_dates)
@@ -227,31 +235,47 @@ def main():
     n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
-    print(f"上昇ラベル(≥+{RISE_THRESHOLD}%): 学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
-    print(f"下落ラベル(≤-{DROP_THRESHOLD}%): 学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
+    print(f"絶対上昇ラベル(≥+{RISE_THRESHOLD}%):  学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
+    print(f"絶対下落ラベル(≤-{DROP_THRESHOLD}%):  学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
+    print(f"相対上昇ラベル(α≥+{ALPHA_THRESHOLD}%): 学習 {ar_tr.sum():,}/{len(ar_tr):,} ({ar_tr.mean()*100:.1f}%)  テスト {ar_te.sum():,}/{len(ar_te):,} ({ar_te.mean()*100:.1f}%)")
+    print(f"相対下落ラベル(α≤-{DROP_ALPHA_THRESHOLD}%): 学習 {ad_tr.sum():,}/{len(ad_tr):,} ({ad_tr.mean()*100:.1f}%)  テスト {ad_te.sum():,}/{len(ad_te):,} ({ad_te.mean()*100:.1f}%)")
     # キャリブレーション用: 学習データを日付順に並べ、最新20%をキャリブレーション用に分離
     sort_idx=np.argsort(np.array(train_dates))
-    X_tr_s=X_tr[sort_idx]; yr_s=yr_tr[sort_idx]; yd_s=yd_tr[sort_idx]
+    X_tr_s=X_tr[sort_idx]
+    yr_s=yr_tr[sort_idx]; yd_s=yd_tr[sort_idx]
+    ar_s=ar_tr[sort_idx]; ad_s=ad_tr[sort_idx]
     n_cal=max(500,int(len(X_tr_s)*0.2))
     X_tr_fit,X_cal=X_tr_s[:-n_cal],X_tr_s[-n_cal:]
     yr_fit,yr_cal=yr_s[:-n_cal],yr_s[-n_cal:]
     yd_fit,yd_cal=yd_s[:-n_cal],yd_s[-n_cal:]
+    ar_fit,ar_cal=ar_s[:-n_cal],ar_s[-n_cal:]
+    ad_fit,ad_cal=ad_s[:-n_cal],ad_s[-n_cal:]
     print(f"\nキャリブレーション分割: 学習{len(X_tr_fit):,} / キャリブレーション{len(X_cal):,} (最新20%)")
-    rise=train_model(X_tr_fit,yr_fit,X_te,yr_te,X_cal,yr_cal,"上昇")
-    drop=train_model(X_tr_fit,yd_fit,X_te,yd_te,X_cal,yd_cal,"下落")
+    rise =train_model(X_tr_fit,yr_fit, X_te,yr_te, X_cal,yr_cal, "絶対上昇")
+    drop =train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落")
+    a_rise=train_model(X_tr_fit,ar_fit, X_te,ar_te, X_cal,ar_cal, "相対上昇(α)")
+    a_drop=train_model(X_tr_fit,ad_fit, X_te,ad_te, X_cal,ad_cal, "相対下落(α)")
     cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
     suffix="_screened" if screener_only else ""
-    joblib.dump(rise,os.path.join(SAVE_DIR,f"rf_model{suffix}{cutoff_tag}.pkl"))
-    joblib.dump(drop,os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}.pkl"))
+    joblib.dump(rise,  os.path.join(SAVE_DIR,f"rf_model{suffix}{cutoff_tag}.pkl"))
+    joblib.dump(drop,  os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}.pkl"))
+    joblib.dump(a_rise,os.path.join(SAVE_DIR,f"rf_alpha_model{suffix}{cutoff_tag}.pkl"))
+    joblib.dump(a_drop,os.path.join(SAVE_DIR,f"rf_alpha_drop_model{suffix}{cutoff_tag}.pkl"))
     # Save all samples (train+test) with dates for purged CV validation
     npz_path=os.path.join(SAVE_DIR,"training_data.npz")
     all_X=np.vstack([X_tr,X_te]); all_yr=np.concatenate([yr_tr,yr_te]); all_yd=np.concatenate([yd_tr,yd_te])
     all_dates=np.array([str(d) for d in train_dates+test_dates])
     np.savez_compressed(npz_path,X=all_X,yr=all_yr,yd=all_yd,dates=all_dates)
-    rise_auc=roc_auc_score(yr_te,rise.predict_proba(X_te)[:,1])
-    drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te)[:,1])
+    rise_auc  =roc_auc_score(yr_te,rise.predict_proba(X_te)[:,1])
+    drop_auc  =roc_auc_score(yd_te,drop.predict_proba(X_te)[:,1])
+    a_rise_auc=roc_auc_score(ar_te,a_rise.predict_proba(X_te)[:,1])
+    a_drop_auc=roc_auc_score(ad_te,a_drop.predict_proba(X_te)[:,1])
+    print(f"\n【AUC サマリー】")
+    print(f"  絶対上昇: {rise_auc:.4f}  絶対下落: {drop_auc:.4f}")
+    print(f"  相対上昇: {a_rise_auc:.4f}  相対下落: {a_drop_auc:.4f}")
     with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
-        json.dump({"rise":float(rise_auc),"drop":float(drop_auc)},f)
+        json.dump({"rise":float(rise_auc),"drop":float(drop_auc),
+                   "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
 
     # C-1: 特徴量重要度を保存
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",

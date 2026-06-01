@@ -591,13 +591,18 @@ def run_rolling_main():
     print(f"  上位{TOP_N}銘柄 × 各ラウンド")
     print("=" * 60)
 
-    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
-    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    rise_path       = os.path.join(BASE_DIR, "rf_model.pkl")
+    drop_path       = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    alpha_rise_path = os.path.join(BASE_DIR, "rf_alpha_model.pkl")
+    alpha_drop_path = os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl")
     if not os.path.exists(rise_path):
         print(f"ERROR: {rise_path} が見つかりません"); return
-    rise_model = joblib.load(rise_path)
-    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
-    print("モデル読み込み完了")
+    rise_model       = joblib.load(rise_path)
+    drop_model       = joblib.load(drop_path)       if os.path.exists(drop_path)       else None
+    alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
+    alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
+    ensemble = alpha_rise_model is not None and alpha_drop_model is not None
+    print(f"モデル読み込み完了（{'4モデルアンサンブル' if ensemble else '2モデル'}）")
 
     print("TSE全銘柄リストを取得中...")
     all_stocks = fetch_tse_codes()
@@ -689,8 +694,14 @@ def run_rolling_main():
         for idx, (code, name, pe, px) in enumerate(raw_meta):
             rp = float(rise_model.predict_proba([fa[idx]])[0][1]) * 100
             dp = float(drop_model.predict_proba([fa[idx]])[0][1]) * 100 if drop_model else 0
+            if ensemble:
+                arp = float(alpha_rise_model.predict_proba([fa[idx]])[0][1]) * 100
+                adp = float(alpha_drop_model.predict_proba([fa[idx]])[0][1]) * 100
+                net = (rp - dp) + (arp - adp)  # アンサンブルスコア
+            else:
+                net = rp - dp
             ret = (px - pe) / pe * 100
-            scores.append((code, name, rp - dp, ret))
+            scores.append((code, name, net, ret))
 
         scores.sort(key=lambda x: -x[2])
         top = scores[:TOP_N]
