@@ -16,10 +16,16 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
+_LOG_DIR = os.path.join(os.getenv("STOCK_ALERT_HOME", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
+os.makedirs(_LOG_DIR, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(_LOG_DIR, "email_send.log"), encoding="utf-8"),
+    ]
 )
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
@@ -612,6 +618,7 @@ def send_email(subject, html_body):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_ADDRESS, GMAIL_ADDRESS, msg.as_string())
+    logger.info("📧 メール送信: %s", subject)
 
 
 # ──────────────────────────── メイン処理 ──────────────────────────────────

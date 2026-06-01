@@ -59,4 +59,5 @@
 - analyst: parse error × 2、スキップ
 
 ## 2026-05-29
-- ERROR: backtest失敗（メトリクス取得不可）
+
+## 2026-06-01
