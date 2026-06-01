@@ -61,3 +61,12 @@
 ## 2026-05-29
 
 ## 2026-06-01
+
+## 2026-06-01
+- metrics: {"avg_return": 2.68, "win_rate": 80.0, "big_win_rate": 10.0, "nk_avg": 1.55, "nk_alpha": 1.13}  periods: {"rate_hike_2022": {"avg_return": 0.13, "win_rate": 50.0, "big_win_rate": 0.0, "nk_avg": -2.41, "nk_alpha": 2.54}, "bull_2023": {"avg_return": 3.96, "win_rate": 75.0, "big_win_rate": 25.0, "nk_avg": 3.47, "nk_alpha": 0.48}, "q1_2024": {"avg_return": 5.93, "win_rate": 75.0, "big_win_rate": 25.0, "nk_avg": 3.66, "nk_alpha": 2.27}, "bear_2024": {"avg_return": 0.44, "win_rate": 100.0, "big_win_rate": 0.0, "nk_avg": -1.34, "nk_alpha": 1.78}, "q2_2025": {"avg_return": 2.96, "win_rate": 100.0, "big_win_rate": 0.0, "nk_avg": 4.38, "nk_alpha": -1.42}}
+- invest_stage: Phase 0
+- signals: なし
+- FM: improve | big=10.0%<20.0% → 強制 improve
+- analyst: {"file": "rf_train_v3.py", "changes": [{"param_name": "n_estimators", "old_value": 800, "new_value": 1200, "reason": "63日長期予測では複雑なパターン学習が必要。アンサンブル数増加で汎化性能向上"}, {"param_name": "max_depth", "old_value": 5, "new_value": 4, "reason": "過学習抑制。長期予測ではノイズ回避のため浅い木が有効。最新研究でも正則化強化推奨"}, {"param_name": "learning_rate", "old_value": 0.04, "new_value": 0.025, "reason": "n_estimators増加に伴い学習率を下げて過学習防止。勾配の安定化"}, {"param_name": "min_child_weight", "old_value": 8, "new_value": 15, "reason": "葉ノードの最小サンプル数増加で過学習抑制。63日先の長期予測ではノイズ除去が重要"}, {"param_name": "colsample_bytree", "old_value": 0.7, "new_value": 0.5, "reason": "特徴量サブサンプリング強化。多目的最適化研究の知見を反映し特徴量ノイズを削減"}, {"param_name": "subsample", "old_value": 0.8, "new_value": 0.7, "reason": "行サンプリング率を下げて正則化強化。長期予測での汎化性能向上"}, {"param_name": "reg_alpha", "old_value": 0, "new_value": 0.5, "reason": "L1正則化追加。最新研究のSVM的正則化組み合わせ知見を反映し過学習抑制"}, {"param_name": "reg_lambda", "old_value": 1, "new_value": 3, "reason": "L2正則化強化。特徴量重要度の低い変数の影響を抑制しモデル安定化"}, {"param_name": "gamma", "old_value": 0, "new_value": 0.3, "reason": "分割の最小損失減少量を設定。不要な分割を防ぎ過学習抑制"}]}
+- engineer: ✅ 採用 [rf_train_v3.py]: n_estimators 800→1200 / max_depth 5→4 / learning_rate 0.04→0.025 / min_child_weight 8→15 / colsample_bytree 0.7→0.5 / subsample 0.8→0.7 / reg_alpha 0→0.5 / reg_lambda 1→3 / gamma 0→0.3 | avg -3.48%→0.73%  win 20.0%→50.0%  big 10.0%→10.0%
+- stagnation: 1サイクル
