@@ -697,7 +697,12 @@ def run_rolling_main():
             if ensemble:
                 arp = float(alpha_rise_model.predict_proba([fa[idx]])[0][1]) * 100
                 adp = float(alpha_drop_model.predict_proba([fa[idx]])[0][1]) * 100
-                net = (rp - dp) + (arp - adp)  # アンサンブルスコア
+                # ① 絶対下落ゲート: drop_abs > 30% は除外（AUC 0.687 = 信頼できる）
+                if dp > 30.0:
+                    net = -9999  # ランキングから除外
+                else:
+                    # ② 収束スコア: rise_abs + rise_rel（両モデルが上昇で一致）
+                    net = rp + arp
             else:
                 net = rp - dp
             ret = (px - pe) / pe * 100
