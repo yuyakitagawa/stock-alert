@@ -155,8 +155,8 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-    m=XGBClassifier(n_estimators=1200,max_depth=4,learning_rate=0.025,subsample=0.7,early_stopping_rounds=50,
-        colsample_bytree=0.5,min_child_weight=15,reg_alpha=0.5,reg_lambda=3,gamma=0.3,scale_pos_weight=spw,
+    m=XGBClassifier(n_estimators=2000,max_depth=5,learning_rate=0.015,subsample=0.65,early_stopping_rounds=80,
+        colsample_bytree=0.4,min_child_weight=25,reg_alpha=1.0,reg_lambda=5,gamma=0.5,scale_pos_weight=spw,
         eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
     m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
     auc_raw=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
