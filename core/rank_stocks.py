@@ -304,15 +304,13 @@ def main():
         close = float(prices["Close"].iloc[-1])
         rise_pct = round(rise_prob * 100, 1)
         drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
-        # アンサンブル: 2段階フィルター
+        # アンサンブル: メタ学習結果に基づく最適スコア
         if ensemble:
             arp = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) * 100
-            # ① 絶対下落ゲート: drop_abs > 30% は除外（AUC 0.687 = 信頼できる）
-            if drop_pct is not None and drop_pct > 30.0:
-                net = -9999  # ランキング最下位（実質除外）
-            else:
-                # ② 収束スコア: rise_abs + rise_rel（両モデルが上昇で一致）
-                net = round(rise_pct + arp, 1)
+            adp = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) * 100
+            # rise_abs が唯一の有効予測因子（相関+0.241）
+            # drop_abs・rise_rel・drop_rel はノイズのため除外
+            net = round(rise_pct, 1)
         else:
             net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
 

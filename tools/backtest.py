@@ -692,31 +692,31 @@ def run_rolling_main():
         fa = add_cs_rank_features(np.array(raw_feats, dtype=float))
         scores = []
         for idx, (code, name, pe, px) in enumerate(raw_meta):
-            rp = float(rise_model.predict_proba([fa[idx]])[0][1]) * 100
-            dp = float(drop_model.predict_proba([fa[idx]])[0][1]) * 100 if drop_model else 0
+            rp  = float(rise_model.predict_proba([fa[idx]])[0][1]) * 100
+            dp  = float(drop_model.predict_proba([fa[idx]])[0][1]) * 100 if drop_model else 0
+            arp = adp = 0.0
             if ensemble:
                 arp = float(alpha_rise_model.predict_proba([fa[idx]])[0][1]) * 100
                 adp = float(alpha_drop_model.predict_proba([fa[idx]])[0][1]) * 100
-                # ① 絶対下落ゲート: drop_abs > 30% は除外（AUC 0.687 = 信頼できる）
-                if dp > 30.0:
-                    net = -9999  # ランキングから除外
-                else:
-                    # ② 収束スコア: rise_abs + rise_rel（両モデルが上昇で一致）
-                    net = rp + arp
+                # メタ学習結果: rise_abs が唯一の有効予測因子（相関 +0.241）
+                # drop_abs(-0.024) / rise_rel(+0.036) / drop_rel(0.000) はノイズ
+                net = rp
             else:
                 net = rp - dp
             ret = (px - pe) / pe * 100
-            scores.append((code, name, net, ret))
+            scores.append((code, name, net, ret, rp, dp, arp, adp))
 
         scores.sort(key=lambda x: -x[2])
         top = scores[:TOP_N]
         rets = [r[3] for r in top]
         avg_r = float(np.mean(rets))
         per_round_avgs.append(avg_r)
-        for code, name, net, ret in top:
+        for code, name, net, ret, rp, dp, arp, adp in top:
             all_trades.append({"ラウンド": ri+1, "entry": str(entry_date),
                                 "exit": str(exit_date), "code": code,
-                                "銘柄名": name, "net": round(net,1), "return": round(ret,2)})
+                                "銘柄名": name, "net": round(net,1), "return": round(ret,2),
+                                "rise_abs": round(rp,1), "drop_abs": round(dp,1),
+                                "rise_rel": round(arp,1), "drop_rel": round(adp,1)})
 
         # 日経同期間リターン
         nk_entry = nk_c[nk_c.index <= entry_date]
