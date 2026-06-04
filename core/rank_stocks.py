@@ -173,23 +173,19 @@ def _days_to_yutai_record(code: str, today=None) -> "int | None":
 
 
 def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None):
-    """S買いラベルを付与できる品質フィルター（元のスクリーナー基準）"""
+    """最小限の品質フィルター（スクリーナーを廃止、モデルスコアで選別）
+    残す条件: 株価・流動性・急落中の除外のみ
+    """
     if close < 300:               return False  # 株価 < 300円（低位株除外）
-    if feat[12] > 0.15:           return False  # down_streak > 3日
-    if feat[10] < -0.15:          return False  # drawdown60 < -15%
-    if feat[2] * 100 < 8.0:       return False  # 3ヶ月モメンタム < 8%
-    if feat[6] >= 75.0:            return False  # RSI ≥ 75（過熱）
-    if feat[16] < 1.0:            return False  # vr2060 < 1.0
-    if feat[7] > MAX_BUY_VOL20:               return False  # vol20 > 22%（高ボラ時は見送り）
-    if ret_504 is not None and ret_504 < 0:    return False  # 2年モメンタム < 0
-    if r2_504 is not None and r2_504 < 0.4:   return False  # 2年トレンドR² < 0.4
-    if nk20 is not None and nk20 < 3.0: return False  # 日経20日リターン < 3%（下降/横ばい相場）
+    if feat[10] < -0.20:          return False  # drawdown60 < -20%（急落中は除外）
+    if feat[12] > 0.20:           return False  # down_streak > 4日（連続下落中は除外）
+    if feat[6] >= 80.0:            return False  # RSI ≥ 80（過熱域のみ除外）
     if volumes and len(volumes) >= 20:
         valid = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
         if valid:
             va20 = np.mean(valid)
             if va20 * close / 1e6 < MIN_LIQUIDITY_M:
-                return False
+                return False  # 流動性なし（売買代金 < 50百万円）
     return True
 
 

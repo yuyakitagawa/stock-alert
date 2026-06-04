@@ -629,19 +629,25 @@ def run_rolling_main():
             print(f"  {i+1}/{len(all_stocks)} 取得済み...")
         time.sleep(0.05)
 
-    # 初回エントリー日でスクリーナーフィルターを一度だけ適用
-    nikkei_return_3m_sc = None
-    nk_past0 = nk_c[nk_c.index <= BACKTEST_DATE]
-    if len(nk_past0) >= 64:
-        nkp0 = nk_past0.values
-        nikkei_return_3m_sc = (nkp0[-1] - nkp0[-64]) / nkp0[-64]
-    screener_raw = []
-    for code, (h, name) in stocks_hist.items():
-        sc = compute_screener_at(h, BACKTEST_DATE, nikkei_return_3m_sc)
-        screener_raw.append({"code": code, **(sc if sc else {})})
-    pass_codes = set(_get_screener_pass_codes(screener_raw))
-    screened = {c: v for c, v in stocks_hist.items() if c in pass_codes}
-    print(f"スクリーナー通過: {len(screened)} 銘柄")
+    # スクリーナーフィルター（--no-screener で全銘柄をモデルで直接評価）
+    if NO_SCREENER:
+        # 品質フィルターのみ（流動性・株価）
+        screened = {c: (h, name) for c, (h, name) in stocks_hist.items()
+                    if len(h) >= 91 and float(h["Close"].dropna().iloc[-1]) >= 300}
+        print(f"全銘柄モード（品質フィルターのみ）: {len(screened)} 銘柄")
+    else:
+        nikkei_return_3m_sc = None
+        nk_past0 = nk_c[nk_c.index <= BACKTEST_DATE]
+        if len(nk_past0) >= 64:
+            nkp0 = nk_past0.values
+            nikkei_return_3m_sc = (nkp0[-1] - nkp0[-64]) / nkp0[-64]
+        screener_raw = []
+        for code, (h, name) in stocks_hist.items():
+            sc = compute_screener_at(h, BACKTEST_DATE, nikkei_return_3m_sc)
+            screener_raw.append({"code": code, **(sc if sc else {})})
+        pass_codes = set(_get_screener_pass_codes(screener_raw))
+        screened = {c: v for c, v in stocks_hist.items() if c in pass_codes}
+        print(f"スクリーナー通過: {len(screened)} 銘柄")
 
     per_round_avgs = []
     per_round_nk   = []
@@ -711,12 +717,24 @@ def run_rolling_main():
         rets = [r[3] for r in top]
         avg_r = float(np.mean(rets))
         per_round_avgs.append(avg_r)
+        # 上位TOP_N銘柄の成績（バックテスト用）
         for code, name, net, ret, rp, dp, arp, adp in top:
             all_trades.append({"ラウンド": ri+1, "entry": str(entry_date),
                                 "exit": str(exit_date), "code": code,
                                 "銘柄名": name, "net": round(net,1), "return": round(ret,2),
                                 "rise_abs": round(rp,1), "drop_abs": round(dp,1),
-                                "rise_rel": round(arp,1), "drop_rel": round(adp,1)})
+                                "rise_rel": round(arp,1), "drop_rel": round(adp,1),
+                                "selected": 1})
+        # メタ学習用: スクリーナー通過全銘柄のスコアも記録（TOP_N以外はselected=0）
+        top_codes = {s[0] for s in top}
+        for code, name, net, ret, rp, dp, arp, adp in scores:
+            if code not in top_codes:
+                all_trades.append({"ラウンド": ri+1, "entry": str(entry_date),
+                                    "exit": str(exit_date), "code": code,
+                                    "銘柄名": name, "net": round(net,1), "return": round(ret,2),
+                                    "rise_abs": round(rp,1), "drop_abs": round(dp,1),
+                                    "rise_rel": round(arp,1), "drop_rel": round(adp,1),
+                                    "selected": 0})
 
         # 日経同期間リターン
         nk_entry = nk_c[nk_c.index <= entry_date]
