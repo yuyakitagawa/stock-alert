@@ -629,25 +629,26 @@ def run_rolling_main():
             print(f"  {i+1}/{len(all_stocks)} 取得済み...")
         time.sleep(0.05)
 
-    # スクリーナーフィルター（--no-screener で全銘柄をモデルで直接評価）
-    if NO_SCREENER:
-        # 品質フィルターのみ（流動性・株価）
-        screened = {c: (h, name) for c, (h, name) in stocks_hist.items()
-                    if len(h) >= 91 and float(h["Close"].dropna().iloc[-1]) >= 300}
-        print(f"全銘柄モード（品質フィルターのみ）: {len(screened)} 銘柄")
-    else:
-        nikkei_return_3m_sc = None
-        nk_past0 = nk_c[nk_c.index <= BACKTEST_DATE]
-        if len(nk_past0) >= 64:
-            nkp0 = nk_past0.values
-            nikkei_return_3m_sc = (nkp0[-1] - nkp0[-64]) / nkp0[-64]
-        screener_raw = []
-        for code, (h, name) in stocks_hist.items():
-            sc = compute_screener_at(h, BACKTEST_DATE, nikkei_return_3m_sc)
-            screener_raw.append({"code": code, **(sc if sc else {})})
-        pass_codes = set(_get_screener_pass_codes(screener_raw))
-        screened = {c: v for c, v in stocks_hist.items() if c in pass_codes}
-        print(f"スクリーナー通過: {len(screened)} 銘柄")
+    from lib.utils import classify_market_regime
+
+    # ① 品質フィルター（常に適用: 株価≥300円・データ十分）
+    quality_filtered = {c: (h, name) for c, (h, name) in stocks_hist.items()
+                        if len(h) >= 91 and float(h["Close"].dropna().iloc[-1]) >= 300}
+    print(f"品質フィルター通過: {len(quality_filtered)} 銘柄")
+
+    # ② スクリーナーフィルター（弱気/不確実時のみ使用）
+    nikkei_return_3m_sc = None
+    nk_past0 = nk_c[nk_c.index <= BACKTEST_DATE]
+    if len(nk_past0) >= 64:
+        nkp0 = nk_past0.values
+        nikkei_return_3m_sc = (nkp0[-1] - nkp0[-64]) / nkp0[-64]
+    screener_raw = []
+    for code, (h, name) in quality_filtered.items():
+        sc = compute_screener_at(h, BACKTEST_DATE, nikkei_return_3m_sc)
+        screener_raw.append({"code": code, **(sc if sc else {})})
+    screener_pass_codes = set(_get_screener_pass_codes(screener_raw))
+    screener_filtered = {c: v for c, v in quality_filtered.items() if c in screener_pass_codes}
+    print(f"スクリーナー通過: {len(screener_filtered)} 銘柄（弱気/不確実時に使用）")
 
     per_round_avgs = []
     per_round_nk   = []
@@ -664,22 +665,30 @@ def run_rolling_main():
         if len(nk_at) < 61:
             continue
 
-        # ── 市場タイミングフィルター ──────────────────────────────────────
-        # 日経が63日SMAを下回る or 20日リターン < -3% → このラウンドをスキップ
-        nk_vals = nk_at.values
+        # ── 相場判定 + 市場タイミングフィルター ─────────────────────────────
+        nk_vals  = nk_at.values
         nk_sma63 = nk_vals[-63:].mean() if len(nk_vals) >= 63 else None
         nk_20d   = (nk_vals[-1] - nk_vals[-21]) / nk_vals[-21] * 100 if len(nk_vals) >= 21 else 0
         is_bear  = (nk_sma63 is not None and float(nk_at.iloc[-1]) < nk_sma63) or nk_20d < -3.0
         if is_bear:
             print(f"  R{ri+1:02d} [{entry_date}] SKIP: 市場タイミング（SMA63比 {float(nk_at.iloc[-1])/nk_sma63*100-100:+.1f}%、日経20d {nk_20d:+.1f}%）")
             continue
+
+        # 相場レジーム判定 → 候補銘柄プールを動的に切り替え
+        regime = classify_market_regime(nk_vals.tolist())
+        if NO_SCREENER or regime == 'bull':
+            round_stocks = quality_filtered   # 強気: 全銘柄からモデルが選ぶ
+        else:
+            round_stocks = screener_filtered  # 不確実/弱気: スクリーナーで品質確保
+        print(f"  R{ri+1:02d} [{entry_date}] 相場={regime} → {len(round_stocks)}銘柄")
+
         nkp = nk_at.values
         nkr = ((nkp[-1]-nkp[-6])/nkp[-6] if len(nkp)>=6 else 0,
                 (nkp[-1]-nkp[-21])/nkp[-21] if len(nkp)>=21 else 0,
                 (nkp[-1]-nkp[-61])/nkp[-61] if len(nkp)>=61 else 0)
 
         raw_feats, raw_meta = [], []
-        for code, (h, name) in screened.items():
+        for code, (h, name) in round_stocks.items():
             feat = extract_features_at(h, entry_date, nkr)
             if feat is None:
                 continue

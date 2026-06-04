@@ -106,6 +106,42 @@ def get_nikkei_returns():
         return None, None, None
 
 
+def classify_market_regime(nk_prices):
+    """日経225の価格系列から相場レジームを判定する。
+
+    Returns:
+        'bull'      : 強気（スクリーナーなし推奨）
+        'bear'      : 弱気（スクリーナーあり or シグナル停止）
+        'uncertain' : 中間（スクリーナーあり推奨）
+
+    判定基準:
+        bull    : 日経 > SMA63 AND 20日リターン > -2%
+        bear    : 日経 < SMA63 OR  20日リターン < -3%
+        uncertain: それ以外
+    """
+    arr = [p for p in nk_prices if p is not None]
+    if len(arr) < 63:
+        return 'uncertain'
+    arr = arr[-200:]  # 最新200日分のみ使用
+    current = arr[-1]
+    sma63   = sum(arr[-63:]) / 63
+    sma200  = sum(arr[-200:]) / 200 if len(arr) >= 200 else sma63
+    nk20    = (arr[-1] - arr[-21]) / arr[-21] * 100 if len(arr) >= 21 else 0
+    nk60    = (arr[-1] - arr[-61]) / arr[-61] * 100 if len(arr) >= 61 else 0
+
+    above_sma63  = current > sma63
+    above_sma200 = current > sma200
+
+    # 強気: SMA63/200の両方を上回り、かつ短期急落なし
+    if above_sma63 and above_sma200 and nk20 > -2.0:
+        return 'bull'
+    # 弱気: SMA63を下回る or 短期急落 or 20日-5%超
+    if not above_sma63 or nk20 < -3.0:
+        return 'bear'
+    # それ以外は中間
+    return 'uncertain'
+
+
 def calc_rsi(prices, period=14):
     if len(prices) < period + 1:
         return 50.0

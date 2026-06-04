@@ -14,7 +14,7 @@ import requests as _requests
 from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores, classify_market_regime
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
                    MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
@@ -219,20 +219,40 @@ def main():
     if drop_model:   print(f"下落モデル読み込み: {drop_path}")
     if ensemble:     print("アルファモデル読み込み完了（4モデルアンサンブル）")
 
-    # 日経225リターン取得
+    # 日経225リターン取得 + 相場レジーム判定
     print("\n日経225リターン取得中...")
     nk5, nk20, nk60 = get_nikkei_returns()
     is_bear = nk20 is not None and nk20 < BEAR_MARKET_THRESHOLD
+
+    # 相場レジーム判定（SMA63/200ベース）
+    regime = 'uncertain'
+    try:
+        from lib.utils import get_nikkei_returns as _gnr
+        import requests as _req
+        from datetime import timedelta as _td
+        _url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
+                f"?interval=1d&period1={int((__import__('datetime').datetime.now()-_td(days=400)).timestamp())}"
+                f"&period2={int(__import__('datetime').datetime.now().timestamp())}")
+        _resp = _req.get(_url, headers=HEADERS, timeout=15)
+        _data = _resp.json()
+        _result = _data.get("chart", {}).get("result", [])
+        if _result:
+            _closes = [c for c in _result[0].get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[]) if c]
+            regime = classify_market_regime(_closes)
+    except Exception:
+        pass
+
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
+        regime_label = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
+        print(f"  相場レジーム: {regime_label}")
         if is_bear:
-            print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
+            print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）")
     else:
         print("  日経225: 取得失敗（相対リターンはN/A）")
         is_bear = False
 
     # ── 市場タイミングフィルター ────────────────────────────────────────────────
-    # 日経20日リターンがMARKET_TIMING_20D_THRESH以下 → シグナル停止
     if MARKET_TIMING_ENABLED and nk20 is not None and nk20 < MARKET_TIMING_20D_THRESH:
         print(f"\n🚫 市場タイミングフィルター発動（日経20日: {nk20:+.1f}% < {MARKET_TIMING_20D_THRESH}%）")
         print("  下落相場のためシグナルを停止します。日経ETFで待機推奨。")
@@ -343,7 +363,11 @@ def main():
         _ss_res504 = float(np.sum((p504 - _pred504)**2))
         _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
         r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
-        buy_ok = passes_buy_filter(feat, close, volumes, nk20=nk20, ret_504=ret_504, r2_504=r2_504)
+        # 相場レジームに応じてフィルター強度を動的に変更
+        buy_ok = passes_buy_filter(feat, close, volumes,
+                                   nk20=nk20 if regime != 'bull' else None,
+                                   ret_504=ret_504 if regime != 'bull' else None,
+                                   r2_504=r2_504 if regime != 'bull' else None)
         recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
