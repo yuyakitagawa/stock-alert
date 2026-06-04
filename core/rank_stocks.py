@@ -252,11 +252,9 @@ def main():
         print("  日経225: 取得失敗（相対リターンはN/A）")
         is_bear = False
 
-    # ── 市場タイミングフィルター ────────────────────────────────────────────────
-    if MARKET_TIMING_ENABLED and nk20 is not None and nk20 < MARKET_TIMING_20D_THRESH:
-        print(f"\n🚫 市場タイミングフィルター発動（日経20日: {nk20:+.1f}% < {MARKET_TIMING_20D_THRESH}%）")
-        print("  下落相場のためシグナルを停止します。日経ETFで待機推奨。")
-        return
+    # ── 市場状況の警告のみ（停止しない — 最終判断はユーザーが行う）
+    if nk20 is not None and nk20 < MARKET_TIMING_20D_THRESH:
+        print(f"\n⚠️ 下落注意（日経20日: {nk20:+.1f}%）— 相場判断はご自身で。シグナルは継続出力します。")
 
     # 全TSE銘柄リスト取得（JPX直読み）
     stock_list = get_tse_stock_list()
@@ -363,11 +361,7 @@ def main():
         _ss_res504 = float(np.sum((p504 - _pred504)**2))
         _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
         r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
-        # 相場レジームに応じてフィルター強度を動的に変更
-        buy_ok = passes_buy_filter(feat, close, volumes,
-                                   nk20=nk20 if regime != 'bull' else None,
-                                   ret_504=ret_504 if regime != 'bull' else None,
-                                   r2_504=r2_504 if regime != 'bull' else None)
+        buy_ok = passes_buy_filter(feat, close, volumes)
         recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
