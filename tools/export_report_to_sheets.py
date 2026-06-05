@@ -29,16 +29,27 @@ def get_or_create_sheet(spreadsheet, title, rows=500, cols=30):
     try:
         ws = spreadsheet.worksheet(title)
         ws.clear()
-        return ws
     except gspread.exceptions.WorksheetNotFound:
-        return spreadsheet.add_worksheet(title=title, rows=rows, cols=cols)
+        ws = spreadsheet.add_worksheet(title=title, rows=rows, cols=cols)
+        return ws
+    # 既存シートのサイズが不足する場合は拡張
+    if ws.row_count < rows or ws.col_count < cols:
+        ws.resize(rows=max(ws.row_count, rows), cols=max(ws.col_count, cols))
+    return ws
 
 
 def write_sheet(ws, data: list[list], header_rows=1):
-    """data = [[row1], [row2], ...] をまとめて書き込み。"""
+    """data = [[row1], [row2], ...] をバッチで書き込み（大量行対応）。"""
     if not data:
         return
-    ws.update(range_name="A1", values=data)
+    import time as _t
+    BATCH = 1000
+    for i in range(0, len(data), BATCH):
+        chunk = data[i:i+BATCH]
+        start_row = i + 1
+        ws.update(range_name=f"A{start_row}", values=chunk)
+        if i + BATCH < len(data):
+            _t.sleep(1.2)  # write quota 対策
     # ヘッダー行を太字・背景色
     if header_rows:
         ws.format(f"A1:{chr(64+len(data[0]))}1", {
@@ -330,27 +341,25 @@ def build_feature_data():
 # 5. 銘柄ファンダメンタル（PER/PBR/ROE + 各種確定日）
 # ────────────────────────────────────────────────────────────
 
-def build_stock_fundamentals():
+def build_stock_fundamentals(kabutan_top_n=100):
+    """
+    全銘柄をDBから取得（net順）、上位 kabutan_top_n 件のみ kabutan.jp で
+    ROE/決算/優待を補完する。
+    """
     import calendar as _cal
     import requests as _req
     import time as _time
     import sqlite3 as _sq
+    import re as _re
+    from datetime import timedelta as _td
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     _HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/html"}
     today = date.today()
-
-    # 保有銘柄 + ランキングDBの直近銘柄を対象にする
-    held_raw = os.getenv("HELD_STOCKS", "")
-    stocks = {}
-    for item in held_raw.split(","):
-        item = item.strip()
-        if ":" in item:
-            code, name = item.split(":", 1)
-            stocks[code.strip()] = name.strip()
-
-    # DBから直近ランキング上位銘柄も追加
     db_path = os.path.join(BASE_DIR, "stock_alert.db")
+
+    # ── Step1: DB から全銘柄取得 ──────────────────────────────
+    rows_db = []
     try:
         con = _sq.connect(db_path)
         con.row_factory = _sq.Row
@@ -358,55 +367,44 @@ def build_stock_fundamentals():
             "SELECT date FROM daily_ranking ORDER BY date DESC LIMIT 1"
         ).fetchone()
         if latest:
-            top = con.execute(
-                "SELECT code, name FROM daily_ranking WHERE date=? ORDER BY net DESC LIMIT 30",
-                (latest["date"],)
+            ranking_date = latest["date"]
+            rows_db = con.execute(
+                """SELECT code, name, close, net, rise_prob, drop_prob, vol,
+                          recommend, rel20, per, pbr
+                   FROM daily_ranking WHERE date=? ORDER BY net DESC""",
+                (ranking_date,)
             ).fetchall()
-            for r in top:
-                if str(r["code"]) not in stocks:
-                    stocks[str(r["code"])] = r["name"]
+            # yutai_cache も読む
+            yutai_map = {}
+            for r in con.execute("SELECT code, has_yutai, record_month FROM yutai_cache"):
+                yutai_map[str(r["code"])] = r["record_month"] if r["has_yutai"] else None
         con.close()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  DB読み込みエラー: {e}")
+        return [["DBエラー"]]
 
-    def _days_to_event(from_date, months, day=28):
+    print(f"  DB取得: {len(rows_db)}銘柄（最終更新 {ranking_date}）")
+
+    # ── Step2: 上位 N 件を kabutan.jp で補完 ─────────────────
+    def _days_to_event(months, day=28):
         best = 9999
         for m in months:
-            for yr in [from_date.year, from_date.year + 1]:
+            for yr in [today.year, today.year + 1]:
                 last = _cal.monthrange(yr, m)[1]
                 d = date(yr, m, min(day, last))
-                delta = (d - from_date).days
+                delta = (d - today).days
                 if 0 <= delta < best:
                     best = delta
         return best if best < 9999 else None
 
-    def fetch_one(code, name):
-        result = {
-            "code": code, "name": name,
-            "per": None, "pbr": None, "roe": None,
-            "next_earnings": None, "days_earnings": None,
-            "div_month": None,    "days_dividend": None,
-            "yutai_month": None,  "days_yutai": None,
-        }
-        import re as _re
+    def fetch_kabutan(code):
+        res = {"code": code, "roe": None, "next_earnings": None,
+               "days_earnings": None, "yutai_month": None}
         try:
-            from datetime import timedelta as _td
-            # PER / PBR（メインページ）
-            r = _req.get(f"https://kabutan.jp/stock/?code={code}", headers=_HEADERS, timeout=10)
-            if r.status_code == 200:
-                text = r.text.replace("\n","").replace("\t","")
-                idx = text.find('data-help="PER"')
-                if idx != -1:
-                    vals = _re.findall(r'<td>([\d.-]+)<span', text[idx:idx+600])
-                    if len(vals) >= 1:
-                        result["per"] = float(vals[0])
-                    if len(vals) >= 2:
-                        result["pbr"] = float(vals[1])
-
-            # ROE + 直近発表日（finance ページ）
-            r2 = _req.get(f"https://kabutan.jp/stock/finance/?code={code}", headers=_HEADERS, timeout=10)
+            # ROE + 決算日（finance ページ）
+            r2 = _req.get(f"https://kabutan.jp/stock/finance/?code={code}",
+                          headers=_HEADERS, timeout=10)
             if r2.status_code == 200:
-                # ROE
                 t2 = r2.text.replace(" ","").replace("\n","").replace("\t","")
                 idx2 = t2.find('ROE">')
                 if idx2 != -1:
@@ -415,88 +413,91 @@ def build_stock_fundamentals():
                     if trows:
                         vs = _re.findall(r'<td[^>]*>([\d,.-]+)</td>', trows[0])
                         if len(vs) >= 3:
-                            try: result["roe"] = float(vs[2])
+                            try: res["roe"] = float(vs[2])
                             except ValueError: pass
-                # 発表日: YY/MM/DD 形式を全部拾い最新の過去日付を取得 → 91日後を次回推定
                 raw_dates = _re.findall(r'(\d{2})/(\d{2})/(\d{2})', r2.text)
-                past_dates = []
+                past = []
                 for yy, mm, dd in raw_dates:
                     try:
                         dt = datetime.strptime(f"20{yy}/{mm}/{dd}", "%Y/%m/%d").date()
-                        if dt <= today:
-                            past_dates.append(dt)
-                    except ValueError:
-                        pass
-                if past_dates:
-                    last_announce = max(past_dates)
-                    est_next = last_announce + _td(days=91)
-                    result["next_earnings"] = f"{est_next.isoformat()}（推定）"
-                    result["days_earnings"] = (est_next - today).days
-
-            # 優待（権利確定月）
-            r3 = _req.get(f"https://kabutan.jp/stock/yutai?code={code}", headers=_HEADERS, timeout=10)
+                        if dt <= today: past.append(dt)
+                    except ValueError: pass
+                if past:
+                    est = max(past) + _td(days=91)
+                    res["next_earnings"] = f"{est.isoformat()}（推定）"
+                    res["days_earnings"] = (est - today).days
+            # 優待
+            r3 = _req.get(f"https://kabutan.jp/stock/yutai?code={code}",
+                          headers=_HEADERS, timeout=10)
             if r3.status_code == 200:
                 m3 = _re.search(r'権利確定月は(\d{1,2})月', r3.text)
                 if m3:
-                    ym = int(m3.group(1))
-                    result["yutai_month"] = ym
-                    result["days_yutai"]  = _days_to_event(today, [ym], day=28)
-
-            # 配当確定日: yutai_monthがある場合はその月、なければ3/9月
-            div_months = [result["yutai_month"]] if result["yutai_month"] else [3, 9]
-            result["div_month"]   = ",".join(str(m) + "月" for m in div_months)
-            result["days_dividend"] = _days_to_event(today, div_months, day=28)
-
-        except Exception as e:
-            result["error"] = str(e)
+                    res["yutai_month"] = int(m3.group(1))
+        except Exception:
+            pass
         _time.sleep(0.5)
-        return result
+        return res
 
-    # 並列取得（低スレッド数でレート制限回避）
-    all_results = []
-    print(f"  対象: {len(stocks)}銘柄（kabutan.jp × 3ページ/銘柄）...")
+    top_codes = [str(r["code"]) for r in rows_db[:kabutan_top_n]]
+    print(f"  kabutan.jp 補完中（上位{kabutan_top_n}銘柄）...")
+    kabutan_map = {}
+    done = [0]
     with ThreadPoolExecutor(max_workers=4) as ex:
-        futures = {ex.submit(fetch_one, code, name): code for code, name in stocks.items()}
-        done = 0
+        futures = {ex.submit(fetch_kabutan, c): c for c in top_codes}
         for future in as_completed(futures):
-            all_results.append(future.result())
-            done += 1
-            if done % 5 == 0:
-                print(f"    {done}/{len(stocks)} 完了...")
+            res = future.result()
+            kabutan_map[res["code"]] = res
+            done[0] += 1
+            if done[0] % 20 == 0:
+                print(f"    {done[0]}/{kabutan_top_n} 完了...")
+    print(f"  kabutan.jp 補完完了")
 
-    # コード順にソート
-    all_results.sort(key=lambda x: x["code"])
+    # ── Step3: シート行を組み立て ─────────────────────────────
+    def fmt_days(d):
+        if d is None: return "—"
+        if d <= 14:   return f"⚠️ {d}日後"
+        if d <= 30:   return f"🔔 {d}日後"
+        return f"{d}日後"
 
-    rows = [[
-        "コード", "銘柄名",
+    header = [
+        "コード", "銘柄名", "株価", "Netスコア", "上昇確率(%)", "下落確率(%)",
+        "ボラ(%)", "推奨", "日経相対20日",
         "PER", "PBR", "ROE(%)",
-        "次回決算日", "決算まで(日)",
-        "配当確定月", "配当まで(日)",
-        "優待確定月", "優待まで(日)",
-    ]]
+        "次回決算日(推定)", "決算まで",
+        "配当確定月", "配当まで",
+        "優待確定月", "優待まで",
+    ]
+    result_rows = [header]
 
-    for r in all_results:
-        def fmt_days(d):
-            if d is None: return "不明"
-            if d <= 14:   return f"⚠️ {d}日後"
-            if d <= 30:   return f"🔔 {d}日後"
-            return f"{d}日後"
+    for r in rows_db:
+        code = str(r["code"])
+        kb   = kabutan_map.get(code, {})
+        ym_db   = yutai_map.get(code)
+        ym      = kb.get("yutai_month") or ym_db
+        div_months = [ym] if ym else [3, 9]
 
-        rows.append([
-            r["code"],
+        result_rows.append([
+            code,
             r["name"],
+            r["close"]     if r["close"]     is not None else "—",
+            round(r["net"], 2) if r["net"] is not None else "—",
+            round(r["rise_prob"], 1) if r["rise_prob"] is not None else "—",
+            round(r["drop_prob"], 1) if r["drop_prob"] is not None else "—",
+            round(r["vol"], 1)       if r["vol"]       is not None else "—",
+            r["recommend"] or "—",
+            round(r["rel20"], 2)     if r["rel20"]     is not None else "—",
             r["per"]  if r["per"]  is not None else "—",
             r["pbr"]  if r["pbr"]  is not None else "—",
-            r["roe"]  if r["roe"]  is not None else "—",
-            r["next_earnings"] or "不明",
-            fmt_days(r["days_earnings"]),
-            r["div_month"] or "3月,9月(推定)",
-            fmt_days(r["days_dividend"]),
-            f"{r['yutai_month']}月" if r["yutai_month"] else "なし",
-            fmt_days(r["days_yutai"]) if r["yutai_month"] else "—",
+            kb.get("roe") if kb.get("roe") is not None else "—",
+            kb.get("next_earnings") or "—",
+            fmt_days(kb.get("days_earnings")),
+            ",".join(f"{m}月" for m in div_months),
+            fmt_days(_days_to_event(div_months)),
+            f"{ym}月" if ym else "なし",
+            fmt_days(_days_to_event([ym]) if ym else None),
         ])
 
-    return rows
+    return result_rows
 
 
 # ────────────────────────────────────────────────────────────
@@ -604,7 +605,7 @@ def main():
     # 6. 銘柄ファンダメンタル
     print("\n[6/6] 銘柄ファンダメンタルを取得中（kabutan.jp）...")
     fund_rows = build_stock_fundamentals()
-    ws6 = get_or_create_sheet(sh, "📋 銘柄ファンダメンタル", rows=200, cols=15)
+    ws6 = get_or_create_sheet(sh, "📋 銘柄ファンダメンタル", rows=4000, cols=20)
     write_sheet(ws6, fund_rows)
     ws6.freeze(rows=1)
     print(f"  → {len(fund_rows)-1}銘柄 書き込み完了")
