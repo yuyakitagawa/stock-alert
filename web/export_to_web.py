@@ -277,5 +277,74 @@ def main() -> None:
     print("[export_to_web] エクスポート完了")
 
 
+def _upsert_simulation(rows: list[dict]) -> None:
+    if not rows:
+        return
+    url = f"{SUPABASE_URL}/rest/v1/web_simulation?on_conflict=period,round,code"
+    headers = _sb_headers()
+    batch_size = 500
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        resp = requests.post(url, headers=headers, json=batch, timeout=30)
+        if not resp.ok:
+            print(f"[export_simulation] upsert failed: {resp.status_code} {resp.text[:200]}")
+        else:
+            print(f"[export_simulation] {len(batch)} 行 upsert 完了")
+
+
+def export_simulation_results() -> None:
+    """simulations/backtests/rolling21d_*.csv を web_simulation テーブルへ一括 upsert"""
+    import glob
+    import csv
+    import re
+
+    pattern = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "simulations", "backtests", "rolling21d_*.csv"
+    )
+    files = sorted(glob.glob(pattern))
+    if not files:
+        print("[export_simulation] CSVファイルが見つかりません:", pattern)
+        return
+
+    all_rows: list[dict] = []
+    for fp in files:
+        m = re.search(r"rolling21d_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv$", fp)
+        if not m:
+            continue
+        period_start, period_end = m.group(1), m.group(2)
+        period = f"{period_start}_{period_end}"
+
+        with open(fp, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if str(row.get("selected", "0")).strip() != "1":
+                    continue
+                try:
+                    all_rows.append({
+                        "period": period,
+                        "period_start": period_start,
+                        "period_end": period_end,
+                        "round": int(row["ラウンド"]),
+                        "entry_date": row["entry"],
+                        "exit_date": row["exit"],
+                        "code": str(row["code"]),
+                        "name": row.get("銘柄名", ""),
+                        "net_score": float(row["net"]) if row.get("net") else None,
+                        "return_pct": float(row["return"]) if row.get("return") else None,
+                    })
+                except (KeyError, ValueError):
+                    pass
+
+    print(f"[export_simulation] {len(all_rows)}件 upsert → web_simulation")
+    # web_simulationは on_conflict=period,round,code で重複解決
+    _upsert_simulation(all_rows)
+    print("[export_simulation] 完了")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--simulation":
+        export_simulation_results()
+    else:
+        main()
