@@ -390,7 +390,8 @@ def build_stock_fundamentals():
         }
         import re as _re
         try:
-            # PER / PBR / 次回決算日
+            from datetime import timedelta as _td
+            # PER / PBR（メインページ）
             r = _req.get(f"https://kabutan.jp/stock/?code={code}", headers=_HEADERS, timeout=10)
             if r.status_code == 200:
                 text = r.text.replace("\n","").replace("\t","")
@@ -401,25 +402,36 @@ def build_stock_fundamentals():
                         result["per"] = float(vals[0])
                     if len(vals) >= 2:
                         result["pbr"] = float(vals[1])
-                m = _re.search(r'決算発表予定日[^<]*<[^>]+>(\d{4}/\d{2}/\d{2})', r.text)
-                if m:
-                    earn_date = datetime.strptime(m.group(1), "%Y/%m/%d").date()
-                    result["next_earnings"] = earn_date.isoformat()
-                    result["days_earnings"] = (earn_date - today).days if earn_date >= today else None
 
-            # ROE
+            # ROE + 直近発表日（finance ページ）
             r2 = _req.get(f"https://kabutan.jp/stock/finance/?code={code}", headers=_HEADERS, timeout=10)
             if r2.status_code == 200:
+                # ROE
                 t2 = r2.text.replace(" ","").replace("\n","").replace("\t","")
                 idx2 = t2.find('ROE">')
                 if idx2 != -1:
                     tbody = t2.find("<tbody>", idx2)
-                    rows  = _re.findall(r'<tr><thscope="row".*?</tr>', t2[tbody:tbody+1200])
-                    if rows:
-                        vs = _re.findall(r'<td[^>]*>([\d,.-]+)</td>', rows[0])
+                    trows = _re.findall(r'<tr><thscope="row".*?</tr>', t2[tbody:tbody+1200])
+                    if trows:
+                        vs = _re.findall(r'<td[^>]*>([\d,.-]+)</td>', trows[0])
                         if len(vs) >= 3:
                             try: result["roe"] = float(vs[2])
                             except ValueError: pass
+                # 発表日: YY/MM/DD 形式を全部拾い最新の過去日付を取得 → 91日後を次回推定
+                raw_dates = _re.findall(r'(\d{2})/(\d{2})/(\d{2})', r2.text)
+                past_dates = []
+                for yy, mm, dd in raw_dates:
+                    try:
+                        dt = datetime.strptime(f"20{yy}/{mm}/{dd}", "%Y/%m/%d").date()
+                        if dt <= today:
+                            past_dates.append(dt)
+                    except ValueError:
+                        pass
+                if past_dates:
+                    last_announce = max(past_dates)
+                    est_next = last_announce + _td(days=91)
+                    result["next_earnings"] = f"{est_next.isoformat()}（推定）"
+                    result["days_earnings"] = (est_next - today).days
 
             # 優待（権利確定月）
             r3 = _req.get(f"https://kabutan.jp/stock/yutai?code={code}", headers=_HEADERS, timeout=10)
