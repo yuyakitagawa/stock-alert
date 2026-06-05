@@ -208,7 +208,7 @@ NOTIFY_TO   = "dosankoure@gmail.com"
 
 GOAL_AVG          = 2.0   # 投資開始ゲート: avg_return > 2%/21日（年率換算26%）
 GOAL_WIN          = 50.0  # 投資開始ゲート: win_rate > 50%
-GOAL_BIGWIN       = 20.0  # 投資開始ゲート: big_win_rate > 20%（+8%/21日）
+GOAL_BIGWIN       = 30.0  # 投資開始ゲート: big_win_rate > 30%（週次レビューFM判断で20%→30%に昇格）
 GOAL_NIKKEI_ALPHA = 0.0   # 日経225に勝つこと（alpha > 0 が必須条件）
 # 最終目標: 元本300万円 → 10年で1億円（3%/月 × 120ヶ月 = 34倍）
 # 日経に勝てないならETFの方が良い → alpha > 0 は投資フェーズ移行の必要条件
