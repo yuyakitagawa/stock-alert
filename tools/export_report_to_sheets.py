@@ -327,7 +327,168 @@ def build_feature_data():
 
 
 # ────────────────────────────────────────────────────────────
-# 5. モデルスペック
+# 5. 銘柄ファンダメンタル（PER/PBR/ROE + 各種確定日）
+# ────────────────────────────────────────────────────────────
+
+def build_stock_fundamentals():
+    import calendar as _cal
+    import requests as _req
+    import time as _time
+    import sqlite3 as _sq
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    _HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/html"}
+    today = date.today()
+
+    # 保有銘柄 + ランキングDBの直近銘柄を対象にする
+    held_raw = os.getenv("HELD_STOCKS", "")
+    stocks = {}
+    for item in held_raw.split(","):
+        item = item.strip()
+        if ":" in item:
+            code, name = item.split(":", 1)
+            stocks[code.strip()] = name.strip()
+
+    # DBから直近ランキング上位銘柄も追加
+    db_path = os.path.join(BASE_DIR, "stock_alert.db")
+    try:
+        con = _sq.connect(db_path)
+        con.row_factory = _sq.Row
+        latest = con.execute(
+            "SELECT date FROM daily_ranking ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+        if latest:
+            top = con.execute(
+                "SELECT code, name FROM daily_ranking WHERE date=? ORDER BY net DESC LIMIT 30",
+                (latest["date"],)
+            ).fetchall()
+            for r in top:
+                if str(r["code"]) not in stocks:
+                    stocks[str(r["code"])] = r["name"]
+        con.close()
+    except Exception:
+        pass
+
+    def _days_to_event(from_date, months, day=28):
+        best = 9999
+        for m in months:
+            for yr in [from_date.year, from_date.year + 1]:
+                last = _cal.monthrange(yr, m)[1]
+                d = date(yr, m, min(day, last))
+                delta = (d - from_date).days
+                if 0 <= delta < best:
+                    best = delta
+        return best if best < 9999 else None
+
+    def fetch_one(code, name):
+        result = {
+            "code": code, "name": name,
+            "per": None, "pbr": None, "roe": None,
+            "next_earnings": None, "days_earnings": None,
+            "div_month": None,    "days_dividend": None,
+            "yutai_month": None,  "days_yutai": None,
+        }
+        import re as _re
+        try:
+            # PER / PBR / 次回決算日
+            r = _req.get(f"https://kabutan.jp/stock/?code={code}", headers=_HEADERS, timeout=10)
+            if r.status_code == 200:
+                text = r.text.replace("\n","").replace("\t","")
+                idx = text.find('data-help="PER"')
+                if idx != -1:
+                    vals = _re.findall(r'<td>([\d.-]+)<span', text[idx:idx+600])
+                    if len(vals) >= 1:
+                        result["per"] = float(vals[0])
+                    if len(vals) >= 2:
+                        result["pbr"] = float(vals[1])
+                m = _re.search(r'決算発表予定日[^<]*<[^>]+>(\d{4}/\d{2}/\d{2})', r.text)
+                if m:
+                    earn_date = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+                    result["next_earnings"] = earn_date.isoformat()
+                    result["days_earnings"] = (earn_date - today).days if earn_date >= today else None
+
+            # ROE
+            r2 = _req.get(f"https://kabutan.jp/stock/finance/?code={code}", headers=_HEADERS, timeout=10)
+            if r2.status_code == 200:
+                t2 = r2.text.replace(" ","").replace("\n","").replace("\t","")
+                idx2 = t2.find('ROE">')
+                if idx2 != -1:
+                    tbody = t2.find("<tbody>", idx2)
+                    rows  = _re.findall(r'<tr><thscope="row".*?</tr>', t2[tbody:tbody+1200])
+                    if rows:
+                        vs = _re.findall(r'<td[^>]*>([\d,.-]+)</td>', rows[0])
+                        if len(vs) >= 3:
+                            try: result["roe"] = float(vs[2])
+                            except ValueError: pass
+
+            # 優待（権利確定月）
+            r3 = _req.get(f"https://kabutan.jp/stock/yutai?code={code}", headers=_HEADERS, timeout=10)
+            if r3.status_code == 200:
+                m3 = _re.search(r'権利確定月は(\d{1,2})月', r3.text)
+                if m3:
+                    ym = int(m3.group(1))
+                    result["yutai_month"] = ym
+                    result["days_yutai"]  = _days_to_event(today, [ym], day=28)
+
+            # 配当確定日: yutai_monthがある場合はその月、なければ3/9月
+            div_months = [result["yutai_month"]] if result["yutai_month"] else [3, 9]
+            result["div_month"]   = ",".join(str(m) + "月" for m in div_months)
+            result["days_dividend"] = _days_to_event(today, div_months, day=28)
+
+        except Exception as e:
+            result["error"] = str(e)
+        _time.sleep(0.5)
+        return result
+
+    # 並列取得（低スレッド数でレート制限回避）
+    all_results = []
+    print(f"  対象: {len(stocks)}銘柄（kabutan.jp × 3ページ/銘柄）...")
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(fetch_one, code, name): code for code, name in stocks.items()}
+        done = 0
+        for future in as_completed(futures):
+            all_results.append(future.result())
+            done += 1
+            if done % 5 == 0:
+                print(f"    {done}/{len(stocks)} 完了...")
+
+    # コード順にソート
+    all_results.sort(key=lambda x: x["code"])
+
+    rows = [[
+        "コード", "銘柄名",
+        "PER", "PBR", "ROE(%)",
+        "次回決算日", "決算まで(日)",
+        "配当確定月", "配当まで(日)",
+        "優待確定月", "優待まで(日)",
+    ]]
+
+    for r in all_results:
+        def fmt_days(d):
+            if d is None: return "不明"
+            if d <= 14:   return f"⚠️ {d}日後"
+            if d <= 30:   return f"🔔 {d}日後"
+            return f"{d}日後"
+
+        rows.append([
+            r["code"],
+            r["name"],
+            r["per"]  if r["per"]  is not None else "—",
+            r["pbr"]  if r["pbr"]  is not None else "—",
+            r["roe"]  if r["roe"]  is not None else "—",
+            r["next_earnings"] or "不明",
+            fmt_days(r["days_earnings"]),
+            r["div_month"] or "3月,9月(推定)",
+            fmt_days(r["days_dividend"]),
+            f"{r['yutai_month']}月" if r["yutai_month"] else "なし",
+            fmt_days(r["days_yutai"]) if r["yutai_month"] else "—",
+        ])
+
+    return rows
+
+
+# ────────────────────────────────────────────────────────────
+# 6. モデルスペック
 # ────────────────────────────────────────────────────────────
 
 def build_model_spec():
@@ -427,6 +588,14 @@ def main():
     write_sheet(ws5, spec_rows)
     ws5.freeze(rows=1)
     print(f"  → 書き込み完了")
+
+    # 6. 銘柄ファンダメンタル
+    print("\n[6/6] 銘柄ファンダメンタルを取得中（kabutan.jp）...")
+    fund_rows = build_stock_fundamentals()
+    ws6 = get_or_create_sheet(sh, "📋 銘柄ファンダメンタル", rows=200, cols=15)
+    write_sheet(ws6, fund_rows)
+    ws6.freeze(rows=1)
+    print(f"  → {len(fund_rows)-1}銘柄 書き込み完了")
 
     print(f"\n✅ 全シート書き込み完了！")
     print(f"   URL: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}")
