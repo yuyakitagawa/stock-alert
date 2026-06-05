@@ -697,8 +697,12 @@ def engineer(proposal, before_metrics, baseline):
         return False, "backtest失敗、revert"
 
     bsl = baseline if baseline else before_metrics
-    improved = any([
-        after.get('avg_return',    -9999) > bsl.get('avg_return',    -9999),
+    # 採用条件: avg が大幅に下がった場合は他の指標が改善していても不採用
+    after_avg = after.get('avg_return', -9999)
+    bsl_avg   = bsl.get('avg_return',   -9999)
+    avg_regression = after_avg < bsl_avg - 0.5  # 0.5%以上avgが下がったら不採用
+    improved = (not avg_regression) and any([
+        after_avg                              > bsl_avg,
         after.get('win_rate',          0) > bsl.get('win_rate',          0),
         after.get('big_win_rate',      0) > bsl.get('big_win_rate',      0),
     ])
