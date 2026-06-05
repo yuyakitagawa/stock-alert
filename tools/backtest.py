@@ -315,9 +315,11 @@ def extract_features_at(hist, target_date, nk_rets=None):
     rel60 = ret60 - nk60
     alpha_momentum = rel5 - rel20 / 4
 
+    # ファンダメンタル6特徴量（バックテスト時は中立値で埋める）
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum]
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum,
+            0.0, 0.0, 0.0, 0.5, 0.5, 0.5]
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
     return feat

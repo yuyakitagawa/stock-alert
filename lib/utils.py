@@ -250,8 +250,26 @@ def compute_seq_features(seq):
     return [ac, skew, max_r, min_r, pos_ratio, slope, recent_vs_early]
 
 
-def extract_features(p, v=None, nk_rets=None):
-    """32次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4"""
+def _days_to_nearest_event(from_date, months, day=25):
+    """from_date から最も近い未来の(year, month, day)までの日数を返す。"""
+    import calendar as _cal
+    from datetime import date as _date
+    best = 9999
+    for m in months:
+        for yr_add in [0, 1]:
+            yr = from_date.year + yr_add
+            last = _cal.monthrange(yr, m)[1]
+            d = _date(yr, m, min(day, last))
+            delta = (d - from_date).days
+            if 0 <= delta < best:
+                best = delta
+    return best if best < 9999 else None
+
+
+def extract_features(p, v=None, nk_rets=None, fundamentals=None):
+    """38次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル6
+    fundamentals: dict with keys per/pbr/roe/days_to_earnings/days_to_dividend/days_to_yutai (all optional)
+    """
     if len(p) < 91 or p[-1] == 0:
         return None
     c = p[-1]
@@ -315,9 +333,23 @@ def extract_features(p, v=None, nk_rets=None):
     rel60 = ret60 - nk60 * 0.01
     alpha_momentum = rel5 - rel20 / 4  # アルファ加速度
 
+    # ファンダメンタル6特徴量
+    fd  = fundamentals or {}
+    _per = fd.get('per');   _pbr = fd.get('pbr');   _roe = fd.get('roe')
+    _dte = fd.get('days_to_earnings')
+    _dtd = fd.get('days_to_dividend')
+    _dty = fd.get('days_to_yutai')
+    per_feat   = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
+    pbr_feat   = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
+    roe_feat   = float(np.clip(_roe  / 15.0,        -0.5, 2.0)) if _roe  is not None else 0.0
+    earn_feat  = float(np.clip(_dte  / 90.0,         0.0, 1.0)) if _dte  is not None else 0.5
+    div_feat   = float(np.clip(_dtd  / 60.0,         0.0, 1.0)) if _dtd  is not None else 0.5
+    yutai_feat = float(np.clip(_dty  / 60.0,         0.0, 1.0)) if _dty  is not None else 0.5
+
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum]
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
+            per_feat, pbr_feat, roe_feat, earn_feat, div_feat, yutai_feat]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None

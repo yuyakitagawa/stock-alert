@@ -274,6 +274,8 @@ def main():
     total = len(codes)
 
     def fetch_one(code):
+        from lib.utils import _days_to_nearest_event
+        from datetime import date as _date
         prices = get_prices(code, days=400)
         with lock:
             done_count[0] += 1
@@ -282,10 +284,30 @@ def main():
         if prices is None or len(prices) < 91:
             time.sleep(0.1)
             return None
+
+        # ファンダメンタル取得
+        fd_raw   = get_fundamentals(code)
+        next_earn = _get_next_earnings(code)
+        today    = _date.today()
+        days_earn = (next_earn - today).days if next_earn and next_earn > today else None
+        days_yutai = _days_to_yutai_record(code, today)
+        yutai_month = _get_yutai_record_month(code)
+        div_months = [yutai_month] if yutai_month else [3, 9]
+        days_div = _days_to_nearest_event(today, div_months, day=28)
+        fundamentals = {
+            "per":              fd_raw.get("PER"),
+            "pbr":              fd_raw.get("PBR"),
+            "roe":              fd_raw.get("ROE"),
+            "days_to_earnings": days_earn,
+            "days_to_dividend": days_div,
+            "days_to_yutai":    days_yutai,
+        }
+
         feat = extract_features(
             prices["Close"].values,
             prices["Volume"].tolist() if "Volume" in prices.columns else None,
             nk_rets,
+            fundamentals=fundamentals,
         )
         if feat is None:
             time.sleep(0.1)
