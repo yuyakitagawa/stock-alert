@@ -13,10 +13,18 @@ core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
 web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 
 【18:00 JST】PDCA自律改善ループ（pdca/orchestrate.py）
-Fund Manager (haiku) → Analyst (sonnet) → Engineer
-  ↳ config.pyパラメータを1つ変更 → backtest.py bear で検証
+オーナー(Human) → Fund Manager → 各メンバーへ命令展開
+  Human が feedback.md に方針を記入 → FM が各メンバーへの具体的命令に翻訳
+  Quant(改善提案) / Securities(銘柄調査) / Engineer(実装・検証)
+  ↳ パラメータを変更 → backtest.py bear で検証
   ↳ 改善したらcommit/push、ダメなら即revert
+
+【月曜 10:00 JST】週次チームレビュー（pdca/weekly_review.py）
+5ロールが相互評価 → 来週の改善アクションを feedback.md に反映
 ```
+
+全アクション（実施中・実施済み）は `pdca/activity.py` 経由で Supabase `activity_log` に記録され、
+Webの **活動ログ**（/activity）・**チームレビュー**（/review）で誰でも状況把握できる。
 
 ---
 
@@ -31,6 +39,10 @@ Fund Manager (haiku) → Analyst (sonnet) → Engineer
 | `email/email_html.py` | メールHTML生成ヘルパー（スパークライン・優先アクション等）|
 | `web/export_to_web.py` | Supabaseへランキング・AI解析をエクスポート（Step 5）|
 | `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
+| `pdca/orchestrate.py` | PDCA自律改善ループ（Human→FM→Quant/Securities/Engineer の指揮系統）|
+| `pdca/weekly_review.py` | 週次チームレビュー（5ロール相互評価＋オーナーへのフィードバック）|
+| `pdca/activity.py` | アクティビティlog（各担当者の実施中・実施済みを Supabase に記録）|
+| `pdca/feedback.md` | オーナー(Human)からチームへの方針・指示。FMが各メンバーへの命令に翻訳する |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_net 等）|
 | `lib/db.py` | SQLite操作（daily_ranking / held_scores / earnings_cache / sector_cache / price_cache）|
