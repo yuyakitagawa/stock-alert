@@ -1,4 +1,4 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, Article, WeeklyReview } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, Article, WeeklyReview, Activity } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary } from "./yahoo";
 
@@ -218,6 +218,15 @@ export async function fetchWeeklyReviews(limit = 10): Promise<WeeklyReview[]> {
   const res = await fetch(
     sbUrl(`weekly_reviews?order=week.desc&limit=${limit}`),
     { headers: anonHeaders(), next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchActivity(limit = 60): Promise<Activity[]> {
+  const res = await fetch(
+    sbUrl(`activity_log?order=ts.desc&limit=${limit}`),
+    { headers: anonHeaders(), next: { revalidate: 30 } },
   );
   if (!res.ok) return [];
   return res.json();

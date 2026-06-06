@@ -74,6 +74,18 @@ export interface DailyQuote {
   fiftyTwoWeekLow:  number | null;
 }
 
+export interface Activity {
+  id:         number;
+  ts:         string;
+  run_date:   string;
+  role:       string;
+  step:       string;
+  status:     string;
+  summary:    string;
+  detail:     string;
+  updated_at: string;
+}
+
 export interface WeeklyReview {
   week:             string;
   created_at:       string;

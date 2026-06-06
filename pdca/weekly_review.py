@@ -9,6 +9,8 @@ import sys, os, re, json, subprocess, requests
 from pathlib import Path
 from datetime import date, timedelta
 
+import activity  # アクティビティログ
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 PDCA_DIR = Path(__file__).resolve().parent
 LOG_DIR  = BASE_DIR / "logs"
@@ -327,6 +329,9 @@ def main():
     print(f"  ログ:{len(log_text.splitlines())}行  指標:{len(trajectory)}件  "
           f"採用:{actions['adopted']} 却下:{actions['rejected']} シグナル:{actions['signals']}回")
 
+    review_aid = activity.start("System", "週次チームレビュー",
+                                "FM・Quant・証券アナリスト・Engineer が相互評価中…")
+
     first = trajectory[0]  if trajectory else {}
     last  = trajectory[-1] if trajectory else {}
 
@@ -457,6 +462,9 @@ def main():
         [f"logs/weekly_review_{ISO_WEEK}.md", "pdca/feedback.md"],
         f"pdca: weekly review {ISO_WEEK} | avg Δ{s(delta_avg)}% adopted={actions['adopted']} [skip ci]",
     )
+    activity.finish(review_aid, "done",
+                    f"{ISO_WEEK} のレビュー完了（来週やること {len([l for l in next_actions.splitlines() if l.strip().startswith('-')])}件）",
+                    next_actions)
     print("=== 完了 ===")
 
 

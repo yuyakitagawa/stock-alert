@@ -8,6 +8,8 @@ from datetime import date
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
+import activity  # アクティビティログ（誰が何をしたか/しているかを記録）
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 PDCA_DIR = Path(__file__).resolve().parent
 
@@ -502,7 +504,14 @@ def analyst_reports(signals):
         net  = s.get('ネット(%)', '')
         vol  = s.get('ボラ(%)', '')
         print(f"  → アナリスト調査中: {code} {name} ...")
-        reports[code] = analyst_research_stock(code, name, net, vol)
+        aid = activity.start("Securities", f"{code} {name} の企業調査",
+                             "財務・IR・業界動向を調査中…")
+        report = analyst_research_stock(code, name, net, vol)
+        reports[code] = report
+        # レポート末尾の総合評価行をサマリーに使う
+        verdict = next((ln.strip() for ln in reversed(report.splitlines())
+                        if any(k in ln for k in ("買い", "中立", "売り"))), "調査完了")
+        activity.finish(aid, "done", f"{code} {name}: {verdict[:60]}", report)
         print(f"    完了")
     return reports
 
@@ -826,13 +835,20 @@ def main():
     print(f"=== PDCA {TODAY} ===")
     log(f"\n## {TODAY}")
 
+    activity.record("System", "PDCAサイクル開始", "running", f"{TODAY} のサイクルを開始")
+
     # Step1: backtest実行
     print("Step1: backtest.py bear 実行中（数分かかります）...")
+    aid = activity.start("Engineer", "バックテスト実行", "5期間で過去成績を測定中…")
     metrics, raw = run_backtest()
     if not metrics:
         msg = "ERROR: backtest失敗（メトリクス取得不可）"
+        activity.finish(aid, "failed", "メトリクス取得不可", raw)
         print(msg); log(f"- {msg}"); push_log(); sys.exit(1)
     periods_info = metrics.pop('periods', {})
+    activity.finish(aid, "done",
+                    f"avg={metrics.get('avg_return')}% win={metrics.get('win_rate')}% big={metrics.get('big_win_rate')}%",
+                    raw)
     print(f"  複合スコア: avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%")
     log(f"- metrics: {json.dumps(metrics)}  periods: {json.dumps(periods_info, ensure_ascii=False)}")
 
@@ -859,12 +875,16 @@ def main():
         print("Step1.6a: アナリスト 各銘柄を調査中...")
         reports = analyst_reports(signals)
         print("Step1.6b: Fund Manager レポートを読んで推奨銘柄を決定中...")
+        aid = activity.start("FM", "購入銘柄の最終判断",
+                             "アナリストのレポートを読んで推奨を決定中…")
         advice = fund_manager_stock_advice(signals, reports)
         print(f"  → FM推奨:\n{advice}")
+        activity.finish(aid, "done", f"{len(signals)}銘柄を評価し購入推奨を決定", advice)
         send_buy_notification(signals, advice, metrics)
         log(f"- signals: {len(signals)}銘柄 通知済み {codes}")
     else:
         print("  → 本日S買いシグナルなし")
+        activity.record("Securities", "買いシグナル確認", "done", "本日S買いシグナルなし")
         log("- signals: なし")
 
     # Step2: Fund Manager
@@ -872,6 +892,7 @@ def main():
     fb = read_feedback()
     fm = fund_manager(metrics, baseline, fb)
     print(f"  → {fm['action']}: {fm['reason']}")
+    activity.record("FM", "改善方針の判断", fm['action'], fm['reason'])
     log(f"- FM: {fm['action']} | {fm['reason']}")
 
     if fm['action'] == 'skip':
@@ -881,25 +902,36 @@ def main():
         cnt = update_stagnation(metrics.get('nk_alpha', -9999))
         if cnt > 0:
             log(f"- stagnation: {cnt}サイクル（skip中）")
+        activity.record("System", "PDCAサイクル完了", "skip", "目標達成済みのため本日は改善スキップ")
         push_log()
         return
 
     # Step3: 数量アナリスト（Quant Analyst） — モデルパラメータ改善
     print("Step3: Quant Analyst 分析中...")
+    aid = activity.start("Quant", "パラメータ改善提案", "最新研究を調べモデル設定の改善案を検討中…")
     prop = quant_analyst(metrics, baseline)
     if not prop:
         print("  → parse error、1回リトライ...")
         prop = quant_analyst(metrics, baseline)
     if not prop:
+        activity.finish(aid, "failed", "提案のparseに2回失敗")
         log("- analyst: parse error × 2、スキップ"); push_log(); return
     for ch in prop.get('changes', []):
         print(f"  → {ch['param_name']}: {ch.get('old_value')}→{ch['new_value']}  ({ch.get('reason','')})")
+    prop_summary = " / ".join(
+        f"{c['param_name']} {c.get('old_value','?')}→{c['new_value']}"
+        for c in prop.get('changes', [])
+    )
+    activity.finish(aid, "done", f"[{prop.get('file','?')}] {prop_summary}",
+                    json.dumps(prop, ensure_ascii=False, indent=2))
     log(f"- analyst: {json.dumps(prop, ensure_ascii=False)}")
 
     # Step4: Engineer（変更→backtest→commit or revert）
     print("Step4: Engineer 実装・検証中...")
+    aid = activity.start("Engineer", "変更の実装・検証", "提案を適用してバックテストで効果を確認中…")
     ok, detail = engineer(prop, metrics, baseline)
     print(f"  → {detail}")
+    activity.finish(aid, "done" if ok else "rejected", detail)
     log(f"- engineer: {detail}")
 
     # Step5: スタグネーション更新（改善後の最新メトリクスで判定）
@@ -912,6 +944,8 @@ def main():
     else:
         log("- stagnation: reset（日経に勝った）")
 
+    cycle_result = "改善を採用" if ok else "改善なし（元に戻した）"
+    activity.record("System", "PDCAサイクル完了", "done", cycle_result)
     push_log()
     print("=== 完了 ===")
 
