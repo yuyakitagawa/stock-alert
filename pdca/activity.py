@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""アクティビティログ: 各担当者（FM/Quant/Securities/Engineer/System）が
+"""アクティビティログ: 各担当者（FM/Quant/Consultant/Engineer/System）が
    実施中・実施済みのアクションを Supabase の activity_log に記録する。
    そこを見れば誰でも「今チームが何をしているか / 何をしたか」を把握できる。
 

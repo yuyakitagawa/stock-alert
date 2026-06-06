@@ -8,7 +8,7 @@ export const revalidate = 30;
 
 export const metadata: Metadata = {
   title: "活動ログ — StockSignal",
-  description: "AIチーム（FM・Quant・証券アナリスト・Engineer）が今・何をしているか / 何をしたかの活動記録",
+  description: "AIチーム（FM・Quant・マーケットコンサル・Engineer）が今・何をしているか / 何をしたかの活動記録",
 };
 
 // ── 担当者・状態の見た目 ──────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 const ROLE_STYLE: Record<string, { label: string; cls: string; emoji: string }> = {
   FM:         { label: "ファンドマネージャー", cls: "bg-blue-900/40 text-blue-300 border-blue-800",     emoji: "💼" },
   Quant:      { label: "数量アナリスト",       cls: "bg-purple-900/40 text-purple-300 border-purple-800", emoji: "📐" },
-  Securities: { label: "証券アナリスト",       cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🔍" },
+  Consultant: { label: "マーケットコンサル",   cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🔍" },
   Engineer:   { label: "エンジニア",           cls: "bg-green-900/40 text-green-300 border-green-800",   emoji: "🔧" },
   System:     { label: "システム",             cls: "bg-gray-800 text-gray-400 border-gray-700",        emoji: "⚙️" },
 };
@@ -41,8 +41,8 @@ function timeLabel(ts: string) {
 const MEMBERS = [
   { emoji: "📐", name: "数量アナリスト", en: "Quant",      cls: "bg-purple-900/30 border-purple-800 text-purple-200",
     job: "モデルの設定値・特徴量・条件を改善する案を出す" },
-  { emoji: "🔍", name: "証券アナリスト", en: "Securities", cls: "bg-yellow-900/30 border-yellow-800 text-yellow-200",
-    job: "買い候補の銘柄を企業調査してFMに報告する" },
+  { emoji: "🔍", name: "マーケットコンサル", en: "Consultant", cls: "bg-yellow-900/30 border-yellow-800 text-yellow-200",
+    job: "マクロ・セクター・市場環境を毎回調査しFM/Quantに助言する" },
   { emoji: "🔧", name: "エンジニア",     en: "Engineer",   cls: "bg-green-900/30 border-green-800 text-green-200",
     job: "提案を実装し、過去成績で検証して採用/却下する" },
 ];

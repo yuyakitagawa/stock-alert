@@ -345,7 +345,7 @@ JSON1行のみで回答: {{"action":"improve"|"skip","reason":"..."}}"""
 
 def fund_manager_directives(metrics, feedback):
     """FMがオーナー(Human)のコメント・方針を読み、各メンバーへの具体的な命令に翻訳する。
-       Human → FM → Quant/Securities/Engineer の指揮系統を実現する。"""
+       Human → FM → Quant/Consultant/Engineer の指揮系統を実現する。"""
     avg = metrics.get('avg_return',  'N/A')
     win = metrics.get('win_rate',    'N/A')
     big = metrics.get('big_win_rate','N/A')
@@ -356,7 +356,7 @@ def fund_manager_directives(metrics, feedback):
 
 部下:
 - Quant（数量アナリスト）: モデルの設定値・特徴量・スクリーニング条件を改善する
-- Securities（証券アナリスト）: 買い候補銘柄を企業調査する
+- Consultant（マーケットコンサル）: マクロ・金利為替・セクター動向など市場環境を調査し、bear耐性やアルファ獲得のための戦略をチームに助言する
 - Engineer（エンジニア）: 提案を実装し、バックテストで検証して採用/却下する
 
 【オーナーからの方針・コメント】
@@ -368,7 +368,7 @@ def fund_manager_directives(metrics, feedback):
 オーナーの意図を汲み、今日それぞれが何を優先すべきかを1〜2文の命令にしてください。
 抽象論ではなく、今の成績に対して具体的に何をすべきかを書くこと。
 JSON1行のみで回答:
-{{"quant":"数量アナリストへの命令","securities":"証券アナリストへの命令","engineer":"エンジニアへの命令"}}"""
+{{"quant":"数量アナリストへの命令","consultant":"マーケットコンサルへの命令","engineer":"エンジニアへの命令"}}"""
     result = parse_json(call_claude("claude-haiku-4-5-20251001", prompt, 500))
     return result or {}
 
@@ -489,9 +489,45 @@ Fund Manager のコメント
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  証券アナリスト（Analyst）
-#  企業の財務状況・経営戦略・業界動向を調査し、FM へ推奨レポートを提出
+#  マーケットコンサル（Consultant）
+#  毎サイクル、マクロ・セクター・市場環境を能動的に調査し、FM/Quant に助言する。
+#  S買いシグナルが出た時は個別銘柄の企業調査も兼務する。
 # ══════════════════════════════════════════════════════════════════════
+
+def market_consultant_research(metrics, fm_directive=""):
+    """マーケットコンサル: 市場環境を調査し、チームへの助言レポートを返す（web検索×3回）。"""
+    directive_block = (
+        f"\n【FMからの今日の命令（最優先で反映）】\n{fm_directive}\n"
+        if fm_directive else ""
+    )
+    avg = metrics.get('avg_return', 'N/A')
+    nka = metrics.get('nk_alpha',   'N/A')
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+            messages=[{"role": "user", "content": f"""あなたは日本株運用チームのマーケットストラテジスト（コンサル）です。
+今日の市場環境を調査し、モデル改善チーム（FM・数量アナリスト）への助言レポートを作成してください。
+{directive_block}
+【現在のモデル成績】平均リターン={avg}%  日経比アルファ={nka}%
+
+以下を web 検索で調査してください:
+1. マクロ環境 — 日経平均・米国市場の直近動向、金利・為替（ドル円）のトレンド
+2. セクター動向 — いま強い/弱い業種、暴落に強いディフェンシブセクター
+3. リスク要因 — 直近の重要イベント（FOMC・主要決算・地政学リスク）
+4. bear耐性 — 下落局面でもアルファを出しやすい銘柄特性（高配当・低ボラ・好財務など）
+
+【レポート形式】
+- 各項目を2〜3文で要約
+- 最後に「チームへの提言」を2〜3点（モデル改善やシグナル方針に活かせる具体策）
+専門用語を避け、簡潔な日本語で。"""}],
+        )
+        texts = [b.text for b in response.content if hasattr(b, 'text') and b.text]
+        return '\n'.join(texts) if texts else "（調査結果なし）"
+    except Exception as e:
+        return f"（市場調査エラー: {type(e).__name__}）"
+
 
 def analyst_research_stock(code, name, net_score, vol, fm_directive=""):
     """1銘柄を徹底調査して買い/売り推奨レポートを返す（web検索×3回）。
@@ -505,7 +541,7 @@ def analyst_research_stock(code, name, net_score, vol, fm_directive=""):
             model="claude-sonnet-4-6",
             max_tokens=1200,
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
-            messages=[{"role": "user", "content": f"""あなたは証券アナリストです。
+            messages=[{"role": "user", "content": f"""あなたは企業調査を担当するマーケットコンサル（証券アナリスト）です。
 企業の財務状況、経営戦略、業界動向などを徹底的に調査・分析する専門家として、
 以下の銘柄をIR取材レベルで調査し、ファンドマネージャーへの推奨レポートを作成してください。
 {directive_block}
@@ -539,7 +575,7 @@ def analyst_reports(signals, fm_directive=""):
         net  = s.get('ネット(%)', '')
         vol  = s.get('ボラ(%)', '')
         print(f"  → アナリスト調査中: {code} {name} ...")
-        aid = activity.start("Securities", f"{code} {name} の企業調査",
+        aid = activity.start("Consultant", f"{code} {name} の企業調査",
                              "財務・IR・業界動向を調査中…")
         report = analyst_research_stock(code, name, net, vol, fm_directive)
         reports[code] = report
@@ -576,9 +612,10 @@ def _research_papers():
         return f"（論文検索スキップ: {type(e).__name__}）"
 
 
-def quant_analyst(metrics, baseline, fm_directive=""):
+def quant_analyst(metrics, baseline, fm_directive="", consult_report=""):
     """数量アナリスト（上位版）: config.py・rf_train_v3.py の両方を改善対象にできる。
-       fm_directive: FMからの今日の命令（Humanの意図を翻訳したもの）"""
+       fm_directive: FMからの今日の命令（Humanの意図を翻訳したもの）
+       consult_report: マーケットコンサルの市場環境レポート"""
     bsl    = baseline or metrics
     config = (BASE_DIR / "config.py").read_text('utf-8')
     train  = (BASE_DIR / "core" / "rf_train_v3.py").read_text('utf-8')
@@ -606,9 +643,13 @@ def quant_analyst(metrics, baseline, fm_directive=""):
         f"\n【ファンドマネージャーからの今日の命令（最優先で従うこと）】\n{fm_directive}\n"
         if fm_directive else ""
     )
+    consult_block = (
+        f"\n【マーケットコンサルの市場環境レポート（提案の参考にせよ）】\n{consult_report}\n"
+        if consult_report else ""
+    )
     prompt = f"""あなたは世界トップレベルのクオンツ研究者です。
 日本株XGBoostモデルを「元本300万円を10年で1億円（年率42%、四半期9%）」を達成できるレベルまで引き上げてください。
-{directive_block}
+{directive_block}{consult_block}
 【現在のモデル性能】
 バックテスト複合スコア: avg={metrics.get('avg_return')}%  win={metrics.get('win_rate')}%  big={metrics.get('big_win_rate')}%
 ベースライン:          avg={bsl.get('avg_return')}%  win={bsl.get('win_rate')}%  big={bsl.get('big_win_rate')}%
@@ -907,12 +948,12 @@ def main():
     log(f"- invest_stage: {phase_label}")
 
     # Step1.55: FM がオーナー(Human)のコメントを各メンバーへの命令に翻訳
-    #           Human → FM → Quant/Securities/Engineer の指揮系統
+    #           Human → FM → Quant/Consultant/Engineer の指揮系統
     print("Step1.55: Fund Manager がオーナーの指示を各メンバーへ展開中...")
     fb = read_feedback()
     directives = fund_manager_directives(metrics, fb)
-    _role_jp = {"quant": "数量アナリスト", "securities": "証券アナリスト", "engineer": "エンジニア"}
-    for role_key, role_en in [("quant", "Quant"), ("securities", "Securities"), ("engineer", "Engineer")]:
+    _role_jp = {"quant": "数量アナリスト", "consultant": "マーケットコンサル", "engineer": "エンジニア"}
+    for role_key in ["quant", "consultant", "engineer"]:
         d = directives.get(role_key)
         if d:
             print(f"  → FM→{_role_jp[role_key]}: {d}")
@@ -920,14 +961,22 @@ def main():
     if directives:
         log(f"- FM directives: {json.dumps(directives, ensure_ascii=False)}")
 
-    # Step1.6: S買いシグナル銘柄チェック → アナリスト調査 → FM判断 → 購入通知
+    # Step1.56: マーケットコンサルが市場環境を調査（毎サイクル稼働）→ Quantの材料にする
+    print("Step1.56: マーケットコンサル 市場環境を調査中...")
+    aid = activity.start("Consultant", "市場環境レポート", "マクロ・セクター・リスク要因を調査中…")
+    consult_report = market_consultant_research(metrics, directives.get('consultant', ''))
+    consult_head = consult_report.split('\n', 1)[0][:80]
+    activity.finish(aid, "done", consult_head, consult_report)
+    log(f"- consultant: {consult_head}")
+
+    # Step1.6: S買いシグナル銘柄チェック → コンサル兼務で銘柄調査 → FM判断 → 購入通知
     print("Step1.6: S買いシグナル 確認中...")
     signals = load_today_signals()
     if signals:
         codes = [s.get('銘柄コード') for s in signals]
         print(f"  → {len(signals)}銘柄 発見: {codes}")
-        print("Step1.6a: アナリスト 各銘柄を調査中...")
-        reports = analyst_reports(signals, directives.get('securities', ''))
+        print("Step1.6a: マーケットコンサル 各銘柄を調査中...")
+        reports = analyst_reports(signals, directives.get('consultant', ''))
         print("Step1.6b: Fund Manager レポートを読んで推奨銘柄を決定中...")
         aid = activity.start("FM", "購入銘柄の最終判断",
                              "アナリストのレポートを読んで推奨を決定中…")
@@ -938,7 +987,7 @@ def main():
         log(f"- signals: {len(signals)}銘柄 通知済み {codes}")
     else:
         print("  → 本日S買いシグナルなし")
-        activity.record("Securities", "買いシグナル確認", "done", "本日S買いシグナルなし")
+        activity.record("Consultant", "買いシグナル確認", "done", "本日S買いシグナルなし（銘柄調査は対象なし）")
         log("- signals: なし")
 
     # Step2: Fund Manager（improve/skip 判断。fb は Step1.55 で取得済み）
@@ -963,10 +1012,10 @@ def main():
     print("Step3: Quant Analyst 分析中...")
     aid = activity.start("Quant", "パラメータ改善提案", "FMの指示に沿ってモデル設定の改善案を検討中…")
     quant_directive = directives.get('quant', '')
-    prop = quant_analyst(metrics, baseline, quant_directive)
+    prop = quant_analyst(metrics, baseline, quant_directive, consult_report)
     if not prop:
         print("  → parse error、1回リトライ...")
-        prop = quant_analyst(metrics, baseline, quant_directive)
+        prop = quant_analyst(metrics, baseline, quant_directive, consult_report)
     if not prop:
         activity.finish(aid, "failed", "提案のparseに2回失敗")
         log("- analyst: parse error × 2、スキップ"); push_log(); return

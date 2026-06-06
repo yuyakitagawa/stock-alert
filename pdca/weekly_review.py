@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """週次ピアレビュー: 5ロール相互評価
    ロール:
-     FM（ファンドマネージャー）、Quant（数量アナリスト）、Securities（証券アナリスト）、
+     FM（ファンドマネージャー）、Quant（数量アナリスト）、Consultant（マーケットコンサル）、
      Engineer（エンジニア）、Human（オーナー・評価を受けるのみ）
    毎週月曜 10:00 JST に GitHub Actions から自動実行
 """
@@ -131,7 +131,7 @@ _CTX = """【システムの説明】
 チームのメンバー:
 ・FM（ファンドマネージャー）: 今日改善するかどうかを決める
 ・Quant（数量アナリスト）: モデルの設定値を改善案として出す
-・Securities（証券アナリスト）: 買い候補銘柄を企業調査する
+・Consultant（マーケットコンサル）: 毎サイクル市場環境（マクロ・セクター・金利為替）を調査しチームに助言する
 ・Engineer（エンジニア）: Quantの案を実際に試して良ければ採用、悪ければ元に戻す
 ・Human（オーナー）: 方針や目標を文章で伝える
 
@@ -194,7 +194,8 @@ def quant_evaluates(log_text: str, actions: dict) -> str:
 def securities_evaluates(log_text: str, actions: dict) -> str:
     prompt = f"""{_CTX}
 
-あなたはSecurities（証券アナリスト）です。今週の記録を読んで、FMとQuantの仕事ぶりを評価してください。
+あなたはConsultant（マーケットコンサル）です。毎サイクル市場環境を調査しチームに助言する立場から、
+今週の記録を読んで、FMとQuantの仕事ぶりを評価してください。
 
 【今週の記録】
 {log_text}
@@ -204,14 +205,13 @@ def securities_evaluates(log_text: str, actions: dict) -> str:
 ## FMへの評価
 ### よかった点（1〜2つ）
 ### 問題だった点（1〜2つ）
-※「調査レポートを活かせていない」「買い判断の基準が曖昧」など
+※「市場環境レポートを改善判断に活かせていない」「指示が抽象的」など
 
 ## Quantへの評価
 ### よかった点（1〜2つ）
 ### 問題だった点（1〜2つ）
-※「モデルが出す買いシグナルが少なすぎる」「ファンダメンタルズへの配慮がない」など
+※「市場環境の助言を提案に反映していない」「マクロ・セクター動向を無視している」など
 
-※今週シグナルがなかった場合は「シグナルなし」と書いた上で、モデル全体の方向性についてコメントしてください。
 専門用語を使わず、中学生でもわかる言葉で書いてください。"""
     return call_claude(prompt)
 
@@ -256,7 +256,7 @@ def evaluate_human(log_text: str, feedback_text: str, trajectory: list) -> str:
 
     prompt = f"""{_CTX}
 
-あなたはAIチーム全員（FM・Quant・Securities・Engineer）を代表してオーナー（Human）にフィードバックします。
+あなたはAIチーム全員（FM・Quant・Consultant・Engineer）を代表してオーナー（Human）にフィードバックします。
 
 【オーナーが書いた方針（feedback.md）】
 {feedback_text[:1200]}
@@ -330,7 +330,7 @@ def main():
           f"採用:{actions['adopted']} 却下:{actions['rejected']} シグナル:{actions['signals']}回")
 
     review_aid = activity.start("System", "週次チームレビュー",
-                                "FM・Quant・証券アナリスト・Engineer が相互評価中…")
+                                "FM・Quant・マーケットコンサル・Engineer が相互評価中…")
 
     first = trajectory[0]  if trajectory else {}
     last  = trajectory[-1] if trajectory else {}
@@ -341,7 +341,7 @@ def main():
     print("Step2: Quant → Engineer / FM 評価中...")
     qa_eval  = quant_evaluates(log_text, actions)
 
-    print("Step3: Securities → FM / Quant 評価中...")
+    print("Step3: Consultant → FM / Quant 評価中...")
     sa_eval  = securities_evaluates(log_text, actions)
 
     print("Step4: FM → Quant / Engineer 評価中...")
@@ -354,7 +354,7 @@ def main():
     evals = {
         "Engineer → Quant/FM":           eng_eval,
         "Quant → Engineer/FM":           qa_eval,
-        "Securities → FM/Quant":         sa_eval,
+        "Consultant → FM/Quant":         sa_eval,
         "FM → Quant/Engineer":           fm_eval,
         "AIチーム → Human":              human_fb,
     }
@@ -394,7 +394,7 @@ def main():
 
 ---
 
-## Securities → FM / Quant 評価
+## Consultant（マーケットコンサル）→ FM / Quant 評価
 
 {sa_eval}
 

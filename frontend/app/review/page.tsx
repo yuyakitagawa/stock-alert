@@ -8,7 +8,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "チームレビュー — StockSignal",
-  description: "AIチーム（FM・Quant・証券アナリスト・Engineer）の週次相互評価レポート",
+  description: "AIチーム（FM・Quant・マーケットコンサル・Engineer）の週次相互評価レポート",
 };
 
 // ── 小コンポーネント ──────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ function ActionItem({ text }: { text: string }) {
     const colorMap: Record<string, string> = {
       FM:         "bg-blue-900/40 text-blue-300 border-blue-800",
       Quant:      "bg-purple-900/40 text-purple-300 border-purple-800",
-      Securities: "bg-yellow-900/40 text-yellow-300 border-yellow-800",
+      Consultant: "bg-yellow-900/40 text-yellow-300 border-yellow-800",
       Engineer:   "bg-green-900/40 text-green-300 border-green-800",
       Human:      "bg-pink-900/40 text-pink-300 border-pink-800",
     };
@@ -177,7 +177,7 @@ function ReviewCard({ review }: { review: WeeklyReview }) {
       {/* 各ロールの評価 */}
       <EvalSection title="Engineer からの評価（Quant・FM へ）"    emoji="🔧" content={review.engineer_eval} />
       <EvalSection title="Quant からの評価（Engineer・FM へ）"    emoji="📐" content={review.quant_eval} />
-      <EvalSection title="証券アナリストからの評価（FM・Quant へ）" emoji="🔍" content={review.securities_eval} />
+      <EvalSection title="マーケットコンサルからの評価（FM・Quant へ）" emoji="🔍" content={review.securities_eval} />
       <EvalSection title="FM からの評価（Quant・Engineer へ）"     emoji="💼" content={review.fm_eval} />
 
       {/* Human へのフィードバック */}
