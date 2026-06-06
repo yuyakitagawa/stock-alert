@@ -435,13 +435,28 @@ def build_stock_fundamentals(kabutan_top_n=None):
         return best if best < 9999 else None
 
     def fetch_kabutan(code):
-        res = {"code": code, "roe": None, "next_earnings": None,
-               "days_earnings": None, "yutai_month": None}
+        # 既存キャッシュから優待月を引き継ぐ（優待リクエストをスキップ）
+        cached = kabutan_map.get(code, {})
+        res = {"code": code, "per": None, "pbr": None, "roe": None,
+               "next_earnings": None, "days_earnings": None,
+               "yutai_month": cached.get("yutai_month")}
+        need_yutai = "yutai_month" not in cached
         try:
-            # ROE + 決算日（finance ページ）
+            # PER/PBR + ROE + 決算日（finance ページ）
             r2 = _req.get(f"https://kabutan.jp/stock/finance/?code={code}",
                           headers=_HEADERS, timeout=10)
             if r2.status_code == 200:
+                # PER / PBR
+                tp = r2.text.replace("\n","").replace("\t","")
+                idxp = tp.find('data-help="PER"')
+                if idxp != -1:
+                    pv = _re.findall(r'<td>([\d.-]+)<span', tp[idxp:idxp+600])
+                    if len(pv) >= 1:
+                        try: res["per"] = float(pv[0])
+                        except ValueError: pass
+                    if len(pv) >= 2:
+                        try: res["pbr"] = float(pv[1])
+                        except ValueError: pass
                 t2 = r2.text.replace(" ","").replace("\n","").replace("\t","")
                 idx2 = t2.find('ROE">')
                 if idx2 != -1:
@@ -463,24 +478,26 @@ def build_stock_fundamentals(kabutan_top_n=None):
                     est = max(past) + _td(days=91)
                     res["next_earnings"] = f"{est.isoformat()}（推定）"
                     res["days_earnings"] = (est - today).days
-            # 優待
-            r3 = _req.get(f"https://kabutan.jp/stock/yutai?code={code}",
-                          headers=_HEADERS, timeout=10)
-            if r3.status_code == 200:
-                m3 = _re.search(r'権利確定月は(\d{1,2})月', r3.text)
-                if m3:
-                    res["yutai_month"] = int(m3.group(1))
+            # 優待（キャッシュ未取得の場合のみ）
+            if need_yutai:
+                r3 = _req.get(f"https://kabutan.jp/stock/yutai?code={code}",
+                              headers=_HEADERS, timeout=10)
+                if r3.status_code == 200:
+                    m3 = _re.search(r'権利確定月は(\d{1,2})月', r3.text)
+                    if m3:
+                        res["yutai_month"] = int(m3.group(1))
         except Exception:
             pass
-        _time.sleep(0.5)
+        _time.sleep(0.3)
         return res
 
     if kabutan_top_n is None:
         target_codes = [str(r["code"]) for r in rows_db]
     else:
         target_codes = [str(r["code"]) for r in rows_db[:kabutan_top_n]]
-    # キャッシュ済みはスキップ
-    pending = [c for c in target_codes if c not in kabutan_map]
+    # キャッシュ済みはスキップ（ただしPER欠損エントリは再取得）
+    pending = [c for c in target_codes
+               if c not in kabutan_map or kabutan_map[c].get("per") is None]
     print(f"  kabutan.jp 補完中（対象{len(target_codes)} / 未取得{len(pending)}銘柄）...")
 
     done = [0]
@@ -541,8 +558,8 @@ def build_stock_fundamentals(kabutan_top_n=None):
             round(r["vol"], 1)       if r["vol"]       is not None else "—",
             r["recommend"] or "—",
             round(r["rel20"], 2)     if r["rel20"]     is not None else "—",
-            r["per"]  if r["per"]  is not None else "—",
-            r["pbr"]  if r["pbr"]  is not None else "—",
+            (kb.get("per") if kb.get("per") is not None else (r["per"] if r["per"] is not None else "—")),
+            (kb.get("pbr") if kb.get("pbr") is not None else (r["pbr"] if r["pbr"] is not None else "—")),
             kb.get("roe") if kb.get("roe") is not None else "—",
             kb.get("next_earnings") or "—",
             fmt_days(kb.get("days_earnings")),
