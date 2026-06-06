@@ -341,22 +341,48 @@ def build_feature_data():
 # 5. 銘柄ファンダメンタル（PER/PBR/ROE + 各種確定日）
 # ────────────────────────────────────────────────────────────
 
-def build_stock_fundamentals(kabutan_top_n=100):
+_FUND_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "_fund_cache.json")
+
+
+def build_stock_fundamentals(kabutan_top_n=None):
     """
-    全銘柄をDBから取得（net順）、上位 kabutan_top_n 件のみ kabutan.jp で
-    ROE/決算/優待を補完する。
+    全銘柄をDBから取得（net順）、kabutan.jp で ROE/決算/優待を補完する。
+    kabutan_top_n=None なら全銘柄、整数なら上位 N 件のみ。
+    取得済みデータは _fund_cache.json にキャッシュし、再実行時は再取得しない。
     """
     import calendar as _cal
     import requests as _req
     import time as _time
     import sqlite3 as _sq
     import re as _re
+    import io as _io
+    import json as _json
     from datetime import timedelta as _td
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     _HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/html"}
     today = date.today()
     db_path = os.path.join(BASE_DIR, "stock_alert.db")
+
+    # ── Step0: 市場区分マップ（JPXから取得）────────────────────
+    market_map = {}
+    try:
+        jpx_url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+        jr = _req.get(jpx_url, headers=_HEADERS, timeout=30)
+        jdf = pd.read_excel(_io.BytesIO(jr.content), dtype=str)
+        jdf.columns = jdf.columns.str.strip()
+        ccol = [c for c in jdf.columns if "コード" in c][0]
+        mcol = [c for c in jdf.columns if "市場" in c][0]
+        seg_short = {"プライム（内国株式）": "プライム",
+                     "スタンダード（内国株式）": "スタンダード",
+                     "グロース（内国株式）": "グロース"}
+        for _, jr2 in jdf.iterrows():
+            market_map[str(jr2[ccol]).strip()] = seg_short.get(str(jr2[mcol]).strip(),
+                                                                str(jr2[mcol]).strip())
+        print(f"  JPX市場区分マップ: {len(market_map)}銘柄")
+    except Exception as e:
+        print(f"  JPX市場区分取得失敗（無視）: {e}")
 
     # ── Step1: DB から全銘柄取得 ──────────────────────────────
     rows_db = []
@@ -384,6 +410,17 @@ def build_stock_fundamentals(kabutan_top_n=100):
         return [["DBエラー"]]
 
     print(f"  DB取得: {len(rows_db)}銘柄（最終更新 {ranking_date}）")
+
+    # ── キャッシュ読み込み ────────────────────────────────────
+    kabutan_map = {}
+    if os.path.exists(_FUND_CACHE_PATH):
+        try:
+            cache = _json.load(open(_FUND_CACHE_PATH, encoding="utf-8"))
+            if cache.get("date") == today.isoformat():
+                kabutan_map = cache.get("data", {})
+                print(f"  キャッシュ読込: {len(kabutan_map)}銘柄（{today}取得済み）")
+        except Exception:
+            pass
 
     # ── Step2: 上位 N 件を kabutan.jp で補完 ─────────────────
     def _days_to_event(months, day=28):
@@ -438,19 +475,36 @@ def build_stock_fundamentals(kabutan_top_n=100):
         _time.sleep(0.5)
         return res
 
-    top_codes = [str(r["code"]) for r in rows_db[:kabutan_top_n]]
-    print(f"  kabutan.jp 補完中（上位{kabutan_top_n}銘柄）...")
-    kabutan_map = {}
+    if kabutan_top_n is None:
+        target_codes = [str(r["code"]) for r in rows_db]
+    else:
+        target_codes = [str(r["code"]) for r in rows_db[:kabutan_top_n]]
+    # キャッシュ済みはスキップ
+    pending = [c for c in target_codes if c not in kabutan_map]
+    print(f"  kabutan.jp 補完中（対象{len(target_codes)} / 未取得{len(pending)}銘柄）...")
+
     done = [0]
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        futures = {ex.submit(fetch_kabutan, c): c for c in top_codes}
-        for future in as_completed(futures):
-            res = future.result()
-            kabutan_map[res["code"]] = res
-            done[0] += 1
-            if done[0] % 20 == 0:
-                print(f"    {done[0]}/{kabutan_top_n} 完了...")
-    print(f"  kabutan.jp 補完完了")
+    total = len(pending)
+
+    def _save_cache():
+        try:
+            _json.dump({"date": today.isoformat(), "data": kabutan_map},
+                       open(_FUND_CACHE_PATH, "w", encoding="utf-8"), ensure_ascii=False)
+        except Exception:
+            pass
+
+    if pending:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            futures = {ex.submit(fetch_kabutan, c): c for c in pending}
+            for future in as_completed(futures):
+                res = future.result()
+                kabutan_map[res["code"]] = res
+                done[0] += 1
+                if done[0] % 50 == 0:
+                    print(f"    {done[0]}/{total} 完了...")
+                    _save_cache()  # 進捗を逐次保存（中断対策）
+        _save_cache()
+    print(f"  kabutan.jp 補完完了（{len(kabutan_map)}銘柄）")
 
     # ── Step3: シート行を組み立て ─────────────────────────────
     def fmt_days(d):
@@ -460,7 +514,7 @@ def build_stock_fundamentals(kabutan_top_n=100):
         return f"{d}日後"
 
     header = [
-        "コード", "銘柄名", "株価", "Netスコア", "上昇確率(%)", "下落確率(%)",
+        "コード", "銘柄名", "市場区分", "株価", "Netスコア", "上昇確率(%)", "下落確率(%)",
         "ボラ(%)", "推奨", "日経相対20日",
         "PER", "PBR", "ROE(%)",
         "次回決算日(推定)", "決算まで",
@@ -479,6 +533,7 @@ def build_stock_fundamentals(kabutan_top_n=100):
         result_rows.append([
             code,
             r["name"],
+            market_map.get(code, "—"),
             r["close"]     if r["close"]     is not None else "—",
             round(r["net"], 2) if r["net"] is not None else "—",
             round(r["rise_prob"], 1) if r["rise_prob"] is not None else "—",
