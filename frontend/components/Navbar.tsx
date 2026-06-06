@@ -43,6 +43,12 @@ export default function Navbar({ dateLabel }: Props) {
           >
             {ui.rankings}
           </Link>
+          <Link
+            href="/review"
+            className={`transition-colors ${pathname?.startsWith("/review") ? "text-white" : "text-gray-400 hover:text-white"}`}
+          >
+            {ui.review}
+          </Link>
         </nav>
 
         {/* Right side */}

@@ -13,6 +13,7 @@ export const UI = {
   ja: {
     top: "TOP",
     rankings: "ランキング",
+    review: "チームレビュー",
     rise: "上昇",
     drop: "下落",
     nikkei: "日経比",
@@ -25,6 +26,7 @@ export const UI = {
   en: {
     top: "TOP",
     rankings: "Rankings",
+    review: "Team Review",
     rise: "Rise",
     drop: "Drop",
     nikkei: "vs Nikkei",

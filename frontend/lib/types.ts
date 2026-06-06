@@ -74,6 +74,27 @@ export interface DailyQuote {
   fiftyTwoWeekLow:  number | null;
 }
 
+export interface WeeklyReview {
+  week:             string;
+  created_at:       string;
+  avg_start:        number | null;
+  avg_end:          number | null;
+  win_start:        number | null;
+  win_end:          number | null;
+  big_start:        number | null;
+  big_end:          number | null;
+  adopted:          number;
+  rejected:         number;
+  skipped:          number;
+  signals:          number;
+  engineer_eval:    string;
+  quant_eval:       string;
+  securities_eval:  string;
+  fm_eval:          string;
+  human_feedback:   string;
+  next_actions:     string;
+}
+
 export interface Article {
   id:               number;
   slug:             string;
