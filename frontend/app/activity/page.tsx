@@ -18,7 +18,6 @@ const ROLE_STYLE: Record<string, { label: string; cls: string; emoji: string }> 
   Quant:      { label: "数量アナリスト",       cls: "bg-purple-900/40 text-purple-300 border-purple-800", emoji: "📐" },
   Securities: { label: "証券アナリスト",       cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🔍" },
   Engineer:   { label: "エンジニア",           cls: "bg-green-900/40 text-green-300 border-green-800",   emoji: "🔧" },
-  Human:      { label: "オーナー",             cls: "bg-pink-900/40 text-pink-300 border-pink-800",     emoji: "🧑" },
   System:     { label: "システム",             cls: "bg-gray-800 text-gray-400 border-gray-700",        emoji: "⚙️" },
 };
 

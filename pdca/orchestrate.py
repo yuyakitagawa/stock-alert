@@ -910,9 +910,6 @@ def main():
     #           Human → FM → Quant/Securities/Engineer の指揮系統
     print("Step1.55: Fund Manager がオーナーの指示を各メンバーへ展開中...")
     fb = read_feedback()
-    has_comment = bool(fb and fb.strip() and fb.strip() != "なし")
-    activity.record("Human", "オーナーからファンドマネージャーへの指示", "done",
-                    fb[:2000] if has_comment else "（特になし）")
     directives = fund_manager_directives(metrics, fb)
     _role_jp = {"quant": "数量アナリスト", "securities": "証券アナリスト", "engineer": "エンジニア"}
     for role_key, role_en in [("quant", "Quant"), ("securities", "Securities"), ("engineer", "Engineer")]:
