@@ -36,6 +36,61 @@ function timeLabel(ts: string) {
   });
 }
 
+// ── 命令系統の組織図 ──────────────────────────────────────────────────────────
+
+const MEMBERS = [
+  { emoji: "📐", name: "数量アナリスト", en: "Quant",      cls: "bg-purple-900/30 border-purple-800 text-purple-200",
+    job: "モデルの設定値・特徴量・条件を改善する案を出す" },
+  { emoji: "🔍", name: "証券アナリスト", en: "Securities", cls: "bg-yellow-900/30 border-yellow-800 text-yellow-200",
+    job: "買い候補の銘柄を企業調査してFMに報告する" },
+  { emoji: "🔧", name: "エンジニア",     en: "Engineer",   cls: "bg-green-900/30 border-green-800 text-green-200",
+    job: "提案を実装し、過去成績で検証して採用/却下する" },
+];
+
+function OrgChart() {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 className="text-base font-bold text-white mb-1">命令系統と役割</h2>
+      <p className="text-xs text-gray-600 mb-5">
+        オーナーの方針をファンドマネージャーが受け取り、各メンバーへ具体的な命令に翻訳して指示します。
+      </p>
+
+      {/* オーナー */}
+      <div className="flex flex-col items-center">
+        <div className="bg-pink-900/30 border border-pink-800 text-pink-200 rounded-lg px-4 py-2 text-center max-w-sm w-full">
+          <div className="text-sm font-bold">🧑 オーナー（あなた）</div>
+          <div className="text-[11px] text-pink-300/70 mt-0.5">チャットで方針・指示を伝える</div>
+        </div>
+
+        <div className="w-px h-5 bg-gray-700" />
+        <span className="text-[10px] text-gray-600 -mt-1 mb-1">指示</span>
+        <div className="w-px h-3 bg-gray-700" />
+
+        {/* FM */}
+        <div className="bg-blue-900/40 border border-blue-700 text-blue-200 rounded-lg px-4 py-2.5 text-center max-w-sm w-full">
+          <div className="text-sm font-bold">💼 ファンドマネージャー（FM）</div>
+          <div className="text-[11px] text-blue-300/70 mt-0.5">
+            方針を要点に整理し、各メンバーへ命令を出す司令塔
+          </div>
+        </div>
+
+        <div className="w-px h-5 bg-gray-700" />
+        <span className="text-[10px] text-gray-600 -mt-1 mb-1">命令を展開</span>
+
+        {/* メンバー3名 */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+          {MEMBERS.map(m => (
+            <div key={m.en} className={`rounded-lg border px-3 py-2.5 text-center ${m.cls}`}>
+              <div className="text-sm font-bold">{m.emoji} {m.name}</div>
+              <div className="text-[11px] opacity-70 mt-1 leading-relaxed">{m.job}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivityRow({ a }: { a: Activity }) {
   const role   = ROLE_STYLE[a.role]   ?? ROLE_STYLE.System;
   const status = STATUS_STYLE[a.status] ?? { label: a.status, cls: "bg-gray-800 text-gray-400 border-gray-700" };
@@ -104,6 +159,9 @@ export default async function ActivityPage() {
           </p>
         </div>
 
+        {/* 命令系統の組織図 */}
+        <OrgChart />
+
         {/* 今動いているもの */}
         {running.length > 0 && (
           <div className="bg-amber-950/30 border border-amber-800/50 rounded-xl p-4">
@@ -123,8 +181,8 @@ export default async function ActivityPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-sm text-gray-300 font-medium mb-1">📌 指示の出し方</p>
           <p className="text-xs text-gray-500 leading-relaxed">
-            チームへの指示・方針は <code className="text-gray-300 bg-gray-800 px-1 py-0.5 rounded">pdca/feedback.md</code> に書き込むと、
-            翌営業日のサイクルから反映されます。チーム同士の評価は
+            オーナーはチャットで方針を伝えるだけ。FMがそれを <code className="text-gray-300 bg-gray-800 px-1 py-0.5 rounded">pdca/feedback.md</code> の要点に整理し、
+            翌営業日のサイクルから各メンバーへの命令に反映します。チーム同士の評価は
             <a href="/review" className="text-green-400 hover:text-green-300"> チームレビュー</a> ページで確認できます。
           </p>
         </div>
