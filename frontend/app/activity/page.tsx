@@ -181,9 +181,10 @@ export default async function ActivityPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-sm text-gray-300 font-medium mb-1">📌 指示の出し方</p>
           <p className="text-xs text-gray-500 leading-relaxed">
-            オーナーはチャットで方針を伝えるだけ。FMがそれを <code className="text-gray-300 bg-gray-800 px-1 py-0.5 rounded">pdca/feedback.md</code> の要点に整理し、
-            翌営業日のサイクルから各メンバーへの命令に反映します。チーム同士の評価は
-            <a href="/review" className="text-green-400 hover:text-green-300"> チームレビュー</a> ページで確認できます。
+            オーナーはチャットで方針・要望を伝えるだけ。FMが内容を判断し、振り分けます ——
+            <span className="text-gray-400">モデル改善の方針</span>なら <code className="text-gray-300 bg-gray-800 px-1 py-0.5 rounded">pdca/feedback.md</code> に整理してチームへ、
+            <span className="text-gray-400">webアプリ・メール・コードの変更</span>が必要ならその箇所を特定して対応します。
+            チーム同士の評価は <a href="/review" className="text-green-400 hover:text-green-300">チームレビュー</a> ページで確認できます。
           </p>
         </div>
 
