@@ -635,7 +635,7 @@ def _load_alert_models_or_exit():
 
 
 def _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60):
-    from lib.utils import _days_to_nearest_event, get_fundamentals
+    from lib.utils import get_fundamentals
     from datetime import date as _date
     raw_data = []
     for code, name in held_stocks.items():
@@ -645,14 +645,11 @@ def _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60):
             continue
         nk_rets = (nk5 / 100, nk20 / 100, nk60 / 100) if nk5 is not None else None
         fd_raw = get_fundamentals(code)
-        today  = _date.today()
         fundamentals = {
             "per": fd_raw.get("PER"),
             "pbr": fd_raw.get("PBR"),
             "roe": fd_raw.get("ROE"),
             "days_to_earnings": None,
-            "days_to_dividend": _days_to_nearest_event(today, [3, 9], day=28),
-            "days_to_yutai":    None,
         }
         feat = extract_features(
             prices["Close"].values,

@@ -285,22 +285,16 @@ def main():
             time.sleep(0.1)
             return None
 
-        # ファンダメンタル取得
+        # ファンダメンタル取得（PER/PBR/ROE/決算まで日数）
         fd_raw   = get_fundamentals(code)
         next_earn = _get_next_earnings(code)
         today    = _date.today()
         days_earn = (next_earn - today).days if next_earn and next_earn > today else None
-        days_yutai = _days_to_yutai_record(code, today)
-        yutai_month = _get_yutai_record_month(code)
-        div_months = [yutai_month] if yutai_month else [3, 9]
-        days_div = _days_to_nearest_event(today, div_months, day=28)
         fundamentals = {
             "per":              fd_raw.get("PER"),
             "pbr":              fd_raw.get("PBR"),
             "roe":              fd_raw.get("ROE"),
             "days_to_earnings": days_earn,
-            "days_to_dividend": days_div,
-            "days_to_yutai":    days_yutai,
         }
 
         feat = extract_features(

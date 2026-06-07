@@ -51,29 +51,23 @@ def get_pit_fundamentals(code, target_date):
             est_next += timedelta(days=91)
         days_earn = (est_next - target_date).days
 
-    ym = (_YUTAI_MONTH or {}).get(code)
-    div_months = [ym] if ym else [3, 9]
-    days_div = _days_to_nearest_event(target_date, div_months, day=28)
-    days_yutai = _days_to_nearest_event(target_date, [ym], day=28) if ym else None
-
-    if eps is None and bps is None and roe is None and not known and ym is None:
+    if eps is None and bps is None and roe is None and not known:
         return None
     return {
         "eps": eps, "bps": bps, "roe": roe,
         "days_to_earnings": days_earn,
-        "days_to_dividend": days_div,
-        "days_to_yutai": days_yutai,
     }
 
 
 def pit_fundamental_features(code, target_date, price):
-    """point-in-timeファンダを6特徴量(正規化済み)に変換。
+    """point-in-timeファンダを4特徴量(正規化済み)に変換。
     extract_features() のファンダ部と同一の正規化。データ無しは中立値。
-    返り値: [per_feat, pbr_feat, roe_feat, earn_feat, div_feat, yutai_feat]
+    返り値: [per_feat, pbr_feat, roe_feat, earn_feat]
+    配当・優待確定日は21日モデルには効果薄のため除外。
     """
     import numpy as np
     pf = pbf = rf = 0.0
-    ef = df = yf = 0.5
+    ef = 0.5
     fd = get_pit_fundamentals(code, target_date)
     if fd is not None:
         eps, bps, roe = fd.get("eps"), fd.get("bps"), fd.get("roe")
@@ -85,8 +79,4 @@ def pit_fundamental_features(code, target_date, price):
             rf = float(np.clip(roe / 15.0, -0.5, 2.0))
         if fd.get("days_to_earnings") is not None:
             ef = float(np.clip(fd["days_to_earnings"] / 90.0, 0.0, 1.0))
-        if fd.get("days_to_dividend") is not None:
-            df = float(np.clip(fd["days_to_dividend"] / 60.0, 0.0, 1.0))
-        if fd.get("days_to_yutai") is not None:
-            yf = float(np.clip(fd["days_to_yutai"] / 60.0, 0.0, 1.0))
-    return [pf, pbf, rf, ef, df, yf]
+    return [pf, pbf, rf, ef]
