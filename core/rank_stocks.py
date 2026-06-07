@@ -285,16 +285,20 @@ def main():
             time.sleep(0.1)
             return None
 
-        # ファンダメンタル取得（PER/PBR/ROE/決算まで日数）
-        fd_raw   = get_fundamentals(code)
+        # ファンダメンタル取得（PER/PBR/ROE/決算まで日数/権利落ち後経過日数）
+        from lib.fundamentals import get_pit_fundamentals as _get_pit
+        fd_raw    = get_fundamentals(code)
         next_earn = _get_next_earnings(code)
-        today    = _date.today()
+        today     = _date.today()
         days_earn = (next_earn - today).days if next_earn and next_earn > today else None
+        pit       = _get_pit(code, today) or {}
         fundamentals = {
-            "per":              fd_raw.get("PER"),
-            "pbr":              fd_raw.get("PBR"),
-            "roe":              fd_raw.get("ROE"),
-            "days_to_earnings": days_earn,
+            "per":                 fd_raw.get("PER"),
+            "pbr":                 fd_raw.get("PBR"),
+            "roe":                 fd_raw.get("ROE"),
+            "days_to_earnings":    days_earn,
+            "days_since_div_ex":   pit.get("days_since_div_ex"),
+            "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
         }
 
         feat = extract_features(

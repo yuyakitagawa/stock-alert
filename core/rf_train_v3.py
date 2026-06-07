@@ -139,12 +139,12 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
                 price_now = closes[i]
                 eps, bps = pit.get("eps"), pit.get("bps")
                 fund = {
-                    "per": (price_now / eps) if eps and eps > 0 else None,
-                    "pbr": (price_now / bps) if bps and bps > 0 else None,
-                    "roe": pit.get("roe"),
-                    "days_to_earnings": pit.get("days_to_earnings"),
-                    "days_to_dividend": pit.get("days_to_dividend"),
-                    "days_to_yutai": pit.get("days_to_yutai"),
+                    "per":                 (price_now / eps) if eps and eps > 0 else None,
+                    "pbr":                 (price_now / bps) if bps and bps > 0 else None,
+                    "roe":                 pit.get("roe"),
+                    "days_to_earnings":    pit.get("days_to_earnings"),
+                    "days_since_div_ex":   pit.get("days_since_div_ex"),
+                    "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
                 }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue

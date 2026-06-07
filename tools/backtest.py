@@ -318,14 +318,14 @@ def extract_features_at(hist, target_date, nk_rets=None, code=None):
     rel60 = ret60 - nk60
     alpha_momentum = rel5 - rel20 / 4
 
-    # ファンダメンタル4特徴量（point-in-time再構成、無ければ中立pad）
+    # ファンダメンタル6特徴量（point-in-time再構成、無ければ中立pad）
     if code is not None:
-        fund4 = pit_fundamental_features(code, target_date, current)
+        fund6 = pit_fundamental_features(code, target_date, current)
     else:
-        fund4 = [0.0, 0.0, 0.0, 0.5]
+        fund6 = [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum] + fund4
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum] + fund6
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
     return feat

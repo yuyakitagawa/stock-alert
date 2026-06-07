@@ -333,20 +333,26 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     rel60 = ret60 - nk60 * 0.01
     alpha_momentum = rel5 - rel20 / 4  # アルファ加速度
 
-    # ファンダメンタル4特徴量（PER/PBR/ROE/決算まで日数）
-    # 配当・優待確定日は21日モデルには効果薄のため除外
+    # ファンダメンタル6特徴量
+    # PER/PBR/ROE: バリュエーション・収益性
+    # days_to_earnings: 決算前ドリフト
+    # days_since_div_ex / days_since_yutai_ex: 権利落ち後の戻り買いゾーン
     fd  = fundamentals or {}
     _per = fd.get('per');   _pbr = fd.get('pbr');   _roe = fd.get('roe')
-    _dte = fd.get('days_to_earnings')
-    per_feat  = float(np.clip(_per / 20.0 - 1.0, -1.0, 3.0)) if _per is not None else 0.0
-    pbr_feat  = float(np.clip(_pbr /  1.5 - 1.0, -1.0, 4.0)) if _pbr is not None else 0.0
-    roe_feat  = float(np.clip(_roe / 15.0,        -0.5, 2.0)) if _roe is not None else 0.0
-    earn_feat = float(np.clip(_dte / 90.0,          0.0, 1.0)) if _dte is not None else 0.5
+    _dte  = fd.get('days_to_earnings')
+    _ddiv = fd.get('days_since_div_ex')
+    _dyut = fd.get('days_since_yutai_ex')
+    per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
+    pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
+    roe_feat      = float(np.clip(_roe  / 15.0,        -0.5, 2.0)) if _roe  is not None else 0.0
+    earn_feat     = float(np.clip(_dte  / 90.0,         0.0, 1.0)) if _dte  is not None else 0.5
+    div_ex_feat   = float(np.clip(_ddiv / 60.0,         0.0, 1.0)) if _ddiv is not None else 0.5
+    yutai_ex_feat = float(np.clip(_dyut / 60.0,         0.0, 1.0)) if _dyut is not None else 0.5
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
             vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
-            per_feat, pbr_feat, roe_feat, earn_feat]
+            per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
