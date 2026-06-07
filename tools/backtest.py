@@ -84,6 +84,9 @@ if not os.path.isdir(BASE_DIR):
 # 例: bear mode (2024-07-01) → (2026-05-04 - 2024-07-01) + 180 ≈ 853日
 FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
 
+# ── point-in-time ファンダメンタル（lib/fundamentals に集約）─────────────────
+from lib.fundamentals import pit_fundamental_features
+
 # ── スクリーナー定数（v1） ───────────────────────
 _SC_MIN_MOMENTUM     = 8.0
 _SC_MAX_MOMENTUM     = 30.0
@@ -226,8 +229,8 @@ def get_nikkei_prices():
 
 # ── 特徴量計算 ──────────────────────────────
 
-def extract_features_at(hist, target_date, nk_rets=None):
-    """target_date時点の特徴量を計算"""
+def extract_features_at(hist, target_date, nk_rets=None, code=None):
+    """target_date時点の特徴量を計算（code を渡すと point-in-time ファンダを再構成）"""
     close = hist["Close"].dropna()
     close.index = pd.to_datetime(close.index).date
     volume = hist["Volume"].dropna()
@@ -315,11 +318,14 @@ def extract_features_at(hist, target_date, nk_rets=None):
     rel60 = ret60 - nk60
     alpha_momentum = rel5 - rel20 / 4
 
-    # ファンダメンタル6特徴量（バックテスト時は中立値で埋める）
+    # ファンダメンタル6特徴量（point-in-time再構成、無ければ中立pad）
+    if code is not None:
+        fund6 = pit_fundamental_features(code, target_date, current)
+    else:
+        fund6 = [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum,
-            0.0, 0.0, 0.0, 0.5, 0.5, 0.5]
+            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum] + fund6
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
     return feat
@@ -411,7 +417,7 @@ def main():
                 nk20_v = (nkp[-1]-nkp[-21])/nkp[-21] if len(nkp)>=21 else 0
                 nk60_v = (nkp[-1]-nkp[-61])/nkp[-61] if len(nkp)>=61 else 0
                 nk_rets_bt = (nk5_v, nk20_v, nk60_v)
-        feat = extract_features_at(hist, BACKTEST_DATE, nk_rets_bt)
+        feat = extract_features_at(hist, BACKTEST_DATE, nk_rets_bt, code=code)
         if feat is None:
             time.sleep(0.3); continue
         if feat[12] > 0.15 or feat[10] < -0.15:
@@ -664,7 +670,7 @@ def run_rolling_main():
 
         raw_feats, raw_meta = [], []
         for code, (h, name) in round_stocks.items():
-            feat = extract_features_at(h, entry_date, nkr)
+            feat = extract_features_at(h, entry_date, nkr, code=code)
             if feat is None:
                 continue
             cl = h["Close"].dropna()

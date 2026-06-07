@@ -2,14 +2,13 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import requests, pandas as pd, numpy as np, time, io, joblib, json, calendar, sqlite3
+import requests, pandas as pd, numpy as np, time, io, joblib, json
 from datetime import datetime, timedelta, date
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, _days_to_nearest_event
-from lib.db import DB_PATH
+from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
+from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=21; RISE_THRESHOLD=5.0; DROP_THRESHOLD=5.0   # 絶対リターン±5%ラベル（識別力重視）
 ALPHA_THRESHOLD=3.0      # 相対ラベル: stock - nikkei >= +3% → alpha_rise=1
@@ -30,97 +29,6 @@ _SC_MIN_MOM=8.0; _SC_MAX_MOM=30.0; _SC_MIN_MOM20=0.0
 _SC_MIN_VOL=22.0; _SC_MAX_VOL=50.0; _SC_MIN_PRICE=300
 _SC_MIN_VR=1.0; _SC_MIN_REL=0.05  # 出来高比 / 日経比相対強度
 _SC_MIN_RSI=45.0; _SC_MAX_RSI=70.0
-
-_KABUTAN_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/html"}
-
-def _fetch_one_fund(code):
-    """kabutan.jp から PER/PBR/ROE を取得。失敗時は None を返す。"""
-    result = {"per": None, "pbr": None, "roe": None}
-    import re as _re
-    try:
-        r = requests.get(f"https://kabutan.jp/stock/?code={code}",
-                         headers=_KABUTAN_HEADERS, timeout=8)
-        if r.status_code == 200:
-            text = r.text.replace("\n","").replace("\t","")
-            idx = text.find('data-help="PER"')
-            if idx != -1:
-                vals = _re.findall(r'<td>([\d.-]+)<span', text[idx:idx+600])
-                if len(vals) >= 1: result["per"] = float(vals[0])
-                if len(vals) >= 2: result["pbr"] = float(vals[1])
-        r2 = requests.get(f"https://kabutan.jp/stock/finance/?code={code}",
-                          headers=_KABUTAN_HEADERS, timeout=8)
-        if r2.status_code == 200:
-            t2 = r2.text.replace(" ","").replace("\n","").replace("\t","")
-            idx2 = t2.find('ROE">')
-            if idx2 != -1:
-                tbody = t2.find("<tbody>", idx2)
-                rows  = _re.findall(r'<tr><thscope="row".*?</tr>', t2[tbody:tbody+1200])
-                if rows:
-                    vs = _re.findall(r'<td[^>]*>([\d,.-]+)</td>', rows[0])
-                    if len(vs) >= 3:
-                        try: result["roe"] = float(vs[2])
-                        except ValueError: pass
-    except Exception:
-        pass
-    return result
-
-
-def _fetch_fund_bulk(codes, max_workers=8):
-    """全銘柄の PER/PBR/ROE + yutai_month を一括取得してキャッシュ dict を返す。"""
-    # yutai_cache から record_month を一括読み込み
-    yutai_map = {}
-    try:
-        con = sqlite3.connect(DB_PATH)
-        rows = con.execute("SELECT code, has_yutai, record_month FROM yutai_cache").fetchall()
-        con.close()
-        for r in rows:
-            yutai_map[str(r[0])] = r[2] if r[1] else None
-    except Exception:
-        pass
-
-    print(f"  ファンダメンタル取得中（{len(codes)}銘柄）...")
-    fund_snap = {}
-    done = [0]
-    def fetch(code):
-        fd = _fetch_one_fund(code)
-        fd["yutai_month"] = yutai_map.get(str(code))
-        time.sleep(0.3)
-        done[0] += 1
-        if done[0] % 200 == 0:
-            print(f"    {done[0]}/{len(codes)} 完了")
-        return code, fd
-
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        for code, fd in ex.map(lambda c: fetch(c), codes):
-            fund_snap[str(code)] = fd
-    print(f"  ファンダメンタル取得完了: {len(fund_snap)}銘柄")
-    return fund_snap
-
-
-def _make_fund_for_sample(fund_snap_entry, sample_date):
-    """学習サンプル日時点のファンダメンタル特徴量 dict を生成する。"""
-    fd = fund_snap_entry or {}
-    yutai_month = fd.get("yutai_month")
-
-    # 決算: 3月期企業の典型パターン（2/5/8/11月中旬）
-    days_earn = _days_to_nearest_event(sample_date, [2, 5, 8, 11], day=14)
-
-    # 配当: yutai_month がある場合はその月、なければ 3/9 月末
-    div_months = [yutai_month] if yutai_month else [3, 9]
-    days_div = _days_to_nearest_event(sample_date, div_months, day=28)
-
-    # 優待: yutai_month の月末
-    days_yutai = _days_to_nearest_event(sample_date, [yutai_month], day=28) if yutai_month else None
-
-    return {
-        "per":              fd.get("per"),
-        "pbr":              fd.get("pbr"),
-        "roe":              fd.get("roe"),
-        "days_to_earnings": days_earn,
-        "days_to_dividend": days_div,
-        "days_to_yutai":    days_yutai,
-    }
-
 
 def get_nikkei_df(days=2200):
     """日経225の株価をDateインデックスのDataFrameで返す"""
@@ -201,7 +109,7 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
     return True
 
 
-def generate_samples(df, nk_df=None, screener_only=False, fund_snap_entry=None):
+def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
     samples=[]; start_i=max(252+SEQ_DAYS,90)
@@ -223,7 +131,21 @@ def generate_samples(df, nk_df=None, screener_only=False, fund_snap_entry=None):
                 nk_ret_3m=(nk_closes[i0]-nk_closes[i63])/nk_closes[i63] if nk_closes[i63]!=0 else None
         if screener_only and not passes_screener_at(closes[:i+1], v_slice, nk_ret_3m):
             continue
-        fund = _make_fund_for_sample(fund_snap_entry, dates[i]) if fund_snap_entry else None
+        # point-in-timeファンダ（fundamentals_annual から、その日に既知だった値のみ）
+        fund = None
+        if sample_code is not None:
+            pit = get_pit_fundamentals(sample_code, dates[i])
+            if pit is not None:
+                price_now = closes[i]
+                eps, bps = pit.get("eps"), pit.get("bps")
+                fund = {
+                    "per": (price_now / eps) if eps and eps > 0 else None,
+                    "pbr": (price_now / bps) if bps and bps > 0 else None,
+                    "roe": pit.get("roe"),
+                    "days_to_earnings": pit.get("days_to_earnings"),
+                    "days_to_dividend": pit.get("days_to_dividend"),
+                    "days_to_yutai": pit.get("days_to_yutai"),
+                }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
@@ -287,9 +209,10 @@ def main():
     nk_df=get_nikkei_df()
     if nk_df is not None: print(f"  日経225: {len(nk_df)}日分取得")
     else: print("  日経225取得失敗 → 絶対リターンで学習")
-    print(f"\nファンダメンタルデータ取得中（kabutan.jp + yutai_cache）...")
-    all_codes = stock_list["code"].tolist()
-    fund_snap = _fetch_fund_bulk(all_codes)
+    # ファンダは fundamentals_annual から point-in-time で取得（事前に
+    # tools/fetch_fundamentals_history.py で蓄積しておくこと）
+    from lib.db import get_fundamentals_codes_count
+    print(f"\nファンダDB: {get_fundamentals_codes_count()}銘柄分の年度別データを使用（point-in-time）")
 
     print(f"\n株価取得中（30〜60分かかります）...")
     train_X,train_yr,train_yd,train_ar,train_ad=[],[],[],[],[]
@@ -300,9 +223,8 @@ def main():
         df=get_prices(row["code"])
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
-        fse = fund_snap.get(str(row["code"]))
         for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only,
-                                                        fund_snap_entry=fse):
+                                                        sample_code=str(row["code"])):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
                 train_ar.append(ar); train_ad.append(ad); train_dates.append(sd)

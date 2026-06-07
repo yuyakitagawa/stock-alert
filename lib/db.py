@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS yutai_cache (
     has_yutai     INTEGER,
     fetched_date  TEXT
 );
+CREATE TABLE IF NOT EXISTS fundamentals_annual (
+    code          TEXT NOT NULL,
+    fy_end        TEXT NOT NULL,   -- 決算期末 YYYY-MM（例 2024-03）
+    announce_date TEXT,            -- 発表日 YYYY-MM-DD（これ以降にEPS等が既知になる）
+    eps           REAL,            -- 1株利益
+    roe           REAL,            -- 自己資本利益率 %
+    bps           REAL,            -- 1株純資産
+    fetched_date  TEXT,
+    PRIMARY KEY (code, fy_end)
+);
 """
 
 @contextmanager
@@ -191,6 +201,55 @@ def set_yutai_cache(code, today_str, has_yutai, record_month):
             "INSERT OR REPLACE INTO yutai_cache (code,record_month,has_yutai,fetched_date) VALUES(?,?,?,?)",
             (str(code), record_month, int(has_yutai), today_str)
         )
+
+
+# ── fundamentals_annual ──────────────────────────────────────────────────
+
+def upsert_fundamentals_annual(code, rows, today_str):
+    """rows: list of dict(fy_end, announce_date, eps, roe, bps)。code単位でまとめてupsert。"""
+    init_db()
+    with _conn() as con:
+        con.executemany(
+            """INSERT OR REPLACE INTO fundamentals_annual
+               (code, fy_end, announce_date, eps, roe, bps, fetched_date)
+               VALUES(?,?,?,?,?,?,?)""",
+            [(str(code), r["fy_end"], r.get("announce_date"), r.get("eps"),
+              r.get("roe"), r.get("bps"), today_str) for r in rows]
+        )
+
+
+def get_fundamentals_annual(code):
+    """code の年度別ファンダを発表日昇順で返す。"""
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT fy_end, announce_date, eps, roe, bps FROM fundamentals_annual
+               WHERE code=? AND announce_date IS NOT NULL ORDER BY announce_date""",
+            (str(code),)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def load_all_fundamentals_annual():
+    """全銘柄の年度別ファンダを {code: [rows...]} で返す（バックテスト用バルク読込）。"""
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT code, fy_end, announce_date, eps, roe, bps FROM fundamentals_annual
+               WHERE announce_date IS NOT NULL ORDER BY code, announce_date"""
+        ).fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(str(r["code"]), []).append(dict(r))
+    return out
+
+
+def get_fundamentals_codes_count():
+    init_db()
+    with _conn() as con:
+        return con.execute(
+            "SELECT COUNT(DISTINCT code) FROM fundamentals_annual"
+        ).fetchone()[0]
 
 
 # ── sector_cache ───────────────────────────────────────────────────────────
