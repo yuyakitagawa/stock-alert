@@ -147,6 +147,12 @@ def fetch_one(code):
         return []
 
 
+def _fetch_with_sleep(code):
+    rows = fetch_one(code)
+    time.sleep(0.25)
+    return code, rows
+
+
 def get_tse_codes():
     import io, pandas as pd
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -178,27 +184,33 @@ def main():
         codes = get_tse_codes()
         if args.limit:
             codes = codes[:args.limit]
-    print(f"対象: {len(codes)}銘柄")
+
+    # 再開対応: 本日取得済みの銘柄はスキップ
+    if not args.codes:
+        from lib.db import _conn
+        with _conn() as con:
+            done_codes = {str(r[0]) for r in con.execute(
+                "SELECT DISTINCT code FROM fundamentals_annual WHERE fetched_date=?",
+                (today,)).fetchall()}
+        before = len(codes)
+        codes = [c for c in codes if c not in done_codes]
+        print(f"対象: {before}銘柄中 {len(done_codes)}件は本日取得済み → 残り{len(codes)}銘柄")
+    else:
+        print(f"対象: {len(codes)}銘柄")
 
     done = [0]
     ok = [0]
     total = len(codes)
 
-    def work(code):
-        rows = fetch_one(code)
-        time.sleep(0.25)
-        if rows:
-            upsert_fundamentals_annual(code, rows, today)
-            return code, len(rows)
-        return code, 0
-
+    # フェッチ(並列) → 書き込み(メインスレッドで直列) でDBロック回避
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(work, c): c for c in codes}
+        futures = {ex.submit(_fetch_with_sleep, c): c for c in codes}
         for fut in as_completed(futures):
-            code, n = fut.result()
-            done[0] += 1
-            if n > 0:
+            code, rows = fut.result()
+            if rows:
+                upsert_fundamentals_annual(code, rows, today)
                 ok[0] += 1
+            done[0] += 1
             if done[0] % 100 == 0:
                 print(f"  {done[0]}/{total} 完了（取得成功 {ok[0]}）")
 
