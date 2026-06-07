@@ -267,8 +267,11 @@ def _days_to_nearest_event(from_date, months, day=25):
 
 
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
-    """38次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル6
-    fundamentals: dict with keys per/pbr/roe/days_to_earnings/days_to_dividend/days_to_yutai (all optional)
+    """41次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル9
+    fundamentals dict keys (all optional):
+      per, pbr, roe, days_to_earnings,
+      days_since_div_ex, days_since_yutai_ex,
+      month（カレンダー月 1-12），div_yield（配当利回り%）
     """
     if len(p) < 91 or p[-1] == 0:
         return None
@@ -333,26 +336,35 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     rel60 = ret60 - nk60 * 0.01
     alpha_momentum = rel5 - rel20 / 4  # アルファ加速度
 
-    # ファンダメンタル6特徴量
+    # ファンダメンタル9特徴量
     # PER/PBR/ROE: バリュエーション・収益性
     # days_to_earnings: 決算前ドリフト
     # days_since_div_ex / days_since_yutai_ex: 権利落ち後の戻り買いゾーン
+    # sin_month / cos_month: 季節性（月の循環エンコード）
+    # div_yield: 配当利回り%/10（高利回り株の識別）
+    import math as _math
     fd  = fundamentals or {}
-    _per = fd.get('per');   _pbr = fd.get('pbr');   _roe = fd.get('roe')
+    _per  = fd.get('per');   _pbr = fd.get('pbr');   _roe = fd.get('roe')
     _dte  = fd.get('days_to_earnings')
     _ddiv = fd.get('days_since_div_ex')
     _dyut = fd.get('days_since_yutai_ex')
+    _dyld = fd.get('div_yield')
+    _mon  = fd.get('month')   # カレンダー月（学習時はサンプル日から渡す）
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
     roe_feat      = float(np.clip(_roe  / 15.0,        -0.5, 2.0)) if _roe  is not None else 0.0
     earn_feat     = float(np.clip(_dte  / 90.0,         0.0, 1.0)) if _dte  is not None else 0.5
     div_ex_feat   = float(np.clip(_ddiv / 60.0,         0.0, 1.0)) if _ddiv is not None else 0.5
     yutai_ex_feat = float(np.clip(_dyut / 60.0,         0.0, 1.0)) if _dyut is not None else 0.5
+    sin_month     = _math.sin(2 * _math.pi * _mon / 12) if _mon is not None else 0.0
+    cos_month     = _math.cos(2 * _math.pi * _mon / 12) if _mon is not None else 1.0
+    div_yield_f   = float(np.clip(_dyld / 10.0,          0.0, 1.0)) if _dyld is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
             vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
-            per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat]
+            per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat,
+            sin_month, cos_month, div_yield_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None

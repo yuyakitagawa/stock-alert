@@ -87,6 +87,7 @@ def fetch_one(code):
         if eps_tbl:
             hdr = eps_tbl[0]
             i_eps = next((i for i, h in enumerate(hdr) if "修正1株益" in h), 5)
+            i_dps = next((i for i, h in enumerate(hdr) if "修正1株配" in h), 6)
             i_ann = next((i for i, h in enumerate(hdr) if "発表日" in h), len(hdr) - 1)
             for row in eps_tbl[1:]:
                 if len(row) <= max(i_eps, i_ann):
@@ -95,10 +96,13 @@ def fetch_one(code):
                 if not fy:
                     continue
                 eps = _to_float(row[i_eps])
+                dps = _to_float(row[i_dps]) if len(row) > i_dps else None
                 ann = _announce(row[i_ann])
                 if eps is None and ann is None:
                     continue
                 merged.setdefault(fy, {})["eps"] = eps
+                if dps is not None:
+                    merged[fy]["dps"] = dps
                 if ann:
                     merged[fy]["announce_date"] = ann
 
@@ -136,11 +140,12 @@ def fetch_one(code):
         rows_out = []
         for fy, d in merged.items():
             rows_out.append({
-                "fy_end": fy,
-                "announce_date": d.get("announce_date"),
-                "eps": d.get("eps"),
-                "roe": d.get("roe"),
-                "bps": d.get("bps"),
+                "fy_end":         fy,
+                "announce_date":  d.get("announce_date"),
+                "eps":            d.get("eps"),
+                "dps":            d.get("dps"),
+                "roe":            d.get("roe"),
+                "bps":            d.get("bps"),
             })
         return rows_out
     except Exception:

@@ -292,13 +292,19 @@ def main():
         today     = _date.today()
         days_earn = (next_earn - today).days if next_earn and next_earn > today else None
         pit       = _get_pit(code, today) or {}
+        per_live = fd_raw.get("PER"); pbr_live = fd_raw.get("PBR")
+        # 配当利回り: ライブ株価 × PBR/PER から配当を逆算 or pit.dps使用
+        _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
+        div_yield_live = (_dps / _close * 100) if _dps and _dps > 0 and _close else None
         fundamentals = {
-            "per":                 fd_raw.get("PER"),
-            "pbr":                 fd_raw.get("PBR"),
+            "per":                 per_live,
+            "pbr":                 pbr_live,
             "roe":                 fd_raw.get("ROE"),
             "days_to_earnings":    days_earn,
             "days_since_div_ex":   pit.get("days_since_div_ex"),
             "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
+            "month":               today.month,
+            "div_yield":           div_yield_live,
         }
 
         feat = extract_features(

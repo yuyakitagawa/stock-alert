@@ -530,10 +530,24 @@ def build_stock_fundamentals(kabutan_top_n=None):
         if d <= 30:   return f"🔔 {d}日後"
         return f"{d}日後"
 
+    # fundamentals_annual から DPS（配当）をバルク読み込み
+    div_map = {}  # code -> {dps, close_at_announce}
+    try:
+        from lib.db import load_all_fundamentals_annual
+        fund_hist = load_all_fundamentals_annual()
+        latest_date_iso = ranking_date  # daily_rankingの最新日
+        for code_fa, recs in fund_hist.items():
+            known = [r for r in recs if r.get("announce_date") and r["announce_date"] <= latest_date_iso]
+            if known and known[-1].get("dps") is not None:
+                div_map[code_fa] = known[-1]["dps"]
+    except Exception:
+        pass
+
     header = [
         "コード", "銘柄名", "市場区分", "株価", "Netスコア", "上昇確率(%)", "下落確率(%)",
         "ボラ(%)", "推奨", "日経相対20日",
         "PER", "PBR", "ROE(%)",
+        "配当利回り(%)", "1株配当(円)",
         "次回決算日(推定)", "決算まで",
         "配当確定月", "配当まで",
         "優待確定月", "優待まで",
@@ -546,6 +560,15 @@ def build_stock_fundamentals(kabutan_top_n=None):
         ym_db   = yutai_map.get(code)
         ym      = kb.get("yutai_month") or ym_db
         div_months = [ym] if ym else [3, 9]
+
+        # 配当利回り計算
+        dps   = div_map.get(code)
+        close = r["close"] if r["close"] else None
+        div_yield_str = "—"
+        if dps is not None and close and close > 0:
+            dy = dps / close * 100
+            flag = " 🔔" if dy >= 3.0 else ""
+            div_yield_str = f"{dy:.2f}%{flag}"
 
         result_rows.append([
             code,
@@ -561,6 +584,8 @@ def build_stock_fundamentals(kabutan_top_n=None):
             (kb.get("per") if kb.get("per") is not None else (r["per"] if r["per"] is not None else "—")),
             (kb.get("pbr") if kb.get("pbr") is not None else (r["pbr"] if r["pbr"] is not None else "—")),
             kb.get("roe") if kb.get("roe") is not None else "—",
+            div_yield_str,
+            round(dps, 1) if dps is not None else "—",
             kb.get("next_earnings") or "—",
             fmt_days(kb.get("days_earnings")),
             ",".join(f"{m}月" for m in div_months),

@@ -137,7 +137,8 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
             pit = get_pit_fundamentals(sample_code, dates[i])
             if pit is not None:
                 price_now = closes[i]
-                eps, bps = pit.get("eps"), pit.get("bps")
+                eps, bps, dps = pit.get("eps"), pit.get("bps"), pit.get("dps")
+                div_yield = (dps / price_now * 100) if dps and dps > 0 and price_now > 0 else None
                 fund = {
                     "per":                 (price_now / eps) if eps and eps > 0 else None,
                     "pbr":                 (price_now / bps) if bps and bps > 0 else None,
@@ -145,6 +146,8 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
                     "days_to_earnings":    pit.get("days_to_earnings"),
                     "days_since_div_ex":   pit.get("days_since_div_ex"),
                     "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
+                    "month":               dates[i].month,
+                    "div_yield":           div_yield,
                 }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue

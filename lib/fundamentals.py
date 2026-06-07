@@ -68,11 +68,11 @@ def get_pit_fundamentals(code, target_date):
     tgt_iso = target_date.isoformat()
     known = [r for r in recs if r["announce_date"] and r["announce_date"] <= tgt_iso]
 
-    eps = bps = roe = None
+    eps = bps = roe = dps = None
     days_earn = None
     if known:
         latest = known[-1]  # announce_date 昇順 → 末尾が最新
-        eps, bps, roe = latest.get("eps"), latest.get("bps"), latest.get("roe")
+        eps, bps, roe, dps = latest.get("eps"), latest.get("bps"), latest.get("roe"), latest.get("dps")
         last_ann = datetime.fromisoformat(known[-1]["announce_date"]).date()
         est_next = last_ann + timedelta(days=91)
         while est_next < target_date:
@@ -88,29 +88,35 @@ def get_pit_fundamentals(code, target_date):
     if eps is None and bps is None and roe is None and not known and ym is None:
         return None
     return {
-        "eps": eps, "bps": bps, "roe": roe,
-        "days_to_earnings":   days_earn,
-        "days_since_div_ex":  days_since_div,
+        "eps": eps, "bps": bps, "roe": roe, "dps": dps,
+        "days_to_earnings":    days_earn,
+        "days_since_div_ex":   days_since_div,
         "days_since_yutai_ex": days_since_yutai,
     }
 
 
 def pit_fundamental_features(code, target_date, price):
-    """point-in-timeファンダを6特徴量(正規化済み)に変換。
+    """point-in-timeファンダを9特徴量(正規化済み)に変換。
     extract_features() のファンダ部と同一の正規化。データ無しは中立値。
-    返り値: [per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat]
+
+    返り値: [per_feat, pbr_feat, roe_feat, earn_feat,
+             div_ex_feat, yutai_ex_feat,
+             sin_month, cos_month, div_yield_feat]
 
     div_ex_feat / yutai_ex_feat:
-      0.0 = 権利落ち直後（戻り買いゾーン入口）
-      1.0 = 60日経過（効果消滅）
-      0.5 = 中立（情報なし）
+      0.0 = 権利落ち直後（戻り買いゾーン）  1.0 = 60日後（効果消滅）
+    div_yield_feat:
+      配当利回り% / 10（3%=0.3, 5%=0.5）。高利回り株を識別。
+    sin_month, cos_month: 月の季節性を循環エンコード。
     """
-    import numpy as np
+    import numpy as np, math
     pf = pbf = rf = 0.0
     ef = div_ef = yutai_ef = 0.5
+    div_yield_f = 0.0
+
     fd = get_pit_fundamentals(code, target_date)
     if fd is not None:
-        eps, bps, roe = fd.get("eps"), fd.get("bps"), fd.get("roe")
+        eps, bps, roe, dps = fd.get("eps"), fd.get("bps"), fd.get("roe"), fd.get("dps")
         if eps is not None and eps > 0 and price > 0:
             pf = float(np.clip((price / eps) / 20.0 - 1.0, -1.0, 3.0))
         if bps is not None and bps > 0 and price > 0:
@@ -119,9 +125,17 @@ def pit_fundamental_features(code, target_date, price):
             rf = float(np.clip(roe / 15.0, -0.5, 2.0))
         if fd.get("days_to_earnings") is not None:
             ef = float(np.clip(fd["days_to_earnings"] / 90.0, 0.0, 1.0))
-        # 権利落ち後経過日数: 0=直後(戻り買い期)→1.0=60日後(完全回復)
         if fd.get("days_since_div_ex") is not None:
             div_ef = float(np.clip(fd["days_since_div_ex"] / 60.0, 0.0, 1.0))
         if fd.get("days_since_yutai_ex") is not None:
             yutai_ef = float(np.clip(fd["days_since_yutai_ex"] / 60.0, 0.0, 1.0))
-    return [pf, pbf, rf, ef, div_ef, yutai_ef]
+        # 配当利回り = DPS / 株価 × 100（PIT: その時点の既知DPS使用）
+        if dps is not None and dps > 0 and price > 0:
+            div_yield_f = float(np.clip((dps / price * 100) / 10.0, 0.0, 1.0))
+
+    # 季節性: 月を循環エンコード（1月と12月が隣接するように）
+    m = target_date.month
+    sin_m = math.sin(2 * math.pi * m / 12)
+    cos_m = math.cos(2 * math.pi * m / 12)
+
+    return [pf, pbf, rf, ef, div_ef, yutai_ef, sin_m, cos_m, div_yield_f]

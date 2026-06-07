@@ -400,71 +400,38 @@ def build_sector_warning(results):
 
 
 def build_yutai_rebound_section(today_str: str) -> str:
-    """権利落ち後0〜14日のリバウンドチャンス銘柄をHTMLで返す。なければ空文字。"""
-    import calendar
-    from lib.db import DB_PATH, init_db
-    import sqlite3
+    """配当落ち後戻し買い戦略の候補銘柄をHTMLで返す。なければ空文字。"""
+    from lib.dividend_strategy import get_candidates
     today = datetime.strptime(today_str, "%Y-%m-%d").date()
-
-    init_db()
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    try:
-        # yutai_cacheから権利確定月ごとに権利落ち日を計算し、0〜14日後の銘柄を抽出
-        yutai_rows = con.execute(
-            "SELECT code, record_month FROM yutai_cache WHERE has_yutai=1 AND record_month IS NOT NULL"
-        ).fetchall()
-    finally:
-        con.close()
-
-    rebound_codes = []
-    for row in yutai_rows:
-        rm = row["record_month"]
-        for yr in [today.year - 1, today.year]:
-            last_day = calendar.monthrange(yr, rm)[1]
-            ex_date = datetime(yr, rm, last_day).date() - __import__("datetime").timedelta(days=2)
-            days_since = (today - ex_date).days
-            if 0 <= days_since <= 14:
-                rebound_codes.append((row["code"], days_since))
-                break
-
-    if not rebound_codes:
+    candidates = get_candidates(today)
+    if not candidates:
         return ""
 
-    # daily_rankingから今日の銘柄スコアを取得
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    try:
-        rows_html = ""
-        for code, days_since in sorted(rebound_codes, key=lambda x: x[1]):
-            rec = con.execute(
-                "SELECT name, close, net, drop_prob, vol FROM daily_ranking WHERE date=? AND code=? LIMIT 1",
-                (today_str, str(code))
-            ).fetchone()
-            if rec is None:
-                continue
-            net_color = "#27ae60" if rec["net"] >= 5 else "#e74c3c" if rec["net"] < 0 else "#888"
-            rows_html += (
-                f"<tr>"
-                f"<td>{rec['name']} <span style='color:#666;font-size:11px'>({code})</span></td>"
-                f"<td style='text-align:right'>{int(rec['close']):,}円</td>"
-                f"<td style='text-align:right;color:{net_color};font-weight:bold'>{rec['net']:+.1f}%</td>"
-                f"<td style='text-align:right;color:#888'>{days_since}日前</td>"
-                f"</tr>"
-            )
-    finally:
-        con.close()
-
-    if not rows_html:
-        return ""
+    rows_html = ""
+    for c in candidates:
+        net = c["net"] or 0
+        net_color = "#27ae60" if net >= 5 else "#e74c3c" if net < 0 else "#888"
+        yield_color = "#c0392b" if c["div_yield"] >= 3 else "#8e44ad"
+        rows_html += (
+            f"<tr>"
+            f"<td>{c['name']} <span style='color:#666;font-size:11px'>({c['code']})</span></td>"
+            f"<td style='text-align:right'>{int(c['close']):,}円</td>"
+            f"<td style='text-align:right;color:{yield_color};font-weight:bold'>{c['div_yield']:.1f}%</td>"
+            f"<td style='text-align:right;color:{net_color};font-weight:bold'>{net:+.1f}%</td>"
+            f"<td style='text-align:right;color:#888'>{c['days_since_ex']}日後</td>"
+            f"</tr>"
+        )
 
     return (
         "<div class='card' style='border-left:4px solid #9b59b6'>"
-        "<h2>🔄 優待リバウンドチャンス</h2>"
+        "<h2>🔄 配当落ち後 戻し買いチャンス</h2>"
         "<p style='color:#666;font-size:12px;margin:0 0 10px'>"
-        "権利落ち後0〜14日以内の銘柄。優待クロス解消による反発が期待できます。購入前にファンダメンタルズを確認してください。</p>"
+        "権利落ち後7〜20日以内の高利回り優待株。クロス解消売りが一巡した後の反発狙い。"
+        "保有目安20営業日。6・8・9月落ちは除外済み。</p>"
         "<table>"
-        "<tr style='background:#f5eef8'><th>銘柄</th><th>株価</th><th>ネット</th><th>権利落ち</th></tr>"
+        "<tr style='background:#f5eef8'>"
+        "<th>銘柄</th><th>株価</th><th>配当利回り</th><th>ネット</th><th>落ち後</th>"
+        "</tr>"
         f"{rows_html}"
         "</table></div>"
     )
@@ -646,7 +613,10 @@ def _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60):
             continue
         nk_rets = (nk5 / 100, nk20 / 100, nk60 / 100) if nk5 is not None else None
         fd_raw = get_fundamentals(code)
-        pit    = _get_pit(code, _date.today()) or {}
+        today  = _date.today()
+        pit    = _get_pit(code, today) or {}
+        _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
+        div_yield = (_dps / _close * 100) if _dps and _dps > 0 and _close else None
         fundamentals = {
             "per":                 fd_raw.get("PER"),
             "pbr":                 fd_raw.get("PBR"),
@@ -654,6 +624,8 @@ def _gather_raw_feature_rows(held_stocks, nk5, nk20, nk60):
             "days_to_earnings":    None,
             "days_since_div_ex":   pit.get("days_since_div_ex"),
             "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
+            "month":               today.month,
+            "div_yield":           div_yield,
         }
         feat = extract_features(
             prices["Close"].values,

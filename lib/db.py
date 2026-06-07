@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS fundamentals_annual (
     fy_end        TEXT NOT NULL,   -- 決算期末 YYYY-MM（例 2024-03）
     announce_date TEXT,            -- 発表日 YYYY-MM-DD（これ以降にEPS等が既知になる）
     eps           REAL,            -- 1株利益
+    dps           REAL,            -- 1株配当（修正1株配）
     roe           REAL,            -- 自己資本利益率 %
     bps           REAL,            -- 1株純資産
     fetched_date  TEXT,
@@ -207,15 +208,19 @@ def set_yutai_cache(code, today_str, has_yutai, record_month):
 # ── fundamentals_annual ──────────────────────────────────────────────────
 
 def upsert_fundamentals_annual(code, rows, today_str):
-    """rows: list of dict(fy_end, announce_date, eps, roe, bps)。code単位でまとめてupsert。"""
+    """rows: list of dict(fy_end, announce_date, eps, dps, roe, bps)。code単位でまとめてupsert。"""
     init_db()
     with _conn() as con:
+        # dps 列が無い場合は ALTER TABLE で追加（既存DBの後方互換）
+        cols = {r[1] for r in con.execute("PRAGMA table_info(fundamentals_annual)").fetchall()}
+        if "dps" not in cols:
+            con.execute("ALTER TABLE fundamentals_annual ADD COLUMN dps REAL")
         con.executemany(
             """INSERT OR REPLACE INTO fundamentals_annual
-               (code, fy_end, announce_date, eps, roe, bps, fetched_date)
-               VALUES(?,?,?,?,?,?,?)""",
+               (code, fy_end, announce_date, eps, dps, roe, bps, fetched_date)
+               VALUES(?,?,?,?,?,?,?,?)""",
             [(str(code), r["fy_end"], r.get("announce_date"), r.get("eps"),
-              r.get("roe"), r.get("bps"), today_str) for r in rows]
+              r.get("dps"), r.get("roe"), r.get("bps"), today_str) for r in rows]
         )
 
 
@@ -224,7 +229,7 @@ def get_fundamentals_annual(code):
     init_db()
     with _conn() as con:
         rows = con.execute(
-            """SELECT fy_end, announce_date, eps, roe, bps FROM fundamentals_annual
+            """SELECT fy_end, announce_date, eps, dps, roe, bps FROM fundamentals_annual
                WHERE code=? AND announce_date IS NOT NULL ORDER BY announce_date""",
             (str(code),)
         ).fetchall()
@@ -236,7 +241,7 @@ def load_all_fundamentals_annual():
     init_db()
     with _conn() as con:
         rows = con.execute(
-            """SELECT code, fy_end, announce_date, eps, roe, bps FROM fundamentals_annual
+            """SELECT code, fy_end, announce_date, eps, dps, roe, bps FROM fundamentals_annual
                WHERE announce_date IS NOT NULL ORDER BY code, announce_date"""
         ).fetchall()
     out = {}
