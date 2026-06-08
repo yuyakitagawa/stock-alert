@@ -399,16 +399,78 @@ def build_sector_warning(results):
 
 
 
+def _dividend_mini_analysis(code: str, c: dict, conn) -> str:
+    """上位候補のミニ分析コメントHTMLを生成（EPS・日経比・モデル判定）。"""
+    parts = []
+
+    # ① EPS トレンド（直近2期）
+    rows = conn.execute(
+        "SELECT fy_end, eps FROM fundamentals_annual WHERE code=? ORDER BY fy_end DESC LIMIT 2",
+        (code,)
+    ).fetchall()
+    if len(rows) >= 2:
+        eps_new, eps_old = rows[0][1], rows[1][1]
+        if eps_new is not None and eps_old is not None:
+            if eps_new < 0:
+                parts.append(f"<span style='color:#c0392b'>⚠ EPS赤字 ({eps_new:.0f}円)</span>")
+            elif eps_new > eps_old * 1.1:
+                parts.append(f"<span style='color:#27ae60'>✓ EPS増益 ({eps_old:.0f}→{eps_new:.0f}円)</span>")
+            else:
+                parts.append(f"<span style='color:#888'>EPS横ばい ({eps_new:.0f}円)</span>")
+    elif rows:
+        eps_new = rows[0][1]
+        if eps_new is not None:
+            clr = "#c0392b" if eps_new < 0 else "#888"
+            parts.append(f"<span style='color:{clr}'>EPS {eps_new:.0f}円</span>")
+
+    # ② 日経比20日・ボラ（daily_ranking の最新行）
+    dr = conn.execute(
+        "SELECT rel20, vol FROM daily_ranking WHERE code=? ORDER BY date DESC LIMIT 1",
+        (code,)
+    ).fetchone()
+    if dr:
+        rel20, vol = dr
+        if rel20 is not None:
+            clr = "#27ae60" if rel20 >= 0 else "#c0392b"
+            parts.append(f"<span style='color:{clr}'>日経比 {rel20:+.1f}%</span>")
+        if vol is not None:
+            clr = "#e67e22" if vol > 25 else "#888"
+            parts.append(f"<span style='color:{clr}'>ボラ {vol:.0f}%</span>")
+
+    # ③ モデル判定コメント
+    net = c.get("net") or 0
+    drop_prob = c.get("drop_prob") or 0
+    if net >= 10:
+        verdict = "<span style='color:#27ae60;font-weight:bold'>◎ モデル強気</span>"
+    elif net >= 5:
+        verdict = "<span style='color:#27ae60'>○ モデルやや強気</span>"
+    elif net < 0 or drop_prob > 15:
+        verdict = "<span style='color:#c0392b'>✗ モデル弱気 — 注意</span>"
+    else:
+        verdict = "<span style='color:#888'>△ 方向感なし</span>"
+    parts.append(verdict)
+
+    if not parts:
+        return ""
+    return (
+        "<tr><td colspan='5' style='padding:2px 8px 8px;font-size:11px;color:#555'>"
+        + " &nbsp;|&nbsp; ".join(parts)
+        + "</td></tr>"
+    )
+
+
 def build_yutai_rebound_section(today_str: str) -> str:
     """配当落ち後戻し買い戦略の候補銘柄をHTMLで返す。なければ空文字。"""
+    import sqlite3 as _sqlite3
     from lib.dividend_strategy import get_candidates
     today = datetime.strptime(today_str, "%Y-%m-%d").date()
     candidates = get_candidates(today)
     if not candidates:
         return ""
 
+    conn = _sqlite3.connect(os.path.join(BASE_DIR, "stock_alert.db"))
     rows_html = ""
-    for c in candidates:
+    for idx, c in enumerate(candidates):
         net = c["net"] or 0
         net_color = "#27ae60" if net >= 5 else "#e74c3c" if net < 0 else "#888"
         yield_color = "#c0392b" if c["div_yield"] >= 3 else "#8e44ad"
@@ -421,6 +483,11 @@ def build_yutai_rebound_section(today_str: str) -> str:
             f"<td style='text-align:right;color:#888'>{c['days_since_ex']}日後</td>"
             f"</tr>"
         )
+        # 上位3銘柄にミニ分析を追加
+        if idx < 3:
+            rows_html += _dividend_mini_analysis(c["code"], c, conn)
+
+    conn.close()
 
     return (
         "<div class='card' style='border-left:4px solid #9b59b6'>"
