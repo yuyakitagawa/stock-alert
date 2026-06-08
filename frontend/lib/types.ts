@@ -44,6 +44,7 @@ export interface AiAnalysis {
   summary:       string;
   bull_points:   string[];
   bear_points:   string[];
+  verdict:       string | null;
   model_version: string;
 }
 
@@ -105,6 +106,20 @@ export interface WeeklyReview {
   fm_eval:          string;
   human_feedback:   string;
   next_actions:     string;
+}
+
+export interface DividendCandidate {
+  date:          string;
+  code:          string;
+  name:          string;
+  yutai_month:   number;
+  ex_date:       string;
+  ex_month:      number;
+  days_since_ex: number;
+  div_yield:     number;
+  close:         number;
+  net:           number;
+  drop_prob:     number | null;
 }
 
 export interface Article {

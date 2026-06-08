@@ -171,19 +171,27 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+    try:
+        from lib.kabutan_earnings import fetch_kabutan_earnings, format_earnings_for_prompt
+        _kabutan_ok = True
+    except ImportError:
+        _kabutan_ok = False
+
     SYSTEM_PROMPT = """あなたは日本株の投資アナリストです。
-提供されたデータをもとに、個人投資家向けに投資判断を説明してください。
+提供されたデータ（AIモデルスコア＋実際の決算業績）をもとに、個人投資家向けに投資判断を説明してください。
 
 以下のJSON形式で出力してください:
 {
-  "summary": "150字以内の日本語説明（なぜこのスコアなのか、主な根拠を具体的に）",
+  "summary": "150字以内の日本語説明（なぜこのスコアなのか、業績トレンドを踏まえて具体的に）",
   "bull_points": ["強気材料1", "強気材料2", "強気材料3"],
-  "bear_points": ["リスク1", "リスク2"]
+  "bear_points": ["リスク1", "リスク2"],
+  "verdict": "買い推奨" | "様子見" | "見送り"
 }
 
 ルール:
-- summary は平易な日本語で、数値を具体的に引用すること
+- summary は平易な日本語で、決算数値（売上・営業利益・EPS）を具体的に引用すること
 - bull_points / bear_points は各2〜3項目
+- verdict は業績トレンドとモデルスコアを総合的に判断すること
 - 投資を勧誘する表現は避け、あくまで分析として述べること
 - JSON以外の文章は出力しないこと"""
 
@@ -196,6 +204,16 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
 
         net = r.get("net") or 0
         rel20 = r.get("rel20") or 0
+
+        # kabutan.jp から実際の決算業績を取得
+        earnings_text = ""
+        if _kabutan_ok:
+            try:
+                e_rows = fetch_kabutan_earnings(str(code))
+                earnings_text = "\n" + format_earnings_for_prompt(e_rows)
+            except Exception as _e:
+                earnings_text = ""
+
         user_prompt = "\n".join([
             f"銘柄: {r.get('name') or code}（{code}）",
             f"セクター: {sector_map.get(str(code), '不明')}",
@@ -207,7 +225,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
             f"年率ボラティリティ: {r.get('vol') or 0:.1f}%",
             "PER: {}".format(f"{r.get('per'):.1f}x" if r.get('per') else '—'),
             "PBR: {}".format(f"{r.get('pbr'):.1f}x" if r.get('pbr') else '—'),
-        ])
+        ]) + earnings_text
 
         try:
             msg = client.messages.create(
@@ -234,12 +252,33 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
             "summary":       parsed.get("summary"),
             "bull_points":   parsed.get("bull_points", []),
             "bear_points":   parsed.get("bear_points", []),
+            "verdict":       parsed.get("verdict"),
             "model_version": "opus-4-7",
         })
-        print(f"[export_to_web] {code}: AI解析完了")
+        print(f"[export_to_web] {code}: AI解析完了 verdict={parsed.get('verdict','—')}")
 
     if ai_rows:
         _upsert("ai_analyses", ai_rows)
+
+
+def export_dividend_strategy(today: str) -> None:
+    """配当落ち後戻し買い候補をSupabaseのweb_dividend_strategyテーブルへupsert"""
+    from lib.dividend_strategy import get_candidates
+    from datetime import date as _date
+    candidates = get_candidates(_date.fromisoformat(today))
+    if not candidates:
+        print("[export_to_web] 配当戦略候補なし（エントリー窓内の銘柄なし）")
+        return
+    rows = [{"date": today, **c} for c in candidates]
+    url = f"{SUPABASE_URL}/rest/v1/web_dividend_strategy?on_conflict=date,code"
+    headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
+    for i in range(0, len(rows), 50):
+        batch = rows[i:i+50]
+        resp = requests.post(url, headers=headers, json=batch, timeout=30)
+        if resp.status_code not in (200, 201):
+            print(f"[export_to_web] web_dividend_strategy upsert失敗: {resp.status_code} {resp.text[:200]}")
+        else:
+            print(f"[export_to_web] web_dividend_strategy: {len(batch)}件 upsert完了")
 
 
 def main() -> None:
@@ -264,7 +303,11 @@ def main() -> None:
     top_rows = [r for r in ranking_rows if r.get("recommend") == "S買い"][:AI_TOP_N]
     generate_ai_analyses(today, top_rows)
 
-    # 5. Next.js ISRキャッシュを即時無効化
+    # 5. 配当落ち戻し買い候補
+    print("\n[5/5+] 配当落ち戻し買い候補をエクスポート中...")
+    export_dividend_strategy(today)
+
+    # 6. Next.js ISRキャッシュを即時無効化
     site_url = os.getenv("SITE_URL", "")
     secret = os.getenv("INTERNAL_SEND_SECRET", "")
     if site_url:

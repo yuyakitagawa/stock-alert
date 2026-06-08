@@ -188,7 +188,19 @@ export default async function StockDetailPage({ params }: Props) {
               <span className="text-xs text-gray-700 font-mono">{formatDate(ai.date)}</span>
             </div>
 
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+              {ai.verdict && (
+                <span className={`inline-block text-xs font-bold px-3 py-1 rounded-full border ${
+                  ai.verdict === "買い推奨"
+                    ? "bg-green-900/40 text-green-300 border-green-700"
+                    : ai.verdict === "見送り"
+                    ? "bg-red-900/40 text-red-300 border-red-700"
+                    : "bg-gray-800 text-gray-400 border-gray-700"
+                }`}>
+                  {ai.verdict === "買い推奨" ? "✓ " : ai.verdict === "見送り" ? "✗ " : "△ "}
+                  {ai.verdict}
+                </span>
+              )}
               <p className="text-gray-300 text-sm leading-relaxed">{ai.summary}</p>
             </div>
 
