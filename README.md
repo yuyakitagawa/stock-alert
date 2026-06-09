@@ -26,6 +26,9 @@ web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 全アクション（実施中・実施済み）は `pdca/activity.py` 経由で Supabase `activity_log` に記録され、
 Webの **活動ログ**（/activity）・**チームレビュー**（/review）で誰でも状況把握できる。
 
+`frontend/` を変更して push すると `.github/workflows/frontend_build.yml` が自動でビルド検証し、
+失敗時（=Vercelデプロイも失敗する）は Gmail に通知する。フロント変更前のローカル `npm run build` 確認も推奨。
+
 ---
 
 ## ファイル構成
