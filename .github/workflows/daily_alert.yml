@@ -53,9 +53,9 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v34baseline-weekly-${{ github.run_number }}
+          key: ml-models-v35-weekly-${{ github.run_number }}
           restore-keys: |
-            ml-models-v34baseline-weekly-
+            ml-models-v35-weekly-
 
       - name: Restore DB cache
         uses: actions/cache@v4
@@ -103,7 +103,7 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v34baseline-weekly-${{ github.run_number }}
+          key: ml-models-v35-weekly-${{ github.run_number }}
 
       - name: Save DB cache
         if: always()
