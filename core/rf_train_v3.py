@@ -307,6 +307,9 @@ def main():
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
                   "ac","skew","max_ret","min_ret","pos_ratio","trend_slope","recent_vs_early",
+                  "rel5","rel20","rel60","alpha_momentum",
+                  "per_feat","pbr_feat","roe_feat","earn_feat",
+                  "div_ex_feat","yutai_ex_feat","sin_month","cos_month","div_yield_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52"]
     imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
            "drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}
