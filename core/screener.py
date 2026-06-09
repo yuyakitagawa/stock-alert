@@ -118,18 +118,13 @@ def calc_metrics(df, nikkei_return_3m=None, nikkei_return_20d=None):
 
 
 def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
+    """モデルに選別を委ねる設計に変更。
+    残すのは流動性・最低株価のみ（Hard Filterはrank_stocks側で適用）。
+    モメンタム/RSI/ボラ条件を撤廃し「乗り遅れ株バイアス」を排除。
+    """
     mask = (
-        (universe_df["momentum"]          >= MIN_MOMENTUM)
-        & (universe_df["momentum_20d"]    >= MIN_MOMENTUM_20D)
-        & (universe_df["vol"]             >= MIN_VOLATILITY)
-        & (universe_df["vol"]             <= MAX_VOLATILITY)
-        & (universe_df["close"]           >= MIN_PRICE)
-        & (universe_df["slope_up"])
-        & (universe_df["vr2060"]          >= MIN_VOL_RATIO)
-        & (universe_df["rel_strength_3m"]  >= rel_strength_min)
-        & (universe_df["rsi"]              >= MIN_RSI)
-        & (universe_df["rsi"]              <= MAX_RSI)
-        & (universe_df["turnover_m"]       >= MIN_LIQUIDITY_M)
+        (universe_df["close"]       >= MIN_PRICE)
+        & (universe_df["turnover_m"] >= MIN_LIQUIDITY_M)
     )
     return universe_df[mask].copy()
 

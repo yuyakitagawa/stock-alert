@@ -10,14 +10,14 @@ from xgboost import XGBClassifier
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
 from lib.fundamentals import get_pit_fundamentals
 
-FORECAST=21; RISE_THRESHOLD=5.0; DROP_THRESHOLD=5.0   # 絶対リターン±5%ラベル（識別力重視）
-ALPHA_THRESHOLD=3.0      # 相対ラベル: stock - nikkei >= +3% → alpha_rise=1
-DROP_ALPHA_THRESHOLD=3.0 # 相対ラベル: stock - nikkei <= -3% → alpha_drop=1
+FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
+ALPHA_THRESHOLD=8.0      # 相対ラベル: stock - nikkei >= +8% → alpha_rise=1
+DROP_ALPHA_THRESHOLD=8.0 # 相対ラベル: stock - nikkei <= -8% → alpha_drop=1
 # 4モデルアンサンブル:
 #   net = (rise_abs - drop_abs) + (rise_rel - drop_rel)
 #   絶対モデルが「どれが上がるか」を担当（AUC高い）
 #   相対モデルが「日経超過を狙う」を担当（アルファ最適化）
-SAMPLE_INTERVAL=21; HISTORY_DAYS=1800  # 21日ごとにサンプル（FORECASTに合わせる）
+SAMPLE_INTERVAL=63; HISTORY_DAYS=1800  # 63日ごとにサンプル（FORECASTに合わせる）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -148,6 +148,8 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
                     "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
                     "month":               dates[i].month,
                     "div_yield":           div_yield,
+                    "eps_growth":          pit.get("eps_growth"),
+                    "roe_trend":           pit.get("roe_trend"),
                 }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue
@@ -310,6 +312,7 @@ def main():
                   "rel5","rel20","rel60","alpha_momentum",
                   "per_feat","pbr_feat","roe_feat","earn_feat",
                   "div_ex_feat","yutai_ex_feat","sin_month","cos_month","div_yield_f",
+                  "eps_growth_f","roe_trend_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52"]
     imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
            "drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}

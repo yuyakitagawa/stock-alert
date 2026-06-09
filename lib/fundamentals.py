@@ -85,6 +85,16 @@ def get_pit_fundamentals(code, target_date):
     days_since_div  = _days_since_last_ex(target_date, div_months)
     days_since_yutai = _days_since_last_ex(target_date, [ym]) if ym else None
 
+    # EPS成長率・ROEトレンド（直近2期比較 — PIT準拠）
+    eps_growth = None
+    roe_trend  = None
+    if len(known) >= 2:
+        prev = known[-2]
+        if eps is not None and prev.get("eps") is not None and prev["eps"] != 0:
+            eps_growth = (eps - prev["eps"]) / abs(prev["eps"])
+        if roe is not None and prev.get("roe") is not None:
+            roe_trend = roe - prev["roe"]   # ROEの前年差（%ポイント）
+
     if eps is None and bps is None and roe is None and not known and ym is None:
         return None
     return {
@@ -92,6 +102,8 @@ def get_pit_fundamentals(code, target_date):
         "days_to_earnings":    days_earn,
         "days_since_div_ex":   days_since_div,
         "days_since_yutai_ex": days_since_yutai,
+        "eps_growth":          eps_growth,
+        "roe_trend":           roe_trend,
     }
 
 
@@ -101,18 +113,21 @@ def pit_fundamental_features(code, target_date, price):
 
     返り値: [per_feat, pbr_feat, roe_feat, earn_feat,
              div_ex_feat, yutai_ex_feat,
-             sin_month, cos_month, div_yield_feat]
+             sin_month, cos_month, div_yield_feat,
+             eps_growth_feat, roe_trend_feat]  ← 11次元
 
     div_ex_feat / yutai_ex_feat:
       0.0 = 権利落ち直後（戻り買いゾーン）  1.0 = 60日後（効果消滅）
     div_yield_feat:
       配当利回り% / 10（3%=0.3, 5%=0.5）。高利回り株を識別。
     sin_month, cos_month: 月の季節性を循環エンコード。
+    eps_growth_feat: EPS前年比（-1〜3に正規化）。業績モメンタム。
+    roe_trend_feat:  ROE前年差（%pt、-10〜+10に正規化）。TSE改革対応。
     """
     import numpy as np, math
     pf = pbf = rf = 0.0
     ef = div_ef = yutai_ef = 0.5
-    div_yield_f = 0.0
+    div_yield_f = eps_gf = roe_tf = 0.0
 
     fd = get_pit_fundamentals(code, target_date)
     if fd is not None:
@@ -129,13 +144,18 @@ def pit_fundamental_features(code, target_date, price):
             div_ef = float(np.clip(fd["days_since_div_ex"] / 60.0, 0.0, 1.0))
         if fd.get("days_since_yutai_ex") is not None:
             yutai_ef = float(np.clip(fd["days_since_yutai_ex"] / 60.0, 0.0, 1.0))
-        # 配当利回り = DPS / 株価 × 100（PIT: その時点の既知DPS使用）
         if dps is not None and dps > 0 and price > 0:
             div_yield_f = float(np.clip((dps / price * 100) / 10.0, 0.0, 1.0))
+        # EPS成長率: (-100%〜+300%)を(-1〜3)にスケール
+        if fd.get("eps_growth") is not None:
+            eps_gf = float(np.clip(fd["eps_growth"], -1.0, 3.0))
+        # ROEトレンド: ±10%ptを-1〜+1に正規化
+        if fd.get("roe_trend") is not None:
+            roe_tf = float(np.clip(fd["roe_trend"] / 10.0, -1.0, 1.0))
 
     # 季節性: 月を循環エンコード（1月と12月が隣接するように）
     m = target_date.month
     sin_m = math.sin(2 * math.pi * m / 12)
     cos_m = math.cos(2 * math.pi * m / 12)
 
-    return [pf, pbf, rf, ef, div_ef, yutai_ef, sin_m, cos_m, div_yield_f]
+    return [pf, pbf, rf, ef, div_ef, yutai_ef, sin_m, cos_m, div_yield_f, eps_gf, roe_tf]

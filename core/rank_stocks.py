@@ -242,15 +242,20 @@ def main():
     except Exception:
         pass
 
+    # レジーム別 動的銘柄数（Daniel & Moskowitz 2016: 強気時は拡大、弱気時は縮小）
+    regime_top_n = {'bull': 10, 'uncertain': 5, 'bear': 3}
+    dynamic_top_n = regime_top_n.get(regime, 5)
+
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
         regime_label = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
-        print(f"  相場レジーム: {regime_label}")
+        print(f"  相場レジーム: {regime_label}  →  推奨銘柄数: {dynamic_top_n}銘柄")
         if is_bear:
             print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）")
     else:
         print("  日経225: 取得失敗（相対リターンはN/A）")
         is_bear = False
+        dynamic_top_n = 5
 
     # ── 市場状況の警告のみ（停止しない — 最終判断はユーザーが行う）
     if nk20 is not None and nk20 < MARKET_TIMING_20D_THRESH:
@@ -305,6 +310,8 @@ def main():
             "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
             "month":               today.month,
             "div_yield":           div_yield_live,
+            "eps_growth":          pit.get("eps_growth"),
+            "roe_trend":           pit.get("roe_trend"),
         }
 
         feat = extract_features(
@@ -448,15 +455,16 @@ def main():
         if (i + 1) % 20 == 0:
             print(f"  {i+1}/{TOP_FUND} 完了...")
 
-    # 表示
+    # 表示（動的銘柄数: レジームに応じて 3/5/10）
     print(f"\n{'='*90}")
-    print(f"上位{TOP_SHOW}銘柄ランキング（ネットスコア順: 上昇確率-下落確率）")
+    regime_label_disp = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
+    print(f"上位{dynamic_top_n}銘柄ランキング [{regime_label_disp}レジーム]（ネットスコア順）")
     if is_bear:
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
     print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'損切り':>8}  {'PER':>7}  {'PBR':>5}  {'ROE%':>6}  推奨")
     print("-" * 120)
-    for _, row in result_df.head(TOP_SHOW).iterrows():
+    for _, row in result_df.head(dynamic_top_n).iterrows():
         drop_str  = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
         stop_str  = f"¥{row['損切り価格(円)']:,.0f}({row['損切り幅(%)']:+.1f}%)"
         per_val = row.get("PER"); pbr_val = row.get("PBR"); roe_val = row.get("ROE(%)")

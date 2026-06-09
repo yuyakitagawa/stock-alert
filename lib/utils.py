@@ -267,11 +267,12 @@ def _days_to_nearest_event(from_date, months, day=25):
 
 
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
-    """41次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル9
+    """43次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11
     fundamentals dict keys (all optional):
       per, pbr, roe, days_to_earnings,
       days_since_div_ex, days_since_yutai_ex,
       month（カレンダー月 1-12），div_yield（配当利回り%）
+      eps_growth（EPS前年比），roe_trend（ROE前年差%pt）
     """
     if len(p) < 91 or p[-1] == 0:
         return None
@@ -350,6 +351,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _dyut = fd.get('days_since_yutai_ex')
     _dyld = fd.get('div_yield')
     _mon  = fd.get('month')   # カレンダー月（学習時はサンプル日から渡す）
+    _epsg = fd.get('eps_growth')
+    _roet = fd.get('roe_trend')
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
     roe_feat      = float(np.clip(_roe  / 15.0,        -0.5, 2.0)) if _roe  is not None else 0.0
@@ -359,12 +362,14 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     sin_month     = _math.sin(2 * _math.pi * _mon / 12) if _mon is not None else 0.0
     cos_month     = _math.cos(2 * _math.pi * _mon / 12) if _mon is not None else 1.0
     div_yield_f   = float(np.clip(_dyld / 10.0,          0.0, 1.0)) if _dyld is not None else 0.0
+    eps_growth_f  = float(np.clip(_epsg,                 -1.0, 3.0)) if _epsg is not None else 0.0
+    roe_trend_f   = float(np.clip(_roet / 10.0,          -1.0, 1.0)) if _roet is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
             vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
             per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat,
-            sin_month, cos_month, div_yield_f]
+            sin_month, cos_month, div_yield_f, eps_growth_f, roe_trend_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
