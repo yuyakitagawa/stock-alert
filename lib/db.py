@@ -93,6 +93,30 @@ CREATE TABLE IF NOT EXISTS earnings_sentiment (
     score        REAL NOT NULL,    -- -1.0〜+1.0（Claude Haiku 分析結果）
     PRIMARY KEY (code, fetched_date)
 );
+CREATE TABLE IF NOT EXISTS margin_data (
+    code         TEXT NOT NULL,
+    week_date    TEXT NOT NULL,    -- YYYY-MM-DD（週次確定日）
+    buy_balance  REAL,             -- 信用買残（株）
+    sell_balance REAL,             -- 信用売残（株）
+    ratio        REAL,             -- 信用倍率
+    fetched_date TEXT,
+    PRIMARY KEY (code, week_date)
+);
+CREATE TABLE IF NOT EXISTS short_interest (
+    code          TEXT NOT NULL,
+    week_date     TEXT NOT NULL,   -- YYYY-MM-DD（TSE公開週）
+    short_balance REAL,            -- 残高株数
+    short_amount  REAL,            -- 残高金額（百万円）
+    PRIMARY KEY (code, week_date)
+);
+CREATE TABLE IF NOT EXISTS tdnet_events (
+    code         TEXT NOT NULL,
+    announce_date TEXT NOT NULL,   -- YYYY-MM-DD
+    title        TEXT,
+    event_type   TEXT,             -- buyback | upward | downward | dividend | other
+    fetched_date TEXT,
+    PRIMARY KEY (code, announce_date, title)
+);
 """
 
 @contextmanager
@@ -402,6 +426,97 @@ def set_earnings_sentiment(code: str, today_str: str, score: float):
             "INSERT OR REPLACE INTO earnings_sentiment (code, fetched_date, score) VALUES(?,?,?)",
             (str(code), today_str, float(score))
         )
+
+
+# ── margin_data ──────────────────────────────────────────────────────────
+
+def upsert_margin_data(code: str, week_date: str, buy: float, sell: float, ratio: float):
+    init_db()
+    from datetime import date
+    today_str = date.today().isoformat()
+    with _conn() as con:
+        con.execute(
+            """INSERT OR REPLACE INTO margin_data
+               (code, week_date, buy_balance, sell_balance, ratio, fetched_date)
+               VALUES(?,?,?,?,?,?)""",
+            (str(code), week_date, buy, sell, ratio, today_str)
+        )
+
+
+def get_margin_data_latest(code: str):
+    """最新の信用倍率データを返す。なければ None。"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT week_date, buy_balance, sell_balance, ratio FROM margin_data "
+            "WHERE code=? ORDER BY week_date DESC LIMIT 1",
+            (str(code),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_margin_data_history(code: str, n: int = 8):
+    """過去 n 週の信用倍率履歴を返す（新しい順）。"""
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT week_date, buy_balance, sell_balance, ratio FROM margin_data "
+            "WHERE code=? ORDER BY week_date DESC LIMIT ?",
+            (str(code), n)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── short_interest ────────────────────────────────────────────────────────
+
+def bulk_upsert_short_interest(rows):
+    """rows: list of (code, week_date, short_balance, short_amount)"""
+    init_db()
+    with _conn() as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO short_interest (code, week_date, short_balance, short_amount) VALUES(?,?,?,?)",
+            rows
+        )
+
+
+def get_short_interest_latest(code: str):
+    """最新の空売り残高データを返す。なければ None。"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT week_date, short_balance, short_amount FROM short_interest "
+            "WHERE code=? ORDER BY week_date DESC LIMIT 1",
+            (str(code),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# ── tdnet_events ──────────────────────────────────────────────────────────
+
+def upsert_tdnet_events(code: str, events: list):
+    """events: list of {'announce_date', 'title', 'event_type'}"""
+    init_db()
+    from datetime import date
+    today_str = date.today().isoformat()
+    with _conn() as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO tdnet_events (code, announce_date, title, event_type, fetched_date) VALUES(?,?,?,?,?)",
+            [(str(code), e["announce_date"], e["title"], e["event_type"], today_str) for e in events]
+        )
+
+
+def get_tdnet_events_recent(code: str, days: int = 60):
+    """直近 days 日以内の適時開示イベントを返す（新しい順）。"""
+    init_db()
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT announce_date, title, event_type FROM tdnet_events "
+            "WHERE code=? AND announce_date >= ? ORDER BY announce_date DESC",
+            (str(code), cutoff)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def save_all_sectors(sector_map):
