@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactElement } from "react";
 import { fetchWeeklyReviews } from "@/lib/data";
 import type { WeeklyReview } from "@/lib/types";
 import Navbar from "@/components/Navbar";
@@ -41,7 +42,7 @@ function MetricRow({ label, start, end }: { label: string; start: number | null;
 function EvalSection({ title, emoji, content }: { title: string; emoji: string; content: string }) {
   // GOODとBADをパースして色分け
   const lines = content.split("\n");
-  const rendered: JSX.Element[] = [];
+  const rendered: ReactElement[] = [];
   let key = 0;
 
   for (const line of lines) {
