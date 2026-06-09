@@ -89,6 +89,7 @@ def get_pit_fundamentals(code, target_date):
     eps_growth = None
     roe_trend  = None
     dps_growth = None
+    bps_growth = None
     if len(known) >= 2:
         prev = known[-2]
         if eps is not None and prev.get("eps") is not None and prev["eps"] != 0:
@@ -97,6 +98,56 @@ def get_pit_fundamentals(code, target_date):
             roe_trend = roe - prev["roe"]   # ROEの前年差（%ポイント）
         if dps is not None and prev.get("dps") is not None and prev["dps"] != 0:
             dps_growth = (dps - prev["dps"]) / abs(prev["dps"])  # 配当成長率（増配シグナル）
+        if bps is not None and prev.get("bps") is not None and prev["bps"] > 0:
+            bps_growth = (bps - prev["bps"]) / prev["bps"]  # BPS前年比成長率
+
+    # ── 投資銀行手法8特徴量 (Group A: 既存データから計算) ────────────────────
+    # 1. EPS surprise: 線形トレンド外挿との乖離（Bernard & Thomas 1989）
+    eps_surprise = None
+    if len(known) >= 3:
+        eps_t2 = known[-3].get("eps")
+        eps_t1 = known[-2].get("eps")
+        eps_t0 = eps
+        if all(e is not None for e in [eps_t2, eps_t1, eps_t0]):
+            trend = eps_t1 - eps_t2
+            expected = eps_t1 + trend
+            denom = abs(expected) if abs(expected) > 1.0 else (abs(eps_t1) if abs(eps_t1) > 1.0 else None)
+            if denom:
+                eps_surprise = (eps_t0 - expected) / denom
+
+    # 2. Piotroski F-score 簡易版（Piotroski 2000、6シグナル、0-1スケール）
+    pio_score = 0.0
+    pio_max   = 0.0
+    if roe is not None:
+        pio_max += 2
+        if roe > 0:                                         pio_score += 1
+        if roe_trend is not None and roe_trend > 0:        pio_score += 1
+    if eps is not None and eps_growth is not None:
+        pio_max += 1
+        if eps_growth > 0:                                  pio_score += 1
+    if dps is not None and dps_growth is not None:
+        pio_max += 2
+        if dps_growth >= 0:                                 pio_score += 1  # 非減配
+        if eps_growth is not None and eps_growth >= dps_growth: pio_score += 1  # 持続可能
+    if bps_growth is not None:
+        pio_max += 1
+        if bps_growth > 0:                                  pio_score += 1  # 簿価増加
+    piotroski = float(pio_score / pio_max) if pio_max > 0 else None
+
+    # 3. Payout ratio（DPS / EPS — 資本還元度）
+    payout = None
+    if dps is not None and eps is not None and abs(eps) > 0.1:
+        payout = max(0.0, min(dps / eps, 2.0))
+
+    # 4. Balance sheet accruals proxy（Sloan 1996 — 会計発生主義）
+    # 実際のBPS成長率 vs 内部留保で期待されるBPS成長率の差
+    accruals = None
+    if bps_growth is not None and roe is not None and len(known) >= 2:
+        bps_prev_val = known[-2].get("bps")
+        if bps_prev_val is not None and bps_prev_val > 0:
+            dps_yield_on_bps = (dps / bps_prev_val) if dps else 0.0
+            expected_retention = roe / 100 - dps_yield_on_bps
+            accruals = bps_growth - expected_retention  # +なら過剰な簿価膨張
 
     if eps is None and bps is None and roe is None and not known and ym is None:
         return None
@@ -108,61 +159,41 @@ def get_pit_fundamentals(code, target_date):
         "eps_growth":          eps_growth,
         "roe_trend":           roe_trend,
         "dps_growth":          dps_growth,
+        # 新規8特徴量（投資銀行手法）
+        "eps_surprise":        eps_surprise,
+        "bps_growth":          bps_growth,
+        "piotroski":           piotroski,
+        "payout":              payout,
+        "accruals":            accruals,
     }
 
 
 def pit_fundamental_features(code, target_date, price):
-    """point-in-timeファンダを9特徴量(正規化済み)に変換。
-    extract_features() のファンダ部と同一の正規化。データ無しは中立値。
+    """point-in-timeファンダをファンダメンタル部の正規化済み辞書として返す。
+    extract_features()に渡すfundamentals dictを生成するためのヘルパー。
+    backtest.py が extract_features() を直接呼び出す際に使用。
 
-    返り値: [per_feat, pbr_feat, roe_feat, earn_feat,
-             div_ex_feat, yutai_ex_feat,
-             sin_month, cos_month, div_yield_feat,
-             eps_growth_feat, roe_trend_feat, dps_growth_feat]  ← 12次元
-
-    div_ex_feat / yutai_ex_feat:
-      0.0 = 権利落ち直後（戻り買いゾーン）  1.0 = 60日後（効果消滅）
-    div_yield_feat:
-      配当利回り% / 10（3%=0.3, 5%=0.5）。高利回り株を識別。
-    sin_month, cos_month: 月の季節性を循環エンコード。
-    eps_growth_feat: EPS前年比（-1〜3に正規化）。業績モメンタム。
-    roe_trend_feat:  ROE前年差（%pt、-10〜+10に正規化）。TSE改革対応。
+    返り値: fundamentals dict（extract_features()のfd引数と互換）
     """
-    import numpy as np, math
-    pf = pbf = rf = 0.0
-    ef = div_ef = yutai_ef = 0.5
-    div_yield_f = eps_gf = roe_tf = dps_gf = 0.0
-
+    import math
     fd = get_pit_fundamentals(code, target_date)
-    if fd is not None:
-        eps, bps, roe, dps = fd.get("eps"), fd.get("bps"), fd.get("roe"), fd.get("dps")
-        if eps is not None and eps > 0 and price > 0:
-            pf = float(np.clip((price / eps) / 20.0 - 1.0, -1.0, 3.0))
-        if bps is not None and bps > 0 and price > 0:
-            pbf = float(np.clip((price / bps) / 1.5 - 1.0, -1.0, 4.0))
-        if roe is not None:
-            rf = float(np.clip(roe / 15.0, -0.5, 2.0))
-        if fd.get("days_to_earnings") is not None:
-            ef = float(np.clip(fd["days_to_earnings"] / 90.0, 0.0, 1.0))
-        if fd.get("days_since_div_ex") is not None:
-            div_ef = float(np.clip(fd["days_since_div_ex"] / 60.0, 0.0, 1.0))
-        if fd.get("days_since_yutai_ex") is not None:
-            yutai_ef = float(np.clip(fd["days_since_yutai_ex"] / 60.0, 0.0, 1.0))
-        if dps is not None and dps > 0 and price > 0:
-            div_yield_f = float(np.clip((dps / price * 100) / 10.0, 0.0, 1.0))
-        # EPS成長率: (-100%〜+300%)を(-1〜3)にスケール
-        if fd.get("eps_growth") is not None:
-            eps_gf = float(np.clip(fd["eps_growth"], -1.0, 3.0))
-        # ROEトレンド: ±10%ptを-1〜+1に正規化
-        if fd.get("roe_trend") is not None:
-            roe_tf = float(np.clip(fd["roe_trend"] / 10.0, -1.0, 1.0))
-        # DPS成長率: -100%〜+200%を-1〜+2に正規化（増配シグナル — TSE資本改革文脈）
-        if fd.get("dps_growth") is not None:
-            dps_gf = float(np.clip(fd["dps_growth"], -1.0, 2.0))
-
-    # 季節性: 月を循環エンコード（1月と12月が隣接するように）
     m = target_date.month
-    sin_m = math.sin(2 * math.pi * m / 12)
-    cos_m = math.cos(2 * math.pi * m / 12)
-
-    return [pf, pbf, rf, ef, div_ef, yutai_ef, sin_m, cos_m, div_yield_f, eps_gf, roe_tf, dps_gf]
+    result = {"month": m}
+    if fd is not None:
+        eps = fd.get("eps")
+        bps = fd.get("bps")
+        dps = fd.get("dps")
+        result["per"]             = (price / eps) if eps and eps > 0 and price > 0 else None
+        result["pbr"]             = (price / bps) if bps and bps > 0 and price > 0 else None
+        result["roe"]             = fd.get("roe")
+        result["days_to_earnings"]  = fd.get("days_to_earnings")
+        result["days_since_div_ex"] = fd.get("days_since_div_ex")
+        result["div_yield"]       = (dps / price * 100) if dps and dps > 0 and price > 0 else None
+        result["eps_growth"]      = fd.get("eps_growth")
+        result["dps_growth"]      = fd.get("dps_growth")
+        result["eps_surprise"]    = fd.get("eps_surprise")
+        result["bps_growth"]      = fd.get("bps_growth")
+        result["piotroski"]       = fd.get("piotroski")
+        result["payout"]          = fd.get("payout")
+        result["accruals"]        = fd.get("accruals")
+    return result

@@ -218,20 +218,24 @@ def get_sector_cached(code):
     return _SECTOR_CACHE.get(str(code), "不明")
 
 
-def add_cs_rank_features(X, dates=None):
-    """Add 6 cross-sectional percentile rank features to feature matrix X.
+def add_cs_rank_features(X, dates=None, sectors=None):
+    """Add 6 standard CS + 1 sector-relative CS = 7 total CS features.
 
     Training mode (dates provided): rank within each date group.
     Inference mode (dates=None): rank within the current batch (single day).
-    Returns augmented matrix shape (n, n_features + 6).
+    sectors: optional sequence of sector labels (same length as X).
+             If provided, adds sector-relative ret60 rank as 7th CS feature.
+             If None, sector rank defaults to 0.5 for all rows.
+    Returns augmented matrix shape (n, n_features + 7).
     """
     X = np.array(X, dtype=float)
     n = len(X)
     rank_matrix = np.full((n, len(RANK_FEAT_INDICES)), 0.5, dtype=float)
+    RET60_IDX = 2  # ret60 is at index 2 in the feature vector
 
     if dates is not None:
-        dates = np.array(dates)
-        _, inverse = np.unique(dates, return_inverse=True)
+        dates_arr = np.array(dates)
+        _, inverse = np.unique(dates_arr, return_inverse=True)
         for d_idx in range(inverse.max() + 1):
             group = np.where(inverse == d_idx)[0]
             cnt = len(group)
@@ -248,7 +252,36 @@ def add_cs_rank_features(X, dates=None):
                 order = np.argsort(np.argsort(vals))
                 rank_matrix[:, j] = order / (n - 1)
 
-    return np.hstack([X, rank_matrix])
+    # Sector-relative ret60 rank（セクター内での相対モメンタム）
+    sector_rank = np.full(n, 0.5, dtype=float)
+    if sectors is not None:
+        sectors_arr = np.array(sectors)
+        if dates is not None:
+            dates_arr2 = np.array(dates)
+            _, inv2 = np.unique(dates_arr2, return_inverse=True)
+            for d_idx in range(inv2.max() + 1):
+                date_group = np.where(inv2 == d_idx)[0]
+                secs_in_group = sectors_arr[date_group]
+                for sec in np.unique(secs_in_group):
+                    sec_mask = secs_in_group == sec
+                    sec_idx = date_group[sec_mask]
+                    cnt = len(sec_idx)
+                    if cnt < 2:
+                        continue
+                    vals = X[sec_idx, RET60_IDX]
+                    order = np.argsort(np.argsort(vals))
+                    sector_rank[sec_idx] = order / (cnt - 1)
+        else:
+            for sec in np.unique(sectors_arr):
+                sec_idx = np.where(sectors_arr == sec)[0]
+                cnt = len(sec_idx)
+                if cnt < 2:
+                    continue
+                vals = X[sec_idx, RET60_IDX]
+                order = np.argsort(np.argsort(vals))
+                sector_rank[sec_idx] = order / (cnt - 1)
+
+    return np.hstack([X, rank_matrix, sector_rank.reshape(-1, 1)])
 
 
 def compute_seq_features(seq):
@@ -291,13 +324,15 @@ def _days_to_nearest_event(from_date, months, day=25):
 
 
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
-    """47次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル12 + マクロ拡張4
+    """53次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11 + マクロ拡張4 + 新規IB8
     fundamentals dict keys (all optional):
-      per, pbr, roe, days_to_earnings,
-      days_since_div_ex, days_since_yutai_ex,
+      per, pbr, roe, days_to_earnings, days_since_div_ex,
       month（カレンダー月 1-12），div_yield（配当利回り%）
-      eps_growth（EPS前年比），roe_trend（ROE前年差%pt），dps_growth（DPS前年比）
+      eps_growth（EPS前年比），dps_growth（DPS前年比）
       vix（VIX指数水準），us5（SP500 5日リターン%），us20（SP500 20日リターン%）
+      fx_beta（USD/JPY 60日ベータ），jpy5（USD/JPY 5日リターン%）
+      eps_surprise（EPS実績-線形予測乖離），bps_growth（BPS前年比）
+      piotroski（簡易Fスコア 0-1），payout（配当性向 DPS/EPS），accruals（BSアクルーアル）
     """
     if len(p) < 91 or p[-1] == 0:
         return None
@@ -362,51 +397,79 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     rel60 = ret60 - nk60 * 0.01
     alpha_momentum = rel5 - rel20 / 4  # アルファ加速度
 
-    # ファンダメンタル9特徴量
-    # PER/PBR/ROE: バリュエーション・収益性
-    # days_to_earnings: 決算前ドリフト
-    # days_since_div_ex / days_since_yutai_ex: 権利落ち後の戻り買いゾーン
-    # sin_month / cos_month: 季節性（月の循環エンコード）
-    # div_yield: 配当利回り%/10（高利回り株の識別）
+    # ファンダメンタル特徴量
     import math as _math
-    fd  = fundamentals or {}
+    fd    = fundamentals or {}
     _per  = fd.get('per');   _pbr = fd.get('pbr');   _roe = fd.get('roe')
     _dte  = fd.get('days_to_earnings')
     _ddiv = fd.get('days_since_div_ex')
-    _dyut = fd.get('days_since_yutai_ex')
     _dyld = fd.get('div_yield')
-    _mon  = fd.get('month')   # カレンダー月（学習時はサンプル日から渡す）
+    _mon  = fd.get('month')
     _epsg = fd.get('eps_growth')
-    _roet = fd.get('roe_trend')
     _dpsg = fd.get('dps_growth')
     _vix  = fd.get('vix')
     _us5  = fd.get('us5')
     _us20 = fd.get('us20')
+    # 新規IB特徴量
+    _fxb   = fd.get('fx_beta')
+    _jpy5  = fd.get('jpy5')
+    _epss  = fd.get('eps_surprise')
+    _bpsg  = fd.get('bps_growth')
+    _pio   = fd.get('piotroski')
+    _pyout = fd.get('payout')
+    _accr  = fd.get('accruals')
+
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
     roe_feat      = float(np.clip(_roe  / 15.0,        -0.5, 2.0)) if _roe  is not None else 0.0
     earn_feat     = float(np.clip(_dte  / 90.0,         0.0, 1.0)) if _dte  is not None else 0.5
     div_ex_feat   = float(np.clip(_ddiv / 60.0,         0.0, 1.0)) if _ddiv is not None else 0.5
-    yutai_ex_feat = float(np.clip(_dyut / 60.0,         0.0, 1.0)) if _dyut is not None else 0.5
     sin_month     = _math.sin(2 * _math.pi * _mon / 12) if _mon is not None else 0.0
     cos_month     = _math.cos(2 * _math.pi * _mon / 12) if _mon is not None else 1.0
     div_yield_f   = float(np.clip(_dyld / 10.0,          0.0, 1.0)) if _dyld is not None else 0.0
     eps_growth_f  = float(np.clip(_epsg,                 -1.0, 3.0)) if _epsg is not None else 0.0
-    roe_trend_f   = float(np.clip(_roet / 10.0,          -1.0, 1.0)) if _roet is not None else 0.0
     dps_growth_f  = float(np.clip(_dpsg,                 -1.0, 2.0)) if _dpsg is not None else 0.0
-    # マクロ拡張4特徴量（VIX恐怖指数・SP500クロスアセット — 投資銀行手法）
-    # VIX: 25を中立として正規化。低VIX=強気環境、高VIX=恐怖・弱気環境。
+    # マクロ拡張（VIX・SP500）
     vix_feat  = float(np.clip((_vix / 25.0) - 1.0, -1.0, 2.0)) if _vix  is not None else 0.0
-    # SP500: 日本市場への1日先行シグナル。±10%を±1に正規化。
     us5_f     = float(np.clip(_us5  / 10.0,         -1.0, 1.0)) if _us5  is not None else 0.0
     us20_f    = float(np.clip(_us20 / 20.0,         -1.0, 1.0)) if _us20 is not None else 0.0
+
+    # ── Amihud非流動性（Amihud 2002）: |日次リターン|/出来高金額 の20日平均 ──────
+    amihud_f = 2.0  # default = medium illiquidity
+    if v is not None and len(v) >= 21:
+        p_arr20 = p[-21:]
+        v_arr20 = np.array([x if x is not None else np.nan for x in v[-20:]], dtype=float)
+        abs_rets = np.abs(np.diff(p_arr20) / p_arr20[:-1])
+        vols_yen = v_arr20 * p[-1] / 1e6   # 百万円単位
+        valid = ~np.isnan(vols_yen) & (vols_yen > 0)
+        if valid.sum() >= 10:
+            illiq = float(np.mean(abs_rets[valid] / vols_yen[valid]))
+            amihud_f = float(np.clip((np.log10(illiq + 1e-10) + 8.0) / 5.0, 0.0, 2.0))
+
+    # ── 新規IB8特徴量 ──────────────────────────────────────────────────────────
+    # USD/JPY 60日ベータ（為替感応度）: 2 = 輸出株, -1 = 内需株
+    fx_beta_f     = float(np.clip(_fxb  / 2.0,   -1.0, 1.5)) if _fxb   is not None else 0.0
+    # USD/JPY 5日リターン（円安/円高方向）: ±5%を±1に正規化
+    jpy5_f        = float(np.clip(_jpy5 / 5.0,   -1.0, 1.0)) if _jpy5  is not None else 0.0
+    # EPS surprise（実績 vs トレンド外挿の乖離率）
+    eps_surprise_f = float(np.clip(_epss,         -1.5, 2.0)) if _epss  is not None else 0.0
+    # BPS前年比成長率（簿価蓄積 — 資本効率の代理変数）
+    bps_growth_f  = float(np.clip(_bpsg,          -0.5, 1.5)) if _bpsg  is not None else 0.0
+    # Piotroski F-score簡易版（0=低品質, 1=高品質、0.5をデフォルト）
+    piotroski_f   = float(np.clip(_pio,            0.0, 1.0)) if _pio   is not None else 0.5
+    # 配当性向（DPS/EPS）: 高=成熟/還元型, 低=成長型
+    payout_f      = float(np.clip(_pyout,          0.0, 1.5)) if _pyout is not None else 0.5
+    # BSアクルーアル（予期せぬ簿価膨張 = 品質懸念）
+    accruals_f    = float(np.clip(_accr,          -0.3, 0.5)) if _accr  is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
             vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
-            per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat,
-            sin_month, cos_month, div_yield_f, eps_growth_f, roe_trend_f,
-            dps_growth_f, vix_feat, us5_f, us20_f]
+            per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat,
+            sin_month, cos_month, div_yield_f, eps_growth_f,
+            dps_growth_f, vix_feat, us5_f, us20_f,
+            amihud_f, fx_beta_f, jpy5_f,
+            eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None

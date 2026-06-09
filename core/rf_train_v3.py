@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-from lib.utils import IsotonicCalibrated, extract_features, calc_rsi
+from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached
 from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
@@ -56,6 +56,9 @@ def get_vix_df(days=2200):
 
 def get_sp500_df(days=2200):
     return _fetch_index_df("%5EGSPC", days)
+
+def get_usdjpy_df(days=2200):
+    return _fetch_index_df("USDJPY%3DX", days)
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -119,8 +122,10 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
 
 
 def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
-                     vix_map=None, sp500_dates=None, sp500_closes_arr=None):
-    """vix_map: {date: float}, sp500_dates: sorted list of date, sp500_closes_arr: np.array"""
+                     vix_map=None, sp500_dates=None, sp500_closes_arr=None,
+                     usdjpy_dates=None, usdjpy_closes_arr=None):
+    """vix_map: {date: float}, sp500_dates/usdjpy_dates: sorted list of date,
+    sp500_closes_arr/usdjpy_closes_arr: np.array"""
     import bisect
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
@@ -162,6 +167,24 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                 v20   = sp500_closes_arr[max(0, sp_i - 20)]
                 us5_val  = (v_now - v5)  / v5  * 100 if v5  > 0 else None
                 us20_val = (v_now - v20) / v20 * 100 if v20 > 0 else None
+        # USD/JPY ベータ（60日ローリング）と5日リターン
+        fx_beta_val = jpy5_val = None
+        if usdjpy_dates and usdjpy_closes_arr is not None:
+            fx_i = bisect.bisect_right(usdjpy_dates, dates[i]) - 1
+            if fx_i >= 5:
+                fx_now = usdjpy_closes_arr[fx_i]
+                fx_5ago = usdjpy_closes_arr[max(0, fx_i - 5)]
+                if fx_5ago > 0:
+                    jpy5_val = (fx_now - fx_5ago) / fx_5ago * 100
+            if fx_i >= 60 and i >= 60:
+                stock_rets = np.diff(closes[i-60:i+1]) / closes[i-60:i]
+                fx_rets    = np.diff(usdjpy_closes_arr[fx_i-60:fx_i+1]) / usdjpy_closes_arr[fx_i-60:fx_i]
+                min_len = min(len(stock_rets), len(fx_rets))
+                if min_len >= 20:
+                    sr = stock_rets[:min_len]; fr = fx_rets[:min_len]
+                    var_fx = np.var(fr)
+                    if var_fx > 0:
+                        fx_beta_val = float(np.cov(sr, fr)[0, 1] / var_fx)
         # point-in-timeファンダ（fundamentals_annual から、その日に既知だった値のみ）
         fund = None
         if sample_code is not None:
@@ -176,29 +199,39 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     "roe":                 pit.get("roe"),
                     "days_to_earnings":    pit.get("days_to_earnings"),
                     "days_since_div_ex":   pit.get("days_since_div_ex"),
-                    "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
                     "month":               dates[i].month,
                     "div_yield":           div_yield,
                     "eps_growth":          pit.get("eps_growth"),
-                    "roe_trend":           pit.get("roe_trend"),
                     "dps_growth":          pit.get("dps_growth"),
                     "vix":                 vix_val,
                     "us5":                 us5_val,
                     "us20":                us20_val,
+                    # 新規IB特徴量
+                    "fx_beta":             fx_beta_val,
+                    "jpy5":                jpy5_val,
+                    "eps_surprise":        pit.get("eps_surprise"),
+                    "bps_growth":          pit.get("bps_growth"),
+                    "piotroski":           pit.get("piotroski"),
+                    "payout":              pit.get("payout"),
+                    "accruals":            pit.get("accruals"),
                 }
             else:
-                # ファンダなし銘柄でもマクロ特徴量は渡す
+                # ファンダなし銘柄でもマクロ・FX特徴量は渡す
                 fund = {
-                    "vix":  vix_val,
-                    "us5":  us5_val,
-                    "us20": us20_val,
+                    "vix":     vix_val,
+                    "us5":     us5_val,
+                    "us20":    us20_val,
+                    "fx_beta": fx_beta_val,
+                    "jpy5":    jpy5_val,
                 }
         else:
-            # sample_code未指定の場合もマクロ特徴量は渡す
+            # sample_code未指定の場合もマクロ・FX特徴量は渡す
             fund = {
-                "vix":  vix_val,
-                "us5":  us5_val,
-                "us20": us20_val,
+                "vix":     vix_val,
+                "us5":     us5_val,
+                "us20":    us20_val,
+                "fx_beta": fx_beta_val,
+                "jpy5":    jpy5_val,
             }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue
@@ -265,15 +298,21 @@ def main():
     else: print("  日経225取得失敗 → 絶対リターンで学習")
     vix_df=get_vix_df()
     sp500_df=get_sp500_df()
-    if vix_df is not None:   print(f"  VIX:        {len(vix_df)}日分取得（恐怖指数）")
-    else:                    print("  VIX取得失敗 → 0.0で代替")
-    if sp500_df is not None: print(f"  S&P500:     {len(sp500_df)}日分取得（クロスアセット）")
-    else:                    print("  S&P500取得失敗 → 0.0で代替")
+    usdjpy_df=get_usdjpy_df()
+    if vix_df is not None:    print(f"  VIX:        {len(vix_df)}日分取得（恐怖指数）")
+    else:                     print("  VIX取得失敗 → 0.0で代替")
+    if sp500_df is not None:  print(f"  S&P500:     {len(sp500_df)}日分取得（クロスアセット）")
+    else:                     print("  S&P500取得失敗 → 0.0で代替")
+    if usdjpy_df is not None: print(f"  USD/JPY:    {len(usdjpy_df)}日分取得（為替ベータ）")
+    else:                     print("  USD/JPY取得失敗 → 0.0で代替")
     # date→値のマップを事前構築（generate_samples 内で高速ルックアップ）
-    vix_map     = dict(zip(vix_df.index, vix_df["Close"]))      if vix_df   is not None else {}
-    sp500_dates = sorted(sp500_df.index)                         if sp500_df is not None else []
+    vix_map     = dict(zip(vix_df.index, vix_df["Close"]))      if vix_df    is not None else {}
+    sp500_dates = sorted(sp500_df.index)                         if sp500_df  is not None else []
     sp500_closes_arr = (sp500_df.loc[sp500_dates, "Close"].values
                         if sp500_df is not None else np.array([]))
+    usdjpy_dates = sorted(usdjpy_df.index)                       if usdjpy_df is not None else []
+    usdjpy_closes_arr = (usdjpy_df.loc[usdjpy_dates, "Close"].values
+                         if usdjpy_df is not None else np.array([]))
     # ファンダは fundamentals_annual から point-in-time で取得（事前に
     # tools/fetch_fundamentals_history.py で蓄積しておくこと）
     from lib.db import get_fundamentals_codes_count
@@ -283,22 +322,29 @@ def main():
     train_X,train_yr,train_yd,train_ar,train_ad=[],[],[],[],[]
     test_X,test_yr,test_yd,test_ar,test_ad=[],[],[],[],[]
     train_dates,test_dates=[],[]
+    train_sectors,test_sectors=[],[]   # セクター内相対モメンタムCS用
     success=0
     for i,row in stock_list.iterrows():
-        df=get_prices(row["code"])
+        code=str(row["code"])
+        sector=get_sector_cached(code)   # JPX 33業種（プロセス内キャッシュ）
+        df=get_prices(code)
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
         for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only,
-                                                        sample_code=str(row["code"]),
+                                                        sample_code=code,
                                                         vix_map=vix_map,
                                                         sp500_dates=sp500_dates,
-                                                        sp500_closes_arr=sp500_closes_arr):
+                                                        sp500_closes_arr=sp500_closes_arr,
+                                                        usdjpy_dates=usdjpy_dates,
+                                                        usdjpy_closes_arr=usdjpy_closes_arr):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
                 train_ar.append(ar); train_ad.append(ad); train_dates.append(sd)
+                train_sectors.append(sector)
             else:
                 test_X.append(feat); test_yr.append(lr); test_yd.append(ld)
                 test_ar.append(ar); test_ad.append(ad); test_dates.append(sd)
+                test_sectors.append(sector)
         success+=1
         if success%100==0:
             print(f"  [{success}銘柄] 学習:{len(train_X):,} テスト:{len(test_X):,}")
@@ -310,18 +356,11 @@ def main():
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
     ar_tr=np.array(train_ar); ar_te=np.array(test_ar)
     ad_tr=np.array(train_ad); ad_te=np.array(test_ad)
-    # Cross-sectional rank features (rank within each sample date)
+    # Cross-sectional rank features（6標準CS + 1セクター内相対モメンタム = 7 CS）
     print("\nクロスセクショナルランク特徴量を計算中...")
     all_X=np.vstack([X_tr,X_te]); all_dates=np.array(train_dates+test_dates)
-    RANK_FEAT=[0,1,2,6,7,9]  # ret5,ret20,ret60,rsi,vol20,pos52
-    rank_mat=np.full((len(all_X),len(RANK_FEAT)),0.5)
-    _,inv=np.unique(all_dates,return_inverse=True)
-    for d_idx in range(inv.max()+1):
-        g=np.where(inv==d_idx)[0]
-        if len(g)<2: continue
-        for j,fi in enumerate(RANK_FEAT):
-            v=all_X[g,fi]; o=np.argsort(np.argsort(v)); rank_mat[g,j]=o/(len(g)-1)
-    all_X_aug=np.hstack([all_X,rank_mat])
+    all_sectors=np.array(train_sectors+test_sectors)
+    all_X_aug=add_cs_rank_features(all_X, dates=all_dates, sectors=all_sectors)
     n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
@@ -368,17 +407,20 @@ def main():
                    "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
 
     # C-1: 特徴量重要度を保存
-    # 53次元: 47基本(32テクニカル+12ファンダ+3マクロ拡張) + 6クロスセクション
+    # 60次元: 53基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB) + 7クロスセクション
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
                   "ac","skew","max_ret","min_ret","pos_ratio","trend_slope","recent_vs_early",
                   "rel5","rel20","rel60","alpha_momentum",
                   "per_feat","pbr_feat","roe_feat","earn_feat",
-                  "div_ex_feat","yutai_ex_feat","sin_month","cos_month","div_yield_f",
-                  "eps_growth_f","roe_trend_f",
+                  "div_ex_feat","sin_month","cos_month","div_yield_f",
+                  "eps_growth_f",
                   "dps_growth_f","vix_feat","us5_f","us20_f",
-                  "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52"]
+                  "amihud_f","fx_beta_f","jpy5_f",
+                  "eps_surprise_f","bps_growth_f","piotroski_f","payout_f","accruals_f",
+                  "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
+                  "cs_sector_ret60"]
     imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
            "drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}
     with open(os.path.join(SAVE_DIR,"feature_importance.json"),"w") as f:

@@ -2,11 +2,11 @@
 
 ## 0. AI Handling Rules (燃費・安全設計)
 - **Think Small**: 大規模なリファクタリングより、バグ修正とパラメータ調整を優先せよ。
-- **No Hallucination**: utils.pyの53次元特徴量の定義を勝手に変えないこと。
+- **No Hallucination**: utils.pyの60次元特徴量の定義を勝手に変えないこと。
 - **Token Saving**: 解説は最小限にし、実行結果や修正コードを即座に提示せよ。
 
 ## 1. File Map (Core Only)
-- `lib/utils.py`: 特徴量定義(53次元: 47基本[32テクニカル+12ファンダ+3マクロ拡張(VIX/US5/US20)]+6クロスセクション) & 共通関数。※変更時は要申告。
+- `lib/utils.py`: 特徴量定義(60次元: 53基本[32テクニカル+11ファンダ+4マクロ(VIX/US5/US20/JPY5)+8新規IB(Amihud非流動性/FXβ/JPY5/EPSサプライズ/BPS成長/Piotroski/配当性向/アクルーアル)]+7CS[6標準+1セクター内相対モメンタム]) & 共通関数。※変更時は要申告。
 - `lib/nlp_sentiment.py`: 決算テキスト感情分析（Claude Haiku × kabutan）。ランキング後処理に使用。
 - `core/rf_train_v3.py`: XGBoost学習(上昇/下落)。※金曜(再学習日)以外は触らない。
 - `core/screener.py` -> `core/rank_stocks.py`: 抽出 & ネットスコア計算。

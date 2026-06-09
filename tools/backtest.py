@@ -86,6 +86,7 @@ FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
 
 # ── point-in-time ファンダメンタル（lib/fundamentals に集約）─────────────────
 from lib.fundamentals import pit_fundamental_features
+from lib.utils import extract_features as _extract_features
 
 # ── スクリーナー定数（v1） ───────────────────────
 _SC_MIN_MOMENTUM     = 8.0
@@ -230,7 +231,10 @@ def get_nikkei_prices():
 # ── 特徴量計算 ──────────────────────────────
 
 def extract_features_at(hist, target_date, nk_rets=None, code=None):
-    """target_date時点の特徴量を計算（code を渡すと point-in-time ファンダを再構成）"""
+    """target_date時点の特徴量を計算（extract_features()に委譲）。
+    nk_rets: (nk5, nk20, nk60) フラクション単位（rf_train_v3と同単位）。
+    code を渡すと point-in-time ファンダ（VIX/FX欠損 → 0.0デフォルト）を再構成。
+    """
     close = hist["Close"].dropna()
     close.index = pd.to_datetime(close.index).date
     volume = hist["Volume"].dropna()
@@ -244,94 +248,17 @@ def extract_features_at(hist, target_date, nk_rets=None, code=None):
 
     p = past_close.values
     v = past_vol.values
-
     current = p[-1]
     if current == 0:
         return None
 
-    ret5  = (current - p[-6])  / p[-6]  if len(p) >= 6  else 0
-    ret20 = (current - p[-21]) / p[-21] if len(p) >= 21 else 0
-    ret60 = (current - p[-61]) / p[-61] if len(p) >= 61 else 0
-    ret90 = (current - p[-91]) / p[-91]
-
-    ma5  = p[-5:].mean()
-    ma25 = p[-25:].mean() if len(p) >= 25 else p.mean()
-    ma75 = p[-75:].mean() if len(p) >= 75 else p.mean()
-    ma5_25  = ma5  / ma25 - 1 if ma25 > 0 else 0
-    ma25_75 = ma25 / ma75 - 1 if ma75 > 0 else 0
-
-    rsi = calc_rsi(p)
-
-    dr20 = np.diff(p[-21:]) / p[-21:-1] if len(p) >= 21 else np.array([0])
-    vol20 = dr20.std() * np.sqrt(252) * 100
-
-    dr60 = np.diff(p[-61:]) / p[-61:-1] if len(p) >= 61 else np.array([0])
-    vol60 = dr60.std() * np.sqrt(252) * 100
-
-    week52 = p[-252:] if len(p) >= 252 else p
-    hi, lo = week52.max(), week52.min()
-    pos52 = (current - lo) / (hi - lo) if hi > lo else 0.5
-
-    SEQ_DAYS = 60
-    if len(p) >= SEQ_DAYS + 1:
-        seq_raw = np.clip(np.diff(p[-(SEQ_DAYS + 1):]) / p[-(SEQ_DAYS + 1):-1], -0.2, 0.2)
-    else:
-        seq_raw = np.zeros(SEQ_DAYS)
-    seq = compute_seq_features(seq_raw)
-
-    # トレンド反転5特徴量
-    rhi = p[-60:].max() if len(p) >= 60 else p.max()
-    drawdown60 = (current - rhi) / rhi
-    hi52 = p[-252:].max() if len(p) >= 252 else p.max()
-    from_hi52 = (current - hi52) / hi52
-    stk = 0
-    for j in range(1, min(21, len(p))):
-        if p[-j] < p[-j - 1]: stk += 1
-        else: break
-    down_streak = stk / 20.0
-    momentum_accel = ret5 - (ret20 / 4)
-    ma5_5ago  = p[-10:-5].mean() if len(p) >= 10 else ma5
-    ma25_5ago = p[-30:-5].mean() if len(p) >= 30 else ma25
-    cross_prev = ma5_5ago / ma25_5ago - 1 if ma25_5ago > 0 else 0
-    ma_cross_dir = ma5_25 - cross_prev
-
-    # 出来高3特徴量
-    if v is not None and len(v) >= 20:
-        va = np.array([x if x is not None else np.nan for x in v], dtype=float)
-        va5  = np.nanmean(va[-5:])  if len(va) >= 5  else 1
-        va20 = np.nanmean(va[-20:]) if len(va) >= 20 else 1
-        va60 = np.nanmean(va[-60:]) if len(va) >= 60 else va20
-        vr520  = va5  / va20 if va20 > 0 else 1.0
-        vr2060 = va20 / va60 if va60 > 0 else 1.0
-        vsurge = va[-1] / va20 if va20 > 0 and not np.isnan(va[-1]) else 1.0
-    else:
-        vr520, vr2060, vsurge = 1.0, 1.0, 1.0
-
-    # 日経マクロ3特徴量（呼び出し元から渡す）
-    nk5 = nk_rets[0] if nk_rets is not None else 0.0
-    nk20 = nk_rets[1] if nk_rets is not None else 0.0
-    nk60 = nk_rets[2] if nk_rets is not None else 0.0
-
-    # 日経相対アルファ4特徴量（nk5/nk20/nk60 はフラクション単位 — rf_train_v3 と揃える）
-    rel5  = ret5  - nk5
-    rel20 = ret20 - nk20
-    rel60 = ret60 - nk60
-    alpha_momentum = rel5 - rel20 / 4
-
-    # ファンダメンタル9特徴量（point-in-time再構成、無ければ中立pad）
+    # fundamentals dict を組み立て（pit_fundamental_featuresはdictを返すよう変更済み）
     if code is not None:
-        fund9 = pit_fundamental_features(code, target_date, current)
+        fundamentals = pit_fundamental_features(code, target_date, current)
     else:
-        import math as _math
-        _m = target_date.month
-        fund9 = [0.0, 0.0, 0.0, 0.5, 0.5, 0.5,
-                 _math.sin(2*_math.pi*_m/12), _math.cos(2*_math.pi*_m/12), 0.0]
-    feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
-            drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
-            vr520, vr2060, vsurge, nk5, nk20, nk60] + seq + [rel5, rel20, rel60, alpha_momentum] + fund9
-    if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
-        return None
-    return feat
+        fundamentals = {"month": target_date.month}
+
+    return _extract_features(p, v, nk_rets, fundamentals=fundamentals)
 
 
 # ── スクリーナー銘柄リスト取得 ──────────────

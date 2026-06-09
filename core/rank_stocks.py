@@ -256,9 +256,10 @@ def main():
     regime_top_n = {'bull': 10, 'uncertain': 5, 'bear': 3}
     dynamic_top_n = regime_top_n.get(regime, 5)
 
-    # ── VIX恐怖指数・S&P500（クロスアセット）取得 ────────────────────────────
-    print("\nマクロデータ取得中（VIX・S&P500）...")
+    # ── VIX恐怖指数・S&P500・USD/JPY（クロスアセット）取得 ─────────────────────
+    print("\nマクロデータ取得中（VIX・S&P500・USD/JPY）...")
     _live_macro = {"vix": None, "us5": None, "us20": None}
+    _live_jpy   = {"jpy5": None, "usdjpy_closes": None}
     try:
         from lib.utils import get_market_index_df
         _vix_df = get_market_index_df("%5EVIX", days=60)
@@ -271,6 +272,12 @@ def main():
             _live_macro["us5"]  = round((_p[-1] - _p[-6])  / _p[-6]  * 100, 2) if len(_p) >= 6  else 0.0
             _live_macro["us20"] = round((_p[-1] - _p[-21]) / _p[-21] * 100, 2) if len(_p) >= 21 else 0.0
             print(f"  S&P500: 5日{_live_macro['us5']:+.2f}% / 20日{_live_macro['us20']:+.2f}%")
+        _jpy_df = get_market_index_df("USDJPY%3DX", days=120)
+        if _jpy_df is not None and len(_jpy_df) >= 6:
+            _jc = _jpy_df["Close"].values
+            _live_jpy["jpy5"] = round((_jc[-1] - _jc[-6]) / _jc[-6] * 100, 2) if len(_jc) >= 6 else 0.0
+            _live_jpy["usdjpy_closes"] = _jc
+            print(f"  USD/JPY: 5日{_live_jpy['jpy5']:+.2f}%")
     except Exception as _e:
         print(f"  マクロデータ取得失敗: {_e}")
 
@@ -312,7 +319,7 @@ def main():
     done_count = [0]
     total = len(codes)
 
-    def fetch_one(code, _macro=_live_macro):
+    def fetch_one(code, _macro=_live_macro, _jpy=_live_jpy):
         from lib.utils import _days_to_nearest_event
         from datetime import date as _date
         prices = get_prices(code, days=400)
@@ -335,22 +342,42 @@ def main():
         # 配当利回り: ライブ株価 × PBR/PER から配当を逆算 or pit.dps使用
         _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
         div_yield_live = (_dps / _close * 100) if _dps and _dps > 0 and _close else None
+        # USD/JPY ベータ（ライブ: 直近60日の株価 vs USD/JPY のベータ）
+        _fx_beta_live = None
+        _jpy_closes = _jpy.get("usdjpy_closes")
+        if _jpy_closes is not None and len(prices) >= 61:
+            p_arr_live = prices["Close"].values
+            stock_rets_live = np.diff(p_arr_live[-61:]) / p_arr_live[-61:-1]
+            fx_rets_live = np.diff(_jpy_closes[-min(61, len(_jpy_closes)):]) / _jpy_closes[-min(61, len(_jpy_closes)):-1]
+            _ml = min(len(stock_rets_live), len(fx_rets_live))
+            if _ml >= 20:
+                _sr = stock_rets_live[:_ml]; _fr = fx_rets_live[:_ml]
+                _vfx = np.var(_fr)
+                if _vfx > 0:
+                    _fx_beta_live = float(np.cov(_sr, _fr)[0, 1] / _vfx)
+
         fundamentals = {
             "per":                 per_live,
             "pbr":                 pbr_live,
             "roe":                 fd_raw.get("ROE"),
             "days_to_earnings":    days_earn,
             "days_since_div_ex":   pit.get("days_since_div_ex"),
-            "days_since_yutai_ex": pit.get("days_since_yutai_ex"),
             "month":               today.month,
             "div_yield":           div_yield_live,
             "eps_growth":          pit.get("eps_growth"),
-            "roe_trend":           pit.get("roe_trend"),
             "dps_growth":          pit.get("dps_growth"),
-            # マクロ特徴量はメインスレッドで取得済みの値を注入（_live_vix/_live_us5/_live_us20）
+            # マクロ特徴量
             "vix":                 _macro.get("vix"),
             "us5":                 _macro.get("us5"),
             "us20":                _macro.get("us20"),
+            # 新規IB特徴量
+            "fx_beta":             _fx_beta_live,
+            "jpy5":                _jpy.get("jpy5"),
+            "eps_surprise":        pit.get("eps_surprise"),
+            "bps_growth":          pit.get("bps_growth"),
+            "piotroski":           pit.get("piotroski"),
+            "payout":              pit.get("payout"),
+            "accruals":            pit.get("accruals"),
         }
 
         feat = extract_features(
@@ -379,7 +406,10 @@ def main():
     if not raw_data:
         print("ERROR: 有効銘柄なし"); return
     feats_matrix = np.array([d[2] for d in raw_data], dtype=float)
-    feats_aug = add_cs_rank_features(feats_matrix)  # 推論時は全銘柄を同一日として扱う
+    # 推論時: 全銘柄を同一日として扱い、セクター内相対モメンタムも計算
+    from lib.utils import get_sector_cached as _gsc
+    _sectors_for_batch = [_gsc(str(d[0])) for d in raw_data]
+    feats_aug = add_cs_rank_features(feats_matrix, sectors=_sectors_for_batch)
 
     # フェーズ3: モデルスコア計算
     results = []
