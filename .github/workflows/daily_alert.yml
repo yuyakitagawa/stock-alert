@@ -41,6 +41,7 @@ jobs:
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
           echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
           echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
+          echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
 
       - name: Create gcp_key.json from secret
         run: |

@@ -590,3 +590,35 @@ def load_market_index_data(ticker: str, days: int = 2200):
     from datetime import date as _date
     idx = [_date.fromisoformat(d) for d in dates]
     return pd.DataFrame({"Close": closes}, index=idx)
+
+
+# ── margin_data / short_interest: point-in-time lookup ────────────────────
+
+def get_margin_ratio_at(code: str, as_of_date: str) -> "float | None":
+    """
+    as_of_date（YYYY-MM-DD）時点で利用可能な最新の信用倍率を返す。
+    週次データなので as_of_date 以前の最新値を返す。
+    """
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT ratio FROM margin_data "
+            "WHERE code=? AND week_date <= ? ORDER BY week_date DESC LIMIT 1",
+            (str(code), as_of_date)
+        ).fetchone()
+    return float(row["ratio"]) if row and row["ratio"] is not None else None
+
+
+def get_short_balance_at(code: str, as_of_date: str) -> "dict | None":
+    """
+    as_of_date（YYYY-MM-DD）時点で利用可能な最新の空売り残高を返す。
+    {'week_date': str, 'short_balance': float, 'short_amount': float | None}
+    """
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT week_date, short_balance, short_amount FROM short_interest "
+            "WHERE code=? AND week_date <= ? ORDER BY week_date DESC LIMIT 1",
+            (str(code), as_of_date)
+        ).fetchone()
+    return dict(row) if row else None
