@@ -36,82 +36,21 @@ def _make_universe(rows):
 class TestApplyScreenerV1(unittest.TestCase):
 
     def test_all_conditions_met_passes(self):
-        """v1の全条件を満たす銘柄が通過する"""
+        """株価・流動性を満たす銘柄が通過する"""
         df = _make_universe([{
-            "code": "A", "momentum": 10.0, "momentum_20d": 0.0,
-            "vol": 30.0, "close": 500.0, "slope_up": True,
+            "code": "A", "momentum": 10.0, "vol": 30.0, "close": 500.0,
         }])
         self.assertEqual(len(apply_screener_v1(df)), 1)
-
-    def test_slope_down_excluded(self):
-        """slope_up=False は除外される"""
-        df = _make_universe([{"code": "A", "slope_up": False}])
-        self.assertTrue(apply_screener_v1(df).empty)
 
     def test_price_below_300_excluded(self):
         """株価 < 300円 は除外される"""
         df = _make_universe([{"code": "A", "close": 299.0}])
         self.assertTrue(apply_screener_v1(df).empty)
 
-    def test_momentum_below_5pct_excluded(self):
-        """3ヶ月モメンタム < +5% は除外される"""
-        df = _make_universe([{"code": "A", "momentum": 4.9}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
     def test_momentum_above_30pct_passes(self):
-        """3ヶ月モメンタム > +30% も通過（上限撤廃、モデル判断に委ねる）"""
+        """3ヶ月モメンタム > +30% も通過（モデルに選別を委任）"""
         df = _make_universe([{"code": "A", "momentum": 50.0}])
         self.assertEqual(len(apply_screener_v1(df)), 1)
-
-    def test_vol_below_20pct_excluded(self):
-        """年率ボラ < 20% は除外される（+15%達成可能性なし）"""
-        df = _make_universe([{"code": "A", "vol": 19.0}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_vol_above_50pct_excluded(self):
-        """年率ボラ > 50% は除外される"""
-        df = _make_universe([{"code": "A", "vol": 51.0}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_momentum_20d_below_minus3_excluded(self):
-        """20日モメンタム < -3% は除外される"""
-        df = _make_universe([{"code": "A", "momentum_20d": -3.1}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_vol_ratio_below_1_excluded(self):
-        """出来高比 < 1.0（出来高減少）は除外される"""
-        df = _make_universe([{"code": "A", "vr2060": 0.99}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_vol_ratio_at_1_passes(self):
-        """出来高比 = 1.0 はちょうど通過する（境界値 >=）"""
-        df = _make_universe([{"code": "A", "vr2060": 1.0}])
-        self.assertEqual(len(apply_screener_v1(df)), 1)
-
-    def test_negative_relative_strength_excluded(self):
-        """日経比相対強度 < 0 は除外される（日経に負けている銘柄）"""
-        df = _make_universe([{"code": "A", "rel_strength_3m": -0.01}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_zero_relative_strength_passes(self):
-        """日経比相対強度 = 0（日経並み）はちょうど通過する"""
-        df = _make_universe([{"code": "A", "rel_strength_3m": 0.0}])
-        self.assertEqual(len(apply_screener_v1(df)), 1)
-
-    def test_rsi_below_45_excluded(self):
-        """RSI < 45（売られすぎ）は除外される"""
-        df = _make_universe([{"code": "A", "rsi": 44.9}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_rsi_above_70_excluded(self):
-        """RSI > 70（買われすぎ）は除外される"""
-        df = _make_universe([{"code": "A", "rsi": 70.1}])
-        self.assertTrue(apply_screener_v1(df).empty)
-
-    def test_rsi_at_bounds_passes(self):
-        """RSI = 45 / 70 はちょうど通過する（境界値 >=/<= ）"""
-        df = _make_universe([{"code": "L", "rsi": 45.0}, {"code": "H", "rsi": 70.0}])
-        self.assertEqual(len(apply_screener_v1(df)), 2)
 
     def test_low_liquidity_excluded(self):
         """20日平均売買代金 < 50百万円は除外される"""
@@ -123,23 +62,17 @@ class TestApplyScreenerV1(unittest.TestCase):
         df = _make_universe([{"code": "A", "turnover_m": 50.0}])
         self.assertEqual(len(apply_screener_v1(df)), 1)
 
-    def test_bear_market_stricter_rel_strength(self):
-        """下落相場フラグ時は相対強度閾値が0.10に引き上げられる"""
-        df = _make_universe([{"code": "A", "rel_strength_3m": 0.07}])
-        self.assertEqual(len(apply_screener_v1(df, rel_strength_min=0.05)), 1)
-        self.assertTrue(apply_screener_v1(df, rel_strength_min=0.10).empty)
-
     def test_multiple_stocks_filtered_correctly(self):
-        """複数銘柄のうち条件を満たすもののみ通過する"""
+        """株価・流動性のみでフィルタリング。モメンタム/ボラはモデルに委任"""
         df = _make_universe([
             {"code": "OK",  "momentum": 10.0, "vol": 30.0, "close": 500.0},
-            {"code": "NG1", "momentum": 4.0},  # モメンタム下限未満
-            {"code": "NG2", "vol": 10.0},      # ボラ下限未満
-            {"code": "NG3", "close": 200.0},   # 株価下限未満
+            {"code": "P1",  "momentum": 4.0},   # モメンタム低い → 通過（モデルが判断）
+            {"code": "P2",  "vol": 10.0},       # ボラ低い → 通過（モデルが判断）
+            {"code": "NG",  "close": 200.0},    # 株価下限未満 → 除外
         ])
         result = apply_screener_v1(df)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result.iloc[0]["code"], "OK")
+        self.assertEqual(len(result), 3)
+        self.assertNotIn("NG", result["code"].values)
 
 
 class TestSectorConcentrationFilter(unittest.TestCase):
