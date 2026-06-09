@@ -123,6 +123,23 @@ CREATE TABLE IF NOT EXISTS market_index_cache (
     close   REAL NOT NULL,
     PRIMARY KEY (ticker, date)
 );
+CREATE TABLE IF NOT EXISTS jquants_fin_summary (
+    code          TEXT NOT NULL,
+    disc_date     TEXT NOT NULL,   -- YYYY-MM-DD（開示日 = point-in-time key）
+    doc_type      TEXT,            -- FY / 1Q / 2Q / 3Q
+    fy_end        TEXT,            -- 決算期末 YYYY-MM-DD
+    np            REAL,            -- 当期純利益
+    cfo           REAL,            -- 営業キャッシュフロー
+    ta            REAL,            -- 総資産
+    equity        REAL,            -- 純資産
+    eps           REAL,            -- 1株利益
+    bps           REAL,            -- 1株純資産
+    div_ann       REAL,            -- 年間配当（1株）
+    payout_ratio  REAL,            -- 配当性向
+    sh_out        REAL,            -- 発行済株式数
+    tr_sh         REAL,            -- 自己株式数
+    PRIMARY KEY (code, disc_date)
+);
 """
 
 @contextmanager
@@ -607,6 +624,52 @@ def get_margin_ratio_at(code: str, as_of_date: str) -> "float | None":
             (str(code), as_of_date)
         ).fetchone()
     return float(row["ratio"]) if row and row["ratio"] is not None else None
+
+
+def bulk_upsert_jquants_fin_summary(rows: list):
+    """
+    rows: list of dict with keys matching jquants_fin_summary columns
+    (code, disc_date, doc_type, fy_end, np, cfo, ta, equity, eps, bps, div_ann, payout_ratio, sh_out, tr_sh)
+    """
+    init_db()
+    with _conn() as con:
+        con.executemany(
+            """INSERT OR REPLACE INTO jquants_fin_summary
+               (code, disc_date, doc_type, fy_end, np, cfo, ta, equity, eps, bps,
+                div_ann, payout_ratio, sh_out, tr_sh)
+               VALUES(:code,:disc_date,:doc_type,:fy_end,:np,:cfo,:ta,:equity,:eps,:bps,
+                      :div_ann,:payout_ratio,:sh_out,:tr_sh)""",
+            rows
+        )
+
+
+def get_jquants_fin_history(code: str, as_of_date: str, n: int = 4) -> list:
+    """
+    as_of_date 以前に開示された最新 n 件の財務サマリーを返す（新しい順）。
+    FYのみに絞る場合は doc_type='FY' でフィルタ可能。
+    """
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM jquants_fin_summary
+               WHERE code=? AND disc_date <= ?
+               ORDER BY disc_date DESC LIMIT ?""",
+            (str(code), as_of_date, n)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_jquants_fin_history_fy(code: str, as_of_date: str, n: int = 3) -> list:
+    """FYレポートのみ n 件（年次）"""
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM jquants_fin_summary
+               WHERE code=? AND disc_date <= ? AND doc_type LIKE 'FY%'
+               ORDER BY disc_date DESC LIMIT ?""",
+            (str(code), as_of_date, n)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_short_balance_at(code: str, as_of_date: str) -> "dict | None":
