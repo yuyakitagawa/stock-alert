@@ -106,6 +106,58 @@ def get_market_index_df(ticker_encoded, days=2200):
         return None
 
 
+def get_market_index_df_cached(cache_key, ticker_encoded, days=2200):
+    """DBキャッシュ優先で市場指数を取得。差分のみ Yahoo から取得して保存。
+
+    cache_key: DBのキー名 ('VIX' | 'SP500' | 'USDJPY')
+    ticker_encoded: Yahoo Finance URLエンコード済みティッカー
+
+    動作:
+      1. DBの最終保存日を確認
+      2. 今日以降のデータが欠けていれば差分のみ Yahoo 取得 → DB保存
+      3. DBから指定 days 分を返す
+      4. DB/Yahoo両方失敗時は None
+    """
+    from lib.db import get_market_index_latest_date, save_market_index_data, load_market_index_data
+    from datetime import date as _date, timedelta as _td
+
+    today = _date.today()
+    latest_str = get_market_index_latest_date(cache_key)
+
+    need_fetch = True
+    if latest_str is not None:
+        latest_date = _date.fromisoformat(latest_str)
+        # 平日なら翌日、週末なら月曜を「次の営業日」と見なす
+        # 簡易判定: 最終保存日が3日以内なら差分フェッチ済みとみなす
+        days_since = (today - latest_date).days
+        if days_since == 0:
+            # 今日のデータまであり → DBから返す
+            return load_market_index_data(cache_key, days=days)
+        elif days_since <= 5:
+            # 数日分だけ差分取得（週末 / 祝日対応）
+            df_new = get_market_index_df(ticker_encoded, days=days_since + 5)
+            if df_new is not None:
+                df_new_diff = df_new[df_new.index > latest_date]
+                save_market_index_data(cache_key, df_new_diff)
+            need_fetch = False
+        else:
+            # 1週間以上古い → 差分取得
+            fetch_days = min(days_since + 10, days)
+            df_new = get_market_index_df(ticker_encoded, days=fetch_days)
+            if df_new is not None:
+                df_new_diff = df_new[df_new.index > latest_date]
+                save_market_index_data(cache_key, df_new_diff)
+            need_fetch = False
+
+    if need_fetch:
+        # DB未登録 → 全期間取得して保存
+        df_full = get_market_index_df(ticker_encoded, days=days)
+        if df_full is not None:
+            save_market_index_data(cache_key, df_full)
+
+    return load_market_index_data(cache_key, days=days)
+
+
 @functools.lru_cache(maxsize=1)
 def get_nikkei_returns():
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"

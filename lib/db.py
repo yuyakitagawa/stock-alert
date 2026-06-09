@@ -117,6 +117,12 @@ CREATE TABLE IF NOT EXISTS tdnet_events (
     fetched_date TEXT,
     PRIMARY KEY (code, announce_date, title)
 );
+CREATE TABLE IF NOT EXISTS market_index_cache (
+    ticker  TEXT NOT NULL,  -- 'VIX' | 'SP500' | 'USDJPY'
+    date    TEXT NOT NULL,  -- YYYY-MM-DD
+    close   REAL NOT NULL,
+    PRIMARY KEY (ticker, date)
+);
 """
 
 @contextmanager
@@ -528,3 +534,59 @@ def save_all_sectors(sector_map):
             "INSERT OR REPLACE INTO sector_cache (code,sector,fetched_date) VALUES(?,?,?)",
             [(code, sector, today_str) for code, sector in sector_map.items()]
         )
+
+
+# ── market_index_cache ─────────────────────────────────────────────────────
+# VIX / S&P500 / USD/JPY の日次終値をDBキャッシュ。毎回Yahoo取得をなくす。
+
+def get_market_index_latest_date(ticker: str):
+    """DBに保存されている最新日付文字列を返す。なければ None。"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT MAX(date) AS mx FROM market_index_cache WHERE ticker=?",
+            (ticker,)
+        ).fetchone()
+    return row["mx"] if row and row["mx"] else None
+
+
+def save_market_index_data(ticker: str, df):
+    """date-indexed DataFrame(Close列)を market_index_cache に一括保存。INSERT OR IGNORE。"""
+    import math
+    if df is None or len(df) == 0:
+        return
+    init_db()
+    rows = []
+    for idx, row in df.iterrows():
+        d = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
+        c = row["Close"]
+        if c is None or (isinstance(c, float) and math.isnan(c)):
+            continue
+        rows.append((ticker, d, float(c)))
+    if rows:
+        with _conn() as con:
+            con.executemany(
+                "INSERT OR IGNORE INTO market_index_cache (ticker, date, close) VALUES(?,?,?)",
+                rows
+            )
+
+
+def load_market_index_data(ticker: str, days: int = 2200):
+    """DBから直近 days 日分を date-indexed DataFrame(Close) で返す。なければ None。"""
+    import pandas as pd
+    from datetime import date, timedelta
+    init_db()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT date, close FROM market_index_cache "
+            "WHERE ticker=? AND date>=? ORDER BY date",
+            (ticker, cutoff)
+        ).fetchall()
+    if not rows:
+        return None
+    dates  = [r["date"]  for r in rows]
+    closes = [r["close"] for r in rows]
+    from datetime import date as _date
+    idx = [_date.fromisoformat(d) for d in dates]
+    return pd.DataFrame({"Close": closes}, index=idx)

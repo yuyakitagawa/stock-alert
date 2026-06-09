@@ -14,7 +14,7 @@ import requests as _requests
 from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores, classify_market_regime
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores, classify_market_regime, get_market_index_df_cached
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
                    MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
@@ -261,18 +261,17 @@ def main():
     _live_macro = {"vix": None, "us5": None, "us20": None}
     _live_jpy   = {"jpy5": None, "usdjpy_closes": None}
     try:
-        from lib.utils import get_market_index_df
-        _vix_df = get_market_index_df("%5EVIX", days=60)
+        _vix_df = get_market_index_df_cached("VIX",    "%5EVIX",    days=60)
         if _vix_df is not None and len(_vix_df) > 0:
             _live_macro["vix"] = float(_vix_df["Close"].iloc[-1])
             print(f"  VIX: {_live_macro['vix']:.1f}")
-        _sp5_df = get_market_index_df("%5EGSPC", days=60)
+        _sp5_df = get_market_index_df_cached("SP500",  "%5EGSPC",   days=60)
         if _sp5_df is not None and len(_sp5_df) >= 21:
             _p = _sp5_df["Close"].values
             _live_macro["us5"]  = round((_p[-1] - _p[-6])  / _p[-6]  * 100, 2) if len(_p) >= 6  else 0.0
             _live_macro["us20"] = round((_p[-1] - _p[-21]) / _p[-21] * 100, 2) if len(_p) >= 21 else 0.0
             print(f"  S&P500: 5日{_live_macro['us5']:+.2f}% / 20日{_live_macro['us20']:+.2f}%")
-        _jpy_df = get_market_index_df("USDJPY%3DX", days=120)
+        _jpy_df = get_market_index_df_cached("USDJPY", "USDJPY%3DX", days=120)
         if _jpy_df is not None and len(_jpy_df) >= 6:
             _jc = _jpy_df["Close"].values
             _live_jpy["jpy5"] = round((_jc[-1] - _jc[-6]) / _jc[-6] * 100, 2) if len(_jc) >= 6 else 0.0

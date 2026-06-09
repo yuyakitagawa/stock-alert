@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
-from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached
+from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
@@ -49,16 +49,16 @@ def _fetch_index_df(ticker_encoded, days=2200):
     except Exception: return None
 
 def get_nikkei_df(days=2200):
-    return _fetch_index_df("%5EN225", days)
+    return _fetch_index_df("%5EN225", days)   # 日経はDBキャッシュ不要（training直接使用）
 
 def get_vix_df(days=2200):
-    return _fetch_index_df("%5EVIX", days)
+    return get_market_index_df_cached("VIX",    "%5EVIX",    days)
 
 def get_sp500_df(days=2200):
-    return _fetch_index_df("%5EGSPC", days)
+    return get_market_index_df_cached("SP500",  "%5EGSPC",   days)
 
 def get_usdjpy_df(days=2200):
-    return _fetch_index_df("USDJPY%3DX", days)
+    return get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
