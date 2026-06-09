@@ -87,6 +87,12 @@ CREATE TABLE IF NOT EXISTS fundamentals_annual (
     fetched_date  TEXT,
     PRIMARY KEY (code, fy_end)
 );
+CREATE TABLE IF NOT EXISTS earnings_sentiment (
+    code         TEXT NOT NULL,
+    fetched_date TEXT NOT NULL,    -- YYYY-MM-DD（当日キャッシュ）
+    score        REAL NOT NULL,    -- -1.0〜+1.0（Claude Haiku 分析結果）
+    PRIMARY KEY (code, fetched_date)
+);
 """
 
 @contextmanager
@@ -373,6 +379,28 @@ def save_price_cache(code, df):
         con.executemany(
             "INSERT OR IGNORE INTO price_cache (code, date, close, volume) VALUES (?,?,?,?)",
             rows
+        )
+
+
+# ── earnings_sentiment ────────────────────────────────────────────────────
+
+def get_earnings_sentiment(code: str, today_str: str):
+    """今日キャッシュ済みならスコア(float)を返す。未キャッシュは None。"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT score FROM earnings_sentiment WHERE code=? AND fetched_date=?",
+            (str(code), today_str)
+        ).fetchone()
+    return float(row["score"]) if row else None
+
+
+def set_earnings_sentiment(code: str, today_str: str, score: float):
+    init_db()
+    with _conn() as con:
+        con.execute(
+            "INSERT OR REPLACE INTO earnings_sentiment (code, fetched_date, score) VALUES(?,?,?)",
+            (str(code), today_str, float(score))
         )
 
 

@@ -246,6 +246,30 @@ def main():
     regime_top_n = {'bull': 10, 'uncertain': 5, 'bear': 3}
     dynamic_top_n = regime_top_n.get(regime, 5)
 
+    # ── VIX恐怖指数・S&P500（クロスアセット）取得 ────────────────────────────
+    print("\nマクロデータ取得中（VIX・S&P500）...")
+    _live_macro = {"vix": None, "us5": None, "us20": None}
+    try:
+        from lib.utils import get_market_index_df
+        _vix_df = get_market_index_df("%5EVIX", days=60)
+        if _vix_df is not None and len(_vix_df) > 0:
+            _live_macro["vix"] = float(_vix_df["Close"].iloc[-1])
+            print(f"  VIX: {_live_macro['vix']:.1f}")
+        _sp5_df = get_market_index_df("%5EGSPC", days=60)
+        if _sp5_df is not None and len(_sp5_df) >= 21:
+            _p = _sp5_df["Close"].values
+            _live_macro["us5"]  = round((_p[-1] - _p[-6])  / _p[-6]  * 100, 2) if len(_p) >= 6  else 0.0
+            _live_macro["us20"] = round((_p[-1] - _p[-21]) / _p[-21] * 100, 2) if len(_p) >= 21 else 0.0
+            print(f"  S&P500: 5日{_live_macro['us5']:+.2f}% / 20日{_live_macro['us20']:+.2f}%")
+    except Exception as _e:
+        print(f"  マクロデータ取得失敗: {_e}")
+
+    # VIX レジーム調整: VIX > 30 は恐怖相場 → top_n を -1（最小1）
+    vix_val = _live_macro.get("vix")
+    if vix_val is not None and vix_val > 30:
+        dynamic_top_n = max(1, dynamic_top_n - 1)
+        print(f"  ⚠️ 高VIX({vix_val:.1f} > 30): 推奨銘柄数を {dynamic_top_n + 1}→{dynamic_top_n}に縮小")
+
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
         regime_label = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
@@ -278,7 +302,7 @@ def main():
     done_count = [0]
     total = len(codes)
 
-    def fetch_one(code):
+    def fetch_one(code, _macro=_live_macro):
         from lib.utils import _days_to_nearest_event
         from datetime import date as _date
         prices = get_prices(code, days=400)
@@ -312,6 +336,11 @@ def main():
             "div_yield":           div_yield_live,
             "eps_growth":          pit.get("eps_growth"),
             "roe_trend":           pit.get("roe_trend"),
+            "dps_growth":          pit.get("dps_growth"),
+            # マクロ特徴量はメインスレッドで取得済みの値を注入（_live_vix/_live_us5/_live_us20）
+            "vix":                 _macro.get("vix"),
+            "us5":                 _macro.get("us5"),
+            "us20":                _macro.get("us20"),
         }
 
         feat = extract_features(
@@ -462,8 +491,8 @@ def main():
     if is_bear:
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'損切り':>8}  {'PER':>7}  {'PBR':>5}  {'ROE%':>6}  推奨")
-    print("-" * 120)
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<18}  {'株価':>8}  {'上昇':>6}  {'下落':>6}  {'ネット':>7}  {'判定':<12}  {'ボラ':>6}  {'損切り':>8}  {'PER':>7}  {'PBR':>5}  {'ROE%':>6}  {'感情':>5}  推奨")
+    print("-" * 128)
     for _, row in result_df.head(dynamic_top_n).iterrows():
         drop_str  = f"{row['下落確率(%)']:>5.1f}%" if row['下落確率(%)'] != "-" else "   N/A"
         stop_str  = f"¥{row['損切り価格(円)']:,.0f}({row['損切り幅(%)']:+.1f}%)"
@@ -471,6 +500,9 @@ def main():
         per_str = f"{per_val:>6.1f}x" if per_val is not None else "    N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
         roe_str = f"{roe_val:>5.1f}%" if roe_val is not None else "   N/A"
+        sent    = row.get("感情スコア", 0.0) or 0.0
+        sent_emoji = "😊" if sent > 0.3 else ("😞" if sent < -0.3 else "😐")
+        sent_str = f"{sent_emoji}{sent:+.2f}"
         print(
             f"{int(row['順位']):>4}  {row['銘柄コード']:>6}  "
             f"{str(row['銘柄名']):<18}  "
@@ -484,8 +516,33 @@ def main():
             f"{per_str}  "
             f"{pbr_str}  "
             f"{roe_str}  "
+            f"{sent_str:>7}  "
             f"{row['推奨']}"
         )
+
+    # フェーズ4b: 上位銘柄の決算テキスト感情分析（Claude Haiku NLP）
+    NLP_TOP = min(20, len(result_df))
+    print(f"\n決算テキスト感情分析中（上位{NLP_TOP}銘柄、Claude Haiku）...")
+    try:
+        from lib.nlp_sentiment import get_earnings_sentiment
+        sentiment_scores = {}
+        for _, row in result_df.head(NLP_TOP).iterrows():
+            c = str(row["銘柄コード"])
+            sentiment_scores[c] = get_earnings_sentiment(c)
+        result_df["感情スコア"] = result_df["銘柄コード"].astype(str).map(
+            lambda x: sentiment_scores.get(x, 0.0)
+        )
+        # 強い悲観（< -0.5）の場合は S買い → 方向感なし に降格
+        for idx, row in result_df.iterrows():
+            if row.get("推奨") == "🥇 S買い" and row.get("感情スコア", 0.0) <= -0.5:
+                result_df.at[idx, "推奨"] = "⏳ 方向感なし"
+                print(f"  ⚠️ {row['銘柄名']}({row['銘柄コード']}): 感情スコア{row['感情スコア']:.2f} → S買い降格")
+        pos_count = (result_df.head(NLP_TOP)["感情スコア"] > 0.2).sum()
+        neg_count = (result_df.head(NLP_TOP)["感情スコア"] < -0.2).sum()
+        print(f"  楽観的: {pos_count}銘柄 / 悲観的: {neg_count}銘柄 / 中立: {NLP_TOP-pos_count-neg_count}銘柄")
+    except Exception as _e:
+        print(f"  感情分析スキップ（APIキー未設定 or エラー: {_e}）")
+        result_df["感情スコア"] = 0.0
 
     # フェーズ5: S買い銘柄の決算チェック（S買い→方向感なし に降格）
     buy_mask = result_df["推奨"] == "🥇 S買い"

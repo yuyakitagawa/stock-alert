@@ -85,15 +85,18 @@ def get_pit_fundamentals(code, target_date):
     days_since_div  = _days_since_last_ex(target_date, div_months)
     days_since_yutai = _days_since_last_ex(target_date, [ym]) if ym else None
 
-    # EPS成長率・ROEトレンド（直近2期比較 — PIT準拠）
+    # EPS成長率・ROEトレンド・DPS成長率（直近2期比較 — PIT準拠）
     eps_growth = None
     roe_trend  = None
+    dps_growth = None
     if len(known) >= 2:
         prev = known[-2]
         if eps is not None and prev.get("eps") is not None and prev["eps"] != 0:
             eps_growth = (eps - prev["eps"]) / abs(prev["eps"])
         if roe is not None and prev.get("roe") is not None:
             roe_trend = roe - prev["roe"]   # ROEの前年差（%ポイント）
+        if dps is not None and prev.get("dps") is not None and prev["dps"] != 0:
+            dps_growth = (dps - prev["dps"]) / abs(prev["dps"])  # 配当成長率（増配シグナル）
 
     if eps is None and bps is None and roe is None and not known and ym is None:
         return None
@@ -104,6 +107,7 @@ def get_pit_fundamentals(code, target_date):
         "days_since_yutai_ex": days_since_yutai,
         "eps_growth":          eps_growth,
         "roe_trend":           roe_trend,
+        "dps_growth":          dps_growth,
     }
 
 
@@ -114,7 +118,7 @@ def pit_fundamental_features(code, target_date, price):
     返り値: [per_feat, pbr_feat, roe_feat, earn_feat,
              div_ex_feat, yutai_ex_feat,
              sin_month, cos_month, div_yield_feat,
-             eps_growth_feat, roe_trend_feat]  ← 11次元
+             eps_growth_feat, roe_trend_feat, dps_growth_feat]  ← 12次元
 
     div_ex_feat / yutai_ex_feat:
       0.0 = 権利落ち直後（戻り買いゾーン）  1.0 = 60日後（効果消滅）
@@ -127,7 +131,7 @@ def pit_fundamental_features(code, target_date, price):
     import numpy as np, math
     pf = pbf = rf = 0.0
     ef = div_ef = yutai_ef = 0.5
-    div_yield_f = eps_gf = roe_tf = 0.0
+    div_yield_f = eps_gf = roe_tf = dps_gf = 0.0
 
     fd = get_pit_fundamentals(code, target_date)
     if fd is not None:
@@ -152,10 +156,13 @@ def pit_fundamental_features(code, target_date, price):
         # ROEトレンド: ±10%ptを-1〜+1に正規化
         if fd.get("roe_trend") is not None:
             roe_tf = float(np.clip(fd["roe_trend"] / 10.0, -1.0, 1.0))
+        # DPS成長率: -100%〜+200%を-1〜+2に正規化（増配シグナル — TSE資本改革文脈）
+        if fd.get("dps_growth") is not None:
+            dps_gf = float(np.clip(fd["dps_growth"], -1.0, 2.0))
 
     # 季節性: 月を循環エンコード（1月と12月が隣接するように）
     m = target_date.month
     sin_m = math.sin(2 * math.pi * m / 12)
     cos_m = math.cos(2 * math.pi * m / 12)
 
-    return [pf, pbf, rf, ef, div_ef, yutai_ef, sin_m, cos_m, div_yield_f, eps_gf, roe_tf]
+    return [pf, pbf, rf, ef, div_ef, yutai_ef, sin_m, cos_m, div_yield_f, eps_gf, roe_tf, dps_gf]

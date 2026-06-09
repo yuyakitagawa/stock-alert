@@ -30,11 +30,11 @@ _SC_MIN_VOL=22.0; _SC_MAX_VOL=50.0; _SC_MIN_PRICE=300
 _SC_MIN_VR=1.0; _SC_MIN_REL=0.05  # 出来高比 / 日経比相対強度
 _SC_MIN_RSI=45.0; _SC_MAX_RSI=70.0
 
-def get_nikkei_df(days=2200):
-    """日経225の株価をDateインデックスのDataFrameで返す"""
+def _fetch_index_df(ticker_encoded, days=2200):
+    """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す"""
     end_ts=int(datetime.now().timestamp())
     start_ts=int((datetime.now()-timedelta(days=days)).timestamp())
-    url=f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1d&period1={start_ts}&period2={end_ts}"
+    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_encoded}?interval=1d&period1={start_ts}&period2={end_ts}"
     try:
         resp=requests.get(url,headers=HEADERS,timeout=15)
         data=resp.json()
@@ -47,6 +47,15 @@ def get_nikkei_df(days=2200):
         df=df.dropna(); df.index=df.index.date
         return df
     except Exception: return None
+
+def get_nikkei_df(days=2200):
+    return _fetch_index_df("%5EN225", days)
+
+def get_vix_df(days=2200):
+    return _fetch_index_df("%5EVIX", days)
+
+def get_sp500_df(days=2200):
+    return _fetch_index_df("%5EGSPC", days)
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -109,7 +118,10 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
     return True
 
 
-def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
+def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
+                     vix_map=None, sp500_dates=None, sp500_closes_arr=None):
+    """vix_map: {date: float}, sp500_dates: sorted list of date, sp500_closes_arr: np.array"""
+    import bisect
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
     samples=[]; start_i=max(252+SEQ_DAYS,90)
@@ -131,6 +143,25 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
                 nk_ret_3m=(nk_closes[i0]-nk_closes[i63])/nk_closes[i63] if nk_closes[i63]!=0 else None
         if screener_only and not passes_screener_at(closes[:i+1], v_slice, nk_ret_3m):
             continue
+        # VIX および SP500 のサンプル日時点の値を取得
+        vix_val = us5_val = us20_val = None
+        if vix_map:
+            vix_val = vix_map.get(dates[i])
+            if vix_val is None:
+                # 直近の営業日の値を使用（祝日対応）
+                for d_adj in range(1, 5):
+                    from datetime import timedelta as _td
+                    vix_val = vix_map.get(dates[i] - _td(days=d_adj))
+                    if vix_val is not None:
+                        break
+        if sp500_dates and sp500_closes_arr is not None:
+            sp_i = bisect.bisect_right(sp500_dates, dates[i]) - 1
+            if sp_i >= 20:
+                v_now = sp500_closes_arr[sp_i]
+                v5    = sp500_closes_arr[max(0, sp_i - 5)]
+                v20   = sp500_closes_arr[max(0, sp_i - 20)]
+                us5_val  = (v_now - v5)  / v5  * 100 if v5  > 0 else None
+                us20_val = (v_now - v20) / v20 * 100 if v20 > 0 else None
         # point-in-timeファンダ（fundamentals_annual から、その日に既知だった値のみ）
         fund = None
         if sample_code is not None:
@@ -150,7 +181,25 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None):
                     "div_yield":           div_yield,
                     "eps_growth":          pit.get("eps_growth"),
                     "roe_trend":           pit.get("roe_trend"),
+                    "dps_growth":          pit.get("dps_growth"),
+                    "vix":                 vix_val,
+                    "us5":                 us5_val,
+                    "us20":                us20_val,
                 }
+            else:
+                # ファンダなし銘柄でもマクロ特徴量は渡す
+                fund = {
+                    "vix":  vix_val,
+                    "us5":  us5_val,
+                    "us20": us20_val,
+                }
+        else:
+            # sample_code未指定の場合もマクロ特徴量は渡す
+            fund = {
+                "vix":  vix_val,
+                "us5":  us5_val,
+                "us20": us20_val,
+            }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
@@ -210,10 +259,21 @@ def main():
     stock_list=get_tse_stock_list()
     if stock_list is None: return
     print(f"対象: {len(stock_list)}銘柄")
-    print("\n日経225データ取得中...")
+    print("\n市場データ取得中...")
     nk_df=get_nikkei_df()
-    if nk_df is not None: print(f"  日経225: {len(nk_df)}日分取得")
+    if nk_df is not None: print(f"  日経225:    {len(nk_df)}日分取得")
     else: print("  日経225取得失敗 → 絶対リターンで学習")
+    vix_df=get_vix_df()
+    sp500_df=get_sp500_df()
+    if vix_df is not None:   print(f"  VIX:        {len(vix_df)}日分取得（恐怖指数）")
+    else:                    print("  VIX取得失敗 → 0.0で代替")
+    if sp500_df is not None: print(f"  S&P500:     {len(sp500_df)}日分取得（クロスアセット）")
+    else:                    print("  S&P500取得失敗 → 0.0で代替")
+    # date→値のマップを事前構築（generate_samples 内で高速ルックアップ）
+    vix_map     = dict(zip(vix_df.index, vix_df["Close"]))      if vix_df   is not None else {}
+    sp500_dates = sorted(sp500_df.index)                         if sp500_df is not None else []
+    sp500_closes_arr = (sp500_df.loc[sp500_dates, "Close"].values
+                        if sp500_df is not None else np.array([]))
     # ファンダは fundamentals_annual から point-in-time で取得（事前に
     # tools/fetch_fundamentals_history.py で蓄積しておくこと）
     from lib.db import get_fundamentals_codes_count
@@ -229,7 +289,10 @@ def main():
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.2); continue
         for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only,
-                                                        sample_code=str(row["code"])):
+                                                        sample_code=str(row["code"]),
+                                                        vix_map=vix_map,
+                                                        sp500_dates=sp500_dates,
+                                                        sp500_closes_arr=sp500_closes_arr):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
                 train_ar.append(ar); train_ad.append(ad); train_dates.append(sd)
@@ -305,6 +368,7 @@ def main():
                    "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
 
     # C-1: 特徴量重要度を保存
+    # 53次元: 47基本(32テクニカル+12ファンダ+3マクロ拡張) + 6クロスセクション
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
@@ -313,6 +377,7 @@ def main():
                   "per_feat","pbr_feat","roe_feat","earn_feat",
                   "div_ex_feat","yutai_ex_feat","sin_month","cos_month","div_yield_f",
                   "eps_growth_f","roe_trend_f",
+                  "dps_growth_f","vix_feat","us5_f","us20_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52"]
     imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
            "drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}

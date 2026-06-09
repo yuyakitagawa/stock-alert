@@ -82,6 +82,30 @@ def get_price_at_date(code, target_date):
         return None
 
 
+def get_market_index_df(ticker_encoded, days=2200):
+    """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す。
+    ticker_encoded: URLエンコード済みティッカー（例: %5EN225, %5EVIX, %5EGSPC）
+    """
+    end_ts   = int(datetime.now().timestamp())
+    start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_encoded}"
+           f"?interval=1d&period1={start_ts}&period2={end_ts}")
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        ts     = result[0].get("timestamp", [])
+        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
+        idx = pd.to_datetime(ts, unit="s", utc=True).tz_convert("Asia/Tokyo")
+        df  = pd.DataFrame({"Close": closes}, index=idx).dropna()
+        df.index = df.index.date
+        return df
+    except Exception:
+        return None
+
+
 @functools.lru_cache(maxsize=1)
 def get_nikkei_returns():
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
@@ -267,12 +291,13 @@ def _days_to_nearest_event(from_date, months, day=25):
 
 
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
-    """43次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11
+    """47次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル12 + マクロ拡張4
     fundamentals dict keys (all optional):
       per, pbr, roe, days_to_earnings,
       days_since_div_ex, days_since_yutai_ex,
       month（カレンダー月 1-12），div_yield（配当利回り%）
-      eps_growth（EPS前年比），roe_trend（ROE前年差%pt）
+      eps_growth（EPS前年比），roe_trend（ROE前年差%pt），dps_growth（DPS前年比）
+      vix（VIX指数水準），us5（SP500 5日リターン%），us20（SP500 20日リターン%）
     """
     if len(p) < 91 or p[-1] == 0:
         return None
@@ -353,6 +378,10 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _mon  = fd.get('month')   # カレンダー月（学習時はサンプル日から渡す）
     _epsg = fd.get('eps_growth')
     _roet = fd.get('roe_trend')
+    _dpsg = fd.get('dps_growth')
+    _vix  = fd.get('vix')
+    _us5  = fd.get('us5')
+    _us20 = fd.get('us20')
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
     roe_feat      = float(np.clip(_roe  / 15.0,        -0.5, 2.0)) if _roe  is not None else 0.0
@@ -364,12 +393,20 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     div_yield_f   = float(np.clip(_dyld / 10.0,          0.0, 1.0)) if _dyld is not None else 0.0
     eps_growth_f  = float(np.clip(_epsg,                 -1.0, 3.0)) if _epsg is not None else 0.0
     roe_trend_f   = float(np.clip(_roet / 10.0,          -1.0, 1.0)) if _roet is not None else 0.0
+    dps_growth_f  = float(np.clip(_dpsg,                 -1.0, 2.0)) if _dpsg is not None else 0.0
+    # マクロ拡張4特徴量（VIX恐怖指数・SP500クロスアセット — 投資銀行手法）
+    # VIX: 25を中立として正規化。低VIX=強気環境、高VIX=恐怖・弱気環境。
+    vix_feat  = float(np.clip((_vix / 25.0) - 1.0, -1.0, 2.0)) if _vix  is not None else 0.0
+    # SP500: 日本市場への1日先行シグナル。±10%を±1に正規化。
+    us5_f     = float(np.clip(_us5  / 10.0,         -1.0, 1.0)) if _us5  is not None else 0.0
+    us20_f    = float(np.clip(_us20 / 20.0,         -1.0, 1.0)) if _us20 is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
             vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
             per_feat, pbr_feat, roe_feat, earn_feat, div_ex_feat, yutai_ex_feat,
-            sin_month, cos_month, div_yield_f, eps_growth_f, roe_trend_f]
+            sin_month, cos_month, div_yield_f, eps_growth_f, roe_trend_f,
+            dps_growth_f, vix_feat, us5_f, us20_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
