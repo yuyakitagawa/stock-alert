@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 
-webpush.setVapidDetails(
-  `mailto:${process.env.VAPID_CONTACT_EMAIL ?? "admin@example.com"}`,
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-);
+// ビルド時（VAPIDキー未設定）にトップレベルで例外を投げないよう、
+// 実行時にVAPIDを初期化する。キーが揃っているときのみ設定。
+let _vapidReady = false;
+function ensureVapid(): boolean {
+  if (_vapidReady) return true;
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const priv = process.env.VAPID_PRIVATE_KEY;
+  if (!pub || !priv) return false;
+  webpush.setVapidDetails(
+    `mailto:${process.env.VAPID_CONTACT_EMAIL ?? "admin@example.com"}`,
+    pub,
+    priv
+  );
+  _vapidReady = true;
+  return true;
+}
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY!;
@@ -23,6 +34,9 @@ export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-internal-secret");
   if (secret !== process.env.INTERNAL_SEND_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!ensureVapid()) {
+    return NextResponse.json({ error: "VAPID keys not configured" }, { status: 503 });
   }
 
   // 最新日付を取得
