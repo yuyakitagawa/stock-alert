@@ -27,9 +27,32 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     sys.exit(0)
 
 
+def _qa_check(today: str) -> None:
+    """QA: Push送信前に web_rankings の鮮度・整合性を検査（alert-only）。"""
+    try:
+        from lib.data_sanity import run_site_gate
+        headers = {
+            "apikey": SUPABASE_SERVICE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        }
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/web_rankings"
+            f"?date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend",
+            headers=headers, timeout=30,
+        )
+        rankings = resp.json() if resp.ok else []
+        run_site_gate({"date": today, "rankings": rankings},
+                      source="send_user_alerts", alert=True)
+    except Exception as e:
+        print(f"[send_user_alerts] QAチェックでエラー（無視して継続）: {e}")
+
+
 def main() -> None:
     today = date.today().isoformat()
     print(f"[send_user_alerts] {today} Web Push 送信開始 {'(dry-run)' if DRY_RUN else ''}")
+
+    # QA: 送信前に本日データの鮮度・整合性を確認
+    _qa_check(today)
 
     if DRY_RUN:
         # dry-run: /api/push/send を呼ばずにサブスクリプション数だけ表示

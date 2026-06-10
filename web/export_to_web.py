@@ -52,6 +52,54 @@ def _upsert(table: str, rows: list[dict]) -> None:
             print(f"[export_to_web] {table}: {len(batch)} 行 upsert 完了")
 
 
+def _sb_get(table: str, query: str = "") -> list[dict]:
+    """Supabaseからテーブルを全件読み出す（QA読み戻し用）。
+       SupabaseのRESTは1ページ最大1000行のため offset でページングする。失敗時は[]。"""
+    base = f"{SUPABASE_URL}/rest/v1/{table}"
+    page_size = 1000
+    offset = 0
+    out: list[dict] = []
+    try:
+        while True:
+            sep = "&" if query else ""
+            url = f"{base}?{query}{sep}limit={page_size}&offset={offset}"
+            resp = requests.get(url, headers=_sb_headers(), timeout=30)
+            if not resp.ok:
+                break
+            rows = resp.json()
+            out.extend(rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        return out
+    except Exception as e:
+        print(f"[export_to_web] {table} 読み出し失敗: {e}")
+        return out
+
+
+def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> None:
+    """全upsert完了後、Supabaseから読み戻してサイト全体の整合性を検証（alert-only）。"""
+    try:
+        from lib.data_sanity import run_site_gate
+        # ライブ状態を読み戻して検証（upsert失敗・欠損も捕捉）
+        live_rankings = _sb_get("web_rankings",
+                                f"date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend")
+        meta = _sb_get("web_stock_meta", "select=code,sector&limit=5000")
+        ai = _sb_get("ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
+        earnings = _sb_get("web_earnings", "select=code&limit=1")
+        context = {
+            "date":        today,
+            "rankings":    live_rankings if live_rankings else ranking_rows,
+            "stock_meta":  meta,
+            "ai_analyses": ai,
+            "earnings":    earnings,
+            "expected_ai": expected_ai,
+        }
+        run_site_gate(context, source="export_to_web(site)", alert=True)
+    except Exception as e:
+        print(f"[export_to_web] サイトQAチェックでエラー（無視して継続）: {e}")
+
+
 _EMOJI_MAP = {
     "🥇 S買い":        "S買い",
     "⏳ 方向感なし":   "方向感なし",
@@ -294,6 +342,9 @@ def main() -> None:
 
     # 5. Top10シミュレーション更新
     update_top10_simulation(ranking_rows, today)
+
+    # 6. QA: サイト全体の整合性チェック（全upsert後にライブ状態を読み戻して検証）
+    qa_site_check(today, ranking_rows, expected_ai=len(top_rows))
 
     # 7. Next.js ISRキャッシュを即時無効化
     site_url = os.getenv("SITE_URL", "")

@@ -1,19 +1,23 @@
 """
-data_sanity.py — ランキング出力の不変条件チェック（QA役の中核）
+data_sanity.py — Quality Assurance (QA) ロールの中核
 
-「ネット = 上昇確率 − 下落確率」のような“定義上必ず成り立つはず”の条件を
-ランタイムで検証し、リリース前に壊れたデータを検知する。
+役割: リリースのたびに、出力データの「定義上必ず成り立つはず」の不変条件と、
+サイト全体（Supabase各テーブル）のデータ欠損・整合性をランタイムで検証する。
 
 きっかけ: ensemble分岐で net=rise（下落確率を引かない）バグが、コードを読んでも
 気づけずリリースされた。コードレビューでは防げないので出力データを直接検査する。
 
+2系統のチェック:
+  - check_ranking(rows): ランキング単体の不変条件（net=rise-drop 等の行レベル検査）
+  - check_site(context): サイト全体の完全性（テーブル横断のカバレッジ・鮮度・欠損）
+
 使い方:
-    from lib.data_sanity import check_ranking, format_violations, has_critical
-    violations = check_ranking(rows)   # rows: list[dict] or DataFrame
-    if violations:
-        print(format_violations(violations))
+    from lib.data_sanity import run_gate, run_site_gate
+    run_gate(ranking_rows, source="rank_stocks")          # リリース前ゲート
+    run_site_gate(site_context, source="export_to_web")   # サイト全体チェック
 
 各チェックは純粋関数。重大度 critical / warning を付与して Violation のリストを返す。
+alert-only: critical でも例外を投げず、呼び出し側の処理は継続させる（通知のみ）。
 """
 from __future__ import annotations
 import os
@@ -222,6 +226,91 @@ def send_qa_alert(violations: list[Violation], source: str = "") -> bool:
     except Exception as e:
         logger.error("[data_sanity] QAアラート送信失敗: %s", e)
         return False
+
+
+def check_site(context: dict) -> list[Violation]:
+    """サイト全体のデータ完全性・整合性を検査する。
+
+    context（提供された項目だけ検査。未提供のキーはスキップ）:
+      - date:         想定する最新日 "YYYY-MM-DD"
+      - rankings:     web_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
+      - stock_meta:   web_stock_meta の行（code/name/sector）
+      - ai_analyses:  ai_analyses の行（code/summary/verdict）
+      - earnings:     web_earnings の行（code/...）
+      - expected_ai:  AI解析が存在すべき件数（上位N）
+    """
+    v: list[Violation] = []
+    expected_date = context.get("date")
+    rankings = context.get("rankings")
+
+    # ── ランキング本体（行レベル不変条件を再利用）+ 鮮度 ──────────────────
+    if "rankings" in context:
+        if not rankings:
+            v.append(Violation("critical", "rankings_empty",
+                               "web_rankings が空（サイトに本日データが出ない）"))
+        else:
+            v.extend(check_ranking(rankings))
+            if expected_date:
+                dates = {r.get("date") for r in rankings if r.get("date")}
+                if dates and expected_date not in dates:
+                    v.append(Violation("critical", "stale_rankings",
+                        f"web_rankings に本日({expected_date})のデータがない（最新={max(dates)}）"))
+
+    # ── stock_meta カバレッジ（銘柄名・セクターの欠損）───────────────────
+    meta = context.get("stock_meta")
+    if rankings and meta is not None:
+        meta_codes = {str(m.get("code")) for m in meta}
+        rank_codes = {str(r.get("code")) for r in rankings}
+        missing = rank_codes - meta_codes
+        if missing:
+            sev = "critical" if len(missing) > len(rank_codes) * 0.2 else "warning"
+            v.append(Violation(sev, "meta_coverage",
+                f"stock_meta未登録の銘柄 {len(missing)}/{len(rank_codes)}件 (例 {list(missing)[:3]})"))
+        # セクター欠損
+        no_sector = [str(m.get("code")) for m in meta if not (m.get("sector") or "").strip()]
+        if len(no_sector) > len(meta) * 0.3:
+            v.append(Violation("warning", "sector_missing",
+                f"セクター未設定が{len(no_sector)}/{len(meta)}件（業種別成績が崩れる）"))
+
+    # ── AI解析カバレッジ・空欠損 ─────────────────────────────────────────
+    ai = context.get("ai_analyses")
+    expected_ai = context.get("expected_ai", 0)
+    if ai is not None:
+        if expected_ai and len(ai) < expected_ai:
+            v.append(Violation("warning", "ai_coverage",
+                f"AI解析が{len(ai)}件のみ（想定{expected_ai}件）"))
+        empty = [a.get("code") for a in ai if not str(a.get("summary") or "").strip()]
+        if empty:
+            v.append(Violation("warning", "ai_empty",
+                f"AI解析のsummaryが空: {len(empty)}件 (例 {empty[:3]})"))
+        if expected_date:
+            stale_ai = [a.get("code") for a in ai
+                        if a.get("date") and a.get("date") != expected_date]
+            if stale_ai and len(stale_ai) == len(ai):
+                v.append(Violation("warning", "ai_stale",
+                    f"AI解析が古い日付のみ（本日{expected_date}分なし）"))
+
+    # ── 決算カレンダー（任意・空なら warning）────────────────────────────
+    earnings = context.get("earnings")
+    if "earnings" in context and rankings and not earnings:
+        v.append(Violation("warning", "earnings_empty", "web_earnings が空"))
+
+    return v
+
+
+def run_site_gate(context: dict, source: str = "", alert: bool = True) -> list[Violation]:
+    """サイト全体チェック→ログ→（違反あれば）メール通知。alert-only。"""
+    violations = check_site(context)
+    summary = format_violations(violations)
+    if violations:
+        logger.warning("[%s] %s", source or "site_qa", summary)
+        print(summary)
+        if alert:
+            send_qa_alert(violations, source)
+    else:
+        logger.info("[%s] %s", source or "site_qa", summary)
+        print(summary)
+    return violations
 
 
 def run_gate(data, source: str = "", alert: bool = True) -> list[Violation]:

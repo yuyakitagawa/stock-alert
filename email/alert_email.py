@@ -743,6 +743,22 @@ def main():
     logger.info("チェック銘柄: %d銘柄", len(held_stocks))
     today_date_str = datetime.now().strftime("%Y-%m-%d")
 
+    # QA: メール送信前に最新ランキングの整合性を検査（alert-only）
+    try:
+        import sqlite3 as _sqlite3
+        from lib.data_sanity import run_gate
+        _con = _sqlite3.connect(os.path.join(BASE_DIR, "stock_alert.db"))
+        _con.row_factory = _sqlite3.Row
+        _latest = _con.execute("SELECT MAX(date) FROM daily_ranking").fetchone()[0]
+        if _latest:
+            _rows = [dict(r) for r in _con.execute(
+                "SELECT code, rise_prob, drop_prob, net, recommend "
+                "FROM daily_ranking WHERE date=?", (_latest,)).fetchall()]
+            run_gate(_rows, source="alert_email", alert=True)
+        _con.close()
+    except Exception as _e:
+        logger.warning("QAチェックでエラー（無視して継続）: %s", _e)
+
     rise_model, drop_model = _load_alert_models_or_exit()
     if rise_model is None:
         return
