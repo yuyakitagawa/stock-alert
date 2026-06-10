@@ -23,6 +23,17 @@ function NetBadge({ net }: { net: number | null }) {
   );
 }
 
+// 上昇確率・下落確率の内訳（net = 上昇 − 下落）
+function ProbBreakdown({ r }: { r: Ranking | undefined }) {
+  if (!r) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 text-xs font-mono mt-0.5">
+      <span className="text-green-400">↑{r.rise_prob.toFixed(0)}%</span>
+      <span className="text-red-400">↓{r.drop_prob.toFixed(0)}%</span>
+    </div>
+  );
+}
+
 function OverseasBar({ ratio }: { ratio: number }) {
   return (
     <div className="flex items-center gap-2">
@@ -95,7 +106,7 @@ export default async function WatchlistPage() {
                 <th className="text-left font-medium px-4 py-3">海外比率</th>
                 <th className="text-left font-medium px-4 py-3">高値から（お得度）</th>
                 <th className="text-right font-medium px-4 py-3">PER / PBR</th>
-                <th className="text-right font-medium px-4 py-3">netスコア</th>
+                <th className="text-right font-medium px-4 py-3">netスコア（上昇↑/下落↓）</th>
               </tr>
             </thead>
             <tbody>
@@ -122,6 +133,7 @@ export default async function WatchlistPage() {
                     </td>
                     <td className="px-4 py-3 align-top text-right">
                       <NetBadge net={r?.net ?? null} />
+                      <ProbBreakdown r={r} />
                       {r?.recommend && <div className="text-xs text-gray-600 mt-0.5">{r.recommend}</div>}
                     </td>
                   </tr>
@@ -158,7 +170,10 @@ export default async function WatchlistPage() {
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs">
                   <span className="text-gray-600">netスコア</span>
-                  <NetBadge net={r?.net ?? null} />
+                  <div className="text-right">
+                    <NetBadge net={r?.net ?? null} />
+                    <ProbBreakdown r={r} />
+                  </div>
                 </div>
               </Link>
             );
