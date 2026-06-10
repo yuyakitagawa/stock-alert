@@ -13,6 +13,7 @@ import move_history  # PDCA棋譜（過去の変更履歴・振り子検出）
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PDCA_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR))  # lib.* を import 可能にする
 
 # メール送信ログ（logs/email_send.log に追記）
 _log_dir = BASE_DIR / "logs"
@@ -868,6 +869,63 @@ def engineer(proposal, before_metrics, baseline):
         )
 
 
+# ── QA ロール（回帰・退化検出）─────────────────────────────────────────────
+AUC_FLOOR_RISE = 0.55   # 上昇AUCがこれ未満ならモデル退化とみなす
+AUC_FLOOR_DROP = 0.55   # 下落AUCがこれ未満なら退化
+
+
+def qa_review(proposal, adopted: bool) -> tuple[bool, str]:
+    """採用された変更がモデル退化やデータ不整合を招いていないか検査する QA ロール。
+       (ok, detail) を返す。ok=False は回帰検出（通知のみ、自動revertはしない）。"""
+    issues = []
+
+    # ① AUC 下限割れ（壊れた再学習の検出）
+    try:
+        auc = json.loads((BASE_DIR / "baseline_auc.json").read_text("utf-8"))
+        if auc.get("rise", 1.0) < AUC_FLOOR_RISE:
+            issues.append(f"上昇AUC={auc['rise']:.3f} < {AUC_FLOOR_RISE}（モデル退化）")
+        if auc.get("drop", 1.0) < AUC_FLOOR_DROP:
+            issues.append(f"下落AUC={auc['drop']:.3f} < {AUC_FLOOR_DROP}（モデル退化）")
+    except Exception as e:
+        issues.append(f"AUC読み込み失敗: {e}")
+
+    # ② モデル出力の縮退検出（定数予測になっていないか）
+    try:
+        import joblib, numpy as np
+        rise_m = joblib.load(BASE_DIR / "rf_model.pkl")
+        nfeat = getattr(rise_m, "n_features_in_", 60)
+        rng = np.random.default_rng(0)
+        X = rng.standard_normal((100, nfeat))
+        pr = rise_m.predict_proba(X)[:, 1]
+        if pr.std() < 0.01:
+            issues.append(f"上昇モデルが定数予測に縮退（std={pr.std():.4f}）")
+    except Exception as e:
+        issues.append(f"モデル予測チェック失敗: {e}")
+
+    # ③ 最新ランキングのデータ整合性（防御の二重化）
+    try:
+        import sqlite3
+        from lib.data_sanity import check_ranking, has_critical
+        conn = sqlite3.connect(BASE_DIR / "stock_alert.db")
+        conn.row_factory = sqlite3.Row
+        latest = conn.execute("SELECT MAX(date) FROM daily_ranking").fetchone()[0]
+        if latest:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT code, rise_prob, drop_prob, net, recommend "
+                "FROM daily_ranking WHERE date=?", (latest,)).fetchall()]
+            v = check_ranking(rows)
+            if has_critical(v):
+                crit = [x.check for x in v if x.severity == "critical"]
+                issues.append(f"最新ランキング({latest})にcritical違反: {crit}")
+        conn.close()
+    except Exception as e:
+        issues.append(f"ランキング整合性チェック失敗: {e}")
+
+    if issues:
+        return False, "⚠️ QA回帰検出: " + " / ".join(issues)
+    return True, "✅ QA合格: モデル退化・データ不整合なし"
+
+
 # ── スタグネーション（改善停滞）検出 ──────────────────────────────────────────
 STAGNATION_FILE = PDCA_DIR / "stagnation.json"
 STAGNATION_N    = 7   # 7サイクル連続で日経に負け続けたら方向性変更アラート
@@ -1168,6 +1226,21 @@ def main():
     print(f"  → {detail}")
     activity.finish(aid, "done" if ok else "rejected", detail)
     log(f"- engineer: {detail}")
+
+    # Step4.5: QA（モデル退化・データ不整合の回帰検出。通知のみ・自動revertなし）
+    print("Step4.5: QA レビュー中...")
+    aid = activity.start("QA", "回帰・退化チェック", "AUC・モデル出力・データ整合性を検査中…")
+    qa_ok, qa_detail = qa_review(prop, ok)
+    print(f"  → {qa_detail}")
+    activity.finish(aid, "done" if qa_ok else "rejected", qa_detail)
+    log(f"- qa: {qa_detail}")
+    if not qa_ok:
+        try:
+            from lib.data_sanity import Violation, send_qa_alert
+            send_qa_alert([Violation("critical", "pdca_regression", qa_detail)],
+                          source="PDCA QA")
+        except Exception as _e:
+            print(f"  QAアラート送信失敗（無視）: {_e}")
 
     # Step5: スタグネーション更新（改善後の最新メトリクスで判定）
     latest_metrics = load_baseline() if ok else metrics

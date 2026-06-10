@@ -270,6 +270,15 @@ def main() -> None:
     if not ranking_rows:
         print(f"[export_to_web] {today} のランキングデータなし。終了します。")
         return
+
+    # QA: web公開前にデータ整合性をチェック（alert-only。壊れたデータがweb/メールに
+    #     出ても気づけるようパイプライン側と二重化。critical でも公開は止めない）
+    try:
+        from lib.data_sanity import run_gate
+        run_gate(ranking_rows, source="export_to_web", alert=True)
+    except Exception as _e:
+        print(f"[export_to_web] QAチェックでエラー（無視して継続）: {_e}")
+
     _upsert("web_rankings", ranking_rows)
 
     # 2. 企業メタ
