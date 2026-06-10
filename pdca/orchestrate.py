@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
 import activity  # アクティビティログ（誰が何をしたか/しているかを記録）
+import move_history  # PDCA棋譜（過去の変更履歴・振り子検出）
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PDCA_DIR = Path(__file__).resolve().parent
@@ -215,6 +216,12 @@ GOAL_NIKKEI_ALPHA = 0.0   # 日経225に勝つこと（alpha > 0 が必須条件
 # 最終目標: 元本300万円 → 10年で1億円（3%/月 × 120ヶ月 = 34倍）
 # 日経に勝てないならETFの方が良い → alpha > 0 は投資フェーズ移行の必要条件
 
+# ── ノイズマージン（C1: ノイズに反応した誤採用を防ぐ）──────────────────────
+# バックテスト(5期間・少ラウンド)の avg は ±1〜2% 揺れる。εの改善では採用しない。
+ADOPT_AVG_MARGIN  = 0.5   # avg をこの幅以上ベースライン超過したら採用（ノイズ床の上）
+ADOPT_BIG_MARGIN  = 5.0   # big_win_rate をこの幅以上改善 ＆ avg非劣化なら採用
+ADOPT_AVG_TOL     = 0.2   # avg がこの幅を超えて下がったら他指標が良くても不採用
+
 # ── 投資ステージ管理 ──────────────────────────────────────────────────────
 # Phase 0: モデル改善中（ETFに入れておく）
 # Phase 1: 目標達成 → 少額でモデルに従う
@@ -306,14 +313,29 @@ def _send_stage_notification(stage):
     except Exception as e:
         print(f"  [ステージ通知エラー] {e}")
 
+def _last_cycle_adopted() -> bool:
+    """直近サイクルで改善が採用されたか（pdca_log の最後の engineer 行で判定）。"""
+    moves = move_history.load_recent_moves(2)
+    return bool(moves) and moves[0].get("adopted") is True
+
+
 def fund_manager(metrics, baseline, feedback):
     bsl = baseline or metrics
 
-    # 目標未達なら問答無用で improve（LLM 判断に頼らない）
     avg      = metrics.get('avg_return',  -9999)
     win      = metrics.get('win_rate',        0)
     big      = metrics.get('big_win_rate',    0)
     nk_alpha = metrics.get('nk_alpha',    -9999)
+
+    # B4: 前サイクルで変更を採用した直後は、もう1サイクル同じ設定で回して
+    #     その改善がノイズでないことを確認する（振り子・積み増しを止める）。
+    if _last_cycle_adopted():
+        return {
+            "action": "hold",
+            "reason": "前サイクルで改善を採用 → 本日は同設定で再確認（ノイズ検証）。積み増しせず安定を優先"
+        }
+
+    # 目標未達なら問答無用で improve（LLM 判断に頼らない）
     if avg < GOAL_AVG or win < GOAL_WIN or big < GOAL_BIGWIN or nk_alpha <= GOAL_NIKKEI_ALPHA:
         reasons = []
         if avg      < GOAL_AVG:          reasons.append(f"avg={avg}%<{GOAL_AVG}%")
@@ -647,6 +669,11 @@ def quant_analyst(metrics, baseline, fm_directive="", consult_report=""):
         f"\n【マーケットコンサルの市場環境レポート（提案の参考にせよ）】\n{consult_report}\n"
         if consult_report else ""
     )
+
+    # 棋譜（過去の試行履歴）— 振り子防止のためQuantに「何を試したか」を見せる
+    moves = move_history.load_recent_moves(12)
+    kifu  = move_history.format_kifu(moves)
+
     prompt = f"""あなたは世界トップレベルのクオンツ研究者です。
 日本株XGBoostモデルを「元本300万円を10年で1億円（年率42%、四半期9%）」を達成できるレベルまで引き上げてください。
 {directive_block}{consult_block}
@@ -661,17 +688,28 @@ def quant_analyst(metrics, baseline, fm_directive="", consult_report=""):
 【最新研究からの知見】
 {research}
 
+{kifu}
+
 【config.py（スクリーニング・フィルター定数）】
 {config}
 
 【rf_train_v3.py（モデル学習コード）抜粋】
 {train[train.find('def train_model'):train.find('def main')]}
 
-改善の方向性（自由に判断せよ）:
-- XGBoostのハイパーパラメータ調整（n_estimators, max_depth, learning_rate, subsample, colsample_bytree, min_child_weight など）
-- スクリーニング条件の見直し（config.py）
-- ALPHA_THRESHOLD / DROP_ALPHA_THRESHOLD の調整（rf_train_v3.py の定数）
-- 特徴量重要度が低い特徴量のweight調整アイデア
+━━━ 提案の規律（厳守）━━━
+1. 【ハイパーパラメータの堂々巡り禁止】上の棋譜を見ること。XGBoostのハイパーパラメータ
+   (n_estimators, max_depth, learning_rate, subsample, colsample_bytree, min_child_weight,
+    reg_alpha, reg_lambda, gamma, early_stopping_rounds) は既に何度も上下に振られ、
+   バックテストのノイズ範囲(±1〜2%)で上下しているだけで本質的改善に至っていない。
+   **これらの単純な数値いじりは原則提案しないこと。**
+2. 【逆戻し禁止】棋譜で直近に動かしたパラメータを逆方向に戻す提案は自動却下される。
+   どうしても提案するなら「前回と違う"新しい根拠"」を reason に必ず明記すること。
+3. 【本質を狙え】優先順位は以下:
+   (a) スクリーニング条件・フィルターの改善（config.py） — bear耐性・アルファ生成に直結
+   (b) ALPHA_THRESHOLD / DROP_ALPHA_THRESHOLD など戦略パラメータ（rf_train_v3.py）
+   (c) 特徴量の扱い（重要度が低い特徴量の整理、相互作用の活用アイデア）
+   (d) ↑が尽きた時のみ、明確な仮説を伴うハイパーパラメータ調整
+4. 1サイクルで触るのは1〜3個まで。多数を同時に動かすと何が効いたか分からなくなる。
 
 変更禁止:
 - BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD（市場分類の根幹）
@@ -787,15 +825,18 @@ def engineer(proposal, before_metrics, baseline):
         return False, "backtest失敗、revert"
 
     bsl = baseline if baseline else before_metrics
-    # 採用条件: avg が大幅に下がった場合は他の指標が改善していても不採用
+    # 採用条件（C1: ノイズマージン）— εの改善では採用しない。
+    #   ① avg が ADOPT_AVG_MARGIN 以上ベースライン超過（明確な改善）  または
+    #   ② big_win_rate が ADOPT_BIG_MARGIN 以上改善 かつ avg が非劣化
+    # いずれの場合も avg が ADOPT_AVG_TOL を超えて下がっていたら不採用。
     after_avg = after.get('avg_return', -9999)
     bsl_avg   = bsl.get('avg_return',   -9999)
-    avg_regression = after_avg < bsl_avg - 0.5  # 0.5%以上avgが下がったら不採用
-    improved = (not avg_regression) and any([
-        after_avg                              > bsl_avg,
-        after.get('win_rate',          0) > bsl.get('win_rate',          0),
-        after.get('big_win_rate',      0) > bsl.get('big_win_rate',      0),
-    ])
+    after_big = after.get('big_win_rate', 0)
+    bsl_big   = bsl.get('big_win_rate',   0)
+    avg_regression = after_avg < bsl_avg - ADOPT_AVG_TOL
+    meaningful_avg = after_avg >= bsl_avg + ADOPT_AVG_MARGIN
+    meaningful_big = (after_big >= bsl_big + ADOPT_BIG_MARGIN) and (after_avg >= bsl_avg)
+    improved = (not avg_regression) and (meaningful_avg or meaningful_big)
 
     change_summary = " / ".join(
         f"{c['param_name']} {c.get('old_value','?')}→{c['new_value']}" for c in applied
@@ -1048,14 +1089,24 @@ def main():
     activity.record("FM", "改善方針の判断", fm['action'], fm['reason'])
     log(f"- FM: {fm['action']} | {fm['reason']}")
 
-    if fm['action'] == 'skip':
-        print("今日は改善スキップ")
-        log("- skip")
-        # スキップ時もスタグネーション更新（目標達成=alphaがプラスならresetしてよい）
+    if fm['action'] in ('skip', 'hold'):
+        if fm['action'] == 'hold':
+            # B4: 前回採用の改善が今日のbacktestでも維持されているか確認
+            held = metrics.get('avg_return', -9999) >= baseline.get('avg_return', -9999) - ADOPT_AVG_TOL
+            verdict = "維持OK（改善は本物）" if held else "⚠️後退（前回の改善はノイズの可能性）"
+            print(f"今日は再確認サイクル（hold）: {verdict}")
+            log(f"- hold: 再確認 avg={metrics.get('avg_return')}% vs bsl={baseline.get('avg_return')}% → {verdict}")
+            if not held:
+                save_baseline(metrics)  # ベースラインを現実に合わせて更新（過大評価を是正）
+                log("- hold: baselineを現在値に是正（ノイズ採用の巻き戻し）")
+            activity.record("System", "PDCAサイクル完了", "hold", f"再確認サイクル: {verdict}")
+        else:
+            print("今日は改善スキップ")
+            log("- skip")
+            activity.record("System", "PDCAサイクル完了", "skip", "目標達成済みのため本日は改善スキップ")
         cnt = update_stagnation(metrics.get('nk_alpha', -9999))
         if cnt > 0:
-            log(f"- stagnation: {cnt}サイクル（skip中）")
-        activity.record("System", "PDCAサイクル完了", "skip", "目標達成済みのため本日は改善スキップ")
+            log(f"- stagnation: {cnt}サイクル（{fm['action']}中）")
         push_log()
         return
 
@@ -1072,6 +1123,36 @@ def main():
         log("- analyst: parse error × 2、スキップ"); push_log(); return
     for ch in prop.get('changes', []):
         print(f"  → {ch['param_name']}: {ch.get('old_value')}→{ch['new_value']}  ({ch.get('reason','')})")
+
+    # Step3.5: 振り子ガード — 直近の変更を逆方向に戻すだけの提案を機械的に除外
+    moves = move_history.load_recent_moves(12)
+    osc = move_history.detect_oscillation(prop, moves)
+    if osc:
+        osc_params = {o['param'] for o in osc}
+        osc_summary = " / ".join(f"{o['param']}({o['now']})" for o in osc)
+        # 「新しい根拠」を明記していない逆戻しは除外。reason に NEW: が無ければ振り子とみなす
+        kept = [c for c in prop.get('changes', [])
+                if re.sub(r'[（(].*', '', str(c.get('param_name', ''))).strip() not in osc_params
+                or str(c.get('reason', '')).strip().upper().startswith('NEW:')]
+        dropped = len(prop.get('changes', [])) - len(kept)
+        if dropped:
+            print(f"  ⛔ 振り子ガード: {osc_summary} を却下（直近と逆方向・新根拠なし）")
+            activity.record("Engineer", "振り子ガード発動",
+                            "rejected" if not kept else "done",
+                            f"逆戻し提案を{dropped}件却下: {osc_summary}")
+            log(f"- guard: 振り子却下 {dropped}件 [{osc_summary}]")
+        prop['changes'] = kept
+        if not kept:
+            print("  → 提案がすべて振り子だったため本サイクルは見送り")
+            log("- analyst: 全提案が振り子のため見送り")
+            activity.finish(aid, "rejected", "全提案が振り子（過去と逆方向）のため見送り")
+            cnt = update_stagnation(metrics.get('nk_alpha', -9999))
+            if cnt > 0:
+                log(f"- stagnation: {cnt}サイクル")
+            activity.record("System", "PDCAサイクル完了", "skip", "振り子提案のみで実質的な改善案なし")
+            push_log()
+            return
+
     prop_summary = " / ".join(
         f"{c['param_name']} {c.get('old_value','?')}→{c['new_value']}"
         for c in prop.get('changes', [])
