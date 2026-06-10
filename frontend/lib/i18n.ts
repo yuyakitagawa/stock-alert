@@ -4,6 +4,7 @@ export const UI = {
   ja: {
     top: "TOP",
     rankings: "ランキング",
+    watchlist: "値上げ力",
     review: "チームレビュー",
     activity: "活動ログ",
     rise: "上昇",
@@ -18,6 +19,7 @@ export const UI = {
   en: {
     top: "TOP",
     rankings: "Rankings",
+    watchlist: "Pricing Power",
     review: "Team Review",
     activity: "Activity",
     rise: "Rise",

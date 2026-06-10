@@ -26,6 +26,11 @@ web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 全アクション（実施中・実施済み）は `pdca/activity.py` 経由で Supabase `activity_log` に記録され、
 Webの **活動ログ**（/activity）・**チームレビュー**（/review）で誰でも状況把握できる。
 
+**値上げ力ウォッチリスト**（/watchlist）は、シェアを独占しインフレ下でも値上げを通せる toC ブランド銘柄の
+将来買い候補リスト（オーナー選定）。正本は `data/pricing_power_watchlist.csv`、フロントは `frontend/lib/watchlist.ts`
+の静的定数で持ち、当日の `web_rankings`（netスコア・シグナル）と銘柄コードで突き合わせて表示する。
+シェア率・海外比率は公知ベースの概算。
+
 `frontend/` を変更して push すると `.github/workflows/frontend_build.yml` が自動でビルド検証し、
 失敗時（=Vercelデプロイも失敗する）は Gmail に通知する。フロント変更前のローカル `npm run build` 確認も推奨。
 
