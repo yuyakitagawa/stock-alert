@@ -1,15 +1,7 @@
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
 import Sparkline from "./Sparkline";
-
-// ネットスコアに応じたカード配色（シグナルラベルは廃止）
-function netStyle(net: number): { border: string; color: string } {
-  if (net >= 15) return { border: "border-green-800",      color: "#4ade80" };
-  if (net >= 5)  return { border: "border-green-900/50",   color: "#86efac" };
-  if (net >= 0)  return { border: "border-gray-700",       color: "#9ca3af" };
-  if (net >= -10) return { border: "border-orange-900/50", color: "#fb923c" };
-  return { border: "border-red-900/50", color: "#f87171" };
-}
+import { netStyle } from "@/lib/signals";
 
 function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";

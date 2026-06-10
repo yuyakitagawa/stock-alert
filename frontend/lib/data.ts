@@ -1,4 +1,4 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, Article, WeeklyReview, Activity } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WeeklyReview, Activity } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary } from "./yahoo";
 
@@ -195,33 +195,7 @@ export async function fetchSparkline(code: string): Promise<number[]> {
   }
 }
 
-export async function fetchArticles(limit = 20): Promise<Article[]> {
-  try {
-    const res = await fetch(
-      sbUrl(`articles?order=signal_date.desc&limit=${limit}`),
-      { headers: anonHeaders(), next: { revalidate: 3600 } },
-    );
-    if (!res.ok) return [];
-    return res.json();
-  } catch {
-    // ビルド時に env 未設定/URL不正で fetch が throw しても [] を返す
-    return [];
-  }
-}
 
-export async function fetchArticle(slug: string): Promise<Article | null> {
-  try {
-    const res = await fetch(
-      sbUrl(`articles?slug=eq.${encodeURIComponent(slug)}&limit=1`),
-      { headers: anonHeaders(), next: { revalidate: 3600 } },
-    );
-    if (!res.ok) return null;
-    const rows = await res.json();
-    return (rows[0] as Article) ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export async function fetchWeeklyReviews(limit = 10): Promise<WeeklyReview[]> {
   const res = await fetch(

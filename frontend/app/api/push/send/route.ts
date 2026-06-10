@@ -48,21 +48,21 @@ export async function POST(req: NextRequest) {
   if (!latest.length) return NextResponse.json({ sent: 0, skipped: 0 });
   const date = latest[0].date;
 
-  // シグナル取得
+  // ネットスコア取得（上位 = rank 昇順）
   const rankRes = await fetch(
-    `${SB_URL}/rest/v1/web_rankings?date=eq.${date}&select=name,code,recommend,net`,
+    `${SB_URL}/rest/v1/web_rankings?date=eq.${date}&select=name,code,net&order=rank.asc&limit=10`,
     { headers: sbHeaders() }
   );
-  const rankings = rankRes.ok ? await rankRes.json() : [];
+  const rankings: { name: string; code: string; net: number }[] =
+    rankRes.ok ? await rankRes.json() : [];
 
-  const sBuy  = rankings.filter((r: { recommend: string }) => r.recommend.includes("S買い"));
-  const sells = rankings.filter((r: { recommend: string }) => r.recommend.includes("売り"));
+  if (rankings.length === 0) return NextResponse.json({ sent: 0, skipped: 0 });
 
-  const lines: string[] = [];
-  if (sBuy.length)  lines.push(`🟢 S買い ${sBuy.length}銘柄`);
-  if (sells.length) lines.push(`🔴 売り検討 ${sells.length}銘柄`);
-
-  if (lines.length === 0) return NextResponse.json({ sent: 0, skipped: 0 });
+  // ネットスコア上位3銘柄を通知
+  const top3 = rankings.slice(0, 3)
+    .map(r => `${r.name}(${r.net >= 0 ? "+" : ""}${r.net.toFixed(0)}%)`)
+    .join(" / ");
+  const lines: string[] = [`📈 ネット上位: ${top3}`];
 
   const payload = JSON.stringify({
     title: `📈 StockSignal ${date}`,

@@ -7,19 +7,19 @@ export const metadata: Metadata = {
     default: "StockSignal — 日本株AIシグナル",
     template: "%s | StockSignal",
   },
-  description: "AIが毎日算出する日本株の買い・売りシグナル。S買いシグナルをリアルタイムで確認。",
-  keywords: ["日本株", "AIシグナル", "株式投資", "買いシグナル", "株スクリーニング"],
+  description: "AIが毎日算出する日本株のネットスコア（上昇確率 − 下落確率）。注目銘柄をネットスコア順で確認。",
+  keywords: ["日本株", "AIシグナル", "株式投資", "ネットスコア", "株スクリーニング"],
   openGraph: {
     type: "website",
     locale: "ja_JP",
     siteName: "StockSignal",
     title: "StockSignal — 日本株AIシグナル",
-    description: "AIが毎日算出する日本株の買い・売りシグナル。S買いシグナルをリアルタイムで確認。",
+    description: "AIが毎日算出する日本株のネットスコア（上昇確率 − 下落確率）。注目銘柄をネットスコア順で確認。",
   },
   twitter: {
     card: "summary",
     title: "StockSignal — 日本株AIシグナル",
-    description: "AIが毎日算出する日本株の買い・売りシグナル。",
+    description: "AIが毎日算出する日本株のネットスコア。注目銘柄をネットスコア順で確認。",
   },
 };
 

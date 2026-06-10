@@ -9,10 +9,9 @@ import {
 } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import RecommendBadge from "@/components/RecommendBadge";
 import StockChart from "@/components/StockChart";
 import StockLivePanel from "@/components/StockLivePanel";
-import { signalStyle } from "@/lib/signals";
+import { netStyle } from "@/lib/signals";
 
 export const revalidate = 3600;
 
@@ -26,7 +25,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!ranking) return { title: `${code} — StockSignal` };
   return {
     title: `${ranking.name} (${code}) — 日本株`,
-    description: `${ranking.name}のAIシグナル: ${ranking.recommend}。ネットスコア ${ranking.net.toFixed(1)}%。`,
+    description: `${ranking.name}のAI予測。ネットスコア ${ranking.net.toFixed(1)}%（上昇確率 − 下落確率）。`,
   };
 }
 
@@ -74,7 +73,7 @@ export default async function StockDetailPage({ params }: Props) {
 
   if (!ranking) notFound();
 
-  const s = signalStyle(ranking.recommend);
+  const s = netStyle(ranking.net);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -96,7 +95,6 @@ export default async function StockDetailPage({ params }: Props) {
             <div className="space-y-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold text-white">{ranking.name}</h1>
-                <RecommendBadge value={ranking.recommend} size="md" />
               </div>
               <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
                 <span className="font-mono font-semibold text-gray-400">{ranking.code}</span>

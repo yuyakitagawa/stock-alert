@@ -2,8 +2,6 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
-import RecommendBadge from "./RecommendBadge";
-import { FILTER_TABS } from "@/lib/signals";
 import { useLang } from "@/contexts/LanguageContext";
 import { UI } from "@/lib/i18n";
 
@@ -32,7 +30,6 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
   const { lang } = useLang();
   const ui = UI[lang];
 
-  const [tab,     setTab]     = useState<string>("all");
   const [search,  setSearch]  = useState("");
   const [sector,  setSector]  = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
@@ -56,7 +53,6 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
 
   const filtered = useMemo(() => {
     let r = rows;
-    if (tab !== "all") r = r.filter(x => x.recommend === tab);
     if (sector) r = r.filter(x => sectorMap?.[x.code] === sector);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -69,12 +65,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
       const bv = b[sortKey] ?? (sortDir === "asc" ? Infinity : -Infinity);
       return sortDir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
     });
-  }, [rows, tab, sector, search, sortKey, sortDir, sectorMap]);
-
-  function tabCount(value: string) {
-    if (value === "all") return rows.length;
-    return rows.filter(r => r.recommend === value).length;
-  }
+  }, [rows, sector, search, sortKey, sortDir, sectorMap]);
 
   const ThSort = ({ col, label, className = "" }: { col: SortKey; label: string; className?: string }) => (
     <th
@@ -88,24 +79,6 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Signal filter tabs */}
-      <div className="flex gap-1.5 flex-wrap">
-        {FILTER_TABS.map(t => (
-          <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              tab === t.value
-                ? "bg-green-700 text-white"
-                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
-            }`}
-          >
-            {t.label}
-            <span className="ml-1.5 opacity-60">({tabCount(t.value)})</span>
-          </button>
-        ))}
-      </div>
-
       {/* Sector + Search */}
       <div className="flex flex-col sm:flex-row gap-2">
         {sectors.length > 0 && (
@@ -138,7 +111,6 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             <tr className="bg-gray-900/80 text-gray-500 text-left border-b border-gray-800">
               <ThSort col="rank"      label="#"         className="w-10 text-center" />
               <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide">銘柄</th>
-              <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide">シグナル</th>
               <ThSort col="close"     label="株価"      className="text-right" />
               <ThSort col="net"       label="ネット"    className="text-right" />
               <ThSort col="rise_prob" label="上昇%"     className="text-right" />
@@ -162,9 +134,6 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                       )}
                     </div>
                   </Link>
-                </td>
-                <td className="px-3 py-2.5">
-                  <RecommendBadge value={r.recommend} />
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-gray-200">
                   ¥{r.close?.toLocaleString() ?? "—"}
@@ -191,7 +160,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-gray-600">
+                <td colSpan={9} className="px-4 py-12 text-center text-gray-600">
                   該当銘柄なし
                 </td>
               </tr>
@@ -212,7 +181,6 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-sm text-white">{r.name}</span>
-                <RecommendBadge value={r.recommend} />
               </div>
               <div className="flex gap-2 text-xs font-mono mt-0.5 text-gray-500 flex-wrap">
                 <span>{r.code}</span>
