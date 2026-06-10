@@ -1,7 +1,9 @@
 // fetch-based Supabase REST helpers (no JS client)
-const SB_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SB_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const SB_SVC  = process.env.SUPABASE_SERVICE_KEY!;
+// .trim() で secret 末尾の改行/空白を除去（CI secret が改行付きだと
+// URL が "https://...co\n/rest/..." となり Invalid URL で落ちるため）
+const SB_URL  = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+const SB_ANON = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
+const SB_SVC  = (process.env.SUPABASE_SERVICE_KEY ?? "").trim();
 
 export function anonHeaders(): Record<string, string> {
   return {
