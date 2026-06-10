@@ -58,6 +58,24 @@ def _days_since_last_ex(target_date, record_months):
     return best
 
 
+def get_pit_valuation(code, target_date):
+    """表示用バリュエーション: target_date時点で既知の eps/bps を
+    「それぞれ最新の非NULL値」で返す。
+    翌期予想行は eps はあるが bps=None のことが多く、get_pit_fundamentals が
+    予想行を最新採用すると bps=None になり PBR が欠損するため、
+    eps と bps を独立に直近非NULLから拾う（PER/PBR表示専用、特徴量には不使用）。
+    返り値: {"eps": float|None, "bps": float|None}
+    """
+    load_fundamentals_cache()
+    code = str(code)
+    recs = _FUND_HIST.get(code, [])
+    tgt_iso = target_date.isoformat()
+    known = [r for r in recs if r["announce_date"] and r["announce_date"] <= tgt_iso]
+    eps = next((r["eps"] for r in reversed(known) if r.get("eps") is not None), None)
+    bps = next((r["bps"] for r in reversed(known) if r.get("bps") is not None), None)
+    return {"eps": eps, "bps": bps}
+
+
 def get_pit_fundamentals(code, target_date):
     """target_date 時点で既知のファンダ生値を返す。データ皆無なら None。
     返り値: {eps, bps, roe, days_to_earnings, days_to_dividend, days_to_yutai}

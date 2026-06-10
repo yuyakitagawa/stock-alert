@@ -310,6 +310,7 @@ def main():
     raw_data = []
     lock = threading.Lock()
     done_count = [0]
+    fund_map = {}   # code -> {"PER","PBR","ROE"}（全銘柄、pit eps/bps から算出）
     total = len(codes)
 
     def fetch_one(code, _macro=_live_macro, _jpy=_live_jpy):
@@ -332,6 +333,18 @@ def main():
         days_earn = (next_earn - today).days if next_earn and next_earn > today else None
         pit       = _get_pit(code, today) or {}
         per_live = fd_raw.get("PER"); pbr_live = fd_raw.get("PBR")
+        # PER/PBR は fundamentals_annual の eps/bps から全銘柄算出。
+        # eps/bps はそれぞれ直近の非NULL値を使う（翌期予想行は bps=None のため）。
+        # ライブ取得(yfinance)は日本株でNoneが多いのでフォールバックに留める。
+        from lib.fundamentals import get_pit_valuation as _get_val
+        _val = _get_val(code, today)
+        _close_px = float(prices["Close"].iloc[-1]) if len(prices) > 0 else None
+        _eps = _val.get("eps"); _bps = _val.get("bps")
+        per_calc = (round(_close_px / _eps, 1) if _eps and _eps > 0 and _close_px else per_live)
+        pbr_calc = (round(_close_px / _bps, 2) if _bps and _bps > 0 and _close_px else pbr_live)
+        roe_calc = fd_raw.get("ROE") if fd_raw.get("ROE") is not None else pit.get("roe")
+        with lock:
+            fund_map[code] = {"PER": per_calc, "PBR": pbr_calc, "ROE": roe_calc}
         # 配当利回り: ライブ株価 × PBR/PER から配当を逆算 or pit.dps使用
         _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
         div_yield_live = (_dps / _close * 100) if _dps and _dps > 0 and _close else None
@@ -487,9 +500,9 @@ def main():
             "相対強度": rs_score if rs_score is not None else "-",
             "損切り価格(円)": stop_loss,
             "損切り幅(%)": stop_pct,
-            "PER": None,
-            "PBR": None,
-            "ROE(%)": None,
+            "PER": (fund_map.get(code) or {}).get("PER"),
+            "PBR": (fund_map.get(code) or {}).get("PBR"),
+            "ROE(%)": (fund_map.get(code) or {}).get("ROE"),
         }
         results.append(row)
 
@@ -498,17 +511,7 @@ def main():
     result_df.index += 1
     result_df.insert(0, "順位", result_df.index)
 
-    # フェーズ4: 上位100銘柄のみ PER/PBR/ROE を取得
-    TOP_FUND = 100
-    print(f"\n上位{TOP_FUND}銘柄のファンダメンタルズ取得中...")
-    for i, (idx, row) in enumerate(result_df.head(TOP_FUND).iterrows()):
-        fund = get_fundamentals(str(row["銘柄コード"]))
-        if fund:
-            result_df.at[idx, "PER"]    = fund.get("PER")
-            result_df.at[idx, "PBR"]    = fund.get("PBR")
-            result_df.at[idx, "ROE(%)"] = fund.get("ROE")
-        if (i + 1) % 20 == 0:
-            print(f"  {i+1}/{TOP_FUND} 完了...")
+    # PER/PBR/ROE は全銘柄 fund_map（pit eps/bps 由来）で既に設定済み
 
     # 表示（動的銘柄数: レジームに応じて 3/5/10）
     print(f"\n{'='*90}")
@@ -761,6 +764,14 @@ def main():
     ]
     save_daily_ranking(db_date_str, db_rows)
     print(f"DB保存: {len(db_rows)}件 → stock_alert.db")
+
+    # QA: 出力データの不変条件チェック（alert-only。違反でも処理は止めない）
+    try:
+        from lib.data_sanity import run_gate
+        run_gate(db_rows, source="rank_stocks", alert=True)
+    except Exception as _e:
+        print(f"[rank_stocks] QAチェックでエラー（無視して継続）: {_e}")
+
     print("完了")
 
 
