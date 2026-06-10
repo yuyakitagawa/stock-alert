@@ -108,20 +108,6 @@ export interface WeeklyReview {
   next_actions:     string;
 }
 
-export interface DividendCandidate {
-  date:          string;
-  code:          string;
-  name:          string;
-  yutai_month:   number;
-  ex_date:       string;
-  ex_month:      number;
-  days_since_ex: number;
-  div_yield:     number;
-  close:         number;
-  net:           number;
-  drop_prob:     number | null;
-}
-
 export interface Article {
   id:               number;
   slug:             string;

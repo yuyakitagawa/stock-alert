@@ -261,26 +261,6 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
         _upsert("ai_analyses", ai_rows)
 
 
-def export_dividend_strategy(today: str) -> None:
-    """配当落ち後戻し買い候補をSupabaseのweb_dividend_strategyテーブルへupsert"""
-    from lib.dividend_strategy import get_candidates
-    from datetime import date as _date
-    candidates = get_candidates(_date.fromisoformat(today))
-    if not candidates:
-        print("[export_to_web] 配当戦略候補なし（エントリー窓内の銘柄なし）")
-        return
-    rows = [{"date": today, **c} for c in candidates]
-    url = f"{SUPABASE_URL}/rest/v1/web_dividend_strategy?on_conflict=date,code"
-    headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
-    for i in range(0, len(rows), 50):
-        batch = rows[i:i+50]
-        resp = requests.post(url, headers=headers, json=batch, timeout=30)
-        if resp.status_code not in (200, 201):
-            print(f"[export_to_web] web_dividend_strategy upsert失敗: {resp.status_code} {resp.text[:200]}")
-        else:
-            print(f"[export_to_web] web_dividend_strategy: {len(batch)}件 upsert完了")
-
-
 def main() -> None:
     today = date.today().isoformat()
     print(f"[export_to_web] {today} のデータをエクスポート開始")
@@ -303,11 +283,7 @@ def main() -> None:
     top_rows = ranking_rows[:10]
     generate_ai_analyses(today, top_rows)
 
-    # 5. 配当落ち戻し買い候補
-    print("\n[5/5+] 配当落ち戻し買い候補をエクスポート中...")
-    export_dividend_strategy(today)
-
-    # 6. Top10シミュレーション更新
+    # 5. Top10シミュレーション更新
     update_top10_simulation(ranking_rows, today)
 
     # 7. Next.js ISRキャッシュを即時無効化
