@@ -505,48 +505,45 @@ def build_yutai_rebound_section(today_str: str) -> str:
 
 
 def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_rets=None):
+    """ネットスコア上位10銘柄を表示（フィルターなし）。"""
     held_codes = _held_codes(results)
-    ranking = (ranking_df.head(50) if ranking_df is not None else load_top_ranking(50))
+    ranking = (ranking_df.head(30) if ranking_df is not None else load_top_ranking(30))
     rows = ""
     count = 0
-    selected_candidates = []  # 観察文生成用
     if ranking is not None:
         for _, row in ranking.iterrows():
             code_str = _row_code_str(row)
-            if code_str is None or code_str in held_codes or count >= 5:
+            if code_str is None or count >= 10:
                 continue
-            rise = row.get("上昇確率(%)", None)
-            drop_v = _safe_float(row.get("下落確率(%)", None))
-            net_v = _row_net_percent(row, use_rise_fallback=True)
-            if net_v is None or not _net_in_candidate_band(net_v):
+            rise    = _safe_float(row.get("上昇確率(%)", None))
+            drop_v  = _safe_float(row.get("下落確率(%)", None))
+            net_v   = _row_net_percent(row, use_rise_fallback=True)
+            if net_v is None:
                 continue
-            if _is_new_candidate_skipped(code_str, net_v, drop_v):
-                continue
-            rec_str = row.get("推奨", "") or ""
-            if "S買い" not in rec_str:
-                continue
-            selected_candidates.append({"net": net_v, "sector": get_sector_cached(code_str)})
-            recommend = recommend_from_scores(net_v, drop_v, allow_buy=True)
-            vol    = row.get("ボラ(%)", 0)
-            vol_lb = row.get("ボラ水準", "")
-            vol_rank = _safe_float(row.get("ボラランク(%)", None))
+            vol     = row.get("ボラ(%)", 0) or 0
+            vol_lb  = row.get("ボラ水準", "")
             rel20_v = _safe_float(row.get("日経比20日(%)", None))
             fund_str = _fundamentals_suffix(row)
-            close_val = int(row["直近株価(円)"])
-            stop_cell = _stop_loss_cell_html(row, close_val)
-            drop_str = f"{drop_v:.1f}%" if drop_v is not None else "-"
-            vrank_str = (f"<span style='font-size:10px;color:#666'>ボラランク {vol_rank:.0f}%ile</span>"
-                         if vol_rank is not None else "")
-            new_badge = "<span class='badge-new'>NEW</span>" if (prev_ranking_codes and code_str not in prev_ranking_codes) else ""
-            etf_badge = _etf_badge_html(code_str, etf_rets) if allow_buy else ""
+            try:
+                close_val = int(row["直近株価(円)"])
+            except (ValueError, TypeError):
+                close_val = 0
+            stop_cell = _stop_loss_cell_html(row, close_val) if close_val else "-"
+            drop_str  = f"{drop_v:.1f}%" if drop_v is not None else "-"
+            rise_str  = f"{rise:.1f}%" if rise is not None else "-"
+            new_badge = ("<span class='badge-new'>NEW</span>"
+                         if prev_ranking_codes and code_str not in prev_ranking_codes else "")
+            held_badge = ("<span style='font-size:10px;background:#fff3cd;color:#856404;"
+                          "border-radius:3px;padding:1px 5px;margin-left:4px'>保有中</span>"
+                          if code_str in held_codes else "")
             rows += (f"<tr>"
-                     f"<td><b>{row['銘柄名']}</b>{new_badge}<br>"
-                     f"<span style='color:#888;font-size:12px'>{code_str} ¥{int(row['直近株価(円)']):,}"
-                     f"{' ' + fund_str if fund_str else ''}</span><br>{vrank_str}</td>"
-                     f"<td style='text-align:center'>{rise:.1f}%</td>"
+                     f"<td style='text-align:center;color:#999;font-size:11px'>{count+1}</td>"
+                     f"<td><b>{row['銘柄名']}</b>{new_badge}{held_badge}<br>"
+                     f"<span style='color:#888;font-size:12px'>{code_str} ¥{close_val:,}"
+                     f"{' ' + fund_str if fund_str else ''}</span></td>"
+                     f"<td style='text-align:center'>{rise_str}</td>"
                      f"<td style='text-align:center'>{drop_str}</td>"
-                     f"<td class='{_net_cls(net_v)}' style='text-align:center'>{net_v:+.1f}%</td>"
-                     f"<td style='text-align:center;font-size:11px'>{recommend}{etf_badge}</td>"
+                     f"<td class='{_net_cls(net_v)}' style='text-align:center;font-weight:bold'>{net_v:+.1f}%</td>"
                      f"<td class='{_rel_cls(rel20_v)}' style='text-align:center'>{_rel_str(rel20_v)}</td>"
                      f"<td style='text-align:center;color:#888;font-size:12px'>{vol:.1f}%{vol_lb}</td>"
                      f"<td style='text-align:center;font-size:12px;line-height:1.5'>{stop_cell}</td>"
@@ -554,21 +551,109 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_ret
             count += 1
     if not rows:
         return (f"<div class='card' style='border-left:4px solid #2980b9'>"
-                f"<h2>📈 新規候補</h2>"
-                f"<p style='color:#666;margin:0;font-size:13px'>本日は条件を満たす新規候補がありません。"
-                f"スクリーナー条件に合致する銘柄が市場に少ないか、保有銘柄と重複しています。</p>"
+                f"<h2>📈 注目銘柄</h2>"
+                f"<p style='color:#666;margin:0;font-size:13px'>本日のランキングデータがありません。</p>"
                 f"</div>")
-    observation = build_candidate_observation(selected_candidates)
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
-            f"<h2>📈 新規候補 Top{count}（ネット {int(NEW_CANDIDATE_NET_MIN)}〜{int(NEW_CANDIDATE_NET_MAX)}%・未保有）</h2>"
-            f"{observation}"
-            f"<p style='color:#666;font-size:12px;margin:0 0 10px;line-height:1.6'>"
-            f"上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日で日経225より何%多く動いたか<br>"
-            f"<b>PER</b> = 株価÷1株利益（低いほど割安）／ <b>PBR</b> = 株価÷1株純資産（1倍割れで資産価値以下）<br>"
-            f"<b>損切り</b> = 現値 → ストップ目安価格（カッコ内はそこまでの下落率）。この価格を割ったら損切り検討</p>"
+            f"<h2>📈 注目銘柄 Top{count}（ネットスコア順）</h2>"
+            f"<p style='color:#666;font-size:12px;margin:0 0 10px'>"
+            f"上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落（高いほど上昇期待）／ 日経差(20日) = 過去20日の日経比超過リターン</p>"
             f"<table><tr style='background:#e8f0fe'>"
-            f"<th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
+            f"<th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th>"
+            f"<th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
             f"{rows}</table></div>")
+
+
+TOP10_SIM_SELL_THRESH = 5.0  # net < 5% で売却（信号消滅基準）
+
+def build_top10_sim_section(today_str: str, ranking_df=None) -> str:
+    """Top10シミュレーション: アクティブポジション + 直近決済結果をHTMLで返す。"""
+    import sqlite3 as _sqlite3
+    from lib.db import DB_PATH, init_db, get_top10_sim_active, get_top10_sim_recent_exits
+    init_db()
+
+    # 今日のnet・価格を取得
+    today_net   = {}
+    today_price = {}
+    if ranking_df is not None:
+        for _, row in ranking_df.iterrows():
+            code = _row_code_str(row)
+            if code:
+                today_net[code]   = _row_net_percent(row, use_rise_fallback=False) or 0
+                today_price[code] = _safe_float(row.get("直近株価(円)", None))
+
+    active  = get_top10_sim_active()
+    exits   = get_top10_sim_recent_exits(10)
+
+    if not active and not exits:
+        return ""
+
+    # アクティブポジション表示
+    active_rows = ""
+    for p in active:
+        code       = p["code"]
+        cur_price  = today_price.get(code)
+        cur_net    = today_net.get(code)
+        ret_pct    = ((cur_price - p["entry_price"]) / p["entry_price"] * 100
+                      if cur_price and p["entry_price"] else None)
+        ret_str    = (f"<span style='color:{'#27ae60' if ret_pct >= 0 else '#c0392b'}"
+                      f";font-weight:bold'>{ret_pct:+.1f}%</span>"
+                      if ret_pct is not None else "—")
+        net_str    = (f"<span style='color:{'#888' if cur_net is None else ('#c0392b' if cur_net < TOP10_SIM_SELL_THRESH else '#27ae60')}'>"
+                      f"{cur_net:+.1f}%</span>" if cur_net is not None else "—")
+        days       = (datetime.now().date() - datetime.strptime(p["entry_date"], "%Y-%m-%d").date()).days
+        active_rows += (f"<tr>"
+                        f"<td><b>{p['name']}</b><br><span style='color:#888;font-size:11px'>{code}</span></td>"
+                        f"<td style='text-align:center;font-size:11px;color:#666'>{p['entry_date']}<br>net {p['entry_net']:+.1f}%</td>"
+                        f"<td style='text-align:center'>{net_str}</td>"
+                        f"<td style='text-align:center'>{ret_str}</td>"
+                        f"<td style='text-align:center;color:#888;font-size:11px'>{days}日</td>"
+                        f"</tr>")
+
+    # 直近決済表示
+    exit_rows = ""
+    for p in exits[:5]:
+        ret   = p.get("return_pct") or 0
+        color = "#27ae60" if ret >= 0 else "#c0392b"
+        exit_rows += (f"<tr style='color:#999'>"
+                      f"<td>{p['name']} ({p['code']})</td>"
+                      f"<td style='text-align:center;font-size:11px'>{p['entry_date']} → {p['exit_date']}</td>"
+                      f"<td style='text-align:center;color:{color};font-weight:bold'>{ret:+.1f}%</td>"
+                      f"</tr>")
+
+    # サマリー統計
+    all_exits = get_top10_sim_recent_exits(200)
+    if all_exits:
+        rets    = [p["return_pct"] for p in all_exits if p.get("return_pct") is not None]
+        avg_r   = sum(rets) / len(rets) if rets else 0
+        win_r   = sum(1 for r in rets if r > 0) / len(rets) * 100 if rets else 0
+        summary = (f"<p style='font-size:12px;color:#555;margin:8px 0 0'>"
+                   f"決済実績: {len(rets)}件 ／ 平均 <b style='color:{'#27ae60' if avg_r>=0 else '#c0392b'}'>{avg_r:+.1f}%</b>"
+                   f" ／ 勝率 <b>{win_r:.0f}%</b></p>")
+    else:
+        summary = ""
+
+    active_section = ""
+    if active_rows:
+        active_section = (f"<h3 style='font-size:13px;margin:0 0 6px'>📌 保有中 ({len(active)}件) — net&lt;5%で売却</h3>"
+                          f"<table><tr style='background:#f0f8f0'>"
+                          f"<th>銘柄</th><th>エントリー</th><th>現在net</th><th>含み損益</th><th>保有日数</th></tr>"
+                          f"{active_rows}</table>")
+
+    exit_section = ""
+    if exit_rows:
+        exit_section = (f"<h3 style='font-size:13px;margin:12px 0 6px'>✅ 直近決済 (最新5件)</h3>"
+                        f"<table><tr style='background:#f8f8f8'>"
+                        f"<th>銘柄</th><th>期間</th><th>リターン</th></tr>"
+                        f"{exit_rows}</table>")
+
+    return (f"<div class='card' style='border-left:4px solid #27ae60'>"
+            f"<h2>📊 Top10シミュレーション</h2>"
+            f"<p style='color:#666;font-size:12px;margin:0 0 10px'>"
+            f"毎日のネットスコア上位10銘柄を自動保有。net &lt; 5% に低下したら自動売却。"
+            f"（売買手数料・スリッページ未考慮）</p>"
+            f"{active_section}{exit_section}{summary}"
+            f"</div>")
 
 
 # ──────────────────────────── HTML組み立て ────────────────────────────────
@@ -625,6 +710,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
 {_build_priority_section(priority_actions or [])}
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes, ranking_df, etf_rets=etf_rets)}
+{build_top10_sim_section(datetime.now().strftime("%Y-%m-%d"), ranking_df)}
 {build_sector_warning(_candidates_for_sector)}
 {build_yutai_rebound_section(datetime.now().strftime("%Y-%m-%d"))}
 <div class='card'>

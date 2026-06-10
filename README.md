@@ -145,7 +145,7 @@ S買いシグナル（vol≤25%、net17-24%、下落確率4%未満、1日最大3
 - サンプリング：20営業日ごと（自己相関低減）
 - 分割：cutoff日より前→学習 / 以降→テスト（ウォークフォワード）
 
-### 特徴量（61次元 = 54次元 + クロスセクション7次元）
+### 特徴量（60次元 = 53次元 + クロスセクション7次元）
 
 **テクニカル10**: ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52
 
@@ -163,7 +163,7 @@ S買いシグナル（vol≤25%、net17-24%、下落確率4%未満、1日最大3
 
 **マクロ拡張4**: vix, us5, us20 (SP500), fx_beta (USD/JPY)
 
-**新規IB特徴量9**: amihud_f (非流動性), fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals (Sloan正確版), buyback_yield (自社株買いYield)
+**新規IB特徴量8**: amihud_f (非流動性), fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals (Sloan正確版)
 
 **クロスセクショナルランク7**: cs_ret5, cs_ret20, cs_ret60, cs_rsi, cs_vol20, cs_pos52, cs_sector_ret60
 

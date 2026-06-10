@@ -912,6 +912,57 @@ def push_log():
         git('push')
 
 
+def send_cycle_summary(metrics, fm_action, fm_reason, engineer_detail, adopted):
+    """PDCAサイクル完了時に結果サマリーをメール通知する。"""
+    gmail_addr = os.getenv("GMAIL_ADDRESS")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    if not gmail_addr or not gmail_pass:
+        print("  [サマリー通知スキップ] GMAIL未設定")
+        return
+    stage = get_invest_stage()
+    avg = metrics.get('avg_return'); win = metrics.get('win_rate')
+    big = metrics.get('big_win_rate'); nka = metrics.get('nk_alpha')
+    if fm_action == 'skip':
+        result = "スキップ（目標達成済み・現状維持）"
+    elif adopted:
+        result = "改善を採用した"
+    else:
+        result = "改善案を検証→効果なしで元に戻した"
+    body = f"""本日のPDCAサイクルが完了しました（{TODAY}）。
+
+【今日の結論】{result}
+
+【バックテスト成績（全期間の複合）】
+  平均リターン : {avg}%
+  勝率         : {win}%
+  大勝率       : {big}%
+  日経比アルファ: {nka}%（プラスなら日経に勝っている）
+
+【ファンドマネージャーの判断】
+  {fm_action} — {fm_reason}
+
+【エンジニアの結果】
+  {engineer_detail}
+
+投資フェーズ: Phase {stage.get('phase', 0)}（0=改善中/ETF待機, 1=少額投資OK）
+
+くわしい各メンバーの動きは活動ログで確認できます:
+https://stock-alert-web.vercel.app/activity
+"""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = f"📊 PDCA完了 {TODAY} — {result}"
+    msg["From"] = gmail_addr
+    msg["To"]   = NOTIFY_TO
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_addr, gmail_pass)
+            server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
+        _mail_log.info("📧 PDCA完了サマリー送信: %s", msg["Subject"])
+        print("  → PDCA完了サマリーメールを送信")
+    except Exception as e:
+        print(f"  [サマリーメールエラー] {e}")
+
+
 def main():
     print(f"=== PDCA {TODAY} ===")
     log(f"\n## {TODAY}")

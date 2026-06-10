@@ -278,6 +278,7 @@ def main():
     _p=_ap.ArgumentParser(add_help=False)
     _p.add_argument("--screener-only",action="store_true",help="スクリーナー通過時点のサンプルのみ学習")
     _p.add_argument("--cutoff",type=str,default=None,help="学習cutoff日 YYYY-MM-DD（デフォルト: 2025-01-01）")
+    _p.add_argument("--tag",type=str,default=None,help="実験用タグ。例: --tag exp_61dim → rf_model_exp_61dim.pkl に保存（本番モデルを上書きしない）")
     _args,_=_p.parse_known_args()
     screener_only=_args.screener_only
     if _args.cutoff:
@@ -385,11 +386,14 @@ def main():
     a_rise=train_model(X_tr_fit,ar_fit, X_te,ar_te, X_cal,ar_cal, "相対上昇(α)")
     a_drop=train_model(X_tr_fit,ad_fit, X_te,ad_te, X_cal,ad_cal, "相対下落(α)")
     cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
+    exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
     suffix="_screened" if screener_only else ""
-    joblib.dump(rise,  os.path.join(SAVE_DIR,f"rf_model{suffix}{cutoff_tag}.pkl"))
-    joblib.dump(drop,  os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}.pkl"))
-    joblib.dump(a_rise,os.path.join(SAVE_DIR,f"rf_alpha_model{suffix}{cutoff_tag}.pkl"))
-    joblib.dump(a_drop,os.path.join(SAVE_DIR,f"rf_alpha_drop_model{suffix}{cutoff_tag}.pkl"))
+    joblib.dump(rise,  os.path.join(SAVE_DIR,f"rf_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
+    joblib.dump(drop,  os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
+    joblib.dump(a_rise,os.path.join(SAVE_DIR,f"rf_alpha_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
+    joblib.dump(a_drop,os.path.join(SAVE_DIR,f"rf_alpha_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
+    if exp_tag:
+        print(f"  ⚠️  実験モデル保存: *{exp_tag}.pkl（本番 rf_model.pkl は変更なし）")
     # Save all samples (train+test) with dates for purged CV validation
     npz_path=os.path.join(SAVE_DIR,"training_data.npz")
     all_X=np.vstack([X_tr,X_te]); all_yr=np.concatenate([yr_tr,yr_te]); all_yd=np.concatenate([yd_tr,yd_te])
@@ -407,7 +411,7 @@ def main():
                    "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
 
     # C-1: 特徴量重要度を保存
-    # 60次元: 53基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB) + 7クロスセクション
+    # 61次元: 54基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB+1自社株買いYield) + 7クロスセクション
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",

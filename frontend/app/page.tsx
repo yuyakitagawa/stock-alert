@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { fetchRankings, fetchSparkline, fetchSectorMap } from "@/lib/data";
+import { fetchRankings, fetchSparkline, fetchSectorMap, fetchDividendCandidates } from "@/lib/data";
 import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockCard from "@/components/StockCard";
 import SimulationPanel from "@/components/SimulationPanel";
 import SectorPerformancePanel from "@/components/SectorPerformancePanel";
+import DividendStrategyPanel from "@/components/DividendStrategyPanel";
 import Link from "next/link";
 
 export const revalidate = 300;
@@ -38,10 +39,11 @@ function SummaryCard({ label, count, colorClass, borderClass }: SummaryCardProps
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sim, sectorMap] = await Promise.all([
+  const [{ date, rows }, sim, sectorMap, dividendCandidates] = await Promise.all([
     fetchRankings(),
     fetchSimulation(),
     fetchSectorMap(),
+    fetchDividendCandidates(),
   ]);
 
   // 業種別成績（本日データ）
@@ -122,6 +124,13 @@ export default async function HomePage() {
             </section>
 
           </>
+        )}
+
+        {/* 配当落ち後 戻し買いチャンス */}
+        {dividendCandidates.length > 0 && (
+          <section>
+            <DividendStrategyPanel candidates={dividendCandidates} />
+          </section>
         )}
 
         {/* Sector performance */}

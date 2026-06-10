@@ -1,0 +1,156 @@
+============================================================
+rf_train_v3: TSE全銘柄 × 5年 ウォークフォワード学習
+分割境界: 2026-01-01 / サンプル間隔: 21日
+============================================================
+対象: 4038銘柄
+
+日経225データ取得中...
+  日経225: 1471日分取得
+
+ファンダDB: 3566銘柄分の年度別データを使用（point-in-time）
+
+株価取得中（30〜60分かかります）...
+  [100銘柄] 学習:3,728 テスト:400
+  [200銘柄] 学習:7,277 テスト:798
+  [300銘柄] 学習:10,888 テスト:1,196
+  [400銘柄] 学習:14,520 テスト:1,595
+  [500銘柄] 学習:18,198 テスト:1,993
+  [600銘柄] 学習:21,731 テスト:2,390
+  [700銘柄] 学習:25,366 テスト:2,789
+  [800銘柄] 学習:29,009 テスト:3,189
+  [900銘柄] 学習:32,608 テスト:3,588
+  [1000銘柄] 学習:36,221 テスト:3,988
+  [1100銘柄] 学習:39,844 テスト:4,388
+  [1200銘柄] 学習:43,458 テスト:4,788
+  [1300銘柄] 学習:47,196 テスト:5,187
+  [1400銘柄] 学習:50,791 テスト:5,586
+  [1500銘柄] 学習:54,513 テスト:5,985
+  [1600銘柄] 学習:58,228 テスト:6,382
+  [1700銘柄] 学習:61,788 テスト:6,781
+  [1800銘柄] 学習:65,522 テスト:7,181
+  [1900銘柄] 学習:69,209 テスト:7,579
+  [2000銘柄] 学習:72,917 テスト:7,978
+  [2100銘柄] 学習:76,486 テスト:8,375
+  [2200銘柄] 学習:80,101 テスト:8,775
+  [2300銘柄] 学習:83,810 テスト:9,175
+  [2400銘柄] 学習:87,385 テスト:9,573
+  [2500銘柄] 学習:91,048 テスト:9,973
+  [2600銘柄] 学習:94,556 テスト:10,369
+  [2700銘柄] 学習:98,296 テスト:10,768
+  [2800銘柄] 学習:101,922 テスト:11,166
+  [2900銘柄] 学習:105,510 テスト:11,564
+  [3000銘柄] 学習:109,197 テスト:11,963
+  [3100銘柄] 学習:112,668 テスト:12,361
+  [3200銘柄] 学習:116,329 テスト:12,760
+  [3300銘柄] 学習:120,030 テスト:13,159
+  [3400銘柄] 学習:123,649 テスト:13,558
+  [3500銘柄] 学習:127,349 テスト:13,957
+  [3600銘柄] 学習:131,011 テスト:14,356
+  [3700銘柄] 学習:134,600 テスト:14,751
+  [3800銘柄] 学習:138,257 テスト:15,148
+  [3900銘柄] 学習:141,947 テスト:15,545
+  [4000銘柄] 学習:145,614 テスト:15,944
+
+完了: 4014銘柄 / 学習:146,123 テスト:16,000
+
+クロスセクショナルランク特徴量を計算中...
+  特徴量次元: 41 → 47
+
+--- サンプル統計 ---
+絶対上昇ラベル(≥+5.0%):  学習 36,900/146,123 (25.3%)  テスト 3,669/16,000 (22.9%)
+絶対下落ラベル(≤-5.0%):  学習 25,766/146,123 (17.6%)  テスト 4,409/16,000 (27.6%)
+相対上昇ラベル(α≥+3.0%): 学習 40,714/146,123 (27.9%)  テスト 3,640/16,000 (22.8%)
+相対下落ラベル(α≤-3.0%): 学習 54,063/146,123 (37.0%)  テスト 9,943/16,000 (62.1%)
+
+キャリブレーション分割: 学習116,899 / キャリブレーション29,224 (最新20%)
+
+[学習] 絶対上昇モデル...
+  正例:28,044 負例:88,855 spw:3.17
+[0]	validation_0-auc:0.57186
+[100]	validation_0-auc:0.62981
+[156]	validation_0-auc:0.63606
+  テストAUC（生）: 0.6396
+  ✅ テストAUC（キャリブレーション後）: 0.6346
+              precision    recall  f1-score   support
+
+          負例       0.78      0.98      0.87     12331
+          正例       0.48      0.07      0.12      3669
+
+    accuracy                           0.77     16000
+   macro avg       0.63      0.52      0.49     16000
+weighted avg       0.71      0.77      0.70     16000
+
+
+[学習] 絶対下落モデル...
+  正例:22,052 負例:94,847 spw:4.30
+[0]	validation_0-auc:0.60196
+[100]	validation_0-auc:0.62719
+[200]	validation_0-auc:0.62962
+[300]	validation_0-auc:0.63484
+[400]	validation_0-auc:0.63767
+[500]	validation_0-auc:0.63994
+[600]	validation_0-auc:0.64188
+[700]	validation_0-auc:0.64182
+[722]	validation_0-auc:0.64208
+  テストAUC（生）: 0.6422
+  ✅ テストAUC（キャリブレーション後）: 0.6416
+              precision    recall  f1-score   support
+
+          負例       0.73      1.00      0.84     11591
+          正例       0.61      0.01      0.01      4409
+
+    accuracy                           0.73     16000
+   macro avg       0.67      0.50      0.43     16000
+weighted avg       0.69      0.73      0.61     16000
+
+
+[学習] 相対上昇(α)モデル...
+  正例:34,317 負例:82,582 spw:2.41
+[0]	validation_0-auc:0.61537
+[100]	validation_0-auc:0.50320
+[150]	validation_0-auc:0.50097
+  テストAUC（生）: 0.6154
+  ✅ テストAUC（キャリブレーション後）: 0.6161
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+              precision    recall  f1-score   support
+
+          負例       0.77      1.00      0.87     12360
+          正例       0.00      0.00      0.00      3640
+
+    accuracy                           0.77     16000
+   macro avg       0.39      0.50      0.44     16000
+weighted avg       0.60      0.77      0.67     16000
+
+
+[学習] 相対下落(α)モデル...
+  正例:40,373 負例:76,526 spw:1.90
+[0]	validation_0-auc:0.66297
+[100]	validation_0-auc:0.65388
+[171]	validation_0-auc:0.64600
+  テストAUC（生）: 0.6631
+  ✅ テストAUC（キャリブレーション後）: 0.6585
+              precision    recall  f1-score   support
+
+          負例       0.44      0.60      0.51      6057
+          正例       0.69      0.54      0.61      9943
+
+    accuracy                           0.56     16000
+   macro avg       0.57      0.57      0.56     16000
+weighted avg       0.59      0.56      0.57     16000
+
+
+【AUC サマリー】
+  絶対上昇: 0.6346  絶対下落: 0.6416
+  相対上昇: 0.6161  相対下落: 0.6585
+  特徴量重要度: feature_importance.json
+  riseモデル最適閾値: 0.338 (F1=0.412)
+  dropモデル最適閾値: 0.040 (F1=0.464)
+
+データ保存: /Users/kitagawayuuya/stock-alert/training_data.npz
+
+保存完了 ✅  次: python3 validation.py  →  python3 rank_stocks.py

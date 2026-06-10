@@ -1,4 +1,4 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, Article, WeeklyReview, Activity } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, Article, WeeklyReview, Activity, DividendCandidate } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary } from "./yahoo";
 
@@ -240,4 +240,17 @@ export async function fetchWeeklyReview(week: string): Promise<WeeklyReview | nu
   if (!res.ok) return null;
   const rows = await res.json();
   return (rows[0] as WeeklyReview) ?? null;
+}
+
+export async function fetchDividendCandidates(): Promise<DividendCandidate[]> {
+  const res = await fetch(
+    sbUrl("web_dividend_strategy?order=div_yield.desc&limit=30"),
+    { headers: anonHeaders(), next: { revalidate: 300 } },
+  );
+  if (!res.ok) return [];
+  const rows = await res.json();
+  // 最新日付のデータのみ返す
+  if (!rows.length) return [];
+  const latest = rows[0].date;
+  return (rows as DividendCandidate[]).filter(r => r.date === latest);
 }

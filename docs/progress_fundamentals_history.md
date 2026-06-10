@@ -21,7 +21,7 @@ kabutan.jp/stock/finance/?code=XXX
 - [x] 2. progress + DBスキーマ作成（fundamentals_annual テーブル）
 - [x] 3. 過去ファンダ取得スクリプト tools/fetch_fundamentals_history.py 作成
 - [x] 4. 数銘柄でEPS/BPS/ROE/発表日のパースを検証
-- [x] 5. 全銘柄(約3,734)の年度別ファンダを取得しDB格納（3,564銘柄 / 16,331行）
+- [x] 5. 全銘柄(約3,734)の年度別ファンダを取得しDB格納（3,566銘柄 / 17,741行。EPS99%/ROE58%/BPS60%）
 - [x] 6. backtest.py に point-in-time ファンダ再構成を組み込み（get_pit_fundamentals + 全呼び出し箇所）
 - [ ] 7. ファンダ入りモデルを再学習（44次元、正しく完了させる）← 実行中
 - [ ] 8. backtest bear + rolling で「ファンダあり vs なし」を比較

@@ -511,7 +511,7 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     piotroski_f   = float(np.clip(_pio,            0.0, 1.0)) if _pio   is not None else 0.5
     # 配当性向（DPS/EPS）: 高=成熟/還元型, 低=成長型
     payout_f      = float(np.clip(_pyout,          0.0, 1.5)) if _pyout is not None else 0.5
-    # BSアクルーアル（予期せぬ簿価膨張 = 品質懸念）
+    # アクルーアル: J-Quants Sloan正確版 (NP-CFO)/TA×5 or BPSプロキシ（フォールバック）
     accruals_f    = float(np.clip(_accr,          -0.3, 0.5)) if _accr  is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,

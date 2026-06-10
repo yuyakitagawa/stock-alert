@@ -149,6 +149,20 @@ def get_pit_fundamentals(code, target_date):
             expected_retention = roe / 100 - dps_yield_on_bps
             accruals = bps_growth - expected_retention  # +なら過剰な簿価膨張
 
+    # ── J-Quants 補完: Sloanアクルーアル（正確版）────────────────────────────
+    # CFOデータが利用可能なら BPS プロキシを正確版で上書き
+    try:
+        from lib.db import get_jquants_fin_history_fy
+        jq_fy = get_jquants_fin_history_fy(str(code), target_date.isoformat(), n=3)
+        if len(jq_fy) >= 1:
+            lq = jq_fy[0]
+            np_v, cfo_v, ta_v = lq.get("np"), lq.get("cfo"), lq.get("ta")
+            if np_v is not None and cfo_v is not None and ta_v and abs(ta_v) > 0:
+                sloan_accruals = (np_v - cfo_v) / ta_v   # 正確なSloan(1996)
+                accruals = sloan_accruals * 5.0           # BPSプロキシと同スケールに正規化
+    except Exception:
+        pass  # J-Quants未取得 → BPSプロキシのまま使用
+
     if eps is None and bps is None and roe is None and not known and ym is None:
         return None
     return {
@@ -164,7 +178,7 @@ def get_pit_fundamentals(code, target_date):
         "bps_growth":          bps_growth,
         "piotroski":           piotroski,
         "payout":              payout,
-        "accruals":            accruals,
+        "accruals":            accruals,      # Sloan正確版 or BPSプロキシ
     }
 
 

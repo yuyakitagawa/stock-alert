@@ -140,6 +140,19 @@ CREATE TABLE IF NOT EXISTS jquants_fin_summary (
     tr_sh         REAL,            -- 自己株式数
     PRIMARY KEY (code, disc_date)
 );
+CREATE TABLE IF NOT EXISTS top10_sim (
+    entry_date   TEXT NOT NULL,   -- 買いエントリー日
+    code         TEXT NOT NULL,   -- 銘柄コード
+    name         TEXT,            -- 銘柄名
+    entry_net    REAL,            -- エントリー時ネットスコア(%)
+    entry_price  REAL,            -- エントリー株価
+    exit_date    TEXT,            -- 売却日（NULLなら保有中）
+    exit_net     REAL,            -- 売却時ネットスコア(%)
+    exit_price   REAL,            -- 売却株価
+    return_pct   REAL,            -- 実現リターン(%)
+    status       TEXT DEFAULT 'active',  -- 'active' | 'exited'
+    PRIMARY KEY (entry_date, code)
+);
 """
 
 @contextmanager
@@ -685,3 +698,55 @@ def get_short_balance_at(code: str, as_of_date: str) -> "dict | None":
             (str(code), as_of_date)
         ).fetchone()
     return dict(row) if row else None
+
+
+# ── top10シミュレーション ─────────────────────────────────────────────────
+
+def get_top10_sim_active() -> list:
+    """現在アクティブなシミュレーションポジション一覧を返す。"""
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM top10_sim WHERE status='active' ORDER BY entry_date DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_top10_sim_recent_exits(n: int = 20) -> list:
+    """直近 n 件の決済済みポジションを返す。"""
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM top10_sim WHERE status='exited' ORDER BY exit_date DESC LIMIT ?",
+            (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_top10_sim_entry(entry_date: str, code: str, name: str,
+                            entry_net: float, entry_price: float) -> None:
+    """新規エントリーを登録（既存なら無視）。"""
+    init_db()
+    with _conn() as con:
+        con.execute(
+            """INSERT OR IGNORE INTO top10_sim
+               (entry_date, code, name, entry_net, entry_price, status)
+               VALUES (?, ?, ?, ?, ?, 'active')""",
+            (entry_date, code, name, entry_net, entry_price)
+        )
+
+
+def close_top10_sim_position(entry_date: str, code: str,
+                              exit_date: str, exit_net: float,
+                              exit_price: float) -> None:
+    """ポジションを決済済みに更新。"""
+    init_db()
+    with _conn() as con:
+        con.execute(
+            """UPDATE top10_sim SET
+               exit_date=?, exit_net=?, exit_price=?,
+               return_pct=ROUND((exit_price - entry_price) / entry_price * 100, 2),
+               status='exited'
+               WHERE entry_date=? AND code=?""",
+            (exit_date, exit_net, exit_price, entry_date, code)
+        )
