@@ -19,3 +19,12 @@
 - [x] README 更新
 - [x] ビルド/プレビュー確認（tsc OK、`/watchlist` HTTP200・11銘柄・当日ランキング突き合わせ確認）
 - [x] commit
+
+## 追加: お得度（高値からの下落率）＋ PER/PBR（オーナー要望）
+- お得度 = 52週高値からの下落率（−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）。
+- PER/PBR = Yahoo `summaryDetail.trailingPE` / `defaultKeyStatistics.priceToBook`。
+- `frontend/lib/data.ts`: `fetchWatchMetricsMap`（認証1回共有 + 全fetchにAbortSignalタイムアウト）。
+- chart APIは `range=5d` の `meta.fiftyTwoWeekHigh` を使いペイロード最小化。
+- 検証: Yahoo直算出とページのバッジ分布が完全一致（お得4/やや安5/高値圏2）。
+- 注意: サンドボックスは fc.yahoo.com 404 で PER/PBR が `—`。本番Vercelは既存 /stocks が同じ認証を使えているため要確認。
+

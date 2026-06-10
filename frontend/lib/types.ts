@@ -75,6 +75,14 @@ export interface DailyQuote {
   fiftyTwoWeekLow:  number | null;
 }
 
+export interface WatchMetrics {
+  price:       number | null;  // 現在値
+  high52:      number | null;  // 52週高値
+  drawdownPct: number | null;  // 52週高値からの下落率（負の値=下落）
+  per:         number | null;  // 実績PER
+  pbr:         number | null;  // PBR
+}
+
 export interface Activity {
   id:         number;
   ts:         string;

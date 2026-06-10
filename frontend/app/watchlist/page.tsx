@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { fetchRankings } from "@/lib/data";
+import { fetchRankings, fetchWatchMetricsMap } from "@/lib/data";
 import { PRICING_POWER_WATCHLIST } from "@/lib/watchlist";
-import type { Ranking } from "@/lib/types";
+import type { Ranking, WatchMetrics } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
@@ -10,7 +10,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "値上げ力ウォッチリスト — StockSignal",
-  description: "シェアを独占しインフレ下で値上げを通せる、toC独占ブランド銘柄のウォッチリスト",
+  description: "シェアを独占しインフレ下で値上げを通せる、toC独占ブランド銘柄。長期の押し目買い候補をお得度つきで監視。",
 };
 
 function NetBadge({ net }: { net: number | null }) {
@@ -34,6 +34,31 @@ function OverseasBar({ ratio }: { ratio: number }) {
   );
 }
 
+// 52週高値からの下落率を「お得度」として評価
+function bargain(drawdownPct: number | null) {
+  if (drawdownPct == null) return null;
+  const d = drawdownPct; // 負の値ほど安い
+  if (d <= -30) return { label: "🔥 大お得", cls: "bg-emerald-900/50 text-emerald-300 border-emerald-700" };
+  if (d <= -20) return { label: "お得",      cls: "bg-green-900/40 text-green-300 border-green-800" };
+  if (d <= -10) return { label: "やや安",    cls: "bg-yellow-900/30 text-yellow-300 border-yellow-800" };
+  return { label: "高値圏", cls: "bg-gray-800 text-gray-400 border-gray-700" };
+}
+
+function DrawdownCell({ m }: { m: WatchMetrics | undefined }) {
+  if (!m || m.drawdownPct == null) return <span className="text-gray-600 text-sm">—</span>;
+  const b = bargain(m.drawdownPct)!;
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded border ${b.cls}`}>{b.label}</span>
+      <span className="font-mono text-sm text-gray-300 tabular-nums">{m.drawdownPct.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+function fmt(v: number | null, suffix = "") {
+  return v == null ? "—" : `${v.toFixed(1)}${suffix}`;
+}
+
 export default async function WatchlistPage() {
   let rankMap: Record<string, Ranking> = {};
   let asOf = "";
@@ -45,15 +70,18 @@ export default async function WatchlistPage() {
     // ランキング取得失敗時も静的リストは表示する
   }
 
+  // 各銘柄のお得度（高値からの下落率）＋ PER/PBR を並列取得（認証は1回）
+  const metricsMap = await fetchWatchMetricsMap(PRICING_POWER_WATCHLIST.map(s => s.code));
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">値上げ力ウォッチリスト</h1>
           <p className="text-sm text-gray-600 mt-1">
-            シェアを独占し、インフレ下でも値上げを通せる toC ブランド銘柄。将来の買い候補として監視します。
+            シェアを独占し、インフレ下でも値上げを通せる toC ブランド銘柄。長期で安く仕込むための「お得度」つき監視リストです。
           </p>
         </div>
 
@@ -63,30 +91,36 @@ export default async function WatchlistPage() {
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-800">
                 <th className="text-left font-medium px-4 py-3">銘柄</th>
-                <th className="text-left font-medium px-4 py-3">独占商品</th>
-                <th className="text-left font-medium px-4 py-3">国内/世界シェア</th>
+                <th className="text-left font-medium px-4 py-3">独占商品・シェア</th>
                 <th className="text-left font-medium px-4 py-3">海外比率</th>
-                <th className="text-right font-medium px-4 py-3">現在のネットスコア</th>
+                <th className="text-left font-medium px-4 py-3">高値から（お得度）</th>
+                <th className="text-right font-medium px-4 py-3">PER / PBR</th>
+                <th className="text-right font-medium px-4 py-3">netスコア</th>
               </tr>
             </thead>
             <tbody>
               {PRICING_POWER_WATCHLIST.map((s) => {
                 const r = rankMap[s.code];
+                const m = metricsMap[s.code];
                 return (
                   <tr key={s.code} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/40 transition-colors">
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       <Link href={`/stocks/${s.code}`} className="group">
                         <div className="font-medium text-white group-hover:text-green-400 transition-colors">{s.name}</div>
                         <div className="text-xs text-gray-600 font-mono">{s.code} · {s.category}</div>
                       </Link>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       <div className="text-gray-300">{s.product}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{s.domesticShare}</div>
                       <div className="text-xs text-gray-600 mt-0.5">{s.note}</div>
                     </td>
-                    <td className="px-4 py-3 text-gray-300">{s.domesticShare}</td>
-                    <td className="px-4 py-3"><OverseasBar ratio={s.overseasRatio} /></td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 align-top"><OverseasBar ratio={s.overseasRatio} /></td>
+                    <td className="px-4 py-3 align-top"><DrawdownCell m={m} /></td>
+                    <td className="px-4 py-3 align-top text-right font-mono text-gray-300 tabular-nums">
+                      {fmt(m?.per ?? null, "x")} / {fmt(m?.pbr ?? null, "x")}
+                    </td>
+                    <td className="px-4 py-3 align-top text-right">
                       <NetBadge net={r?.net ?? null} />
                       {r?.recommend && <div className="text-xs text-gray-600 mt-0.5">{r.recommend}</div>}
                     </td>
@@ -101,6 +135,7 @@ export default async function WatchlistPage() {
         <div className="md:hidden space-y-3">
           {PRICING_POWER_WATCHLIST.map((s) => {
             const r = rankMap[s.code];
+            const m = metricsMap[s.code];
             return (
               <Link
                 key={s.code}
@@ -112,16 +147,18 @@ export default async function WatchlistPage() {
                     <div className="font-medium text-white">{s.name}</div>
                     <div className="text-xs text-gray-600 font-mono">{s.code} · {s.category}</div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <NetBadge net={r?.net ?? null} />
-                    {r?.recommend && <div className="text-xs text-gray-600 mt-0.5">{r.recommend}</div>}
-                  </div>
+                  <DrawdownCell m={m} />
                 </div>
                 <div className="text-sm text-gray-300 mt-2">{s.product}</div>
-                <div className="text-xs text-gray-600 mt-1">{s.note}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{s.domesticShare}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{s.note}</div>
                 <div className="flex items-center justify-between mt-3 text-xs">
-                  <span className="text-gray-400">{s.domesticShare}</span>
+                  <span className="font-mono text-gray-400">PER {fmt(m?.per ?? null, "x")} / PBR {fmt(m?.pbr ?? null, "x")}</span>
                   <OverseasBar ratio={s.overseasRatio} />
+                </div>
+                <div className="flex items-center justify-between mt-2 text-xs">
+                  <span className="text-gray-600">netスコア</span>
+                  <NetBadge net={r?.net ?? null} />
                 </div>
               </Link>
             );
@@ -129,8 +166,9 @@ export default async function WatchlistPage() {
         </div>
 
         <p className="text-xs text-gray-700 leading-relaxed">
-          ※ シェア率・海外売上比率は公知情報をもとにした概算で、決算期により変動します。投資判断の際は各社IRで最新値をご確認ください。
-          ネットスコアは {asOf || "—"} 時点のAIモデル値（上昇確率−下落確率）。
+          ※「お得度」は52週高値からの下落率で判定（−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）。
+          株価・PER・PBR は Yahoo Finance のリアルタイム取得（最大1時間キャッシュ）。シェア率・海外売上比率は公知ベースの概算で、
+          投資判断の際は各社IRで最新値をご確認ください。netスコアは {asOf || "—"} 時点のAIモデル値（上昇確率−下落確率）。
         </p>
       </main>
 
