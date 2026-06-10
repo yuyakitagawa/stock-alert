@@ -22,22 +22,6 @@ function formatDate(date: string) {
   });
 }
 
-interface SummaryCardProps {
-  label: string;
-  count: number;
-  colorClass: string;
-  borderClass: string;
-}
-
-function SummaryCard({ label, count, colorClass, borderClass }: SummaryCardProps) {
-  return (
-    <div className={`bg-gray-900 rounded-xl border ${borderClass} p-5`}>
-      <div className={`text-3xl font-bold font-mono ${colorClass}`}>{count}</div>
-      <div className="text-sm text-gray-500 mt-1.5">{label}</div>
-    </div>
-  );
-}
-
 export default async function HomePage() {
   const [{ date, rows }, sim, sectorMap, dividendCandidates] = await Promise.all([
     fetchRankings(),
@@ -61,11 +45,8 @@ export default async function HomePage() {
     }))
     .sort((a, b) => b.avgNet - a.avgNet);
 
-  const sBuy    = rows.filter(r => r.recommend === "S買い");
-  const neutral = rows.filter(r => r.recommend === "方向感なし");
-  const weak    = rows.filter(r => r.recommend === "弱気シグナル");
-  const down    = rows.filter(r => r.recommend === "下降シグナル");
-  const featured = sBuy.slice(0, 24);
+  // 注目銘柄 = ネットスコア上位10銘柄（rows は rank 昇順 = net 降順）
+  const featured = rows.slice(0, 10);
   const dateLabel = formatDate(date);
 
   const sparklines = await Promise.all(featured.map(r => fetchSparkline(r.code)));
@@ -84,43 +65,25 @@ export default async function HomePage() {
           </div>
         ) : (
           <>
-            {/* Hero */}
-            <section>
-              <div className="flex items-baseline gap-3 mb-5">
-                <h1 className="text-xl sm:text-2xl font-bold text-white">日本株 シグナル概要</h1>
-                <span className="text-sm text-gray-600 font-mono">{dateLabel}</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                <SummaryCard label="S買い"      count={sBuy.length}    colorClass="text-green-400"   borderClass="border-green-900" />
-                <SummaryCard label="方向感なし" count={neutral.length} colorClass="text-gray-400"    borderClass="border-gray-700" />
-                <SummaryCard label="弱気"       count={weak.length}    colorClass="text-orange-400"  borderClass="border-orange-900/50" />
-                <SummaryCard label="下降"       count={down.length}    colorClass="text-red-500"     borderClass="border-red-900/50" />
-              </div>
-              <p className="text-xs text-gray-700 text-right mt-2 font-mono">合計 {rows.length.toLocaleString()} 銘柄</p>
-            </section>
-
-            {/* Featured stocks */}
+            {/* Featured stocks = ネットスコア上位10銘柄 */}
             <section>
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-white">注目銘柄</h2>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-900/60 text-green-400 border border-green-800">S買い</span>
+                <div className="flex items-baseline gap-3">
+                  <h2 className="text-lg font-bold text-white">注目銘柄 <span className="text-gray-500 font-normal">Top 10</span></h2>
+                  <span className="text-sm text-gray-600 font-mono">{dateLabel}</span>
                 </div>
                 <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium">
                   全銘柄を見る →
                 </Link>
               </div>
-              {featured.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {featured.map(r => (
-                    <StockCard key={r.code} r={r} sparkline={sparklineMap[r.code]} />
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-xl px-6 py-8 text-center text-gray-600 text-sm">
-                  現在S買いシグナルの銘柄はありません
-                </div>
-              )}
+              <p className="text-xs text-gray-600 mb-4">
+                ネットスコア（上昇確率 − 下落確率）が高い順の上位10銘柄。全 {rows.length.toLocaleString()} 銘柄中。
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {featured.map(r => (
+                  <StockCard key={r.code} r={r} sparkline={sparklineMap[r.code]} />
+                ))}
+              </div>
             </section>
 
           </>

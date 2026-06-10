@@ -1,9 +1,6 @@
-import SignalLegend from "./SignalLegend";
-
 export default function Footer() {
   return (
     <footer className="mt-12">
-      <SignalLegend />
       <div className="border-t border-gray-800 py-6 px-4">
         <div className="max-w-7xl mx-auto text-center space-y-2">
           <p className="text-xs text-gray-600 leading-relaxed max-w-2xl mx-auto">

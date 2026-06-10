@@ -1,8 +1,15 @@
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
-import RecommendBadge from "./RecommendBadge";
 import Sparkline from "./Sparkline";
-import { signalStyle } from "@/lib/signals";
+
+// ネットスコアに応じたカード配色（シグナルラベルは廃止）
+function netStyle(net: number): { border: string; color: string } {
+  if (net >= 15) return { border: "border-green-800",      color: "#4ade80" };
+  if (net >= 5)  return { border: "border-green-900/50",   color: "#86efac" };
+  if (net >= 0)  return { border: "border-gray-700",       color: "#9ca3af" };
+  if (net >= -10) return { border: "border-orange-900/50", color: "#fb923c" };
+  return { border: "border-red-900/50", color: "#f87171" };
+}
 
 function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";
@@ -19,7 +26,7 @@ interface Props {
 }
 
 export default function StockCard({ r, sparkline }: Props) {
-  const s = signalStyle(r.recommend);
+  const s = netStyle(r.net ?? 0);
   return (
     <Link
       href={`/stocks/${r.code}`}
@@ -41,7 +48,6 @@ export default function StockCard({ r, sparkline }: Props) {
             <p className="font-semibold text-sm text-white truncate">{r.name}</p>
             <p className="text-xs text-gray-500 font-mono">{r.code}</p>
           </div>
-          <RecommendBadge value={r.recommend} />
         </div>
 
         {/* Price */}

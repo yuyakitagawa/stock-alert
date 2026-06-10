@@ -2,6 +2,7 @@ import { anonHeaders, sbUrl } from "./supabase";
 import { fetchLatestDate } from "./data";
 
 const SHARES = 100;
+const SELL_NET_THRESH = 5;   // ネットスコアがこれ未満に下がったら売却（信号消滅）
 
 async function fetchEarliestDate(): Promise<string> {
   const res = await fetch(
@@ -18,6 +19,7 @@ interface RawRow {
   name: string;
   close: number;
   date: string;
+  net?: number;
   recommend?: string;
 }
 
@@ -53,11 +55,10 @@ export interface SimSummary {
   annualizedReturnPct:number;
 }
 
-// 特定コードの買い日以降の最初の売りシグナルを取得
+// 特定コードの買い日以降、ネットスコアが閾値未満に下がった最初の日を売却日とする
 async function fetchFirstSell(code: string, afterDate: string): Promise<RawRow | null> {
-  const sellRecs = encodeURIComponent("下降シグナル");
   const res = await fetch(
-    sbUrl(`web_rankings?code=eq.${code}&date=gt.${afterDate}&recommend=in.(${sellRecs})&order=date.asc&limit=1&select=code,close,date`),
+    sbUrl(`web_rankings?code=eq.${code}&date=gt.${afterDate}&net=lt.${SELL_NET_THRESH}&order=date.asc&limit=1&select=code,close,date,net`),
     { headers: anonHeaders(), next: { revalidate: 300 } }
   );
   if (!res.ok) return null;
@@ -69,22 +70,31 @@ export async function fetchSimulation(): Promise<{
   positions: SimPosition[];
   summary: SimSummary;
 }> {
-  const recFilter = encodeURIComponent("S買い");
-
+  // 毎日のネットスコア上位10銘柄（rank<=10）を買い候補とする。
+  // rank は export 時に net 降順で振られた日次順位（1 = 最高ネット）。
   const [buyRows, latestDate, since] = await Promise.all([
     (async () => {
-      const res = await fetch(
-        sbUrl(`web_rankings?recommend=eq.${recFilter}&net=gte.17&drop_prob=lt.4&order=date.asc&select=code,name,close,date`),
-        { headers: anonHeaders(), next: { revalidate: 300 } }
-      );
-      if (!res.ok) return [] as RawRow[];
-      return res.json() as Promise<RawRow[]>;
+      const all: RawRow[] = [];
+      const pageSize = 1000;
+      let offset = 0;
+      for (;;) {
+        const res = await fetch(
+          sbUrl(`web_rankings?rank=lte.10&order=date.asc,rank.asc&select=code,name,close,date,net&limit=${pageSize}&offset=${offset}`),
+          { headers: anonHeaders(), next: { revalidate: 300 } }
+        );
+        if (!res.ok) break;
+        const rows: RawRow[] = await res.json();
+        all.push(...rows);
+        if (rows.length < pageSize) break;
+        offset += pageSize;
+      }
+      return all;
     })(),
     fetchLatestDate(),
     fetchEarliestDate(),
   ]);
 
-  // 銘柄ごとの最初のS買いのみ
+  // 銘柄ごとに「最初にtop10入りした日」を買い日とする
   const firstBuy = new Map<string, RawRow>();
   for (const row of buyRows) {
     if (!firstBuy.has(row.code)) firstBuy.set(row.code, row);
