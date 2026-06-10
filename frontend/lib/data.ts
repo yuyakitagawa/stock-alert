@@ -204,12 +204,13 @@ export async function fetchWatchMetrics(
   code: string,
   auth: import("./yahoo").YahooAuth | null,
 ): Promise<WatchMetrics> {
-  // 1) chart API の meta から現在値＋52週高値（認証不要・安定）。
-  //    range=5d でも meta.fiftyTwoWeekHigh は取れるのでペイロードを最小化。
+  // 1) chart API（認証不要・Vercelでも安定）から現在値＋52週高値＋ミニチャート用終値。
+  //    range=1mo で meta（高値・現在値）と直近1ヶ月の終値を1コールで両取り。
   let price: number | null = null;
   let high52: number | null = null;
+  let spark: number[] = [];
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=5d&interval=1d`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=1mo&interval=1d`;
     const res = await fetch(url, {
       next: { revalidate: 3600 },
       headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
@@ -217,9 +218,12 @@ export async function fetchWatchMetrics(
     });
     if (res.ok) {
       const data = await res.json();
-      const meta = data?.chart?.result?.[0]?.meta;
+      const result = data?.chart?.result?.[0];
+      const meta = result?.meta;
       price = (meta?.regularMarketPrice as number) ?? null;
       high52 = (meta?.fiftyTwoWeekHigh as number) ?? null;
+      const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
+      spark = closes.filter((v): v is number => v != null);
     }
   } catch { /* graceful */ }
 
@@ -241,7 +245,7 @@ export async function fetchWatchMetrics(
     } catch { /* graceful */ }
   }
 
-  return { price, high52, drawdownPct, per, pbr };
+  return { price, high52, drawdownPct, per, pbr, spark };
 }
 
 // 複数銘柄を並列取得（認証は1回だけ）

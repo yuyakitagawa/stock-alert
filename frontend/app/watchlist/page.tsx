@@ -5,6 +5,7 @@ import { PRICING_POWER_WATCHLIST } from "@/lib/watchlist";
 import type { Ranking, WatchMetrics } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import Sparkline from "@/components/Sparkline";
 
 export const revalidate = 3600;
 
@@ -70,6 +71,25 @@ function fmt(v: number | null, suffix = "") {
   return v == null ? "—" : `${v.toFixed(1)}${suffix}`;
 }
 
+// PER/PBR は自前データ(web_rankings)を優先し、欠損時のみYahooで補完
+function valuation(r: Ranking | undefined, m: WatchMetrics | undefined) {
+  return {
+    per: r?.per ?? m?.per ?? null,
+    pbr: r?.pbr ?? m?.pbr ?? null,
+  };
+}
+
+// 直近1ヶ月のミニチャート（上昇=緑/下落=赤）
+function MiniChart({ spark }: { spark: number[] | undefined }) {
+  if (!spark || spark.length < 2) return null;
+  const up = spark[spark.length - 1] >= spark[0];
+  return (
+    <div className="w-28">
+      <Sparkline prices={spark} color={up ? "#22c55e" : "#ef4444"} showLabel />
+    </div>
+  );
+}
+
 export default async function WatchlistPage() {
   let rankMap: Record<string, Ranking> = {};
   let asOf = "";
@@ -118,7 +138,8 @@ export default async function WatchlistPage() {
                     <td className="px-4 py-3 align-top">
                       <Link href={`/stocks/${s.code}`} className="group">
                         <div className="font-medium text-white group-hover:text-green-400 transition-colors">{s.name}</div>
-                        <div className="text-xs text-gray-600 font-mono">{s.code} · {s.category}</div>
+                        <div className="text-xs text-gray-600 font-mono mb-1">{s.code} · {s.category}</div>
+                        <MiniChart spark={m?.spark} />
                       </Link>
                     </td>
                     <td className="px-4 py-3 align-top">
@@ -129,12 +150,18 @@ export default async function WatchlistPage() {
                     <td className="px-4 py-3 align-top"><OverseasBar ratio={s.overseasRatio} /></td>
                     <td className="px-4 py-3 align-top"><DrawdownCell m={m} /></td>
                     <td className="px-4 py-3 align-top text-right font-mono text-gray-300 tabular-nums">
-                      {fmt(m?.per ?? null, "x")} / {fmt(m?.pbr ?? null, "x")}
+                      {(() => { const v = valuation(r, m); return `${fmt(v.per, "x")} / ${fmt(v.pbr, "x")}`; })()}
                     </td>
                     <td className="px-4 py-3 align-top text-right">
-                      <NetBadge net={r?.net ?? null} />
-                      <ProbBreakdown r={r} />
-                      {r?.recommend && <div className="text-xs text-gray-600 mt-0.5">{r.recommend}</div>}
+                      {r ? (
+                        <>
+                          <NetBadge net={r.net} />
+                          <ProbBreakdown r={r} />
+                          {r.recommend && <div className="text-xs text-gray-600 mt-0.5">{r.recommend}</div>}
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-600">スクリーン対象外</span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -161,19 +188,28 @@ export default async function WatchlistPage() {
                   </div>
                   <DrawdownCell m={m} />
                 </div>
+                {m?.spark && m.spark.length >= 2 && (
+                  <div className="mt-2"><MiniChart spark={m.spark} /></div>
+                )}
                 <div className="text-sm text-gray-300 mt-2">{s.product}</div>
                 <div className="text-xs text-gray-500 mt-0.5">{s.domesticShare}</div>
                 <div className="text-xs text-gray-600 mt-0.5">{s.note}</div>
                 <div className="flex items-center justify-between mt-3 text-xs">
-                  <span className="font-mono text-gray-400">PER {fmt(m?.per ?? null, "x")} / PBR {fmt(m?.pbr ?? null, "x")}</span>
+                  <span className="font-mono text-gray-400">
+                    {(() => { const v = valuation(r, m); return `PER ${fmt(v.per, "x")} / PBR ${fmt(v.pbr, "x")}`; })()}
+                  </span>
                   <OverseasBar ratio={s.overseasRatio} />
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs">
                   <span className="text-gray-600">netスコア</span>
-                  <div className="text-right">
-                    <NetBadge net={r?.net ?? null} />
-                    <ProbBreakdown r={r} />
-                  </div>
+                  {r ? (
+                    <div className="text-right">
+                      <NetBadge net={r.net} />
+                      <ProbBreakdown r={r} />
+                    </div>
+                  ) : (
+                    <span className="text-gray-600">スクリーン対象外</span>
+                  )}
                 </div>
               </Link>
             );
@@ -181,9 +217,12 @@ export default async function WatchlistPage() {
         </div>
 
         <p className="text-xs text-gray-700 leading-relaxed">
-          ※「お得度」は52週高値からの下落率で判定（−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）。
-          株価・PER・PBR は Yahoo Finance のリアルタイム取得（最大1時間キャッシュ）。シェア率・海外売上比率は公知ベースの概算で、
-          投資判断の際は各社IRで最新値をご確認ください。netスコアは {asOf || "—"} 時点のAIモデル値（上昇確率−下落確率）。
+          ※ チャートは直近1ヶ月の終値（緑=上昇 / 赤=下落）。「お得度」は52週高値からの下落率で判定
+          （−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）。株価・チャート・52週高値は Yahoo Finance、
+          PER は当日ランキングのファンダ値（一部はYahoo補完）。PBR は現状データ未整備の銘柄が多く「—」表示になります。
+          シェア率・海外売上比率は公知ベースの概算で、投資判断の際は各社IRで最新値をご確認ください。
+          netスコア（上昇確率−下落確率）は {asOf || "—"} 時点のAIモデル値。AIスコアはモメンタム・スクリーンを通過した銘柄のみで、
+          通過しない銘柄（例: 久光製薬）は「スクリーン対象外」と表示します。
         </p>
       </main>
 
