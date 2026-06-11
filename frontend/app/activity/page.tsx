@@ -8,7 +8,7 @@ export const revalidate = 30;
 
 export const metadata: Metadata = {
   title: "活動ログ — StockSignal",
-  description: "AIチーム（FM・Quant・マーケットコンサル・Engineer・QA）が今・何をしているか / 何をしたかの活動記録",
+  description: "AIチーム（FM・Quant・相場リスク管制官・Engineer・QA・デザイナー）が今・何をしているか / 何をしたかの活動記録",
 };
 
 // ── 担当者・状態の見た目 ──────────────────────────────────────────────────────
@@ -19,6 +19,7 @@ const ROLE_STYLE: Record<string, { label: string; cls: string; emoji: string }> 
   Consultant: { label: "相場リスク管制官",     cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🚦" },
   Engineer:   { label: "エンジニア",           cls: "bg-green-900/40 text-green-300 border-green-800",   emoji: "🔧" },
   QA:         { label: "品質保証（QA）",       cls: "bg-cyan-900/40 text-cyan-300 border-cyan-800",     emoji: "🛡️" },
+  Designer:   { label: "デザイナー",           cls: "bg-rose-900/40 text-rose-300 border-rose-800",     emoji: "🎨" },
   System:     { label: "システム",             cls: "bg-gray-800 text-gray-400 border-gray-700",        emoji: "⚙️" },
 };
 
@@ -48,6 +49,8 @@ const MEMBERS = [
     job: "提案を実装し、過去成績で検証して採用/却下する" },
   { emoji: "🛡️", name: "品質保証（QA）", en: "QA",         cls: "bg-cyan-900/30 border-cyan-800 text-cyan-200",
     job: "リリースのたびにデータの欠損・整合性を検査。わかりづらい用語の指摘・改善提案も行う" },
+  { emoji: "🎨", name: "デザイナー",     en: "Designer",   cls: "bg-rose-900/30 border-rose-800 text-rose-200",
+    job: "画面の使いやすさ・見やすさ・モバイル対応を点検し、改善案を出す（Engineerが実装）" },
 ];
 
 function OrgChart() {
@@ -80,8 +83,8 @@ function OrgChart() {
         <div className="w-px h-5 bg-gray-700" />
         <span className="text-[10px] text-gray-600 -mt-1 mb-1">命令を展開</span>
 
-        {/* メンバー4名 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
+        {/* メンバー5名 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
           {MEMBERS.map(m => (
             <div key={m.en} className={`rounded-lg border px-3 py-2.5 text-center ${m.cls}`}>
               <div className="text-sm font-bold">{m.emoji} {m.name}</div>
