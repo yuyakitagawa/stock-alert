@@ -79,12 +79,11 @@ export default async function HomePage() {
           <>
             {/* Featured stocks = ネットスコア上位10銘柄 */}
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-baseline gap-3">
-                  <h2 className="text-lg font-bold text-white">注目銘柄 <span className="text-gray-500 font-normal">Top 10</span></h2>
-                  <span className="text-sm text-gray-600 font-mono">{dateLabel}</span>
-                </div>
-                <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="text-lg font-bold text-white whitespace-nowrap">
+                  注目銘柄 <span className="text-gray-500 font-normal">Top 10</span>
+                </h2>
+                <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium whitespace-nowrap">
                   全銘柄を見る →
                 </Link>
               </div>
