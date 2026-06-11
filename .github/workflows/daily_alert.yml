@@ -88,6 +88,10 @@ jobs:
       - name: Step 5 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
+      - name: Step 5b - 会社説明をスプシから同期
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/sync_descriptions.py
+
       - name: Step 6 - ユーザーアラートメール送信
         continue-on-error: true
         run: cd ~/stock-alert && python web/send_user_alerts.py
