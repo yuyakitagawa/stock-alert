@@ -276,7 +276,12 @@ def _generate_batch(client, stocks: list[dict], master: dict) -> list[dict]:
 
 
 def _haiku_phase(stocks: list[dict], master: dict) -> list[dict]:
-    """スクレイプ失敗分を Haiku でバッチ生成。"""
+    """
+    スクレイプ失敗分を Haiku でバッチ生成。
+    SAVE_INTERVAL 件ごとに中間 upsert → 途中終了でも進捗を保護。
+    """
+    SAVE_INTERVAL = 200  # 200件ごとに保存
+
     if not stocks:
         return []
     if not ANTHROPIC_API_KEY:
@@ -287,18 +292,31 @@ def _haiku_phase(stocks: list[dict], master: dict) -> list[dict]:
     chunks = [stocks[i:i + BATCH_N] for i in range(0, len(stocks), BATCH_N)]
     print(f"[gen] Phase2: Haiku バッチ生成（{len(stocks)}件、{len(chunks)}バッチ、{WORKERS}並列）")
     done = 0
-    rows: list[dict] = []
+    pending: list[dict] = []   # まだ保存していない行
+    total_saved = 0
+
+    def _flush(force: bool = False) -> None:
+        nonlocal pending, total_saved
+        if pending and (force or len(pending) >= SAVE_INTERVAL):
+            _upsert_bulk(pending)
+            total_saved += len(pending)
+            print(f"[gen]   中間保存: {total_saved}/{len(stocks)} 件完了")
+            pending = []
+
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         futs = {ex.submit(_generate_batch, client, ch, master): i
                 for i, ch in enumerate(chunks)}
         for fut in as_completed(futs):
             batch_rows = fut.result()
             if batch_rows:
-                rows.extend(batch_rows)
+                pending.extend(batch_rows)
                 done += len(batch_rows)
                 print(f"[gen]   Haiku 進捗: {done}/{len(stocks)} 生成済み")
-    print(f"[gen] Phase2 完了: {len(rows)}件 生成")
-    return rows
+            _flush()
+
+    _flush(force=True)
+    print(f"[gen] Phase2 完了: {total_saved}件 生成・保存")
+    return []  # すべて保存済みのため空リストを返す
 
 
 # ─── Supabase upsert ──────────────────────────────────────────────────────────
@@ -352,14 +370,11 @@ def main() -> None:
         print(f"[gen] スクレイプ結果を即時保存: {len(scraped_rows)}件")
         _upsert_bulk(scraped_rows)
 
-    # Phase 2: Haiku フォールバック（J-Quants強化プロンプト）
-    haiku_rows = _haiku_phase(fallback_stocks, jq_master)
-    if haiku_rows:
-        _upsert_bulk(haiku_rows)
+    # Phase 2: Haiku フォールバック（J-Quants強化プロンプト・中間保存あり）
+    _haiku_phase(fallback_stocks, jq_master)
 
-    total = len(scraped_rows) + len(haiku_rows)
-    print(f"[gen] 完了: {total}/{len(todo)} 件の会社説明を生成・保存"
-          f"（スクレイプ {len(scraped_rows)} + Haiku {len(haiku_rows)}）")
+    print(f"[gen] 完了: {len(todo)} 件の処理終了"
+          f"（スクレイプ {len(scraped_rows)}件保存済み）")
 
 
 if __name__ == "__main__":
