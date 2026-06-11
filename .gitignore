@@ -18,4 +18,7 @@ stock_alert.db
 simulations/
 .vercel
 .claude/
+!.claude/
+.claude/*
+!.claude/skills/
 tools/_fund_cache.json
