@@ -77,12 +77,18 @@ def _sb_get(table: str, query: str = "") -> list[dict]:
         return out
 
 
-def _description_targets() -> list[str]:
-    """会社説明があるべき銘柄コード = 値上げ力ウォッチリスト + 保有株。
-    これらはユーザーが必ず閲覧する銘柄なので説明欠損をQAが指摘する対象とする。"""
+def _description_targets(ranking_rows: list[dict] | None = None) -> list[str]:
+    """会社説明があるべき銘柄コード。
+    会社説明は全銘柄が対象なので、当日ランキングの全銘柄をターゲットにする
+    （ウォッチリスト＋保有株も保険として含める）。QA がカバレッジ欠損を指摘する。"""
     import csv as _csv
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     codes: set[str] = set()
+    # 当日ランキングの全銘柄（=サイトで閲覧されうる全銘柄）
+    for r in (ranking_rows or []):
+        c = str(r.get("code", "")).strip()
+        if c:
+            codes.add(c.zfill(4))
     # ウォッチリスト
     wl_path = os.path.join(root, "data", "pricing_power_watchlist.csv")
     try:
@@ -119,7 +125,7 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
         descriptions = _sb_get(
             "ai_analyses",
             "model_version=eq.company-desc-v1&select=code,summary&limit=5000")
-        desc_targets = _description_targets()
+        desc_targets = _description_targets(live_rankings if live_rankings else ranking_rows)
         context = {
             "date":         today,
             "rankings":     live_rankings if live_rankings else ranking_rows,

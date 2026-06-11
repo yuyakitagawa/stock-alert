@@ -88,7 +88,11 @@ jobs:
       - name: Step 5 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
-      - name: Step 5b - 会社説明をスプシから同期
+      - name: Step 5a2 - 会社説明をAI生成（未生成の銘柄を差分補完）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/generate_descriptions.py --limit 400
+
+      - name: Step 5b - 会社説明をスプシから同期（手動説明で上書き優先）
         continue-on-error: true
         run: cd ~/stock-alert && python web/sync_descriptions.py
 
