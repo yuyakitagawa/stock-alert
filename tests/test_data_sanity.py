@@ -178,6 +178,49 @@ class TestCheckSite(unittest.TestCase):
         v = check_site({"date": "2026-06-11", "rankings": rows})
         self.assertEqual(v, [], f"部分contextで誤検知: {format_violations(v)}")
 
+    def test_description_full_coverage_ok(self):
+        """対象銘柄すべてに会社説明があれば違反なし。"""
+        ctx = self._ctx()
+        ctx["desc_targets"] = ["2811", "7309", "4452"]
+        ctx["descriptions"] = [{"code": c, "summary": "説明あり"} for c in ctx["desc_targets"]]
+        v = check_site(ctx)
+        self.assertFalse(any(x.check == "description_coverage" for x in v))
+
+    def test_description_missing_warning(self):
+        """対象銘柄の一部に説明が無ければ warning で指摘。"""
+        ctx = self._ctx()
+        ctx["desc_targets"] = ["2811", "7309", "4452", "1801"]
+        ctx["descriptions"] = [{"code": "2811", "summary": "説明あり"},
+                               {"code": "7309", "summary": "説明あり"},
+                               {"code": "4452", "summary": "説明あり"}]  # 1801(建設)欠損
+        v = check_site(ctx)
+        self.assertTrue(any(x.check == "description_coverage" and x.severity == "warning" for x in v))
+
+    def test_description_empty_summary_counts_as_missing(self):
+        """summaryが空文字でも欠損扱い（『概要情報を取得できませんでした』状態）。"""
+        ctx = self._ctx()
+        ctx["desc_targets"] = ["2811", "1801"]
+        ctx["descriptions"] = [{"code": "2811", "summary": "説明あり"},
+                               {"code": "1801", "summary": "   "}]
+        v = check_site(ctx)
+        self.assertTrue(any(x.check == "description_coverage" for x in v))
+
+    def test_description_partial_missing_is_warning(self):
+        """一部だけ欠損（説明が1件以上ある）なら warning に留める。"""
+        ctx = self._ctx()
+        ctx["desc_targets"] = ["2811", "7309", "4452", "1801"]
+        ctx["descriptions"] = [{"code": "2811", "summary": "説明あり"}]  # 3/4欠損だが1件あり
+        v = check_site(ctx)
+        self.assertTrue(any(x.check == "description_coverage" and x.severity == "warning" for x in v))
+
+    def test_description_all_missing_critical(self):
+        """対象に説明が1件も無い＝パイプライン故障 → critical。"""
+        ctx = self._ctx()
+        ctx["desc_targets"] = ["2811", "7309", "4452", "1801"]
+        ctx["descriptions"] = []  # 全欠損
+        v = check_site(ctx)
+        self.assertTrue(any(x.check == "description_coverage" and x.severity == "critical" for x in v))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

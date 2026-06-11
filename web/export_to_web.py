@@ -77,6 +77,34 @@ def _sb_get(table: str, query: str = "") -> list[dict]:
         return out
 
 
+def _description_targets() -> list[str]:
+    """会社説明があるべき銘柄コード = 値上げ力ウォッチリスト + 保有株。
+    これらはユーザーが必ず閲覧する銘柄なので説明欠損をQAが指摘する対象とする。"""
+    import csv as _csv
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    codes: set[str] = set()
+    # ウォッチリスト
+    wl_path = os.path.join(root, "data", "pricing_power_watchlist.csv")
+    try:
+        with open(wl_path, newline="", encoding="utf-8") as f:
+            for row in _csv.DictReader(f):
+                c = str(row.get("code", "")).strip()
+                if c:
+                    codes.add(c.zfill(4))
+    except Exception:
+        pass
+    # 保有株（スプシ→CSVフォールバック）
+    try:
+        from lib.sheets_helper import load_watch_list
+        for c in load_watch_list().keys():
+            c = str(c).strip()
+            if c:
+                codes.add(c.zfill(4))
+    except Exception:
+        pass
+    return sorted(codes)
+
+
 def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> None:
     """全upsert完了後、Supabaseから読み戻してサイト全体の整合性を検証（alert-only）。"""
     try:
@@ -87,13 +115,20 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
         meta = _sb_get("web_stock_meta", "select=code,sector&limit=5000")
         ai = _sb_get("ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
         earnings = _sb_get("web_earnings", "select=code&limit=1")
+        # 会社説明（詳細ページ「この会社について」）のカバレッジ検査用
+        descriptions = _sb_get(
+            "ai_analyses",
+            "model_version=eq.company-desc-v1&select=code,summary&limit=5000")
+        desc_targets = _description_targets()
         context = {
-            "date":        today,
-            "rankings":    live_rankings if live_rankings else ranking_rows,
-            "stock_meta":  meta,
-            "ai_analyses": ai,
-            "earnings":    earnings,
-            "expected_ai": expected_ai,
+            "date":         today,
+            "rankings":     live_rankings if live_rankings else ranking_rows,
+            "stock_meta":   meta,
+            "ai_analyses":  ai,
+            "earnings":     earnings,
+            "expected_ai":  expected_ai,
+            "descriptions": descriptions,
+            "desc_targets": desc_targets,
         }
         run_site_gate(context, source="export_to_web(site)", alert=True)
     except Exception as e:

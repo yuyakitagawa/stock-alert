@@ -238,6 +238,8 @@ def check_site(context: dict) -> list[Violation]:
       - ai_analyses:  ai_analyses の行（code/summary/verdict）
       - earnings:     web_earnings の行（code/...）
       - expected_ai:  AI解析が存在すべき件数（上位N）
+      - descriptions: ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
+      - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
     """
     v: list[Violation] = []
     expected_date = context.get("date")
@@ -289,6 +291,25 @@ def check_site(context: dict) -> list[Violation]:
             if stale_ai and len(stale_ai) == len(ai):
                 v.append(Violation("warning", "ai_stale",
                     f"AI解析が古い日付のみ（本日{expected_date}分なし）"))
+
+    # ── 会社説明カバレッジ（詳細ページ「この会社について」）─────────────────
+    # descriptions: ai_analyses(model_version=company-desc-v1) の {code, summary}
+    # desc_targets: 説明があるべき銘柄コード（ウォッチリスト＋保有株など）
+    descriptions = context.get("descriptions")
+    desc_targets = context.get("desc_targets")
+    if descriptions is not None and desc_targets:
+        have = {str(d.get("code")) for d in descriptions
+                if str(d.get("summary") or "").strip()}
+        targets = [str(c) for c in desc_targets]
+        missing = [c for c in targets if c not in have]
+        if missing:
+            # 対象に説明が1件も無い＝説明パイプライン全体の故障 → critical。
+            # 一部欠損はコンテンツ不足 → warning（スプシに追記すれば解消）。
+            present = [c for c in targets if c in have]
+            sev = "critical" if not present else "warning"
+            v.append(Violation(sev, "description_coverage",
+                f"会社説明が未登録の銘柄 {len(missing)}/{len(targets)}件"
+                f"（詳細ページで『概要情報を取得できませんでした』表示）(例 {missing[:5]})"))
 
     # ── 決算カレンダー（任意・空なら warning）────────────────────────────
     earnings = context.get("earnings")
