@@ -12,6 +12,7 @@ import Footer from "@/components/Footer";
 import StockChart from "@/components/StockChart";
 import StockLivePanel from "@/components/StockLivePanel";
 import { netStyle } from "@/lib/signals";
+import { GLOSSARY } from "@/lib/glossary";
 
 export const revalidate = 3600;
 
@@ -133,18 +134,21 @@ export default async function StockDetailPage({ params }: Props) {
             <MetricCard
               label="ネットスコア"
               value={signFmt(ranking.net)}
+              sub={GLOSSARY.net.short}
               colorClass={ranking.net >= 0 ? "text-green-400" : "text-red-400"}
             />
-            <MetricCard label="上昇確率"     value={`${fmt(ranking.rise_prob)}%`} colorClass="text-green-400" />
-            <MetricCard label="下落確率"     value={`${fmt(ranking.drop_prob)}%`} colorClass="text-red-400" />
+            <MetricCard label="上昇確率" value={`${fmt(ranking.rise_prob)}%`} sub={GLOSSARY.rise_prob.short} colorClass="text-green-400" />
+            <MetricCard label="下落確率" value={`${fmt(ranking.drop_prob)}%`} sub={GLOSSARY.drop_prob.short} colorClass="text-red-400" />
             <MetricCard
               label="日経比 20日"
               value={signFmt(ranking.rel20)}
+              sub={GLOSSARY.rel20.short}
               colorClass={ranking.rel20 >= 0 ? "text-blue-400" : "text-orange-400"}
             />
             <MetricCard
               label="ボラティリティ"
               value={ranking.vol != null ? `${fmt(ranking.vol)}%` : "—"}
+              sub={GLOSSARY.vol.short}
             />
           </div>
         </section>
@@ -153,8 +157,8 @@ export default async function StockDetailPage({ params }: Props) {
         <section>
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">バリュエーション</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <MetricCard label="PER" value={ranking.per != null ? `${fmt(ranking.per)}x` : "—"} />
-            <MetricCard label="PBR" value={ranking.pbr != null ? `${fmt(ranking.pbr)}x` : "—"} />
+            <MetricCard label="PER" value={ranking.per != null ? `${fmt(ranking.per)}x` : "—"} sub={GLOSSARY.per.short} />
+            <MetricCard label="PBR" value={ranking.pbr != null ? `${fmt(ranking.pbr)}x` : "—"} sub={GLOSSARY.pbr.short} />
             {earnings && (
               <div className="col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-1">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">次回決算日</p>
@@ -175,6 +179,7 @@ export default async function StockDetailPage({ params }: Props) {
                 ¥{ranking.stop_loss.toLocaleString()}
               </span>
             </div>
+            <p className="text-xs text-gray-500 mt-1.5">{GLOSSARY.stop_loss.short}</p>
           </section>
         )}
 

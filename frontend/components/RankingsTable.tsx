@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Ranking } from "@/lib/types";
 import { useLang } from "@/contexts/LanguageContext";
 import { UI } from "@/lib/i18n";
+import { GLOSSARY } from "@/lib/glossary";
 
 type SortKey = "rank" | "net" | "rise_prob" | "drop_prob" | "rel20" | "close";
 
@@ -67,8 +68,9 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
     });
   }, [rows, sector, search, sortKey, sortDir, sectorMap]);
 
-  const ThSort = ({ col, label, className = "" }: { col: SortKey; label: string; className?: string }) => (
+  const ThSort = ({ col, label, hint, className = "" }: { col: SortKey; label: string; hint?: string; className?: string }) => (
     <th
+      title={hint}
       className={`px-3 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none hover:text-white transition-colors whitespace-nowrap ${className}`}
       onClick={() => handleSort(col)}
     >
@@ -112,12 +114,12 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
               <ThSort col="rank"      label="#"         className="w-10 text-center" />
               <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide">銘柄</th>
               <ThSort col="close"     label="株価"      className="text-right" />
-              <ThSort col="net"       label="ネット"    className="text-right" />
-              <ThSort col="rise_prob" label="上昇確率"   className="text-right" />
-              <ThSort col="drop_prob" label="下落確率"   className="text-right" />
-              <ThSort col="rel20"     label="日経比20日" className="text-right hidden lg:table-cell" />
-              <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell">PER</th>
-              <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell">PBR</th>
+              <ThSort col="net"       label="ネット"    hint={GLOSSARY.net.short}       className="text-right" />
+              <ThSort col="rise_prob" label="上昇確率"   hint={GLOSSARY.rise_prob.short} className="text-right" />
+              <ThSort col="drop_prob" label="下落確率"   hint={GLOSSARY.drop_prob.short} className="text-right" />
+              <ThSort col="rel20"     label="日経比20日" hint={GLOSSARY.rel20.short}     className="text-right hidden lg:table-cell" />
+              <th title={GLOSSARY.per.short} className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell cursor-help">PER</th>
+              <th title={GLOSSARY.pbr.short} className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell cursor-help">PBR</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800/60">

@@ -3,6 +3,7 @@ import { fetchRankings, fetchSectorMap } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RankingsTable from "@/components/RankingsTable";
+import GlossaryLegend from "@/components/GlossaryLegend";
 
 export const revalidate = 300;
 
@@ -46,7 +47,10 @@ export default async function RankingsPage() {
             <p className="text-sm">平日16時以降に更新されます</p>
           </div>
         ) : (
-          <RankingsTable rows={rows} sectorMap={sectorMap} />
+          <>
+            <GlossaryLegend />
+            <RankingsTable rows={rows} sectorMap={sectorMap} />
+          </>
         )}
       </main>
 

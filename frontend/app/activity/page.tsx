@@ -47,7 +47,7 @@ const MEMBERS = [
   { emoji: "🔧", name: "エンジニア",     en: "Engineer",   cls: "bg-green-900/30 border-green-800 text-green-200",
     job: "提案を実装し、過去成績で検証して採用/却下する" },
   { emoji: "🛡️", name: "品質保証（QA）", en: "QA",         cls: "bg-cyan-900/30 border-cyan-800 text-cyan-200",
-    job: "リリースのたびにデータの欠損・整合性を検査し、異常を通知する" },
+    job: "リリースのたびにデータの欠損・整合性を検査。わかりづらい用語の指摘・改善提案も行う" },
 ];
 
 function OrgChart() {
