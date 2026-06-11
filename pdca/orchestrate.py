@@ -49,23 +49,32 @@ except ImportError:
 # ── バックテスト期間定義 ──────────────────────────────────────────────────
 # データが揃い次第 periods リストに追加していく
 BACKTEST_PERIODS = [
-    # (ラベル, 開始日, 終了日) — 手持ち4.5年分 (2022-02〜2026-05) をフル活用
-    ("rate_hike_2022", "2022-06-01", "2022-12-31"),  # 米利上げ局面
-    ("bull_2023",      "2023-04-01", "2023-10-01"),  # 2023年前半強気相場
-    ("q1_2024",        "2024-01-01", "2024-06-30"),  # bear前の強気期
-    ("bear_2024",      "2024-07-01", "2024-10-01"),  # 2024年8月円キャリー崩壊
-    ("q2_2025",        "2025-05-14", "2025-08-14"),  # 直近1年前
+    # (ラベル, 開始日, 終了日) — 直近800日ウィンドウ内（oldest≈2024-04-01）で網羅
+    # 注: FETCH_DAYS=max(800, period_length+180) のため古い期間はデータ取得不可→全スキップ
+    # → 2024-04以降の5期間でbear/回復/強気/直近をカバー
+    ("bear_2024",   "2024-07-01", "2024-10-01"),  # 2024年8月円キャリー崩壊（最重要）
+    ("q4_2024",     "2024-10-01", "2025-01-31"),  # 崩壊後反発・BOJ利上げ局面
+    ("q1_2025",     "2025-01-01", "2025-05-01"),  # 米関税ショック・地政学変動
+    ("q2_2025",     "2025-05-14", "2025-08-14"),  # 直近強気相場
+    ("q3_2025",     "2025-07-01", "2025-11-30"),  # 夏〜秋（データ蓄積済み）
 ]
 
 
 def _run_one_backtest(start, end):
     """1期間のバックテストを実行してメトリクス dict を返す（ローリング5日モード）"""
-    r = subprocess.run(
-        [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "21", "--top-n", "5"],
-        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=3600,
-        env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
-    )
-    out = r.stdout + r.stderr
+    try:
+        r = subprocess.run(
+            [PYTHON, "tools/backtest.py", "--start", start, "--end", end, "--rolling", "--forecast-days", "21", "--top-n", "5"],
+            capture_output=True, text=True, cwd=str(BASE_DIR), timeout=3600,
+            env={**os.environ, "STOCK_ALERT_HOME": str(BASE_DIR)},
+        )
+        out = r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        print(f"    [タイムアウト] {start}→{end} が3600s超過")
+        return {}
+    except Exception as e:
+        print(f"    [エラー] {start}→{end}: {e}")
+        return {}
     m = {}
     for pat, key in [
         (r'平均リターン: ([+-]?\d+\.?\d*)%',              'avg_return'),
