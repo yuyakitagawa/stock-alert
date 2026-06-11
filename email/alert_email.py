@@ -567,6 +567,38 @@ def build_earnings_map(codes):
     return result
 
 
+def _risk_regime_banner_html() -> str:
+    """相場リスク管制官の当日判定をバナー表示（data/risk_regime.json）。なければ空。"""
+    import json as _json
+    path = os.path.join(BASE_DIR, "data", "risk_regime.json")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = _json.load(f)
+    except Exception:
+        return ""
+    regime = v.get("regime")
+    if regime == "risk_off":
+        bg, br, fg = "#3a1212", "#c0392b", "#ff8a80"
+    elif regime == "caution":
+        bg, br, fg = "#3a2e12", "#d4a017", "#ffd54f"
+    else:
+        bg, br, fg = "#12301f", "#27ae60", "#81c995"
+    reasons = "・".join(v.get("reasons", []))
+    return (
+        f"<div style='background:{bg};border-left:4px solid {br};border-radius:8px;"
+        f"padding:12px 14px;margin-bottom:12px'>"
+        f"<div style='color:{fg};font-weight:700;font-size:14px'>"
+        f"🛡️ 相場リスク管制官: {v.get('label','')} → {v.get('action','')}</div>"
+        f"<div style='color:#bbb;font-size:12px;margin-top:4px'>{reasons}</div>"
+        + (f"<div style='color:{fg};font-size:12px;margin-top:4px'>"
+           f"⚠️ リスクオフ地合いのため本日のS買いは自動見送りしています</div>"
+           if v.get("suppress_buy") else "")
+        + "</div>"
+    )
+
+
 def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None, nk60=None,
                prev_ranking_codes=None, priority_actions=None,
                ranking_df=None, etf_rets=None):
@@ -589,6 +621,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
     hot_banner  = _hot_market_banner_html(is_hot, nk60)
     candidate_count = _unheld_ranking_row_count(ranking_df, held_codes_set)
     index_banner = _index_etf_banner_html(is_bear, candidate_count, nk20)
+    risk_banner = _risk_regime_banner_html()
 
     return f"""<html><head>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -598,6 +631,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
   <div style='font-size:20px;font-weight:700;margin-bottom:4px'>📊 チェック銘柄アラート</div>
   <div style='font-size:13px;color:#aaa'>{today} ／ {nk_str}</div>
 </div>
+{risk_banner}
 {bear_banner}
 {hot_banner}
 {index_banner}

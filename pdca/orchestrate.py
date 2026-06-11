@@ -517,6 +517,20 @@ Fund Manager のコメント
 #  S買いシグナルが出た時は個別銘柄の企業調査も兼務する。
 # ══════════════════════════════════════════════════════════════════════
 
+def _risk_regime_head() -> str:
+    """日次パイプラインが算出した当日のリスク判定（data/risk_regime.json）を1行で返す。"""
+    try:
+        import json as _json
+        path = BASE_DIR / "data" / "risk_regime.json"
+        if not path.exists():
+            return ""
+        v = _json.loads(path.read_text("utf-8"))
+        from lib.risk_regime import summary_line
+        return f"🛡️ 相場リスク管制官 [{v.get('date','')}]: {summary_line(v)}"
+    except Exception:
+        return ""
+
+
 def market_consultant_research(metrics, fm_directive=""):
     """マーケットコンサル: 市場環境を調査し、チームへの助言レポートを返す（web検索×3回）。"""
     directive_block = (
@@ -1112,12 +1126,12 @@ def main():
         log(f"- FM directives: {json.dumps(directives, ensure_ascii=False)}")
 
     # Step1.56: マーケットコンサルが市場環境を調査（毎サイクル稼働）→ Quantの材料にする
-    print("Step1.56: マーケットコンサル 市場環境を調査中...")
-    aid = activity.start("Consultant", "市場環境レポート", "マクロ・セクター・リスク要因を調査中…")
-    consult_report = market_consultant_research(metrics, directives.get('consultant', ''))
-    consult_head = consult_report.split('\n', 1)[0][:80]
-    activity.finish(aid, "done", consult_head, consult_report)
-    log(f"- consultant: {consult_head}")
+    print("Step1.56: 相場リスク管制官 当日のリスク地合いを判定中...")
+    aid = activity.start("Consultant", "相場リスク判定", "マクロからリスクオン/オフを判定中…")
+    risk_head = _risk_regime_head()
+    consult_report = risk_head + "\n\n" + market_consultant_research(metrics, directives.get('consultant', ''))
+    activity.finish(aid, "done", risk_head or consult_report.split('\n', 1)[0][:80], consult_report)
+    log(f"- consultant(risk): {risk_head}")
 
     # Step1.6: S買いシグナル銘柄チェック → コンサル兼務で銘柄調査 → FM判断 → 購入通知
     print("Step1.6: S買いシグナル 確認中...")

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 const ROLE_STYLE: Record<string, { label: string; cls: string; emoji: string }> = {
   FM:         { label: "ファンドマネージャー", cls: "bg-blue-900/40 text-blue-300 border-blue-800",     emoji: "💼" },
   Quant:      { label: "数量アナリスト",       cls: "bg-purple-900/40 text-purple-300 border-purple-800", emoji: "📐" },
-  Consultant: { label: "マーケットコンサル",   cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🔍" },
+  Consultant: { label: "相場リスク管制官",     cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🚦" },
   Engineer:   { label: "エンジニア",           cls: "bg-green-900/40 text-green-300 border-green-800",   emoji: "🔧" },
   QA:         { label: "品質保証（QA）",       cls: "bg-cyan-900/40 text-cyan-300 border-cyan-800",     emoji: "🛡️" },
   System:     { label: "システム",             cls: "bg-gray-800 text-gray-400 border-gray-700",        emoji: "⚙️" },
@@ -42,8 +42,8 @@ function timeLabel(ts: string) {
 const MEMBERS = [
   { emoji: "📐", name: "数量アナリスト", en: "Quant",      cls: "bg-purple-900/30 border-purple-800 text-purple-200",
     job: "モデルの設定値・特徴量・条件を改善する案を出す" },
-  { emoji: "🔍", name: "マーケットコンサル", en: "Consultant", cls: "bg-yellow-900/30 border-yellow-800 text-yellow-200",
-    job: "マクロ・セクター・市場環境を毎回調査しFM/Quantに助言する" },
+  { emoji: "🚦", name: "相場リスク管制官", en: "Consultant", cls: "bg-yellow-900/30 border-yellow-800 text-yellow-200",
+    job: "マクロ（日経・VIX・ドル円・米国）からリスクオン/オフを判定。リスクオフ日は買いを自動見送り。買いシグナル時は銘柄も調査" },
   { emoji: "🔧", name: "エンジニア",     en: "Engineer",   cls: "bg-green-900/30 border-green-800 text-green-200",
     job: "提案を実装し、過去成績で検証して採用/却下する" },
   { emoji: "🛡️", name: "品質保証（QA）", en: "QA",         cls: "bg-cyan-900/30 border-cyan-800 text-cyan-200",

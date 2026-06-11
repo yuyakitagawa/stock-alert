@@ -735,6 +735,34 @@ def main():
         else:
             print(f"  ETFデータ取得失敗: フィルタースキップ")
 
+    # フェーズ8: 相場リスク管制官 — マクロからリスクオン/オフを判定し、
+    #            リスクオフ地合いではS買いを全件見送り（自動防御）
+    from lib.risk_regime import assess as _assess_risk, summary_line as _risk_summary
+    risk_verdict = _assess_risk(
+        nk20=nk20,
+        vix=_live_macro.get("vix"),
+        jpy5=_live_jpy.get("jpy5"),
+        us20=_live_macro.get("us20"),
+        us5=_live_macro.get("us5"),
+    )
+    print(f"\n🛡️ 相場リスク管制官: {_risk_summary(risk_verdict)}")
+    if risk_verdict["suppress_buy"]:
+        risk_buy = result_df[result_df["推奨"] == "🥇 S買い"]["銘柄コード"].astype(str).tolist()
+        for code in risk_buy:
+            idx = result_df[result_df["銘柄コード"].astype(str) == code].index
+            result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
+        if risk_buy:
+            print(f"  🔴 リスクオフ地合い → S買い{len(risk_buy)}件を全て見送り（方向感なしに降格）")
+    # 当日のリスク判定を保存（メール・Web・活動ログが参照）
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        _risk_out = {"date": _dt.now().strftime("%Y-%m-%d"), **risk_verdict}
+        with open(os.path.join(BASE_DIR, "data", "risk_regime.json"), "w", encoding="utf-8") as _f:
+            _json.dump(_risk_out, _f, ensure_ascii=False)
+    except Exception as _e:
+        print(f"  リスク判定の保存失敗（無視）: {_e}")
+
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")
     os.makedirs(os.path.join(BASE_DIR, "data", "rankings"), exist_ok=True)
