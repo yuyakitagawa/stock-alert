@@ -129,6 +129,20 @@ export interface WeeklyReview {
   next_actions:     string;
 }
 
+export interface QvSimTrade {
+  id:           number;
+  code:         string;
+  name:         string | null;
+  entry_date:   string;
+  exit_date:    string | null;
+  entry_price:  number | null;
+  exit_price:   number | null;
+  return_pct:   number | null;
+  reason:       string | null;
+  held_days:    number | null;
+  status:       "active" | "closed";
+}
+
 export interface RiskRegime {
   date:         string;
   regime:       "risk_on" | "caution" | "risk_off";

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { fetchRankings } from "@/lib/data";
+import { fetchRankings, fetchQvSimTrades } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import QvPanel from "@/components/QvPanel";
+import QvSimPanel from "@/components/QvSimPanel";
 
 export const revalidate = 300;
 
@@ -21,7 +22,10 @@ export const QV_SELL_NET_MIN   = -5.0;   // net がこれ未満で売り
 export const QV_SELL_DROP_MIN  = 10.0;   // drop_prob がこれ以上で売り
 
 export default async function QvPage() {
-  const { date, rows } = await fetchRankings();
+  const [{ date, rows }, simTrades] = await Promise.all([
+    fetchRankings(),
+    fetchQvSimTrades(),
+  ]);
 
   // QV条件フィルタリング
   const candidates = rows.filter(r =>
@@ -55,6 +59,10 @@ export default async function QvPage() {
           sellNetMin={QV_SELL_NET_MIN}
           sellDropMin={QV_SELL_DROP_MIN}
         />
+
+        <hr className="border-gray-800" />
+
+        <QvSimPanel trades={simTrades} />
       </main>
       <Footer />
     </div>

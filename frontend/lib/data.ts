@@ -309,6 +309,15 @@ export async function fetchWeeklyReview(week: string): Promise<WeeklyReview | nu
   return (rows[0] as WeeklyReview) ?? null;
 }
 
+export async function fetchQvSimTrades(): Promise<import("./types").QvSimTrade[]> {
+  const res = await fetch(
+    sbUrl("web_qv_sim?order=entry_date.asc"),
+    { headers: anonHeaders(), next: { revalidate: 300 } },
+  );
+  if (!res.ok) return [];
+  return (await res.json()) as import("./types").QvSimTrade[];
+}
+
 export async function fetchRiskRegime(): Promise<RiskRegime | null> {
   const res = await fetch(
     sbUrl("web_risk_regime?order=date.desc&limit=1"),
