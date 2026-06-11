@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: gautamkrishnar/keepalive-workflow@v2
-        with:
-          use_api: true
+
+      - name: Keep repository active
+        run: |
+          git config user.email "keepalive@github-actions"
+          git config user.name  "GitHub Actions"
+          git commit --allow-empty -m "chore: keepalive [skip ci]"
+          git push
