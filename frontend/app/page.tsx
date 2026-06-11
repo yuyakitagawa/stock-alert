@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchRankings, fetchSparkline, fetchSectorMap } from "@/lib/data";
+import { fetchRankings, fetchSparkline, fetchSectorMap, fetchNikkeiReturn } from "@/lib/data";
 import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -22,26 +22,29 @@ function formatDate(date: string) {
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sim, sectorMap] = await Promise.all([
+  const [{ date, rows }, sim, sectorMap, nikkei20] = await Promise.all([
     fetchRankings(),
     fetchSimulation(),
     fetchSectorMap(),
+    fetchNikkeiReturn(20),
   ]);
 
-  // 業種別成績（本日データ）
+  // 業種別成績（本日データ）= 実際の20日リターン平均（ネットスコアではない）。
+  // web_rankings の rel20（日経比）に日経20日リターンを足し戻して絶対リターンに復元。
   const sectorBuckets = new Map<string, number[]>();
   for (const r of rows) {
+    if (r.rel20 == null) continue;
     const sector = sectorMap[r.code] ?? "その他";
     if (!sectorBuckets.has(sector)) sectorBuckets.set(sector, []);
-    sectorBuckets.get(sector)!.push(r.net);
+    sectorBuckets.get(sector)!.push(r.rel20 + nikkei20);
   }
   const sectorStats = Array.from(sectorBuckets.entries())
-    .map(([sector, nets]) => ({
+    .map(([sector, rets]) => ({
       sector,
-      count: nets.length,
-      avgNet: nets.reduce((s, n) => s + n, 0) / nets.length,
+      count: rets.length,
+      avgReturn: rets.reduce((s, n) => s + n, 0) / rets.length,
     }))
-    .sort((a, b) => b.avgNet - a.avgNet);
+    .sort((a, b) => b.avgReturn - a.avgReturn);
 
   // 注目銘柄 = ネットスコア上位10銘柄（rows は rank 昇順 = net 降順）
   const featured = rows.slice(0, 10);

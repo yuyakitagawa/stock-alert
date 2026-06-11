@@ -195,6 +195,28 @@ export async function fetchSparkline(code: string): Promise<number[]> {
   }
 }
 
+// 日経225（^N225）の直近 days 営業日リターン(%)。業種別の絶対リターン算出に使用。
+// （web_rankings には日経比 rel20 しか無いため、絶対リターン = rel20 + 日経20日 で復元する）
+export async function fetchNikkeiReturn(days = 20): Promise<number> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?range=3mo&interval=1d`;
+    const res = await fetch(url, {
+      next: { revalidate: 3600 },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const closes: number[] = (data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [])
+      .filter((v: number | null): v is number => v !== null);
+    if (closes.length <= days) return 0;
+    const last = closes[closes.length - 1];
+    const prev = closes[closes.length - 1 - days];
+    return prev > 0 ? ((last - prev) / prev) * 100 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 
 
 // 値上げ力ウォッチリスト用: 52週高値からの下落率（お得度）＋ PER/PBR
