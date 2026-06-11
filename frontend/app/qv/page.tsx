@@ -18,8 +18,8 @@ const QV_POS52_MAX      = 0.45;   // 52週安値圏
 const QV_DROP_MAX       = 8.0;    // drop_prob 上限
 const QV_VOL_MAX        = 25.0;   // ボラ上限
 // 売りシグナル閾値
-export const QV_SELL_NET_MIN   = -5.0;   // net がこれ未満で売り
-export const QV_SELL_DROP_MIN  = 10.0;   // drop_prob がこれ以上で売り
+const QV_SELL_NET_MIN   = -5.0;   // net がこれ未満で売り
+const QV_SELL_DROP_MIN  = 10.0;   // drop_prob がこれ以上で売り
 
 export default async function QvPage() {
   const [{ date, rows }, simTrades] = await Promise.all([
