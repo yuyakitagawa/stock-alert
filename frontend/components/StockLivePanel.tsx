@@ -229,7 +229,7 @@ export default function StockLivePanel({ code, name, sector }: Props) {
                 ))}
               </tbody>
             </table>
-            <p className="text-xs text-gray-700 px-4 py-2 bg-gray-900/50 border-t border-gray-800">出典: Yahoo Finance</p>
+            <p className="text-xs text-gray-600 px-4 py-2 bg-gray-900/50 border-t border-gray-800">出典: Yahoo Finance</p>
           </div>
         </section>
       )}

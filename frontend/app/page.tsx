@@ -60,6 +60,14 @@ export default async function HomePage() {
       <Navbar dateLabel={dateLabel} />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 space-y-10">
+        {/* ページ見出し（h1）＋ データ基準日（全画面で常時表示） */}
+        <header className="space-y-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-white">日本株 AIシグナル</h1>
+          <p className="text-sm text-gray-500">
+            {date ? `${dateLabel} 時点のAIスコア` : "データを取得中…"}
+          </p>
+        </header>
+
         <RiskRegimeBanner risk={risk} />
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-gray-600 space-y-3">

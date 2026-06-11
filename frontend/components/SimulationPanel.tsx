@@ -59,7 +59,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
               </div>
               <div className="text-xs text-gray-500 mt-1.5">
                 期間リターン {summary.compoundReturnPct >= 0 ? "+" : ""}{summary.compoundReturnPct.toFixed(1)}%
-                <span className="text-gray-700 ml-2">（損益合計÷総投資額）を {summary.since} 〜 今日まで年率換算</span>
+                <span className="text-gray-600 ml-2">（損益合計÷総投資額）を {summary.since} 〜 今日まで年率換算</span>
               </div>
             </div>
             <div className="text-right space-y-2 shrink-0 pt-1">
@@ -85,14 +85,14 @@ export default function SimulationPanel({ positions, summary }: Props) {
         <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500 font-semibold tracking-wide uppercase">シグナル精度</span>
-            <span className="text-xs text-gray-700">全 {summary.allCount} シグナル（保有中 {summary.heldCount} + 売却済 {summary.soldCount}）</span>
+            <span className="text-xs text-gray-600">全 {summary.allCount} シグナル（保有中 {summary.heldCount} + 売却済 {summary.soldCount}）</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {/* Win rate */}
             <div className="space-y-2">
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">勝率</span>
-                <span className="text-xs text-gray-700" title="買付時より現在値または売値が高い銘柄の割合">(?)</span>
+                <span className="text-xs text-gray-600" title="買付時より現在値または売値が高い銘柄の割合">(?)</span>
               </div>
               <div className="text-2xl font-bold font-mono text-white">
                 {summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}
@@ -111,7 +111,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
             <div className="space-y-2">
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">平均騰落率</span>
-                <span className="text-xs text-gray-700" title="全ポジションの騰落率の単純平均">(?)</span>
+                <span className="text-xs text-gray-600" title="全ポジションの騰落率の単純平均">(?)</span>
               </div>
               <div className={`text-2xl font-bold font-mono ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
                 {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(2)}
@@ -158,21 +158,21 @@ export default function SimulationPanel({ positions, summary }: Props) {
               <div className="font-mono font-bold text-white text-sm">
                 {summary.totalCost.toLocaleString("ja-JP")}円
               </div>
-              <div className="text-xs text-gray-700 mt-1">全買付価格 × 100株の合計</div>
+              <div className="text-xs text-gray-600 mt-1">全買付価格 × 100株の合計</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="text-xs text-gray-500 mb-1">損益合計</div>
               <div className={`font-mono font-bold text-sm ${pnlColor}`}>
                 {fmtYen(summary.totalPnl)}
               </div>
-              <div className="text-xs text-gray-700 mt-1">確定 + 含み損益の合計</div>
+              <div className="text-xs text-gray-600 mt-1">確定 + 含み損益の合計</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="text-xs text-gray-500 mb-1">単純平均リターン</div>
               <div className={`font-mono font-bold text-sm ${pnlColor}`}>
                 {fmtPct(summary.totalPnlPct)}
               </div>
-              <div className="text-xs text-gray-700 mt-1">損益合計 ÷ 総投資額（参考）</div>
+              <div className="text-xs text-gray-600 mt-1">損益合計 ÷ 総投資額（参考）</div>
             </div>
           </div>
         </div>
@@ -182,7 +182,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-gray-400">保有中 ({held.length}銘柄)</h3>
-              <span className="text-xs text-gray-700">買いシグナル日に買付、まだ売りシグナルが出ていない</span>
+              <span className="text-xs text-gray-600">買いシグナル日に買付、まだ売りシグナルが出ていない</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800">
               <table className="w-full text-xs font-mono">
@@ -232,7 +232,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-gray-600">売却済み ({sold.length}銘柄)</h3>
-              <span className="text-xs text-gray-700">ネットスコアが5%未満に下がった日に売却したと仮定</span>
+              <span className="text-xs text-gray-600">ネットスコアが5%未満に下がった日に売却したと仮定</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800/50">
               <table className="w-full text-xs font-mono opacity-60">
@@ -280,7 +280,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
         )}
 
         {/* Disclaimer */}
-        <p className="text-xs text-gray-700 border-t border-gray-800/60 pt-4">
+        <p className="text-xs text-gray-600 border-t border-gray-800/60 pt-4">
           ※ 本シミュレーションは参考情報です。実際の投資判断はご自身の責任で行ってください。
           年率換算は「損益合計÷総投資額」を観測期間から年率換算したもので、将来の成果を保証するものではありません。
           売買タイミングはシグナル発生日の終値を使用。手数料・スリッページ・税金は考慮していません。

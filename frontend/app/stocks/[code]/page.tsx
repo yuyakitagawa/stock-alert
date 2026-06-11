@@ -99,7 +99,7 @@ export default async function StockDetailPage({ params }: Props) {
                 {meta?.sector && <span>{meta.sector}</span>}
                 {meta?.market && (
                   <>
-                    <span className="text-gray-700">·</span>
+                    <span className="text-gray-600">·</span>
                     <span>{meta.market}</span>
                   </>
                 )}
@@ -108,6 +108,9 @@ export default async function StockDetailPage({ params }: Props) {
             <div className="text-right">
               <div className="text-3xl font-bold font-mono text-white">
                 ¥{ranking.close?.toLocaleString() ?? "—"}
+              </div>
+              <div className="text-[11px] text-gray-500">
+                {ranking.date ? `${formatDate(ranking.date)} 終値` : "終値"}
               </div>
               <div className={`font-mono font-bold ${ranking.net >= 0 ? "text-green-400" : "text-red-400"}`}>
                 ネット {signFmt(ranking.net)}
@@ -185,7 +188,7 @@ export default async function StockDetailPage({ params }: Props) {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">AI解析</h2>
-              <span className="text-xs text-gray-700 font-mono">{formatDate(ai.date)}</span>
+              <span className="text-xs text-gray-600 font-mono">{formatDate(ai.date)}</span>
             </div>
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
@@ -233,7 +236,7 @@ export default async function StockDetailPage({ params }: Props) {
               )}
             </div>
 
-            <p className="text-xs text-gray-700">model: {ai.model_version}</p>
+            <p className="text-xs text-gray-600">model: {ai.model_version}</p>
           </section>
         ) : (
           <section className="bg-gray-900/50 border border-gray-800 rounded-xl p-6 text-center">

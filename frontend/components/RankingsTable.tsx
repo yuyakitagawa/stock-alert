@@ -177,7 +177,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             href={`/stocks/${r.code}`}
             className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 hover:bg-gray-800 transition-colors"
           >
-            <span className="text-gray-700 font-mono text-xs w-6 text-center">{r.rank}</span>
+            <span className="text-gray-600 font-mono text-xs w-6 text-center">{r.rank}</span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-sm text-white">{r.name}</span>
@@ -197,7 +197,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
               </div>
               <div className="text-xs font-mono">
                 <span className="text-green-500/90">上昇{fmt(r.rise_prob)}%</span>
-                <span className="text-gray-700 mx-1">/</span>
+                <span className="text-gray-600 mx-1">/</span>
                 <span className="text-red-500/90">下落{fmt(r.drop_prob)}%</span>
               </div>
             </div>
@@ -208,7 +208,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
         )}
       </div>
 
-      <p className="text-xs text-gray-700 text-right">{filtered.length} 銘柄</p>
+      <p className="text-xs text-gray-600 text-right">{filtered.length} 銘柄</p>
     </div>
   );
 }

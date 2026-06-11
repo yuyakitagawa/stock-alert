@@ -218,7 +218,7 @@ export default async function WatchlistPage() {
           })}
         </div>
 
-        <p className="text-xs text-gray-700 leading-relaxed">
+        <p className="text-xs text-gray-600 leading-relaxed">
           ※ チャートは直近1ヶ月の終値（緑=上昇 / 赤=下落）。「お得度」は52週高値からの下落率で判定
           （−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）。株価・チャート・52週高値は Yahoo Finance、
           PER は当日ランキングのファンダ値（一部はYahoo補完）。PBR は現状データ未整備の銘柄が多く「—」表示になります。

@@ -7,7 +7,7 @@ export default function Footer() {
             本サービスが提供するシグナルおよびスコアは情報提供のみを目的としており、特定の有価証券の売買を勧誘するものではありません。
             投資判断はご自身の責任において行ってください。過去のシグナル精度は将来の利益を保証するものではありません。
           </p>
-          <p className="text-xs text-gray-700">
+          <p className="text-xs text-gray-600">
             &copy; {new Date().getFullYear()} StockSignal — 日本株 AI シグナル
           </p>
         </div>

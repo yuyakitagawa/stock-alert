@@ -10,6 +10,18 @@ html {
   scroll-behavior: smooth;
 }
 
+/* キーボード操作時のフォーカス可視化（マウス操作では出さない） */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #22c55e;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 body {
   background-color: #0a0f1a;
   color: #e5e7eb;

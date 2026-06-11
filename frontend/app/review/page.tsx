@@ -31,7 +31,7 @@ function MetricRow({ label, start, end }: { label: string; start: number | null;
       <span className="text-sm text-gray-400">{label}</span>
       <div className="flex items-center gap-3">
         <span className="text-xs text-gray-600 font-mono">{start ?? "?"}%</span>
-        <span className="text-gray-700">→</span>
+        <span className="text-gray-600">→</span>
         <span className="text-sm font-mono text-white">{end ?? "?"}%</span>
         <DeltaBadge start={start} end={end} />
       </div>
@@ -231,7 +231,7 @@ export default async function ReviewPage() {
 
         {latest ? (
           <>
-            <p className="text-xs text-gray-700 font-mono">
+            <p className="text-xs text-gray-600 font-mono">
               {latest.week} — {new Date(latest.created_at).toLocaleDateString("ja-JP", { month: "long", day: "numeric" })} 生成
             </p>
             <ReviewCard review={latest} />

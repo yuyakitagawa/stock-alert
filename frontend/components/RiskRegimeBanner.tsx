@@ -32,7 +32,7 @@ export default function RiskRegimeBanner({ risk }: { risk: RiskRegime | null }) 
           {risk.reasons.join("・")}
         </p>
       )}
-      <p className="text-[11px] text-gray-700 mt-1">
+      <p className="text-[11px] text-gray-600 mt-1">
         マクロ（日経20日・VIX・ドル円・S&amp;P500）から自動判定。リスクオフ日は買いシグナルを見送ります。
       </p>
     </div>
