@@ -10,7 +10,7 @@ import Sparkline from "@/components/Sparkline";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "値上げ力ウォッチリスト — StockSignal",
+  title: "ウォッチリスト — StockSignal",
   description: "シェアを独占しインフレ下で値上げを通せる、toC独占ブランド銘柄。長期の押し目買い候補をお得度つきで監視。",
 };
 
@@ -110,7 +110,7 @@ export default async function WatchlistPage() {
 
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white">値上げ力ウォッチリスト</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">ウォッチリスト</h1>
           <p className="text-sm text-gray-600 mt-1">
             シェアを独占し、インフレ下でも値上げを通せる toC ブランド銘柄。長期で安く仕込むための「お得度」つき監視リストです。
           </p>
@@ -122,7 +122,8 @@ export default async function WatchlistPage() {
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-800">
                 <th className="text-left font-medium px-4 py-3">銘柄</th>
-                <th className="text-left font-medium px-4 py-3">独占商品・シェア</th>
+                <th className="text-left font-medium px-4 py-3">独占商品</th>
+                <th className="text-left font-medium px-4 py-3">独占率</th>
                 <th className="text-left font-medium px-4 py-3">海外比率</th>
                 <th className="text-left font-medium px-4 py-3">高値から（お得度）</th>
                 <th className="text-right font-medium px-4 py-3">PER / PBR</th>
@@ -144,9 +145,9 @@ export default async function WatchlistPage() {
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="text-gray-300">{s.product}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{s.domesticShare}</div>
                       <div className="text-xs text-gray-600 mt-0.5">{s.note}</div>
                     </td>
+                    <td className="px-4 py-3 align-top text-gray-300">{s.domesticShare}</td>
                     <td className="px-4 py-3 align-top"><OverseasBar ratio={s.overseasRatio} /></td>
                     <td className="px-4 py-3 align-top"><DrawdownCell m={m} /></td>
                     <td className="px-4 py-3 align-top text-right font-mono text-gray-300 tabular-nums">
@@ -192,7 +193,7 @@ export default async function WatchlistPage() {
                   <div className="mt-2"><MiniChart spark={m.spark} /></div>
                 )}
                 <div className="text-sm text-gray-300 mt-2">{s.product}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{s.domesticShare}</div>
+                <div className="text-xs text-gray-400 mt-0.5">独占率: <span className="text-gray-300">{s.domesticShare}</span></div>
                 <div className="text-xs text-gray-600 mt-0.5">{s.note}</div>
                 <div className="flex items-center justify-between mt-3 text-xs">
                   <span className="font-mono text-gray-400">
