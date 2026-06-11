@@ -161,7 +161,7 @@ export default async function WatchlistPage() {
                           {r.recommend && <div className="text-xs text-gray-600 mt-0.5">{r.recommend}</div>}
                         </>
                       ) : (
-                        <span className="text-xs text-gray-600">スクリーン対象外</span>
+                        <span className="text-xs text-gray-600">データ未取得</span>
                       )}
                     </td>
                   </tr>
@@ -209,7 +209,7 @@ export default async function WatchlistPage() {
                       <ProbBreakdown r={r} />
                     </div>
                   ) : (
-                    <span className="text-gray-600">スクリーン対象外</span>
+                    <span className="text-gray-600">データ未取得</span>
                   )}
                 </div>
               </Link>
@@ -222,8 +222,8 @@ export default async function WatchlistPage() {
           （−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）。株価・チャート・52週高値は Yahoo Finance、
           PER は当日ランキングのファンダ値（一部はYahoo補完）。PBR は現状データ未整備の銘柄が多く「—」表示になります。
           シェア率・海外売上比率は公知ベースの概算で、投資判断の際は各社IRで最新値をご確認ください。
-          netスコア（上昇確率−下落確率）は {asOf || "—"} 時点のAIモデル値。AIスコアはモメンタム・スクリーンを通過した銘柄のみで、
-          通過しない銘柄（例: 久光製薬）は「スクリーン対象外」と表示します。
+          netスコア（上昇確率−下落確率）は {asOf || "—"} 時点のAIモデル値。当日の市場価格データが取得できない銘柄
+          （上場廃止・売買停止など）は「データ未取得」と表示します。
         </p>
       </main>
 

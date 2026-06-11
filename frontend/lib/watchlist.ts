@@ -21,7 +21,6 @@ export const PRICING_POWER_WATCHLIST: WatchStock[] = [
   { code: "4452", name: "花王",            category: "日用品",     product: "トイレタリー全般",        domesticShare: "国内上位独占級",  overseasRatio: 40, note: "洗剤・紙おむつ等ブランド多数。値上げ＋詰替で防御" },
   { code: "4911", name: "資生堂",          category: "化粧品",     product: "化粧品",                 domesticShare: "国内首位",        overseasRatio: 60, note: "高価格帯ブランド。インバウンド・中国需要" },
   { code: "4527", name: "ロート製薬",      category: "ヘルスケア", product: "目薬・スキンケア",        domesticShare: "国内首位",        overseasRatio: 40, note: "目薬国内トップ。OTC＋スキンケアで価格決定力" },
-  { code: "4530", name: "久光製薬",        category: "ヘルスケア", product: "貼付薬(サロンパス)",      domesticShare: "世界首位級",      overseasRatio: 30, note: "鎮痛貼付薬のグローバルブランド" },
   { code: "7956", name: "ピジョン",        category: "日用品",     product: "哺乳瓶・ベビー用品",       domesticShare: "国内首位",        overseasRatio: 60, note: "ベビー用品の指名買い。中国・アジア展開" },
   { code: "7309", name: "シマノ",          category: "機械",       product: "自転車変速機",            domesticShare: "世界 約70-80%",   overseasRatio: 90, note: "自転車部品の世界寡占。実質プライスメーカー" },
 ];
