@@ -92,6 +92,10 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/sync_descriptions.py
 
+      - name: Step 5c - 全Webページのスモーク検査（QA）
+        continue-on-error: true
+        run: cd ~/stock-alert && sleep 20 && python web/qa_pages.py
+
       - name: Step 6 - ユーザーアラートメール送信
         continue-on-error: true
         run: cd ~/stock-alert && python web/send_user_alerts.py

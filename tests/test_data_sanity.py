@@ -12,7 +12,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
 from lib.data_sanity import (
-    check_ranking, check_site, has_critical, Violation, format_violations,
+    check_ranking, check_site, check_pages, has_critical, Violation, format_violations,
 )
 
 
@@ -220,6 +220,47 @@ class TestCheckSite(unittest.TestCase):
         ctx["descriptions"] = []  # 全欠損
         v = check_site(ctx)
         self.assertTrue(any(x.check == "description_coverage" and x.severity == "critical" for x in v))
+
+
+class TestCheckPages(unittest.TestCase):
+    def _ok(self, route="/rankings", expect=None):
+        return {"route": route, "status": 200,
+                "body": "x" * 5000 + (expect or ""), "expect": expect}
+
+    def test_healthy_pages_pass(self):
+        results = [self._ok("/"), self._ok("/rankings"),
+                   self._ok("/watchlist", "お得度"), self._ok("/stocks/7203", "AIスコア")]
+        v = check_pages(results)
+        self.assertEqual(v, [], f"健全ページで違反: {format_violations(v)}")
+
+    def test_http_error_critical(self):
+        v = check_pages([{"route": "/rankings", "status": 500, "body": ""}])
+        self.assertTrue(any(x.check == "page_status" and x.severity == "critical" for x in v))
+
+    def test_fetch_error_critical(self):
+        v = check_pages([{"route": "/", "error": "timeout"}])
+        self.assertTrue(any(x.check == "page_fetch" and x.severity == "critical" for x in v))
+
+    def test_error_boundary_critical(self):
+        body = "x" * 2000 + "エラーが発生しました" + "x" * 2000
+        v = check_pages([{"route": "/stocks/7203", "status": 200, "body": body}])
+        self.assertTrue(any(x.check == "page_error" and x.severity == "critical" for x in v))
+
+    def test_empty_body_critical(self):
+        v = check_pages([{"route": "/activity", "status": 200, "body": "短い"}])
+        self.assertTrue(any(x.check == "page_empty" and x.severity == "critical" for x in v))
+
+    def test_missing_expected_content_critical(self):
+        """期待文言（例: 銘柄ページの『AIスコア』）が無ければ404/欠落として critical。"""
+        body = "x" * 5000  # AIスコアを含まない
+        v = check_pages([{"route": "/stocks/9999999", "status": 200, "body": body, "expect": "AIスコア"}])
+        self.assertTrue(any(x.check == "page_content" and x.severity == "critical" for x in v))
+
+    def test_notfound_string_does_not_false_positive(self):
+        """健全ページにboundary由来の『ページが見つかりません』が混じっても誤検知しない。"""
+        body = "x" * 5000 + "ページが見つかりません"  # 全ページに埋め込まれる文字列
+        v = check_pages([{"route": "/", "status": 200, "body": body}])
+        self.assertEqual(v, [], f"boundary文字列で誤検知: {format_violations(v)}")
 
 
 if __name__ == "__main__":

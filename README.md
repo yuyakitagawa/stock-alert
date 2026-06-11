@@ -66,7 +66,8 @@ Supabase `ai_analyses`(model_version=`company-desc-v1`) へ upsert → 既存の
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_net 等）|
 | `lib/db.py` | SQLite操作（daily_ranking / held_scores / earnings_cache / sector_cache / price_cache）|
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
-| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：ウォッチリスト＋保有株に説明が無いと指摘）。全リリース地点（rank_stocks/export_to_web/alert_email/send_user_alerts）とPDCAで使用（alert-only：違反でも更新は止めずメール通知）|
+| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：ウォッチリスト＋保有株に説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/alert_email/send_user_alerts）とPDCAで使用（alert-only：違反でも更新は止めずメール通知）|
+| `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist /activity /review ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
 | `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
 | `tools/backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存。`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
@@ -74,7 +75,7 @@ Supabase `ai_analyses`(model_version=`company-desc-v1`) へ upsert → 既存の
 | `tools/simulate_monthly.py` | 月次シミュレーション（保有シナリオ分析）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
 | `tests/test_alert_email.py` | メール生成ヘルパーのユニットテスト（36件）|
-| `tests/test_data_sanity.py` | QA（データ整合性・サイト全体・会社説明カバレッジ）のユニットテスト（22件）|
+| `tests/test_data_sanity.py` | QA（データ整合性・サイト全体・会社説明カバレッジ・全ページスモーク）のユニットテスト（29件）|
 
 ---
 

@@ -45,6 +45,14 @@ DIVERSITY_WARN   = 20      # 上昇確率ユニーク値がこれ未満なら wa
 DIVERSITY_CRIT   = 8       # これ未満なら critical（ほぼ縮退）
 TOP1_SHARE_WARN  = 0.40    # 最頻値の占有率がこれ超なら warning（バグ時=0.41 / 健全=0.26）
 
+# ── ページ・スモーク検査用 ───────────────────────────────────────────────
+# 注: Next.jsは not-found / error boundary を全ページのRSCペイロードに埋め込むため
+# 「ページが見つかりません」等の文字列は健全ページにも現れる。よって 404/欠落の判定は
+# 文字列ではなく HTTPステータス＋期待文言(expect)の有無で行う。
+# エラー画面マーカーは error boundary が実際に描画された時のみ現れるので信頼できる。
+PAGE_ERROR_MARKERS = ["エラーが発生しました", "データの取得中に問題が発生しました"]
+PAGE_MIN_BODY      = 800   # HTML本文がこれ未満なら空ページ疑い
+
 
 @dataclass
 class Violation:
@@ -317,6 +325,59 @@ def check_site(context: dict) -> list[Violation]:
         v.append(Violation("warning", "earnings_empty", "web_earnings が空"))
 
     return v
+
+
+def check_pages(results: list[dict]) -> list[Violation]:
+    """Webページの巡回結果を検査する（純粋関数：取得は呼び出し側で行う）。
+
+    results: 各ページの取得結果リスト。各要素:
+      - route:  ページ識別子（"/", "/rankings", "/stocks/7203" など）
+      - status: HTTPステータス（int）
+      - body:   レスポンスHTML本文（str）
+      - error:  取得時の例外メッセージ（任意。あれば取得失敗扱い）
+      - expect: 本文に含まれるべき文言（任意。これが無ければ内容欠落＝404/描画失敗の疑い）
+    """
+    v: list[Violation] = []
+    for r in results:
+        route = str(r.get("route") or r.get("url") or "?")
+        if r.get("error"):
+            v.append(Violation("critical", "page_fetch",
+                f"{route}: 取得失敗（{r.get('error')}）"))
+            continue
+        status = r.get("status")
+        body   = str(r.get("body") or "")
+        if status != 200:
+            v.append(Violation("critical", "page_status",
+                f"{route}: HTTP {status}（ページが開けない）"))
+            continue
+        if any(m in body for m in PAGE_ERROR_MARKERS):
+            v.append(Violation("critical", "page_error",
+                f"{route}: エラー画面を表示中（描画失敗）"))
+            continue
+        if len(body) < PAGE_MIN_BODY:
+            v.append(Violation("critical", "page_empty",
+                f"{route}: 本文が極端に短い（{len(body)}字・空ページ/描画失敗の疑い）"))
+            continue
+        expect = r.get("expect")
+        if expect and expect not in body:
+            v.append(Violation("critical", "page_content",
+                f"{route}: 期待文言『{expect}』が無い（404/内容欠落の疑い）"))
+    return v
+
+
+def run_pages_gate(results: list[dict], source: str = "", alert: bool = True) -> list[Violation]:
+    """全ページ巡回チェック→ログ→（違反あれば）メール通知。alert-only。"""
+    violations = check_pages(results)
+    summary = format_violations(violations)
+    if violations:
+        logger.warning("[%s] %s", source or "pages_qa", summary)
+        print(summary)
+        if alert:
+            send_qa_alert(violations, source)
+    else:
+        logger.info("[%s] %s", source or "pages_qa", summary)
+        print(summary)
+    return violations
 
 
 def run_site_gate(context: dict, source: str = "", alert: bool = True) -> list[Violation]:
