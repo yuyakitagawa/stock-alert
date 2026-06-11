@@ -32,8 +32,55 @@ jobs:
         working-directory: frontend
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: npm run build
+
+      - name: Smoke test (start server + check pages)
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          npx next start -p 3000 &
+          SERVER_PID=$!
+          # サーバー起動待ち（最大30秒）
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:3000/ > /dev/null && break
+            sleep 2
+          done
+
+          FAILED=0
+          check_page() {
+            local path=$1
+            local keyword=$2
+            local body
+            body=$(curl -sf "http://localhost:3000${path}" 2>&1)
+            if [ $? -ne 0 ]; then
+              echo "❌ FAIL ${path} — HTTP error"
+              FAILED=1
+            elif ! echo "$body" | grep -q "$keyword"; then
+              echo "❌ FAIL ${path} — '${keyword}' not found"
+              FAILED=1
+            else
+              echo "✅ OK   ${path}"
+            fi
+          }
+
+          check_page "/"          "StockSignal"
+          check_page "/rankings"  "StockSignal"
+          check_page "/qv"        "QV"
+          check_page "/activity"  "StockSignal"
+          check_page "/review"    "StockSignal"
+
+          kill $SERVER_PID 2>/dev/null || true
+
+          if [ $FAILED -ne 0 ]; then
+            echo "スモークテスト失敗"
+            exit 1
+          fi
+          echo "全ページ OK"
 
       - name: Notify on failure
         if: failure()
