@@ -1,3 +1,5 @@
+import { signFmtArrow } from "@/lib/signals";
+
 interface SectorStat {
   sector:    string;
   count:     number;
@@ -33,8 +35,8 @@ export default function SectorPerformancePanel({ stats, date }: Props) {
                     style={{ width: `${Math.abs(s.avgReturn) / max * 100}%` }}
                   />
                 </div>
-                <span className={`font-mono text-xs font-bold tabular-nums w-14 text-right ${s.avgReturn >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  {s.avgReturn >= 0 ? "+" : ""}{s.avgReturn.toFixed(1)}%
+                <span className={`font-mono text-xs font-bold tabular-nums w-16 text-right ${s.avgReturn >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {signFmtArrow(s.avgReturn)}
                 </span>
               </div>
             </div>

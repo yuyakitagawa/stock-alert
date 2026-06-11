@@ -10,3 +10,12 @@ export function netStyle(net: number | null | undefined): {
   if (n >= -10) return { bg: "bg-orange-900/40", text: "text-orange-300", border: "border-orange-800",    color: "#f97316" };
   return            { bg: "bg-red-900/50",    text: "text-red-300",    border: "border-red-800",       color: "#dc2626" };
 }
+
+// 符号付き％を方向記号つきで返す（色覚多様性に配慮: 色だけに頼らない）。
+// 例: +1.5 → "▲ +1.5%"、-2.0 → "▼ -2.0%"、null → "—"
+export function signFmtArrow(n: number | null | undefined, digits = 1): string {
+  if (n == null) return "—";
+  const arrow = n > 0 ? "▲" : n < 0 ? "▼" : "▬";
+  const sign  = n >= 0 ? "+" : "";
+  return `${arrow} ${sign}${n.toFixed(digits)}%`;
+}

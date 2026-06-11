@@ -1,15 +1,11 @@
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
 import Sparkline from "./Sparkline";
-import { netStyle } from "@/lib/signals";
+import { netStyle, signFmtArrow } from "@/lib/signals";
 
 function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";
   return n.toFixed(digits);
-}
-function signFmt(n: number | null) {
-  if (n == null) return "—";
-  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 }
 
 interface Props {
@@ -49,7 +45,7 @@ export default function StockCard({ r, sparkline }: Props) {
           </span>
           <span className={`font-mono text-sm font-bold ${r.net >= 0 ? "text-green-400" : "text-red-400"}`}>
             <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">ネット</span>
-            {signFmt(r.net)}
+            {signFmtArrow(r.net)}
           </span>
         </div>
 
@@ -68,9 +64,11 @@ export default function StockCard({ r, sparkline }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between text-xs text-gray-600 font-mono pt-1 border-t border-gray-800">
-          <span>日経比 {signFmt(r.rel20)}</span>
-          <span className="group-hover:text-gray-400 transition-colors">詳細 →</span>
+        <div className="flex justify-between text-xs font-mono pt-1 border-t border-gray-800">
+          <span className={r.rel20 == null ? "text-gray-600" : r.rel20 >= 0 ? "text-blue-400" : "text-orange-400"}>
+            <span className="text-gray-600 mr-1">日経比</span>{signFmtArrow(r.rel20)}
+          </span>
+          <span className="text-gray-600 group-hover:text-gray-400 transition-colors">詳細 →</span>
         </div>
       </div>
     </Link>

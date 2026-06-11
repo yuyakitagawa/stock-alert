@@ -5,6 +5,7 @@ import type { Ranking } from "@/lib/types";
 import { useLang } from "@/contexts/LanguageContext";
 import { UI } from "@/lib/i18n";
 import { GLOSSARY } from "@/lib/glossary";
+import { signFmtArrow } from "@/lib/signals";
 
 type SortKey = "rank" | "net" | "rise_prob" | "drop_prob" | "rel20" | "close";
 
@@ -12,10 +13,7 @@ function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";
   return n.toFixed(digits);
 }
-function signFmt(n: number | null) {
-  if (n == null) return "—";
-  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
-}
+const signFmt = signFmtArrow;
 
 function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
   if (!active) return <span className="ml-1 opacity-20">⇅</span>;
@@ -197,8 +195,10 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                 <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">ネット</span>
                 {signFmt(r.net)}
               </div>
-              <div className="text-xs text-gray-600 font-mono">
-                上昇{fmt(r.rise_prob)}% 下落{fmt(r.drop_prob)}%
+              <div className="text-xs font-mono">
+                <span className="text-green-500/90">上昇{fmt(r.rise_prob)}%</span>
+                <span className="text-gray-700 mx-1">/</span>
+                <span className="text-red-500/90">下落{fmt(r.drop_prob)}%</span>
               </div>
             </div>
           </Link>

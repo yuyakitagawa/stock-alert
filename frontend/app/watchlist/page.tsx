@@ -6,6 +6,7 @@ import type { Ranking, WatchMetrics } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Sparkline from "@/components/Sparkline";
+import { signFmtArrow } from "@/lib/signals";
 
 export const revalidate = 3600;
 
@@ -19,7 +20,7 @@ function NetBadge({ net }: { net: number | null }) {
   const up = net >= 0;
   return (
     <span className={`font-mono text-sm font-semibold ${up ? "text-green-400" : "text-red-400"}`}>
-      {up ? "+" : ""}{net.toFixed(1)}%
+      {signFmtArrow(net)}
     </span>
   );
 }

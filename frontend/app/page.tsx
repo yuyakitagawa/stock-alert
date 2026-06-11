@@ -90,14 +90,13 @@ export default async function HomePage() {
               </div>
             </section>
 
+            {/* Sector performance */}
+            <SectorPerformancePanel stats={sectorStats} date={dateLabel} />
+
+            {/* Simulation */}
+            <SimulationPanel positions={sim.positions} summary={sim.summary} />
           </>
         )}
-
-        {/* Sector performance */}
-        <SectorPerformancePanel stats={sectorStats} date={dateLabel} />
-
-        {/* Simulation */}
-        <SimulationPanel positions={sim.positions} summary={sim.summary} />
       </main>
 
       <Footer />

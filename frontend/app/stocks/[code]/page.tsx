@@ -11,7 +11,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockChart from "@/components/StockChart";
 import StockLivePanel from "@/components/StockLivePanel";
-import { netStyle } from "@/lib/signals";
+import { netStyle, signFmtArrow } from "@/lib/signals";
 import { GLOSSARY } from "@/lib/glossary";
 
 export const revalidate = 3600;
@@ -34,10 +34,7 @@ function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";
   return n.toFixed(digits);
 }
-function signFmt(n: number | null) {
-  if (n == null) return "—";
-  return (n >= 0 ? "+" : "") + (n as number).toFixed(1) + "%";
-}
+const signFmt = signFmtArrow;
 function formatDate(date: string | null | undefined) {
   if (!date) return "—";
   return new Date(date).toLocaleDateString("ja-JP", {
