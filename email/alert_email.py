@@ -454,7 +454,7 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_ret
             f"<p style='color:#666;font-size:12px;margin:0 0 10px'>"
             f"上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落（高いほど上昇期待）／ 日経差(20日) = 過去20日の日経比超過リターン</p>"
             f"<table><tr style='background:#e8f0fe'>"
-            f"<th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th>"
+            f"<th>#</th><th>銘柄</th><th>上昇確率</th><th>下落確率</th><th>ネット</th>"
             f"<th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
             f"{rows}</table></div>")
 
@@ -611,7 +611,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
   <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
   <table>
-    <tr><th>#</th><th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th></tr>
+    <tr><th>#</th><th>銘柄</th><th>上昇確率</th><th>下落確率</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th></tr>
     {_build_all_rows(results, earnings_map)}
   </table>
 </div>

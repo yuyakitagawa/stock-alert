@@ -113,8 +113,8 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
               <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide">銘柄</th>
               <ThSort col="close"     label="株価"      className="text-right" />
               <ThSort col="net"       label="ネット"    className="text-right" />
-              <ThSort col="rise_prob" label="上昇%"     className="text-right" />
-              <ThSort col="drop_prob" label="下落%"     className="text-right" />
+              <ThSort col="rise_prob" label="上昇確率"   className="text-right" />
+              <ThSort col="drop_prob" label="下落確率"   className="text-right" />
               <ThSort col="rel20"     label="日経比20日" className="text-right hidden lg:table-cell" />
               <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell">PER</th>
               <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell">PBR</th>
@@ -192,10 +192,11 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             </div>
             <div className="text-right shrink-0">
               <div className={`font-mono font-bold text-sm ${r.net >= 0 ? "text-green-400" : "text-red-400"}`}>
+                <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">ネット</span>
                 {signFmt(r.net)}
               </div>
               <div className="text-xs text-gray-600 font-mono">
-                ↑{fmt(r.rise_prob)}% ↓{fmt(r.drop_prob)}%
+                上昇{fmt(r.rise_prob)}% 下落{fmt(r.drop_prob)}%
               </div>
             </div>
           </Link>

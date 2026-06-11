@@ -8,7 +8,7 @@ export const revalidate = 30;
 
 export const metadata: Metadata = {
   title: "活動ログ — StockSignal",
-  description: "AIチーム（FM・Quant・マーケットコンサル・Engineer）が今・何をしているか / 何をしたかの活動記録",
+  description: "AIチーム（FM・Quant・マーケットコンサル・Engineer・QA）が今・何をしているか / 何をしたかの活動記録",
 };
 
 // ── 担当者・状態の見た目 ──────────────────────────────────────────────────────
@@ -18,6 +18,7 @@ const ROLE_STYLE: Record<string, { label: string; cls: string; emoji: string }> 
   Quant:      { label: "数量アナリスト",       cls: "bg-purple-900/40 text-purple-300 border-purple-800", emoji: "📐" },
   Consultant: { label: "マーケットコンサル",   cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800", emoji: "🔍" },
   Engineer:   { label: "エンジニア",           cls: "bg-green-900/40 text-green-300 border-green-800",   emoji: "🔧" },
+  QA:         { label: "品質保証（QA）",       cls: "bg-cyan-900/40 text-cyan-300 border-cyan-800",     emoji: "🛡️" },
   System:     { label: "システム",             cls: "bg-gray-800 text-gray-400 border-gray-700",        emoji: "⚙️" },
 };
 
@@ -45,6 +46,8 @@ const MEMBERS = [
     job: "マクロ・セクター・市場環境を毎回調査しFM/Quantに助言する" },
   { emoji: "🔧", name: "エンジニア",     en: "Engineer",   cls: "bg-green-900/30 border-green-800 text-green-200",
     job: "提案を実装し、過去成績で検証して採用/却下する" },
+  { emoji: "🛡️", name: "品質保証（QA）", en: "QA",         cls: "bg-cyan-900/30 border-cyan-800 text-cyan-200",
+    job: "リリースのたびにデータの欠損・整合性を検査し、異常を通知する" },
 ];
 
 function OrgChart() {
@@ -77,8 +80,8 @@ function OrgChart() {
         <div className="w-px h-5 bg-gray-700" />
         <span className="text-[10px] text-gray-600 -mt-1 mb-1">命令を展開</span>
 
-        {/* メンバー3名 */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+        {/* メンバー4名 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
           {MEMBERS.map(m => (
             <div key={m.en} className={`rounded-lg border px-3 py-2.5 text-center ${m.cls}`}>
               <div className="text-sm font-bold">{m.emoji} {m.name}</div>

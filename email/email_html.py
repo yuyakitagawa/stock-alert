@@ -204,7 +204,7 @@ def build_sell_section(results):
                f"<p style='color:#666;font-size:13px;margin:0 0 10px'>"
                f"ネット低下または保有期限超過。理由を確認してください。</p>"
                f"<table><tr style='background:#fde8e8'>"
-               f"<th>銘柄</th><th>上昇</th><th>下落</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th><th>保有</th></tr>"
+               f"<th>銘柄</th><th>上昇確率</th><th>下落確率</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th><th>保有</th></tr>"
                f"{rows}</table></div>")
     return section, sells
 

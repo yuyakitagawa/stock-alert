@@ -48,6 +48,7 @@ export default function StockCard({ r, sparkline }: Props) {
             ¥{r.close?.toLocaleString() ?? "—"}
           </span>
           <span className={`font-mono text-sm font-bold ${r.net >= 0 ? "text-green-400" : "text-red-400"}`}>
+            <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">ネット</span>
             {signFmt(r.net)}
           </span>
         </div>
@@ -55,8 +56,8 @@ export default function StockCard({ r, sparkline }: Props) {
         {/* Probability bar */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>上昇 {fmt(r.rise_prob)}%</span>
-            <span>下落 {fmt(r.drop_prob)}%</span>
+            <span>上昇確率 {fmt(r.rise_prob)}%</span>
+            <span>下落確率 {fmt(r.drop_prob)}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
             <div
