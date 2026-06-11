@@ -4,7 +4,9 @@ generate_descriptions.py
 
 生成フロー（2段階）:
   Phase 1: Yahoo Finance JP の「特色」テキストをスクレイプ（会社四季報データ・事実確実）
-  Phase 2: スクレイプ失敗分のみ Claude Haiku でバッチ生成（フォールバック）
+           ※シングルスレッド+5秒待機でレート制限を回避。1実行あたり最大50件。
+  Phase 2: スクレイプ失敗分は Claude Haiku でバッチ生成（フォールバック）
+           J-Quants eq_master（S33業種・規模区分・市場区分）を付加した高精度プロンプト。
 
 - web_stock_meta(code/name/sector) を母集団とする。
 - 差分生成（--refresh なしは未生成のみ）。
@@ -14,7 +16,7 @@ generate_descriptions.py
   python3 web/generate_descriptions.py            # 未生成分を最大2000件補完
   python3 web/generate_descriptions.py --limit 50 # 50件だけ
   python3 web/generate_descriptions.py --all      # 未生成すべて
-  python3 web/generate_descriptions.py --refresh  # 全銘柄を再スクレイプ（事実精度向上）
+  python3 web/generate_descriptions.py --refresh  # 全銘柄を再生成（事実精度向上）
   python3 web/generate_descriptions.py --dry-run  # 生成せず対象数だけ表示
 """
 import json
@@ -45,10 +47,10 @@ BATCH_N     = 20    # 1リクエストあたりの銘柄数
 WORKERS     = 3     # 並列数
 MAX_RETRY   = 5
 
-# Yahoo Finance JP スクレイプ設定
-SCRAPE_UA      = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120"
-SCRAPE_DELAY   = 1.2   # 1銘柄あたりの待機秒（3並列で実効3req/s）
-SCRAPE_WORKERS = 3
+# Yahoo Finance JP スクレイプ設定（レート制限対策: シングルスレッド+5秒待機）
+SCRAPE_UA      = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124"
+SCRAPE_DELAY   = 5.0   # リクエスト間隔（秒）
+SCRAPE_LIMIT   = 50    # 1実行あたりのスクレイプ上限（IP rate-limit対策）
 
 SYSTEM = (
     "あなたは日本株の企業情報に詳しいアナリストです。各企業について、"
@@ -102,17 +104,42 @@ def _targets(limit: int | None, refresh: bool = False) -> list[dict]:
     return valid if limit is None else valid[:limit]
 
 
+# ─── J-Quants eq_master（プロンプト強化用）────────────────────────────────────
+
+def _get_jquants_master() -> dict[str, dict]:
+    """J-Quants eq_master から 銘柄コード→{S33Nm, ScaleCat, MktNm} を返す。"""
+    try:
+        import os as _os
+        from jquantsapi import ClientV2
+        api_key = _os.environ.get("JQUANTS_API_KEY", "")
+        if not api_key:
+            return {}
+        client = ClientV2(api_key=api_key)
+        df = client.get_eq_master()
+        result = {}
+        for _, row in df.iterrows():
+            code = str(row.get("Code", "")).rstrip("0")  # 5桁→4桁に変換
+            result[code] = {
+                "s33":   str(row.get("S33Nm",   "") or ""),
+                "scale": str(row.get("ScaleCat","") or ""),
+                "mkt":   str(row.get("MktNm",   "") or ""),
+            }
+        print(f"[gen] J-Quants eq_master: {len(result)}銘柄取得")
+        return result
+    except Exception as e:
+        print(f"[gen] J-Quants eq_master 取得失敗（プロンプト強化なし）: {e}")
+        return {}
+
+
 # ─── Phase 1: Yahoo Finance JP スクレイプ ────────────────────────────────────
 
-def _fetch_tokushoku(stock: dict) -> tuple[str, str | None]:
-    """Yahoo Finance JPの「特色」テキストを取得。(code, text|None) を返す。"""
-    code = str(stock.get("code"))
+def _fetch_tokushoku(code: str) -> str | None:
+    """Yahoo Finance JPの「特色」テキストを取得。失敗時 None。"""
     url = f"https://finance.yahoo.co.jp/quote/{code}.T/profile"
     try:
         r = requests.get(url, headers={"User-Agent": SCRAPE_UA}, timeout=12)
-        time.sleep(SCRAPE_DELAY)
-        if not r.ok:
-            return code, None
+        if not r.ok or len(r.text) < 5000:
+            return None
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.text, "html.parser")
         for h2 in soup.find_all("h2"):
@@ -122,43 +149,54 @@ def _fetch_tokushoku(stock: dict) -> tuple[str, str | None]:
                     text = p.get_text(strip=True)
                     text = re.sub(r"^【特色】\s*", "", text)
                     if len(text) >= 10:
-                        return code, text
-        return code, None
+                        return text
+        return None
     except Exception:
-        return code, None
+        return None
 
 
 def _scrape_phase(stocks: list[dict]) -> tuple[list[dict], list[dict]]:
     """
-    Yahoo スクレイプを全銘柄に試みる。
+    Yahoo スクレイプを上位 SCRAPE_LIMIT 件に試みる（シングルスレッド・低速）。
     返り値: (scraped_rows, fallback_stocks)
-      - scraped_rows: Supabase に直接 upsert できる行リスト
-      - fallback_stocks: スクレイプ失敗 → Haiku フォールバックが必要
     """
-    scraped_rows: list[dict] = []
-    fallback:     list[dict] = []
+    targets = stocks[:SCRAPE_LIMIT]
+    rest    = stocks[SCRAPE_LIMIT:]
 
-    print(f"[gen] Phase1: Yahoo スクレイプ開始（{len(stocks)}件、{SCRAPE_WORKERS}並列）")
-    done = 0
-    with ThreadPoolExecutor(max_workers=SCRAPE_WORKERS) as ex:
-        futs = {ex.submit(_fetch_tokushoku, s): s for s in stocks}
-        for fut in as_completed(futs):
-            code, text = fut.result()
-            done += 1
-            if text:
-                scraped_rows.append({
-                    "code":          code,
-                    "date":          CACHE_DATE,
-                    "summary":       text,
-                    "bull_points":   [],
-                    "bear_points":   [],
-                    "model_version": MODEL_VER,
-                })
-            else:
-                fallback.append(futs[fut])
-            if done % 100 == 0:
-                print(f"[gen]   スクレイプ進捗: {done}/{len(stocks)} "
-                      f"（取得 {len(scraped_rows)} / 失敗 {len(fallback)}）")
+    scraped_rows: list[dict] = []
+    fallback:     list[dict] = list(rest)  # 上限超えはフォールバックへ
+
+    if not targets:
+        return [], stocks
+
+    print(f"[gen] Phase1: Yahoo スクレイプ（上位{len(targets)}件、{SCRAPE_DELAY}s間隔）")
+    consecutive_fails = 0
+    FAIL_ABORT = 5  # 連続失敗がこの件数を超えたらスクレイプ打ち切り（IP ブロック検知）
+    for i, s in enumerate(targets):
+        code = str(s.get("code"))
+        text = _fetch_tokushoku(code)
+        if text:
+            consecutive_fails = 0
+            scraped_rows.append({
+                "code":          code,
+                "date":          CACHE_DATE,
+                "summary":       text,
+                "bull_points":   [],
+                "bear_points":   [],
+                "model_version": MODEL_VER,
+            })
+        else:
+            consecutive_fails += 1
+            fallback.append(s)
+        time.sleep(SCRAPE_DELAY)
+        if (i + 1) % 10 == 0:
+            print(f"[gen]   スクレイプ: {i+1}/{len(targets)} "
+                  f"（取得 {len(scraped_rows)} / 失敗 {len(fallback) - len(rest)}）")
+        if consecutive_fails >= FAIL_ABORT:
+            print(f"[gen]   連続{FAIL_ABORT}件失敗 → IP ブロックと判断し Phase1 を打ち切り")
+            # 残りはフォールバックへ
+            fallback.extend(targets[i+1:])
+            break
 
     print(f"[gen] Phase1 完了: 取得 {len(scraped_rows)}件 / フォールバック {len(fallback)}件")
     return scraped_rows, fallback
@@ -182,12 +220,25 @@ def _parse_json(text: str) -> dict:
         return {}
 
 
-def _generate_batch(client, stocks: list[dict]) -> list[dict]:
-    """複数銘柄を1リクエストで生成。{コード:説明} のJSONを受け取り行リストを返す。"""
+def _generate_batch(client, stocks: list[dict], master: dict) -> list[dict]:
+    """
+    複数銘柄を1リクエストで生成。J-Quants情報でプロンプトを強化。
+    {コード:説明} のJSONを受け取り行リストを返す。
+    """
     import anthropic
+
+    def _ctx(s: dict) -> str:
+        code = str(s.get("code"))
+        info = master.get(code, {})
+        parts = [info.get("s33") or str(s.get("sector") or "不明")]
+        if info.get("scale"):
+            parts.append(info["scale"])
+        if info.get("mkt"):
+            parts.append(info["mkt"] + "市場")
+        return " / ".join(p for p in parts if p)
+
     lines = "\n".join(
-        f"- {str(s.get('code'))} {str(s.get('name') or '').strip()} "
-        f"({str(s.get('sector') or '不明').strip()})"
+        f"- {str(s.get('code'))} {str(s.get('name') or '').strip()} ({_ctx(s)})"
         for s in stocks)
     user = (
         "以下の各企業について、どんな事業の会社かを100〜150字の日本語で説明してください。\n"
@@ -224,7 +275,7 @@ def _generate_batch(client, stocks: list[dict]) -> list[dict]:
     return []
 
 
-def _haiku_phase(stocks: list[dict]) -> list[dict]:
+def _haiku_phase(stocks: list[dict], master: dict) -> list[dict]:
     """スクレイプ失敗分を Haiku でバッチ生成。"""
     if not stocks:
         return []
@@ -238,7 +289,8 @@ def _haiku_phase(stocks: list[dict]) -> list[dict]:
     done = 0
     rows: list[dict] = []
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futs = {ex.submit(_generate_batch, client, ch): i for i, ch in enumerate(chunks)}
+        futs = {ex.submit(_generate_batch, client, ch, master): i
+                for i, ch in enumerate(chunks)}
         for fut in as_completed(futs):
             batch_rows = fut.result()
             if batch_rows:
@@ -284,22 +336,30 @@ def main() -> None:
         print("[gen] SUPABASE 未設定。中止。"); sys.exit(1)
 
     todo = _targets(limit, refresh=refresh)
-    mode = "再スクレイプ(--refresh)" if refresh else "差分補完"
+    mode = "再生成(--refresh)" if refresh else "差分補完"
     print(f"[gen] {mode} 対象: {len(todo)}件")
     if dry or not todo:
         print("[gen] dry-run または対象なしで終了。"); return
 
-    # Phase 1: Yahoo スクレイプ
+    # J-Quants マスター取得（プロンプト強化用。失敗してもスキップ）
+    jq_master = _get_jquants_master()
+
+    # Phase 1: Yahoo スクレイプ（上限 SCRAPE_LIMIT 件・シングルスレッド）
     scraped_rows, fallback_stocks = _scrape_phase(todo)
 
-    # Phase 2: Haiku フォールバック
-    haiku_rows = _haiku_phase(fallback_stocks)
+    # スクレイプ結果を即時保存（rate-limitで中断しても損失なし）
+    if scraped_rows:
+        print(f"[gen] スクレイプ結果を即時保存: {len(scraped_rows)}件")
+        _upsert_bulk(scraped_rows)
 
-    # 保存（スクレイプ結果を先に、Haiku 結果で補完）
-    all_rows = scraped_rows + haiku_rows
-    print(f"[gen] 保存開始: 合計 {len(all_rows)}件（スクレイプ {len(scraped_rows)} + Haiku {len(haiku_rows)}）")
-    _upsert_bulk(all_rows)
-    print(f"[gen] 完了: {len(all_rows)}/{len(todo)} 件の会社説明を生成・保存")
+    # Phase 2: Haiku フォールバック（J-Quants強化プロンプト）
+    haiku_rows = _haiku_phase(fallback_stocks, jq_master)
+    if haiku_rows:
+        _upsert_bulk(haiku_rows)
+
+    total = len(scraped_rows) + len(haiku_rows)
+    print(f"[gen] 完了: {total}/{len(todo)} 件の会社説明を生成・保存"
+          f"（スクレイプ {len(scraped_rows)} + Haiku {len(haiku_rows)}）")
 
 
 if __name__ == "__main__":
