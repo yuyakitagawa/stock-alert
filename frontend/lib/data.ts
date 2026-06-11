@@ -1,4 +1,4 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WeeklyReview, Activity, WatchMetrics } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WeeklyReview, Activity, WatchMetrics, RiskRegime } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary, yfQuoteSummaryWithAuth, getAuth } from "./yahoo";
 
@@ -307,4 +307,14 @@ export async function fetchWeeklyReview(week: string): Promise<WeeklyReview | nu
   if (!res.ok) return null;
   const rows = await res.json();
   return (rows[0] as WeeklyReview) ?? null;
+}
+
+export async function fetchRiskRegime(): Promise<RiskRegime | null> {
+  const res = await fetch(
+    sbUrl("web_risk_regime?order=date.desc&limit=1"),
+    { headers: anonHeaders(), next: { revalidate: 300 } },
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return (rows[0] as RiskRegime) ?? null;
 }

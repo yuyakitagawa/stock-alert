@@ -116,3 +116,13 @@ export interface WeeklyReview {
   human_feedback:   string;
   next_actions:     string;
 }
+
+export interface RiskRegime {
+  date:         string;
+  regime:       "risk_on" | "caution" | "risk_off";
+  score:        number;
+  action:       string;
+  label:        string;
+  reasons:      string[];
+  suppress_buy: boolean;
+}

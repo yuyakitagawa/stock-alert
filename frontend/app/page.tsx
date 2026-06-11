@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { fetchRankings, fetchSparkline, fetchSectorMap, fetchNikkeiReturn } from "@/lib/data";
+import { fetchRankings, fetchSparkline, fetchSectorMap, fetchNikkeiReturn, fetchRiskRegime } from "@/lib/data";
 import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockCard from "@/components/StockCard";
 import SimulationPanel from "@/components/SimulationPanel";
 import SectorPerformancePanel from "@/components/SectorPerformancePanel";
+import RiskRegimeBanner from "@/components/RiskRegimeBanner";
 import Link from "next/link";
 
 export const revalidate = 300;
@@ -22,11 +23,12 @@ function formatDate(date: string) {
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sim, sectorMap, nikkei20] = await Promise.all([
+  const [{ date, rows }, sim, sectorMap, nikkei20, risk] = await Promise.all([
     fetchRankings(),
     fetchSimulation(),
     fetchSectorMap(),
     fetchNikkeiReturn(20),
+    fetchRiskRegime(),
   ]);
 
   // 業種別成績（本日データ）= 実際の20日リターン平均（ネットスコアではない）。
@@ -58,6 +60,7 @@ export default async function HomePage() {
       <Navbar dateLabel={dateLabel} />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 space-y-10">
+        <RiskRegimeBanner risk={risk} />
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-gray-600 space-y-3">
             <span className="text-5xl">📊</span>
