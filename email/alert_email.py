@@ -599,6 +599,74 @@ def _risk_regime_banner_html() -> str:
     )
 
 
+def build_qv_candidates_section(ranking_df=None) -> str:
+    """今日の QV 候補（業績強×株価低迷）と保有中ポジションの売りシグナルをHTMLで返す。"""
+    QV_PIOTROSKI_MIN  = 0.67
+    QV_POS52_MAX      = 0.45
+    QV_DROP_MAX       = 8.0
+    QV_VOL_MAX        = 25.0
+    QV_SELL_NET_MIN   = -5.0
+    QV_SELL_DROP_MIN  = 10.0
+
+    if ranking_df is None:
+        return ""
+
+    candidates = []
+    for _, row in ranking_df.iterrows():
+        pio   = row.get("piotroski")
+        pos52 = row.get("pos52")
+        drop  = _safe_float(row.get("下落確率(%)") or row.get("drop_prob"))
+        vol   = _safe_float(row.get("ボラ(%)") or row.get("vol"))
+        bpsg  = row.get("bps_growth")
+        epss  = row.get("eps_surprise")
+        net   = _row_net_percent(row, use_rise_fallback=False)
+        if pio is None or pos52 is None: continue
+        if pio < QV_PIOTROSKI_MIN: continue
+        if pos52 >= QV_POS52_MAX: continue
+        if drop is not None and drop > QV_DROP_MAX: continue
+        if vol  is not None and vol  > QV_VOL_MAX:  continue
+        if not ((bpsg is not None and bpsg > 0) or (epss is not None and epss > 0)): continue
+        candidates.append({
+            "code": _row_code_str(row),
+            "name": row.get("銘柄名", row.get("name", "")),
+            "close": _safe_float(row.get("直近株価(円)", row.get("close"))),
+            "net": net,
+            "drop": drop,
+            "piotroski": pio,
+            "pos52": pos52,
+            "pbr": _safe_float(row.get("PBR") or row.get("pbr")),
+        })
+    candidates.sort(key=lambda x: -(x["net"] or 0))
+
+    if not candidates:
+        return ""
+
+    rows_html = ""
+    for c in candidates[:15]:
+        pio_score = round((c["piotroski"] or 0) * 9)
+        pos_pct   = round((c["pos52"] or 0) * 100)
+        net_color = "#81c995" if (c["net"] or 0) >= 0 else "#ff8a80"
+        rows_html += (
+            f"<tr><td>{c['name']}<span style='color:#888;font-size:10px;margin-left:4px'>{c['code']}</span></td>"
+            f"<td>¥{int(c['close'] or 0):,}</td>"
+            f"<td style='color:{net_color};font-weight:700'>{c['net']:+.1f}%</td>"
+            f"<td style='color:#81c995'>{pio_score}/9</td>"
+            f"<td style='color:#ffd54f'>{pos_pct}%</td>"
+            f"<td>{(c['drop'] or 0):.1f}%</td>"
+            "<td>" + (f"{c['pbr']:.2f}x" if c['pbr'] else "—") + "</td></tr>"
+        )
+
+    return (
+        "<div class='card'>"
+        "<h2>🎯 QV候補（業績強×株価低迷）</h2>"
+        "<p style='color:#666;font-size:12px;margin:0 0 10px'>"
+        "Piotroski≥6/9（財務健全）× 52週安値圏45%以内（株価低迷）× 業績改善シグナルあり。"
+        f"詳細・保有管理は <a href='https://stock-alert-web.vercel.app/qv' style='color:#81c995'>QVページ</a> で。</p>"
+        "<table><tr><th>銘柄</th><th>株価</th><th>ネット</th><th>Piotroski</th><th>52週位置</th><th>drop%</th><th>PBR</th></tr>"
+        f"{rows_html}</table></div>"
+    )
+
+
 def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None, nk60=None,
                prev_ranking_codes=None, priority_actions=None,
                ranking_df=None, etf_rets=None):
@@ -640,6 +708,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
 {sell_section}
 {_build_ranking_section(results, prev_ranking_codes, ranking_df, etf_rets=etf_rets)}
 {build_top10_sim_section(datetime.now().strftime("%Y-%m-%d"), ranking_df)}
+{build_qv_candidates_section(ranking_df)}
 {build_sector_warning(_candidates_for_sector)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>

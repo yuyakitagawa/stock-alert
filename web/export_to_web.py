@@ -162,7 +162,8 @@ def export_rankings(today: str) -> list[dict]:
     con.row_factory = sqlite3.Row
     rows = con.execute(
         """SELECT date, code, name, close, rise_prob, drop_prob, net, vol,
-                  recommend, rel20, stop_loss, per, pbr
+                  recommend, rel20, stop_loss, per, pbr,
+                  piotroski, bps_growth, eps_surprise, pos52
            FROM daily_ranking
            WHERE date = ?
            ORDER BY net DESC""",
@@ -185,8 +186,12 @@ def export_rankings(today: str) -> list[dict]:
             "recommend":  _clean_recommend(r["recommend"]),
             "rel20":      r["rel20"],
             "stop_loss":  r["stop_loss"],
-            "per":        r["per"],
-            "pbr":        r["pbr"],
+            "per":          r["per"],
+            "pbr":          r["pbr"],
+            "piotroski":    r["piotroski"],
+            "bps_growth":   r["bps_growth"],
+            "eps_surprise": r["eps_surprise"],
+            "pos52":        r["pos52"],
         })
     return records
 

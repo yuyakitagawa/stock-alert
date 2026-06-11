@@ -344,7 +344,12 @@ def main():
         pbr_calc = (round(_close_px / _bps, 2) if _bps and _bps > 0 and _close_px else pbr_live)
         roe_calc = fd_raw.get("ROE") if fd_raw.get("ROE") is not None else pit.get("roe")
         with lock:
-            fund_map[code] = {"PER": per_calc, "PBR": pbr_calc, "ROE": roe_calc}
+            fund_map[code] = {
+                "PER": per_calc, "PBR": pbr_calc, "ROE": roe_calc,
+                "piotroski":    pit.get("piotroski"),
+                "bps_growth":   pit.get("bps_growth"),
+                "eps_surprise": pit.get("eps_surprise"),
+            }
         # 配当利回り: ライブ株価 × PBR/PER から配当を逆算 or pit.dps使用
         _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
         div_yield_live = (_dps / _close * 100) if _dps and _dps > 0 and _close else None
@@ -503,6 +508,10 @@ def main():
             "PER": (fund_map.get(code) or {}).get("PER"),
             "PBR": (fund_map.get(code) or {}).get("PBR"),
             "ROE(%)": (fund_map.get(code) or {}).get("ROE"),
+            "piotroski":    (fund_map.get(code) or {}).get("piotroski"),
+            "bps_growth":   (fund_map.get(code) or {}).get("bps_growth"),
+            "eps_surprise": (fund_map.get(code) or {}).get("eps_surprise"),
+            "pos52":        round(float(feat[9]), 3),
         }
         results.append(row)
 
@@ -784,9 +793,13 @@ def main():
             "vol": row["ボラ(%)"],
             "recommend": row["推奨"],
             "rel20": row["日経比20日(%)"] if row["日経比20日(%)"] != "-" else None,
-            "stop_loss": row["損切り価格(円)"],
-            "per": row.get("PER"),
-            "pbr": row.get("PBR"),
+            "stop_loss":    row["損切り価格(円)"],
+            "per":          row.get("PER"),
+            "pbr":          row.get("PBR"),
+            "piotroski":    row.get("piotroski"),
+            "bps_growth":   row.get("bps_growth"),
+            "eps_surprise": row.get("eps_surprise"),
+            "pos52":        row.get("pos52"),
         }
         for _, row in result_df.iterrows()
     ]

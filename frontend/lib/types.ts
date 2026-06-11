@@ -8,20 +8,32 @@ export type Recommend =
   | string;
 
 export interface Ranking {
-  date:       string;
-  code:       string;
-  rank:       number;
-  name:       string;
-  close:      number;
-  rise_prob:  number;
-  drop_prob:  number;
-  net:        number;
-  vol:        number;
-  recommend:  Recommend;
-  rel20:      number;
-  stop_loss:  number | null;
-  per:        number | null;
-  pbr:        number | null;
+  date:         string;
+  code:         string;
+  rank:         number;
+  name:         string;
+  close:        number;
+  rise_prob:    number;
+  drop_prob:    number;
+  net:          number;
+  vol:          number;
+  recommend:    Recommend;
+  rel20:        number;
+  stop_loss:    number | null;
+  per:          number | null;
+  pbr:          number | null;
+  piotroski:    number | null;
+  bps_growth:   number | null;
+  eps_surprise: number | null;
+  pos52:        number | null;
+}
+
+export interface QvPosition {
+  code:      string;
+  name:      string;
+  buyDate:   string;
+  buyPrice:  number;
+  buyNet:    number;
 }
 
 export interface StockMeta {

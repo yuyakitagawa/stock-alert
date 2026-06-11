@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS daily_ranking (
     per               REAL,
     pbr               REAL,
     actual_return_63d REAL,
+    piotroski         REAL,
+    bps_growth        REAL,
+    eps_surprise      REAL,
+    pos52             REAL,
     PRIMARY KEY (date, code)
 );
 CREATE TABLE IF NOT EXISTS held_scores (
@@ -178,17 +182,25 @@ def init_db():
 # ── daily_ranking ──────────────────────────────────────────────────────────
 
 def save_daily_ranking(date_str, rows):
-    """rows: list of dicts with keys: code, name, close, rise_prob, drop_prob, net, vol, recommend, rel20, stop_loss, per, pbr"""
+    """rows: list of dicts with keys: code, name, close, rise_prob, drop_prob, net, vol, recommend, rel20, stop_loss, per, pbr, piotroski, bps_growth, eps_surprise, pos52"""
     init_db()
+    # カラム追加（既存DBへのマイグレーション）
+    with _conn() as con:
+        existing = {r[1] for r in con.execute("PRAGMA table_info(daily_ranking)")}
+        for col, typ in [("piotroski","REAL"),("bps_growth","REAL"),("eps_surprise","REAL"),("pos52","REAL")]:
+            if col not in existing:
+                con.execute(f"ALTER TABLE daily_ranking ADD COLUMN {col} {typ}")
     sql = """INSERT OR REPLACE INTO daily_ranking
-             (date,code,name,close,rise_prob,drop_prob,net,vol,recommend,rel20,stop_loss,per,pbr)
-             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+             (date,code,name,close,rise_prob,drop_prob,net,vol,recommend,rel20,stop_loss,per,pbr,
+              piotroski,bps_growth,eps_surprise,pos52)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     with _conn() as con:
         con.executemany(sql, [
             (date_str, r.get("code"), r.get("name"), r.get("close"),
              r.get("rise_prob"), r.get("drop_prob"), r.get("net"),
              r.get("vol"), r.get("recommend"), r.get("rel20"),
-             r.get("stop_loss"), r.get("per"), r.get("pbr"))
+             r.get("stop_loss"), r.get("per"), r.get("pbr"),
+             r.get("piotroski"), r.get("bps_growth"), r.get("eps_surprise"), r.get("pos52"))
             for r in rows
         ])
 
