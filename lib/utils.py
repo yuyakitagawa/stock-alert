@@ -592,9 +592,17 @@ def recommend_from_net(net, allow_buy=True):
     return "⏳ 方向感なし"
 
 
-def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None):
-    """S買い: 17<=net<=24 かつ drop_prob<4% かつ vol<=25%。上位3件まで（rank_stocks.pyフェーズ6）"""
-    if allow_buy and drop_prob is not None and drop_prob < 4.0 and 17.0 <= net <= 24.0:
-        if vol is None or vol <= 25.0:
-            return "🥇 S買い"
+def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
+                          piotroski=None, pos52=None, bps_growth=None, eps_surprise=None):
+    """💎 買い: drop_prob<1% AND net>=20 AND Piotroski>=6/9 AND pos52<0.45 AND 業績改善シグナルあり"""
+    if (allow_buy
+            and drop_prob is not None and drop_prob < 1.0
+            and net >= 20.0
+            and piotroski is not None and piotroski >= 0.67
+            and pos52 is not None and pos52 < 0.45
+            and (
+                (bps_growth is not None and bps_growth > 0)
+                or (eps_surprise is not None and eps_surprise > 0)
+            )):
+        return "💎 買い"
     return recommend_from_net(net, allow_buy=allow_buy)

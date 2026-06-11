@@ -101,7 +101,7 @@ def parse_args():
     p.add_argument("--start", type=str, default="2025-01-01")
     p.add_argument("--end",   type=str, default=date.today().isoformat())
     p.add_argument("--bear",  action="store_true", help="2024/08暴落期 (2024-07-01〜2024-10-01)")
-    p.add_argument("--strategy", choices=["v2", "v3", "v4", "mom", "momnet", "momreg", "baseline", "qv"], default="v2")
+    p.add_argument("--strategy", choices=["v2", "v3", "v4", "mom", "momnet", "momreg", "baseline", "qv", "qv_nk"], default="v2")
     p.add_argument("--max-pos",  type=int, default=MAX_POS)
     p.add_argument("--hold-days", type=int, default=HOLD_LIMIT_DAYS, help="最大保有営業日（v3で勝ち伸ばし用に延長）")
     p.add_argument("--sector-cap", type=int, default=1, help="1セクター当たり最大保有数")
@@ -159,8 +159,8 @@ def main():
     else:
         START = date.fromisoformat(args.start); END = date.fromisoformat(args.end)
     max_pos = args.max_pos
-    # qv は mean-reversion に時間がかかるため保有上限を 90日に延長（未指定時のみ）
-    if args.strategy == "qv" and args.hold_days == HOLD_LIMIT_DAYS:
+    # qv / qv_nk は mean-reversion に時間がかかるため保有上限を 90日に延長（未指定時のみ）
+    if args.strategy in ("qv", "qv_nk") and args.hold_days == HOLD_LIMIT_DAYS:
         args.hold_days = 90
 
     # backtest.py のグローバル期間を合わせる（FETCH_DAYS等に影響）
@@ -270,7 +270,7 @@ def main():
                 if f[IDX_DOWNSTREAK] > BUY_DOWNSTK_MAX: continue
                 if f[IDX_POS52] < 0.6: continue          # 52週レンジ上位60%以上（高値圏）
                 if f[IDX_RET90] <= 0: continue            # 3ヶ月で上昇しているもの
-            elif args.strategy == "qv":
+            elif args.strategy in ("qv", "qv_nk"):
                 # Quality × Value: 業績強 × 株価低迷
                 if f[IDX_VOL20] > 25.0: continue         # 過度なボラ除外
                 if f[IDX_DRAWDOWN60] < BUY_DRAWDOWN_MIN: continue   # フリーフォール除外
@@ -288,7 +288,7 @@ def main():
                 continue
             if args.strategy == "momnet" and dp > 10.0:    # モメンタム＋モデルの危険回避
                 continue
-            if args.strategy == "qv" and dp > 8.0:         # QV: 下落リスクが高すぎるもの除外
+            if args.strategy in ("qv", "qv_nk") and dp > 8.0:  # QV: 下落リスクが高すぎるもの除外
                 continue
             if args.strategy == "baseline" and net < 5.0:
                 continue
@@ -319,8 +319,11 @@ def main():
     def total_equity(d):
         eq = cash
         for code, pos in positions.items():
-            dts, cls = hist_map[code][2], hist_map[code][3]
-            px = price_on_or_before(dts, cls, d) or pos["entry_price"]
+            if pos.get("_is_nk"):
+                px = price_on_or_before(nk_dates, nk_closes, d) or pos["entry_price"]
+            else:
+                dts, cls = hist_map[code][2], hist_map[code][3]
+                px = price_on_or_before(dts, cls, d) or pos["entry_price"]
             eq += pos["shares"] * px
         return eq
 
@@ -331,6 +334,26 @@ def main():
         # 1) 売り判定（保有銘柄）
         for code in list(positions.keys()):
             pos = positions[code]
+            # 日経ETFポジション（qv_nk用）: 日経価格で評価・qv候補が出たら乗り換える
+            if pos.get("_is_nk"):
+                nk_px = price_on_or_before(nk_dates, nk_closes, d)
+                if nk_px is None:
+                    continue
+                pos["peak"] = max(pos["peak"], nk_px)
+                held_days = sum(1 for x in trading_dates if pos["entry_date"] < x <= d)
+                # qvスロットが埋まる見込みがあれば売って入れ替え（次の買いループで自然に埋まる）
+                qv_cands = score_universe(d)
+                current_qv = sum(1 for c in positions if not positions[c].get("_is_nk"))
+                sell_nk = (len(qv_cands) > current_qv) or (held_days >= args.hold_days)
+                if sell_nk:
+                    ret = (nk_px - pos["entry_price"]) / pos["entry_price"] * 100
+                    cash += pos["shares"] * nk_px
+                    trades.append({"code": "NK225", "name": "日経225(ETF)", "entry": str(pos["entry_date"]),
+                                   "exit": str(d), "held_days": held_days,
+                                   "entry_px": round(pos["entry_price"], 1), "exit_px": round(nk_px, 1),
+                                   "return": round(ret, 2), "reason": "NK→QV入替" if len(qv_cands) > current_qv else "時間切れ"})
+                    del positions[code]
+                continue
             dts, cls = hist_map[code][2], hist_map[code][3]
             px = price_on_or_before(dts, cls, d)
             if px is None:
@@ -353,7 +376,7 @@ def main():
                     if dp >= 12.0: sell = "drop急騰"   # momnetのみ軽くdrop売り
                 elif args.strategy == "baseline":
                     if net < 5.0: sell = "net<5"
-                elif args.strategy == "qv":
+                elif args.strategy in ("qv", "qv_nk"):
                     # 逆張りなので少し許容。drop急騰 or net大幅マイナスで撤退
                     if dp >= 10.0: sell = "drop急騰"
                     elif net < -5.0: sell = "net大幅反転"
@@ -404,12 +427,45 @@ def main():
                 sector_count[sector] += 1
                 open_slots -= 1
 
+        # qv_nk: qv銘柄で埋まらなかったスロットを日経ETFポジションで補完
+        if args.strategy == "qv_nk":
+            nk_slots = max_pos - len(positions)
+            if nk_slots > 0:
+                nk_px = price_on_or_before(nk_dates, nk_closes, d)
+                if nk_px and cash >= (cash / (nk_slots + 1)) * 0.99:
+                    eq = total_equity(d)
+                    alloc = eq / max_pos
+                    for _ in range(nk_slots):
+                        if cash < alloc * 0.99:
+                            break
+                        nk_key = f"_NK_{d}"  # 日毎に別ポジとして管理
+                        if nk_key not in positions:
+                            shares = alloc / nk_px
+                            cash -= alloc
+                            positions[nk_key] = {
+                                "entry_date": d, "entry_price": nk_px, "shares": shares,
+                                "peak": nk_px, "name": "日経225", "sector": "_NK", "vol20": 18.0,
+                                "_is_nk": True,
+                            }
+                            break  # 1スロット分まとめて日経に入れる（重複キー回避）
+
         equity_curve.append((d, total_equity(d)))
 
     # 期末に全クローズ
     last_d = trading_dates[-1]
     for code in list(positions.keys()):
         pos = positions[code]
+        if pos.get("_is_nk"):
+            px = price_on_or_before(nk_dates, nk_closes, last_d) or pos["entry_price"]
+            held_days = sum(1 for x in trading_dates if pos["entry_date"] < x <= last_d)
+            ret = (px - pos["entry_price"]) / pos["entry_price"] * 100
+            cash += pos["shares"] * px
+            trades.append({"code": "NK225", "name": "日経225(ETF)", "entry": str(pos["entry_date"]),
+                           "exit": str(last_d), "held_days": held_days,
+                           "entry_px": round(pos["entry_price"], 1), "exit_px": round(px, 1),
+                           "return": round(ret, 2), "reason": "期末"})
+            del positions[code]
+            continue
         dts, cls = hist_map[code][2], hist_map[code][3]
         px = price_on_or_before(dts, cls, last_d) or pos["entry_price"]
         held_days = sum(1 for x in trading_dates if pos["entry_date"] < x <= last_d)

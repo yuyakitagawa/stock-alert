@@ -468,7 +468,14 @@ def main():
         _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
         r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
         buy_ok = passes_buy_filter(feat, close, volumes)
-        recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
+        _fm = fund_map.get(code) or {}
+        recommend = recommend_from_scores(
+            net, drop_pct, allow_buy=buy_ok, vol=vol,
+            piotroski=_fm.get("piotroski"),
+            pos52=float(feat[9]),
+            bps_growth=_fm.get("bps_growth"),
+            eps_surprise=_fm.get("eps_surprise"),
+        )
 
         # 損切りライン（1.5 ATR, 20日ボラベース）
         stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)

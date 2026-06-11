@@ -48,8 +48,9 @@ export default async function HomePage() {
     }))
     .sort((a, b) => b.avgReturn - a.avgReturn);
 
-  // 注目銘柄 = ネットスコア上位10銘柄（rows は rank 昇順 = net 降順）
-  const featured = rows.slice(0, 10);
+  // 注目銘柄 = 「💎 買い」条件（drop<1%+net≥20+QV）の上位10銘柄
+  const buyRows = rows.filter(r => r.recommend === "💎 買い");
+  const featured = (buyRows.length > 0 ? buyRows : rows).slice(0, 10);
   const dateLabel = formatDate(date);
 
   const sparklines = await Promise.all(featured.map(r => fetchSparkline(r.code)));
@@ -88,7 +89,10 @@ export default async function HomePage() {
                 </Link>
               </div>
               <p className="text-xs text-gray-600 mb-4">
-                ネットスコア（上昇確率 − 下落確率）が高い順の上位10銘柄。全 {rows.length.toLocaleString()} 銘柄中。
+                {buyRows.length > 0
+                  ? <>💎 買い条件（下落確率&lt;1% × ネット≥20% × 財務健全 × 株価低迷 × 業績改善）の該当 <span className="text-green-400">{buyRows.length}</span> 銘柄中 上位10件。全 {rows.length.toLocaleString()} 銘柄中。</>
+                  : <>本日は💎買い条件の該当銘柄なし。ネットスコア上位10銘柄を表示。全 {rows.length.toLocaleString()} 銘柄中。</>
+                }
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {featured.map(r => (

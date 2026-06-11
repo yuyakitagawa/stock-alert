@@ -18,7 +18,6 @@ export default function Navbar({ dateLabel }: Props) {
   const links: { href: string; label: string }[] = [
     { href: "/",          label: ui.top },
     { href: "/rankings",  label: ui.rankings },
-    { href: "/qv",        label: "QV" },
     { href: "/watchlist", label: ui.watchlist },
     { href: "/activity",  label: ui.activity },
     { href: "/review",    label: ui.review },

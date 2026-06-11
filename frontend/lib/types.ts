@@ -1,10 +1,8 @@
 export type Recommend =
-  | "S買い"
+  | "💎 買い"
   | "方向感なし"
   | "弱気シグナル"
   | "下降シグナル"
-  | "買い継続"
-  | "買い増し"
   | string;
 
 export interface Ranking {
@@ -26,14 +24,6 @@ export interface Ranking {
   bps_growth:   number | null;
   eps_surprise: number | null;
   pos52:        number | null;
-}
-
-export interface QvPosition {
-  code:      string;
-  name:      string;
-  buyDate:   string;
-  buyPrice:  number;
-  buyNet:    number;
 }
 
 export interface StockMeta {
@@ -127,20 +117,6 @@ export interface WeeklyReview {
   fm_eval:          string;
   human_feedback:   string;
   next_actions:     string;
-}
-
-export interface QvSimTrade {
-  id:           number;
-  code:         string;
-  name:         string | null;
-  entry_date:   string;
-  exit_date:    string | null;
-  entry_price:  number | null;
-  exit_price:   number | null;
-  return_pct:   number | null;
-  reason:       string | null;
-  held_days:    number | null;
-  status:       "active" | "closed";
 }
 
 export interface RiskRegime {
