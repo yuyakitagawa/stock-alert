@@ -29,8 +29,9 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
   const { lang } = useLang();
   const ui = UI[lang];
 
-  const [search,  setSearch]  = useState("");
-  const [sector,  setSector]  = useState("");
+  const [search,   setSearch]   = useState("");
+  const [sector,   setSector]   = useState("");
+  const [buyOnly,  setBuyOnly]  = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -50,8 +51,11 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
     return Array.from(set).sort();
   }, [rows, sectorMap]);
 
+  const buyCount = useMemo(() => rows.filter(r => r.recommend === "💎 買い").length, [rows]);
+
   const filtered = useMemo(() => {
     let r = rows;
+    if (buyOnly) r = r.filter(x => x.recommend === "💎 買い");
     if (sector) r = r.filter(x => sectorMap?.[x.code] === sector);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -79,8 +83,24 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Sector + Search */}
+      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2">
+        <button
+          onClick={() => setBuyOnly(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors shrink-0 ${
+            buyOnly
+              ? "bg-green-900/50 border-green-600 text-green-300"
+              : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600"
+          }`}
+          suppressHydrationWarning
+        >
+          💎 買いのみ
+          {buyCount > 0 && (
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${buyOnly ? "bg-green-700 text-green-100" : "bg-gray-700 text-gray-400"}`}>
+              {buyCount}
+            </span>
+          )}
+        </button>
         {sectors.length > 0 && (
           <select
             value={sector}
@@ -126,7 +146,12 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                 <td className="px-3 py-2.5 text-center text-gray-600 font-mono text-xs">{r.rank}</td>
                 <td className="px-3 py-2.5">
                   <Link href={`/stocks/${r.code}`} className="group-hover:text-green-400 transition-colors">
-                    <div className="font-semibold text-white">{r.name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-white">{r.name}</span>
+                      {r.recommend === "💎 買い" && (
+                        <span className="text-[10px] font-bold bg-green-900/60 text-green-300 border border-green-700/60 px-1.5 py-0.5 rounded-full whitespace-nowrap">💎 買い</span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-500 font-mono">
                       {r.code}
                       {sectorMap?.[r.code] && (
@@ -181,6 +206,9 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-sm text-white">{r.name}</span>
+                {r.recommend === "💎 買い" && (
+                  <span className="text-[10px] font-bold bg-green-900/60 text-green-300 border border-green-700/60 px-1.5 py-0.5 rounded-full">💎</span>
+                )}
               </div>
               <div className="flex gap-2 text-xs font-mono mt-0.5 text-gray-500 flex-wrap">
                 <span>{r.code}</span>
