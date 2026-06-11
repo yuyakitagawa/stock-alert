@@ -6,6 +6,7 @@ import sys, os, re, json, subprocess, smtplib, glob, logging
 from pathlib import Path
 from datetime import date
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 import activity  # アクティビティログ（誰が何をしたか/しているかを記録）
@@ -724,7 +725,8 @@ def quant_analyst(metrics, baseline, fm_directive="", consult_report=""):
    (b) ALPHA_THRESHOLD / DROP_ALPHA_THRESHOLD など戦略パラメータ（rf_train_v3.py）
    (c) 特徴量の扱い（重要度が低い特徴量の整理、相互作用の活用アイデア）
    (d) ↑が尽きた時のみ、明確な仮説を伴うハイパーパラメータ調整
-4. 1サイクルで触るのは1〜3個まで。多数を同時に動かすと何が効いたか分からなくなる。
+4. 1サイクルで触るのは**最大2個**まで。Engineerから「10個同時では何が効いたかわからない、2個に絞ってほしい」という要請を受けた。
+5. 提案には必ず「スクリーニング条件・特徴量選択」か「bear相場対策」の観点を1件以上含めること。ハイパラだけの提案は受け付けない。
 
 変更禁止:
 - BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD（市場分類の根幹）
@@ -1076,6 +1078,54 @@ https://stock-alert-web.vercel.app/activity
         print(f"  [サマリーメールエラー] {e}")
 
 
+def _check_consecutive_backtest_failure():
+    """QAリクエスト: バックテスト連続失敗を検知し、3日以上続いたらFMにアラートメール送信。"""
+    log_path = BASE_DIR / "pdca" / "pdca_log.md"
+    if not log_path.exists():
+        return
+    text = log_path.read_text("utf-8")
+    # 末尾から ERROR: backtest失敗 の連続件数をカウント
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    consecutive = 0
+    for line in reversed(lines):
+        if "ERROR: backtest失敗" in line:
+            consecutive += 1
+        elif line.startswith("## 20"):
+            # 日付区切りをまたいでも ERROR が続いているならカウント継続
+            continue
+        else:
+            break
+    if consecutive >= 3:
+        subject = f"[PDCA-QA] ⚠️ バックテスト{consecutive}日連続失敗"
+        body = (
+            f"バックテストが{consecutive}日連続で失敗しています（{TODAY} 時点）。\n\n"
+            "改善サイクルが止まっています。原因を調査してください。\n\n"
+            "考えられる原因:\n"
+            "- backtest.py の依存データ（CSV/モデルファイル）が欠損\n"
+            "- venv の依存ライブラリが壊れた\n"
+            "- screener.py がエラーでCSV未生成\n\n"
+            "確認コマンド:\n"
+            "  python3 tools/backtest.py bear 2>&1 | head -30\n"
+        )
+        gmail_addr = os.getenv("GMAIL_ADDRESS", "")
+        gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+        if not gmail_addr or not gmail_pass:
+            print(f"  [QA連続失敗検知] {consecutive}日連続失敗 / メール未設定のためスキップ")
+            return
+        try:
+            msg = MIMEMultipart()
+            msg["Subject"] = subject
+            msg["From"]    = gmail_addr
+            msg["To"]      = NOTIFY_TO
+            msg.attach(MIMEText(body, "plain", "utf-8"))
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(gmail_addr, gmail_pass)
+                server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
+            print(f"  [QA] バックテスト{consecutive}日連続失敗アラートを送信")
+        except Exception as e:
+            print(f"  [QA連続失敗アラートエラー] {e}")
+
+
 def main():
     print(f"=== PDCA {TODAY} ===")
     log(f"\n## {TODAY}")
@@ -1089,7 +1139,10 @@ def main():
     if not metrics:
         msg = "ERROR: backtest失敗（メトリクス取得不可）"
         activity.finish(aid, "failed", "メトリクス取得不可", raw)
-        print(msg); log(f"- {msg}"); push_log(); sys.exit(1)
+        print(msg); log(f"- {msg}")
+        # QAリクエスト: バックテスト連続失敗を検知してFMにアラート
+        _check_consecutive_backtest_failure()
+        push_log(); sys.exit(1)
     periods_info = metrics.pop('periods', {})
     activity.finish(aid, "done",
                     f"avg={metrics.get('avg_return')}% win={metrics.get('win_rate')}% big={metrics.get('big_win_rate')}%",
