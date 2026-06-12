@@ -1,1 +1,1 @@
-{"date": "2026-06-12", "regime": "risk_on", "score": 1, "action": "通常", "label": "🟢 リスクオン", "reasons": ["VIX 22（不安定）"], "suppress_buy": false}
+{"date": "2026-06-12", "regime": "risk_on", "score": 0, "action": "通常", "label": "🟢 リスクオン", "reasons": ["マクロに大きな警戒材料なし"], "suppress_buy": false}
