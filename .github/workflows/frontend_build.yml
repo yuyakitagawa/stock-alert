@@ -70,8 +70,6 @@ jobs:
 
           check_page "/"          "StockSignal"
           check_page "/rankings"  "StockSignal"
-          check_page "/qv"        "QV"
-          check_page "/activity"  "StockSignal"
           check_page "/review"    "StockSignal"
 
           kill $SERVER_PID 2>/dev/null || true

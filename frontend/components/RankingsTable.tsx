@@ -68,7 +68,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
       const bv = b[sortKey] ?? (sortDir === "asc" ? Infinity : -Infinity);
       return sortDir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
     });
-  }, [rows, sector, search, sortKey, sortDir, sectorMap]);
+  }, [rows, buyOnly, sector, search, sortKey, sortDir, sectorMap]);
 
   const ThSort = ({ col, label, hint, className = "" }: { col: SortKey; label: string; hint?: string; className?: string }) => (
     <th
