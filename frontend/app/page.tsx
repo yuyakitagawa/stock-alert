@@ -90,7 +90,7 @@ export default async function HomePage() {
               </div>
               <p className="text-xs text-gray-600 mb-4">
                 {buyRows.length > 0
-                  ? <>💎 買い条件（下落確率&lt;1% × ネット≥20% × 財務健全 × 株価低迷 × 業績改善）の該当 <span className="text-green-400">{buyRows.length}</span> 銘柄中 上位10件。全 {rows.length.toLocaleString()} 銘柄中。</>
+                  ? <>💎 買い条件（下落確率&lt;2% × ネット≥16% × 財務健全 × 株価低迷 × 業績改善）の該当 <span className="text-green-400">{buyRows.length}</span> 銘柄中 上位10件。全 {rows.length.toLocaleString()} 銘柄中。</>
                   : <>本日は💎買い条件の該当銘柄なし。ネットスコア上位10銘柄を表示。全 {rows.length.toLocaleString()} 銘柄中。</>
                 }
               </p>

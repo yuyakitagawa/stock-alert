@@ -594,10 +594,10 @@ def recommend_from_net(net, allow_buy=True):
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None):
-    """💎 買い: drop_prob<1% AND net>=20 AND Piotroski>=6/9 AND pos52<0.45 AND 業績改善シグナルあり"""
+    """💎 買い: drop_prob<2% AND net>=16 AND Piotroski>=6/9 AND pos52<0.45 AND 業績改善シグナルあり"""
     if (allow_buy
-            and drop_prob is not None and drop_prob < 1.0
-            and net >= 20.0
+            and drop_prob is not None and drop_prob < 2.0
+            and net >= 16.0
             and piotroski is not None and piotroski >= 0.67
             and pos52 is not None and pos52 < 0.45
             and (

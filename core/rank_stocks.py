@@ -620,20 +620,20 @@ def main():
         result_df["適時開示"]       = result_df["銘柄コード"].astype(str).map(lambda x: _make_tdnet_label(alt_results.get(x, {})))
         result_df["Gトレンド"]      = result_df["銘柄コード"].astype(str).map(lambda x: _safe_get(x, "trend_score", 0.0))
 
-        # 信用倍率 > 10: S買い → 降格（過剰レバレッジシグナル）
+        # 信用倍率 > 10: 💎 買い → 降格（過剰レバレッジシグナル）
         degraded_margin = []
         for idx, row in result_df.iterrows():
             ratio = row.get("信用倍率")
-            if ratio is not None and ratio > 10.0 and row.get("推奨") == "🥇 S買い":
+            if ratio is not None and ratio > 10.0 and row.get("推奨") == "💎 買い":
                 result_df.at[idx, "推奨"] = "⏳ 方向感なし"
                 degraded_margin.append(f"{row['銘柄名']}({row['銘柄コード']})[信用倍率:{ratio:.1f}倍]")
         if degraded_margin:
             print(f"  ⚠️ 信用倍率過剰でS買い降格: {', '.join(degraded_margin)}")
 
-        # 下方修正あり: S買い → 降格
+        # 下方修正あり: 💎 買い → 降格
         degraded_down = []
         for idx, row in result_df.iterrows():
-            if alt_results.get(str(row["銘柄コード"]), {}).get("has_downward") and row.get("推奨") == "🥇 S買い":
+            if alt_results.get(str(row["銘柄コード"]), {}).get("has_downward") and row.get("推奨") == "💎 買い":
                 result_df.at[idx, "推奨"] = "⏳ 方向感なし"
                 degraded_down.append(f"{row['銘柄名']}({row['銘柄コード']})[下方修正]")
         if degraded_down:
@@ -670,9 +670,9 @@ def main():
         result_df["感情スコア"] = result_df["銘柄コード"].astype(str).map(
             lambda x: sentiment_scores.get(x, 0.0)
         )
-        # 強い悲観（< -0.5）の場合は S買い → 方向感なし に降格
+        # 強い悲観（< -0.5）の場合は 💎 買い → 方向感なし に降格
         for idx, row in result_df.iterrows():
-            if row.get("推奨") == "🥇 S買い" and row.get("感情スコア", 0.0) <= -0.5:
+            if row.get("推奨") == "💎 買い" and row.get("感情スコア", 0.0) <= -0.5:
                 result_df.at[idx, "推奨"] = "⏳ 方向感なし"
                 print(f"  ⚠️ {row['銘柄名']}({row['銘柄コード']}): 感情スコア{row['感情スコア']:.2f} → S買い降格")
         pos_count = (result_df.head(NLP_TOP)["感情スコア"] > 0.2).sum()
@@ -683,7 +683,7 @@ def main():
         result_df["感情スコア"] = 0.0
 
     # フェーズ5: S買い銘柄の決算チェック（S買い→方向感なし に降格）
-    buy_mask = result_df["推奨"] == "🥇 S買い"
+    buy_mask = result_df["推奨"] == "💎 買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
         print(f"\n決算日チェック中（S買い {len(buy_codes)}銘柄）...")
@@ -699,7 +699,7 @@ def main():
                     print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → S買いを方向感なしに降格")
 
     # フェーズ5b: 株主優待権利落ち日チェック（権利落ち日21日前以内は除外）
-    buy_mask = result_df["推奨"] == "🥇 S買い"
+    buy_mask = result_df["推奨"] == "💎 買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
         print(f"\n株主優待権利落ちチェック中（S買い {len(buy_codes)}銘柄）...")
@@ -712,18 +712,9 @@ def main():
                 name = result_df.loc[idx, "銘柄名"].values[0]
                 print(f"  ⚠️ {name}({code}): 優待権利落ち{days}日前 → S買いを方向感なしに降格")
 
-    # フェーズ6: S買い上位3件のみ残し、4件目以降は方向感なしに降格
-    sbuy_all = result_df[result_df["推奨"] == "🥇 S買い"].sort_values("ネット(%)", ascending=False)
-    if len(sbuy_all) > 3:
-        cap_codes = sbuy_all.iloc[3:]["銘柄コード"].astype(str).tolist()
-        for code in cap_codes:
-            idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-            result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
-        print(f"\nS買い1日3件制限: {len(cap_codes)}件を方向感なしに降格")
-
     # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
     # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→方向感なし に降格
-    buy_mask = result_df["推奨"] == "🥇 S買い"
+    buy_mask = result_df["推奨"] == "💎 買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
         print(f"\n米国ETFリードラグフィルター中（S買い {len(buy_codes)}銘柄）...")
@@ -763,7 +754,7 @@ def main():
     )
     print(f"\n🛡️ 相場リスク管制官: {_risk_summary(risk_verdict)}")
     if risk_verdict["suppress_buy"]:
-        risk_buy = result_df[result_df["推奨"] == "🥇 S買い"]["銘柄コード"].astype(str).tolist()
+        risk_buy = result_df[result_df["推奨"] == "💎 買い"]["銘柄コード"].astype(str).tolist()
         for code in risk_buy:
             idx = result_df[result_df["銘柄コード"].astype(str) == code].index
             result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
