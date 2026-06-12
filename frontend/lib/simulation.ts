@@ -3,16 +3,7 @@ import { fetchLatestDate } from "./data";
 
 const SHARES = 100;
 const SELL_NET_THRESH = 5;   // ネットスコアがこれ未満に下がったら売却（信号消滅）
-
-async function fetchEarliestDate(): Promise<string> {
-  const res = await fetch(
-    sbUrl("web_rankings?select=date&order=date.asc&limit=1"),
-    { headers: anonHeaders(), next: { revalidate: 300 } }
-  );
-  if (!res.ok) return "2026-01-01";
-  const rows = await res.json();
-  return rows[0]?.date ?? "2026-01-01";
-}
+const SIM_START = "2026-01-01"; // シミュレーション開始日（固定）
 
 interface RawRow {
   code: string;
@@ -72,14 +63,16 @@ export async function fetchSimulation(): Promise<{
 }> {
   // 毎日のネットスコア上位10銘柄（rank<=10）を買い候補とする。
   // rank は export 時に net 降順で振られた日次順位（1 = 最高ネット）。
-  const [buyRows, latestDate, since] = await Promise.all([
+  const [buyRows, latestDate] = await Promise.all([
     (async () => {
+      // 💎 買いシグナルが初めて出た日を買いエントリーとする（2026-01-01以降）
       const all: RawRow[] = [];
       const pageSize = 1000;
       let offset = 0;
+      const encoded = encodeURIComponent("💎 買い");
       for (;;) {
         const res = await fetch(
-          sbUrl(`web_rankings?rank=lte.10&order=date.asc,rank.asc&select=code,name,close,date,net&limit=${pageSize}&offset=${offset}`),
+          sbUrl(`web_rankings?recommend=eq.${encoded}&date=gte.${SIM_START}&order=date.asc,rank.asc&select=code,name,close,date,net&limit=${pageSize}&offset=${offset}`),
           { headers: anonHeaders(), next: { revalidate: 300 } }
         );
         if (!res.ok) break;
@@ -91,8 +84,8 @@ export async function fetchSimulation(): Promise<{
       return all;
     })(),
     fetchLatestDate(),
-    fetchEarliestDate(),
   ]);
+  const since = SIM_START;
 
   // 銘柄ごとに「最初にtop10入りした日」を買い日とする
   const firstBuy = new Map<string, RawRow>();
