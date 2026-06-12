@@ -115,3 +115,15 @@
 
 ## 2026-06-10
 - ERROR: backtest失敗（メトリクス取得不可）
+
+## 2026-06-12
+- metrics: {"avg_return": 2.38, "win_rate": 65.0, "big_win_rate": 11.66, "nk_avg": 0.72, "nk_alpha": 1.66}  periods: {"bear_2024": {"avg_return": -0.23, "win_rate": 50.0, "big_win_rate": 0.0, "nk_avg": -1.25, "nk_alpha": 1.02}, "q4_2024": {"avg_return": 2.29, "win_rate": 66.7, "big_win_rate": 0.0, "nk_avg": 0.57, "nk_alpha": 1.72}, "q1_2025": {"avg_return": -1.69, "win_rate": 33.3, "big_win_rate": 0.0, "nk_avg": -6.74, "nk_alpha": 5.04}, "q2_2025": {"avg_return": 7.25, "win_rate": 100.0, "big_win_rate": 33.3, "nk_avg": 4.38, "nk_alpha": 2.87}, "q3_2025": {"avg_return": 4.27, "win_rate": 75.0, "big_win_rate": 25.0, "nk_avg": 6.64, "nk_alpha": -2.36}}
+- invest_stage: Phase 0
+- FM directives: {"quant": "bear_2024期間の損失パターン（業種・特徴量）を分析し、下落局面での早期リスク検出に特化した特徴量追加を1件提案してください。パラメータ数値調整は禁止。", "consultant": "VIX・日経20日リターンの実データ取得スクリプトを lib/risk_regime_data.py に実装し、現在のデフォルト risk_on 判定を実運用可能にしてください。これなしではbear防御が機能しません。", "engineer": "2026-06-08〜10の3日連続バックテスト失敗の原因を特定し、修正完了とその内容をFMに報告してください。修正まで improve 指示は一時停止します。"}
+- consultant(risk): 🛡️ 相場リスク管制官 [2026-06-12]: 🟢 リスクオン（リスク点1）→ 通常: VIX 22（不安定）
+- signals: なし
+- FM: improve | big=11.66%<30.0% → 強制 improve
+- analyst: {"file": "rf_train_v3.py", "changes": [{"param_name": "sector_drawdown_20d", "old_value": null, "new_value": "new_feature", "reason": "bear_2024分析: 下落局面では業種連鎖が先行指標となる。各銘柄の所属業種について過去20日間の業種平均リターン（セクタードローダウン）を特徴量として追加。高ベータ・高ボラ・モメンタム銘柄が業種単位で集中売りされるパターンをbear_2024期で確認。業種平均が-5%以下に沈む銘柄は個別でも63日後に大幅下落する傾向が強く、下落モデルの早期リスク検出精度を向上させる。実装: sector_ret_20d = df.groupby('sector')['ret_20d'].transform('mean') として特徴量リストに追加"}]}
+- engineer: rf_train_v3.py 変更後の再学習失敗、revert
+- qa: ⚠️ QA回帰検出: AUC読み込み失敗: [Errno 2] No such file or directory: '/home/runner/work/stock-alert/stock-alert/baseline_auc.json'
+- stagnation: reset（日経に勝った）
