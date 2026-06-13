@@ -80,7 +80,8 @@ jobs:
           STOCK_ALERT_HOME: ${{ github.workspace }}
         working-directory: ${{ github.workspace }}
         run: |
-          claude --dangerously-skip-permissions -p "${{ inputs.instruction }}"
+          # 出力をファイルにも保存（後でLINEへ要約通知するため）
+          claude --dangerously-skip-permissions -p "${{ inputs.instruction }}" 2>&1 | tee /tmp/claude_out.txt
 
       - name: Commit changes if any
         run: |
@@ -91,3 +92,31 @@ jobs:
           else
             echo "変更なし"
           fi
+
+      - name: Notify result to LINE
+        if: always()
+        env:
+          INTERNAL_SEND_SECRET: ${{ secrets.INTERNAL_SEND_SECRET }}
+          INSTRUCTION: ${{ inputs.instruction }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          # Claudeの出力末尾を要約としてLINEへPush通知（オーナーのみに届く）
+          TAIL=$(tail -c 1500 /tmp/claude_out.txt 2>/dev/null || echo "(出力なし)")
+          export MSG="✅ 指示が完了しました（${JOB_STATUS}）
+          指示: ${INSTRUCTION}
+
+          --- 結果(末尾) ---
+          ${TAIL}"
+          python3 - <<'PY' || echo "通知送信に失敗（処理は継続）"
+          import json, os, urllib.request
+          data = json.dumps({"message": os.environ["MSG"]}).encode()
+          req = urllib.request.Request(
+              "https://stock-alert-web.vercel.app/api/line/notify",
+              data=data,
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": "Bearer " + os.environ["INTERNAL_SEND_SECRET"],
+              },
+          )
+          print(urllib.request.urlopen(req).read().decode())
+          PY
