@@ -1071,7 +1071,7 @@ def send_cycle_summary(metrics, fm_action, fm_reason, engineer_detail, adopted):
 投資フェーズ: Phase {stage.get('phase', 0)}（0=改善中/ETF待機, 1=少額投資OK）
 
 くわしい各メンバーの動きは活動ログで確認できます:
-https://stock-alert-web.vercel.app/activity
+https://stock-alert-web.vercel.app/review
 """
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = f"📊 PDCA完了 {TODAY} — {result}"

@@ -2,7 +2,7 @@
 qa_pages.py
 QA: Webアプリの全ページを巡回し、開けない/エラー画面/空ページ/内容欠落を検知する。
 
-固定ルート（/ /rankings /watchlist /activity /review）＋ サンプル銘柄詳細ページ
+固定ルート（/ /rankings /watchlist /review）＋ サンプル銘柄詳細ページ
 （ウォッチリスト＋当日上位）を実際に HTTP 取得し、lib.data_sanity.check_pages で検査。
 違反があれば QA アラートメールを送る（alert-only）。
 
@@ -36,7 +36,6 @@ STATIC_ROUTES = [
     ("/",          "注目銘柄"),
     ("/rankings",  None),
     ("/watchlist", "お得度"),
-    ("/activity",  None),
     ("/review",    None),
 ]
 
