@@ -11,6 +11,19 @@ export function netStyle(net: number | null | undefined): {
   return            { bg: "bg-red-900/50",    text: "text-red-300",    border: "border-red-800",       color: "#dc2626" };
 }
 
+// 上昇/下落確率を段階ラベルに変換する。
+// モデルの確率はIsotonic較正で数十段の階段値になっており、小数第1位まで出すと
+// 「20.3%」のように多数の銘柄が同値になり、過度に精密な印象を与える。
+// そのため画面表示は連続値ではなく粗い段階（高/やや高/中/やや低/低）で示す。
+export function probBand(p: number | null | undefined): string {
+  if (p == null) return "—";
+  if (p >= 30) return "高";
+  if (p >= 22) return "やや高";
+  if (p >= 14) return "中";
+  if (p >= 7)  return "やや低";
+  return "低";
+}
+
 // 符号付き％を方向記号つきで返す（色覚多様性に配慮: 色だけに頼らない）。
 // 例: +1.5 → "▲ +1.5%"、-2.0 → "▼ -2.0%"、null → "—"
 export function signFmtArrow(n: number | null | undefined, digits = 1): string {

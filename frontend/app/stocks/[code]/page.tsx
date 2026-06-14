@@ -11,7 +11,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockChart from "@/components/StockChart";
 import StockLivePanel from "@/components/StockLivePanel";
-import { netStyle, signFmtArrow } from "@/lib/signals";
+import { netStyle, signFmtArrow, probBand } from "@/lib/signals";
 import { GLOSSARY } from "@/lib/glossary";
 
 export const revalidate = 3600;
@@ -137,8 +137,8 @@ export default async function StockDetailPage({ params }: Props) {
               sub={GLOSSARY.net.short}
               colorClass={ranking.net >= 0 ? "text-green-400" : "text-red-400"}
             />
-            <MetricCard label="上昇確率" value={`${fmt(ranking.rise_prob)}%`} sub={GLOSSARY.rise_prob.short} colorClass="text-green-400" />
-            <MetricCard label="下落確率" value={`${fmt(ranking.drop_prob)}%`} sub={GLOSSARY.drop_prob.short} colorClass="text-red-400" />
+            <MetricCard label="上昇確率" value={probBand(ranking.rise_prob)} sub={GLOSSARY.rise_prob.short} colorClass="text-green-400" />
+            <MetricCard label="下落確率" value={probBand(ranking.drop_prob)} sub={GLOSSARY.drop_prob.short} colorClass="text-red-400" />
             <MetricCard
               label="日経比 20日"
               value={signFmt(ranking.rel20)}

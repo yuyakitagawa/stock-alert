@@ -5,7 +5,7 @@ import type { Ranking } from "@/lib/types";
 import { useLang } from "@/contexts/LanguageContext";
 import { UI } from "@/lib/i18n";
 import { GLOSSARY } from "@/lib/glossary";
-import { signFmtArrow } from "@/lib/signals";
+import { signFmtArrow, probBand } from "@/lib/signals";
 
 type SortKey = "rank" | "net" | "rise_prob" | "drop_prob" | "rel20" | "close";
 
@@ -166,11 +166,11 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                 <td className={`px-3 py-2.5 text-right font-mono font-bold ${r.net >= 0 ? "text-green-400" : "text-red-400"}`}>
                   {signFmt(r.net)}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-green-400">
-                  {fmt(r.rise_prob)}%
+                <td className="px-3 py-2.5 text-right text-green-400">
+                  {probBand(r.rise_prob)}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-red-400">
-                  {fmt(r.drop_prob)}%
+                <td className="px-3 py-2.5 text-right text-red-400">
+                  {probBand(r.drop_prob)}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-gray-400 hidden lg:table-cell">
                   {signFmt(r.rel20)}
@@ -223,10 +223,10 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                 <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">ネット</span>
                 {signFmt(r.net)}
               </div>
-              <div className="text-xs font-mono">
-                <span className="text-green-500/90">上昇{fmt(r.rise_prob)}%</span>
+              <div className="text-xs">
+                <span className="text-green-500/90">上昇{probBand(r.rise_prob)}</span>
                 <span className="text-gray-600 mx-1">/</span>
-                <span className="text-red-500/90">下落{fmt(r.drop_prob)}%</span>
+                <span className="text-red-500/90">下落{probBand(r.drop_prob)}</span>
               </div>
             </div>
           </Link>

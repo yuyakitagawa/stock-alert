@@ -105,6 +105,19 @@ def _safe_float(val):
     return None
 
 
+def _prob_band(p):
+    """上昇/下落確率を段階ラベルに変換する。
+    モデル確率はIsotonic較正で数十段の階段値になり、小数表示だと多数の銘柄が同値になって
+    過度に精密な印象を与えるため、高/やや高/中/やや低/低の5段階で示す（Web表示と統一）。"""
+    if p is None:
+        return "-"
+    if p >= 30: return "高"
+    if p >= 22: return "やや高"
+    if p >= 14: return "中"
+    if p >= 7:  return "やや低"
+    return "低"
+
+
 def _row_net_percent(row, *, use_rise_fallback):
     """ランキング行のネット(%)を数値化。欠損時は use_rise_fallback に応じて上昇確率 or 0 を使う。"""
     if use_rise_fallback:
@@ -424,8 +437,8 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_ret
             except (ValueError, TypeError):
                 close_val = 0
             stop_cell = _stop_loss_cell_html(row, close_val) if close_val else "-"
-            drop_str  = f"{drop_v:.1f}%" if drop_v is not None else "-"
-            rise_str  = f"{rise:.1f}%" if rise is not None else "-"
+            drop_str  = _prob_band(drop_v)
+            rise_str  = _prob_band(rise)
             new_badge = ("<span class='badge-new'>NEW</span>"
                          if prev_ranking_codes and code_str not in prev_ranking_codes else "")
             held_badge = ("<span style='font-size:10px;background:#fff3cd;color:#856404;"
@@ -452,7 +465,7 @@ def _build_ranking_section(results, prev_ranking_codes, ranking_df=None, etf_ret
     return (f"<div class='card' style='border-left:4px solid #2980b9'>"
             f"<h2>📈 注目銘柄 Top{count}（ネットスコア順）</h2>"
             f"<p style='color:#666;font-size:12px;margin:0 0 10px'>"
-            f"上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落（高いほど上昇期待）／ 日経差(20日) = 過去20日の日経比超過リターン</p>"
+            f"上昇/下落 = 3ヶ月後に±15%以上動くAI予測の段階（高〜低）／ ネット = 上昇−下落（高いほど上昇期待）／ 日経差(20日) = 過去20日の日経比超過リターン</p>"
             f"<table><tr style='background:#e8f0fe'>"
             f"<th>#</th><th>銘柄</th><th>上昇確率</th><th>下落確率</th><th>ネット</th>"
             f"<th>日経差(20日)</th><th>ボラ</th><th>損切り</th></tr>"
@@ -644,7 +657,7 @@ def build_html(results, today, is_bear=False, is_hot=False, nk5=None, nk20=None,
 {build_sector_warning(_candidates_for_sector)}
 <div class='card'>
   <h2>📋 チェック銘柄一覧（{len(results)}銘柄 / ネット順）</h2>
-  <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くモデル確率 ／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
+  <p style='color:#666;font-size:12px;margin:0 0 10px'>上昇/下落 = 3ヶ月後に±15%以上動くAI予測の段階（高〜低）／ ネット = 上昇−下落 ／ 日経差(20日) = 過去20日間で日経225より何%多く動いたか</p>
   <table>
     <tr><th>#</th><th>銘柄</th><th>上昇確率</th><th>下落確率</th><th>ネット</th><th>推奨</th><th>日経差(20日)</th><th>ボラ</th></tr>
     {_build_all_rows(results, earnings_map)}

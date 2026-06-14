@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
 import Sparkline from "./Sparkline";
-import { netStyle, signFmtArrow } from "@/lib/signals";
+import { netStyle, signFmtArrow, probBand } from "@/lib/signals";
 
 function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";
@@ -52,8 +52,8 @@ export default function StockCard({ r, sparkline }: Props) {
         {/* Probability bar */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>上昇確率 {fmt(r.rise_prob)}%</span>
-            <span>下落確率 {fmt(r.drop_prob)}%</span>
+            <span>上昇 {probBand(r.rise_prob)}</span>
+            <span>下落 {probBand(r.drop_prob)}</span>
           </div>
           <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
             <div

@@ -65,6 +65,19 @@ def rel_str(r):
     return f"{r:+.1f}%" if r is not None else "-"
 
 
+def prob_band(p):
+    """上昇/下落確率を段階ラベルに変換する。
+    モデル確率はIsotonic較正で数十段の階段値になり、小数表示だと多数の銘柄が同値になって
+    過度に精密な印象を与えるため、高/やや高/中/やや低/低の5段階で示す（Web表示と統一）。"""
+    if p is None:
+        return "-"
+    if p >= 30: return "高"
+    if p >= 22: return "やや高"
+    if p >= 14: return "中"
+    if p >= 7:  return "やや低"
+    return "低"
+
+
 def classify_sector(sector):
     if sector in _DEFENSIVE_SECTORS:
         return "defensive"
@@ -187,11 +200,11 @@ def build_sell_section(results):
     rows = ""
     for r in sells:
         hd_cell = _holding_days_cell(r.get("holding_days"))
-        drop_str = f"{r['drop_prob']:.1f}%" if r.get("drop_prob") is not None else "-"
+        drop_str = prob_band(r.get("drop_prob"))
         rows += (f"<tr>"
                  f"<td><b>{r['name']}</b><br>"
                  f"<span style='color:#888;font-size:12px'>{r['code']} ¥{r['close']:,.0f}</span></td>"
-                 f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
+                 f"<td style='text-align:center'>{prob_band(r.get('prob'))}</td>"
                  f"<td style='text-align:center'>{drop_str}</td>"
                  f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
                  f"<td style='text-align:center;font-size:11px'>{r.get('recommend','')}</td>"
@@ -213,7 +226,7 @@ def build_all_rows(results, earnings_map=None):
     earnings_map = earnings_map or {}
     rows = ""
     for idx, r in enumerate(sorted(results, key=lambda x: x["net"], reverse=True), 1):
-        drop_str   = f"{r['drop_prob']:.1f}%" if r.get("drop_prob") is not None else "-"
+        drop_str   = prob_band(r.get("drop_prob"))
         spark      = build_sparkline_svg(r.get("prices_close", []))
         spark_html = f"<br>{spark}" if spark else ""
         days = earnings_map.get(str(r["code"]))
@@ -242,7 +255,7 @@ def build_all_rows(results, earnings_map=None):
                  f"<td><b>{r['name']}</b>{earn_badge}{cut_badge}{hold_badge}"
                  f"<span style='color:#888;font-size:11px'><br>{r['code']} ¥{r['close']:,.0f} {qty_str}</span>"
                  f"{spark_html}</td>"
-                 f"<td style='text-align:center'>{r['prob']:.1f}%</td>"
+                 f"<td style='text-align:center'>{prob_band(r.get('prob'))}</td>"
                  f"<td style='text-align:center'>{drop_str}</td>"
                  f"<td class='{net_cls(r['net'])}' style='text-align:center'>{r['net']:+.1f}%</td>"
                  f"<td style='text-align:center;font-size:11px'>{r.get('recommend', '')}</td>"

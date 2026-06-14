@@ -157,6 +157,19 @@ def _clean_recommend(value: str) -> str:
     return _EMOJI_MAP.get(value, value)
 
 
+def _prob_band(p) -> str:
+    """上昇/下落確率を段階ラベルに変換する。
+    モデル確率はIsotonic較正で数十段の階段値になり、小数表示だと多数の銘柄が同値になって
+    過度に精密な印象を与えるため、高/やや高/中/やや低/低の5段階で示す（Web/メール表示と統一）。"""
+    if p is None:
+        return "-"
+    if p >= 30: return "高"
+    if p >= 22: return "やや高"
+    if p >= 14: return "中"
+    if p >= 7:  return "やや低"
+    return "低"
+
+
 def export_rankings(today: str) -> list[dict]:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
@@ -312,8 +325,8 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
             f"銘柄: {r.get('name') or code}（{code}）",
             f"セクター: {sector_map.get(str(code), '不明')}",
             f"ネットスコア: {'+' if net >= 0 else ''}{net:.1f}%",
-            f"上昇確率: {r.get('rise_prob') or 0:.1f}%",
-            f"下落確率: {r.get('drop_prob') or 0:.1f}%",
+            f"上昇度: {_prob_band(r.get('rise_prob'))}（AI予測の段階。高〜低の5段階）",
+            f"下落度: {_prob_band(r.get('drop_prob'))}（AI予測の段階。高〜低の5段階）",
             f"推奨シグナル: {r.get('recommend') or '—'}",
             f"日経比20日リターン: {'+' if rel20 >= 0 else ''}{rel20:.1f}%",
             f"年率ボラティリティ: {r.get('vol') or 0:.1f}%",
