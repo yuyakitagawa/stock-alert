@@ -127,3 +127,15 @@
 - engineer: rf_train_v3.py 変更後の再学習失敗、revert
 - qa: ⚠️ QA回帰検出: AUC読み込み失敗: [Errno 2] No such file or directory: '/home/runner/work/stock-alert/stock-alert/baseline_auc.json'
 - stagnation: reset（日経に勝った）
+
+## 2026-06-15
+- metrics: {"avg_return": 2.38, "win_rate": 65.0, "big_win_rate": 11.66, "nk_avg": 0.72, "nk_alpha": 1.66}  periods: {"bear_2024": {"avg_return": -0.23, "win_rate": 50.0, "big_win_rate": 0.0, "nk_avg": -1.25, "nk_alpha": 1.02}, "q4_2024": {"avg_return": 2.29, "win_rate": 66.7, "big_win_rate": 0.0, "nk_avg": 0.57, "nk_alpha": 1.72}, "q1_2025": {"avg_return": -1.69, "win_rate": 33.3, "big_win_rate": 0.0, "nk_avg": -6.74, "nk_alpha": 5.04}, "q2_2025": {"avg_return": 7.25, "win_rate": 100.0, "big_win_rate": 33.3, "nk_avg": 4.38, "nk_alpha": 2.87}, "q3_2025": {"avg_return": 4.27, "win_rate": 75.0, "big_win_rate": 25.0, "nk_avg": 6.64, "nk_alpha": -2.36}}
+- invest_stage: Phase 0
+- FM directives: {"quant": "bear_2024期間（2024/08前後）の急落局面で大損失した銘柄の業種・特徴量パターンを分析し、bear相場専用フィルター（例：ボラティリティ上昇時は買わない条件）を提案してください。現在big_win_rate=11.66%で目標の30%に遠いため、下落局面での損失回避が次の改善の鍵です。", "consultant": "VIX・日経20日リターン・ドル円の実データ取得スクリプト（lib/risk_regime_data.py）を本日実装し、現状のrisk_onデフォルト判定から脱却してください。リスクオフ判定が毎日確実に実行されないと、bear防御（最優先課題）が機能しません。", "engineer": "2026-06-08〜10の3日連続バックテスト失敗の原因を本日中に特定・修正し、FMに報告してください。同時に3日以上ERROR継続時のGmailアラート機能を実装してください。修正まで改善指示を凍結します。"}
+- consultant(risk): 🛡️ 相場リスク管制官 [2026-06-12]: 🟢 リスクオン（リスク点0）→ 通常: マクロに大きな警戒材料なし
+- signals: なし
+- FM: improve | big=11.66%<30.0% → 強制 improve
+- analyst: {"file": "config.py", "changes": [{"param_name": "MAX_BUY_VOL20", "old_value": 22.0, "new_value": 18.0, "reason": "bear_2024期間の急落局面分析：VIX上昇時に高ボラ銘柄が大損失の主因。特徴量重要度でvix_feat/vol60が上位にあり、ボラティリティ急騰時に高vol銘柄を掴むと損失拡大。20日ボラ上限を22→18%に厳格化し、平時でも低ボラ銘柄に絞ることでbear局面での損失回避を狙う。big_win_rate改善の鍵は『負けない銘柄選び』"}, {"param_name": "CANDIDATE_DROP_PROB_MAX", "old_value": 8.0, "new_value": 5.0, "reason": "bear相場専用フィルター強化：下落確率8%以下でも急落局面では損失発生。下落モデルの重要度上位にcos_month/vix_featがあり、下落予兆を厳格に排除すべき。drop_prob上限を8→5%に引き下げ、少しでも下落リスクのある銘柄を事前に除外。守備重視でbig_win_rate向上を図る"}]}
+- engineer: ❌ 改善なし [config.py]: MAX_BUY_VOL20 22.0→18.0 / CANDIDATE_DROP_PROB_MAX 8.0→5.0 | avg 2.38% (bsl 3.65%)、revert
+- qa: ⚠️ QA回帰検出: AUC読み込み失敗: [Errno 2] No such file or directory: '/home/runner/work/stock-alert/stock-alert/baseline_auc.json'
+- stagnation: reset（日経に勝った）
