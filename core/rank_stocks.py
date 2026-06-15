@@ -469,12 +469,16 @@ def main():
         r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
         buy_ok = passes_buy_filter(feat, close, volumes)
         _fm = fund_map.get(code) or {}
+        valid_vols = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
+        _turnover_m = float(np.mean(valid_vols) * close / 1e6) if len(valid_vols) >= 10 else None
         recommend = recommend_from_scores(
             net, drop_pct, allow_buy=buy_ok, vol=vol,
             piotroski=_fm.get("piotroski"),
             pos52=float(feat[9]),
             bps_growth=_fm.get("bps_growth"),
             eps_surprise=_fm.get("eps_surprise"),
+            ret90=float(feat[3]),
+            turnover_m=_turnover_m,
         )
 
         # 損切りライン（1.5 ATR, 20日ボラベース）

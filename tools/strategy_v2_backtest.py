@@ -272,13 +272,17 @@ def main():
                 if f[IDX_RET90] <= 0: continue            # 3ヶ月で上昇しているもの
             elif args.strategy in ("qv", "qv_nk"):
                 # Quality × Value: 業績強 × 株価低迷
-                if f[IDX_VOL20] > 25.0: continue         # 過度なボラ除外
+                if f[IDX_VOL20] > 20.0: continue         # 過度なボラ除外（外食・IT小型対策）
                 if f[IDX_DRAWDOWN60] < BUY_DRAWDOWN_MIN: continue   # フリーフォール除外
                 if f[IDX_DOWNSTREAK] > BUY_DOWNSTK_MAX: continue    # 連続急落除外
+                if f[IDX_RET90] < -0.25: continue        # 3ヶ月継続下落（バリュートラップ除外）
                 if f[IDX_PIOTROSKI] < 0.67: continue     # 財務健全（6/9以上）
                 if f[IDX_POS52] >= 0.45: continue        # 52週安値圏（株価低迷）を要求
-                # 業績改善シグナル（BPS成長 or EPSサプライズのどちらかがプラスでよい）
-                if f[IDX_BPS_GROWTH] <= 0 and f[IDX_EPS_SURPRISE] <= 0: continue
+                # 業績改善シグナル（EPSサプライズ2%超 or BPS成長プラス）
+                if f[IDX_EPS_SURPRISE] <= 2.0 and f[IDX_BPS_GROWTH] <= 0: continue
+                # QV専用: 流動性100M以上（Gunosy・マークラインズ等の薄商い除外）
+                h_qv, _, dts_qv, cls_qv, vol_qv = hist_map[code]
+                if turnover_m(dts_qv, cls_qv, vol_qv, d) < 100.0: continue
             rp = float(rise_model.predict_proba([f])[0][1]) * 100
             dp = float(drop_model.predict_proba([f])[0][1]) * 100 if drop_model else 0.0
             net = rp - dp
