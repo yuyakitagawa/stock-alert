@@ -139,3 +139,15 @@
 - engineer: ❌ 改善なし [config.py]: MAX_BUY_VOL20 22.0→18.0 / CANDIDATE_DROP_PROB_MAX 8.0→5.0 | avg 2.38% (bsl 3.65%)、revert
 - qa: ⚠️ QA回帰検出: AUC読み込み失敗: [Errno 2] No such file or directory: '/home/runner/work/stock-alert/stock-alert/baseline_auc.json'
 - stagnation: reset（日経に勝った）
+
+## 2026-06-16
+- metrics: {"avg_return": 2.38, "win_rate": 65.0, "big_win_rate": 11.66, "nk_avg": 0.72, "nk_alpha": 1.66}  periods: {"bear_2024": {"avg_return": -0.23, "win_rate": 50.0, "big_win_rate": 0.0, "nk_avg": -1.25, "nk_alpha": 1.02}, "q4_2024": {"avg_return": 2.29, "win_rate": 66.7, "big_win_rate": 0.0, "nk_avg": 0.57, "nk_alpha": 1.72}, "q1_2025": {"avg_return": -1.69, "win_rate": 33.3, "big_win_rate": 0.0, "nk_avg": -6.74, "nk_alpha": 5.04}, "q2_2025": {"avg_return": 7.25, "win_rate": 100.0, "big_win_rate": 33.3, "nk_avg": 4.38, "nk_alpha": 2.87}, "q3_2025": {"avg_return": 4.27, "win_rate": 75.0, "big_win_rate": 25.0, "nk_avg": 6.64, "nk_alpha": -2.36}}
+- invest_stage: Phase 0
+- FM directives: {"quant": "bear_2024期間の損失銘柄を業種・特徴量で分析し、下落相場で機能する新しいスクリーニング条件（例：低ボラ銘柄優先、PBR<1フィルタ）を1件提案してください。ハイパラ調整は禁止。", "consultant": "VIX・日経20日リターンの実データ取得スクリプトを lib/risk_regime_data.py に実装し、明日から毎日のリスクオン/オフ判定を自動生成してください。現在全日デフォルト risk_on のため判定が機能していません。", "engineer": "2026-06-08～10のバックテスト連続失敗（3日以上ERROR）の原因を特定し、FMに報告・修正してください。修正完了まで improve 指示は停止します。加えて、連続エラーを自動検知して3日目に Gmail アラート送信するロジックを CI/CD パイプラインに追加してください。"}
+- consultant(risk): 🛡️ 相場リスク管制官 [2026-06-12]: 🟢 リスクオン（リスク点0）→ 通常: マクロに大きな警戒材料なし
+- signals: なし
+- FM: improve | big=11.66%<30.0% → 強制 improve
+- analyst: {"file": "config.py", "changes": [{"param_name": "BEAR_LOW_VOL_FILTER_ENABLED", "old_value": null, "new_value": true, "reason": "bear_2024期間の損失銘柄分析：下落相場では高ボラ銘柄が急落しやすい。新規フィルター追加でbear相場時にvol20<18%の低ボラ銘柄のみ候補とする"}, {"param_name": "BEAR_LOW_VOL_THRESHOLD", "old_value": null, "new_value": 18.0, "reason": "bear相場専用スクリーニング条件。通常MAX_BUY_VOL20=22%だがbear時は18%に厳格化し、下落耐性の高い低ボラ銘柄を優先選定"}]}
+- engineer: config.py: すべてのパラメータが見つからず変更失敗
+- qa: ⚠️ QA回帰検出: AUC読み込み失敗: [Errno 2] No such file or directory: '/home/runner/work/stock-alert/stock-alert/baseline_auc.json'
+- stagnation: reset（日経に勝った）
