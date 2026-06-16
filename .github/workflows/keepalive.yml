@@ -18,7 +18,7 @@ jobs:
 
       - name: Keep repository active
         run: |
-          git config user.email "keepalive@github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name  "GitHub Actions"
           git commit --allow-empty -m "chore: keepalive [skip ci]"
           git push

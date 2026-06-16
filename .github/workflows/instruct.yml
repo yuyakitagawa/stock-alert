@@ -71,7 +71,7 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.email "claude-bot@github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "Claude Bot"
 
       - name: Run Claude instruction
