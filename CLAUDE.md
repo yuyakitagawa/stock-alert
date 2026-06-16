@@ -57,3 +57,11 @@
   - 売り判定の段階・推奨ラベル → `lib/utils.py` の `recommend_from_net` ＋ `rank_stocks.py` の判定閾値
   - 損切り式・レジーム別銘柄数・VIX/リスクオフ調整 → `core/rank_stocks.py`
   - ユーザーから毎回指示がなくても、ロジック/フィルター変更を実装した時点で本ページ更新を自動的にセットで行うこと。`re-train`（金曜再学習）で重要度が変わった場合も同様。
+
+## 8. デプロイ反映確認（Web変更時・絶対厳守）
+- **「push した」で完了報告するな**: フロント（`frontend/`）や web 出力を変更して push したら、**本番（https://stock-alert-web.vercel.app）に実際に反映されたことを確認するまでが1タスク**。コミット成功＝反映完了ではない。
+- **反映の確認方法**: 変更したルートに HTTP 200 が返るか、表示が変わったかを実際に検証する。新規ページなら `curl -s -o /dev/null -w "%{http_code}" https://stock-alert-web.vercel.app/<route>` が 200 になること。Vercel のデプロイ状態は API で `readyState=READY` を確認する（`BLOCKED`/`ERROR` は未反映）。
+  - 状態確認: トークン `~/Library/Application Support/com.vercel.cli/auth.json`、project `prj_MCyYVEhxABeth2g4rWyV7FafZjbE`、team `team_We4BWT0fwTuIjRoc34bf75mF` で `GET https://api.vercel.com/v6/deployments`。
+- **反映されたら human に知らせる**: 本番反映を確認できた時点で、ユーザーに「反映完了」を明示報告する。確認できないまま黙って終わらない。
+- **反映されない場合**: 状態（BLOCKED/ERROR 等）と原因・ユーザーがやるべきこと（Vercel ダッシュボードでの解除等）を具体的に伝える。課金/アカウント設定は AI が触らない。
+- **監視ループは最大5回**: 反映待ちで再確認を回す場合は ScheduleWakeup を最大5回までに制限する。
