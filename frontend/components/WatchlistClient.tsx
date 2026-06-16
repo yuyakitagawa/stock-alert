@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Ranking, WatchMetrics } from "@/lib/types";
 import { useBookmarks } from "@/lib/bookmarks";
 import { signFmtArrow } from "@/lib/signals";
+import { PRICING_POWER_META } from "@/lib/watchlist";
 import Sparkline from "@/components/Sparkline";
 import BookmarkButton from "@/components/BookmarkButton";
 
@@ -29,6 +30,18 @@ function ProbBreakdown({ r }: { r: Ranking | undefined }) {
     <div className="flex items-center justify-end gap-2 text-xs font-mono mt-0.5">
       <span className="text-green-400">↑{r.rise_prob.toFixed(0)}%</span>
       <span className="text-red-400">↓{r.drop_prob.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+function OverseasBar({ ratio }: { ratio: number | undefined }) {
+  if (ratio == null) return <span className="text-gray-600 text-sm">—</span>;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-16 h-1.5 rounded-full bg-gray-800 overflow-hidden">
+        <div className="h-full bg-blue-400" style={{ width: `${Math.min(ratio, 100)}%` }} />
+      </div>
+      <span className="font-mono text-xs text-gray-400 tabular-nums">{ratio}%</span>
     </div>
   );
 }
@@ -93,7 +106,13 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
   }, [codes]);
 
   const items = useMemo(
-    () => codes.map((code) => ({ code, r: rankMap[code], sector: sectorMap[code], m: metrics[code] })),
+    () => codes.map((code) => ({
+      code,
+      r: rankMap[code],
+      sector: sectorMap[code],
+      m: metrics[code],
+      meta: PRICING_POWER_META[code],
+    })),
     [codes, rankMap, sectorMap, metrics],
   );
 
@@ -129,6 +148,9 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
           <thead>
             <tr className="text-xs text-gray-500 border-b border-gray-800">
               <th className="text-left font-medium px-4 py-3">銘柄</th>
+              <th className="text-left font-medium px-4 py-3">独占商品</th>
+              <th className="text-left font-medium px-4 py-3">独占率</th>
+              <th className="text-left font-medium px-4 py-3">海外比率</th>
               <th className="text-left font-medium px-4 py-3">高値から（お得度）</th>
               <th className="text-right font-medium px-4 py-3">PER / PBR</th>
               <th className="text-right font-medium px-4 py-3">netスコア（上昇↑/下落↓）</th>
@@ -136,7 +158,7 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
             </tr>
           </thead>
           <tbody>
-            {items.map(({ code, r, sector, m }) => (
+            {items.map(({ code, r, sector, m, meta }) => (
               <tr key={code} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/40 transition-colors">
                 <td className="px-4 py-3 align-top">
                   <Link href={`/stocks/${code}`} className="group">
@@ -147,6 +169,18 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
                     <MiniChart spark={m?.spark} />
                   </Link>
                 </td>
+                <td className="px-4 py-3 align-top">
+                  {meta ? (
+                    <>
+                      <div className="text-gray-300">{meta.product}</div>
+                      <div className="text-xs text-gray-600 mt-0.5">{meta.note}</div>
+                    </>
+                  ) : (
+                    <span className="text-gray-600 text-sm">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 align-top text-gray-300">{meta?.domesticShare ?? <span className="text-gray-600 text-sm">—</span>}</td>
+                <td className="px-4 py-3 align-top"><OverseasBar ratio={meta?.overseasRatio} /></td>
                 <td className="px-4 py-3 align-top"><DrawdownCell m={m} /></td>
                 <td className="px-4 py-3 align-top text-right font-mono text-gray-300 tabular-nums">
                   {(() => { const v = valuation(r, m); return `${fmt(v.per, "x")} / ${fmt(v.pbr, "x")}`; })()}
@@ -171,7 +205,7 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
 
       {/* モバイル: カード */}
       <div className="md:hidden space-y-3">
-        {items.map(({ code, r, sector, m }) => (
+        {items.map(({ code, r, sector, m, meta }) => (
           <Link
             key={code}
             href={`/stocks/${code}`}
@@ -192,10 +226,18 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
             {m?.spark && m.spark.length >= 2 && (
               <div className="mt-2"><MiniChart spark={m.spark} /></div>
             )}
+            {meta && (
+              <>
+                <div className="text-sm text-gray-300 mt-2">{meta.product}</div>
+                <div className="text-xs text-gray-400 mt-0.5">独占率: <span className="text-gray-300">{meta.domesticShare}</span></div>
+                <div className="text-xs text-gray-600 mt-0.5">{meta.note}</div>
+              </>
+            )}
             <div className="flex items-center justify-between mt-3 text-xs">
               <span className="font-mono text-gray-400">
                 {(() => { const v = valuation(r, m); return `PER ${fmt(v.per, "x")} / PBR ${fmt(v.pbr, "x")}`; })()}
               </span>
+              {meta && <OverseasBar ratio={meta.overseasRatio} />}
             </div>
             <div className="flex items-center justify-between mt-2 text-xs">
               <span className="text-gray-600">netスコア</span>

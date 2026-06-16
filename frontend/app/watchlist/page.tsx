@@ -29,7 +29,7 @@ export default async function WatchlistPage() {
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">ウォッチリスト</h1>
           <p className="text-sm text-gray-600 mt-1">
