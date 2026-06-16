@@ -19,6 +19,7 @@ export default function Navbar({ dateLabel }: Props) {
     { href: "/",          label: ui.top },
     { href: "/rankings",  label: ui.rankings },
     { href: "/watchlist", label: ui.watchlist },
+    { href: "/model",     label: ui.model },
     { href: "/review",    label: ui.review },
   ];
 
