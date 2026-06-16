@@ -1,6 +1,6 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WeeklyReview, Activity, WatchMetrics, RiskRegime } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WeeklyReview, Activity, RiskRegime } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
-import { yfQuoteSummary, yfQuoteSummaryWithAuth, getAuth } from "./yahoo";
+import { yfQuoteSummary } from "./yahoo";
 
 const CACHE: RequestInit = { next: { revalidate: 300 } };
 
@@ -219,67 +219,6 @@ export async function fetchNikkeiReturn(days = 20): Promise<number> {
 
 
 
-// 値上げ力ウォッチリスト用: 52週高値からの下落率（お得度）＋ PER/PBR
-// 認証(crumb)は1回だけ取得して全銘柄で使い回す。全fetchにタイムアウトを入れ、
-// 失敗時は null を返して描画をブロックしない（Vercelタイムアウト回避）。
-export async function fetchWatchMetrics(
-  code: string,
-  auth: import("./yahoo").YahooAuth | null,
-): Promise<WatchMetrics> {
-  // 1) chart API（認証不要・Vercelでも安定）から現在値＋52週高値＋ミニチャート用終値。
-  //    range=1mo で meta（高値・現在値）と直近1ヶ月の終値を1コールで両取り。
-  let price: number | null = null;
-  let high52: number | null = null;
-  let spark: number[] = [];
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=1mo&interval=1d`;
-    const res = await fetch(url, {
-      next: { revalidate: 3600 },
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const result = data?.chart?.result?.[0];
-      const meta = result?.meta;
-      price = (meta?.regularMarketPrice as number) ?? null;
-      high52 = (meta?.fiftyTwoWeekHigh as number) ?? null;
-      const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
-      spark = closes.filter((v): v is number => v != null);
-    }
-  } catch { /* graceful */ }
-
-  const drawdownPct =
-    price != null && high52 != null && high52 > 0
-      ? ((price - high52) / high52) * 100
-      : null;
-
-  // 2) PER / PBR（quoteSummary・共有認証）
-  let per: number | null = null;
-  let pbr: number | null = null;
-  if (auth) {
-    try {
-      const r = await yfQuoteSummaryWithAuth(code, "summaryDetail,defaultKeyStatistics", auth);
-      const sd = r?.summaryDetail as Record<string, { raw?: number }> | undefined;
-      const ks = r?.defaultKeyStatistics as Record<string, { raw?: number }> | undefined;
-      per = sd?.trailingPE?.raw ?? null;
-      pbr = ks?.priceToBook?.raw ?? null;
-    } catch { /* graceful */ }
-  }
-
-  return { price, high52, drawdownPct, per, pbr, spark };
-}
-
-// 複数銘柄を並列取得（認証は1回だけ）
-export async function fetchWatchMetricsMap(codes: string[]): Promise<Record<string, WatchMetrics>> {
-  const auth = await getAuth();
-  const results = await Promise.all(
-    codes.map(c => fetchWatchMetrics(c, auth).catch((): WatchMetrics | null => null)),
-  );
-  const map: Record<string, WatchMetrics> = {};
-  codes.forEach((c, i) => { const m = results[i]; if (m) map[c] = m; });
-  return map;
-}
 
 export async function fetchWeeklyReviews(limit = 10): Promise<WeeklyReview[]> {
   const res = await fetch(

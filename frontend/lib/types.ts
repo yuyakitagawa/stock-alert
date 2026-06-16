@@ -77,15 +77,6 @@ export interface DailyQuote {
   fiftyTwoWeekLow:  number | null;
 }
 
-export interface WatchMetrics {
-  price:       number | null;  // 現在値
-  high52:      number | null;  // 52週高値
-  drawdownPct: number | null;  // 52週高値からの下落率（負の値=下落）
-  per:         number | null;  // 実績PER（Yahooフォールバック）
-  pbr:         number | null;  // PBR（Yahooフォールバック）
-  spark:       number[];       // 直近1ヶ月の終値（ミニチャート用）
-}
-
 export interface Activity {
   id:         number;
   ts:         string;

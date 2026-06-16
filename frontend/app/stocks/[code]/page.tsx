@@ -11,6 +11,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockChart from "@/components/StockChart";
 import StockLivePanel from "@/components/StockLivePanel";
+import BookmarkButton from "@/components/BookmarkButton";
 import { netStyle, signFmtArrow, probBand } from "@/lib/signals";
 import { GLOSSARY } from "@/lib/glossary";
 
@@ -93,6 +94,7 @@ export default async function StockDetailPage({ params }: Props) {
             <div className="space-y-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold text-white">{ranking.name}</h1>
+                <BookmarkButton code={code} variant="labeled" />
               </div>
               <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
                 <span className="font-mono font-semibold text-gray-400">{ranking.code}</span>

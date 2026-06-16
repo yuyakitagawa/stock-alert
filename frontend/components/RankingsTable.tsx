@@ -6,6 +6,7 @@ import { useLang } from "@/contexts/LanguageContext";
 import { UI } from "@/lib/i18n";
 import { GLOSSARY } from "@/lib/glossary";
 import { signFmtArrow, probBand } from "@/lib/signals";
+import BookmarkButton from "@/components/BookmarkButton";
 
 type SortKey = "rank" | "net" | "rise_prob" | "drop_prob" | "rel20" | "close";
 
@@ -138,6 +139,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
               <ThSort col="rel20"     label="日経比20日" hint={GLOSSARY.rel20.short}     className="text-right hidden lg:table-cell" />
               <th title={GLOSSARY.per.short} className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell cursor-help">PER</th>
               <th title={GLOSSARY.pbr.short} className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-right hidden xl:table-cell cursor-help">PBR</th>
+              <th className="w-10 px-2 py-3"><span className="sr-only">ブックマーク</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800/60">
@@ -181,11 +183,14 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                 <td className="px-3 py-2.5 text-right font-mono text-gray-500 hidden xl:table-cell">
                   {r.pbr != null ? `${fmt(r.pbr)}x` : "—"}
                 </td>
+                <td className="px-2 py-2.5 text-center">
+                  <BookmarkButton code={r.code} />
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-gray-600">
+                <td colSpan={10} className="px-4 py-12 text-center text-gray-600">
                   該当銘柄なし
                 </td>
               </tr>
@@ -229,6 +234,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
                 <span className="text-red-500/90">下落{probBand(r.drop_prob)}</span>
               </div>
             </div>
+            <BookmarkButton code={r.code} className="shrink-0 -mr-1" />
           </Link>
         ))}
         {filtered.length === 0 && (

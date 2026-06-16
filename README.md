@@ -26,14 +26,11 @@ web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 全アクション（実施中・実施済み）は `pdca/activity.py` 経由で Supabase `activity_log` に記録され、
 Webの **活動ログ**（/activity）・**チームレビュー**（/review）で誰でも状況把握できる。
 
-**値上げ力ウォッチリスト**（/watchlist）は、シェアを独占しインフレ下でも値上げを通せる toC ブランド銘柄の
-将来買い候補リスト（オーナー選定）。正本は `data/pricing_power_watchlist.csv`、フロントは `frontend/lib/watchlist.ts`
-の静的定数で持ち、当日の `web_rankings`（netスコア・シグナル）と銘柄コードで突き合わせて表示する。
-長期の押し目買い向けに、**直近1ヶ月のミニチャート**（Sparkline・緑=上昇/赤=下落）、**お得度**（52週高値からの下落率:
-−30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）、**PER / PBR**、**上昇↑/下落↓確率** を表示する。
-株価・チャート・52週高値は Yahoo Finance chart API（認証不要・`fetchWatchMetricsMap` で並列取得、各fetchにタイムアウト、ISR 1h）、
-PER は当日 `web_rankings` のファンダ値（Yahoo補完）。PBR は bps データ未整備の銘柄が多く「—」になりやすい。
-netスコア・確率は当日ランキング（全銘柄スコアリング）から取得。市場価格データが無い銘柄（上場廃止・売買停止等）は「データ未取得」と表示。シェア率・海外比率は公知ベースの概算。
+**ウォッチリスト**（/watchlist）は、ユーザーが自分で銘柄をブックマークして監視する**マイ・ウォッチリスト**。
+ログイン不要で、ブックマークは `localStorage`（端末/ブラウザごと）に保存する（実装: `frontend/lib/bookmarks.ts` の `useBookmarks` フック、
+キー `stocksignal:bookmarks`）。銘柄詳細ページのヘッダーとランキング各行の**しおりアイコン**（`frontend/components/BookmarkButton.tsx`）で追加/削除する。
+ウォッチリスト本体は当日の `web_rankings`（全銘柄スコア）から該当コードを引き、銘柄名・株価・**PER/PBR**・**ネットスコア（上昇↑/下落↓確率）**・推奨ラベルを表示する
+（`frontend/components/WatchlistClient.tsx`）。当日スコアが無い銘柄（上場廃止・売買停止・対象外等）は「未取得」と表示。ブックマークが0件のときは空状態を表示する。
 
 **会社説明**（銘柄詳細ページ /stocks/[code] の「この会社について」）は**全銘柄が対象**。
 - `web/generate_descriptions.py`：**2段階生成**で事実精度を重視。
