@@ -7,6 +7,23 @@ import { useCallback, useEffect, useState } from "react";
  */
 const KEY = "stocksignal:bookmarks";
 const EVENT = "stocksignal:bookmarks-changed";
+const SEED_FLAG = "stocksignal:bookmarks-seeded";
+
+/**
+ * 初期デフォルト（旧キュレーション「値上げ力ウォッチリスト」の toC 独占ブランド銘柄）。
+ * 初回訪問時に一度だけ種まきする。以後ユーザーが削除したら復活させない。
+ * カゴメ/カルビー/日清食品HD/アサヒGHD/ユニ・チャーム/花王/資生堂/ロート製薬/ピジョン/シマノ
+ */
+const DEFAULT_BOOKMARKS = ["2811", "2229", "2897", "2502", "8113", "4452", "4911", "4527", "7956", "7309"];
+
+function ensureSeeded() {
+  if (typeof window === "undefined") return;
+  if (localStorage.getItem(SEED_FLAG)) return; // 種まき済みなら何もしない
+  const existing = read();
+  const union = [...DEFAULT_BOOKMARKS, ...existing.filter((c) => !DEFAULT_BOOKMARKS.includes(c))];
+  localStorage.setItem(KEY, JSON.stringify(union));
+  localStorage.setItem(SEED_FLAG, "1");
+}
 
 function read(): string[] {
   if (typeof window === "undefined") return [];
@@ -31,6 +48,7 @@ export function useBookmarks() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    ensureSeeded();
     setCodes(read());
     setMounted(true);
     const sync = () => setCodes(read());
