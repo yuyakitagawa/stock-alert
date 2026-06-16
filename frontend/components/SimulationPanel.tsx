@@ -32,7 +32,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
-          毎日のネットスコア上位10銘柄を100株ずつ購入し、ネットスコアが5%未満に下がった日に売却した場合の仮想成績です。
+          QV戦略（Piotroski財務健全度0.67以上 × 52週安値圏 × 業績改善）でエントリーし、最大90日保有または条件消失で売却した場合の仮想成績です。
           手数料・税金は含みません。
         </p>
       </div>
@@ -232,7 +232,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-gray-600">売却済み ({sold.length}銘柄)</h3>
-              <span className="text-xs text-gray-600">ネットスコアが5%未満に下がった日に売却したと仮定</span>
+              <span className="text-xs text-gray-600">最大90日保有または条件消失（時間切れ/期末/drop急騰）で売却</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800/50">
               <table className="w-full text-xs font-mono opacity-60">

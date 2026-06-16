@@ -2,16 +2,26 @@ import { anonHeaders, sbUrl } from "./supabase";
 import { fetchLatestDate } from "./data";
 
 const SHARES = 100;
-const SELL_NET_THRESH = 5;   // ネットスコアがこれ未満に下がったら売却（信号消滅）
 const SIM_START = "2026-01-01"; // シミュレーション開始日（固定）
 
-interface RawRow {
-  code: string;
-  name: string;
-  close: number;
-  date: string;
-  net?: number;
-  recommend?: string;
+interface QvRow {
+  id:           number;
+  code:         string;
+  name:         string;
+  entry_date:   string;
+  exit_date:    string | null;
+  entry_price:  number;
+  exit_price:   number | null;
+  return_pct:   number | null;
+  reason:       string | null;
+  held_days:    number | null;
+  status:       string;
+}
+
+interface LatestRow {
+  code:      string;
+  close:     number;
+  recommend: string;
 }
 
 export interface SimPosition {
@@ -26,6 +36,7 @@ export interface SimPosition {
   currentSignal?:string;
   pnl:           number;
   pnlPct:        number;
+  reason?:       string;
 }
 
 export interface SimSummary {
@@ -46,140 +57,92 @@ export interface SimSummary {
   annualizedReturnPct:number;
 }
 
-// 特定コードの買い日以降、ネットスコアが閾値未満に下がった最初の日を売却日とする
-async function fetchFirstSell(code: string, afterDate: string): Promise<RawRow | null> {
-  const res = await fetch(
-    sbUrl(`web_rankings?code=eq.${code}&date=gt.${afterDate}&net=lt.${SELL_NET_THRESH}&order=date.asc&limit=1&select=code,close,date,net`),
-    { headers: anonHeaders(), next: { revalidate: 300 } }
-  );
-  if (!res.ok) return null;
-  const rows: RawRow[] = await res.json();
-  return rows[0] ?? null;
-}
-
+// QV戦略バックテスト結果（web_qv_sim）から実績シミュレーションを構築する。
+// QV戦略: Piotroski>=0.67 × pos52<0.45 × 業績改善、90日保有。
 export async function fetchSimulation(): Promise<{
   positions: SimPosition[];
   summary: SimSummary;
 }> {
-  // 毎日のネットスコア上位10銘柄（rank<=10）を買い候補とする。
-  // rank は export 時に net 降順で振られた日次順位（1 = 最高ネット）。
-  const [buyRows, latestDate] = await Promise.all([
+  const [qvRows, latestDate] = await Promise.all([
     (async () => {
-      // 💎 買いシグナルが初めて出た日を買いエントリーとする（2026-01-01以降）
-      const all: RawRow[] = [];
-      const pageSize = 1000;
-      let offset = 0;
-      const encoded = encodeURIComponent("💎 買い");
-      for (;;) {
-        const res = await fetch(
-          sbUrl(`web_rankings?recommend=eq.${encoded}&date=gte.${SIM_START}&order=date.asc,rank.asc&select=code,name,close,date,net&limit=${pageSize}&offset=${offset}`),
-          { headers: anonHeaders(), next: { revalidate: 300 } }
-        );
-        if (!res.ok) break;
-        const rows: RawRow[] = await res.json();
-        all.push(...rows);
-        if (rows.length < pageSize) break;
-        offset += pageSize;
-      }
-      return all;
+      const res = await fetch(
+        sbUrl(`web_qv_sim?order=entry_date.asc&limit=200`),
+        { headers: anonHeaders(), cache: "no-store" }
+      );
+      if (!res.ok) return [] as QvRow[];
+      return res.json() as Promise<QvRow[]>;
     })(),
     fetchLatestDate(),
   ]);
-  const since = SIM_START;
 
-  // 銘柄ごとに「最初にtop10入りした日」を買い日とする
-  const firstBuy = new Map<string, RawRow>();
-  for (const row of buyRows) {
-    if (!firstBuy.has(row.code)) firstBuy.set(row.code, row);
-  }
-
-  // 最新価格マップ
-  let latestMap = new Map<string, RawRow>();
-  if (latestDate) {
-    const pageSize = 1000;
-    let offset = 0;
-    for (;;) {
-      const res = await fetch(
-        sbUrl(`web_rankings?date=eq.${latestDate}&select=code,close,recommend&order=rank.asc&limit=${pageSize}&offset=${offset}`),
-        { headers: anonHeaders(), next: { revalidate: 300 } }
-      );
-      if (!res.ok) break;
-      const rows: RawRow[] = await res.json();
+  // 保有中のコードに現在価格を取得
+  const activeCodes = qvRows.filter(r => r.status === "active").map(r => r.code);
+  let latestMap = new Map<string, LatestRow>();
+  if (activeCodes.length > 0 && latestDate) {
+    const inFilter = activeCodes.map(c => `code.eq.${c}`).join(",");
+    const res = await fetch(
+      sbUrl(`web_rankings?date=eq.${latestDate}&or=(${inFilter})&select=code,close,recommend`),
+      { headers: anonHeaders(), cache: "no-store" }
+    );
+    if (res.ok) {
+      const rows: LatestRow[] = await res.json();
       for (const r of rows) latestMap.set(r.code, r);
-      if (rows.length < pageSize) break;
-      offset += pageSize;
     }
   }
 
-  // 銘柄ごとに最初の売りシグナルを並列取得
-  const buyEntries = Array.from(firstBuy.entries());
-  const sellResults = await Promise.all(
-    buyEntries.map(([code, buy]) => fetchFirstSell(code, buy.date))
-  );
-  const firstSell = new Map<string, RawRow | null>(
-    buyEntries.map(([code], i) => [code, sellResults[i]])
-  );
-
-  const positions: SimPosition[] = buyEntries
-    .sort(([, a], [, b]) => a.date.localeCompare(b.date))
-    .map(([code, buy]) => {
-      const sell = firstSell.get(code) ?? null;
-      if (sell) {
-        const pnl = (sell.close - buy.close) * SHARES;
-        return {
-          code,
-          name:      buy.name,
-          buyDate:   buy.date,
-          buyPrice:  buy.close,
-          status:    "sold" as const,
-          sellDate:  sell.date,
-          sellPrice: sell.close,
-          pnl,
-          pnlPct:    (sell.close - buy.close) / buy.close * 100,
-        };
-      } else {
-        const latest = latestMap.get(code);
-        const currentPrice = latest?.close ?? buy.close;
-        const pnl = (currentPrice - buy.close) * SHARES;
-        return {
-          code,
-          name:          buy.name,
-          buyDate:       buy.date,
-          buyPrice:      buy.close,
-          status:        "held" as const,
-          currentPrice,
-          currentSignal: latest?.recommend,
-          pnl,
-          pnlPct:        (currentPrice - buy.close) / buy.close * 100,
-        };
-      }
-    });
+  const positions: SimPosition[] = qvRows.map(row => {
+    if (row.status === "active") {
+      const latest  = latestMap.get(row.code);
+      const curPrice = latest?.close ?? row.entry_price;
+      const pnlPct   = (curPrice - row.entry_price) / row.entry_price * 100;
+      return {
+        code:          row.code,
+        name:          row.name,
+        buyDate:       row.entry_date,
+        buyPrice:      row.entry_price,
+        status:        "held" as const,
+        currentPrice:  curPrice,
+        currentSignal: latest?.recommend,
+        pnl:           (curPrice - row.entry_price) * SHARES,
+        pnlPct,
+      };
+    } else {
+      const exitPx  = row.exit_price ?? row.entry_price;
+      const pnlPct  = row.return_pct ?? (exitPx - row.entry_price) / row.entry_price * 100;
+      return {
+        code:      row.code,
+        name:      row.name,
+        buyDate:   row.entry_date,
+        buyPrice:  row.entry_price,
+        status:    "sold" as const,
+        sellDate:  row.exit_date ?? undefined,
+        sellPrice: exitPx,
+        pnl:       (exitPx - row.entry_price) * SHARES,
+        pnlPct,
+        reason:    row.reason ?? undefined,
+      };
+    }
+  });
 
   const held = positions.filter(p => p.status === "held");
   const sold = positions.filter(p => p.status === "sold");
 
-  // 全ポジション合算（保有中 + 売却済み）
-  const allCost  = positions.reduce((s, p) => s + p.buyPrice * SHARES, 0);
-  const allPnl   = positions.reduce((s, p) => s + p.pnl, 0);
-
+  const allCost      = positions.reduce((s, p) => s + p.buyPrice * SHARES, 0);
+  const allPnl       = positions.reduce((s, p) => s + p.pnl, 0);
   const allWinCount  = positions.filter(p => p.pnl > 0).length;
   const avgReturnPct = positions.length > 0
-    ? positions.reduce((s, p) => s + p.pnlPct, 0) / positions.length
-    : 0;
-  const maxGainPct = positions.length > 0 ? Math.max(...positions.map(p => p.pnlPct)) : 0;
-  const maxLossPct = positions.length > 0 ? Math.min(...positions.map(p => p.pnlPct)) : 0;
+    ? positions.reduce((s, p) => s + p.pnlPct, 0) / positions.length : 0;
+  const maxGainPct   = positions.length > 0 ? Math.max(...positions.map(p => p.pnlPct)) : 0;
+  const maxLossPct   = positions.length > 0 ? Math.min(...positions.map(p => p.pnlPct)) : 0;
 
-  // 期間リターン: 総損益 ÷ 総投資額（独立トレードの合算として正確）
-  const totalPnlPct = allCost > 0 ? allPnl / allCost : 0;
+  const totalPnlPct       = allCost > 0 ? allPnl / allCost : 0;
   const compoundReturnPct = totalPnlPct * 100;
 
-  // 年率換算: 期間リターンを観測期間のカレンダー日数で年率換算
-  const sinceMs   = new Date(since).getTime();
-  const latestMs  = new Date(latestDate ?? since).getTime();
-  const calDays   = Math.max(1, (latestMs - sinceMs) / (1000 * 60 * 60 * 24));
+  const sinceMs  = new Date(SIM_START).getTime();
+  const latestMs = new Date(latestDate ?? SIM_START).getTime();
+  const calDays  = Math.max(1, (latestMs - sinceMs) / (1000 * 60 * 60 * 24));
   const annualizedReturnPct = positions.length > 0
-    ? (Math.pow(1 + totalPnlPct, 365 / calDays) - 1) * 100
-    : 0;
+    ? (Math.pow(1 + totalPnlPct, 365 / calDays) - 1) * 100 : 0;
 
   return {
     positions,
@@ -191,7 +154,7 @@ export async function fetchSimulation(): Promise<{
       heldCount:           held.length,
       soldCount:           sold.length,
       winCount:            held.filter(p => p.pnl > 0).length,
-      since,
+      since:               SIM_START,
       allCount:            positions.length,
       allWinCount,
       avgReturnPct,
