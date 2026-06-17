@@ -42,5 +42,5 @@
 - [x] C2. DB `edinet_holdings` テーブル＋ `upsert_edinet_holdings` / `get_edinet_holdings_recent(days, codes)`。日次蓄積（point-in-time）。
 - [x] C3. `tools/scan_large_holdings.py`: 直近N日スキャン→DB蓄積→カタリスト候補CSVと突合→`data/edinet_holding_matches.csv`。スモークテスト合格（350/360抽出・コード正規化・突合・名称解決OK）。
 - [x] C4. README/.gitignore更新（同コミット）。model/page.tsx は選定ロジック未変更のため対象外。
-- [ ] C5. クラウド化: `EDINET_API_KEY` を GitHub Secrets に追加し、日次ワークフローでスキャン実行（イベント蓄積の自動化）。
+- [x] C5. クラウド化: daily_alert.yml に Step2b（カタリスト候補スクリーン）＋Step2c（EDINET大量保有スキャン --days 3）を追加。`.env` に EDINET_API_KEY を流し込み、結果CSVをアーティファクト化。stock_alert.db キャッシュで edinet_holdings が日次蓄積。**残: ユーザーが GitHub Secrets に `EDINET_API_KEY` を登録**（未登録でもスキャンはスキップされ本体パイプラインは無害）。
 - [ ] C6. 数週間フォワードで「突合ヒット銘柄」の事後株価を評価（過去BT不可のため）。

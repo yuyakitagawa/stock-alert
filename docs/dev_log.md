@@ -16,7 +16,11 @@
 **検証:** スモークテスト合格（350/360のみ抽出・有報120は除外・secCode正規化・DB upsert/絞込・
 名称解決OK）。py_compile通過。※過去開示は蓄積方式のためBT不可＝フォワード評価のみ。
 
-**残:** C5 `EDINET_API_KEY` を GitHub Secrets 登録＋日次ワークフロー化、C6 数週後にヒット銘柄の事後評価。
+**クラウド化(C5):** daily_alert.yml に Step2b（カタリスト候補スクリーン --min-turnover 500）＋
+Step2c（EDINET大量保有スキャン --days 3）を追加。`.env` に EDINET_API_KEY 流し込み、結果CSVを
+アーティファクト化。edinet_holdings は stock_alert.db キャッシュで日次蓄積。両ステップとも
+continue-on-error＝本体パイプラインは無害。**残:** ユーザーが GitHub Secrets に EDINET_API_KEY 登録、
+C6 数週後にヒット銘柄の事後評価。
 
 ---
 
