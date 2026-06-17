@@ -35,5 +35,12 @@
 - [ ] B4. 日次で「定性シグナル付き選定」をログ保存（フォワードテスト用の記録）
 - [ ] B5. 数週間後、定性あり/なしの実績を比較評価
 
-## 保留
-- [ ] C. EDINET登録（⑤の過去検証）— A/Bの結果次第
+## C: EDINET大量保有スキャナー（①②先回り・イベント駆動）— フォワード
+> 結論: 選定シグナルへの「成長」上乗せが2連続失敗（eps/進捗率）したため、別メカニズム＝
+> 「構造的に改革が起きやすい候補」×「実際に誰かが5%超を買い集めた事実」の突合に転換。
+- [x] C1. `lib/edinet.py`: EDINET API v2クライアント。documents.jsonから大量保有(350)/変更(360)報告書を抽出、secCode 5桁→4桁正規化。失敗時[]・例外非伝播（alt_data流儀）。
+- [x] C2. DB `edinet_holdings` テーブル＋ `upsert_edinet_holdings` / `get_edinet_holdings_recent(days, codes)`。日次蓄積（point-in-time）。
+- [x] C3. `tools/scan_large_holdings.py`: 直近N日スキャン→DB蓄積→カタリスト候補CSVと突合→`data/edinet_holding_matches.csv`。スモークテスト合格（350/360抽出・コード正規化・突合・名称解決OK）。
+- [x] C4. README/.gitignore更新（同コミット）。model/page.tsx は選定ロジック未変更のため対象外。
+- [ ] C5. クラウド化: `EDINET_API_KEY` を GitHub Secrets に追加し、日次ワークフローでスキャン実行（イベント蓄積の自動化）。
+- [ ] C6. 数週間フォワードで「突合ヒット銘柄」の事後株価を評価（過去BT不可のため）。
