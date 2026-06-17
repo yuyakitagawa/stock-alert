@@ -20,7 +20,7 @@ Usage:
 import sys, os, csv, json, argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.edinet import scan_large_holdings, _api_key
+from lib.edinet import scan_large_holdings, verify_api, _api_key
 from lib.db import get_edinet_holdings_recent
 
 
@@ -51,7 +51,19 @@ def main():
     p.add_argument("--candidates", type=str, default="data/catalyst_candidates.csv")
     p.add_argument("--out", type=str, default="data/edinet_holding_matches.csv")
     p.add_argument("--no-fetch", action="store_true", help="スキャンせずDB蓄積分だけ突合")
+    p.add_argument("--verify", action="store_true", help="APIキーの有効性のみ確認して終了")
     args = p.parse_args()
+
+    if args.verify:
+        v = verify_api()
+        print(f"EDINET APIキー検証: date={v['date']} status={v['status']} "
+              f"総件数={v['total']} 大量保有={v['large']} → {v['reason']}")
+        if v["ok"]:
+            print("✅ PASS: キーは有効。大量保有報告書を取得できます。")
+            sys.exit(0)
+        else:
+            print(f"❌ FAIL: {v['reason']}")
+            sys.exit(1)
 
     if not _api_key():
         print("⚠️ EDINET_API_KEY が未設定です（.env または環境変数）。スキャンをスキップします。")

@@ -1,0 +1,56 @@
+name: EDINET Scan Test
+
+# EDINET_API_KEY の有効性確認＆スキャン単体テスト用（手動実行のみ・メール未送信）。
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  edinet-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" > ~/stock-alert/.env
+
+      - name: APIキー検証（無効ならここで失敗）
+        run: cd ~/stock-alert && python tools/scan_large_holdings.py --verify
+
+      - name: Restore DB cache（突合用の候補データ・読み取りのみ）
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/stock_alert.db
+          key: stock-alert-db-restore-only
+          restore-keys: |
+            stock-alert-db-
+
+      - name: EDINETスキャン＋突合（蓄積はこのジョブ限り・本番DBキャッシュは保存しない）
+        run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 5
+
+      - name: 結果をアーティファクト保存
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: edinet-scan-test-${{ github.run_number }}
+          path: |
+            data/catalyst_candidates.csv
+            data/edinet_holding_matches.csv
+          retention-days: 7
+          if-no-files-found: ignore

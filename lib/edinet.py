@@ -78,6 +78,43 @@ def fetch_documents_list(target_date: "str | date") -> list:
         return []
 
 
+def verify_api(target_date: "str | date | None" = None) -> dict:
+    """APIキーの有効性を確認する。指定日（既定=直近の平日）の書類一覧を取得し、
+    HTTPステータス・総件数・大量保有件数を返す。
+
+    Returns: {'ok': bool, 'reason': str, 'status': int|None, 'total': int, 'large': int, 'date': str}
+    """
+    if not _api_key():
+        return {"ok": False, "reason": "EDINET_API_KEY 未設定", "status": None,
+                "total": 0, "large": 0, "date": ""}
+    if target_date is None:
+        d = date.today()
+        while d.weekday() >= 5:  # 土日は遡る
+            d -= timedelta(days=1)
+        target_date = d
+    if isinstance(target_date, date):
+        target_date = target_date.isoformat()
+    try:
+        resp = requests.get(
+            f"{_API_BASE}/documents.json",
+            params={"date": target_date, "type": 2, "Subscription-Key": _api_key()},
+            timeout=15,
+        )
+        status = resp.status_code
+        if status != 200:
+            reason = "キー無効/権限不足" if status in (401, 403) else f"HTTP {status}"
+            return {"ok": False, "reason": reason, "status": status,
+                    "total": 0, "large": 0, "date": target_date}
+        results = resp.json().get("results", []) or []
+        large = sum(1 for r in results
+                    if str(r.get("docTypeCode", "")) in _LARGE_HOLDING_TYPES)
+        return {"ok": True, "reason": "OK", "status": status,
+                "total": len(results), "large": large, "date": target_date}
+    except Exception as e:
+        return {"ok": False, "reason": f"例外: {e}", "status": None,
+                "total": 0, "large": 0, "date": target_date}
+
+
 def extract_large_holdings(results: list, disc_date: str) -> list:
     """documents.json の results から大量保有報告書（350/360）のみ抽出して整形。
 
