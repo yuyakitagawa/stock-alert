@@ -43,6 +43,19 @@ def latest_bps_roe(con, code):
     return bps, roe
 
 
+def latest_bps_split_safe(con, code):
+    """分割調整済み株価(price_cache)と整合するBPSを返す。
+    J-Quants(jquants_fin_summary)のBPSは開示ごとに分割後株数で再表示されるため、
+    株式分割を実施した銘柄でも分割調整漏れが起きない。直近開示のbps(>0)を採用。
+    J-Quants未取得の銘柄は None（呼び出し側でfundamentals_annual値にフォールバック）。"""
+    r = con.execute(
+        "SELECT bps FROM jquants_fin_summary "
+        "WHERE code=? AND bps IS NOT NULL AND bps>0 "
+        "ORDER BY disc_date DESC LIMIT 1", (code,)
+    ).fetchone()
+    return r[0] if r else None
+
+
 def latest_equity_ratio(con, code):
     """jquants_fin_summary から直近の equity/ta（自己資本比率）。"""
     r = con.execute(
@@ -116,7 +129,10 @@ def main():
     cands = []
     for code in codes:
         close = latest_close(con, code)
-        bps, roe = latest_bps_roe(con, code)
+        bps_kab, roe = latest_bps_roe(con, code)
+        # PBRは分割調整済み株価と整合するJ-Quants BPSを優先（分割調整漏れ防止）。
+        # J-Quants未取得の銘柄のみ fundamentals_annual(株探) 値にフォールバック。
+        bps = latest_bps_split_safe(con, code) or bps_kab
         if close is None or bps is None or bps <= 0 or roe is None:
             continue
         pbr = close / bps

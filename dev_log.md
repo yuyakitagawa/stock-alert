@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-06-17 PBR分割調整バグの根本修正（BPSソースをJ-Quantsへ）
+
+```
+方針: ユーザー指示「4000銘柄全て正値に」→ Web全件スクレイプは非現実的なため
+      根本原因（BPSソース）をコード修正し、DB再計算で全銘柄を一括正値化する。
+
+修正:
+  1. tools/screen_catalyst_candidates.py
+     - latest_bps_split_safe() を追加。jquants_fin_summary の直近開示BPS(>0)を採用。
+       J-QuantsのBPSは開示ごとに分割後株数で再表示され、分割調整漏れが起きない。
+     - PBR算出で J-Quants BPS を優先、未取得銘柄のみ株探(fundamentals_annual)へフォールバック。
+  2. lib/fundamentals.py
+     - _jq_split_safe_bps() を追加し get_pit_valuation(表示PER/PBR用)で優先採用。
+       → Web/メール表示PBRの分割調整漏れを是正（全銘柄対象）。
+
+未変更（意図的）:
+  - pit_fundamental_features() の pbr（60次元特徴量）は学習済みモデルとの分布整合のため
+    据え置き。分割調整BPSへの移行は金曜再学習時に申告のうえ実施（CLAUDE.md §0）。
+
+検証状況:
+  - 当リモート環境はDBが空のため未検証（compileのみOK）。
+  - 次のDB有環境（ローカル/GitHub Actions）で screener 再実行 →
+    東宝(9602)/マブチ(6592)/東邦ガス(9533) 等の既知バグ銘柄で実PBRと一致するか照合する。
+```
+
+- 判定: 根本修正（要DB環境で再生成・照合）。データ修正版CSVは前コミットで反映済み。
+
+---
+
 ## 2026-06-12 モデル再学習 + QV戦略 2026年バックテスト
 
 ```
