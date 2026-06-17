@@ -1,0 +1,161 @@
+"""
+lib/edinet.py
+EDINET API v2 経由で大量保有報告書（5%ルール）を取得するモジュール。
+
+目的（GARP・イベント駆動）:
+  「構造的に買収・改革が起きやすい候補（カタリストスクリーン）」× 「実際に誰かが
+  5%超を買い集めた事実（大量保有報告書）」を突合し、本物の先回り候補を洗い出す。
+
+必要なもの:
+  - 環境変数 EDINET_API_KEY（EDINET API v2 のサブスクリプションキー）
+    ※ .env に置けば自動ロード。クラウドは GitHub Secrets に登録。
+
+設計方針（既存 alt_data.py に倣う）:
+  - DBキャッシュ前提（日次スキャンで edinet_holdings に蓄積）
+  - 失敗時は常に [] を返す（例外は伝播しない）
+  - documents.json のメタデータのみ使用（誰が・どの銘柄を・いつ）。
+    保有割合は XBRL 本文にあるが本フェーズでは未取得（突合には書類の有無で十分）。
+
+docTypeCode:
+  350 = 大量保有報告書
+  360 = 変更報告書（保有割合の増減・追加取得）
+"""
+import os
+import requests
+from datetime import date, timedelta
+
+_API_BASE = "https://api.edinet-fsa.go.jp/api/v2"
+_LARGE_HOLDING_TYPES = {"350", "360"}  # 大量保有報告書 / 変更報告書
+
+
+def _api_key() -> str:
+    """EDINET_API_KEY を返す。.env も探索。未設定なら空文字。"""
+    key = os.environ.get("EDINET_API_KEY", "")
+    if not key:
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        if os.path.exists(env_path):
+            for line in open(env_path):
+                line = line.strip()
+                if line.startswith("EDINET_API_KEY=") and not line.startswith("#"):
+                    key = line.split("=", 1)[1].strip()
+                    break
+    return key
+
+
+def _normalize_sec_code(sec_code: str) -> "str | None":
+    """EDINET の secCode（5桁。末尾0付き）を 4桁の証券コードに正規化。"""
+    if not sec_code:
+        return None
+    s = str(sec_code).strip()
+    if len(s) == 5 and s.endswith("0"):
+        return s[:4]
+    if len(s) == 4:
+        return s
+    return s[:4] if len(s) >= 4 else None
+
+
+def fetch_documents_list(target_date: "str | date") -> list:
+    """指定日に EDINET へ提出された書類メタデータ一覧を返す。
+
+    Returns: documents.json の results 配列（取得失敗時は []）。
+    """
+    if isinstance(target_date, date):
+        target_date = target_date.isoformat()
+    key = _api_key()
+    if not key:
+        return []
+    try:
+        resp = requests.get(
+            f"{_API_BASE}/documents.json",
+            params={"date": target_date, "type": 2, "Subscription-Key": key},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return data.get("results", []) or []
+    except Exception:
+        return []
+
+
+def verify_api(target_date: "str | date | None" = None) -> dict:
+    """APIキーの有効性を確認する。指定日（既定=直近の平日）の書類一覧を取得し、
+    HTTPステータス・総件数・大量保有件数を返す。
+
+    Returns: {'ok': bool, 'reason': str, 'status': int|None, 'total': int, 'large': int, 'date': str}
+    """
+    if not _api_key():
+        return {"ok": False, "reason": "EDINET_API_KEY 未設定", "status": None,
+                "total": 0, "large": 0, "date": ""}
+    if target_date is None:
+        d = date.today()
+        while d.weekday() >= 5:  # 土日は遡る
+            d -= timedelta(days=1)
+        target_date = d
+    if isinstance(target_date, date):
+        target_date = target_date.isoformat()
+    try:
+        resp = requests.get(
+            f"{_API_BASE}/documents.json",
+            params={"date": target_date, "type": 2, "Subscription-Key": _api_key()},
+            timeout=15,
+        )
+        status = resp.status_code
+        if status != 200:
+            reason = "キー無効/権限不足" if status in (401, 403) else f"HTTP {status}"
+            return {"ok": False, "reason": reason, "status": status,
+                    "total": 0, "large": 0, "date": target_date}
+        results = resp.json().get("results", []) or []
+        large = sum(1 for r in results
+                    if str(r.get("docTypeCode", "")) in _LARGE_HOLDING_TYPES)
+        return {"ok": True, "reason": "OK", "status": status,
+                "total": len(results), "large": large, "date": target_date}
+    except Exception as e:
+        return {"ok": False, "reason": f"例外: {e}", "status": None,
+                "total": 0, "large": 0, "date": target_date}
+
+
+def extract_large_holdings(results: list, disc_date: str) -> list:
+    """documents.json の results から大量保有報告書（350/360）のみ抽出して整形。
+
+    Returns: list of dict（doc_id, sec_code, filer_name, doc_type_code,
+             doc_description, submit_date, disc_date）。
+    """
+    records = []
+    for r in results:
+        if str(r.get("docTypeCode", "")) not in _LARGE_HOLDING_TYPES:
+            continue
+        sec_code = _normalize_sec_code(r.get("secCode"))
+        records.append({
+            "doc_id": r.get("docID"),
+            "sec_code": sec_code,
+            "filer_name": r.get("filerName"),
+            "doc_type_code": str(r.get("docTypeCode", "")),
+            "doc_description": r.get("docDescription"),
+            "submit_date": r.get("submitDateTime"),
+            "disc_date": disc_date,
+        })
+    return [x for x in records if x["doc_id"]]
+
+
+def scan_large_holdings(days_back: int = 7, persist: bool = True) -> list:
+    """直近 days_back 日分の大量保有報告書をスキャンして DB に蓄積。
+
+    Args:
+        days_back: 何日前まで遡るか（EDINETは過去5年保持、当日含む）。
+        persist:   True なら edinet_holdings テーブルへ upsert。
+
+    Returns: 取得した全レコード（dict のリスト）。
+    """
+    from lib.db import upsert_edinet_holdings
+
+    all_records = []
+    today = date.today()
+    for i in range(days_back):
+        d = (today - timedelta(days=i)).isoformat()
+        results = fetch_documents_list(d)
+        recs = extract_large_holdings(results, disc_date=d)
+        if recs and persist:
+            upsert_edinet_holdings(recs)
+        all_records.extend(recs)
+    return all_records

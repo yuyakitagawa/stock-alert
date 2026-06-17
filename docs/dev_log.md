@@ -1,4 +1,29 @@
 
+## 2026-06-17(3): EDINET大量保有スキャナー実装（イベント駆動・先回り検出）
+
+**動機:** 選定シグナルへの「成長」上乗せが2連続失敗（eps_growth/進捗率）。別メカニズムへ転換。
+「構造的に改革・買収が起きやすい候補（カタリストスクリーン）」×「実際に誰かが5%超を
+買い集めた事実（大量保有報告書）」の突合で、本物の先回り候補を洗い出す。
+
+**実装:**
+- `lib/edinet.py`: EDINET API v2クライアント。documents.json（type=2）から大量保有報告書
+  (docTypeCode=350)/変更報告書(360)を抽出。secCode 5桁→4桁正規化。失敗時[]・例外非伝播。
+- DB `edinet_holdings` テーブル＋ `upsert_edinet_holdings` / `get_edinet_holdings_recent(days, codes)`。
+  日次でイベント蓄積（point-in-time、doc_id主キーで重複排除）。
+- `tools/scan_large_holdings.py`: 直近N日スキャン→DB蓄積→`data/catalyst_candidates.csv` と
+  突合→`data/edinet_holding_matches.csv` 出力。code_name_map で銘柄名解決。
+
+**検証:** スモークテスト合格（350/360のみ抽出・有報120は除外・secCode正規化・DB upsert/絞込・
+名称解決OK）。py_compile通過。※過去開示は蓄積方式のためBT不可＝フォワード評価のみ。
+
+**クラウド化(C5):** daily_alert.yml に Step2b（カタリスト候補スクリーン --min-turnover 500）＋
+Step2c（EDINET大量保有スキャン --days 3）を追加。`.env` に EDINET_API_KEY 流し込み、結果CSVを
+アーティファクト化。edinet_holdings は stock_alert.db キャッシュで日次蓄積。両ステップとも
+continue-on-error＝本体パイプラインは無害。**残:** ユーザーが GitHub Secrets に EDINET_API_KEY 登録、
+C6 数週後にヒット銘柄の事後評価。
+
+---
+
 ## 2026-06-17(2): 進捗率(上方修正先回り)を選定加点で検証 → 不採用
 
 **動機:** GARP方針「未来の業績成長×割安」。会社予想に対する累計実績の進み具合（進捗率）で
