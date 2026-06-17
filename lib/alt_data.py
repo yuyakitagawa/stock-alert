@@ -98,13 +98,25 @@ def get_margin_data(code: str) -> "dict | None":
 
 # ── 2. TDnet適時開示 ──────────────────────────────────────────────────────
 
-# イベントタイプ分類キーワード
+# イベントタイプ分類キーワード（前方優先＝具体的・信頼度の高い分類を先に。
+# 汎用的な ma は最後＝「完全子会社化」等の具体イベントに先取りさせる）
 _EVENT_KEYWORDS = {
-    "buyback":   ["自己株式取得", "自社株買い", "自己株式の取得"],
-    "dividend":  ["配当予想の修正", "増配", "配当金", "特別配当"],
-    "upward":    ["業績予想の修正（上方）", "上方修正", "業績上方"],
-    "downward":  ["業績予想の修正（下方）", "下方修正", "業績下方"],
-    "ma":        ["合併", "買収", "M&A", "子会社化", "株式取得"],
+    "buyback":     ["自己株式取得", "自社株買い", "自己株式の取得"],
+    "dividend":    ["配当予想の修正", "増配", "配当金", "特別配当", "記念配当"],
+    "upward":      ["業績予想の修正（上方）", "上方修正", "業績上方"],
+    "downward":    ["業績予想の修正（下方）", "下方修正", "業績下方"],
+    # ⑤ 需給・ガバナンス（ma より具体的なので先に判定）
+    "tob":         ["公開買付", "TOB", "ＴＯＢ", "株式公開買付"],
+    "parent":      ["完全子会社化", "親子上場", "上場廃止", "非公開化", "MBO"],
+    "mgmt":        ["代表取締役の異動", "社長交代", "経営体制", "代表取締役異動"],
+    "holding":     ["大量保有", "変更報告書"],
+    # ③ 強いカタリスト（事業構造の変化）
+    "alliance":    ["業務提携", "資本提携", "資本業務提携", "協業", "戦略的提携"],
+    "order":       ["受注", "大型契約", "長期契約", "基本合意"],
+    "newbiz":      ["新製品", "新サービス", "新規事業", "市場参入", "事業開始"],
+    "restructure": ["構造改革", "事業再編", "事業譲渡", "撤退", "希望退職", "中期経営計画"],
+    # 汎用M&A（最後＝catch-all）
+    "ma":          ["合併", "買収", "M&A", "子会社化", "株式取得"],
 }
 
 
@@ -202,7 +214,9 @@ def summarize_tdnet_events(events: list) -> dict:
     Returns: {'buyback': bool, 'dividend': bool, 'upward': bool, 'downward': bool, 'ma': bool,
               'days_since_buyback': int|None, 'days_since_upward': int|None}
     """
-    result = {t: False for t in ["buyback", "dividend", "upward", "downward", "ma"]}
+    result = {t: False for t in ["buyback", "dividend", "upward", "downward", "ma",
+                                  "tob", "alliance", "order", "newbiz", "restructure",
+                                  "parent", "mgmt", "holding"]}
     result["days_since_buyback"] = None
     result["days_since_upward"]  = None
     today = date.today()
@@ -390,6 +404,7 @@ def get_alt_signals(code: str, name: str = "") -> dict:
         "tdnet_events": [],
         "has_buyback": False, "has_upward": False, "has_downward": False,
         "days_since_buyback": None, "days_since_upward": None,
+        "growth_catalysts": [], "has_growth_catalyst": False,
         "trend_score": 0.0,
     }
 
@@ -415,6 +430,12 @@ def get_alt_signals(code: str, name: str = "") -> dict:
         result["has_downward"]        = summary.get("downward", False)
         result["days_since_buyback"]  = summary.get("days_since_buyback")
         result["days_since_upward"]   = summary.get("days_since_upward")
+        # ③⑤ 将来成長カタリスト（GARP定性シグナル・フォワードテスト用）
+        # buyback/dividendは資本還元、tob/parentはプレミアム、alliance/order/newbizは事業拡大
+        _growth_types = ["buyback", "dividend", "tob", "alliance", "order", "newbiz", "parent"]
+        fired = [t for t in _growth_types if summary.get(t)]
+        result["growth_catalysts"]     = fired
+        result["has_growth_catalyst"]  = len(fired) > 0
 
     # Googleトレンド（銘柄名で検索）
     if name:

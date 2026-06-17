@@ -130,6 +130,10 @@ def parse_row(row: pd.Series) -> dict:
         "payout_ratio": _f(row.get("PayoutRatioAnn")),
         "sh_out":       _f(row.get("ShOutFY")),
         "tr_sh":        _f(row.get("TrShFY")),
+        # 通期会社予想（進捗率＝累計実績NP÷FNP の計算に使用）
+        "fnp":          _f(row.get("FNP")),
+        "fop":          _f(row.get("FOP")),
+        "fsales":       _f(row.get("FSales")),
     }
 
 

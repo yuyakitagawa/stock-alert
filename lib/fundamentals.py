@@ -229,3 +229,45 @@ def pit_fundamental_features(code, target_date, price):
         result["payout"]          = fd.get("payout")
         result["accruals"]        = fd.get("accruals")
     return result
+
+
+# ── 進捗率（会社予想に対する累計実績の進み具合）─────────────────────────────
+# GARP: 「未来の業績成長を割安なうちに」捉えるための先行指標。
+# 四半期の累計実績NP ÷ 通期会社予想FNP を、その四半期の期待ペースと比較する。
+# 期待を上回るペース（progress_vs_pace > 1）= 通期上方修正の先回りシグナル。
+_QTR_EXPECTED_PACE = {"1Q": 0.25, "2Q": 0.50, "3Q": 0.75}
+
+
+def get_progress_rate(code, as_of_date):
+    """as_of_date 時点で既知の最新四半期開示から進捗率を point-in-time で返す。
+
+    返り値: {
+      "progress_ratio":   float | None,  # 累計実績NP / 通期予想FNP
+      "progress_vs_pace": float | None,  # progress_ratio / 四半期期待ペース（>1=上振れ）
+      "doc_type":         str   | None,  # 1Q/2Q/3Q（FYは中間進捗の意味を持たないためNone扱い）
+      "disc_date":        str   | None,
+    }
+    データ不足時は各値 None。
+    """
+    from lib.db import get_jquants_fin_history
+    none_result = {"progress_ratio": None, "progress_vs_pace": None,
+                   "doc_type": None, "disc_date": None}
+    as_of_iso = as_of_date.isoformat() if hasattr(as_of_date, "isoformat") else str(as_of_date)
+    rows = get_jquants_fin_history(str(code), as_of_iso, n=1)
+    if not rows:
+        return none_result
+    r = rows[0]
+    doc_type = r.get("doc_type")
+    np_v = r.get("np")
+    fnp_v = r.get("fnp")
+    # 中間四半期（1Q/2Q/3Q）かつ 予想NPが正のときのみ進捗率が意味を持つ
+    if doc_type not in _QTR_EXPECTED_PACE or np_v is None or fnp_v is None or fnp_v <= 0:
+        return none_result
+    progress_ratio = np_v / fnp_v
+    pace = _QTR_EXPECTED_PACE[doc_type]
+    return {
+        "progress_ratio":   progress_ratio,
+        "progress_vs_pace": progress_ratio / pace,
+        "doc_type":         doc_type,
+        "disc_date":        r.get("disc_date"),
+    }
