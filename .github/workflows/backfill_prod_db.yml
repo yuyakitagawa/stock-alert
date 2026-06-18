@@ -50,7 +50,8 @@ jobs:
           restore-keys: |
             stock-alert-db-
 
-      - name: ① ファンダ取得（kabutan → fundamentals_annual：ROE/BPS/EPS/発表日）
+      - name: ① ファンダ取得（kabutan → fundamentals_annual）※クラウドはIPブロックで取れないため任意
+        continue-on-error: true
         run: |
           cd ~/stock-alert
           LIM="${{ github.event.inputs.fund_limit }}"
@@ -60,8 +61,8 @@ jobs:
             python tools/fetch_fundamentals_history.py
           fi
 
-      - name: ② J-Quants財務取得（jquants_fin_summary：自己資本比率/会社予想・①の開示日を使用）
-        run: cd ~/stock-alert && python tools/fetch_jquants_fin.py --resume
+      - name: ② J-Quants財務取得（jquants_fin_summary：純資産/総資産/営業益/売上/予想・全営業日）
+        run: cd ~/stock-alert && python tools/fetch_jquants_fin.py --all-days --resume
 
       - name: ③ EDINET大量保有 全履歴バックフィル（edinet_holdings）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --start "${{ github.event.inputs.edinet_start }}" --match-days 1

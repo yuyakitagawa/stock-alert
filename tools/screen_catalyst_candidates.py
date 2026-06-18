@@ -78,6 +78,42 @@ def latest_equity_ratio(con, code):
     return None
 
 
+def latest_roe_jquants(con, code):
+    """fundamentals_annual(kabutan)が無い環境用。直近FYの純利益÷純資産でROE(%)を算出。"""
+    r = con.execute(
+        "SELECT np, equity FROM jquants_fin_summary "
+        "WHERE code=? AND doc_type='FY' AND np IS NOT NULL AND equity IS NOT NULL AND equity>0 "
+        "ORDER BY disc_date DESC LIMIT 1", (code,)
+    ).fetchone()
+    if r and r[1]:
+        return r[0] / r[1] * 100.0
+    return None
+
+
+def jquants_earnings_rows(con, code):
+    """jquants_fin_summary から利益の質フィルター用の年次行を組み立てる（kabutan非依存）。
+    各FY行を {fy_end, is_forecast, revenue, op_profit, net_income} に整形（fy_end昇順）。
+    最新開示の会社予想(fop/fsales/fnp)があれば予想行を1件追加。"""
+    rows = con.execute(
+        "SELECT fy_end, sales, op, np, disc_date, fop, fsales, fnp "
+        "FROM jquants_fin_summary WHERE code=? AND doc_type='FY' "
+        "AND op IS NOT NULL ORDER BY fy_end ASC", (code,)
+    ).fetchall()
+    out = []
+    for r in rows:
+        out.append({"fy_end": r[0], "is_forecast": False,
+                    "revenue": r[1], "op_profit": r[2], "net_income": r[3]})
+    # 会社予想（最新開示の通期予想）を予想行として付与
+    fc = con.execute(
+        "SELECT fop, fsales, fnp FROM jquants_fin_summary "
+        "WHERE code=? AND fop IS NOT NULL ORDER BY disc_date DESC LIMIT 1", (code,)
+    ).fetchone()
+    if fc and fc[0] is not None:
+        out.append({"fy_end": "forecast", "is_forecast": True,
+                    "revenue": fc[1], "op_profit": fc[0], "net_income": fc[2]})
+    return out
+
+
 def load_name_map():
     """code→name。J-Quants全銘柄マップ(data/code_name_map.json)優先、無ければランキングCSV。"""
     import json
@@ -146,6 +182,9 @@ def main():
     for code in codes:
         close = latest_close(con, code)
         bps_kab, roe = latest_bps_roe(con, code)
+        # ROEは fundamentals_annual(kabutan) 優先。無い環境(クラウド)では J-Quants(純利益/純資産)で算出。
+        if roe is None:
+            roe = latest_roe_jquants(con, code)
         # PBRは分割調整済み株価と整合するJ-Quants BPSを優先（分割調整漏れ防止）。
         # J-Quants未取得の銘柄のみ fundamentals_annual(株探) 値にフォールバック。
         bps = latest_bps_split_safe(con, code) or bps_kab
@@ -175,7 +214,9 @@ def main():
 
         # 利益の質フィルター（A: 化粧除外 / B: 斜陽除外）＋ 成長加減点
         if not args.no_quality:
-            q = assess_earnings_quality(fetch_kabutan_earnings(code))
+            # kabutan(営業益・売上)優先。取れない環境(クラウド)では J-Quants実績で代替。
+            earn_rows = fetch_kabutan_earnings(code) or jquants_earnings_rows(con, code)
+            q = assess_earnings_quality(earn_rows)
             row.update({
                 "op_yoy": q["op_yoy"], "op_margin": q["op_margin"],
                 "rev_cagr3": q["rev_cagr3"], "fc_dir": q["fc_dir"],

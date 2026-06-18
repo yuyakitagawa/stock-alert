@@ -1,4 +1,24 @@
 
+## 2026-06-18: ファンダをJ-Quantsに切替（kabutanクラウドブロック対策）＋EDINET全履歴投入
+
+**EDINET全データ投入: 成功。** バックフィルジョブで edinet_holdings に 70,797行/662銘柄（5年分）を
+本番DBキャッシュへ保存（日次が継承）。
+
+**問題:** 同ジョブの①ファンダ取得が 0/3566 件で全滅。原因＝**kabutan.jp が GitHub Actions の
+データセンターIPをブロック**（ローカル=自宅IPでは取得可）。結果 fundamentals_annual/jquants_fin_summary
+が空→ROE/自己資本比率/営業益が無く A/Bスクリーンは0候補。
+
+**対処（kabutan非依存のクラウド完結化）:**
+- jquants_fin_summary に `op`(営業益実績)/`sales`(売上実績) 列を追加（マイグレーション込み）。
+  parse_row が OP/Sales（予想FOP/FSalesに対する実績）を抽出、別名にもフォールバック＋列名を一度ログ。
+- fetch_jquants_fin.py に `--all-days`：fundamentals_annual非依存で全営業日を直接取得。
+- screen_catalyst_candidates.py：ROEを fundamentals_annual 優先・無ければ J-Quants(純利益/純資産)で算出。
+  利益の質A/Bの営業益/売上も kabutan 優先・取れなければ J-Quants実績(jquants_earnings_rows)で代替。
+- backfill_prod_db.yml：②を `--all-days`、①(kabutan)は continue-on-error の任意ステップに降格。
+
+**検証:** parse_row（OP/Sales抽出・別名）、ROE算出、A/B（本業減益）判定をインメモリDBで確認。全82テスト緑。
+※ J-Quantsの実績営業益/売上の正確な列名は次回バックフィルの「列名サンプル」ログで最終確認する。
+
 ## 2026-06-17(4): カタリスト候補スクリーンに利益の質フィルター(A/B)を追加
 
 **動機:** PBR<1×ROE<8%×自己資本比率>50% は「安い箱」しか見ておらず、低ROEの"理由"を

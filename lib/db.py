@@ -145,6 +145,8 @@ CREATE TABLE IF NOT EXISTS jquants_fin_summary (
     fnp           REAL,            -- 通期会社予想・当期純利益（進捗率用）
     fop           REAL,            -- 通期会社予想・営業利益
     fsales        REAL,            -- 通期会社予想・売上高
+    op            REAL,            -- 営業利益（実績・利益の質フィルター用）
+    sales         REAL,            -- 売上高（実績・利益の質フィルター用）
     PRIMARY KEY (code, disc_date)
 );
 CREATE TABLE IF NOT EXISTS edinet_holdings (
@@ -714,15 +716,15 @@ def bulk_upsert_jquants_fin_summary(rows: list):
     with _conn() as con:
         # 既存DBへの予想カラム追加（マイグレーション）
         existing = {r[1] for r in con.execute("PRAGMA table_info(jquants_fin_summary)").fetchall()}
-        for col in ("fnp", "fop", "fsales"):
+        for col in ("fnp", "fop", "fsales", "op", "sales"):
             if col not in existing:
                 con.execute(f"ALTER TABLE jquants_fin_summary ADD COLUMN {col} REAL")
         con.executemany(
             """INSERT OR REPLACE INTO jquants_fin_summary
                (code, disc_date, doc_type, fy_end, np, cfo, ta, equity, eps, bps,
-                div_ann, payout_ratio, sh_out, tr_sh, fnp, fop, fsales)
+                div_ann, payout_ratio, sh_out, tr_sh, fnp, fop, fsales, op, sales)
                VALUES(:code,:disc_date,:doc_type,:fy_end,:np,:cfo,:ta,:equity,:eps,:bps,
-                      :div_ann,:payout_ratio,:sh_out,:tr_sh,:fnp,:fop,:fsales)""",
+                      :div_ann,:payout_ratio,:sh_out,:tr_sh,:fnp,:fop,:fsales,:op,:sales)""",
             rows
         )
 
