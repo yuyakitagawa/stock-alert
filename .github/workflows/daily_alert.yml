@@ -83,6 +83,7 @@ jobs:
         run: cd ~/stock-alert && python core/rank_stocks.py
 
       - name: Step 4 - メールアラート送信
+        if: ${{ false }}  # ユーザー依頼でデイリーAlertメール停止(2026-06-18)。復活はこのif行を削除
         run: cd ~/stock-alert && python email/alert_email.py
 
       - name: Step 5 - Webエクスポート（Supabase）
