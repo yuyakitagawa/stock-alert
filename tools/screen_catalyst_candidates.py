@@ -214,6 +214,14 @@ def main():
         else:
             print(f"{c['code']:<6}{nm:<20}{c['pbr']:>6}{c['roe']:>7}{c['equity_ratio']:>9}{c['turnover_m']:>10.0f}{flag}")
 
+    # 除外された地雷を理由付きでログ表示（化粧/斜陽の妥当性を人手レビューしやすく）
+    if q_on and excluded:
+        print(f"\n── 品質フィルター除外 {len(excluded)}件（地雷レビュー用）──")
+        print(f"{'コード':<6}{'銘柄名':<20}{'理由':<8}  詳細")
+        print("-" * 80)
+        for e in sorted(excluded, key=lambda x: x["reason"]):
+            print(f"{e['code']:<6}{(e['name'] or '')[:18]:<20}{e['reason']:<8}  {e['note']}")
+
     # CSV保存
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     base_fields = ["code", "name", "pbr", "roe", "equity_ratio", "turnover_m", "monopoly", "score"]
