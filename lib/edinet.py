@@ -138,24 +138,41 @@ def extract_large_holdings(results: list, disc_date: str) -> list:
     return [x for x in records if x["doc_id"]]
 
 
-def scan_large_holdings(days_back: int = 7, persist: bool = True) -> list:
-    """直近 days_back 日分の大量保有報告書をスキャンして DB に蓄積。
+def scan_large_holdings(days_back: int = 7, persist: bool = True,
+                        start_date: "str | None" = None,
+                        skip_weekends: bool = True, sleep_sec: float = 0.0) -> list:
+    """直近 days_back 日分（または start_date 以降）の大量保有報告書をスキャンしてDB蓄積。
 
     Args:
-        days_back: 何日前まで遡るか（EDINETは過去5年保持、当日含む）。
-        persist:   True なら edinet_holdings テーブルへ upsert。
+        days_back:     何日前まで遡るか（当日含む）。start_date 指定時は無視。
+        persist:       True なら edinet_holdings テーブルへ upsert。
+        start_date:    'YYYY-MM-DD'。指定するとこの日から当日までを全て走査（バックフィル用）。
+        skip_weekends: 土日はEDINET提出が無いのでスキップ（API呼び出し削減）。
+        sleep_sec:     各日リクエスト間の待機（バックフィルでEDINETに優しく）。
 
     Returns: 取得した全レコード（dict のリスト）。
     """
+    import time
     from lib.db import upsert_edinet_holdings
 
-    all_records = []
     today = date.today()
-    for i in range(days_back):
-        d = (today - timedelta(days=i)).isoformat()
-        results = fetch_documents_list(d)
-        recs = extract_large_holdings(results, disc_date=d)
+    if start_date:
+        d0 = date.fromisoformat(start_date)
+        dates = [d0 + timedelta(days=i) for i in range((today - d0).days + 1)]
+    else:
+        dates = [today - timedelta(days=i) for i in range(days_back)]
+    if skip_weekends:
+        dates = [d for d in dates if d.weekday() < 5]
+
+    all_records = []
+    for d in dates:
+        ds = d.isoformat()
+        results = fetch_documents_list(ds)
+        recs = extract_large_holdings(results, disc_date=ds)
         if recs and persist:
             upsert_edinet_holdings(recs)
         all_records.extend(recs)
+        if sleep_sec:
+            time.sleep(sleep_sec)
     return all_records
+
