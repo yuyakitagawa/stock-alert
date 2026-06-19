@@ -7,8 +7,13 @@ const CACHE: RequestInit = { next: { revalidate: 300 } };
 // env欠落(NEXT_PUBLIC_SUPABASE_URL未設定で相対URL)やネットワーク失敗で fetch() 自体が
 // throw し、ビルド(プリレンダ)が落ちるのを防ぐ共通ラッパ。失敗時は null を返す。
 async function sbFetch(path: string, init: RequestInit): Promise<Response | null> {
+  const url = sbUrl(path);
+  // env欠落時 sbUrl は相対URL("/rest/v1/...")になる。Next.jsのfetchは相対URLを
+  // throwせずハングするため try/catch では握れず、ビルド(プリレンダ)が60秒で
+  // タイムアウトして落ちる。絶対URLでなければfetchせず即 null を返して回避する。
+  if (!/^https?:\/\//.test(url)) return null;
   try {
-    return await fetch(sbUrl(path), init);
+    return await fetch(url, init);
   } catch {
     return null;
   }
