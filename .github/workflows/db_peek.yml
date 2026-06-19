@@ -1,0 +1,75 @@
+name: DB Peek
+
+# 本番DBキャッシュの中身を数行のぞくだけの確認用ワークフロー（読み取りのみ・メール送信なし）。
+on:
+  workflow_dispatch:
+    inputs:
+      table:
+        description: 'のぞくテーブル名'
+        default: 'jquants_fin_summary'
+      code:
+        description: '特定銘柄コード（任意・例 7203）'
+        default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  peek:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Restore DB cache（読み取りのみ）
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/stock_alert.db
+          key: stock-alert-db-peek-readonly
+          restore-keys: |
+            stock-alert-db-
+
+      - name: テーブルをのぞく
+        env:
+          PEEK_TABLE: ${{ github.event.inputs.table }}
+          PEEK_CODE: ${{ github.event.inputs.code }}
+        run: |
+          cd ~/stock-alert && python - <<'PY'
+          import os, sqlite3, lib.db as db
+          t = os.environ.get("PEEK_TABLE") or "jquants_fin_summary"
+          code = (os.environ.get("PEEK_CODE") or "").strip()
+          con = sqlite3.connect(db.DB_PATH); con.row_factory = sqlite3.Row
+
+          cols = [r[1] for r in con.execute(f"PRAGMA table_info({t})")]
+          n = con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+          print(f"=== {t} : {n}行 / 列: {cols}\n")
+
+          def show(rows):
+              for r in rows:
+                  print(" | ".join(f"{k}={r[k]}" for k in r.keys()))
+
+          if t == "jquants_fin_summary":
+              sel = "code,disc_date,doc_type,fy_end,sales,op,np,equity,ta,bps,fop,fsales,fnp"
+              if code:
+                  print(f"--- {code} の全開示（新しい順）---")
+                  show(con.execute(f"SELECT {sel} FROM {t} WHERE code=? ORDER BY disc_date DESC", (code,)))
+              else:
+                  print("--- トヨタ(7203) の最新FY 1件 ---")
+                  show(con.execute(f"SELECT {sel} FROM {t} WHERE code='7203' AND doc_type='FY' ORDER BY disc_date DESC LIMIT 1"))
+                  print("\n--- 直近開示 10件（全銘柄）---")
+                  show(con.execute(f"SELECT {sel} FROM {t} ORDER BY disc_date DESC LIMIT 10"))
+                  print("\n--- op/sales が埋まっているFY行 5件 ---")
+                  show(con.execute(f"SELECT {sel} FROM {t} WHERE doc_type='FY' AND op IS NOT NULL ORDER BY disc_date DESC LIMIT 5"))
+          else:
+              show(con.execute(f"SELECT * FROM {t} LIMIT 10"))
+          con.close()
+          PY
