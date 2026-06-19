@@ -1,4 +1,19 @@
 
+## 2026-06-18(2): カタリストA/Bのヒストリカルバックテストを実装
+
+**動機:** 本番DBにJ-Quants財務とEDINET全履歴が揃った（jquants_fin_summary 17,060行/4,110銘柄、
+edinet_holdings 72,381行/667銘柄）。A/B利益の質フィルターが実リターンの平均・勝率・大勝率を
+改善するかを数値で検証する（CLAUDE.md §5）。
+
+**実装:**
+- tools/catalyst_backtest.py: point-in-time（disc_date≤基準日のみ＝先読み無し）で過去時点の
+  カタリスト候補を再構成→保有H日のフォワードリターンを集計。A/Bあり/なしを比較出力。
+  ROEは直近FYの np/equity、A/Bの営業益/売上はJ-Quants実績(op/sales)。
+- .github/workflows/catalyst_backtest.yml: 本番DBキャッシュを読み取りで復元しBT実行（メール未送信）。
+
+**検証:** インメモリDBで選定・フォワードリターン算出・point-in-time（未開示は不可視）・
+A/Bあり=本業減益で除外/なし=残す、を確認。全82テスト緑。実数値は Catalyst Backtest 実行ログで確認。
+
 ## 2026-06-18: ファンダをJ-Quantsに切替（kabutanクラウドブロック対策）＋EDINET全履歴投入
 
 **EDINET全データ投入: 成功。** バックフィルジョブで edinet_holdings に 70,797行/662銘柄（5年分）を
