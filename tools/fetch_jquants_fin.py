@@ -14,7 +14,7 @@ API制限: 5件/分 → 12秒スリープ
     python3 tools/fetch_jquants_fin.py          # 全期間フェッチ（nohup推奨）
     python3 tools/fetch_jquants_fin.py --resume # 未取得日のみフェッチ
 """
-import sys, os, time, argparse, sqlite3
+import sys, os, time, argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
@@ -56,33 +56,14 @@ def get_target_dates() -> list[str]:
     DBの fundamentals_annual から実際に発表があった日付を取得。
     未取得分のみ返す（--resume 時は取得済みをスキップ）。
     """
-    from lib.db import DB_PATH, init_db
-    init_db()
-    con = sqlite3.connect(DB_PATH)
-
-    # 発表があった日付（利用可能範囲内）
-    rows = con.execute("""
-        SELECT DISTINCT announce_date
-        FROM fundamentals_annual
-        WHERE announce_date IS NOT NULL
-          AND announce_date >= ?
-          AND announce_date <= ?
-        ORDER BY announce_date
-    """, (AVAIL_START, AVAIL_END)).fetchall()
-
-    all_dates = [r[0] for r in rows]
-    con.close()
-    return all_dates
+    from lib.db import get_fundamentals_announce_dates
+    return get_fundamentals_announce_dates(AVAIL_START, AVAIL_END)
 
 
 def get_fetched_dates() -> set[str]:
     """既にDBに保存済みの disc_date 一覧を返す。"""
-    from lib.db import DB_PATH, init_db
-    init_db()
-    con = sqlite3.connect(DB_PATH)
-    rows = con.execute("SELECT DISTINCT disc_date FROM jquants_fin_summary").fetchall()
-    con.close()
-    return {r[0] for r in rows}
+    from lib.db import get_jquants_disc_dates
+    return get_jquants_disc_dates()
 
 
 def parse_row(row: pd.Series) -> dict:

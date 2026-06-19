@@ -1,4 +1,29 @@
 
+## 2026-06-19: DBをSQLite→Supabaseへ全面移行
+
+**動機:** 「全部SupabaseにDBは移行したい」（オーナー）。これまで SQLite(`stock_alert.db`、GitHub Actions
+キャッシュ)＝データ処理/BT、Supabase＝Web表示 の2層だったが、キャッシュ消失リスク・2系統の二重管理を
+解消し Supabase に一元化する。
+
+**実装:**
+- Supabase に16テーブルを作成（price_cache/held_scores/jquants_fin_summary/edinet_holdings 等）。
+  daily_ranking→`web_rankings`、earnings_cache→`web_earnings`、sector_cache→`web_stock_meta` に統合
+  （既存Web表示テーブルに `fetched_date`/`actual_return_63d` を追加）。索引・RLS(anon read)付与。
+- `lib/supabase_client.py`: REST APIラッパ（upsert/insert_ignore/select/select_one/rpc、ページング込み）。
+- `lib/db.py`: SQLite実装を全てSupabase REST版に置換（関数シグネチャ維持で呼び出し側は無改修）。
+  返り値は dict（旧 sqlite3.Row と同じ `r["key"]` アクセス）。未設定時は空を返し例外非伝播。
+- 全銘柄スクリーン（カタリスト候補）は per-code REST だと遅いため Postgres RPC
+  `screen_catalyst_candidates()` でサーバーサイド集計。`tools/screen_catalyst_candidates.py` はRPC呼出に。
+- 直接 sqlite3 を使っていた8ファイル（export_to_web/alert_email/fetch_jquants_fin/fetch_history/
+  backfill_history/export_report_to_sheets/orchestrate と _conn利用4ファイル）を lib.db ヘルパー経由に統一。
+- GitHub Actions: daily_alert/pdca_daily/edinet_scan_test からDBキャッシュ Restore/Save を削除。
+  edinet_scan_test に SUPABASE creds 追加。
+- `tools/migrate_sqlite_to_supabase.py` ＋ `migrate_to_supabase.yml`: 既存SQLite実データを一括投入
+  （冪等upsert）。実データは Actions キャッシュ内のため移行はワークフローで実行。
+
+**検証:** 74テスト緑。lib.db の read-path（未設定時 空/None・例外なし）スモーク確認。RPCは Supabase 上で
+実行確認（移行前のため空配列）。**残:** Migrate ワークフローを1回手動実行して既存実データを投入。
+
 ## 2026-06-18(2): カタリストA/Bのヒストリカルバックテストを実装
 
 **動機:** 本番DBにJ-Quants財務とEDINET全履歴が揃った（jquants_fin_summary 17,060行/4,110銘柄、
@@ -69,6 +94,11 @@ model/page.tsxは選定モデル外のため対象外。
 
 **検証:** スモークテスト合格（350/360のみ抽出・有報120は除外・secCode正規化・DB upsert/絞込・
 名称解決OK）。py_compile通過。※過去開示は蓄積方式のためBT不可＝フォワード評価のみ。
+
+**突合ノイズ除外(C5b 2026-06-17):** 初回スキャン(run#1)で 5401日本製鉄 が1件ヒットしたが、
+提出者＝日本製鉄自身・概要「短期大量譲渡」＝自己申告かつ売り報告で先回りシグナルではなかった。
+scan_large_holdings に is_noise_match を追加し、突合時に①自己申告(提出者≒対象企業名)②譲渡/売却/処分
+の報告を除外（`--no-exclude` で全表示可）。検証ログ: status=200 総件数583/大量保有131、5日で392件取得。
 
 **クラウド化(C5):** daily_alert.yml に Step2b（カタリスト候補スクリーン --min-turnover 500）＋
 Step2c（EDINET大量保有スキャン --days 3）を追加。`.env` に EDINET_API_KEY 流し込み、結果CSVを

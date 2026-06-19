@@ -194,9 +194,8 @@ def main():
     # キャッシュ済み銘柄のみ（高速モード）
     cached_codes = None
     if args.cached_only:
-        from lib.db import _conn
-        with _conn() as con:
-            cached_codes = {str(r[0]) for r in con.execute("SELECT DISTINCT code FROM price_cache")}
+        from lib.db import get_price_cache_codes
+        cached_codes = set(get_price_cache_codes())
         all_stocks = [(c, n) for c, n in all_stocks if str(c) in cached_codes]
     print(f"株価データ取得中（{len(all_stocks)}銘柄）...")
     hist_map = {}

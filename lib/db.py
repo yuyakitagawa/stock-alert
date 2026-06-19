@@ -1,430 +1,310 @@
-"""SQLite persistence layer for stock-alert."""
+"""Supabase persistence layer for stock-alert.
+
+Migrated from SQLite. All reads/writes go to Supabase REST API.
+"""
 import os
-import sqlite3
-from contextlib import contextmanager
+from datetime import date, timedelta
+
+import lib.supabase_client as sb
 
 _PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _BASE_DIR = os.getenv("STOCK_ALERT_HOME", _PROJECT_DIR)
 DB_PATH = os.path.join(_BASE_DIR, "stock_alert.db")
 
-_DDL = """
-CREATE TABLE IF NOT EXISTS price_cache (
-    code    TEXT NOT NULL,
-    date    TEXT NOT NULL,
-    close   REAL,
-    volume  INTEGER,
-    PRIMARY KEY (code, date)
-);
-CREATE TABLE IF NOT EXISTS simulation_results (
-    run_date     TEXT NOT NULL,
-    entry_date   TEXT NOT NULL,
-    code         TEXT NOT NULL,
-    name         TEXT,
-    label        TEXT,
-    entry_price  REAL,
-    current_price REAL,
-    return_pct   REAL,
-    holding_days INTEGER,
-    net_at_entry REAL,
-    drop_prob_at_entry REAL,
-    PRIMARY KEY (run_date, entry_date, code)
-);
-CREATE TABLE IF NOT EXISTS daily_ranking (
-    date              TEXT NOT NULL,
-    code              TEXT NOT NULL,
-    name              TEXT,
-    close             REAL,
-    rise_prob         REAL,
-    drop_prob         REAL,
-    net               REAL,
-    vol               REAL,
-    recommend         TEXT,
-    rel20             REAL,
-    stop_loss         REAL,
-    per               REAL,
-    pbr               REAL,
-    actual_return_63d REAL,
-    piotroski         REAL,
-    bps_growth        REAL,
-    eps_surprise      REAL,
-    pos52             REAL,
-    PRIMARY KEY (date, code)
-);
-CREATE TABLE IF NOT EXISTS held_scores (
-    date      TEXT NOT NULL,
-    code      TEXT NOT NULL,
-    name      TEXT,
-    close     REAL,
-    rise_prob REAL,
-    drop_prob REAL,
-    net       REAL,
-    signal    TEXT,
-    ret20     REAL,
-    vol       REAL,
-    rel20     REAL,
-    PRIMARY KEY (date, code)
-);
-CREATE TABLE IF NOT EXISTS earnings_cache (
-    code         TEXT PRIMARY KEY,
-    next_date    TEXT,
-    fetched_date TEXT
-);
-CREATE TABLE IF NOT EXISTS sector_cache (
-    code         TEXT PRIMARY KEY,
-    sector       TEXT,
-    fetched_date TEXT
-);
-CREATE TABLE IF NOT EXISTS yutai_cache (
-    code          TEXT PRIMARY KEY,
-    record_month  INTEGER,
-    has_yutai     INTEGER,
-    fetched_date  TEXT
-);
-CREATE TABLE IF NOT EXISTS fundamentals_annual (
-    code          TEXT NOT NULL,
-    fy_end        TEXT NOT NULL,   -- 決算期末 YYYY-MM（例 2024-03）
-    announce_date TEXT,            -- 発表日 YYYY-MM-DD（これ以降にEPS等が既知になる）
-    eps           REAL,            -- 1株利益
-    dps           REAL,            -- 1株配当（修正1株配）
-    roe           REAL,            -- 自己資本利益率 %
-    bps           REAL,            -- 1株純資産
-    fetched_date  TEXT,
-    PRIMARY KEY (code, fy_end)
-);
-CREATE TABLE IF NOT EXISTS earnings_sentiment (
-    code         TEXT NOT NULL,
-    fetched_date TEXT NOT NULL,    -- YYYY-MM-DD（当日キャッシュ）
-    score        REAL NOT NULL,    -- -1.0〜+1.0（Claude Haiku 分析結果）
-    PRIMARY KEY (code, fetched_date)
-);
-CREATE TABLE IF NOT EXISTS margin_data (
-    code         TEXT NOT NULL,
-    week_date    TEXT NOT NULL,    -- YYYY-MM-DD（週次確定日）
-    buy_balance  REAL,             -- 信用買残（株）
-    sell_balance REAL,             -- 信用売残（株）
-    ratio        REAL,             -- 信用倍率
-    fetched_date TEXT,
-    PRIMARY KEY (code, week_date)
-);
-CREATE TABLE IF NOT EXISTS short_interest (
-    code          TEXT NOT NULL,
-    week_date     TEXT NOT NULL,   -- YYYY-MM-DD（TSE公開週）
-    short_balance REAL,            -- 残高株数
-    short_amount  REAL,            -- 残高金額（百万円）
-    PRIMARY KEY (code, week_date)
-);
-CREATE TABLE IF NOT EXISTS tdnet_events (
-    code         TEXT NOT NULL,
-    announce_date TEXT NOT NULL,   -- YYYY-MM-DD
-    title        TEXT,
-    event_type   TEXT,             -- buyback | upward | downward | dividend | other
-    fetched_date TEXT,
-    PRIMARY KEY (code, announce_date, title)
-);
-CREATE TABLE IF NOT EXISTS market_index_cache (
-    ticker  TEXT NOT NULL,  -- 'VIX' | 'SP500' | 'USDJPY'
-    date    TEXT NOT NULL,  -- YYYY-MM-DD
-    close   REAL NOT NULL,
-    PRIMARY KEY (ticker, date)
-);
-CREATE TABLE IF NOT EXISTS jquants_fin_summary (
-    code          TEXT NOT NULL,
-    disc_date     TEXT NOT NULL,   -- YYYY-MM-DD（開示日 = point-in-time key）
-    doc_type      TEXT,            -- FY / 1Q / 2Q / 3Q
-    fy_end        TEXT,            -- 決算期末 YYYY-MM-DD
-    np            REAL,            -- 当期純利益
-    cfo           REAL,            -- 営業キャッシュフロー
-    ta            REAL,            -- 総資産
-    equity        REAL,            -- 純資産
-    eps           REAL,            -- 1株利益
-    bps           REAL,            -- 1株純資産
-    div_ann       REAL,            -- 年間配当（1株）
-    payout_ratio  REAL,            -- 配当性向
-    sh_out        REAL,            -- 発行済株式数
-    tr_sh         REAL,            -- 自己株式数
-    fnp           REAL,            -- 通期会社予想・当期純利益（進捗率用）
-    fop           REAL,            -- 通期会社予想・営業利益
-    fsales        REAL,            -- 通期会社予想・売上高
-    op            REAL,            -- 営業利益（実績・利益の質フィルター用）
-    sales         REAL,            -- 売上高（実績・利益の質フィルター用）
-    PRIMARY KEY (code, disc_date)
-);
-CREATE TABLE IF NOT EXISTS edinet_holdings (
-    doc_id         TEXT NOT NULL,    -- EDINET書類管理番号（PK）
-    sec_code       TEXT,             -- 対象会社の証券コード（4桁・買い集めの標的）
-    filer_name     TEXT,             -- 提出者（大量保有した側＝買い手）
-    doc_type_code  TEXT,             -- 350=大量保有報告書 / 360=変更報告書
-    doc_description TEXT,            -- 書類概要
-    submit_date    TEXT,             -- 提出日時 YYYY-MM-DD HH:MM
-    disc_date      TEXT,             -- 開示日 YYYY-MM-DD（point-in-time key）
-    fetched_date   TEXT,
-    PRIMARY KEY (doc_id)
-);
-CREATE TABLE IF NOT EXISTS top10_sim (
-    entry_date   TEXT NOT NULL,   -- 買いエントリー日
-    code         TEXT NOT NULL,   -- 銘柄コード
-    name         TEXT,            -- 銘柄名
-    entry_net    REAL,            -- エントリー時ネットスコア(%)
-    entry_price  REAL,            -- エントリー株価
-    exit_date    TEXT,            -- 売却日（NULLなら保有中）
-    exit_net     REAL,            -- 売却時ネットスコア(%)
-    exit_price   REAL,            -- 売却株価
-    return_pct   REAL,            -- 実現リターン(%)
-    status       TEXT DEFAULT 'active',  -- 'active' | 'exited'
-    PRIMARY KEY (entry_date, code)
-);
-"""
-
-@contextmanager
-def _conn():
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA busy_timeout=30000")
-    try:
-        yield con
-        con.commit()
-    except Exception:
-        con.rollback()
-        raise
-    finally:
-        con.close()
-
 
 def init_db():
-    with _conn() as con:
-        con.executescript(_DDL)
+    pass
 
 
-# ── daily_ranking ──────────────────────────────────────────────────────────
+# ── 移行後の共通ヘルパー（旧・直接sqlite3呼び出しの置換用） ──────────────
+
+def get_latest_ranking_date():
+    """web_rankings の最新日付を返す。なければ None。"""
+    row = sb.select_one("web_rankings", "order=date.desc&select=date")
+    return row["date"] if row else None
+
+
+def get_ranking_by_date(date_str, select="*", order="net.desc"):
+    """指定日のランキング全行を返す。"""
+    return sb.select("web_rankings", f"date=eq.{date_str}&order={order}&select={select}")
+
+
+def get_ranking_dates_desc(limit=0):
+    """web_rankings の開示日を新しい順の重複なしで返す。"""
+    rows = sb.select("web_rankings", "order=date.desc&select=date")
+    seen = []
+    for r in rows:
+        if r["date"] not in seen:
+            seen.append(r["date"])
+        if limit and len(seen) >= limit:
+            break
+    return seen
+
+
+def get_price_cache_codes():
+    """price_cache に存在する銘柄コード一覧（重複なし）。"""
+    rows = sb.select("price_cache", "select=code")
+    return sorted({r["code"] for r in rows})
+
+
+def get_jquants_disc_dates():
+    """jquants_fin_summary の disc_date 一覧（重複なし）。"""
+    rows = sb.select("jquants_fin_summary", "select=disc_date")
+    return {r["disc_date"] for r in rows}
+
+
+def get_fundamentals_announce_dates(start, end):
+    """fundamentals_annual の announce_date 一覧（範囲内・重複なし・昇順）。"""
+    rows = sb.select(
+        "fundamentals_annual",
+        f"announce_date=gte.{start}&announce_date=lte.{end}"
+        "&announce_date=not.is.null&order=announce_date.asc&select=announce_date"
+    )
+    seen = []
+    for r in rows:
+        if r["announce_date"] not in seen:
+            seen.append(r["announce_date"])
+    return seen
+
+
+def get_all_yutai():
+    """yutai_cache 全行を返す。"""
+    return sb.select("yutai_cache", "select=code,has_yutai,record_month")
+
+
+# ── daily_ranking (→ web_rankings) ────────────────────────────────────────
 
 def save_daily_ranking(date_str, rows):
     """rows: list of dicts with keys: code, name, close, rise_prob, drop_prob, net, vol, recommend, rel20, stop_loss, per, pbr, piotroski, bps_growth, eps_surprise, pos52"""
-    init_db()
-    # カラム追加（既存DBへのマイグレーション）
-    with _conn() as con:
-        existing = {r[1] for r in con.execute("PRAGMA table_info(daily_ranking)")}
-        for col, typ in [("piotroski","REAL"),("bps_growth","REAL"),("eps_surprise","REAL"),("pos52","REAL")]:
-            if col not in existing:
-                con.execute(f"ALTER TABLE daily_ranking ADD COLUMN {col} {typ}")
-    sql = """INSERT OR REPLACE INTO daily_ranking
-             (date,code,name,close,rise_prob,drop_prob,net,vol,recommend,rel20,stop_loss,per,pbr,
-              piotroski,bps_growth,eps_surprise,pos52)
-             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
-    with _conn() as con:
-        con.executemany(sql, [
-            (date_str, r.get("code"), r.get("name"), r.get("close"),
-             r.get("rise_prob"), r.get("drop_prob"), r.get("net"),
-             r.get("vol"), r.get("recommend"), r.get("rel20"),
-             r.get("stop_loss"), r.get("per"), r.get("pbr"),
-             r.get("piotroski"), r.get("bps_growth"), r.get("eps_surprise"), r.get("pos52"))
-            for r in rows
-        ])
+    sb_rows = []
+    for r in rows:
+        sb_rows.append({
+            "date": date_str,
+            "code": r.get("code"),
+            "name": r.get("name"),
+            "close": r.get("close"),
+            "rise_prob": r.get("rise_prob"),
+            "drop_prob": r.get("drop_prob"),
+            "net": r.get("net"),
+            "vol": r.get("vol"),
+            "recommend": r.get("recommend"),
+            "rel20": r.get("rel20"),
+            "stop_loss": r.get("stop_loss"),
+            "per": r.get("per"),
+            "pbr": r.get("pbr"),
+            "piotroski": r.get("piotroski"),
+            "bps_growth": r.get("bps_growth"),
+            "eps_surprise": r.get("eps_surprise"),
+            "pos52": r.get("pos52"),
+        })
+    sb.upsert("web_rankings", sb_rows, on_conflict="date,code")
 
 
-# ── held_scores ────────────────────────────────────────────────────────────
+# ── held_scores ───────────────────────────────────────────────────────────
 
 def save_held_scores(date_str, results):
     """results: list of dicts from _held_results_from_models"""
-    init_db()
-    sql = """INSERT OR REPLACE INTO held_scores
-             (date,code,name,close,rise_prob,drop_prob,net,signal,ret20,vol,rel20)
-             VALUES(?,?,?,?,?,?,?,?,?,?,?)"""
-    with _conn() as con:
-        con.executemany(sql, [
-            (date_str, r["code"], r["name"], r["close"],
-             r["prob"], r.get("drop_prob"), r["net"],
-             r["signal"], r.get("ret20"), r.get("vol"), r.get("rel20"))
-            for r in results
-        ])
+    sb_rows = [{
+        "date": date_str,
+        "code": r["code"],
+        "name": r["name"],
+        "close": r["close"],
+        "rise_prob": r["prob"],
+        "drop_prob": r.get("drop_prob"),
+        "net": r["net"],
+        "signal": r["signal"],
+        "ret20": r.get("ret20"),
+        "vol": r.get("vol"),
+        "rel20": r.get("rel20"),
+    } for r in results]
+    sb.upsert("held_scores", sb_rows, on_conflict="date,code")
 
 
 def load_prev_held_scores(today_str):
     """直前日の保有株スコアを {code: row_dict} で返す"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT MAX(date) AS d FROM held_scores WHERE date < ?", (today_str,)
-        ).fetchone()
-        if not row or not row["d"]:
-            return {}
-        rows = con.execute("SELECT * FROM held_scores WHERE date=?", (row["d"],)).fetchall()
-        return {r["code"]: dict(r) for r in rows}
+    rows = sb.select(
+        "held_scores",
+        f"date=lt.{today_str}&order=date.desc&limit=1&select=date",
+        limit=1
+    )
+    if not rows:
+        return {}
+    prev_date = rows[0]["date"]
+    held = sb.select("held_scores", f"date=eq.{prev_date}")
+    return {r["code"]: r for r in held}
 
 
-# ── earnings_cache ─────────────────────────────────────────────────────────
+# ── earnings_cache (→ web_earnings) ───────────────────────────────────────
 
 CACHE_MISS = object()
 
 def get_earnings_cache(code, today_str):
     """今日キャッシュ済みなら next_date(str or None)を返す。未キャッシュはCACHE_MISS。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT next_date, fetched_date FROM earnings_cache WHERE code=?", (str(code),)
-        ).fetchone()
-    if row and row["fetched_date"] == today_str:
-        return row["next_date"]  # "YYYY-MM-DD" or None
+    row = sb.select_one(
+        "web_earnings",
+        f"code=eq.{code}&select=next_date,fetched_date"
+    )
+    if row and row.get("fetched_date") == today_str:
+        return row.get("next_date")
     return CACHE_MISS
 
 
 def set_earnings_cache(code, today_str, next_date_str):
-    init_db()
-    with _conn() as con:
-        con.execute(
-            "INSERT OR REPLACE INTO earnings_cache (code,next_date,fetched_date) VALUES(?,?,?)",
-            (str(code), next_date_str, today_str)
-        )
+    sb.upsert("web_earnings", [{
+        "code": str(code),
+        "next_date": next_date_str,
+        "fetched_date": today_str,
+    }], on_conflict="code")
 
 
-# ── yutai_cache ────────────────────────────────────────────────────────────
+# ── yutai_cache ───────────────────────────────────────────────────────────
 
 def get_yutai_cache(code, today_str):
     """今日キャッシュ済みなら (has_yutai, record_month) を返す。未キャッシュは CACHE_MISS。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT has_yutai, record_month, fetched_date FROM yutai_cache WHERE code=?", (str(code),)
-        ).fetchone()
-    if row and row["fetched_date"] == today_str:
+    row = sb.select_one(
+        "yutai_cache",
+        f"code=eq.{code}&select=has_yutai,record_month,fetched_date"
+    )
+    if row and row.get("fetched_date") == today_str:
         return (bool(row["has_yutai"]), row["record_month"])
     return CACHE_MISS
 
 
 def set_yutai_cache(code, today_str, has_yutai, record_month):
-    init_db()
-    with _conn() as con:
-        con.execute(
-            "INSERT OR REPLACE INTO yutai_cache (code,record_month,has_yutai,fetched_date) VALUES(?,?,?,?)",
-            (str(code), record_month, int(has_yutai), today_str)
-        )
+    sb.upsert("yutai_cache", [{
+        "code": str(code),
+        "record_month": record_month,
+        "has_yutai": int(has_yutai),
+        "fetched_date": today_str,
+    }], on_conflict="code")
 
 
 # ── fundamentals_annual ──────────────────────────────────────────────────
 
 def upsert_fundamentals_annual(code, rows, today_str):
-    """rows: list of dict(fy_end, announce_date, eps, dps, roe, bps)。code単位でまとめてupsert。"""
-    init_db()
-    with _conn() as con:
-        # dps 列が無い場合は ALTER TABLE で追加（既存DBの後方互換）
-        cols = {r[1] for r in con.execute("PRAGMA table_info(fundamentals_annual)").fetchall()}
-        if "dps" not in cols:
-            con.execute("ALTER TABLE fundamentals_annual ADD COLUMN dps REAL")
-        con.executemany(
-            """INSERT OR REPLACE INTO fundamentals_annual
-               (code, fy_end, announce_date, eps, dps, roe, bps, fetched_date)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            [(str(code), r["fy_end"], r.get("announce_date"), r.get("eps"),
-              r.get("dps"), r.get("roe"), r.get("bps"), today_str) for r in rows]
-        )
+    """rows: list of dict(fy_end, announce_date, eps, dps, roe, bps)"""
+    sb_rows = [{
+        "code": str(code),
+        "fy_end": r["fy_end"],
+        "announce_date": r.get("announce_date"),
+        "eps": r.get("eps"),
+        "dps": r.get("dps"),
+        "roe": r.get("roe"),
+        "bps": r.get("bps"),
+        "fetched_date": today_str,
+    } for r in rows]
+    sb.upsert("fundamentals_annual", sb_rows, on_conflict="code,fy_end")
 
 
 def get_fundamentals_annual(code):
     """code の年度別ファンダを発表日昇順で返す。"""
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            """SELECT fy_end, announce_date, eps, dps, roe, bps FROM fundamentals_annual
-               WHERE code=? AND announce_date IS NOT NULL ORDER BY announce_date""",
-            (str(code),)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    return sb.select(
+        "fundamentals_annual",
+        f"code=eq.{code}&announce_date=not.is.null&order=announce_date.asc"
+        "&select=fy_end,announce_date,eps,dps,roe,bps"
+    )
 
 
 def load_all_fundamentals_annual():
-    """全銘柄の年度別ファンダを {code: [rows...]} で返す（バックテスト用バルク読込）。"""
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            """SELECT code, fy_end, announce_date, eps, dps, roe, bps FROM fundamentals_annual
-               WHERE announce_date IS NOT NULL ORDER BY code, announce_date"""
-        ).fetchall()
+    """全銘柄の年度別ファンダを {code: [rows...]} で返す"""
+    rows = sb.select(
+        "fundamentals_annual",
+        "announce_date=not.is.null&order=code.asc,announce_date.asc"
+        "&select=code,fy_end,announce_date,eps,dps,roe,bps"
+    )
     out = {}
     for r in rows:
-        out.setdefault(str(r["code"]), []).append(dict(r))
+        out.setdefault(str(r["code"]), []).append(r)
     return out
 
 
+def get_fundamentals_fetched_codes(today_str):
+    """当日に取得済みの fundamentals_annual 銘柄コード集合。"""
+    rows = sb.select(
+        "fundamentals_annual",
+        f"fetched_date=eq.{today_str}&select=code"
+    )
+    return {str(r["code"]) for r in rows}
+
+
 def get_fundamentals_codes_count():
-    init_db()
-    with _conn() as con:
-        return con.execute(
-            "SELECT COUNT(DISTINCT code) FROM fundamentals_annual"
-        ).fetchone()[0]
+    rows = sb.select("fundamentals_annual", "select=code")
+    return len(set(r["code"] for r in rows))
 
 
-# ── sector_cache ───────────────────────────────────────────────────────────
+# ── sector_cache (→ web_stock_meta) ───────────────────────────────────────
 
 def get_all_sectors():
-    init_db()
-    with _conn() as con:
-        rows = con.execute("SELECT code, sector FROM sector_cache").fetchall()
-        return {r["code"]: r["sector"] for r in rows}
+    rows = sb.select("web_stock_meta", "select=code,sector")
+    return {r["code"]: r["sector"] for r in rows if r.get("sector")}
 
+
+def save_all_sectors(sector_map):
+    today_str = date.today().isoformat()
+    sb_rows = [{
+        "code": code,
+        "sector": sector,
+        "fetched_date": today_str,
+    } for code, sector in sector_map.items()]
+    sb.upsert("web_stock_meta", sb_rows, on_conflict="code")
+
+
+# ── simulation_results ────────────────────────────────────────────────────
 
 def save_simulation_results(run_date, rows):
-    """rows: list of dicts with keys matching simulation_results columns"""
-    init_db()
-    sql = """INSERT OR REPLACE INTO simulation_results
-             (run_date,entry_date,code,name,label,entry_price,current_price,return_pct,holding_days,net_at_entry,drop_prob_at_entry)
-             VALUES(?,?,?,?,?,?,?,?,?,?,?)"""
-    with _conn() as con:
-        con.executemany(sql, [
-            (run_date, r["entry_date"], r["code"], r.get("name"), r.get("label"),
-             r.get("entry_price"), r.get("current_price"), r.get("return_pct"),
-             r.get("holding_days"), r.get("net_at_entry"), r.get("drop_prob_at_entry"))
-            for r in rows
-        ])
+    sb_rows = [{
+        "run_date": run_date,
+        "entry_date": r["entry_date"],
+        "code": r["code"],
+        "name": r.get("name"),
+        "label": r.get("label"),
+        "entry_price": r.get("entry_price"),
+        "current_price": r.get("current_price"),
+        "return_pct": r.get("return_pct"),
+        "holding_days": r.get("holding_days"),
+        "net_at_entry": r.get("net_at_entry"),
+        "drop_prob_at_entry": r.get("drop_prob_at_entry"),
+    } for r in rows]
+    sb.upsert("simulation_results", sb_rows, on_conflict="run_date,entry_date,code")
 
 
 def load_simulation_results(run_date=None):
-    """run_dateを指定すればその日の結果、Noneなら全件"""
-    init_db()
-    with _conn() as con:
-        if run_date:
-            rows = con.execute(
-                "SELECT * FROM simulation_results WHERE run_date=? ORDER BY entry_date, return_pct DESC",
-                (run_date,)
-            ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT * FROM simulation_results ORDER BY run_date, entry_date, return_pct DESC"
-            ).fetchall()
-        return [dict(r) for r in rows]
+    if run_date:
+        return sb.select(
+            "simulation_results",
+            f"run_date=eq.{run_date}&order=entry_date.asc,return_pct.desc"
+        )
+    return sb.select(
+        "simulation_results",
+        "order=run_date.asc,entry_date.asc,return_pct.desc"
+    )
 
 
 def get_holding_days(codes, today_str):
-    """held_scores の MIN(date) から各コードの推定保有日数を返す。
-    DBに記録がないコード（新規追加銘柄）はキーなしで返る。"""
     if not codes:
         return {}
     from datetime import datetime as _dt
     today = _dt.strptime(today_str, "%Y-%m-%d").date()
-    init_db()
     result = {}
-    with _conn() as con:
-        for code in codes:
-            row = con.execute(
-                "SELECT MIN(date) AS first_date FROM held_scores WHERE code=?",
-                (str(code),)
-            ).fetchone()
-            if row and row["first_date"]:
-                first = _dt.strptime(row["first_date"], "%Y-%m-%d").date()
-                result[str(code)] = (today - first).days
+    for code in codes:
+        row = sb.select_one(
+            "held_scores",
+            f"code=eq.{code}&order=date.asc&select=date"
+        )
+        if row and row.get("date"):
+            first = _dt.strptime(row["date"], "%Y-%m-%d").date()
+            result[str(code)] = (today - first).days
     return result
 
 
-# ── price_cache ────────────────────────────────────────────────────────────
+# ── price_cache ───────────────────────────────────────────────────────────
 
 def get_price_cache_coverage(code):
     """キャッシュの (min_date_str, max_date_str) を返す。未キャッシュは None。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT MIN(date) AS mn, MAX(date) AS mx FROM price_cache WHERE code=?",
-            (str(code),)
-        ).fetchone()
-    if row and row["mn"]:
-        return row["mn"], row["mx"]
+    mn_row = sb.select_one("price_cache", f"code=eq.{code}&order=date.asc&select=date")
+    mx_row = sb.select_one("price_cache", f"code=eq.{code}&order=date.desc&select=date")
+    if mn_row and mx_row:
+        return mn_row["date"], mx_row["date"]
     return None
 
 
@@ -432,260 +312,202 @@ def get_price_cache(code, start_date_str, end_date_str):
     """キャッシュから DataFrame(Close, Volume) を返す。データ不足なら None。"""
     import pandas as pd
     from datetime import date as _date
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT date, close, volume FROM price_cache "
-            "WHERE code=? AND date>=? AND date<=? ORDER BY date",
-            (str(code), start_date_str, end_date_str)
-        ).fetchall()
+    rows = sb.select(
+        "price_cache",
+        f"code=eq.{code}&date=gte.{start_date_str}&date=lte.{end_date_str}"
+        f"&order=date.asc&select=date,close,volume"
+    )
     if len(rows) < 100:
         return None
-    dates  = [r["date"]  for r in rows]
+    dates = [r["date"] for r in rows]
     closes = [r["close"] for r in rows]
-    vols   = [r["volume"] for r in rows]
+    vols = [r["volume"] for r in rows]
     idx = [_date.fromisoformat(d) for d in dates]
     return pd.DataFrame({"Close": closes, "Volume": vols}, index=idx)
 
 
 def save_price_cache(code, df):
-    """DataFrame を price_cache に INSERT OR IGNORE で保存。"""
+    """DataFrame を price_cache に INSERT IGNORE で保存。"""
     import math
-    init_db()
     rows = []
     for idx, row in df.iterrows():
-        # 日付を YYYY-MM-DD 形式に統一（Timestamp の isoformat は時刻付きになるため）
         d = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
         cv = row.get("Close")
         vv = row.get("Volume")
         c = float(cv) if cv is not None and not (isinstance(cv, float) and math.isnan(cv)) else None
-        v = int(vv)   if vv is not None and not (isinstance(vv, float) and math.isnan(vv)) else None
-        rows.append((str(code), d, c, v))
-    if not rows:
-        return
-    with _conn() as con:
-        con.executemany(
-            "INSERT OR IGNORE INTO price_cache (code, date, close, volume) VALUES (?,?,?,?)",
-            rows
-        )
+        v = int(vv) if vv is not None and not (isinstance(vv, float) and math.isnan(vv)) else None
+        rows.append({"code": str(code), "date": d, "close": c, "volume": v})
+    if rows:
+        sb.insert_ignore("price_cache", rows, on_conflict="code,date")
 
 
 # ── earnings_sentiment ────────────────────────────────────────────────────
 
 def get_earnings_sentiment(code: str, today_str: str):
     """今日キャッシュ済みならスコア(float)を返す。未キャッシュは None。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT score FROM earnings_sentiment WHERE code=? AND fetched_date=?",
-            (str(code), today_str)
-        ).fetchone()
+    row = sb.select_one(
+        "earnings_sentiment",
+        f"code=eq.{code}&fetched_date=eq.{today_str}&select=score"
+    )
     return float(row["score"]) if row else None
 
 
 def set_earnings_sentiment(code: str, today_str: str, score: float):
-    init_db()
-    with _conn() as con:
-        con.execute(
-            "INSERT OR REPLACE INTO earnings_sentiment (code, fetched_date, score) VALUES(?,?,?)",
-            (str(code), today_str, float(score))
-        )
+    sb.upsert("earnings_sentiment", [{
+        "code": str(code),
+        "fetched_date": today_str,
+        "score": float(score),
+    }], on_conflict="code,fetched_date")
 
 
 # ── margin_data ──────────────────────────────────────────────────────────
 
 def upsert_margin_data(code: str, week_date: str, buy: float, sell: float, ratio: float):
-    init_db()
-    from datetime import date
     today_str = date.today().isoformat()
-    with _conn() as con:
-        con.execute(
-            """INSERT OR REPLACE INTO margin_data
-               (code, week_date, buy_balance, sell_balance, ratio, fetched_date)
-               VALUES(?,?,?,?,?,?)""",
-            (str(code), week_date, buy, sell, ratio, today_str)
-        )
+    sb.upsert("margin_data", [{
+        "code": str(code),
+        "week_date": week_date,
+        "buy_balance": buy,
+        "sell_balance": sell,
+        "ratio": ratio,
+        "fetched_date": today_str,
+    }], on_conflict="code,week_date")
 
 
 def get_margin_data_latest(code: str):
-    """最新の信用倍率データを返す。なければ None。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT week_date, buy_balance, sell_balance, ratio FROM margin_data "
-            "WHERE code=? ORDER BY week_date DESC LIMIT 1",
-            (str(code),)
-        ).fetchone()
-    return dict(row) if row else None
+    return sb.select_one(
+        "margin_data",
+        f"code=eq.{code}&order=week_date.desc&select=week_date,buy_balance,sell_balance,ratio"
+    )
 
 
 def get_margin_data_history(code: str, n: int = 8):
-    """過去 n 週の信用倍率履歴を返す（新しい順）。"""
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT week_date, buy_balance, sell_balance, ratio FROM margin_data "
-            "WHERE code=? ORDER BY week_date DESC LIMIT ?",
-            (str(code), n)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    return sb.select(
+        "margin_data",
+        f"code=eq.{code}&order=week_date.desc&limit={n}"
+        f"&select=week_date,buy_balance,sell_balance,ratio"
+    )
 
 
 # ── short_interest ────────────────────────────────────────────────────────
 
 def bulk_upsert_short_interest(rows):
     """rows: list of (code, week_date, short_balance, short_amount)"""
-    init_db()
-    with _conn() as con:
-        con.executemany(
-            "INSERT OR REPLACE INTO short_interest (code, week_date, short_balance, short_amount) VALUES(?,?,?,?)",
-            rows
-        )
+    sb_rows = [{
+        "code": r[0],
+        "week_date": r[1],
+        "short_balance": r[2],
+        "short_amount": r[3],
+    } for r in rows]
+    sb.upsert("short_interest", sb_rows, on_conflict="code,week_date")
 
 
 def get_short_interest_latest(code: str):
-    """最新の空売り残高データを返す。なければ None。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT week_date, short_balance, short_amount FROM short_interest "
-            "WHERE code=? ORDER BY week_date DESC LIMIT 1",
-            (str(code),)
-        ).fetchone()
-    return dict(row) if row else None
+    return sb.select_one(
+        "short_interest",
+        f"code=eq.{code}&order=week_date.desc&select=week_date,short_balance,short_amount"
+    )
 
 
 # ── tdnet_events ──────────────────────────────────────────────────────────
 
 def upsert_tdnet_events(code: str, events: list):
     """events: list of {'announce_date', 'title', 'event_type'}"""
-    init_db()
-    from datetime import date
     today_str = date.today().isoformat()
-    with _conn() as con:
-        con.executemany(
-            "INSERT OR REPLACE INTO tdnet_events (code, announce_date, title, event_type, fetched_date) VALUES(?,?,?,?,?)",
-            [(str(code), e["announce_date"], e["title"], e["event_type"], today_str) for e in events]
-        )
+    sb_rows = [{
+        "code": str(code),
+        "announce_date": e["announce_date"],
+        "title": e["title"],
+        "event_type": e["event_type"],
+        "fetched_date": today_str,
+    } for e in events]
+    sb.upsert("tdnet_events", sb_rows, on_conflict="code,announce_date,title")
+
+
+def tdnet_fetched_today(code: str, today_str: str) -> bool:
+    """当日に code の tdnet をフェッチ済みか。"""
+    row = sb.select_one(
+        "tdnet_events",
+        f"code=eq.{code}&fetched_date=eq.{today_str}&select=code"
+    )
+    return row is not None
 
 
 def get_tdnet_events_recent(code: str, days: int = 60):
-    """直近 days 日以内の適時開示イベントを返す（新しい順）。"""
-    init_db()
-    from datetime import date, timedelta
     cutoff = (date.today() - timedelta(days=days)).isoformat()
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT announce_date, title, event_type FROM tdnet_events "
-            "WHERE code=? AND announce_date >= ? ORDER BY announce_date DESC",
-            (str(code), cutoff)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    return sb.select(
+        "tdnet_events",
+        f"code=eq.{code}&announce_date=gte.{cutoff}&order=announce_date.desc"
+        f"&select=announce_date,title,event_type"
+    )
 
 
-# ── edinet_holdings ────────────────────────────────────────────────────────
+# ── edinet_holdings ───────────────────────────────────────────────────────
 
 def upsert_edinet_holdings(records: list):
-    """records: list of dict with keys
-    doc_id, sec_code, filer_name, doc_type_code, doc_description, submit_date, disc_date"""
     if not records:
         return
-    init_db()
-    from datetime import date
     today_str = date.today().isoformat()
-    with _conn() as con:
-        con.executemany(
-            "INSERT OR REPLACE INTO edinet_holdings "
-            "(doc_id, sec_code, filer_name, doc_type_code, doc_description, submit_date, disc_date, fetched_date) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            [(r["doc_id"], r.get("sec_code"), r.get("filer_name"), r.get("doc_type_code"),
-              r.get("doc_description"), r.get("submit_date"), r.get("disc_date"), today_str)
-             for r in records]
-        )
+    sb_rows = [{
+        "doc_id": r["doc_id"],
+        "sec_code": r.get("sec_code"),
+        "filer_name": r.get("filer_name"),
+        "doc_type_code": r.get("doc_type_code"),
+        "doc_description": r.get("doc_description"),
+        "submit_date": r.get("submit_date"),
+        "disc_date": r.get("disc_date"),
+        "fetched_date": today_str,
+    } for r in records]
+    sb.upsert("edinet_holdings", sb_rows, on_conflict="doc_id")
 
 
 def get_edinet_holdings_recent(days: int = 30, codes: list | None = None):
-    """直近 days 日以内の大量保有報告イベントを返す（新しい順）。
-    codes 指定時はその証券コードのみに絞る。"""
-    init_db()
-    from datetime import date, timedelta
     cutoff = (date.today() - timedelta(days=days)).isoformat()
-    sql = ("SELECT doc_id, sec_code, filer_name, doc_type_code, doc_description, "
-           "submit_date, disc_date FROM edinet_holdings WHERE disc_date >= ?")
-    params: list = [cutoff]
+    q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
+    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date"
     if codes:
-        placeholders = ",".join("?" for _ in codes)
-        sql += f" AND sec_code IN ({placeholders})"
-        params.extend([str(c) for c in codes])
-    sql += " ORDER BY disc_date DESC, submit_date DESC"
-    with _conn() as con:
-        rows = con.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+        code_list = ",".join(str(c) for c in codes)
+        q += f"&sec_code=in.({code_list})"
+    return sb.select("edinet_holdings", q)
 
 
-def save_all_sectors(sector_map):
-    from datetime import date
-    today_str = date.today().isoformat()
-    init_db()
-    with _conn() as con:
-        con.executemany(
-            "INSERT OR REPLACE INTO sector_cache (code,sector,fetched_date) VALUES(?,?,?)",
-            [(code, sector, today_str) for code, sector in sector_map.items()]
-        )
-
-
-# ── market_index_cache ─────────────────────────────────────────────────────
-# VIX / S&P500 / USD/JPY の日次終値をDBキャッシュ。毎回Yahoo取得をなくす。
+# ── market_index_cache ────────────────────────────────────────────────────
 
 def get_market_index_latest_date(ticker: str):
-    """DBに保存されている最新日付文字列を返す。なければ None。"""
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT MAX(date) AS mx FROM market_index_cache WHERE ticker=?",
-            (ticker,)
-        ).fetchone()
-    return row["mx"] if row and row["mx"] else None
+    row = sb.select_one(
+        "market_index_cache",
+        f"ticker=eq.{ticker}&order=date.desc&select=date"
+    )
+    return row["date"] if row else None
 
 
 def save_market_index_data(ticker: str, df):
-    """date-indexed DataFrame(Close列)を market_index_cache に一括保存。INSERT OR IGNORE。"""
     import math
     if df is None or len(df) == 0:
         return
-    init_db()
     rows = []
     for idx, row in df.iterrows():
         d = idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx)[:10]
         c = row["Close"]
         if c is None or (isinstance(c, float) and math.isnan(c)):
             continue
-        rows.append((ticker, d, float(c)))
+        rows.append({"ticker": ticker, "date": d, "close": float(c)})
     if rows:
-        with _conn() as con:
-            con.executemany(
-                "INSERT OR IGNORE INTO market_index_cache (ticker, date, close) VALUES(?,?,?)",
-                rows
-            )
+        sb.insert_ignore("market_index_cache", rows, on_conflict="ticker,date")
 
 
 def load_market_index_data(ticker: str, days: int = 2200):
-    """DBから直近 days 日分を date-indexed DataFrame(Close) で返す。なければ None。"""
     import pandas as pd
-    from datetime import date, timedelta
-    init_db()
+    from datetime import date as _date
     cutoff = (date.today() - timedelta(days=days)).isoformat()
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT date, close FROM market_index_cache "
-            "WHERE ticker=? AND date>=? ORDER BY date",
-            (ticker, cutoff)
-        ).fetchall()
+    rows = sb.select(
+        "market_index_cache",
+        f"ticker=eq.{ticker}&date=gte.{cutoff}&order=date.asc&select=date,close"
+    )
     if not rows:
         return None
-    dates  = [r["date"]  for r in rows]
+    dates = [r["date"] for r in rows]
     closes = [r["close"] for r in rows]
-    from datetime import date as _date
     idx = [_date.fromisoformat(d) for d in dates]
     return pd.DataFrame({"Close": closes}, index=idx)
 
@@ -693,133 +515,108 @@ def load_market_index_data(ticker: str, days: int = 2200):
 # ── margin_data / short_interest: point-in-time lookup ────────────────────
 
 def get_margin_ratio_at(code: str, as_of_date: str) -> "float | None":
-    """
-    as_of_date（YYYY-MM-DD）時点で利用可能な最新の信用倍率を返す。
-    週次データなので as_of_date 以前の最新値を返す。
-    """
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT ratio FROM margin_data "
-            "WHERE code=? AND week_date <= ? ORDER BY week_date DESC LIMIT 1",
-            (str(code), as_of_date)
-        ).fetchone()
-    return float(row["ratio"]) if row and row["ratio"] is not None else None
-
-
-def bulk_upsert_jquants_fin_summary(rows: list):
-    """
-    rows: list of dict with keys matching jquants_fin_summary columns
-    (code, disc_date, doc_type, fy_end, np, cfo, ta, equity, eps, bps, div_ann, payout_ratio, sh_out, tr_sh)
-    """
-    init_db()
-    with _conn() as con:
-        # 既存DBへの予想カラム追加（マイグレーション）
-        existing = {r[1] for r in con.execute("PRAGMA table_info(jquants_fin_summary)").fetchall()}
-        for col in ("fnp", "fop", "fsales", "op", "sales"):
-            if col not in existing:
-                con.execute(f"ALTER TABLE jquants_fin_summary ADD COLUMN {col} REAL")
-        con.executemany(
-            """INSERT OR REPLACE INTO jquants_fin_summary
-               (code, disc_date, doc_type, fy_end, np, cfo, ta, equity, eps, bps,
-                div_ann, payout_ratio, sh_out, tr_sh, fnp, fop, fsales, op, sales)
-               VALUES(:code,:disc_date,:doc_type,:fy_end,:np,:cfo,:ta,:equity,:eps,:bps,
-                      :div_ann,:payout_ratio,:sh_out,:tr_sh,:fnp,:fop,:fsales,:op,:sales)""",
-            rows
-        )
-
-
-def get_jquants_fin_history(code: str, as_of_date: str, n: int = 4) -> list:
-    """
-    as_of_date 以前に開示された最新 n 件の財務サマリーを返す（新しい順）。
-    FYのみに絞る場合は doc_type='FY' でフィルタ可能。
-    """
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            """SELECT * FROM jquants_fin_summary
-               WHERE code=? AND disc_date <= ?
-               ORDER BY disc_date DESC LIMIT ?""",
-            (str(code), as_of_date, n)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def get_jquants_fin_history_fy(code: str, as_of_date: str, n: int = 3) -> list:
-    """FYレポートのみ n 件（年次）"""
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            """SELECT * FROM jquants_fin_summary
-               WHERE code=? AND disc_date <= ? AND doc_type LIKE 'FY%'
-               ORDER BY disc_date DESC LIMIT ?""",
-            (str(code), as_of_date, n)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    row = sb.select_one(
+        "margin_data",
+        f"code=eq.{code}&week_date=lte.{as_of_date}&order=week_date.desc&select=ratio"
+    )
+    return float(row["ratio"]) if row and row.get("ratio") is not None else None
 
 
 def get_short_balance_at(code: str, as_of_date: str) -> "dict | None":
-    """
-    as_of_date（YYYY-MM-DD）時点で利用可能な最新の空売り残高を返す。
-    {'week_date': str, 'short_balance': float, 'short_amount': float | None}
-    """
-    init_db()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT week_date, short_balance, short_amount FROM short_interest "
-            "WHERE code=? AND week_date <= ? ORDER BY week_date DESC LIMIT 1",
-            (str(code), as_of_date)
-        ).fetchone()
-    return dict(row) if row else None
+    return sb.select_one(
+        "short_interest",
+        f"code=eq.{code}&week_date=lte.{as_of_date}&order=week_date.desc"
+        f"&select=week_date,short_balance,short_amount"
+    )
 
 
-# ── top10シミュレーション ─────────────────────────────────────────────────
+# ── jquants_fin_summary ──────────────────────────────────────────────────
+
+def bulk_upsert_jquants_fin_summary(rows: list):
+    sb.upsert("jquants_fin_summary", rows, on_conflict="code,disc_date")
+
+
+def get_jquants_fin_history(code: str, as_of_date: str, n: int = 4) -> list:
+    return sb.select(
+        "jquants_fin_summary",
+        f"code=eq.{code}&disc_date=lte.{as_of_date}&order=disc_date.desc&limit={n}"
+    )
+
+
+def get_jquants_fin_history_fy(code: str, as_of_date: str, n: int = 3) -> list:
+    return sb.select(
+        "jquants_fin_summary",
+        f"code=eq.{code}&disc_date=lte.{as_of_date}&doc_type=like.FY*"
+        f"&order=disc_date.desc&limit={n}"
+    )
+
+
+def jquants_earnings_rows(code: str) -> list:
+    """利益の質フィルター用の年次行を jquants_fin_summary から組み立てる（kabutan非依存）。
+    各FY行を {fy_end, is_forecast, revenue, op_profit, net_income} に整形（fy_end昇順）。
+    最新開示の会社予想(fop/fsales/fnp)があれば予想行を1件追加。"""
+    rows = sb.select(
+        "jquants_fin_summary",
+        f"code=eq.{code}&doc_type=eq.FY&op=not.is.null"
+        "&order=fy_end.asc&select=fy_end,sales,op,np,disc_date,fop,fsales,fnp"
+    )
+    out = []
+    for r in rows:
+        out.append({"fy_end": r["fy_end"], "is_forecast": False,
+                    "revenue": r["sales"], "op_profit": r["op"], "net_income": r["np"]})
+    fc = sb.select_one(
+        "jquants_fin_summary",
+        f"code=eq.{code}&fop=not.is.null&order=disc_date.desc&select=fop,fsales,fnp"
+    )
+    if fc and fc.get("fop") is not None:
+        out.append({"fy_end": "forecast", "is_forecast": True,
+                    "revenue": fc.get("fsales"), "op_profit": fc.get("fop"),
+                    "net_income": fc.get("fnp")})
+    return out
+
+
+# ── top10 シミュレーション ────────────────────────────────────────────────
 
 def get_top10_sim_active() -> list:
-    """現在アクティブなシミュレーションポジション一覧を返す。"""
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT * FROM top10_sim WHERE status='active' ORDER BY entry_date DESC"
-        ).fetchall()
-    return [dict(r) for r in rows]
+    return sb.select("top10_sim", "status=eq.active&order=entry_date.desc")
 
 
 def get_top10_sim_recent_exits(n: int = 20) -> list:
-    """直近 n 件の決済済みポジションを返す。"""
-    init_db()
-    with _conn() as con:
-        rows = con.execute(
-            "SELECT * FROM top10_sim WHERE status='exited' ORDER BY exit_date DESC LIMIT ?",
-            (n,)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    return sb.select(
+        "top10_sim",
+        f"status=eq.exited&order=exit_date.desc&limit={n}"
+    )
 
 
 def upsert_top10_sim_entry(entry_date: str, code: str, name: str,
                             entry_net: float, entry_price: float) -> None:
-    """新規エントリーを登録（既存なら無視）。"""
-    init_db()
-    with _conn() as con:
-        con.execute(
-            """INSERT OR IGNORE INTO top10_sim
-               (entry_date, code, name, entry_net, entry_price, status)
-               VALUES (?, ?, ?, ?, ?, 'active')""",
-            (entry_date, code, name, entry_net, entry_price)
-        )
+    sb.insert_ignore("top10_sim", [{
+        "entry_date": entry_date,
+        "code": code,
+        "name": name,
+        "entry_net": entry_net,
+        "entry_price": entry_price,
+        "status": "active",
+    }], on_conflict="entry_date,code")
 
 
 def close_top10_sim_position(entry_date: str, code: str,
                               exit_date: str, exit_net: float,
                               exit_price: float) -> None:
-    """ポジションを決済済みに更新。"""
-    init_db()
-    with _conn() as con:
-        con.execute(
-            """UPDATE top10_sim SET
-               exit_date=?, exit_net=?, exit_price=?,
-               return_pct=ROUND((exit_price - entry_price) / entry_price * 100, 2),
-               status='exited'
-               WHERE entry_date=? AND code=?""",
-            (exit_date, exit_net, exit_price, entry_date, code)
-        )
+    row = sb.select_one(
+        "top10_sim",
+        f"entry_date=eq.{entry_date}&code=eq.{code}&select=entry_price"
+    )
+    if not row:
+        return
+    entry_price = row["entry_price"]
+    return_pct = round((exit_price - entry_price) / entry_price * 100, 2) if entry_price else 0
+    sb.upsert("top10_sim", [{
+        "entry_date": entry_date,
+        "code": code,
+        "exit_date": exit_date,
+        "exit_net": exit_net,
+        "exit_price": exit_price,
+        "return_pct": return_pct,
+        "status": "exited",
+    }], on_conflict="entry_date,code")

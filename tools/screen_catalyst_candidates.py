@@ -27,91 +27,13 @@ Usage:
   python3 tools/screen_catalyst_candidates.py --pbr-max 0.8 --roe-max 6 --equity-min 0.6 --top 50
   python3 tools/screen_catalyst_candidates.py --no-quality   # 品質フィルター無効
 """
-import sys, os, csv, argparse, sqlite3, glob
+import sys, os, csv, argparse, glob
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.db import DB_PATH
+import lib.supabase_client as sb
+from lib.db import jquants_earnings_rows
 from lib.kabutan_earnings import fetch_kabutan_earnings
 from lib.earnings_quality import assess_earnings_quality
-
-
-def latest_close(con, code):
-    r = con.execute(
-        "SELECT close FROM price_cache WHERE code=? ORDER BY date DESC LIMIT 1", (code,)
-    ).fetchone()
-    return r[0] if r and r[0] else None
-
-
-def latest_bps_roe(con, code):
-    """fundamentals_annual から直近の非NULL bps と roe を独立に取得。"""
-    rows = con.execute(
-        "SELECT roe, bps FROM fundamentals_annual WHERE code=? ORDER BY fy_end DESC LIMIT 6",
-        (code,)
-    ).fetchall()
-    roe = next((r[0] for r in rows if r[0] is not None), None)
-    bps = next((r[1] for r in rows if r[1] is not None), None)
-    return bps, roe
-
-
-def latest_bps_split_safe(con, code):
-    """分割調整済み株価(price_cache)と整合するBPSを返す。
-    J-Quants(jquants_fin_summary)のBPSは開示ごとに分割後株数で再表示されるため、
-    株式分割を実施した銘柄でも分割調整漏れが起きない。直近開示のbps(>0)を採用。
-    J-Quants未取得の銘柄は None（呼び出し側でfundamentals_annual値にフォールバック）。"""
-    r = con.execute(
-        "SELECT bps FROM jquants_fin_summary "
-        "WHERE code=? AND bps IS NOT NULL AND bps>0 "
-        "ORDER BY disc_date DESC LIMIT 1", (code,)
-    ).fetchone()
-    return r[0] if r else None
-
-
-def latest_equity_ratio(con, code):
-    """jquants_fin_summary から直近の equity/ta（自己資本比率）。"""
-    r = con.execute(
-        "SELECT equity, ta FROM jquants_fin_summary "
-        "WHERE code=? AND equity IS NOT NULL AND ta IS NOT NULL AND ta>0 "
-        "ORDER BY disc_date DESC LIMIT 1", (code,)
-    ).fetchone()
-    if r and r[1]:
-        return r[0] / r[1]
-    return None
-
-
-def latest_roe_jquants(con, code):
-    """fundamentals_annual(kabutan)が無い環境用。直近FYの純利益÷純資産でROE(%)を算出。"""
-    r = con.execute(
-        "SELECT np, equity FROM jquants_fin_summary "
-        "WHERE code=? AND doc_type='FY' AND np IS NOT NULL AND equity IS NOT NULL AND equity>0 "
-        "ORDER BY disc_date DESC LIMIT 1", (code,)
-    ).fetchone()
-    if r and r[1]:
-        return r[0] / r[1] * 100.0
-    return None
-
-
-def jquants_earnings_rows(con, code):
-    """jquants_fin_summary から利益の質フィルター用の年次行を組み立てる（kabutan非依存）。
-    各FY行を {fy_end, is_forecast, revenue, op_profit, net_income} に整形（fy_end昇順）。
-    最新開示の会社予想(fop/fsales/fnp)があれば予想行を1件追加。"""
-    rows = con.execute(
-        "SELECT fy_end, sales, op, np, disc_date, fop, fsales, fnp "
-        "FROM jquants_fin_summary WHERE code=? AND doc_type='FY' "
-        "AND op IS NOT NULL ORDER BY fy_end ASC", (code,)
-    ).fetchall()
-    out = []
-    for r in rows:
-        out.append({"fy_end": r[0], "is_forecast": False,
-                    "revenue": r[1], "op_profit": r[2], "net_income": r[3]})
-    # 会社予想（最新開示の通期予想）を予想行として付与
-    fc = con.execute(
-        "SELECT fop, fsales, fnp FROM jquants_fin_summary "
-        "WHERE code=? AND fop IS NOT NULL ORDER BY disc_date DESC LIMIT 1", (code,)
-    ).fetchone()
-    if fc and fc[0] is not None:
-        out.append({"fy_end": "forecast", "is_forecast": True,
-                    "revenue": fc[1], "op_profit": fc[0], "net_income": fc[2]})
-    return out
 
 
 def load_name_map():
@@ -128,18 +50,6 @@ def load_name_map():
                 if c and c not in name_map:
                     name_map[c] = row.get("銘柄名", "")
     return name_map
-
-
-def avg_turnover_m(con, code, days=20):
-    """直近days日の平均売買代金（百万円）。流動性フィルタ用。"""
-    rows = con.execute(
-        "SELECT close, volume FROM price_cache WHERE code=? ORDER BY date DESC LIMIT ?",
-        (code, days)
-    ).fetchall()
-    vals = [c * v for c, v in rows if c and v]
-    if len(vals) < max(5, days // 2):
-        return None
-    return (sum(vals) / len(vals)) / 1e6
 
 
 def load_monopoly_set():
@@ -169,45 +79,30 @@ def main():
                    help="品質フィルターで除外した銘柄の出力先（人手レビュー用）")
     args = p.parse_args()
 
-    con = sqlite3.connect(DB_PATH)
     name_map = load_name_map()
     mono = load_monopoly_set()
 
-    codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM price_cache").fetchall()]
-    print(f"universe: {len(codes)}銘柄をスクリーニング中...")
+    print("universe: Supabase(RPC)でスクリーニング中...")
+    rows = sb.rpc("screen_catalyst_candidates", {
+        "pbr_max": args.pbr_max,
+        "roe_max": args.roe_max,
+        "equity_min": args.equity_min,
+        "min_turnover": args.min_turnover,
+    }) or []
 
     cands = []
     excluded = []
     excl_counts = {"営業赤字": 0, "化粧決算": 0, "本業減益": 0}
-    for code in codes:
-        close = latest_close(con, code)
-        bps_kab, roe = latest_bps_roe(con, code)
-        # ROEは fundamentals_annual(kabutan) 優先。無い環境(クラウド)では J-Quants(純利益/純資産)で算出。
-        if roe is None:
-            roe = latest_roe_jquants(con, code)
-        # PBRは分割調整済み株価と整合するJ-Quants BPSを優先（分割調整漏れ防止）。
-        # J-Quants未取得の銘柄のみ fundamentals_annual(株探) 値にフォールバック。
-        bps = latest_bps_split_safe(con, code) or bps_kab
-        if close is None or bps is None or bps <= 0 or roe is None:
-            continue
-        pbr = close / bps
-        if pbr >= args.pbr_max or roe >= args.roe_max:
-            continue
-        eq_ratio = latest_equity_ratio(con, code)
-        if eq_ratio is None or eq_ratio < args.equity_min:
-            continue
-        # 流動性フィルタ（実際に売買できる水準に絞る）
-        turn = avg_turnover_m(con, code)
-        if turn is None or turn < args.min_turnover:
-            continue
-        # 候補スコア: 割安(PBR低)×財務余力(自己資本比率高)。低いほど買収/改革妙味が大きい
-        score = (1.0 - pbr) * eq_ratio
-
+    # 基本スクリーン（割安×財務余力×流動性・ROE/BPSフォールバック）はRPCでサーバーサイド集計済み。
+    # 利益の質A/Bは通過した少数候補にのみPythonで適用する。
+    for r in rows:
+        code = r["code"]
+        score = r["score"]
         row = {
             "code": code, "name": name_map.get(code, ""),
-            "pbr": round(pbr, 2), "roe": round(roe, 1),
-            "equity_ratio": round(eq_ratio * 100, 1),
-            "turnover_m": round(turn, 0),
+            "pbr": round(r["pbr"], 2), "roe": round(r["roe"], 1),
+            "equity_ratio": round(r["equity_ratio"] * 100, 1),
+            "turnover_m": round(r["turnover_m"], 0),
             "monopoly": mono.get(code, ""),
             "score": round(score, 3),
         }
@@ -215,7 +110,7 @@ def main():
         # 利益の質フィルター（A: 化粧除外 / B: 斜陽除外）＋ 成長加減点
         if not args.no_quality:
             # kabutan(営業益・売上)優先。取れない環境(クラウド)では J-Quants実績で代替。
-            earn_rows = fetch_kabutan_earnings(code) or jquants_earnings_rows(con, code)
+            earn_rows = fetch_kabutan_earnings(code) or jquants_earnings_rows(code)
             q = assess_earnings_quality(earn_rows)
             row.update({
                 "op_yoy": q["op_yoy"], "op_margin": q["op_margin"],
@@ -233,7 +128,6 @@ def main():
         cands.append(row)
 
     cands.sort(key=lambda x: -x["score"])
-    con.close()
 
     q_on = not args.no_quality
     print(f"\n該当: {len(cands)}銘柄（PBR<{args.pbr_max} / ROE<{args.roe_max}% / 自己資本比率>{args.equity_min*100:.0f}% / 売買代金≥{args.min_turnover:.0f}百万円"

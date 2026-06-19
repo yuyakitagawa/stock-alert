@@ -58,14 +58,6 @@ jobs:
           restore-keys: |
             ml-models-v35-weekly-
 
-      - name: Restore DB cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/stock_alert.db
-          key: stock-alert-db-${{ github.run_number }}
-          restore-keys: |
-            stock-alert-db-
-
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
 
@@ -122,13 +114,6 @@ jobs:
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
           key: ml-models-v35-weekly-${{ github.run_number }}
-
-      - name: Save DB cache
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/stock_alert.db
-          key: stock-alert-db-${{ github.run_number }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4

@@ -929,20 +929,16 @@ def qa_review(proposal, adopted: bool) -> tuple[bool, str]:
 
     # ③ 最新ランキングのデータ整合性（防御の二重化）
     try:
-        import sqlite3
         from lib.data_sanity import check_ranking, has_critical
-        conn = sqlite3.connect(BASE_DIR / "stock_alert.db")
-        conn.row_factory = sqlite3.Row
-        latest = conn.execute("SELECT MAX(date) FROM daily_ranking").fetchone()[0]
+        from lib.db import get_latest_ranking_date, get_ranking_by_date
+        latest = get_latest_ranking_date()
         if latest:
-            rows = [dict(r) for r in conn.execute(
-                "SELECT code, rise_prob, drop_prob, net, recommend "
-                "FROM daily_ranking WHERE date=?", (latest,)).fetchall()]
+            rows = get_ranking_by_date(
+                latest, select="code,rise_prob,drop_prob,net,recommend")
             v = check_ranking(rows)
             if has_critical(v):
                 crit = [x.check for x in v if x.severity == "critical"]
                 issues.append(f"最新ランキング({latest})にcritical違反: {crit}")
-        conn.close()
     except Exception as e:
         issues.append(f"ランキング整合性チェック失敗: {e}")
 

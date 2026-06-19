@@ -254,20 +254,13 @@ def load_held_stocks():
 
 def load_top_ranking(n=15):
     """最新ランキングをDBから取得。DBにデータがなければCSVにフォールバック。"""
-    import sqlite3
-    from lib.db import DB_PATH, init_db
-    init_db()
-    with sqlite3.connect(DB_PATH) as con:
-        con.row_factory = sqlite3.Row
-        row = con.execute("SELECT MAX(date) FROM daily_ranking").fetchone()
-        if row and row[0]:
-            rows = con.execute(
-                "SELECT * FROM daily_ranking WHERE date=? ORDER BY net DESC LIMIT ?",
-                (row[0], n)
-            ).fetchall()
-            df = _db_ranking_to_df(rows)
-            if df is not None:
-                return df
+    from lib.db import get_latest_ranking_date, get_ranking_by_date
+    latest = get_latest_ranking_date()
+    if latest:
+        rows = get_ranking_by_date(latest)[:n]
+        df = _db_ranking_to_df(rows)
+        if df is not None:
+            return df
     files = _ranking_glob_files()
     if not files:
         return None
@@ -276,17 +269,12 @@ def load_top_ranking(n=15):
 
 def load_prev_ranking_codes():
     """前回ランキングの銘柄コードセットをDBから取得。"""
-    import sqlite3
-    from lib.db import DB_PATH, init_db
-    init_db()
-    with sqlite3.connect(DB_PATH) as con:
-        dates = con.execute(
-            "SELECT DISTINCT date FROM daily_ranking ORDER BY date DESC LIMIT 2"
-        ).fetchall()
-        if len(dates) < 2:
-            return set()
-        rows = con.execute("SELECT code FROM daily_ranking WHERE date=?", (dates[1][0],)).fetchall()
-        return {r[0] for r in rows}
+    from lib.db import get_ranking_dates_desc, get_ranking_by_date
+    dates = get_ranking_dates_desc(limit=2)
+    if len(dates) < 2:
+        return set()
+    rows = get_ranking_by_date(dates[1], select="code")
+    return {r["code"] for r in rows}
 
 
 
@@ -476,9 +464,7 @@ TOP10_SIM_SELL_THRESH = 5.0  # net < 5% で売却（信号消滅基準）
 
 def build_top10_sim_section(today_str: str, ranking_df=None) -> str:
     """Top10シミュレーション: アクティブポジション + 直近決済結果をHTMLで返す。"""
-    import sqlite3 as _sqlite3
-    from lib.db import DB_PATH, init_db, get_top10_sim_active, get_top10_sim_recent_exits
-    init_db()
+    from lib.db import get_top10_sim_active, get_top10_sim_recent_exits
 
     # 今日のnet・価格を取得
     today_net   = {}
@@ -793,17 +779,13 @@ def main():
 
     # QA: メール送信前に最新ランキングの整合性を検査（alert-only）
     try:
-        import sqlite3 as _sqlite3
         from lib.data_sanity import run_gate
-        _con = _sqlite3.connect(os.path.join(BASE_DIR, "stock_alert.db"))
-        _con.row_factory = _sqlite3.Row
-        _latest = _con.execute("SELECT MAX(date) FROM daily_ranking").fetchone()[0]
+        from lib.db import get_latest_ranking_date, get_ranking_by_date
+        _latest = get_latest_ranking_date()
         if _latest:
-            _rows = [dict(r) for r in _con.execute(
-                "SELECT code, rise_prob, drop_prob, net, recommend "
-                "FROM daily_ranking WHERE date=?", (_latest,)).fetchall()]
+            _rows = get_ranking_by_date(
+                _latest, select="code,rise_prob,drop_prob,net,recommend")
             run_gate(_rows, source="alert_email", alert=True)
-        _con.close()
     except Exception as _e:
         logger.warning("QAチェックでエラー（無視して継続）: %s", _e)
 

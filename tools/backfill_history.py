@@ -28,7 +28,6 @@ from lib.db import save_daily_ranking, DB_PATH, init_db
 from config import BASE_DIR
 from core.screener import get_tse_stock_list
 from core.rank_stocks import passes_buy_filter, MIN_LIQUIDITY_M, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
-import sqlite3
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
@@ -153,11 +152,8 @@ def nk_rets_at(nk_hist, trading_dates, target_date_str):
 
 def get_existing_dates():
     """DB に既存のランキング日付セットを返す"""
-    init_db()
-    con = sqlite3.connect(DB_PATH)
-    rows = con.execute("SELECT DISTINCT date FROM daily_ranking").fetchall()
-    con.close()
-    return {r[0] for r in rows}
+    from lib.db import get_ranking_dates_desc
+    return set(get_ranking_dates_desc())
 
 
 def main():
@@ -345,14 +341,10 @@ def export_all_to_supabase(dates, names):
         print("  SUPABASE_URL 未設定、スキップ")
         return
 
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
+    from lib.db import get_ranking_by_date
 
     for date_str in sorted(dates):
-        rows = con.execute(
-            "SELECT * FROM daily_ranking WHERE date=? ORDER BY net DESC",
-            (date_str,)
-        ).fetchall()
+        rows = get_ranking_by_date(date_str)
         if not rows:
             continue
 
@@ -378,8 +370,6 @@ def export_all_to_supabase(dates, names):
         upsert("web_rankings", web_rows)
         s_buy = sum(1 for r in web_rows if r["recommend"] == "S買い")
         print(f"  {date_str}: {len(web_rows)}件 upsert (S買い:{s_buy})")
-
-    con.close()
 
 
 if __name__ == "__main__":

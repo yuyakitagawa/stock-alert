@@ -192,11 +192,8 @@ def main():
 
     # 再開対応: 本日取得済みの銘柄はスキップ
     if not args.codes:
-        from lib.db import _conn
-        with _conn() as con:
-            done_codes = {str(r[0]) for r in con.execute(
-                "SELECT DISTINCT code FROM fundamentals_annual WHERE fetched_date=?",
-                (today,)).fetchall()}
+        from lib.db import get_fundamentals_fetched_codes
+        done_codes = get_fundamentals_fetched_codes(today)
         before = len(codes)
         codes = [c for c in codes if c not in done_codes]
         print(f"対象: {before}銘柄中 {len(done_codes)}件は本日取得済み → 残り{len(codes)}銘柄")
