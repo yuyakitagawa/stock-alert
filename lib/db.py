@@ -145,7 +145,20 @@ CREATE TABLE IF NOT EXISTS jquants_fin_summary (
     fnp           REAL,            -- 通期会社予想・当期純利益（進捗率用）
     fop           REAL,            -- 通期会社予想・営業利益
     fsales        REAL,            -- 通期会社予想・売上高
+    op            REAL,            -- 営業利益（実績・利益の質フィルター用）
+    sales         REAL,            -- 売上高（実績・利益の質フィルター用）
     PRIMARY KEY (code, disc_date)
+);
+CREATE TABLE IF NOT EXISTS edinet_holdings (
+    doc_id         TEXT NOT NULL,    -- EDINET書類管理番号（PK）
+    sec_code       TEXT,             -- 対象会社の証券コード（4桁・買い集めの標的）
+    filer_name     TEXT,             -- 提出者（大量保有した側＝買い手）
+    doc_type_code  TEXT,             -- 350=大量保有報告書 / 360=変更報告書
+    doc_description TEXT,            -- 書類概要
+    submit_date    TEXT,             -- 提出日時 YYYY-MM-DD HH:MM
+    disc_date      TEXT,             -- 開示日 YYYY-MM-DD（point-in-time key）
+    fetched_date   TEXT,
+    PRIMARY KEY (doc_id)
 );
 CREATE TABLE IF NOT EXISTS top10_sim (
     entry_date   TEXT NOT NULL,   -- 買いエントリー日
@@ -570,6 +583,46 @@ def get_tdnet_events_recent(code: str, days: int = 60):
     return [dict(r) for r in rows]
 
 
+# ── edinet_holdings ────────────────────────────────────────────────────────
+
+def upsert_edinet_holdings(records: list):
+    """records: list of dict with keys
+    doc_id, sec_code, filer_name, doc_type_code, doc_description, submit_date, disc_date"""
+    if not records:
+        return
+    init_db()
+    from datetime import date
+    today_str = date.today().isoformat()
+    with _conn() as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO edinet_holdings "
+            "(doc_id, sec_code, filer_name, doc_type_code, doc_description, submit_date, disc_date, fetched_date) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            [(r["doc_id"], r.get("sec_code"), r.get("filer_name"), r.get("doc_type_code"),
+              r.get("doc_description"), r.get("submit_date"), r.get("disc_date"), today_str)
+             for r in records]
+        )
+
+
+def get_edinet_holdings_recent(days: int = 30, codes: list | None = None):
+    """直近 days 日以内の大量保有報告イベントを返す（新しい順）。
+    codes 指定時はその証券コードのみに絞る。"""
+    init_db()
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    sql = ("SELECT doc_id, sec_code, filer_name, doc_type_code, doc_description, "
+           "submit_date, disc_date FROM edinet_holdings WHERE disc_date >= ?")
+    params: list = [cutoff]
+    if codes:
+        placeholders = ",".join("?" for _ in codes)
+        sql += f" AND sec_code IN ({placeholders})"
+        params.extend([str(c) for c in codes])
+    sql += " ORDER BY disc_date DESC, submit_date DESC"
+    with _conn() as con:
+        rows = con.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
 def save_all_sectors(sector_map):
     from datetime import date
     today_str = date.today().isoformat()
@@ -663,15 +716,15 @@ def bulk_upsert_jquants_fin_summary(rows: list):
     with _conn() as con:
         # 既存DBへの予想カラム追加（マイグレーション）
         existing = {r[1] for r in con.execute("PRAGMA table_info(jquants_fin_summary)").fetchall()}
-        for col in ("fnp", "fop", "fsales"):
+        for col in ("fnp", "fop", "fsales", "op", "sales"):
             if col not in existing:
                 con.execute(f"ALTER TABLE jquants_fin_summary ADD COLUMN {col} REAL")
         con.executemany(
             """INSERT OR REPLACE INTO jquants_fin_summary
                (code, disc_date, doc_type, fy_end, np, cfo, ta, equity, eps, bps,
-                div_ann, payout_ratio, sh_out, tr_sh, fnp, fop, fsales)
+                div_ann, payout_ratio, sh_out, tr_sh, fnp, fop, fsales, op, sales)
                VALUES(:code,:disc_date,:doc_type,:fy_end,:np,:cfo,:ta,:equity,:eps,:bps,
-                      :div_ann,:payout_ratio,:sh_out,:tr_sh,:fnp,:fop,:fsales)""",
+                      :div_ann,:payout_ratio,:sh_out,:tr_sh,:fnp,:fop,:fsales,:op,:sales)""",
             rows
         )
 

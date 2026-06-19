@@ -15,14 +15,24 @@ EDINET 大量保有報告書が必要（別途登録）。
   - 自己資本比率 > 50% … 資産・現金が厚い＝TOB原資/株主還元余地
   + 独占率ウォッチリスト該当 … ③業界寡占の追い風（フラグ表示）
 
+利益の質フィルター（--quality、デフォルトON）:
+  低ROEの"理由"を問い、化粧決算と斜陽事業を機械的に除外する。
+  - A 利益の質: 営業赤字 / 純利益>営業益×1.5（一過性益の水増し疑い）を除外
+  - B 本業方向: 直近実績の営業利益が前年比減益を除外
+  - 加減点: 売上3期CAGR・営業利益率トレンド・会社予想方向で score を調整
+  除外された銘柄は理由付きで data/catalyst_excluded.csv に出力（人手レビュー用）。
+
 Usage:
   python3 tools/screen_catalyst_candidates.py
   python3 tools/screen_catalyst_candidates.py --pbr-max 0.8 --roe-max 6 --equity-min 0.6 --top 50
+  python3 tools/screen_catalyst_candidates.py --no-quality   # 品質フィルター無効
 """
 import sys, os, csv, argparse, sqlite3, glob
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.db import DB_PATH
+from lib.kabutan_earnings import fetch_kabutan_earnings
+from lib.earnings_quality import assess_earnings_quality
 
 
 def latest_close(con, code):
@@ -66,6 +76,42 @@ def latest_equity_ratio(con, code):
     if r and r[1]:
         return r[0] / r[1]
     return None
+
+
+def latest_roe_jquants(con, code):
+    """fundamentals_annual(kabutan)が無い環境用。直近FYの純利益÷純資産でROE(%)を算出。"""
+    r = con.execute(
+        "SELECT np, equity FROM jquants_fin_summary "
+        "WHERE code=? AND doc_type='FY' AND np IS NOT NULL AND equity IS NOT NULL AND equity>0 "
+        "ORDER BY disc_date DESC LIMIT 1", (code,)
+    ).fetchone()
+    if r and r[1]:
+        return r[0] / r[1] * 100.0
+    return None
+
+
+def jquants_earnings_rows(con, code):
+    """jquants_fin_summary から利益の質フィルター用の年次行を組み立てる（kabutan非依存）。
+    各FY行を {fy_end, is_forecast, revenue, op_profit, net_income} に整形（fy_end昇順）。
+    最新開示の会社予想(fop/fsales/fnp)があれば予想行を1件追加。"""
+    rows = con.execute(
+        "SELECT fy_end, sales, op, np, disc_date, fop, fsales, fnp "
+        "FROM jquants_fin_summary WHERE code=? AND doc_type='FY' "
+        "AND op IS NOT NULL ORDER BY fy_end ASC", (code,)
+    ).fetchall()
+    out = []
+    for r in rows:
+        out.append({"fy_end": r[0], "is_forecast": False,
+                    "revenue": r[1], "op_profit": r[2], "net_income": r[3]})
+    # 会社予想（最新開示の通期予想）を予想行として付与
+    fc = con.execute(
+        "SELECT fop, fsales, fnp FROM jquants_fin_summary "
+        "WHERE code=? AND fop IS NOT NULL ORDER BY disc_date DESC LIMIT 1", (code,)
+    ).fetchone()
+    if fc and fc[0] is not None:
+        out.append({"fy_end": "forecast", "is_forecast": True,
+                    "revenue": fc[1], "op_profit": fc[0], "net_income": fc[2]})
+    return out
 
 
 def load_name_map():
@@ -117,6 +163,10 @@ def main():
     p.add_argument("--min-turnover", type=float, default=100.0, help="平均売買代金の下限（百万円）。流動性フィルタ")
     p.add_argument("--top", type=int, default=40)
     p.add_argument("--out", type=str, default="data/catalyst_candidates.csv")
+    p.add_argument("--no-quality", action="store_true",
+                   help="利益の質フィルター(A/B)を無効化（化粧/斜陽の除外を行わない）")
+    p.add_argument("--excluded-out", type=str, default="data/catalyst_excluded.csv",
+                   help="品質フィルターで除外した銘柄の出力先（人手レビュー用）")
     args = p.parse_args()
 
     con = sqlite3.connect(DB_PATH)
@@ -127,9 +177,14 @@ def main():
     print(f"universe: {len(codes)}銘柄をスクリーニング中...")
 
     cands = []
+    excluded = []
+    excl_counts = {"営業赤字": 0, "化粧決算": 0, "本業減益": 0}
     for code in codes:
         close = latest_close(con, code)
         bps_kab, roe = latest_bps_roe(con, code)
+        # ROEは fundamentals_annual(kabutan) 優先。無い環境(クラウド)では J-Quants(純利益/純資産)で算出。
+        if roe is None:
+            roe = latest_roe_jquants(con, code)
         # PBRは分割調整済み株価と整合するJ-Quants BPSを優先（分割調整漏れ防止）。
         # J-Quants未取得の銘柄のみ fundamentals_annual(株探) 値にフォールバック。
         bps = latest_bps_split_safe(con, code) or bps_kab
@@ -147,33 +202,85 @@ def main():
             continue
         # 候補スコア: 割安(PBR低)×財務余力(自己資本比率高)。低いほど買収/改革妙味が大きい
         score = (1.0 - pbr) * eq_ratio
-        cands.append({
+
+        row = {
             "code": code, "name": name_map.get(code, ""),
             "pbr": round(pbr, 2), "roe": round(roe, 1),
             "equity_ratio": round(eq_ratio * 100, 1),
             "turnover_m": round(turn, 0),
             "monopoly": mono.get(code, ""),
             "score": round(score, 3),
-        })
+        }
+
+        # 利益の質フィルター（A: 化粧除外 / B: 斜陽除外）＋ 成長加減点
+        if not args.no_quality:
+            # kabutan(営業益・売上)優先。取れない環境(クラウド)では J-Quants実績で代替。
+            earn_rows = fetch_kabutan_earnings(code) or jquants_earnings_rows(con, code)
+            q = assess_earnings_quality(earn_rows)
+            row.update({
+                "op_yoy": q["op_yoy"], "op_margin": q["op_margin"],
+                "rev_cagr3": q["rev_cagr3"], "fc_dir": q["fc_dir"],
+                "growth_bonus": q["bonus"],
+            })
+            if q["exclude"]:
+                excl_counts[q["exclude"]] = excl_counts.get(q["exclude"], 0) + 1
+                excluded.append({**row, "reason": q["exclude"],
+                                 "note": "; ".join(q["notes"])})
+                continue
+            # 成長方向で base score を調整（gateを通った候補の並べ替え）
+            row["score"] = round(score * (1.0 + q["bonus"]), 3)
+
+        cands.append(row)
 
     cands.sort(key=lambda x: -x["score"])
     con.close()
 
-    print(f"\n該当: {len(cands)}銘柄（PBR<{args.pbr_max} / ROE<{args.roe_max}% / 自己資本比率>{args.equity_min*100:.0f}% / 売買代金≥{args.min_turnover:.0f}百万円）\n")
-    print(f"{'コード':<6}{'銘柄名':<22}{'PBR':>6}{'ROE%':>7}{'自己資本%':>9}{'代金(百万)':>10}  寡占/メモ")
-    print("-" * 88)
+    q_on = not args.no_quality
+    print(f"\n該当: {len(cands)}銘柄（PBR<{args.pbr_max} / ROE<{args.roe_max}% / 自己資本比率>{args.equity_min*100:.0f}% / 売買代金≥{args.min_turnover:.0f}百万円"
+          f"{' / 利益の質A・B' if q_on else ''}）")
+    if q_on:
+        print(f"品質フィルター除外: 営業赤字{excl_counts['営業赤字']} / 化粧決算{excl_counts['化粧決算']} / 本業減益{excl_counts['本業減益']}（計{len(excluded)}件）")
+    if q_on:
+        print(f"\n{'コード':<6}{'銘柄名':<20}{'PBR':>6}{'ROE%':>6}{'自己資本%':>8}{'営業益YoY%':>10}{'売上CAGR%':>9}{'予想':>8}  寡占/メモ")
+    else:
+        print(f"\n{'コード':<6}{'銘柄名':<22}{'PBR':>6}{'ROE%':>7}{'自己資本%':>9}{'代金(百万)':>10}  寡占/メモ")
+    print("-" * 96)
     for c in cands[:args.top]:
-        nm = (c["name"] or "")[:20]
+        nm = (c["name"] or "")[:18]
         flag = f"  🏰{c['monopoly']}" if c["monopoly"] else ""
-        print(f"{c['code']:<6}{nm:<22}{c['pbr']:>6}{c['roe']:>7}{c['equity_ratio']:>9}{c['turnover_m']:>10.0f}{flag}")
+        if q_on:
+            yoy = f"{c.get('op_yoy')}" if c.get("op_yoy") is not None else "-"
+            cagr = f"{c.get('rev_cagr3')}" if c.get("rev_cagr3") is not None else "-"
+            print(f"{c['code']:<6}{nm:<20}{c['pbr']:>6}{c['roe']:>6}{c['equity_ratio']:>8}{yoy:>10}{cagr:>9}{c.get('fc_dir','-'):>8}{flag}")
+        else:
+            print(f"{c['code']:<6}{nm:<20}{c['pbr']:>6}{c['roe']:>7}{c['equity_ratio']:>9}{c['turnover_m']:>10.0f}{flag}")
+
+    # 除外された地雷を理由付きでログ表示（化粧/斜陽の妥当性を人手レビューしやすく）
+    if q_on and excluded:
+        print(f"\n── 品質フィルター除外 {len(excluded)}件（地雷レビュー用）──")
+        print(f"{'コード':<6}{'銘柄名':<20}{'理由':<8}  詳細")
+        print("-" * 80)
+        for e in sorted(excluded, key=lambda x: x["reason"]):
+            print(f"{e['code']:<6}{(e['name'] or '')[:18]:<20}{e['reason']:<8}  {e['note']}")
 
     # CSV保存
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    base_fields = ["code", "name", "pbr", "roe", "equity_ratio", "turnover_m", "monopoly", "score"]
+    q_fields = ["op_yoy", "op_margin", "rev_cagr3", "fc_dir", "growth_bonus"] if q_on else []
     with open(args.out, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["code", "name", "pbr", "roe", "equity_ratio", "turnover_m", "monopoly", "score"])
+        w = csv.DictWriter(f, fieldnames=base_fields + q_fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(cands)
     print(f"\n全{len(cands)}件を保存: {args.out}")
+
+    # 除外銘柄を理由付きで保存（人手レビュー用）
+    if q_on and excluded:
+        os.makedirs(os.path.dirname(args.excluded_out), exist_ok=True)
+        with open(args.excluded_out, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=base_fields + ["reason", "note"], extrasaction="ignore")
+            w.writeheader()
+            w.writerows(excluded)
+        print(f"除外{len(excluded)}件を保存: {args.excluded_out}")
 
 
 if __name__ == "__main__":
