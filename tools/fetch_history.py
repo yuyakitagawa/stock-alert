@@ -77,12 +77,8 @@ def fetch_yahoo(code, days):
 
 def get_all_codes():
     """price_cache 既存コード + JPX 銘柄リストを合わせた全コード"""
-    import sqlite3
-    db_path = os.path.join(BASE_DIR, "stock_alert.db")
-    con = sqlite3.connect(db_path)
-    rows = con.execute("SELECT DISTINCT code FROM price_cache").fetchall()
-    con.close()
-    codes_from_db = [r[0] for r in rows]
+    from lib.db import get_price_cache_codes
+    codes_from_db = get_price_cache_codes()
     if codes_from_db:
         return codes_from_db
 

@@ -22,26 +22,21 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install requests python-dotenv
 
       - name: Link repo to ~/stock-alert
         run: ln -s $GITHUB_WORKSPACE ~/stock-alert
 
       - name: Create .env from secrets
-        run: echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" > ~/stock-alert/.env
+        run: |
+          echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" > ~/stock-alert/.env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
 
       - name: APIキー検証（無効ならここで失敗）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --verify
 
-      - name: Restore DB cache（突合用の候補データ・読み取りのみ）
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/stock_alert.db
-          key: stock-alert-db-restore-only
-          restore-keys: |
-            stock-alert-db-
-
-      - name: EDINETスキャン＋突合（蓄積はこのジョブ限り・本番DBキャッシュは保存しない）
+      - name: EDINETスキャン＋突合（蓄積はSupabaseへ・DBキャッシュ不要）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 5
 
       - name: 結果をアーティファクト保存

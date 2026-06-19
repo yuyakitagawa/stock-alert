@@ -135,14 +135,8 @@ def get_tdnet_events(code: str, days: int = 45) -> list:
     """
     today_str = date.today().isoformat()
     # 当日にすでにフェッチ済みか確認
-    from lib.db import init_db, _conn
-    init_db()
-    with _conn() as con:
-        already = con.execute(
-            "SELECT COUNT(*) as n FROM tdnet_events WHERE code=? AND fetched_date=?",
-            (str(code), today_str)
-        ).fetchone()["n"]
-    if already > 0:
+    from lib.db import tdnet_fetched_today
+    if tdnet_fetched_today(str(code), today_str):
         return get_tdnet_events_recent(str(code), days)
 
     events = []

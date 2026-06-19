@@ -6,7 +6,6 @@ rank_stocks.py の後、alert_email.py の後に実行する（Step 5）。
 """
 import json
 import os
-import sqlite3
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date
@@ -25,8 +24,6 @@ AI_TOP_N = int(os.getenv("AI_TOP_N", "20"))
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     print("[export_to_web] SUPABASE_URL / SUPABASE_SERVICE_KEY が未設定。スキップします。")
     sys.exit(0)
-
-from lib.db import DB_PATH
 
 
 def _sb_headers() -> dict:
@@ -171,18 +168,13 @@ def _prob_band(p) -> str:
 
 
 def export_rankings(today: str) -> list[dict]:
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    rows = con.execute(
-        """SELECT date, code, name, close, rise_prob, drop_prob, net, vol,
-                  recommend, rel20, stop_loss, per, pbr,
-                  piotroski, bps_growth, eps_surprise, pos52
-           FROM daily_ranking
-           WHERE date = ?
-           ORDER BY net DESC""",
-        (today,),
-    ).fetchall()
-    con.close()
+    import lib.supabase_client as sb
+    rows = sb.select(
+        "web_rankings",
+        f"date=eq.{today}&order=net.desc"
+        "&select=date,code,name,close,rise_prob,drop_prob,net,vol,"
+        "recommend,rel20,stop_loss,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
+    )
 
     records = []
     for i, r in enumerate(rows, 1):
@@ -210,13 +202,8 @@ def export_rankings(today: str) -> list[dict]:
 
 
 def export_stock_meta(ranking_rows: list[dict]) -> None:
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    sector_map = {
-        r["code"]: r["sector"]
-        for r in con.execute("SELECT code, sector FROM sector_cache").fetchall()
-    }
-    con.close()
+    from lib.db import get_all_sectors
+    sector_map = get_all_sectors()
 
     meta_rows = []
     seen = set()
@@ -237,17 +224,9 @@ def export_stock_meta(ranking_rows: list[dict]) -> None:
 
 
 def export_earnings(codes: list[str]) -> None:
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    rows = con.execute(
-        f"""SELECT code, next_date FROM earnings_cache
-            WHERE code IN ({",".join("?" * len(codes))})""",
-        codes,
-    ).fetchall()
-    con.close()
-
-    earnings_rows = [{"code": r["code"], "next_date": r["next_date"]} for r in rows]
-    _upsert("web_earnings", earnings_rows)
+    # earnings_cache は web_earnings に統合済み（set_earnings_cache が直接書込）。
+    # 既に next_date が入っているため、ここでの再エクスポートは不要。
+    return
 
 
 def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
@@ -268,13 +247,8 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
     cached_codes = {r["code"] for r in resp.json()} if resp.ok else set()
 
     # メタ情報取得
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    sector_map = {
-        r["code"]: r["sector"]
-        for r in con.execute("SELECT code, sector FROM sector_cache").fetchall()
-    }
-    con.close()
+    from lib.db import get_all_sectors
+    sector_map = get_all_sectors()
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 

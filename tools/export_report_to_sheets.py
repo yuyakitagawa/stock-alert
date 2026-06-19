@@ -354,7 +354,6 @@ def build_stock_fundamentals(kabutan_top_n=None):
     import calendar as _cal
     import requests as _req
     import time as _time
-    import sqlite3 as _sq
     import re as _re
     import io as _io
     import json as _json
@@ -386,25 +385,17 @@ def build_stock_fundamentals(kabutan_top_n=None):
 
     # ── Step1: DB から全銘柄取得 ──────────────────────────────
     rows_db = []
+    ranking_date = None
+    yutai_map = {}
     try:
-        con = _sq.connect(db_path)
-        con.row_factory = _sq.Row
-        latest = con.execute(
-            "SELECT date FROM daily_ranking ORDER BY date DESC LIMIT 1"
-        ).fetchone()
-        if latest:
-            ranking_date = latest["date"]
-            rows_db = con.execute(
-                """SELECT code, name, close, net, rise_prob, drop_prob, vol,
-                          recommend, rel20, per, pbr
-                   FROM daily_ranking WHERE date=? ORDER BY net DESC""",
-                (ranking_date,)
-            ).fetchall()
-            # yutai_cache も読む
-            yutai_map = {}
-            for r in con.execute("SELECT code, has_yutai, record_month FROM yutai_cache"):
+        from lib.db import get_latest_ranking_date, get_ranking_by_date, get_all_yutai
+        ranking_date = get_latest_ranking_date()
+        if ranking_date:
+            rows_db = get_ranking_by_date(
+                ranking_date,
+                select="code,name,close,net,rise_prob,drop_prob,vol,recommend,rel20,per,pbr")
+            for r in get_all_yutai():
                 yutai_map[str(r["code"])] = r["record_month"] if r["has_yutai"] else None
-        con.close()
     except Exception as e:
         print(f"  DB読み込みエラー: {e}")
         return [["DBエラー"]]
