@@ -283,6 +283,54 @@ DBキャッシュは廃止。
 
 ---
 
+## 外部API・データソース一覧
+
+### 利用API
+
+| API | 取得データ | 用途 | 利用ファイル |
+|---|---|---|---|
+| **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
+| **J-Quants API v2** | 財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想）、信用残高（週次）、空売り残高 | ファンダ特徴量・IB特徴量・カタリストスクリーン | `lib/jquants.py`, `tools/fetch_jquants_fin.py` |
+| **kabutan.jp** (スクレイピング) | PER/PBR/ROE、次回決算日、株主優待月、信用倍率、業績テキスト | ファンダ特徴量・決算フィルター・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
+| **EDINET API v2** | 大量保有報告書(350)/変更報告書(360) | 先回りシグナル（外部の買い集め検出） | `lib/edinet.py`, `tools/scan_large_holdings.py` |
+| **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
+| **yfinance** | セクターマッピング（米国ETF対応用） | 米国ETFリードラグフィルター（フェーズ7） | `core/rank_stocks.py` |
+| **Gmail API** | メール送信 | 日次アラートメール | `email/alert_email.py` |
+| **Google Sheets API** | スプシ読み書き | レポート出力・手動会社説明同期 | `lib/sheets_helper.py` |
+| **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
+| **Claude API** (Anthropic) | テキスト生成 | 会社説明(Phase2)・企業インサイト・PDCA改善提案 | `web/generate_descriptions.py`, `pdca/` |
+
+### 特徴量が使うデータと出所
+
+| カテゴリ | 特徴量 | データ出所 |
+|---|---|---|
+| **テクニカル (10)** | ret5/20/60/90, ma5_25, ma25_75, rsi, vol20/60, pos52 | Yahoo Finance 株価 |
+| **トレンド反転 (5)** | drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir | Yahoo Finance 株価 |
+| **出来高 (3)** | vr520, vr2060, vsurge | Yahoo Finance 出来高 |
+| **日経マクロ (3)** | nk5, nk20, nk60 | Yahoo Finance 日経225 |
+| **60日系列要約 (7)** | autocorr, skew, max/min_ret, pos_ratio, slope, recent_vs_early | Yahoo Finance 株価 |
+| **相対アルファ (4)** | rel5/20/60, alpha_momentum | Yahoo Finance 株価＋日経 |
+| **ファンダメンタル (11)** | per, pbr, roe, earn_feat, div_ex_feat, sin/cos_month, div_yield, eps/dps_growth, dividend_relevant | kabutan (PER/PBR/ROE/決算日/優待月), fundamentals_annual (EPS/DPS成長) |
+| **マクロ拡張 (4)** | vix, us5, us20, jpy5 | Yahoo Finance (^VIX, ^GSPC, JPY=X) |
+| **IB特徴量 (8)** | amihud, fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals | Yahoo Finance (株価/出来高/為替), fundamentals_annual (EPS/BPS/DPS), jquants_fin_summary (CFO/NP/TA/equity) |
+| **クロスセクショナル (7)** | cs_ret5/20/60, cs_rsi, cs_vol20, cs_pos52, cs_sector_ret60 | 上記テクニカル特徴量の日次グループ内正規化 |
+
+### フィルターが使うデータ
+
+| フィルター | 条件 | データ出所 |
+|---|---|---|
+| **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
+| **💎買い条件** (`recommend_from_scores`) | net≥16, drop_prob<2%, Piotroski≥6/9, pos52<0.45, vol≤20%, ret90>-25%, 売買代金≥100M, EPS surprise>2% or BPS成長+ | モデル予測＋fundamentals_annual＋jquants_fin_summary |
+| **決算フィルター** (フェーズ5) | 決算22日以内→S買い降格 | kabutan 決算日 |
+| **優待フィルター** (フェーズ5b) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
+| **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
+| **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
+| **カタリストスクリーン** (RPC) | PBR<1.0, ROE<8%, 自己資本比率>50%, 売買代金≥指定値 | jquants_fin_summary＋fundamentals_annual |
+| **利益の質フィルター** (A/B) | 営業赤字/化粧決算/本業減益を除外 | jquants_fin_summary (営業益/売上/純利益) |
+| **EDINET突合** | 大量保有報告×カタリスト候補マッチ（自己申告・売り除外） | EDINET API |
+
+---
+
 ## セットアップ
 
 ### 必要なSecrets（GitHub Settings → Secrets）
