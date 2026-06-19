@@ -50,6 +50,14 @@ export interface AiAnalysis {
   model_version: string;
 }
 
+// 企業インサイト(フェーズ1: AI生成・参考)。事業概要拡張/主要取引先/カタリスト評価/リスク。
+export interface Insight {
+  business:  string;
+  customers: string;
+  catalyst:  string;
+  risks:     string[];
+}
+
 export interface CompanyProfile {
   description: string | null;
   website:     string | null;

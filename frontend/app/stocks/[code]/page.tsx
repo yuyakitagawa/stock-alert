@@ -11,6 +11,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StockChart from "@/components/StockChart";
 import StockLivePanel from "@/components/StockLivePanel";
+import StockInsightPanel from "@/components/StockInsightPanel";
 import BookmarkButton from "@/components/BookmarkButton";
 import { netStyle, signFmtArrow, probBand } from "@/lib/signals";
 import { GLOSSARY } from "@/lib/glossary";
@@ -128,6 +129,16 @@ export default async function StockDetailPage({ params }: Props) {
 
         {/* Live data (market quote, company overview, earnings) — client-side */}
         <StockLivePanel code={code} name={ranking.name} sector={meta?.sector} />
+
+        {/* Qualitative AI insight (business / customers / catalyst / risks) — client-side, reference only */}
+        <StockInsightPanel
+          code={code}
+          name={ranking.name}
+          sector={meta?.sector}
+          pbr={ranking.pbr}
+          per={ranking.per}
+          net={ranking.net}
+        />
 
         {/* Score metrics */}
         <section>
