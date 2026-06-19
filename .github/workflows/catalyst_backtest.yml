@@ -1,8 +1,8 @@
 name: Catalyst Backtest
 
 # カタリスト候補スクリーン（A/B利益の質フィルター）のヒストリカルBT。
-# 本番DBキャッシュ（price_cache＋jquants_fin_summary）を読み込み、point-in-timeで
-# 平均/勝率/大勝率を A/Bあり・なし で比較。メール未送信・DBは読み取りのみ。
+# Supabaseから price_cache＋jquants_fin_summary をローカルSQLiteへhydrateし、point-in-timeで
+# 平均/勝率/大勝率を A/Bあり・なし で比較。メール未送信・Supabaseは読み取りのみ。
 on:
   workflow_dispatch:
     inputs:
@@ -35,16 +35,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install dependencies
+        run: pip install requests pandas numpy python-dotenv
+
       - name: Link repo to ~/stock-alert
         run: ln -s $GITHUB_WORKSPACE ~/stock-alert
 
-      - name: Restore DB cache（本番DB・読み取りのみ）
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/stock_alert.db
-          key: stock-alert-db-bt-readonly
-          restore-keys: |
-            stock-alert-db-
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+
+      - name: Supabase→ローカルSQLite hydrate（BT高速化）
+        run: cd ~/stock-alert && python tools/hydrate_sqlite_from_supabase.py price_cache jquants_fin_summary
 
       - name: カタリストBT（A/Bあり vs なし）
         run: cd ~/stock-alert && python tools/catalyst_backtest.py

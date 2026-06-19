@@ -1,8 +1,8 @@
 name: Backfill Prod DB
 
-# 本番DBキャッシュ(stock_alert.db)に「ファンダ＋EDINET全履歴」を一括投入する一回限りのジョブ。
+# Supabaseに「ファンダ＋EDINET全履歴」を一括投入する一回限りのジョブ。
 # 取得順: ①kabutanファンダ(fundamentals_annual) → ②J-Quants財務(jquants_fin_summary・①の開示日を使用)
-#         → ③EDINET大量保有(edinet_holdings) 全履歴。保存したDBキャッシュは日次パイプラインが継承する。
+#         → ③EDINET大量保有(edinet_holdings) 全履歴。各ツールが直接Supabaseへupsertする。
 # メールは送らない。重複は各テーブルの主キーで排除されるため再実行安全。
 on:
   workflow_dispatch:
@@ -41,14 +41,8 @@ jobs:
         run: |
           echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" > ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
-
-      - name: Restore DB cache（最新の本番DBを読み込み・この上に追記）
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/stock_alert.db
-          key: stock-alert-db-backfill-${{ github.run_id }}
-          restore-keys: |
-            stock-alert-db-
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
 
       - name: ① ファンダ取得（kabutan → fundamentals_annual）※クラウドはIPブロックで取れないため任意
         continue-on-error: true
@@ -72,25 +66,18 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500
 
-      - name: 件数サマリ（投入結果の確認）
+      - name: 件数サマリ（投入結果の確認・Supabase件数）
         if: always()
         run: |
           cd ~/stock-alert && python -c "
-          import sqlite3, lib.db as db
-          con=sqlite3.connect(db.DB_PATH)
+          import lib.supabase_client as sb
+          import requests
           for t in ['price_cache','fundamentals_annual','jquants_fin_summary','edinet_holdings']:
               try:
-                  n=con.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
-                  c=con.execute(f'SELECT COUNT(DISTINCT code) FROM {t}').fetchone()[0] if t!='edinet_holdings' else con.execute('SELECT COUNT(DISTINCT sec_code) FROM edinet_holdings').fetchone()[0]
-                  print(f'{t}: {n}行 / {c}コード')
+                  url=f'{sb.SUPABASE_URL}/rest/v1/{t}?select=count'
+                  h=sb._headers(); h['Prefer']='count=exact'
+                  r=requests.head(f'{sb.SUPABASE_URL}/rest/v1/{t}', headers={**sb._headers(),'Prefer':'count=exact','Range':'0-0'}, timeout=30)
+                  print(f'{t}: {r.headers.get(\"content-range\",\"?\")}')
               except Exception as e:
                   print(t, 'ERR', e)
-          con.close()
           "
-
-      - name: Save DB cache（日次パイプラインが継承）
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ github.workspace }}/stock_alert.db
-          key: stock-alert-db-backfill-${{ github.run_id }}
