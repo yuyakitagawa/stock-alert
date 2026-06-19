@@ -221,21 +221,25 @@ export async function fetchNikkeiReturn(days = 20): Promise<number> {
 
 
 export async function fetchWeeklyReviews(limit = 10): Promise<WeeklyReview[]> {
-  const res = await fetch(
-    sbUrl(`weekly_reviews?order=week.desc&limit=${limit}`),
-    { headers: anonHeaders(), next: { revalidate: 3600 } },
-  );
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(
+      sbUrl(`weekly_reviews?order=week.desc&limit=${limit}`),
+      { headers: anonHeaders(), next: { revalidate: 3600 } },
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }  // env欠落/ネットワーク失敗でビルド(プリレンダ)を止めない
 }
 
 export async function fetchActivity(limit = 60): Promise<Activity[]> {
-  const res = await fetch(
-    sbUrl(`activity_log?order=ts.desc&limit=${limit}`),
-    { headers: anonHeaders(), next: { revalidate: 30 } },
-  );
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(
+      sbUrl(`activity_log?order=ts.desc&limit=${limit}`),
+      { headers: anonHeaders(), next: { revalidate: 30 } },
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }  // env欠落/ネットワーク失敗でビルド(プリレンダ)を止めない
 }
 
 export async function fetchWeeklyReview(week: string): Promise<WeeklyReview | null> {
