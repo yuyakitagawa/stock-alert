@@ -24,6 +24,62 @@
 **検証:** 74テスト緑。lib.db の read-path（未設定時 空/None・例外なし）スモーク確認。RPCは Supabase 上で
 実行確認（移行前のため空配列）。**残:** Migrate ワークフローを1回手動実行して既存実データを投入。
 
+## 2026-06-18(2): カタリストA/Bのヒストリカルバックテストを実装
+
+**動機:** 本番DBにJ-Quants財務とEDINET全履歴が揃った（jquants_fin_summary 17,060行/4,110銘柄、
+edinet_holdings 72,381行/667銘柄）。A/B利益の質フィルターが実リターンの平均・勝率・大勝率を
+改善するかを数値で検証する（CLAUDE.md §5）。
+
+**実装:**
+- tools/catalyst_backtest.py: point-in-time（disc_date≤基準日のみ＝先読み無し）で過去時点の
+  カタリスト候補を再構成→保有H日のフォワードリターンを集計。A/Bあり/なしを比較出力。
+  ROEは直近FYの np/equity、A/Bの営業益/売上はJ-Quants実績(op/sales)。
+- .github/workflows/catalyst_backtest.yml: 本番DBキャッシュを読み取りで復元しBT実行（メール未送信）。
+
+**検証:** インメモリDBで選定・フォワードリターン算出・point-in-time（未開示は不可視）・
+A/Bあり=本業減益で除外/なし=残す、を確認。全82テスト緑。実数値は Catalyst Backtest 実行ログで確認。
+
+## 2026-06-18: ファンダをJ-Quantsに切替（kabutanクラウドブロック対策）＋EDINET全履歴投入
+
+**EDINET全データ投入: 成功。** バックフィルジョブで edinet_holdings に 70,797行/662銘柄（5年分）を
+本番DBキャッシュへ保存（日次が継承）。
+
+**問題:** 同ジョブの①ファンダ取得が 0/3566 件で全滅。原因＝**kabutan.jp が GitHub Actions の
+データセンターIPをブロック**（ローカル=自宅IPでは取得可）。結果 fundamentals_annual/jquants_fin_summary
+が空→ROE/自己資本比率/営業益が無く A/Bスクリーンは0候補。
+
+**対処（kabutan非依存のクラウド完結化）:**
+- jquants_fin_summary に `op`(営業益実績)/`sales`(売上実績) 列を追加（マイグレーション込み）。
+  parse_row が OP/Sales（予想FOP/FSalesに対する実績）を抽出、別名にもフォールバック＋列名を一度ログ。
+- fetch_jquants_fin.py に `--all-days`：fundamentals_annual非依存で全営業日を直接取得。
+- screen_catalyst_candidates.py：ROEを fundamentals_annual 優先・無ければ J-Quants(純利益/純資産)で算出。
+  利益の質A/Bの営業益/売上も kabutan 優先・取れなければ J-Quants実績(jquants_earnings_rows)で代替。
+- backfill_prod_db.yml：②を `--all-days`、①(kabutan)は continue-on-error の任意ステップに降格。
+
+**検証:** parse_row（OP/Sales抽出・別名）、ROE算出、A/B（本業減益）判定をインメモリDBで確認。全82テスト緑。
+※ J-Quantsの実績営業益/売上の正確な列名は次回バックフィルの「列名サンプル」ログで最終確認する。
+
+## 2026-06-17(4): カタリスト候補スクリーンに利益の質フィルター(A/B)を追加
+
+**動機:** PBR<1×ROE<8%×自己資本比率>50% は「安い箱」しか見ておらず、低ROEの"理由"を
+問わないため上位が地雷化（①化粧決算=一過性益で純利益水増し ②斜陽事業=本業縮小）。
+人手レビューで弾いていた①②を機械除外する（依頼書 docs/handoff_catalyst_quality_filter.md）。
+
+**実装（PR#11のPBR修正済みコードの上に乗せる）:**
+- lib/earnings_quality.py: kabutan年次業績から判定。
+  - A 利益の質: 営業赤字 / 純利益>営業益×1.5（化粧）→ ゲート除外
+  - B 本業方向: 直近実績の営業益が前年比減益 → ゲート除外
+  - 加減点: 売上3期CAGR・営業利益率3期トレンド・会社予想方向(増収増益/減益予想)
+- screen_catalyst_candidates.py: ゲート通過後に bonus で score 調整。除外銘柄は
+  理由付きで data/catalyst_excluded.csv に出力（§5の人手レビュー用）。--no-quality で無効化。
+- tests/test_earnings_quality.py 8件追加。全82 passed。
+
+**検証:** 化粧/赤字/減益/健全増益/データ無しの各パターンを単体テストで確認。実データBTは
+QV本戦略と別系統のためフォワード/定性検証（除外CSVの人手突合）で可否判断（CLAUDE.md§5依頼）。
+model/page.tsxは選定モデル外のため対象外。
+
+## 2026-06-17(3): EDINET大量保有スキャナー実装（イベント駆動・先回り検出）
+
 **動機:** 選定シグナルへの「成長」上乗せが2連続失敗（eps_growth/進捗率）。別メカニズムへ転換。
 「構造的に改革・買収が起きやすい候補（カタリストスクリーン）」×「実際に誰かが5%超を
 買い集めた事実（大量保有報告書）」の突合で、本物の先回り候補を洗い出す。

@@ -551,6 +551,30 @@ def get_jquants_fin_history_fy(code: str, as_of_date: str, n: int = 3) -> list:
     )
 
 
+def jquants_earnings_rows(code: str) -> list:
+    """利益の質フィルター用の年次行を jquants_fin_summary から組み立てる（kabutan非依存）。
+    各FY行を {fy_end, is_forecast, revenue, op_profit, net_income} に整形（fy_end昇順）。
+    最新開示の会社予想(fop/fsales/fnp)があれば予想行を1件追加。"""
+    rows = sb.select(
+        "jquants_fin_summary",
+        f"code=eq.{code}&doc_type=eq.FY&op=not.is.null"
+        "&order=fy_end.asc&select=fy_end,sales,op,np,disc_date,fop,fsales,fnp"
+    )
+    out = []
+    for r in rows:
+        out.append({"fy_end": r["fy_end"], "is_forecast": False,
+                    "revenue": r["sales"], "op_profit": r["op"], "net_income": r["np"]})
+    fc = sb.select_one(
+        "jquants_fin_summary",
+        f"code=eq.{code}&fop=not.is.null&order=disc_date.desc&select=fop,fsales,fnp"
+    )
+    if fc and fc.get("fop") is not None:
+        out.append({"fy_end": "forecast", "is_forecast": True,
+                    "revenue": fc.get("fsales"), "op_profit": fc.get("fop"),
+                    "net_income": fc.get("fnp")})
+    return out
+
+
 # ── top10 シミュレーション ────────────────────────────────────────────────
 
 def get_top10_sim_active() -> list:

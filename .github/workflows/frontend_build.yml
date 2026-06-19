@@ -81,7 +81,7 @@ jobs:
           echo "全ページ OK"
 
       - name: Notify on failure
-        if: failure()
+        if: ${{ false }}  # ユーザー依頼で障害通知メール停止(2026-06-18)。復活は if: failure() に戻す
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

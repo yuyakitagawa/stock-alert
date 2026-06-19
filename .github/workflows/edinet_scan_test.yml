@@ -36,6 +36,9 @@ jobs:
       - name: APIキー検証（無効ならここで失敗）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --verify
 
+      - name: カタリスト候補スクリーン（利益の質A/Bフィルター・除外結果をログ表示）
+        run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500
+
       - name: EDINETスキャン＋突合（蓄積はSupabaseへ・DBキャッシュ不要）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 5
 
@@ -46,6 +49,7 @@ jobs:
           name: edinet-scan-test-${{ github.run_number }}
           path: |
             data/catalyst_candidates.csv
+            data/catalyst_excluded.csv
             data/edinet_holding_matches.csv
           retention-days: 7
           if-no-files-found: ignore

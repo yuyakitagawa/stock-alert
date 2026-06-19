@@ -57,12 +57,30 @@ def _days_since_last_ex(target_date, record_months):
     return best
 
 
+def _jq_split_safe_bps(code, target_date):
+    """J-Quants(jquants_fin_summary)の直近開示BPS(>0)を返す。
+    開示ごとに分割後株数で再表示されるため、分割調整済み株価と整合する
+    （fundamentals_annual=株探値は分割調整漏れで表示PBRが過小化することがある）。
+    表示PER/PBR専用。Noneなら呼び出し側でfundamentals_annual値に委ねる。"""
+    try:
+        from lib.db import get_jquants_fin_history
+        rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
+    except Exception:
+        return None
+    for r in rows:
+        b = r.get("bps")
+        if b is not None and b > 0:
+            return b
+    return None
+
+
 def get_pit_valuation(code, target_date):
     """表示用バリュエーション: target_date時点で既知の eps/bps を
     「それぞれ最新の非NULL値」で返す。
     翌期予想行は eps はあるが bps=None のことが多く、get_pit_fundamentals が
     予想行を最新採用すると bps=None になり PBR が欠損するため、
     eps と bps を独立に直近非NULLから拾う（PER/PBR表示専用、特徴量には不使用）。
+    BPSは分割調整漏れを防ぐためJ-Quants値を優先し、無ければ株探値にフォールバック。
     返り値: {"eps": float|None, "bps": float|None}
     """
     load_fundamentals_cache()
@@ -72,6 +90,8 @@ def get_pit_valuation(code, target_date):
     known = [r for r in recs if r["announce_date"] and r["announce_date"] <= tgt_iso]
     eps = next((r["eps"] for r in reversed(known) if r.get("eps") is not None), None)
     bps = next((r["bps"] for r in reversed(known) if r.get("bps") is not None), None)
+    # 分割調整済み株価と整合するJ-Quants BPSを優先（表示PBRの過小化を防止）
+    bps = _jq_split_safe_bps(code, target_date) or bps
     return {"eps": eps, "bps": bps}
 
 
@@ -215,6 +235,10 @@ def pit_fundamental_features(code, target_date, price):
         bps = fd.get("bps")
         dps = fd.get("dps")
         result["per"]             = (price / eps) if eps and eps > 0 and price > 0 else None
+        # 注意: ここの pbr は60次元特徴量の一部。bps は fundamentals_annual(株探)由来で
+        # 分割調整漏れの可能性があるが、学習済みモデルと特徴量分布の整合を保つため
+        # ここでは敢えて変更しない（CLAUDE.md §0「特徴量は変更時要申告」）。
+        # 分割調整済みBPSへの移行は金曜再学習時に申告のうえ一括で行うこと。
         result["pbr"]             = (price / bps) if bps and bps > 0 and price > 0 else None
         result["roe"]             = fd.get("roe")
         result["days_to_earnings"]  = fd.get("days_to_earnings")

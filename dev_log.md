@@ -1,5 +1,66 @@
 # Dev Log
 
+## 2026-06-17 カタリスト候補CSVのPBRバグ修正（全65銘柄を実測照合）
+
+```
+原因: screen_catalyst_candidates.py の pbr = close / bps で
+      close=price_cache(分割調整済) と bps=fundamentals_annual(旧株ベース) の
+      分割調整基準が不整合。株式分割銘柄でPBRが分割比率分だけ過小化。
+      ※同じロジックが lib/fundamentals.py:219 にもあり、Web/メール表示PBRも影響。
+        ただし bps は表示専用で60次元特徴量には不使用 → モデル精度には無害。
+
+対応: data/catalyst_candidates.csv の全65銘柄PBRを irbank等で実測し正値に置換。
+      score=(1-pbr)*equity_ratio を再計算・再ソート。
+
+検出された主な誤り（旧→実測）:
+  9602 東宝       0.41 → 2.21  (差1.80・最悪)
+  2695 くら寿司    0.98 → 1.91
+  9533 東邦瓦斯    0.24 → 0.93
+  6592 マブチ     0.58 → 1.19
+  5541 大平洋金属  0.64 → 0.88
+  6104 芝浦機械    0.77 → 0.98
+  1663 K&Oエナジー 0.98 → 1.19
+
+結果: 実PBR>=1.0で除外7銘柄（9602/6592/6201/3765/4078/1663/2695）。
+      6201豊田自動織機は2026/06/01 TOB上場廃止済。
+      採用65→58銘柄。修正後トップは 6619ダブルスコープ(PBR0.21)。
+```
+
+- 今回はCSVデータのみ手修正。**screener本体のbps分割調整は未修正**（DBが当環境では空のため検証不可）。
+- 次タスク候補: lib/fundamentals.py / screen_catalyst_candidates.py のBPSを「自己資本÷現発行株数」算出に変更し、分割調整漏れを根絶（要DB環境で再生成・照合）。
+- 判定: データ品質修正（バックテスト対象外）。
+
+---
+
+## 2026-06-17 PBR分割調整バグの根本修正（BPSソースをJ-Quantsへ）
+
+```
+方針: ユーザー指示「4000銘柄全て正値に」→ Web全件スクレイプは非現実的なため
+      根本原因（BPSソース）をコード修正し、DB再計算で全銘柄を一括正値化する。
+
+修正:
+  1. tools/screen_catalyst_candidates.py
+     - latest_bps_split_safe() を追加。jquants_fin_summary の直近開示BPS(>0)を採用。
+       J-QuantsのBPSは開示ごとに分割後株数で再表示され、分割調整漏れが起きない。
+     - PBR算出で J-Quants BPS を優先、未取得銘柄のみ株探(fundamentals_annual)へフォールバック。
+  2. lib/fundamentals.py
+     - _jq_split_safe_bps() を追加し get_pit_valuation(表示PER/PBR用)で優先採用。
+       → Web/メール表示PBRの分割調整漏れを是正（全銘柄対象）。
+
+未変更（意図的）:
+  - pit_fundamental_features() の pbr（60次元特徴量）は学習済みモデルとの分布整合のため
+    据え置き。分割調整BPSへの移行は金曜再学習時に申告のうえ実施（CLAUDE.md §0）。
+
+検証状況:
+  - 当リモート環境はDBが空のため未検証（compileのみOK）。
+  - 次のDB有環境（ローカル/GitHub Actions）で screener 再実行 →
+    東宝(9602)/マブチ(6592)/東邦ガス(9533) 等の既知バグ銘柄で実PBRと一致するか照合する。
+```
+
+- 判定: 根本修正（要DB環境で再生成・照合）。データ修正版CSVは前コミットで反映済み。
+
+---
+
 ## 2026-06-12 モデル再学習 + QV戦略 2026年バックテスト
 
 ```

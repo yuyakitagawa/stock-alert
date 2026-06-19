@@ -115,12 +115,42 @@ def parse_row(row: pd.Series) -> dict:
         "fnp":          _f(row.get("FNP")),
         "fop":          _f(row.get("FOP")),
         "fsales":       _f(row.get("FSales")),
+        # 実績の営業利益・売上高（利益の質A/Bフィルター用）。
+        # このwrapperは予想を FOP/FSales と呼ぶため実績は OP/Sales と推測。別名にもフォールバック。
+        "op":           _f(_first(row, "OP", "OperatingProfit", "OpProfit")),
+        "sales":        _f(_first(row, "Sales", "NetSales", "Net Sales")),
     }
+
+
+def _first(row, *keys):
+    """row から最初に非Noneで取れたキーの値を返す（J-Quants列名の揺れ吸収）。"""
+    for k in keys:
+        v = row.get(k)
+        if v is not None and str(v) not in ("nan", "None", ""):
+            return v
+    return None
+
+
+def all_business_days() -> list[str]:
+    """利用可能期間 [AVAIL_START, AVAIL_END] の全営業日（土日除く）。
+    fundamentals_annual が無くてもJ-Quants財務を直接取得できる（kabutan非依存）。"""
+    from datetime import timedelta
+    d0 = date.fromisoformat(AVAIL_START)
+    d1 = date.fromisoformat(AVAIL_END)
+    out = []
+    d = d0
+    while d <= d1:
+        if d.weekday() < 5:
+            out.append(d.isoformat())
+        d += timedelta(days=1)
+    return out
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="取得済み日付をスキップ")
+    parser.add_argument("--all-days", action="store_true",
+                        help="fundamentals_annual非依存で全営業日を取得（クラウド・kabutan不要）")
     args = parser.parse_args()
 
     load_env()
@@ -136,7 +166,11 @@ def main():
 
     cli = ClientV2(api_key=api_key)
 
-    target_dates = get_target_dates()
+    # --all-days か、fundamentals_annual が空（クラウドでkabutan不可）なら全営業日を対象に。
+    target_dates = all_business_days() if args.all_days else get_target_dates()
+    if not target_dates and not args.all_days:
+        logger.info("fundamentals_annual に発表日が無いため全営業日にフォールバック")
+        target_dates = all_business_days()
     logger.info(f"対象日数: {len(target_dates)} 日 ({AVAIL_START} ～ {AVAIL_END})")
     logger.info(f"予想時間: {len(target_dates) * RATE_SLEEP // 60} 分")
 
@@ -147,12 +181,17 @@ def main():
 
     total_rows = 0
     errors = 0
+    logged_cols = False
 
     for i, d in enumerate(target_dates):
         date_str = d.replace("-", "")
         try:
             df = cli.get_fin_summary(date_yyyymmdd=date_str)
             if df is not None and len(df) > 0:
+                if not logged_cols:
+                    # 実績の営業利益・売上の列名を一度だけ確認（OP/Sales 推測の検証用）
+                    logger.info(f"列名サンプル: {list(df.columns)}")
+                    logged_cols = True
                 rows = [parse_row(row) for _, row in df.iterrows()]
                 # 財務諸表（FY/1Q/2Q/3Q）のみ保存。配当予想・業績修正等は除外
                 rows = [r for r in rows if r["code"] and r["disc_date"]
