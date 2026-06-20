@@ -154,10 +154,12 @@ def fetch_xbrl_details(doc_id: str) -> dict:
         print(f"    ⚠ XBRL取得失敗: {doc_id}")
         return result
 
-    # 対象銘柄の証券コード（SecurityCodeDEI: 5桁 → 4桁に正規化）
+    # 対象銘柄の証券コード
+    # 優先1: SecurityCodeOfIssuer（発行者コード = 対象銘柄）
+    # 優先2: SecurityCodeDEI（nil でないもの）
     sec_patterns = [
-        r'<[^>]*SecurityCodeDEI[^>]*>\s*(\d{4,5})\s*<',
-        r'<[^>]*:SecurityCodeDEI[^>]*>\s*(\d{4,5})\s*<',
+        r'<[^>]*SecurityCodeOfIssuer[^>]*>\s*(\d{4,5})\s*<',
+        r'<[^>]*SecurityCodeDEI[^>]*(?<!nil="true")>\s*(\d{4,5})\s*<',
     ]
     for pat in sec_patterns:
         m = re.search(pat, xbrl_text)
@@ -167,9 +169,8 @@ def fetch_xbrl_details(doc_id: str) -> dict:
 
     # 保有割合（提出後）
     ratio_patterns = [
-        r'<[^>]*HoldingRatioOfShareCertificatesEtcDEI[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
-        r'<[^>]*HoldingRatioOfShareCertificatesEtc[^>]*DEI[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
-        r'HoldingRatio[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'<[^>]*HoldingRatioOfShareCertificatesEtc[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'<[^>]*HoldingRatio[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
     ]
     for pat in ratio_patterns:
         m = re.search(pat, xbrl_text)
