@@ -211,7 +211,7 @@ export default function ModelPage() {
           <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-sm text-gray-400 leading-relaxed">
             <strong className="text-gray-200">さらに後段の降格チェック：</strong>
             💎買いでも、株主優待権利落ち21日前・
-            適時開示の下方修正・決算テキストの強い悲観（感情スコア ≤ −0.5）・
+            決算テキストの強い悲観（感情スコア ≤ −0.5）・
             強相関の米国セクターETFが前日マイナス・リスクオフ地合い、のいずれかに該当すると
             <span className="text-gray-300">「方向感なし」へ自動降格</span>します。
           </div>
