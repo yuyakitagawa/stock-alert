@@ -6,7 +6,7 @@
 解消し Supabase に一元化する。
 
 **実装:**
-- Supabase に16テーブルを作成（price_cache/held_scores/jquants_fin_summary/edinet_large_holdings 等）。
+- Supabase に16テーブルを作成（yahoo_price_cache/held_scores/jquants_fin_summary/edinet_large_holdings 等）。
   daily_ranking→`web_rankings`、earnings_cache→`web_earnings`、sector_cache→`web_stock_meta` に統合
   （既存Web表示テーブルに `fetched_date`/`actual_return_63d` を追加）。索引・RLS(anon read)付与。
 - `lib/supabase_client.py`: REST APIラッパ（upsert/insert_ignore/select/select_one/rpc、ページング込み）。
@@ -45,14 +45,14 @@ A/Bあり=本業減益で除外/なし=残す、を確認。全82テスト緑。
 本番DBキャッシュへ保存（日次が継承）。
 
 **問題:** 同ジョブの①ファンダ取得が 0/3566 件で全滅。原因＝**kabutan.jp が GitHub Actions の
-データセンターIPをブロック**（ローカル=自宅IPでは取得可）。結果 fundamentals_annual/jquants_fin_summary
+データセンターIPをブロック**（ローカル=自宅IPでは取得可）。結果 kabutan_fundamentals/jquants_fin_summary
 が空→ROE/自己資本比率/営業益が無く A/Bスクリーンは0候補。
 
 **対処（kabutan非依存のクラウド完結化）:**
 - jquants_fin_summary に `op`(営業益実績)/`sales`(売上実績) 列を追加（マイグレーション込み）。
   parse_row が OP/Sales（予想FOP/FSalesに対する実績）を抽出、別名にもフォールバック＋列名を一度ログ。
-- fetch_jquants_fin.py に `--all-days`：fundamentals_annual非依存で全営業日を直接取得。
-- screen_catalyst_candidates.py：ROEを fundamentals_annual 優先・無ければ J-Quants(純利益/純資産)で算出。
+- fetch_jquants_fin.py に `--all-days`：kabutan_fundamentals非依存で全営業日を直接取得。
+- screen_catalyst_candidates.py：ROEを kabutan_fundamentals 優先・無ければ J-Quants(純利益/純資産)で算出。
   利益の質A/Bの営業益/売上も kabutan 優先・取れなければ J-Quants実績(jquants_earnings_rows)で代替。
 - backfill_prod_db.yml：②を `--all-days`、①(kabutan)は continue-on-error の任意ステップに降格。
 

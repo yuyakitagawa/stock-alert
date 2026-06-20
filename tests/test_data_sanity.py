@@ -137,7 +137,7 @@ class TestCheckSite(unittest.TestCase):
             "date": "2026-06-11",
             "rankings": rows,
             "stock_meta": [{"code": r["code"], "sector": "電気機器"} for r in rows],
-            "ai_analyses": [{"code": r["code"], "summary": "解析あり",
+            "claude_ai_analyses": [{"code": r["code"], "summary": "解析あり",
                              "verdict": "様子見", "date": "2026-06-11"} for r in rows[:10]],
             "earnings": [{"code": rows[0]["code"]}],
             "expected_ai": 10,
@@ -162,7 +162,7 @@ class TestCheckSite(unittest.TestCase):
 
     def test_ai_empty_warning(self):
         ctx = self._ctx()
-        ctx["ai_analyses"][0]["summary"] = ""
+        ctx["claude_ai_analyses"][0]["summary"] = ""
         v = check_site(ctx)
         self.assertTrue(any(x.check == "ai_empty" for x in v))
 
@@ -171,7 +171,7 @@ class TestCheckSite(unittest.TestCase):
         self.assertTrue(any(x.check == "rankings_empty" and x.severity == "critical" for x in v))
 
     def test_partial_context_skips_missing(self):
-        """未提供のキーは検査しない（earnings/ai_analyses無し）。"""
+        """未提供のキーは検査しない（earnings/claude_ai_analyses無し）。"""
         rows = _healthy_rows(3100)
         for r in rows:
             r["date"] = "2026-06-11"

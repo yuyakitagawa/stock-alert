@@ -1,7 +1,7 @@
 """
 fetch_fundamentals_history.py
 kabutan.jp の財務ページから年度別ファンダ（EPS・ROE・BPS・発表日）を取得し
-fundamentals_annual テーブルへ格納する。backtest の point-in-time 再構成用。
+kabutan_fundamentals テーブルへ格納する。backtest の point-in-time 再構成用。
 
 通期業績テーブル : 決算期 / 修正1株益(EPS) / 発表日
 収益性テーブル   : 決算期 / ROE
