@@ -367,7 +367,7 @@ def export_all_to_supabase(dates, names):
                 "pbr":       r["pbr"],
             })
 
-        upsert("web_rankings", web_rows)
+        upsert("gen_rankings", web_rows)
         s_buy = sum(1 for r in web_rows if r["recommend"] == "S買い")
         print(f"  {date_str}: {len(web_rows)}件 upsert (S買い:{s_buy})")
 

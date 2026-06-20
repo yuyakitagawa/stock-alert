@@ -4,15 +4,15 @@
 - パイプライン用テーブル（yahoo_price_cache等16テーブル）をSupabaseに作成
 - lib/db.py をSupabase REST API経由に書き換え
 - GitHub ActionsのSQLiteキャッシュを廃止
-- 既存Web用テーブル（web_rankings等）はそのまま維持（フロント用の読み取りビュー）
+- 既存Web用テーブル（gen_rankings等）はそのまま維持（フロント用の読み取りビュー）
 
 ## Phase 1: Supabaseテーブル作成 ✓
 - [x] yahoo_price_cache / held_scores / simulation_results / kabutan_yutai
 - [x] kabutan_fundamentals / kabutan_sentiment / kabutan_jquants_margin / short_interest
 - [x] tdnet_events / yahoo_market_index / jquants_fin_summary / edinet_large_holdings / top10_sim
-- [x] web_rankings に actual_return_63d 追加（daily_ranking統合）
-- [x] web_earnings に fetched_date 追加（earnings_cache統合）
-- [x] web_stock_meta に fetched_date 追加（sector_cache統合）
+- [x] gen_rankings に actual_return_63d 追加（daily_ranking統合）
+- [x] kabutan_earnings に fetched_date 追加（earnings_cache統合）
+- [x] gen_stock_meta に fetched_date 追加（sector_cache統合）
 - [x] インデックス・RLSポリシー（anon read）
 - [x] RPC `screen_catalyst_candidates()`（全銘柄スクリーンをサーバーサイド集計）
 
@@ -23,7 +23,7 @@
 - [x] 74テスト緑 + read-path スモーク確認（未設定時は空を返す）
 
 ## Phase 3: 直接sqlite3呼び出しの更新 ✓
-- [x] web/export_to_web.py（web_rankings/web_stock_meta読み込みに変更）
+- [x] web/export_to_web.py（gen_rankings/gen_stock_meta読み込みに変更）
 - [x] email/alert_email.py（3箇所）
 - [x] tools/screen_catalyst_candidates.py（RPC化）
 - [x] tools/fetch_jquants_fin.py / tools/fetch_history.py / tools/backfill_history.py

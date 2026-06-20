@@ -32,7 +32,7 @@ export default async function HomePage() {
   ]);
 
   // 業種別成績（本日データ）= 実際の20日リターン平均（ネットスコアではない）。
-  // web_rankings の rel20（日経比）に日経20日リターンを足し戻して絶対リターンに復元。
+  // gen_rankings の rel20（日経比）に日経20日リターンを足し戻して絶対リターンに復元。
   const sectorBuckets = new Map<string, number[]>();
   for (const r of rows) {
     if (r.rel20 == null) continue;

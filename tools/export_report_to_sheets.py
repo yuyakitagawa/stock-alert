@@ -395,7 +395,7 @@ def build_stock_fundamentals(kabutan_top_n=None):
                 ranking_date,
                 select="code,name,close,net,rise_prob,drop_prob,vol,recommend,rel20,per,pbr")
             for r in get_all_yutai():
-                yutai_map[str(r["code"])] = r["record_month"] if r["has_yutai"] else None
+                yutai_map[str(r["code"])] = r.get("yutai_month") or r.get("record_month")
     except Exception as e:
         print(f"  DB読み込みエラー: {e}")
         return [["DBエラー"]]

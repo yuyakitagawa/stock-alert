@@ -27,7 +27,7 @@ def load_fundamentals_cache():
         _FUND_HIST = load_all_fundamentals_annual()
         _YUTAI_MONTH = {}
         for r in get_all_yutai():
-            _YUTAI_MONTH[str(r["code"])] = r["record_month"] if r["has_yutai"] else None
+            _YUTAI_MONTH[str(r["code"])] = r.get("yutai_month") or r.get("record_month")
     except Exception:
         _FUND_HIST = {}
         _YUTAI_MONTH = {}

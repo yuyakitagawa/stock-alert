@@ -44,7 +44,7 @@ def fetch_all(params):
     rows, offset = [], 0
     while True:
         p = {**params, "limit": 1000, "offset": offset}
-        r = requests.get(f"{SBUY_URL}/rest/v1/web_rankings", params=p, headers=HEADERS)
+        r = requests.get(f"{SBUY_URL}/rest/v1/gen_rankings", params=p, headers=HEADERS)
         batch = r.json()
         rows.extend(batch)
         if len(batch) < 1000:

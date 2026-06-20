@@ -40,7 +40,7 @@
 ## 5. Webシミュレーション修正（重要な落とし穴）
 - 本番Vercelは **/Users/kitagawayuuya/stock-alert/frontend/** からビルドされる。
   （別repo /Users/kitagawayuuya/bussiness/stock-alert-web は本番と繋がっていない＝触っても無意味）
-- simulation.ts を web_qv_sim 読み込み・cache:no-store に修正済み。本番反映確認済み（コミット3728cb7）。
+- simulation.ts を gen_qv_sim 読み込み・cache:no-store に修正済み。本番反映確認済み（コミット3728cb7）。
 
 ## 6. EDINET（①②カタリスト先回りの次フェーズ）
 - EDINET APIキー取得済み・**動作確認OK**（.env の EDINET_API_KEY、大量保有報告書 docTypeCode=350/360 取得可能）。

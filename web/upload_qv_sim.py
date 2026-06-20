@@ -1,5 +1,5 @@
 """
-web/upload_qv_sim.py — QVバックテスト結果を Supabase web_qv_sim テーブルへアップロード
+web/upload_qv_sim.py — QVバックテスト結果を Supabase gen_qv_sim テーブルへアップロード
 
 使い方:
   python3 web/upload_qv_sim.py --csv simulations/backtests/strategy_v2_qv_2026-01-01_2026-06-12.csv
@@ -20,7 +20,7 @@ def upsert(rows: list[dict]) -> None:
     if not rows:
         return
     resp = requests.post(
-        f"{SB_URL}/rest/v1/web_qv_sim",
+        f"{SB_URL}/rest/v1/gen_qv_sim",
         headers={
             "apikey": SB_KEY,
             "Authorization": f"Bearer {SB_KEY}",

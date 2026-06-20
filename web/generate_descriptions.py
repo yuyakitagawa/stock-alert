@@ -8,7 +8,7 @@ generate_descriptions.py
   Phase 2: スクレイプ失敗分は Claude Haiku でバッチ生成（フォールバック）
            J-Quants eq_master（S33業種・規模区分・市場区分）を付加した高精度プロンプト。
 
-- web_stock_meta(code/name/sector) を母集団とする。
+- gen_stock_meta(code/name/sector) を母集団とする。
 - 差分生成（--refresh なしは未生成のみ）。
 - 手動説明（スプシ由来）は既存のため自然に保護される。
 
@@ -88,14 +88,14 @@ def _sb_get(table: str, query: str) -> list[dict]:
 
 
 def _existing_codes() -> set[str]:
-    rows = _sb_get("claude_ai_analyses",
+    rows = _sb_get("gen_ai_analyses",
                    f"model_version=eq.{MODEL_VER}&select=code,summary")
     # summary が空のものは未生成扱いにして再生成対象に含める
     return {str(r["code"]) for r in rows if str(r.get("summary") or "").strip()}
 
 
 def _targets(limit: int | None, refresh: bool = False) -> list[dict]:
-    meta = _sb_get("web_stock_meta", "select=code,name,sector")
+    meta = _sb_get("gen_stock_meta", "select=code,name,sector")
     valid = [m for m in meta if str(m.get("name") or "").strip()]
     if not refresh:
         have = _existing_codes()
@@ -328,7 +328,7 @@ def _upsert_bulk(rows: list[dict]) -> None:
     chunk_size = 500
     for i in range(0, len(rows), chunk_size):
         chunk = rows[i:i + chunk_size]
-        r = requests.post(f"{SUPABASE_URL}/rest/v1/claude_ai_analyses",
+        r = requests.post(f"{SUPABASE_URL}/rest/v1/gen_ai_analyses",
                           headers=_headers(), json=chunk, timeout=60)
         if not r.ok:
             print(f"[gen] upsert 失敗: {r.status_code} {r.text[:200]}")

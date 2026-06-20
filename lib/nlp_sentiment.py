@@ -77,15 +77,7 @@ def _score_with_claude(headlines: list, code: str) -> float:
 
 def get_earnings_sentiment(code: str) -> float:
     """決算センチメントスコアを返す（-1〜+1）。
-    当日キャッシュがあれば即返却、なければkabutan+Claude Haikuで分析してキャッシュ。
-    APIキーなし / スクレイプ失敗時は 0.0（中立）を返す。
+    kabutan+Claude Haikuで分析。APIキーなし / スクレイプ失敗時は 0.0（中立）。
     """
-    from lib.db import get_earnings_sentiment as _get, set_earnings_sentiment as _set
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    cached = _get(str(code), today_str)
-    if cached is not None:
-        return cached
     headlines = _scrape_kabutan_headlines(str(code))
-    score = _score_with_claude(headlines, str(code)) if headlines else 0.0
-    _set(str(code), today_str, score)
-    return score
+    return _score_with_claude(headlines, str(code)) if headlines else 0.0

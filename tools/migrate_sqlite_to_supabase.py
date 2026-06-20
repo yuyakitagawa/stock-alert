@@ -19,21 +19,19 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 TABLE_MAP = {
     "price_cache":         ("yahoo_price_cache",   "code,date", None),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
-    "yutai_cache":         ("kabutan_yutai",       "code", None),
     "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),
-    "earnings_sentiment":  ("kabutan_sentiment",   "code,fetched_date", None),
     "margin_data":         ("kabutan_jquants_margin", "code,week_date", None),
     "short_interest":      ("short_interest",      "code,week_date", None),
     "tdnet_events":        ("tdnet_events",        "code,announce_date,title", None),
     "market_index_cache":  ("yahoo_market_index",  "ticker,date", None),
     "jquants_fin_summary": ("jquants_fin_summary", "code,disc_date", None),
     "edinet_holdings":     ("edinet_large_holdings", "doc_id", None),
-    "top10_sim":           ("top10_sim",           "entry_date,code", None),
-    # daily_ranking は web_rankings に統合（rank列は後でexport_to_webが付与するためNULL可）
-    "daily_ranking":       ("web_rankings",        "date,code", None),
-    # earnings_cache → web_earnings, sector_cache → web_stock_meta
-    "earnings_cache":      ("web_earnings",        "code", None),
-    "sector_cache":        ("web_stock_meta",      "code", None),
+    "top10_sim":           ("gen_top10_sim",           "entry_date,code", None),
+    # daily_ranking は gen_rankings に統合（rank列は後でexport_to_webが付与するためNULL可）
+    "daily_ranking":       ("gen_rankings",        "date,code", None),
+    # earnings_cache → kabutan_earnings, sector_cache → gen_stock_meta
+    "earnings_cache":      ("kabutan_earnings",        "code", None),
+    "sector_cache":        ("gen_stock_meta",      "code", None),
 }
 
 
