@@ -1,0 +1,46 @@
+name: Backfill EDINET Large Holdings
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'バックフィル開始日 (YYYY-MM-DD)'
+        required: true
+        default: '2024-01-01'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost yfinance
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Backfill EDINET large holdings
+        run: |
+          cd ~/stock-alert && python tools/scan_large_holdings.py \
+            --start "${{ github.event.inputs.start_date }}" \
+            --no-exclude
