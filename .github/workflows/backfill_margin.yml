@@ -1,0 +1,53 @@
+name: Backfill kabutan_jquants_margin
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: '取得開始日 (YYYYMMDD)'
+        required: true
+        default: '20240317'
+      end:
+        description: '取得終了日 (YYYYMMDD)'
+        required: true
+        default: '20260620'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost \
+            gspread google-auth yfinance anthropic jquantsapi
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Backfill margin data
+        run: |
+          cd ~/stock-alert && python -c "
+          from lib.jquants import fetch_margin_history
+          n = fetch_margin_history(start='${{ inputs.start }}', end='${{ inputs.end }}')
+          print(f'信用残高バックフィル完了: {n}行保存')
+          "
