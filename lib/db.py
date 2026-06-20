@@ -288,54 +288,6 @@ def save_price_cache(code, df):
         sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
 
 
-# ── kabutan_jquants_margin ──────────────────────────────────────────────────────────
-
-def upsert_margin_data(code: str, week_date: str, buy: float, sell: float, ratio: float):
-    today_str = date.today().isoformat()
-    sb.upsert("kabutan_jquants_margin", [{
-        "code": str(code),
-        "week_date": week_date,
-        "buy_balance": buy,
-        "sell_balance": sell,
-        "ratio": ratio,
-        "fetched_date": today_str,
-    }], on_conflict="code,week_date")
-
-
-def get_margin_data_latest(code: str):
-    return sb.select_one(
-        "kabutan_jquants_margin",
-        f"code=eq.{code}&order=week_date.desc&select=week_date,buy_balance,sell_balance,ratio"
-    )
-
-
-def get_margin_data_history(code: str, n: int = 8):
-    return sb.select(
-        "kabutan_jquants_margin",
-        f"code=eq.{code}&order=week_date.desc&limit={n}"
-        f"&select=week_date,buy_balance,sell_balance,ratio"
-    )
-
-
-# ── short_interest ────────────────────────────────────────────────────────
-
-def bulk_upsert_short_interest(rows):
-    """rows: list of (code, week_date, short_balance, short_amount)"""
-    sb_rows = [{
-        "code": r[0],
-        "week_date": r[1],
-        "short_balance": r[2],
-        "short_amount": r[3],
-    } for r in rows]
-    sb.upsert("short_interest", sb_rows, on_conflict="code,week_date")
-
-
-def get_short_interest_latest(code: str):
-    return sb.select_one(
-        "short_interest",
-        f"code=eq.{code}&order=week_date.desc&select=week_date,short_balance,short_amount"
-    )
-
 
 # ── tdnet_events ──────────────────────────────────────────────────────────
 

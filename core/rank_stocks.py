@@ -541,23 +541,13 @@ def main():
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
     print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<16}  {'株価':>8}  {'ネット':>7}  {'判定':<12}  "
-          f"{'PER':>6}  {'PBR':>5}  {'信用倍':>6}  {'空売%':>6}  {'適時':>7}  {'感情':>5}  {'Gトレ':>5}  推奨")
+          f"{'PER':>6}  {'PBR':>5}  {'適時':>7}  {'感情':>5}  {'Gトレ':>5}  推奨")
     print("-" * 140)
     for _, row in result_df.head(dynamic_top_n).iterrows():
         stop_str  = f"({row['損切り幅(%)']:+.1f}%)"
         per_val = row.get("PER"); pbr_val = row.get("PBR")
         per_str = f"{per_val:>5.1f}x" if per_val is not None else "   N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
-
-        # 信用倍率
-        margin_r = row.get("信用倍率")
-        margin_str = f"{margin_r:>5.1f}x" if margin_r is not None else "   —"
-        if margin_r and margin_r > 10:
-            margin_str = f"⚠️{margin_r:.1f}"
-
-        # 空売り残高（流通株数に対する比率は概算）
-        short_bal = row.get("空売残高(万株)")
-        short_str = f"{short_bal:>4.0f}万" if short_bal is not None else "  —"
 
         # 適時開示
         tdnet_str = str(row.get("適時開示", "—"))[:7]
@@ -578,8 +568,6 @@ def main():
             f"{row['ネット(%)']:>+6.1f}%  "
             f"{row['判定']:<12}  "
             f"{per_str}  {pbr_str}  "
-            f"{margin_str:>6}  "
-            f"{short_str:>6}  "
             f"{tdnet_str:>7}  "
             f"{sent_str:>5}  "
             f"{gtr_str:>5}  "
@@ -589,7 +577,7 @@ def main():
     # フェーズ4b: オルタナティブデータ取得（上位20銘柄）
     ALT_TOP = min(20, len(result_df))
     print(f"\nオルタナティブデータ取得中（上位{ALT_TOP}銘柄）...")
-    print("  対象: 信用倍率 / 空売り残高 / 適時開示 / Googleトレンド")
+    print("  対象: 適時開示 / Googleトレンド")
     alt_results = {}
     alt_errors = 0
     try:
@@ -618,21 +606,8 @@ def main():
         def _safe_get(code, key, default=None):
             return alt_results.get(str(code), {}).get(key, default)
 
-        result_df["信用倍率"]      = result_df["銘柄コード"].astype(str).map(lambda x: _safe_get(x, "margin_ratio"))
-        result_df["空売残高(万株)"] = result_df["銘柄コード"].astype(str).map(
-            lambda x: round(_safe_get(x, "short_balance", 0) / 10000, 1) if _safe_get(x, "short_balance") else None)
         result_df["適時開示"]       = result_df["銘柄コード"].astype(str).map(lambda x: _make_tdnet_label(alt_results.get(x, {})))
         result_df["Gトレンド"]      = result_df["銘柄コード"].astype(str).map(lambda x: _safe_get(x, "trend_score", 0.0))
-
-        # 信用倍率 > 10: 💎 買い → 降格（過剰レバレッジシグナル）
-        degraded_margin = []
-        for idx, row in result_df.iterrows():
-            ratio = row.get("信用倍率")
-            if ratio is not None and ratio > 10.0 and row.get("推奨") == "💎 買い":
-                result_df.at[idx, "推奨"] = "⏳ 方向感なし"
-                degraded_margin.append(f"{row['銘柄名']}({row['銘柄コード']})[信用倍率:{ratio:.1f}倍]")
-        if degraded_margin:
-            print(f"  ⚠️ 信用倍率過剰でS買い降格: {', '.join(degraded_margin)}")
 
         # 下方修正あり: 💎 買い → 降格
         degraded_down = []
@@ -657,8 +632,6 @@ def main():
         print(f"  取得完了: {len(alt_results)}件 / エラー: {alt_errors}件")
     except Exception as _ae:
         print(f"  オルタナティブデータ取得エラー: {_ae}")
-        result_df["信用倍率"] = None
-        result_df["空売残高(万株)"] = None
         result_df["適時開示"] = ""
         result_df["Gトレンド"] = 0.0
 
