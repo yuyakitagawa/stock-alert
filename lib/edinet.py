@@ -168,9 +168,10 @@ def fetch_xbrl_details(doc_id: str) -> dict:
             break
 
     # 保有割合（提出後）
+    # PerLastReport（前回割合）や Notes（注記）を除外し、現在の保有割合のみ取得
     ratio_patterns = [
-        r'<[^>]*HoldingRatioOfShareCertificatesEtc[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
-        r'<[^>]*HoldingRatio[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?[\s>](?:(?!PerLastReport)[^>])*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'<[^>]*:HoldingRatioOfShareCertificatesEtc[\s>][^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
     ]
     for pat in ratio_patterns:
         m = re.search(pat, xbrl_text)
