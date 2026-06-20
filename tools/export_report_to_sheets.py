@@ -218,59 +218,6 @@ def build_simulation_data(all_rounds):
     return rows1, rows2
 
 
-# ────────────────────────────────────────────────────────────
-# 3. PDCA改善履歴
-# ────────────────────────────────────────────────────────────
-
-def build_pdca_data():
-    log_path = os.path.join(BASE_DIR, "pdca", "pdca_log.md")
-    if not os.path.exists(log_path):
-        return [["PDCAログが見つかりません"]]
-
-    rows = [["日付", "avg(%)", "win(%)", "big(%)", "nk_alpha(%)", "投資ステージ",
-             "エンジニア決定", "変更サマリー"]]
-
-    content = open(log_path).read()
-    sections = re.split(r'\n## ', content)
-
-    for sec in sections:
-        date_m = re.match(r'(\d{4}-\d{2}-\d{2})', sec.strip())
-        if not date_m: continue
-        dt = date_m.group(1)
-
-        # metrics
-        met_m = re.search(r'"avg_return":\s*([\d.-]+).*?"win_rate":\s*([\d.-]+).*?"big_win_rate":\s*([\d.-]+)', sec)
-        nk_m  = re.search(r'"nk_alpha":\s*([\d.-]+)', sec)
-        stage_m = re.search(r'invest_stage: (Phase \d)', sec)
-        eng_m   = re.search(r'engineer: (✅ 採用|❌ 改善なし|[^\n]+)', sec)
-
-        avg = float(met_m.group(1)) if met_m else ""
-        win = float(met_m.group(2)) if met_m else ""
-        big = float(met_m.group(3)) if met_m else ""
-        nk  = float(nk_m.group(1))  if nk_m  else ""
-        stage = stage_m.group(1) if stage_m else ""
-
-        eng_text = ""
-        if eng_m:
-            eng_raw = eng_m.group(1)
-            if "✅" in eng_raw:
-                eng_text = "✅ 採用"
-                # パラメータ変更サマリー
-                params = re.findall(r'(\w+)\s+[\d.]+→[\d.]+', eng_raw)
-                eng_summary = " / ".join(params[:5]) if params else ""
-            elif "❌" in eng_raw:
-                eng_text = "❌ リバート"
-                eng_summary = ""
-            else:
-                eng_text = eng_raw[:40]
-                eng_summary = ""
-        else:
-            eng_summary = ""
-
-        rows.append([dt, avg, win, big, nk, stage, eng_text, eng_summary])
-
-    return rows
-
 
 # ────────────────────────────────────────────────────────────
 # 4. 特徴量一覧（44次元）
@@ -666,16 +613,8 @@ def main():
     ws2.freeze(rows=2)
     print(f"  → 書き込み完了")
 
-    # 3. PDCA改善履歴
-    print("\n[3/5] PDCA改善履歴を解析中...")
-    pdca_rows = build_pdca_data()
-    ws3 = get_or_create_sheet(sh, "🔄 PDCA改善履歴", rows=200)
-    write_sheet(ws3, pdca_rows)
-    ws3.freeze(rows=1)
-    print(f"  → {len(pdca_rows)-1}行 書き込み完了")
-
-    # 4. 特徴量一覧
-    print("\n[4/5] 特徴量一覧を書き込み中...")
+    # 3. 特徴量一覧
+    print("\n[3/5] 特徴量一覧を書き込み中...")
     feat_rows = build_feature_data()
     ws4 = get_or_create_sheet(sh, "🧬 特徴量一覧(44次元)", rows=60, cols=10)
     write_sheet(ws4, feat_rows)

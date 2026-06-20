@@ -13,18 +13,9 @@ core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
 J-Quants空売り残高取得（short_interest、直近1週間分）
 web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 
-【18:00 JST】PDCA自律改善ループ（pdca_daily.yml → pdca/orchestrate.py）
-オーナー(Human) → Fund Manager → 各メンバーへ命令展開
-  Human が feedback.md に方針を記入 → FM が各メンバーへの具体的命令に翻訳
-  Quant(改善提案) / 相場リスク管制官(リスクオン/オフ判定・買い見送り) / Engineer(実装・検証) / QA(整合性検査)
-  ↳ パラメータを変更 → backtest.py bear で検証
-  ↳ 改善したらcommit/push、ダメなら即revert
-
 その他ワークフロー: ci.yml（テスト）、frontend_build.yml（ビルド検証）、
 keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）
 ```
-
-全アクション（実施中・実施済み）は `pdca/activity.py` 経由で Supabase `gen_activity_log` に記録される。
 
 **ウォッチリスト**（/watchlist）は、ユーザーが自分で銘柄をブックマークして監視する**マイ・ウォッチリスト**。
 ログイン不要で、ブックマークは `localStorage`（即時の正本・オフラインファースト）に保存しつつ、ブラウザ発行の匿名 `client_id`（キー `stocksignal:client-id`）を識別子に
@@ -69,16 +60,11 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `web/generate_descriptions.py` | 全銘柄の会社説明を2段階で生成（Phase1: Yahoo特色スクレイプ／Phase2: Haiku Haikuフォールバック）→ `gen_ai_analyses`(company-desc-v1)。`--refresh` で全銘柄再スクレイプ。Step 5a2 |
 | `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期（AI生成を上書き）。Step 5b |
 | `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
-| `pdca/orchestrate.py` | PDCA自律改善ループ（Human→FM→Quant/Consultant/Engineer→QA の指揮系統）。QAがモデル退化・データ不整合を検出（通知のみ）|
-| `pdca/move_history.py` | PDCA棋譜（過去の変更履歴・採否を抽出、振り子＝逆戻し提案を検出）|
-| `pdca/activity.py` | アクティビティlog（各担当者の実施中・実施済みを Supabase に記録）|
-| `pdca/feedback.md` | オーナー(Human)からチームへの方針・指示。FMが各メンバーへの命令に翻訳する |
-| `pdca/owner_directive.py` | オーナーの自然文の方針を、FMが feedback.md の要点に整理して書き込む（`python3 pdca/owner_directive.py "方針"`）|
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_net 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / kabutan_earnings / gen_stock_meta / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
-| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/alert_email/send_user_alerts）とPDCAで使用（alert-only：違反でも更新は止めずメール通知）|
+| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/alert_email/send_user_alerts）で使用（alert-only：違反でも更新は止めずメール通知）|
 | `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
 | `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
@@ -274,7 +260,6 @@ DBキャッシュは廃止。
 | `gen_top10_sim` | Top10シミュレーション（日次トラッキング）|
 | `gen_simulation` | バックテスト結果 |
 | `gen_risk_regime` | リスクオン/オフ判定 |
-| `gen_activity_log` | PDCAアクティビティログ |
 | `gen_dividend_strategy` | 配当戦略 |
 | `gen_qv_sim` | QV戦略バックテスト結果 |
 | `kabutan_earnings` | 決算日キャッシュ（`fetched_date` で当日判定）|
@@ -312,7 +297,7 @@ DBキャッシュは廃止。
 | **Gmail API** | メール送信 | 日次アラートメール | `email/alert_email.py` |
 | **Google Sheets API** | スプシ読み書き | レポート出力・手動会社説明同期 | `lib/sheets_helper.py` |
 | **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
-| **Claude API** (Anthropic) | テキスト生成 | 会社説明(Phase2)・企業インサイト・PDCA改善提案 | `web/generate_descriptions.py`, `pdca/` |
+| **Claude API** (Anthropic) | テキスト生成 | 会社説明(Phase2)・企業インサイト | `web/generate_descriptions.py` |
 
 ### 特徴量が使うデータと出所
 
