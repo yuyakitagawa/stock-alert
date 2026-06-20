@@ -27,7 +27,7 @@
 
 ### フィルターA: 利益の質（お化粧除外）
 - データ源: `tools/_kabutan_earnings_cache.json`（年次: `revenue/op_profit/ord_profit/net_income`, `is_forecast`）。
-  ※ `kabutan_fundamentals` には営業利益が無い（eps/dps/roe/bps のみ）。**営業利益はkabutanキャッシュから取る**こと。
+  **営業利益はkabutanキャッシュから取る**こと。
 - ルール案（直近の実績期 is_forecast=false）:
   - `op_profit <= 0`（営業赤字） → **除外**。
   - `net_income > op_profit × 1.5` かつ `op_profit>0` → 一過性益で水増しの疑い → **減点 or 除外**。
