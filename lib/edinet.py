@@ -172,14 +172,18 @@ def fetch_xbrl_details(doc_id: str) -> dict:
 
     # 保有割合（提出後）
     # PerLastReport（前回割合）や Notes（注記）を除外し、現在の保有割合のみ取得
+    # 値は小数（0.0778 = 7.78%）またはパーセント（7.78）の両方がありうる
     ratio_patterns = [
-        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?[\s>](?:(?!PerLastReport)[^>])*>\s*([0-9]+\.?[0-9]*)\s*<',
-        r'<[^>]*:HoldingRatioOfShareCertificatesEtc[\s>][^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?[\s>](?:(?!PerLastReport)[^>])*>\s*([0-9]*\.?[0-9]+)\s*<',
+        r'<[^>]*:HoldingRatioOfShareCertificatesEtc[\s>][^>]*>\s*([0-9]*\.?[0-9]+)\s*<',
     ]
     for pat in ratio_patterns:
         m = re.search(pat, xbrl_text)
         if m:
-            result["holding_ratio"] = float(m.group(1))
+            val = float(m.group(1))
+            if val < 1.0:
+                val *= 100
+            result["holding_ratio"] = round(val, 2)
             break
 
     return result
