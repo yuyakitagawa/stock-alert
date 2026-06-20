@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """アクティビティログ: 各担当者（FM/Quant/Consultant/Engineer/System）が
-   実施中・実施済みのアクションを Supabase の activity_log に記録する。
+   実施中・実施済みのアクションを Supabase の gen_activity_log に記録する。
    そこを見れば誰でも「今チームが何をしているか / 何をしたか」を把握できる。
 
    使い方:
@@ -18,7 +18,7 @@ load_dotenv(BASE_DIR / ".env", override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SVC = os.getenv("SUPABASE_SERVICE_KEY", "")
-TABLE        = "activity_log"
+TABLE        = "gen_activity_log"
 
 
 def _enabled() -> bool:

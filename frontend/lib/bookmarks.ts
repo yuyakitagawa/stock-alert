@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 /**
  * ブックマーク（マイ・ウォッチリスト）。
  * オフラインファースト: localStorage を即時の正本として扱い、
- * 匿名 client_id をキーに Supabase(web_bookmarks) へ非同期同期する。
+ * 匿名 client_id をキーに Supabase(app_bookmarks) へ非同期同期する。
  * 認証は無いため client_id はブラウザ単位（端末間同期は不可）。
  */
 const KEY = "stocksignal:bookmarks";

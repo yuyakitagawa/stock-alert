@@ -1,4 +1,4 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WeeklyReview, Activity, WatchMetrics, RiskRegime } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WatchMetrics, RiskRegime } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
 import { yfQuoteSummary, yfQuoteSummaryWithAuth, getAuth } from "./yahoo";
 
@@ -29,7 +29,7 @@ function remapRecommend(r: Ranking): Ranking {
 }
 
 export async function fetchLatestDate(): Promise<string | null> {
-  const res = await sbFetch("web_rankings?select=date&order=date.desc&limit=1",
+  const res = await sbFetch("gen_rankings?select=date&order=date.desc&limit=1",
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -44,7 +44,7 @@ export async function fetchRankings(): Promise<{ date: string; rows: Ranking[] }
   const pageSize = 1000;
   let offset = 0;
   for (;;) {
-    const res = await sbFetch(`web_rankings?date=eq.${date}&order=rank.asc&limit=${pageSize}&offset=${offset}`,
+    const res = await sbFetch(`gen_rankings?date=eq.${date}&order=rank.asc&limit=${pageSize}&offset=${offset}`,
       { headers: anonHeaders(), ...CACHE });
     if (!res || !res.ok) break;
     const rows: Ranking[] = await res.json();
@@ -58,7 +58,7 @@ export async function fetchRankings(): Promise<{ date: string; rows: Ranking[] }
 export async function fetchStockRanking(code: string): Promise<Ranking | null> {
   const date = await fetchLatestDate();
   if (!date) return null;
-  const res = await sbFetch(`web_rankings?date=eq.${date}&code=eq.${code}&limit=1`,
+  const res = await sbFetch(`gen_rankings?date=eq.${date}&code=eq.${code}&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -66,7 +66,7 @@ export async function fetchStockRanking(code: string): Promise<Ranking | null> {
 }
 
 export async function fetchStockMeta(code: string): Promise<StockMeta | null> {
-  const res = await sbFetch(`web_stock_meta?code=eq.${code}&limit=1`,
+  const res = await sbFetch(`gen_stock_meta?code=eq.${code}&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -74,7 +74,7 @@ export async function fetchStockMeta(code: string): Promise<StockMeta | null> {
 }
 
 export async function fetchEarnings(code: string): Promise<Earnings | null> {
-  const res = await sbFetch(`web_earnings?code=eq.${code}&limit=1`,
+  const res = await sbFetch(`kabutan_earnings?code=eq.${code}&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -82,7 +82,7 @@ export async function fetchEarnings(code: string): Promise<Earnings | null> {
 }
 
 export async function fetchAiAnalysis(code: string): Promise<AiAnalysis | null> {
-  const res = await sbFetch(`claude_ai_analyses?code=eq.${code}&order=date.desc&limit=1`,
+  const res = await sbFetch(`gen_ai_analyses?code=eq.${code}&order=date.desc&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -94,7 +94,7 @@ export async function fetchSectorMap(): Promise<Record<string, string>> {
   const pageSize = 1000;
   let offset = 0;
   for (;;) {
-    const res = await sbFetch(`web_stock_meta?select=code,sector&limit=${pageSize}&offset=${offset}`,
+    const res = await sbFetch(`gen_stock_meta?select=code,sector&limit=${pageSize}&offset=${offset}`,
       { headers: anonHeaders(), next: { revalidate: 86400 } });
     if (!res || !res.ok) break;
     const rows: { code: string; sector: string | null }[] = await res.json();
@@ -197,7 +197,7 @@ export async function fetchSparkline(code: string): Promise<number[]> {
 }
 
 // 日経225（^N225）の直近 days 営業日リターン(%)。業種別の絶対リターン算出に使用。
-// （web_rankings には日経比 rel20 しか無いため、絶対リターン = rel20 + 日経20日 で復元する）
+// （gen_rankings には日経比 rel20 しか無いため、絶対リターン = rel20 + 日経20日 で復元する）
 export async function fetchNikkeiReturn(days = 20): Promise<number> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?range=3mo&interval=1d`;
@@ -221,30 +221,8 @@ export async function fetchNikkeiReturn(days = 20): Promise<number> {
 
 
 
-export async function fetchWeeklyReviews(limit = 10): Promise<WeeklyReview[]> {
-  const res = await sbFetch(`weekly_reviews?order=week.desc&limit=${limit}`,
-    { headers: anonHeaders(), next: { revalidate: 3600 } });
-  if (!res || !res.ok) return [];
-  return res.json();
-}
-
-export async function fetchActivity(limit = 60): Promise<Activity[]> {
-  const res = await sbFetch(`activity_log?order=ts.desc&limit=${limit}`,
-    { headers: anonHeaders(), next: { revalidate: 30 } });
-  if (!res || !res.ok) return [];
-  return res.json();
-}
-
-export async function fetchWeeklyReview(week: string): Promise<WeeklyReview | null> {
-  const res = await sbFetch(`weekly_reviews?week=eq.${encodeURIComponent(week)}&limit=1`,
-    { headers: anonHeaders(), next: { revalidate: 3600 } });
-  if (!res || !res.ok) return null;
-  const rows = await res.json();
-  return (rows[0] as WeeklyReview) ?? null;
-}
-
 export async function fetchRiskRegime(): Promise<RiskRegime | null> {
-  const res = await sbFetch("web_risk_regime?order=date.desc&limit=1",
+  const res = await sbFetch("gen_risk_regime?order=date.desc&limit=1",
     { headers: anonHeaders(), next: { revalidate: 300 } });
   if (!res || !res.ok) return null;
   const rows = await res.json();

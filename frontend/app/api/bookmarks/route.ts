@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sbUrl, svcHeaders } from "@/lib/supabase";
 
-// 匿名 client_id ごとのブックマークを Supabase(web_bookmarks) に永続化する。
+// 匿名 client_id ごとのブックマークを Supabase(app_bookmarks) に永続化する。
 // 認証は無いため client_id（ブラウザ発行の UUID）が唯一の識別子。
 // 書き込みは service key が必要なため、すべて API ルート経由で行う。
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   if (!clientId) return badRequest("clientId required");
 
   const res = await fetch(
-    sbUrl(`web_bookmarks?client_id=eq.${encodeURIComponent(clientId)}&select=code&order=created_at.asc`),
+    sbUrl(`app_bookmarks?client_id=eq.${encodeURIComponent(clientId)}&select=code&order=created_at.asc`),
     { headers: svcHeaders(), cache: "no-store" },
   );
   if (!res.ok) {
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (codes.length === 0) return NextResponse.json({ ok: true });
 
   const rows = codes.map((code) => ({ client_id: clientId, code }));
-  const res = await fetch(sbUrl("web_bookmarks"), {
+  const res = await fetch(sbUrl("app_bookmarks"), {
     method: "POST",
     headers: svcHeaders({ Prefer: "resolution=merge-duplicates" }),
     body: JSON.stringify(rows),
@@ -60,7 +60,7 @@ export async function DELETE(req: NextRequest) {
 
   const res = await fetch(
     sbUrl(
-      `web_bookmarks?client_id=eq.${encodeURIComponent(clientId)}&code=eq.${encodeURIComponent(code)}`,
+      `app_bookmarks?client_id=eq.${encodeURIComponent(clientId)}&code=eq.${encodeURIComponent(code)}`,
     ),
     { method: "DELETE", headers: svcHeaders() },
   );

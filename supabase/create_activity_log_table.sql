@@ -2,7 +2,7 @@
 -- 各担当者（FM/Quant/Securities/Engineer/System）が実施中・実施済みのアクションを記録する。
 -- Supabase Dashboard の SQL Editor で1回だけ実行してください。
 
-CREATE TABLE IF NOT EXISTS activity_log (
+CREATE TABLE IF NOT EXISTS gen_activity_log (
   id          BIGSERIAL PRIMARY KEY,
   ts          TIMESTAMPTZ DEFAULT NOW(),   -- 開始時刻
   run_date    DATE,                        -- 実行日
@@ -14,10 +14,10 @@ CREATE TABLE IF NOT EXISTS activity_log (
   updated_at  TIMESTAMPTZ DEFAULT NOW()    -- 完了時刻
 );
 
-CREATE INDEX IF NOT EXISTS idx_activity_log_ts ON activity_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_ts ON gen_activity_log(ts DESC);
 
 -- 匿名ユーザーの読み取りを許可（RLS）
-ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gen_activity_log ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "activity_log_public_read" ON activity_log
+CREATE POLICY "activity_log_public_read" ON gen_activity_log
   FOR SELECT USING (true);

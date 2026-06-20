@@ -113,21 +113,21 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
     try:
         from lib.data_sanity import run_site_gate
         # ライブ状態を読み戻して検証（upsert失敗・欠損も捕捉）
-        live_rankings = _sb_get("web_rankings",
+        live_rankings = _sb_get("gen_rankings",
                                 f"date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend")
-        meta = _sb_get("web_stock_meta", "select=code,sector&limit=5000")
-        ai = _sb_get("claude_ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
-        earnings = _sb_get("web_earnings", "select=code&limit=1")
+        meta = _sb_get("gen_stock_meta", "select=code,sector&limit=5000")
+        ai = _sb_get("gen_ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
+        earnings = _sb_get("kabutan_earnings", "select=code&limit=1")
         # 会社説明（詳細ページ「この会社について」）のカバレッジ検査用
         descriptions = _sb_get(
-            "claude_ai_analyses",
+            "gen_ai_analyses",
             "model_version=eq.company-desc-v1&select=code,summary&limit=5000")
         desc_targets = _description_targets(live_rankings if live_rankings else ranking_rows)
         context = {
             "date":         today,
             "rankings":     live_rankings if live_rankings else ranking_rows,
             "stock_meta":   meta,
-            "claude_ai_analyses":  ai,
+            "gen_ai_analyses":  ai,
             "earnings":     earnings,
             "expected_ai":  expected_ai,
             "descriptions": descriptions,
@@ -170,7 +170,7 @@ def _prob_band(p) -> str:
 def export_rankings(today: str) -> list[dict]:
     import lib.supabase_client as sb
     rows = sb.select(
-        "web_rankings",
+        "gen_rankings",
         f"date=eq.{today}&order=net.desc"
         "&select=date,code,name,close,rise_prob,drop_prob,net,vol,"
         "recommend,rel20,stop_loss,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
@@ -220,11 +220,11 @@ def export_stock_meta(ranking_rows: list[dict]) -> None:
             "per":     r["per"],
             "pbr":     r["pbr"],
         })
-    _upsert("web_stock_meta", meta_rows)
+    _upsert("gen_stock_meta", meta_rows)
 
 
 def export_earnings(codes: list[str]) -> None:
-    # earnings_cache は web_earnings に統合済み（set_earnings_cache が直接書込）。
+    # earnings_cache は kabutan_earnings に統合済み（set_earnings_cache が直接書込）。
     # 既に next_date が入っているため、ここでの再エクスポートは不要。
     return
 
@@ -242,7 +242,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
 
     # 既存キャッシュ確認
     codes = [r["code"] for r in top_rows]
-    check_url = f"{SUPABASE_URL}/rest/v1/claude_ai_analyses?date=eq.{today}&code=in.({','.join(codes)})&select=code"
+    check_url = f"{SUPABASE_URL}/rest/v1/gen_ai_analyses?date=eq.{today}&code=in.({','.join(codes)})&select=code"
     resp = requests.get(check_url, headers=_sb_headers(), timeout=10)
     cached_codes = {r["code"] for r in resp.json()} if resp.ok else set()
 
@@ -339,7 +339,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
         print(f"[export_to_web] {code}: AI解析完了 verdict={parsed.get('verdict','—')}")
 
     if ai_rows:
-        _upsert("claude_ai_analyses", ai_rows)
+        _upsert("gen_ai_analyses", ai_rows)
 
 
 def export_risk_regime(today: str) -> None:
@@ -365,7 +365,7 @@ def export_risk_regime(today: str) -> None:
         "reasons":      v.get("reasons", []),
         "suppress_buy": bool(v.get("suppress_buy")),
     }
-    _upsert("web_risk_regime?on_conflict=date", [row])
+    _upsert("gen_risk_regime?on_conflict=date", [row])
 
 
 def main() -> None:
@@ -386,7 +386,7 @@ def main() -> None:
     except Exception as _e:
         print(f"[export_to_web] QAチェックでエラー（無視して継続）: {_e}")
 
-    _upsert("web_rankings", ranking_rows)
+    _upsert("gen_rankings", ranking_rows)
 
     # 2. 企業メタ
     export_stock_meta(ranking_rows)
@@ -424,7 +424,7 @@ def main() -> None:
 def _upsert_simulation(rows: list[dict]) -> None:
     if not rows:
         return
-    url = f"{SUPABASE_URL}/rest/v1/web_simulation?on_conflict=period,round,code"
+    url = f"{SUPABASE_URL}/rest/v1/gen_simulation?on_conflict=period,round,code"
     headers = _sb_headers()
     batch_size = 500
     for i in range(0, len(rows), batch_size):
@@ -444,7 +444,7 @@ def update_top10_simulation(ranking_rows: list[dict], today: str) -> None:
     Top10シミュレーション日次更新:
     1. アクティブポジションを今日のnetスコアでチェック → net<5%なら決済
     2. 今日のtop10に新規入りした銘柄を追加
-    3. Supabase web_top10_sim テーブルへ upsert
+    3. Supabase gen_top10_sim テーブルへ upsert
     """
     from lib.db import (init_db, get_top10_sim_active,
                         upsert_top10_sim_entry, close_top10_sim_position)
@@ -483,12 +483,12 @@ def update_top10_simulation(ranking_rows: list[dict], today: str) -> None:
     from lib.db import get_top10_sim_active, get_top10_sim_recent_exits
     all_rows = get_top10_sim_active() + get_top10_sim_recent_exits(30)
     if all_rows:
-        _upsert("web_top10_sim", all_rows)
+        _upsert("gen_top10_sim", all_rows)
         print(f"[top10_sim] {len(all_rows)}件 upsert完了")
 
 
 def export_simulation_results() -> None:
-    """simulations/backtests/rolling21d_*.csv を web_simulation テーブルへ一括 upsert"""
+    """simulations/backtests/rolling21d_*.csv を gen_simulation テーブルへ一括 upsert"""
     import glob
     import csv
     import re
@@ -531,8 +531,8 @@ def export_simulation_results() -> None:
                 except (KeyError, ValueError):
                     pass
 
-    print(f"[export_simulation] {len(all_rows)}件 upsert → web_simulation")
-    # web_simulationは on_conflict=period,round,code で重複解決
+    print(f"[export_simulation] {len(all_rows)}件 upsert → gen_simulation")
+    # gen_simulationは on_conflict=period,round,code で重複解決
     _upsert_simulation(all_rows)
     print("[export_simulation] 完了")
 

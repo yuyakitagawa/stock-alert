@@ -19,19 +19,19 @@ def init_db():
 # ── 移行後の共通ヘルパー（旧・直接sqlite3呼び出しの置換用） ──────────────
 
 def get_latest_ranking_date():
-    """web_rankings の最新日付を返す。なければ None。"""
-    row = sb.select_one("web_rankings", "order=date.desc&select=date")
+    """gen_rankings の最新日付を返す。なければ None。"""
+    row = sb.select_one("gen_rankings", "order=date.desc&select=date")
     return row["date"] if row else None
 
 
 def get_ranking_by_date(date_str, select="*", order="net.desc"):
     """指定日のランキング全行を返す。"""
-    return sb.select("web_rankings", f"date=eq.{date_str}&order={order}&select={select}")
+    return sb.select("gen_rankings", f"date=eq.{date_str}&order={order}&select={select}")
 
 
 def get_ranking_dates_desc(limit=0):
-    """web_rankings の開示日を新しい順の重複なしで返す。"""
-    rows = sb.select("web_rankings", "order=date.desc&select=date")
+    """gen_rankings の開示日を新しい順の重複なしで返す。"""
+    rows = sb.select("gen_rankings", "order=date.desc&select=date")
     seen = []
     for r in rows:
         if r["date"] not in seen:
@@ -68,11 +68,11 @@ def get_fundamentals_announce_dates(start, end):
 
 
 def get_all_yutai():
-    """kabutan_yutai 全行を返す。"""
-    return sb.select("kabutan_yutai", "select=code,has_yutai,record_month")
+    """gen_stock_meta から優待情報を返す。"""
+    return sb.select("gen_stock_meta", "select=code,has_yutai,yutai_month&has_yutai=eq.true")
 
 
-# ── daily_ranking (→ web_rankings) ────────────────────────────────────────
+# ── daily_ranking (→ gen_rankings) ────────────────────────────────────────
 
 def save_daily_ranking(date_str, rows):
     """rows: list of dicts with keys: code, name, close, rise_prob, drop_prob, net, vol, recommend, rel20, stop_loss, per, pbr, piotroski, bps_growth, eps_surprise, pos52"""
@@ -97,17 +97,17 @@ def save_daily_ranking(date_str, rows):
             "eps_surprise": r.get("eps_surprise"),
             "pos52": r.get("pos52"),
         })
-    sb.upsert("web_rankings", sb_rows, on_conflict="date,code")
+    sb.upsert("gen_rankings", sb_rows, on_conflict="date,code")
 
 
-# ── earnings_cache (→ web_earnings) ───────────────────────────────────────
+# ── earnings_cache (→ kabutan_earnings) ───────────────────────────────────────
 
 CACHE_MISS = object()
 
 def get_earnings_cache(code, today_str):
     """今日キャッシュ済みなら next_date(str or None)を返す。未キャッシュはCACHE_MISS。"""
     row = sb.select_one(
-        "web_earnings",
+        "kabutan_earnings",
         f"code=eq.{code}&select=next_date,fetched_date"
     )
     if row and row.get("fetched_date") == today_str:
@@ -116,31 +116,29 @@ def get_earnings_cache(code, today_str):
 
 
 def set_earnings_cache(code, today_str, next_date_str):
-    sb.upsert("web_earnings", [{
+    sb.upsert("kabutan_earnings", [{
         "code": str(code),
         "next_date": next_date_str,
         "fetched_date": today_str,
     }], on_conflict="code")
 
 
-# ── kabutan_yutai ───────────────────────────────────────────────────────────
-
 def get_yutai_cache(code, today_str):
-    """今日キャッシュ済みなら (has_yutai, record_month) を返す。未キャッシュは CACHE_MISS。"""
+    """gen_stock_metaから優待情報を返す。キャッシュ済みなら (has_yutai, yutai_month)。"""
     row = sb.select_one(
-        "kabutan_yutai",
-        f"code=eq.{code}&select=has_yutai,record_month,fetched_date"
+        "gen_stock_meta",
+        f"code=eq.{code}&select=has_yutai,yutai_month,fetched_date"
     )
     if row and row.get("fetched_date") == today_str:
-        return (bool(row["has_yutai"]), row["record_month"])
+        return (bool(row.get("has_yutai")), row.get("yutai_month"))
     return CACHE_MISS
 
 
 def set_yutai_cache(code, today_str, has_yutai, record_month):
-    sb.upsert("kabutan_yutai", [{
+    sb.upsert("gen_stock_meta", [{
         "code": str(code),
-        "record_month": record_month,
-        "has_yutai": int(has_yutai),
+        "has_yutai": bool(has_yutai),
+        "yutai_month": record_month,
         "fetched_date": today_str,
     }], on_conflict="code")
 
@@ -198,10 +196,10 @@ def get_fundamentals_codes_count():
     return len(set(r["code"] for r in rows))
 
 
-# ── sector_cache (→ web_stock_meta) ───────────────────────────────────────
+# ── sector_cache (→ gen_stock_meta) ───────────────────────────────────────
 
 def get_all_sectors():
-    rows = sb.select("web_stock_meta", "select=code,sector")
+    rows = sb.select("gen_stock_meta", "select=code,sector")
     return {r["code"]: r["sector"] for r in rows if r.get("sector")}
 
 
@@ -212,7 +210,7 @@ def save_all_sectors(sector_map):
         "sector": sector,
         "fetched_date": today_str,
     } for code, sector in sector_map.items()]
-    sb.upsert("web_stock_meta", sb_rows, on_conflict="code")
+    sb.upsert("gen_stock_meta", sb_rows, on_conflict="code")
 
 
 # ── simulation_results ────────────────────────────────────────────────────
@@ -288,25 +286,6 @@ def save_price_cache(code, df):
         rows.append({"code": str(code), "date": d, "close": c, "volume": v})
     if rows:
         sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
-
-
-# ── kabutan_sentiment ────────────────────────────────────────────────────
-
-def get_earnings_sentiment(code: str, today_str: str):
-    """今日キャッシュ済みならスコア(float)を返す。未キャッシュは None。"""
-    row = sb.select_one(
-        "kabutan_sentiment",
-        f"code=eq.{code}&fetched_date=eq.{today_str}&select=score"
-    )
-    return float(row["score"]) if row else None
-
-
-def set_earnings_sentiment(code: str, today_str: str, score: float):
-    sb.upsert("kabutan_sentiment", [{
-        "code": str(code),
-        "fetched_date": today_str,
-        "score": float(score),
-    }], on_conflict="code,fetched_date")
 
 
 # ── kabutan_jquants_margin ──────────────────────────────────────────────────────────
@@ -528,19 +507,19 @@ def jquants_earnings_rows(code: str) -> list:
 # ── top10 シミュレーション ────────────────────────────────────────────────
 
 def get_top10_sim_active() -> list:
-    return sb.select("top10_sim", "status=eq.active&order=entry_date.desc")
+    return sb.select("gen_top10_sim", "status=eq.active&order=entry_date.desc")
 
 
 def get_top10_sim_recent_exits(n: int = 20) -> list:
     return sb.select(
-        "top10_sim",
+        "gen_top10_sim",
         f"status=eq.exited&order=exit_date.desc&limit={n}"
     )
 
 
 def upsert_top10_sim_entry(entry_date: str, code: str, name: str,
                             entry_net: float, entry_price: float) -> None:
-    sb.insert_ignore("top10_sim", [{
+    sb.insert_ignore("gen_top10_sim", [{
         "entry_date": entry_date,
         "code": code,
         "name": name,
@@ -554,14 +533,14 @@ def close_top10_sim_position(entry_date: str, code: str,
                               exit_date: str, exit_net: float,
                               exit_price: float) -> None:
     row = sb.select_one(
-        "top10_sim",
+        "gen_top10_sim",
         f"entry_date=eq.{entry_date}&code=eq.{code}&select=entry_price"
     )
     if not row:
         return
     entry_price = row["entry_price"]
     return_pct = round((exit_price - entry_price) / entry_price * 100, 2) if entry_price else 0
-    sb.upsert("top10_sim", [{
+    sb.upsert("gen_top10_sim", [{
         "entry_date": entry_date,
         "code": code,
         "exit_date": exit_date,

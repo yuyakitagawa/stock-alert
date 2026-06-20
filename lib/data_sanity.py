@@ -244,12 +244,12 @@ def check_site(context: dict) -> list[Violation]:
 
     context（提供された項目だけ検査。未提供のキーはスキップ）:
       - date:         想定する最新日 "YYYY-MM-DD"
-      - rankings:     web_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
-      - stock_meta:   web_stock_meta の行（code/name/sector）
-      - claude_ai_analyses:  claude_ai_analyses の行（code/summary/verdict）
-      - earnings:     web_earnings の行（code/...）
+      - rankings:     gen_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
+      - stock_meta:   gen_stock_meta の行（code/name/sector）
+      - gen_ai_analyses:  gen_ai_analyses の行（code/summary/verdict）
+      - earnings:     kabutan_earnings の行（code/...）
       - expected_ai:  AI解析が存在すべき件数（上位N）
-      - descriptions: claude_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
+      - descriptions: gen_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
       - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
     """
     v: list[Violation] = []
@@ -260,14 +260,14 @@ def check_site(context: dict) -> list[Violation]:
     if "rankings" in context:
         if not rankings:
             v.append(Violation("critical", "rankings_empty",
-                               "web_rankings が空（サイトに本日データが出ない）"))
+                               "gen_rankings が空（サイトに本日データが出ない）"))
         else:
             v.extend(check_ranking(rankings))
             if expected_date:
                 dates = {r.get("date") for r in rankings if r.get("date")}
                 if dates and expected_date not in dates:
                     v.append(Violation("critical", "stale_rankings",
-                        f"web_rankings に本日({expected_date})のデータがない（最新={max(dates)}）"))
+                        f"gen_rankings に本日({expected_date})のデータがない（最新={max(dates)}）"))
 
     # ── stock_meta カバレッジ（銘柄名・セクターの欠損）───────────────────
     meta = context.get("stock_meta")
@@ -286,7 +286,7 @@ def check_site(context: dict) -> list[Violation]:
                 f"セクター未設定が{len(no_sector)}/{len(meta)}件（業種別成績が崩れる）"))
 
     # ── AI解析カバレッジ・空欠損 ─────────────────────────────────────────
-    ai = context.get("claude_ai_analyses")
+    ai = context.get("gen_ai_analyses")
     expected_ai = context.get("expected_ai", 0)
     if ai is not None:
         if expected_ai and len(ai) < expected_ai:
@@ -304,7 +304,7 @@ def check_site(context: dict) -> list[Violation]:
                     f"AI解析が古い日付のみ（本日{expected_date}分なし）"))
 
     # ── 会社説明カバレッジ（詳細ページ「この会社について」）─────────────────
-    # descriptions: claude_ai_analyses(model_version=company-desc-v1) の {code, summary}
+    # descriptions: gen_ai_analyses(model_version=company-desc-v1) の {code, summary}
     # desc_targets: 説明があるべき銘柄コード（ウォッチリスト＋保有株など）
     descriptions = context.get("descriptions")
     desc_targets = context.get("desc_targets")
@@ -325,7 +325,7 @@ def check_site(context: dict) -> list[Violation]:
     # ── 決算カレンダー（任意・空なら warning）────────────────────────────
     earnings = context.get("earnings")
     if "earnings" in context and rankings and not earnings:
-        v.append(Violation("warning", "earnings_empty", "web_earnings が空"))
+        v.append(Violation("warning", "earnings_empty", "kabutan_earnings が空"))
 
     return v
 
