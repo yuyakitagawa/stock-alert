@@ -61,7 +61,11 @@ jobs:
       - name: ③ EDINET大量保有 全履歴バックフィル（edinet_large_holdings）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --start "${{ github.event.inputs.edinet_start }}" --match-days 1
 
-      - name: "④ 確認 A/Bカタリストスクリーン（実データで候補＋除外結果を表示）"
+      - name: ④ 空売り残高バックフィル（J-Quants → short_interest）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_jquants_history.py --short --start 20240101
+
+      - name: "⑤ 確認 A/Bカタリストスクリーン（実データで候補＋除外結果を表示）"
         if: always()
         continue-on-error: true
         run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500
@@ -72,7 +76,7 @@ jobs:
           cd ~/stock-alert && python -c "
           import lib.supabase_client as sb
           import requests
-          for t in ['yahoo_price_cache','kabutan_fundamentals','jquants_fin_summary','edinet_large_holdings']:
+          for t in ['yahoo_price_cache','kabutan_fundamentals','jquants_fin_summary','edinet_large_holdings','short_interest']:
               try:
                   url=f'{sb.SUPABASE_URL}/rest/v1/{t}?select=count'
                   h=sb._headers(); h['Prefer']='count=exact'

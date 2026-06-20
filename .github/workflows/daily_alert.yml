@@ -80,6 +80,18 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 3
 
+      - name: Step 2d - 空売り残高 日次更新（J-Quants → short_interest）
+        continue-on-error: true
+        run: |
+          cd ~/stock-alert && python -c "
+          from lib.jquants import fetch_short_history
+          from datetime import date, timedelta
+          end = date.today().strftime('%Y%m%d')
+          start = (date.today() - timedelta(days=7)).strftime('%Y%m%d')
+          n = fetch_short_history(start=start, end=end)
+          print(f'空売り残高: {n}行保存')
+          "
+
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
 
