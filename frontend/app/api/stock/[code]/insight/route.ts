@@ -17,7 +17,7 @@ const serviceHeaders = () => ({
 
 async function getCached(code: string): Promise<Insight | null> {
   const res = await fetch(
-    sbUrl(`claude_ai_analyses?code=eq.${code}&model_version=eq.${MODEL_VER}&select=summary&limit=1`),
+    sbUrl(`gen_ai_analyses?code=eq.${code}&model_version=eq.${MODEL_VER}&select=summary&limit=1`),
     { headers: anonHeaders(), next: { revalidate: 86400 } }
   );
   if (!res.ok) return null;
@@ -30,7 +30,7 @@ async function getCached(code: string): Promise<Insight | null> {
 async function saveCache(code: string, insight: Insight): Promise<void> {
   const serviceKey = process.env.SUPABASE_SERVICE_KEY;
   if (!serviceKey) return;
-  await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/claude_ai_analyses`, {
+  await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/gen_ai_analyses`, {
     method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify([{

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
 
-  const res = await fetch(`${SB_URL}/rest/v1/push_subscriptions`, {
+  const res = await fetch(`${SB_URL}/rest/v1/app_push_subscriptions`, {
     method: "POST",
     headers: sbHeaders(),
     body: JSON.stringify({ endpoint, keys, enabled: true }),

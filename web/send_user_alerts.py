@@ -1,8 +1,8 @@
 """
-Supabase の push_subscriptions を参照し、売りシグナルが出た保有株がある
+Supabase の app_push_subscriptions を参照し、売りシグナルが出た保有株がある
 サブスクリプションに Web Push 通知を送る（Step 6）。
 
-実行条件: export_to_web.py が実行済みで web_rankings に本日データがある前提。
+実行条件: export_to_web.py が実行済みで gen_rankings に本日データがある前提。
 依存: requests, pywebpush, python-dotenv
 """
 import json
@@ -28,7 +28,7 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
 
 
 def _qa_check(today: str) -> None:
-    """QA: Push送信前に web_rankings の鮮度・整合性を検査（alert-only）。"""
+    """QA: Push送信前に gen_rankings の鮮度・整合性を検査（alert-only）。"""
     try:
         from lib.data_sanity import run_site_gate
         headers = {
@@ -36,7 +36,7 @@ def _qa_check(today: str) -> None:
             "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         }
         resp = requests.get(
-            f"{SUPABASE_URL}/rest/v1/web_rankings"
+            f"{SUPABASE_URL}/rest/v1/gen_rankings"
             f"?date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend",
             headers=headers, timeout=30,
         )
@@ -61,7 +61,7 @@ def main() -> None:
             "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         }
         resp = requests.get(
-            f"{SUPABASE_URL}/rest/v1/push_subscriptions?enabled=eq.true&select=id",
+            f"{SUPABASE_URL}/rest/v1/app_push_subscriptions?enabled=eq.true&select=id",
             headers=headers,
             timeout=10,
         )

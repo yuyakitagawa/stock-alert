@@ -18,11 +18,11 @@ Supabase に接続できる状態にする。
 
 ## フェーズ 2: テーブル作成 ✅
 
-- [x] `web_rankings` 作成
-- [x] `web_stock_meta` 作成
+- [x] `gen_rankings` 作成
+- [x] `gen_stock_meta` 作成
 - [x] `kabutan_earnings` 作成
-- [x] `claude_ai_analyses` 作成
-- [x] `push_subscriptions` 作成
+- [x] `gen_ai_analyses` 作成
+- [x] `app_push_subscriptions` 作成
 
 ---
 

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   // 最新日付を取得
   const latestRes = await fetch(
-    `${SB_URL}/rest/v1/web_rankings?select=date&order=date.desc&limit=1`,
+    `${SB_URL}/rest/v1/gen_rankings?select=date&order=date.desc&limit=1`,
     { headers: sbHeaders() }
   );
   const latest = latestRes.ok ? await latestRes.json() : [];
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   // ネットスコア取得（上位 = rank 昇順）
   const rankRes = await fetch(
-    `${SB_URL}/rest/v1/web_rankings?date=eq.${date}&select=name,code,net&order=rank.asc&limit=10`,
+    `${SB_URL}/rest/v1/gen_rankings?date=eq.${date}&select=name,code,net&order=rank.asc&limit=10`,
     { headers: sbHeaders() }
   );
   const rankings: { name: string; code: string; net: number }[] =
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
   // サブスクリプション取得
   const subsRes = await fetch(
-    `${SB_URL}/rest/v1/push_subscriptions?enabled=eq.true&select=endpoint,keys`,
+    `${SB_URL}/rest/v1/app_push_subscriptions?enabled=eq.true&select=endpoint,keys`,
     { headers: sbHeaders() }
   );
   const subs = subsRes.ok ? await subsRes.json() : [];
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         const status = (err as { statusCode?: number }).statusCode;
         if (status === 410 || status === 404) {
           await fetch(
-            `${SB_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
+            `${SB_URL}/rest/v1/app_push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
             { method: "DELETE", headers: sbHeaders() }
           );
         }
