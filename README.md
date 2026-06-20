@@ -27,8 +27,10 @@ web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 Webの **活動ログ**（/activity）・**チームレビュー**（/review）で誰でも状況把握できる。
 
 **ウォッチリスト**（/watchlist）は、ユーザーが自分で銘柄をブックマークして監視する**マイ・ウォッチリスト**。
-ログイン不要で、ブックマークは `localStorage`（端末/ブラウザごと）に保存する（実装: `frontend/lib/bookmarks.ts` の `useBookmarks` フック、
-キー `stocksignal:bookmarks`）。銘柄詳細ページのヘッダーとランキング各行の**しおりアイコン**（`frontend/components/BookmarkButton.tsx`）で追加/削除する。
+ログイン不要で、ブックマークは `localStorage`（即時の正本・オフラインファースト）に保存しつつ、ブラウザ発行の匿名 `client_id`（キー `stocksignal:client-id`）を識別子に
+Supabase `web_bookmarks` へ非同期同期する（実装: `frontend/lib/bookmarks.ts` の `useBookmarks` フック、キー `stocksignal:bookmarks`、API ルート `app/api/bookmarks` の GET/POST/DELETE・service key）。
+認証が無いため `client_id` はブラウザ単位で、端末間同期は不可（サーバーに記録が残るのみ）。銘柄詳細ページのヘッダーとランキング各行の**しおりアイコン**（`frontend/components/BookmarkButton.tsx`）で追加/削除する。
+ウォッチリストには**「保有株を取り込む」ボタン**があり、オーナーの保有43銘柄（`frontend/lib/owner-holdings.ts`）を自分のブラウザで一括ブックマークできる。
 ウォッチリスト本体は当日の `web_rankings`（全銘柄スコア）から該当コードを引き、銘柄名・**直近1ヶ月ミニチャート**（Sparkline・緑=上昇/赤=下落）・
 **お得度**（52週高値からの下落率: −30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）・**PER/PBR**・**ネットスコア（上昇↑/下落↓確率）**・推奨ラベルを表示する
 （`frontend/components/WatchlistClient.tsx`、デスクトップはテーブル/モバイルはカード）。ミニチャート・お得度・PER/PBR の市場データは API ルート `app/api/watch-metrics`（`fetchWatchMetricsMap`・Yahoo・ISR 1h）から
@@ -275,6 +277,7 @@ DBキャッシュは廃止。
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
 | `kabutan_yutai` / `kabutan_sentiment` / `simulation_results` / `top10_sim` | 優待・感情・BT・Top10シム |
 | `edinet_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
+| `web_bookmarks` | Webのマイ・ウォッチリスト（匿名 `client_id` ごと。localStorageと双方向同期）|
 
 全銘柄スクリーン（カタリスト候補）は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計する
 （REST per-code を避け高速化）。
