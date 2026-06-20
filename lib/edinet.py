@@ -197,17 +197,15 @@ def fetch_holding_ratio(doc_id: str) -> "float | None":
 def extract_large_holdings(results: list, disc_date: str) -> list:
     """documents.json の results から大量保有報告書（350/360）のみ抽出して整形。
 
-    Returns: list of dict（doc_id, sec_code, filer_name, doc_type_code,
+    Returns: list of dict（doc_id, filer_name, doc_type_code,
              doc_description, submit_date, disc_date）。
     """
     records = []
     for r in results:
         if str(r.get("docTypeCode", "")) not in _LARGE_HOLDING_TYPES:
             continue
-        sec_code = _normalize_sec_code(r.get("secCode"))
         records.append({
             "doc_id": r.get("docID"),
-            "sec_code": sec_code,
             "filer_name": r.get("filerName"),
             "doc_type_code": str(r.get("docTypeCode", "")),
             "doc_description": r.get("docDescription"),
