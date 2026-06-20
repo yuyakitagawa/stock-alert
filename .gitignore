@@ -24,3 +24,5 @@ simulations/
 .claude/*
 !.claude/skills/
 tools/_fund_cache.json
+_local_*.json
+_train_local.py
