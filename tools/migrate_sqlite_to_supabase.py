@@ -20,8 +20,6 @@ TABLE_MAP = {
     "price_cache":         ("yahoo_price_cache",   "code,date", None),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
     "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),
-    "margin_data":         ("kabutan_jquants_margin", "code,week_date", None),
-    "short_interest":      ("short_interest",      "code,week_date", None),
     "tdnet_events":        ("tdnet_events",        "code,announce_date,title", None),
     "market_index_cache":  ("yahoo_market_index",  "ticker,date", None),
     "jquants_fin_summary": ("jquants_fin_summary", "code,disc_date", None),
