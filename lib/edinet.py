@@ -45,10 +45,12 @@ def _api_key() -> str:
 
 
 def _normalize_sec_code(sec_code: str) -> "str | None":
-    """EDINET の secCode（5桁。末尾0付き）を 4桁の証券コードに正規化。"""
+    """EDINET の secCode を 4桁の証券コードに正規化。
+    形式: 4桁数字（7794）、5桁末尾0（77940）、英字混じり（268A, 268A0）
+    """
     if not sec_code:
         return None
-    s = str(sec_code).strip()
+    s = str(sec_code).strip().upper()
     if len(s) == 5 and s.endswith("0"):
         return s[:4]
     if len(s) == 4:
@@ -117,13 +119,8 @@ def verify_api(target_date: "str | date | None" = None) -> dict:
                 "total": 0, "large": 0, "date": target_date}
 
 
-def fetch_holding_ratio(doc_id: str) -> "float | None":
-    """XBRL本文（ZIP）から保有割合(%)を抽出する。取得失敗時は None。
-
-    EDINET API v2: GET /api/v2/documents/{docID}?type=1 → ZIP(XBRL一式)
-    大量保有報告書のXBRLには jpcrp_cor:HoldingRatioOfShareCertificatesEtcDEI 等の
-    タグで保有割合が記載されている。
-    """
+def _fetch_xbrl_text(doc_id: str) -> "str | None":
+    """XBRL本文（ZIP内 PublicDoc/*.xbrl）をテキストで返す。取得失敗時は None。"""
     key = _api_key()
     if not key or not doc_id:
         return None
@@ -134,28 +131,67 @@ def fetch_holding_ratio(doc_id: str) -> "float | None":
             timeout=30,
         )
         if resp.status_code != 200:
+            print(f"    XBRL HTTP {resp.status_code}: {doc_id}")
             return None
         zf = zipfile.ZipFile(io.BytesIO(resp.content))
-        # XBRL本文（PublicDoc/内の .xbrl ファイル）を探す
         xbrl_names = [n for n in zf.namelist()
                       if "PublicDoc" in n and n.endswith(".xbrl")]
         if not xbrl_names:
+            print(f"    XBRL内に.xbrlファイルなし: {doc_id} files={zf.namelist()[:5]}")
             return None
-        xbrl_text = zf.read(xbrl_names[0]).decode("utf-8", errors="replace")
-        # 保有割合タグを探す（複数の名前空間パターンに対応）
-        # jpcrp_cor:HoldingRatioOfShareCertificatesEtcDEI（提出後保有割合）
-        # jpcrp_cor:HoldingRatioOfShareCertificatesEtcBeforeChangeReportDEI（変更前）
-        patterns = [
-            r'<[^>]*HoldingRatioOfShareCertificatesEtcDEI[^>]*>([0-9]+\.?[0-9]*)<',
-            r'<[^>]*HoldingRatioOfShareCertificatesEtc[^>]*DEI[^>]*>([0-9]+\.?[0-9]*)<',
-        ]
-        for pat in patterns:
-            m = re.search(pat, xbrl_text)
-            if m:
-                return float(m.group(1))
+        return zf.read(xbrl_names[0]).decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"    XBRL例外: {doc_id} {e}")
         return None
-    except Exception:
-        return None
+
+
+def fetch_xbrl_details(doc_id: str) -> dict:
+    """XBRL本文から対象銘柄コード(issuer_code)と保有割合(holding_ratio)を抽出する。
+
+    Returns: {"issuer_code": str|None, "holding_ratio": float|None}
+    """
+    result = {"issuer_code": None, "holding_ratio": None}
+    xbrl_text = _fetch_xbrl_text(doc_id)
+    if not xbrl_text:
+        print(f"    ⚠ XBRL取得失敗: {doc_id}")
+        return result
+
+    # 対象銘柄の証券コード
+    # 優先1: SecurityCodeOfIssuer（発行者コード = 対象銘柄）
+    # 優先2: SecurityCodeDEI（nil でないもの）
+    # コード形式: 4桁数字 or 3桁数字+英字（268A等、2024年以降のIPO）
+    sec_patterns = [
+        r'<[^>]*SecurityCodeOfIssuer[^>]*>\s*([0-9A-Za-z]{4,5})\s*<',
+        r'<[^>]*SecurityCodeDEI[^>]*(?<!nil="true")>\s*([0-9A-Za-z]{4,5})\s*<',
+    ]
+    for pat in sec_patterns:
+        m = re.search(pat, xbrl_text)
+        if m:
+            result["issuer_code"] = _normalize_sec_code(m.group(1))
+            break
+
+    # 保有割合（提出後）
+    # PerLastReport（前回割合）や Notes（注記）を除外し、現在の保有割合のみ取得
+    # 値は小数（0.0778 = 7.78%）またはパーセント（7.78）の両方がありうる
+    ratio_patterns = [
+        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?[\s>](?:(?!PerLastReport)[^>])*>\s*([0-9]*\.?[0-9]+)\s*<',
+        r'<[^>]*:HoldingRatioOfShareCertificatesEtc[\s>][^>]*>\s*([0-9]*\.?[0-9]+)\s*<',
+    ]
+    for pat in ratio_patterns:
+        m = re.search(pat, xbrl_text)
+        if m:
+            val = float(m.group(1))
+            if val < 1.0:
+                val *= 100
+            result["holding_ratio"] = round(val, 2)
+            break
+
+    return result
+
+
+def fetch_holding_ratio(doc_id: str) -> "float | None":
+    """後方互換: XBRL本文から保有割合(%)のみ返す。"""
+    return fetch_xbrl_details(doc_id).get("holding_ratio")
 
 
 def extract_large_holdings(results: list, disc_date: str) -> list:
@@ -177,7 +213,8 @@ def extract_large_holdings(results: list, disc_date: str) -> list:
             "doc_description": r.get("docDescription"),
             "submit_date": r.get("submitDateTime"),
             "disc_date": disc_date,
-            "holding_ratio": None,  # XBRL取得後に埋める
+            "holding_ratio": None,   # XBRL取得後に埋める
+            "issuer_code": None,     # XBRL取得後に埋める
         })
     return [x for x in records if x["doc_id"]]
 
@@ -217,10 +254,14 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
         recs = extract_large_holdings(results, disc_date=ds)
         if fetch_xbrl:
             for rec in recs:
-                ratio = fetch_holding_ratio(rec["doc_id"])
-                rec["holding_ratio"] = ratio
+                details = fetch_xbrl_details(rec["doc_id"])
+                rec["holding_ratio"] = details["holding_ratio"]
+                rec["issuer_code"] = details["issuer_code"]
+                if not rec["issuer_code"]:
+                    print(f"    ⚠ issuer_code取得失敗: {rec['doc_id']} filer={rec.get('filer_name')}")
                 if sleep_sec:
                     time.sleep(sleep_sec)
+            recs = [r for r in recs if r.get("issuer_code")]
         if recs and persist:
             upsert_edinet_large_holdings(recs)
         all_records.extend(recs)

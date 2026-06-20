@@ -376,27 +376,35 @@ def upsert_edinet_large_holdings(records: list):
     if not records:
         return
     today_str = date.today().isoformat()
-    sb_rows = [{
-        "doc_id": r["doc_id"],
-        "sec_code": r.get("sec_code"),
-        "filer_name": r.get("filer_name"),
-        "doc_type_code": r.get("doc_type_code"),
-        "doc_description": r.get("doc_description"),
-        "submit_date": r.get("submit_date"),
-        "disc_date": r.get("disc_date"),
-        "holding_ratio": r.get("holding_ratio"),
-        "fetched_date": today_str,
-    } for r in records]
+    seen = set()
+    sb_rows = []
+    for r in records:
+        did = r["doc_id"]
+        if did in seen:
+            continue
+        seen.add(did)
+        sb_rows.append({
+            "doc_id": did,
+            "sec_code": r.get("sec_code"),
+            "filer_name": r.get("filer_name"),
+            "doc_type_code": r.get("doc_type_code"),
+            "doc_description": r.get("doc_description"),
+            "submit_date": r.get("submit_date"),
+            "disc_date": r.get("disc_date"),
+            "holding_ratio": r.get("holding_ratio"),
+            "issuer_code": r.get("issuer_code"),
+            "fetched_date": today_str,
+        })
     sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 
 def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
-    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio"
+    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio,issuer_code"
     if codes:
         code_list = ",".join(str(c) for c in codes)
-        q += f"&sec_code=in.({code_list})"
+        q += f"&issuer_code=in.({code_list})"
     return sb.select("edinet_large_holdings", q)
 
 

@@ -131,14 +131,13 @@ def main():
     matches = []
     excluded = {"self_filing": 0, "sell": 0}
     for h in holdings:
-        code = h.get("sec_code")
-        if cands and code not in cands:
+        issuer = h.get("issuer_code") or h.get("sec_code")
+        if cands and issuer not in cands:
             continue
-        cand = cands.get(code, {})
-        issuer_name = name_map.get(code, cand.get("name", ""))
+        cand = cands.get(issuer, {})
+        issuer_name = name_map.get(issuer, cand.get("name", ""))
         filer = h.get("filer_name", "")
         desc = (h.get("doc_description") or "").strip()
-        # 自己申告・売り/譲渡の報告を除外（第三者の買い集めだけ残す）
         if not args.no_exclude:
             reason = is_noise_match(filer, issuer_name, desc)
             if reason:
@@ -146,7 +145,8 @@ def main():
                 continue
         ratio = h.get("holding_ratio")
         matches.append({
-            "code": code,
+            "issuer_code": issuer,
+            "code": h.get("sec_code"),
             "name": issuer_name,
             "filer_name": filer,
             "doc_type": "大量保有" if h.get("doc_type_code") == "350" else "変更",
@@ -162,18 +162,19 @@ def main():
     if not args.no_exclude and (excluded["self_filing"] or excluded["sell"]):
         print(f"\n（ノイズ除外: 自己申告{excluded['self_filing']}件 / 譲渡・売却{excluded['sell']}件）")
     print(f"\n🎯 {title}: {len(matches)}件\n")
-    print(f"{'コード':<6}{'銘柄名':<20}{'種別':<8}{'開示日':<12}{'保有%':>6}  {'提出者':<24}  概要")
+    print(f"{'対象':<6}{'銘柄名':<20}{'種別':<8}{'開示日':<12}{'保有%':>6}  {'提出者':<24}  概要")
     print("-" * 110)
     for m in matches[:60]:
         nm = (m["name"] or "")[:18]
         filer = (m["filer_name"] or "")[:22]
         ratio_str = f"{m['holding_ratio']:.1f}" if m.get("holding_ratio") is not None else "  -"
-        print(f"{m['code'] or '----':<6}{nm:<20}{m['doc_type']:<8}{m['disc_date']:<12}{ratio_str:>6}  {filer:<24}  {m['doc_description'][:40]}")
+        issuer = m.get("issuer_code") or "----"
+        print(f"{issuer:<6}{nm:<20}{m['doc_type']:<8}{m['disc_date']:<12}{ratio_str:>6}  {filer:<24}  {m['doc_description'][:40]}")
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
-            "code", "name", "filer_name", "doc_type", "disc_date",
+            "issuer_code", "code", "name", "filer_name", "doc_type", "disc_date",
             "holding_ratio", "pbr", "roe", "equity_ratio", "doc_description"])
         w.writeheader()
         w.writerows(matches)
