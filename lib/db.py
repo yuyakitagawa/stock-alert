@@ -53,19 +53,6 @@ def get_jquants_disc_dates():
     return {r["disc_date"] for r in rows}
 
 
-def get_fundamentals_announce_dates(start, end):
-    """kabutan_fundamentals の announce_date 一覧（範囲内・重複なし・昇順）。"""
-    rows = sb.select(
-        "kabutan_fundamentals",
-        f"announce_date=gte.{start}&announce_date=lte.{end}"
-        "&announce_date=not.is.null&order=announce_date.asc&select=announce_date"
-    )
-    seen = []
-    for r in rows:
-        if r["announce_date"] not in seen:
-            seen.append(r["announce_date"])
-    return seen
-
 
 def get_all_yutai():
     """gen_stock_meta から優待情報を返す。"""
@@ -142,58 +129,6 @@ def set_yutai_cache(code, today_str, has_yutai, record_month):
         "fetched_date": today_str,
     }], on_conflict="code")
 
-
-# ── kabutan_fundamentals ──────────────────────────────────────────────────
-
-def upsert_fundamentals_annual(code, rows, today_str):
-    """rows: list of dict(fy_end, announce_date, eps, dps, roe, bps)"""
-    sb_rows = [{
-        "code": str(code),
-        "fy_end": r["fy_end"],
-        "announce_date": r.get("announce_date"),
-        "eps": r.get("eps"),
-        "dps": r.get("dps"),
-        "roe": r.get("roe"),
-        "bps": r.get("bps"),
-        "fetched_date": today_str,
-    } for r in rows]
-    sb.upsert("kabutan_fundamentals", sb_rows, on_conflict="code,fy_end")
-
-
-def get_fundamentals_annual(code):
-    """code の年度別ファンダを発表日昇順で返す。"""
-    return sb.select(
-        "kabutan_fundamentals",
-        f"code=eq.{code}&announce_date=not.is.null&order=announce_date.asc"
-        "&select=fy_end,announce_date,eps,dps,roe,bps"
-    )
-
-
-def load_all_fundamentals_annual():
-    """全銘柄の年度別ファンダを {code: [rows...]} で返す"""
-    rows = sb.select(
-        "kabutan_fundamentals",
-        "announce_date=not.is.null&order=code.asc,announce_date.asc"
-        "&select=code,fy_end,announce_date,eps,dps,roe,bps"
-    )
-    out = {}
-    for r in rows:
-        out.setdefault(str(r["code"]), []).append(r)
-    return out
-
-
-def get_fundamentals_fetched_codes(today_str):
-    """当日に取得済みの kabutan_fundamentals 銘柄コード集合。"""
-    rows = sb.select(
-        "kabutan_fundamentals",
-        f"fetched_date=eq.{today_str}&select=code"
-    )
-    return {str(r["code"]) for r in rows}
-
-
-def get_fundamentals_codes_count():
-    rows = sb.select("kabutan_fundamentals", "select=code")
-    return len(set(r["code"] for r in rows))
 
 
 # ── sector_cache (→ gen_stock_meta) ───────────────────────────────────────

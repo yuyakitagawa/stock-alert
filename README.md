@@ -68,7 +68,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `tools/backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存。`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
 | `tools/multi_backtest.py` | 33期間一括バックテスト＋フィルター比較分析（ウォークフォワード対応） |
 | `tools/simulate_monthly.py` | 月次シミュレーション（保有シナリオ分析）|
-| `tools/screen_catalyst_candidates.py` | カタリスト候補スクリーン（GARP補助）。PBR<1.0・ROE<8%・自己資本比率>50%・流動性の「安い箱」抽出は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計（ROEは kabutan_fundamentals 優先・無ければ J-Quants、BPSは分割調整漏れ防止のため J-Quants 優先）。通過候補に **利益の質フィルター(A/B)** で化粧決算（営業赤字・純利益>営業益×1.5）と斜陽事業（本業減益）を除外し、売上CAGR・営業利益率・会社予想方向で加減点。`data/catalyst_candidates.csv`（残）＋ `data/catalyst_excluded.csv`（除外理由付き・レビュー用）。`--no-quality` で品質フィルター無効 |
+| `tools/screen_catalyst_candidates.py` | カタリスト候補スクリーン（GARP補助）。PBR<1.0・ROE<8%・自己資本比率>50%・流動性の「安い箱」抽出は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計（J-Quants財務データ使用）。通過候補に **利益の質フィルター(A/B)** で化粧決算（営業赤字・純利益>営業益×1.5）と斜陽事業（本業減益）を除外し、売上CAGR・営業利益率・会社予想方向で加減点。`data/catalyst_candidates.csv`（残）＋ `data/catalyst_excluded.csv`（除外理由付き・レビュー用）。`--no-quality` で品質フィルター無効 |
 | `tools/catalyst_backtest.py` | カタリスト候補スクリーンのヒストリカルBT（point-in-time・disc_date≤基準日）。A/Bあり/なしで平均・勝率・大勝率を比較。データは J-Quants財務＋yahoo_price_cache |
 | `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
 | `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）と譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`EDINET_API_KEY` 必須 |
@@ -233,7 +233,6 @@ DBキャッシュは廃止。
 | `gen_dividend_strategy` | 配当戦略 |
 | `gen_qv_sim` | QV戦略バックテスト結果 |
 | `kabutan_earnings` | 決算日キャッシュ（`fetched_date` で当日判定）|
-| `kabutan_fundamentals` | 年次ファンダメンタル（kabutan） |
 | `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
@@ -276,9 +275,9 @@ DBキャッシュは廃止。
 | **日経マクロ (3)** | nk5, nk20, nk60 | Yahoo Finance 日経225 |
 | **60日系列要約 (7)** | autocorr, skew, max/min_ret, pos_ratio, slope, recent_vs_early | Yahoo Finance 株価 |
 | **相対アルファ (4)** | rel5/20/60, alpha_momentum | Yahoo Finance 株価＋日経 |
-| **ファンダメンタル (11)** | per, pbr, roe, earn_feat, div_ex_feat, sin/cos_month, div_yield, eps/dps_growth, dividend_relevant | kabutan (PER/PBR/ROE/決算日/優待月), kabutan_fundamentals (EPS/DPS成長) |
+| **ファンダメンタル (11)** | per, pbr, roe, earn_feat, div_ex_feat, sin/cos_month, div_yield, eps/dps_growth, dividend_relevant | kabutan (PER/PBR/ROE/決算日/優待月), jquants_fin_summary (EPS/BPS) |
 | **マクロ拡張 (4)** | vix, us5, us20, jpy5 | Yahoo Finance (^VIX, ^GSPC, JPY=X) |
-| **IB特徴量 (8)** | amihud, fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals | Yahoo Finance (株価/出来高/為替), kabutan_fundamentals (EPS/BPS/DPS), jquants_fin_summary (CFO/NP/TA/equity) |
+| **IB特徴量 (8)** | amihud, fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals | Yahoo Finance (株価/出来高/為替), jquants_fin_summary (CFO/NP/TA/equity) |
 | **クロスセクショナル (7)** | cs_ret5/20/60, cs_rsi, cs_vol20, cs_pos52, cs_sector_ret60 | 上記テクニカル特徴量の日次グループ内正規化 |
 
 ### フィルターが使うデータ
@@ -286,12 +285,12 @@ DBキャッシュは廃止。
 | フィルター | 条件 | データ出所 |
 |---|---|---|
 | **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
-| **💎買い条件** (`recommend_from_scores`) | net≥16, drop_prob<2%, Piotroski≥6/9, pos52<0.45, vol≤20%, ret90>-25%, 売買代金≥100M, EPS surprise>2% or BPS成長+ | モデル予測＋kabutan_fundamentals＋jquants_fin_summary |
+| **💎買い条件** (`recommend_from_scores`) | net≥16, drop_prob<2%, Piotroski≥6/9, pos52<0.45, vol≤20%, ret90>-25%, 売買代金≥100M, EPS surprise>2% or BPS成長+ | モデル予測＋jquants_fin_summary |
 | **決算フィルター** (フェーズ5) | 決算22日以内→S買い降格 | kabutan 決算日 |
 | **優待フィルター** (フェーズ5b) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
 | **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
 | **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
-| **カタリストスクリーン** (RPC) | PBR<1.0, ROE<8%, 自己資本比率>50%, 売買代金≥指定値 | jquants_fin_summary＋kabutan_fundamentals |
+| **カタリストスクリーン** (RPC) | PBR<1.0, ROE<8%, 自己資本比率>50%, 売買代金≥指定値 | jquants_fin_summary |
 | **利益の質フィルター** (A/B) | 営業赤字/化粧決算/本業減益を除外 | jquants_fin_summary (営業益/売上/純利益) |
 | **EDINET突合** | 大量保有報告×カタリスト候補マッチ（自己申告・売り除外） | EDINET API |
 

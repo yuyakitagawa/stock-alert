@@ -19,7 +19,6 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 TABLE_MAP = {
     "price_cache":         ("yahoo_price_cache",   "code,date", None),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
-    "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),
     "tdnet_events":        ("tdnet_events",        "code,announce_date,title", None),
     "market_index_cache":  ("yahoo_market_index",  "ticker,date", None),
     "jquants_fin_summary": ("jquants_fin_summary", "code,disc_date", None),
