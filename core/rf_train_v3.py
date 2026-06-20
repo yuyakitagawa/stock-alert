@@ -30,6 +30,28 @@ _SC_MIN_VOL=22.0; _SC_MAX_VOL=50.0; _SC_MIN_PRICE=300
 _SC_MIN_VR=1.0; _SC_MIN_REL=0.05  # 出来高比 / 日経比相対強度
 _SC_MIN_RSI=45.0; _SC_MAX_RSI=70.0
 
+def _load_edinet_map():
+    """EDINET大量保有報告を {issuer_code: [(submit_date, holding_ratio), ...]} で返す。
+    submit_date降順（最新が先頭）。"""
+    try:
+        from lib.db import get_edinet_all
+        rows = get_edinet_all()
+        if not rows:
+            return {}
+        m = {}
+        for r in rows:
+            code = r.get("issuer_code")
+            sub = (r.get("submit_date") or r.get("disc_date", ""))[:10]
+            ratio = r.get("holding_ratio")
+            if code and sub and ratio is not None:
+                m.setdefault(code, []).append((sub, float(ratio)))
+        for code in m:
+            m[code].sort(key=lambda x: x[0], reverse=True)
+        return m
+    except Exception:
+        return {}
+
+
 def _fetch_index_df(ticker_encoded, days=2200):
     """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す"""
     end_ts=int(datetime.now().timestamp())
@@ -123,9 +145,11 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
 
 def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                      vix_map=None, sp500_dates=None, sp500_closes_arr=None,
-                     usdjpy_dates=None, usdjpy_closes_arr=None):
+                     usdjpy_dates=None, usdjpy_closes_arr=None,
+                     edinet_map=None):
     """vix_map: {date: float}, sp500_dates/usdjpy_dates: sorted list of date,
-    sp500_closes_arr/usdjpy_closes_arr: np.array"""
+    sp500_closes_arr/usdjpy_closes_arr: np.array
+    edinet_map: {code: [(submit_date_str, holding_ratio), ...]}"""
     import bisect
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
@@ -185,7 +209,18 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     var_fx = np.var(fr)
                     if var_fx > 0:
                         fx_beta_val = float(np.cov(sr, fr)[0, 1] / var_fx)
-        # point-in-timeファンダ（優待月・J-Quants accruals等）
+        # EDINET大量保有: point-in-time（サンプル日から90日以内の最新保有割合）
+        edinet_hold_val = None
+        if edinet_map and sample_code:
+            filings = edinet_map.get(str(sample_code), [])
+            from datetime import timedelta as _td2
+            cutoff_90 = (dates[i] - _td2(days=90)).isoformat()
+            d_iso = dates[i].isoformat()
+            for sub_date, ratio in filings:
+                if cutoff_90 <= sub_date <= d_iso:
+                    edinet_hold_val = ratio
+                    break
+        # point-in-timeファンダ（優待月・J-Quants財務）
         fund = None
         if sample_code is not None:
             pit = get_pit_fundamentals(sample_code, dates[i])
@@ -206,7 +241,6 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     "vix":                 vix_val,
                     "us5":                 us5_val,
                     "us20":                us20_val,
-                    # 新規IB特徴量
                     "fx_beta":             fx_beta_val,
                     "jpy5":                jpy5_val,
                     "eps_surprise":        pit.get("eps_surprise"),
@@ -214,24 +248,25 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     "piotroski":           pit.get("piotroski"),
                     "payout":              pit.get("payout"),
                     "accruals":            pit.get("accruals"),
+                    "edinet_holding":      edinet_hold_val,
                 }
             else:
-                # ファンダなし銘柄でもマクロ・FX特徴量は渡す
                 fund = {
                     "vix":     vix_val,
                     "us5":     us5_val,
                     "us20":    us20_val,
                     "fx_beta": fx_beta_val,
                     "jpy5":    jpy5_val,
+                    "edinet_holding": edinet_hold_val,
                 }
         else:
-            # sample_code未指定の場合もマクロ・FX特徴量は渡す
             fund = {
                 "vix":     vix_val,
                 "us5":     us5_val,
                 "us20":    us20_val,
                 "fx_beta": fx_beta_val,
                 "jpy5":    jpy5_val,
+                "edinet_holding": edinet_hold_val,
             }
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue
@@ -314,6 +349,10 @@ def main():
     usdjpy_dates = sorted(usdjpy_df.index)                       if usdjpy_df is not None else []
     usdjpy_closes_arr = (usdjpy_df.loc[usdjpy_dates, "Close"].values
                          if usdjpy_df is not None else np.array([]))
+    # EDINET大量保有報告マップ: {code: [(submit_date, holding_ratio), ...]}
+    edinet_map = _load_edinet_map()
+    if edinet_map:
+        print(f"  EDINET大量保有: {len(edinet_map)}銘柄分")
     print(f"\n株価取得中（30〜60分かかります）...")
     train_X,train_yr,train_yd,train_ar,train_ad=[],[],[],[],[]
     test_X,test_yr,test_yd,test_ar,test_ad=[],[],[],[],[]
@@ -332,7 +371,8 @@ def main():
                                                         sp500_dates=sp500_dates,
                                                         sp500_closes_arr=sp500_closes_arr,
                                                         usdjpy_dates=usdjpy_dates,
-                                                        usdjpy_closes_arr=usdjpy_closes_arr):
+                                                        usdjpy_closes_arr=usdjpy_closes_arr,
+                                                        edinet_map=edinet_map):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
                 train_ar.append(ar); train_ad.append(ad); train_dates.append(sd)
@@ -406,7 +446,7 @@ def main():
                    "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
 
     # C-1: 特徴量重要度を保存
-    # 61次元: 54基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB+1自社株買いYield) + 7クロスセクション
+    # 61次元: 54基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB+1EDINET) + 7クロスセクション
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
@@ -418,6 +458,7 @@ def main():
                   "dps_growth_f","vix_feat","us5_f","us20_f",
                   "amihud_f","fx_beta_f","jpy5_f",
                   "eps_surprise_f","bps_growth_f","piotroski_f","payout_f","accruals_f",
+                  "edinet_hold_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
                   "cs_sector_ret60"]
     imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
