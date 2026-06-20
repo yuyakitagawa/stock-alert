@@ -131,7 +131,7 @@ def main():
     matches = []
     excluded = {"self_filing": 0, "sell": 0}
     for h in holdings:
-        issuer = h.get("issuer_code") or h.get("sec_code")
+        issuer = h.get("issuer_code")
         if cands and issuer not in cands:
             continue
         cand = cands.get(issuer, {})
@@ -146,7 +146,7 @@ def main():
         ratio = h.get("holding_ratio")
         matches.append({
             "issuer_code": issuer,
-            "code": h.get("sec_code"),
+            "code": issuer,
             "name": issuer_name,
             "filer_name": filer,
             "doc_type": "大量保有" if h.get("doc_type_code") == "350" else "変更",
