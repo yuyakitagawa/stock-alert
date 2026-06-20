@@ -52,15 +52,6 @@ def load_env():
                 os.environ.setdefault(k.strip(), v.strip())
 
 
-def get_target_dates() -> list[str]:
-    """
-    DBの kabutan_fundamentals から実際に発表があった日付を取得。
-    未取得分のみ返す（--resume 時は取得済みをスキップ）。
-    """
-    from lib.db import get_fundamentals_announce_dates
-    return get_fundamentals_announce_dates(AVAIL_START, AVAIL_END)
-
-
 def get_fetched_dates() -> set[str]:
     """既にDBに保存済みの disc_date 一覧を返す。"""
     from lib.db import get_jquants_disc_dates
@@ -133,8 +124,7 @@ def _first(row, *keys):
 
 
 def all_business_days() -> list[str]:
-    """利用可能期間 [AVAIL_START, AVAIL_END] の全営業日（土日除く）。
-    kabutan_fundamentals が無くてもJ-Quants財務を直接取得できる（kabutan非依存）。"""
+    """利用可能期間 [AVAIL_START, AVAIL_END] の全営業日（土日除く）。"""
     from datetime import timedelta
     d0 = date.fromisoformat(AVAIL_START)
     d1 = date.fromisoformat(AVAIL_END)
@@ -150,8 +140,6 @@ def all_business_days() -> list[str]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="取得済み日付をスキップ")
-    parser.add_argument("--all-days", action="store_true",
-                        help="kabutan_fundamentals非依存で全営業日を取得（クラウド・kabutan不要）")
     args = parser.parse_args()
 
     load_env()
@@ -167,11 +155,7 @@ def main():
 
     cli = ClientV2(api_key=api_key)
 
-    # --all-days か、kabutan_fundamentals が空（クラウドでkabutan不可）なら全営業日を対象に。
-    target_dates = all_business_days() if args.all_days else get_target_dates()
-    if not target_dates and not args.all_days:
-        logger.info("kabutan_fundamentals に発表日が無いため全営業日にフォールバック")
-        target_dates = all_business_days()
+    target_dates = all_business_days()
     logger.info(f"対象日数: {len(target_dates)} 日 ({AVAIL_START} ～ {AVAIL_END})")
     logger.info(f"予想時間: {len(target_dates) * RATE_SLEEP // 60} 分")
 
