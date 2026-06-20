@@ -1,4 +1,5 @@
 """Supabase REST API client for stock-alert pipeline."""
+import math
 import os
 import requests
 from dotenv import load_dotenv
@@ -10,6 +11,21 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 _BATCH_SIZE = 500
 _TIMEOUT = 30
+
+
+def _sanitize(rows: list[dict]) -> list[dict]:
+    """inf/-inf/NaN を None に置換する。1件でも非有限値が混じると
+    JSON シリアライズ時に 'Out of range float values' で全 upsert が落ちるため。"""
+    out = []
+    for row in rows:
+        clean = {}
+        for k, v in row.items():
+            if isinstance(v, float) and not math.isfinite(v):
+                clean[k] = None
+            else:
+                clean[k] = v
+        out.append(clean)
+    return out
 
 
 def _headers(prefer: str = "resolution=merge-duplicates") -> dict:
@@ -31,6 +47,7 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> None:
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if on_conflict:
         url += f"?on_conflict={on_conflict}"
+    rows = _sanitize(rows)
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = rows[i: i + _BATCH_SIZE]
         resp = requests.post(url, headers=_headers(), json=batch, timeout=_TIMEOUT)
@@ -46,6 +63,7 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
     if on_conflict:
         url += f"?on_conflict={on_conflict}"
     headers = _headers(prefer="resolution=ignore-duplicates")
+    rows = _sanitize(rows)
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = rows[i: i + _BATCH_SIZE]
         resp = requests.post(url, headers=headers, json=batch, timeout=_TIMEOUT)
