@@ -2,11 +2,11 @@
 
 ## 0. AI Handling Rules (燃費・安全設計)
 - **Think Small**: 大規模なリファクタリングより、バグ修正とパラメータ調整を優先せよ。
-- **No Hallucination**: utils.pyの60次元特徴量の定義を勝手に変えないこと。
+- **No Hallucination**: utils.pyの61次元特徴量の定義を勝手に変えないこと。
 - **Token Saving**: 解説は最小限にし、実行結果や修正コードを即座に提示せよ。
 
 ## 1. File Map (Core Only)
-- `lib/utils.py`: 特徴量定義(60次元: 53基本[32テクニカル+11ファンダ+4マクロ(VIX/US5/US20/JPY5)+8新規IB(Amihud非流動性/FXβ/JPY5/EPSサプライズ/BPS成長/Piotroski/配当性向/アクルーアル)]+7CS[6標準+1セクター内相対モメンタム]) & 共通関数。※変更時は要申告。
+- `lib/utils.py`: 特徴量定義(61次元: 54基本[32テクニカル+11ファンダ+4マクロ(VIX/US5/US20/JPY5)+8新規IB(Amihud非流動性/FXβ/JPY5/EPSサプライズ/BPS成長/Piotroski/配当性向/アクルーアル)+1EDINET大量保有]+7CS[6標準+1セクター内相対モメンタム]) & 共通関数。※変更時は要申告。
 - `lib/nlp_sentiment.py`: 決算テキスト感情分析（Claude Haiku × kabutan）。ランキング後処理に使用。
 - `core/rf_train_v3.py`: XGBoost学習(上昇/下落)。※金曜(再学習日)以外は触らない。
 - `core/screener.py` -> `core/rank_stocks.py`: 抽出 & ネットスコア計算。
@@ -19,7 +19,7 @@
 - **Hard Filters (Don't Touch)**:
   - `down_streak > 3日` (0.15換算): 除外
   - `drawdown60 < -15%`: 除外
-- **Note**: AUC 0.663 (上昇) / 0.791 (下落)。下落予測の精度を重視せよ。
+- **Note**: AUC 0.642 (上昇) / 0.766 (下落)。下落予測の精度を重視せよ。
 
 ## 3. Operations (Commands)
 - Screening & Rank: `python3 core/screener.py && python3 core/rank_stocks.py`
@@ -49,7 +49,7 @@
 - **テストは対象と一緒に消す**: 関数を削除したら、そのテストも同じコミットで削除せよ。
 - **READMEは同一コミットで更新**: 機能追加・変更・削除を実装したら、必ず同じコミットで README.md を更新せよ。フィルター値・コマンド・ファイル構成・テスト件数も合わせること。
 - **AIモデル説明ページを同一コミットで更新（絶対厳守）**: 予測モデルの素性・特徴量重要度・買いフィルター・売りロジック・損切り式・レジーム調整のいずれかを変更したら、**必ず同じコミットで** `frontend/app/model/page.tsx` の該当数値・条件を実コードに合わせて更新せよ。対象の真実源（source of truth）は次の通り。乖離は放置禁止。
-  - 特徴量重要度・AUC・60次元の内訳 → `feature_importance.json` / `lib/utils.py`（`extract_features`）
+  - 特徴量重要度・AUC・61次元の内訳 → `feature_importance.json` / `lib/utils.py`（`extract_features`）
   - 品質フィルター（株価/DD/連続下落/RSI/流動性） → `core/rank_stocks.py` の `passes_buy_filter`
   - 💎買い条件 → `lib/utils.py` の `recommend_from_scores`
   - 売り判定の段階・推奨ラベル → `lib/utils.py` の `recommend_from_net` ＋ `rank_stocks.py` の判定閾値
