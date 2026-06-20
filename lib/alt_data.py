@@ -2,10 +2,8 @@
 lib/alt_data.py
 オルタナティブデータ取得モジュール（全て無料・公開データ）
 
-1. 信用倍率 / 信用残    (kabutan.jp/stock/credit)
-2. TDnet適時開示        (kabutan IR + TDnet)
-3. 空売り残高           (JPX/TSE公開週次Excel)
-4. Googleトレンド       (pytrends — 要pip install pytrends)
+1. TDnet適時開示        (kabutan IR + TDnet)
+2. Googleトレンド       (pytrends — 要pip install pytrends)
 
 設計方針:
 - DBキャッシュ優先（当日1回のみ外部アクセス）
@@ -18,9 +16,7 @@ import time
 import requests
 from datetime import datetime, date, timedelta
 from lib.db import (
-    get_margin_data_latest, upsert_margin_data,
     get_tdnet_events_recent, upsert_tdnet_events,
-    get_short_interest_latest, bulk_upsert_short_interest,
 )
 
 _HEADERS = {
@@ -29,74 +25,7 @@ _HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# ── 1. 信用倍率 / 信用残 ─────────────────────────────────────────────────
-
-def _parse_number(text: str) -> "float | None":
-    """カンマ・全角数字を除去して float に変換。失敗時は None。"""
-    try:
-        cleaned = text.replace(",", "").replace("，", "").replace("倍", "").strip()
-        return float(cleaned)
-    except (ValueError, AttributeError):
-        return None
-
-
-def get_margin_data(code: str) -> "dict | None":
-    """信用倍率・信用買残・信用売残を返す。DBキャッシュ（当日）優先。
-
-    Returns:
-        {'ratio': float, 'buy': float, 'sell': float, 'date': str} or None
-    """
-    today_str = date.today().isoformat()
-    cached = get_margin_data_latest(str(code))
-    if cached and cached.get("fetched_date") == today_str:
-        return {"ratio": cached["ratio"], "buy": cached["buy_balance"],
-                "sell": cached["sell_balance"], "date": cached["week_date"]}
-
-    try:
-        resp = requests.get(
-            f"https://kabutan.jp/stock/credit?code={code}",
-            headers=_HEADERS, timeout=8
-        )
-        if resp.status_code != 200:
-            return cached  # 古いキャッシュを返す
-        text = resp.text.replace("\n", "").replace("\t", "").replace(" ", "")
-
-        # 信用倍率のパターン: 数値 + 倍
-        ratio_m = re.search(r'信用倍率[^<]{0,20}<td[^>]*>([\d,.]+)倍?</td>', text)
-        buy_m   = re.search(r'信用買残[^<]{0,20}<td[^>]*>([\d,]+)', text)
-        sell_m  = re.search(r'信用売残[^<]{0,20}<td[^>]*>([\d,]+)', text)
-
-        # フォールバック: テーブル行から数値を抽出
-        if not ratio_m:
-            ratio_m = re.search(r'<td[^>]*>([\d]+\.[\d]+)</td>[^<]*<td[^>]*>倍</td>', text)
-        if not ratio_m:
-            # 最もシンプルな数値一致（倍の直前）
-            ratio_m = re.search(r'>([\d]+\.[\d]{1,2})</td>', text)
-
-        ratio = _parse_number(ratio_m.group(1)) if ratio_m else None
-        buy   = _parse_number(buy_m.group(1))   if buy_m   else None
-        sell  = _parse_number(sell_m.group(1))  if sell_m  else None
-
-        # 最新週の確定日を取得（kabutan は YYYY/MM/DD 形式）
-        date_m = re.search(r'(\d{4}/\d{2}/\d{2})', text[:3000])
-        week_date = date_m.group(1).replace("/", "-") if date_m else today_str
-
-        if ratio is not None:
-            upsert_margin_data(
-                code, week_date,
-                buy   if buy   is not None else 0.0,
-                sell  if sell  is not None else 0.0,
-                ratio
-            )
-            return {"ratio": ratio, "buy": buy, "sell": sell, "date": week_date}
-
-        # ratio が取れなくても古いキャッシュを返す
-        return cached
-    except Exception:
-        return cached
-
-
-# ── 2. TDnet適時開示 ──────────────────────────────────────────────────────
+# ── 1. TDnet適時開示 ──────────────────────────────────────────────────────
 
 # イベントタイプ分類キーワード（前方優先＝具体的・信頼度の高い分類を先に。
 # 汎用的な ma は最後＝「完全子会社化」等の具体イベントに先取りさせる）
@@ -236,95 +165,7 @@ def today_str_or_placeholder(ev: dict) -> str:
     return "_check"
 
 
-# ── 3. 空売り残高 (TSE/JPX 週次公開データ) ──────────────────────────────
-
-_SHORT_INDEX_URL = "https://www.jpx.co.jp/markets/statistics-equities/short-selling/"
-_SHORT_ATT_BASE  = "https://www.jpx.co.jp"
-
-_short_cache: dict = {}     # {code_str: {'week_date': str, 'short_balance': float, 'short_amount': float}}
-_short_cache_date: str = "" # 最終ロード日
-
-
-def _load_tse_short_data() -> bool:
-    """TSE から最新の週次空売り残高Excelをダウンロードして _short_cache を更新。"""
-    global _short_cache, _short_cache_date
-    today_str = date.today().isoformat()
-    if _short_cache_date == today_str and _short_cache:
-        return True
-    try:
-        import pandas as pd
-        # インデックスページから最新ファイルのリンクを取得
-        resp = requests.get(_SHORT_INDEX_URL, headers=_HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return False
-        # xlsx or xls ファイルへのリンクを探す
-        links = re.findall(r'href="([^"]+short[^"]*\.xls[x]?)"', resp.text, re.IGNORECASE)
-        if not links:
-            links = re.findall(r'href="(/[^"]+tvdivq[^"]+\.xls[x]?)"', resp.text, re.IGNORECASE)
-        if not links:
-            return False
-        file_url = _SHORT_ATT_BASE + links[0] if links[0].startswith("/") else links[0]
-        resp2 = requests.get(file_url, headers=_HEADERS, timeout=30)
-        if resp2.status_code != 200:
-            return False
-        df = pd.read_excel(io.BytesIO(resp2.content), dtype=str)
-        df.columns = [str(c).strip() for c in df.columns]
-        # 列名の揺れに対応
-        code_col   = next((c for c in df.columns if "コード" in c or "code" in c.lower()), None)
-        bal_col    = next((c for c in df.columns if "残高株数" in c or "株数" in c), None)
-        amount_col = next((c for c in df.columns if "残高金額" in c or "金額" in c), None)
-        if code_col is None or bal_col is None:
-            return False
-        # ファイル名から週の日付を推定
-        week_m = re.search(r'(\d{8})', file_url)
-        week_date = (datetime.strptime(week_m.group(1), "%Y%m%d").date().isoformat()
-                     if week_m else today_str)
-        rows_to_save = []
-        _short_cache = {}
-        for _, row in df.iterrows():
-            code = str(row[code_col]).strip().zfill(4)
-            if not re.match(r'^\d{4}$', code):
-                continue
-            try:
-                bal = float(str(row[bal_col]).replace(",", "").replace("，", ""))
-            except (ValueError, TypeError):
-                continue
-            amt = None
-            if amount_col:
-                try:
-                    amt = float(str(row[amount_col]).replace(",", "").replace("，", ""))
-                except (ValueError, TypeError):
-                    pass
-            _short_cache[code] = {"week_date": week_date, "short_balance": bal, "short_amount": amt}
-            rows_to_save.append((code, week_date, bal, amt))
-        if rows_to_save:
-            bulk_upsert_short_interest(rows_to_save)
-        _short_cache_date = today_str
-        return bool(_short_cache)
-    except Exception:
-        return False
-
-
-def get_short_balance(code: str) -> "dict | None":
-    """空売り残高データを返す（単位: 株）。
-    Returns: {'week_date': str, 'short_balance': float, 'short_amount': float} or None
-    """
-    global _short_cache
-    code = str(code).zfill(4)
-    # メモリキャッシュ確認
-    if _short_cache.get(code):
-        return _short_cache[code]
-    # DBキャッシュ確認
-    cached = get_short_interest_latest(code)
-    if cached:
-        return cached
-    # 全件ロード（初回のみ時間かかる）
-    if _load_tse_short_data():
-        return _short_cache.get(code)
-    return None
-
-
-# ── 4. Google トレンド ───────────────────────────────────────────────────
+# ── 2. Google トレンド ───────────────────────────────────────────────────
 
 try:
     from pytrends.request import TrendReq as _TrendReq
@@ -379,10 +220,6 @@ def get_alt_signals(code: str, name: str = "") -> dict:
 
     Returns:
         {
-          'margin_ratio': float | None,       # 信用倍率
-          'margin_buy': float | None,          # 信用買残（株）
-          'margin_sell': float | None,         # 信用売残（株）
-          'short_balance': float | None,       # 空売り残高（株）
           'tdnet_events': list,                # 適時開示イベント
           'has_buyback': bool,                 # 30日以内に自社株買い発表
           'has_upward': bool,                  # 30日以内に上方修正発表
@@ -393,26 +230,12 @@ def get_alt_signals(code: str, name: str = "") -> dict:
         }
     """
     result = {
-        "margin_ratio": None, "margin_buy": None, "margin_sell": None,
-        "short_balance": None,
         "tdnet_events": [],
         "has_buyback": False, "has_upward": False, "has_downward": False,
         "days_since_buyback": None, "days_since_upward": None,
         "growth_catalysts": [], "has_growth_catalyst": False,
         "trend_score": 0.0,
     }
-
-    # 信用倍率
-    margin = get_margin_data(code)
-    if margin:
-        result["margin_ratio"] = margin.get("ratio")
-        result["margin_buy"]   = margin.get("buy")
-        result["margin_sell"]  = margin.get("sell")
-
-    # 空売り残高
-    short = get_short_balance(code)
-    if short:
-        result["short_balance"] = short.get("short_balance")
 
     # 適時開示
     events = get_tdnet_events(code, days=45)
