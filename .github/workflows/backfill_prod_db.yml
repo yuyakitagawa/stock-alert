@@ -2,7 +2,7 @@ name: Backfill Prod DB
 
 # Supabaseに「ファンダ＋EDINET全履歴」を一括投入する一回限りのジョブ。
 # 取得順: ①kabutanファンダ(fundamentals_annual) → ②J-Quants財務(jquants_fin_summary・①の開示日を使用)
-#         → ③EDINET大量保有(edinet_holdings) 全履歴。各ツールが直接Supabaseへupsertする。
+#         → ③EDINET大量保有(edinet_large_holdings) 全履歴。各ツールが直接Supabaseへupsertする。
 # メールは送らない。重複は各テーブルの主キーで排除されるため再実行安全。
 on:
   workflow_dispatch:
@@ -58,7 +58,7 @@ jobs:
       - name: ② J-Quants財務取得（jquants_fin_summary：純資産/総資産/営業益/売上/予想・全営業日）
         run: cd ~/stock-alert && python tools/fetch_jquants_fin.py --all-days --resume
 
-      - name: ③ EDINET大量保有 全履歴バックフィル（edinet_holdings）
+      - name: ③ EDINET大量保有 全履歴バックフィル（edinet_large_holdings）
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --start "${{ github.event.inputs.edinet_start }}" --match-days 1
 
       - name: "④ 確認 A/Bカタリストスクリーン（実データで候補＋除外結果を表示）"
@@ -72,7 +72,7 @@ jobs:
           cd ~/stock-alert && python -c "
           import lib.supabase_client as sb
           import requests
-          for t in ['price_cache','fundamentals_annual','jquants_fin_summary','edinet_holdings']:
+          for t in ['price_cache','fundamentals_annual','jquants_fin_summary','edinet_large_holdings']:
               try:
                   url=f'{sb.SUPABASE_URL}/rest/v1/{t}?select=count'
                   h=sb._headers(); h['Prefer']='count=exact'

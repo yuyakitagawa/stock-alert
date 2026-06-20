@@ -39,8 +39,8 @@
 > 結論: 選定シグナルへの「成長」上乗せが2連続失敗（eps/進捗率）したため、別メカニズム＝
 > 「構造的に改革が起きやすい候補」×「実際に誰かが5%超を買い集めた事実」の突合に転換。
 - [x] C1. `lib/edinet.py`: EDINET API v2クライアント。documents.jsonから大量保有(350)/変更(360)報告書を抽出、secCode 5桁→4桁正規化。失敗時[]・例外非伝播（alt_data流儀）。
-- [x] C2. DB `edinet_holdings` テーブル＋ `upsert_edinet_holdings` / `get_edinet_holdings_recent(days, codes)`。日次蓄積（point-in-time）。
+- [x] C2. DB `edinet_large_holdings` テーブル＋ `upsert_edinet_large_holdings` / `get_edinet_large_holdings_recent(days, codes)`。日次蓄積（point-in-time）。
 - [x] C3. `tools/scan_large_holdings.py`: 直近N日スキャン→DB蓄積→カタリスト候補CSVと突合→`data/edinet_holding_matches.csv`。スモークテスト合格（350/360抽出・コード正規化・突合・名称解決OK）。
 - [x] C4. README/.gitignore更新（同コミット）。model/page.tsx は選定ロジック未変更のため対象外。
-- [x] C5. クラウド化: daily_alert.yml に Step2b（カタリスト候補スクリーン）＋Step2c（EDINET大量保有スキャン --days 3）を追加。`.env` に EDINET_API_KEY を流し込み、結果CSVをアーティファクト化。stock_alert.db キャッシュで edinet_holdings が日次蓄積。**残: ユーザーが GitHub Secrets に `EDINET_API_KEY` を登録**（未登録でもスキャンはスキップされ本体パイプラインは無害）。
+- [x] C5. クラウド化: daily_alert.yml に Step2b（カタリスト候補スクリーン）＋Step2c（EDINET大量保有スキャン --days 3）を追加。`.env` に EDINET_API_KEY を流し込み、結果CSVをアーティファクト化。stock_alert.db キャッシュで edinet_large_holdings が日次蓄積。**残: ユーザーが GitHub Secrets に `EDINET_API_KEY` を登録**（未登録でもスキャンはスキップされ本体パイプラインは無害）。
 - [ ] C6. 数週間フォワードで「突合ヒット銘柄」の事後株価を評価（過去BT不可のため）。
