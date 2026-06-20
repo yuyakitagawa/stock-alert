@@ -100,38 +100,12 @@ def save_daily_ranking(date_str, rows):
     sb.upsert("web_rankings", sb_rows, on_conflict="date,code")
 
 
-# ── held_scores ───────────────────────────────────────────────────────────
+# ── held_scores（保有追跡のみ。スコアは web_rankings から取得）────────────
 
 def save_held_scores(date_str, results):
-    """results: list of dicts from _held_results_from_models"""
-    sb_rows = [{
-        "date": date_str,
-        "code": r["code"],
-        "name": r["name"],
-        "close": r["close"],
-        "rise_prob": r["prob"],
-        "drop_prob": r.get("drop_prob"),
-        "net": r["net"],
-        "signal": r["signal"],
-        "ret20": r.get("ret20"),
-        "vol": r.get("vol"),
-        "rel20": r.get("rel20"),
-    } for r in results]
+    """保有銘柄の date,code のみ記録（保有日数の追跡用）"""
+    sb_rows = [{"date": date_str, "code": r["code"]} for r in results]
     sb.upsert("held_scores", sb_rows, on_conflict="date,code")
-
-
-def load_prev_held_scores(today_str):
-    """直前日の保有株スコアを {code: row_dict} で返す"""
-    rows = sb.select(
-        "held_scores",
-        f"date=lt.{today_str}&order=date.desc&limit=1&select=date",
-        limit=1
-    )
-    if not rows:
-        return {}
-    prev_date = rows[0]["date"]
-    held = sb.select("held_scores", f"date=eq.{prev_date}")
-    return {r["code"]: r for r in held}
 
 
 # ── earnings_cache (→ kabutan_earnings) ───────────────────────────────────

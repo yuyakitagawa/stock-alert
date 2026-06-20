@@ -266,7 +266,7 @@ DBキャッシュは廃止。
 | テーブル | 内容 |
 |---|---|
 | `web_rankings` | 毎日のランキングスコア（旧 `daily_ranking`。コード・確率・ネット・推奨・rank）|
-| `held_scores` | 保有銘柄の前日スコア（昨日比差分計算用）|
+| `held_scores` | 保有銘柄の追跡（date, code のみ。保有日数計算用）|
 | `kabutan_earnings` | 決算日キャッシュ（旧 `earnings_cache`。`fetched_date` で当日判定）|
 | `web_stock_meta` | 業種分類ほかメタ（旧 `sector_cache` を統合）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|

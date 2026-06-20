@@ -18,7 +18,7 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # 値が None のマップは「列名そのまま」
 TABLE_MAP = {
     "price_cache":         ("yahoo_price_cache",    "code,date", None),
-    "held_scores":         ("held_scores",         "date,code", None),
+    "held_scores":         ("held_scores",         "date,code", {"date": "date", "code": "code"}),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
     "yutai_cache":         ("kabutan_yutai",        "code", None),
     "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),
@@ -54,7 +54,8 @@ def migrate_table(con, sqlite_table, only=None):
     batch = []
     BATCH = 1000
     for row in cur:
-        rec = {cols[i]: clean_value(row[i]) for i in range(len(cols))}
+        raw = {cols[i]: clean_value(row[i]) for i in range(len(cols))}
+        rec = {colmap[k]: raw[k] for k in colmap if k in raw} if colmap else raw
         batch.append(rec)
         if len(batch) >= BATCH:
             sb.upsert(sb_table, batch, on_conflict=on_conflict)
