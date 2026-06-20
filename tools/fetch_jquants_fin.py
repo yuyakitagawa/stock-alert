@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 
 os.makedirs("logs", exist_ok=True)
 
-# Free プラン利用可能期間（直近2年）
-AVAIL_START = (date.today().replace(year=date.today().year - 2)).isoformat()
+# Free プラン利用可能期間（開始は初回取得時点、終了は常に当日）
+# --resume で差分取得するため、古いデータは蓄積され続ける
+AVAIL_START = "2024-03-17"
 AVAIL_END   = date.today().isoformat()
 
 RATE_SLEEP = 13  # 12秒+余裕 (5件/分)
