@@ -448,23 +448,6 @@ def load_market_index_data(ticker: str, days: int = 2200):
     return pd.DataFrame({"Close": closes}, index=idx)
 
 
-# ── kabutan_jquants_margin / short_interest: point-in-time lookup ────────────────────
-
-def get_margin_ratio_at(code: str, as_of_date: str) -> "float | None":
-    row = sb.select_one(
-        "kabutan_jquants_margin",
-        f"code=eq.{code}&week_date=lte.{as_of_date}&order=week_date.desc&select=ratio"
-    )
-    return float(row["ratio"]) if row and row.get("ratio") is not None else None
-
-
-def get_short_balance_at(code: str, as_of_date: str) -> "dict | None":
-    return sb.select_one(
-        "short_interest",
-        f"code=eq.{code}&week_date=lte.{as_of_date}&order=week_date.desc"
-        f"&select=week_date,short_balance,short_amount"
-    )
-
 
 # ── jquants_fin_summary ──────────────────────────────────────────────────
 
