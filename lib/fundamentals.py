@@ -116,7 +116,7 @@ def get_pit_fundamentals(code, target_date):
             est_next += timedelta(days=91)
         days_earn = (est_next - target_date).days
 
-    # 配当・優待の権利落ち後経過日数（yutai_cacheの確定月から計算）
+    # 配当・優待の権利落ち後経過日数（kabutan_yutaiの確定月から計算）
     ym = (_YUTAI_MONTH or {}).get(code)
     div_months = [ym] if ym else [3, 9]   # 優待月or典型的な配当月
     days_since_div  = _days_since_last_ex(target_date, div_months)
