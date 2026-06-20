@@ -31,9 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests pandas numpy scikit-learn joblib \
-            python-dotenv openpyxl xlrd xgboost \
-            gspread google-auth yfinance anthropic jquantsapi
+          pip install requests pandas numpy python-dotenv jquants-api-client
 
       - name: Link repo to ~/stock-alert
         run: ln -s $GITHUB_WORKSPACE ~/stock-alert
