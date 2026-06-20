@@ -32,7 +32,7 @@ TABLE_MAP = {
     "top10_sim":           ("top10_sim",           "entry_date,code", None),
     # daily_ranking は web_rankings に統合（rank列は後でexport_to_webが付与するためNULL可）
     "daily_ranking":       ("web_rankings",        "date,code", None),
-    # earnings_cache → web_earnings, sector_cache → web_stock_meta
+    # earnings_cache → kabutan_earnings, sector_cache → web_stock_meta
     "earnings_cache":      ("kabutan_earnings",     "code", None),
     "sector_cache":        ("web_stock_meta",      "code", None),
 }

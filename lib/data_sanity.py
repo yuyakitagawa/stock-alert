@@ -245,7 +245,7 @@ def check_site(context: dict) -> list[Violation]:
       - rankings:     web_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
       - stock_meta:   web_stock_meta の行（code/name/sector）
       - claude_ai_analyses:  claude_ai_analyses の行（code/summary/verdict）
-      - earnings:     web_earnings の行（code/...）
+      - earnings:     kabutan_earnings の行（code/...）
       - expected_ai:  AI解析が存在すべき件数（上位N）
       - descriptions: claude_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
       - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
