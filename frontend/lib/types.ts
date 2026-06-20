@@ -94,39 +94,6 @@ export interface WatchMetrics {
   spark:       number[];       // 直近1ヶ月の終値（ミニチャート用）
 }
 
-export interface Activity {
-  id:         number;
-  ts:         string;
-  run_date:   string;
-  role:       string;
-  step:       string;
-  status:     string;
-  summary:    string;
-  detail:     string;
-  updated_at: string;
-}
-
-export interface WeeklyReview {
-  week:             string;
-  created_at:       string;
-  avg_start:        number | null;
-  avg_end:          number | null;
-  win_start:        number | null;
-  win_end:          number | null;
-  big_start:        number | null;
-  big_end:          number | null;
-  adopted:          number;
-  rejected:         number;
-  skipped:          number;
-  signals:          number;
-  engineer_eval:    string;
-  quant_eval:       string;
-  securities_eval:  string;
-  fm_eval:          string;
-  human_feedback:   string;
-  next_actions:     string;
-}
-
 export interface RiskRegime {
   date:         string;
   regime:       "risk_on" | "caution" | "risk_off";

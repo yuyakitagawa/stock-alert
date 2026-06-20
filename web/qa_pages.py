@@ -58,7 +58,7 @@ def _sample_stock_codes(limit_top: int = 3) -> list[str]:
     if SUPABASE_URL and SUPABASE_KEY:
         try:
             r = requests.get(
-                f"{SUPABASE_URL}/rest/v1/web_rankings?select=code&order=net.desc&limit={limit_top}",
+                f"{SUPABASE_URL}/rest/v1/gen_rankings?select=code&order=net.desc&limit={limit_top}",
                 headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
                 timeout=15)
             if r.ok:

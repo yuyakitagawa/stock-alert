@@ -4,7 +4,7 @@
 認証は導入しない（匿名 client_id 方式）。
 
 ## 設計
-- テーブル `web_bookmarks(client_id text, code text, created_at timestamptz default now(), PK(client_id, code))`。
+- テーブル `app_bookmarks(client_id text, code text, created_at timestamptz default now(), PK(client_id, code))`。
 - 識別: ブラウザごとに UUID の `client_id` を localStorage に発行（`stocksignal:client-id`）。
 - 同期: localStorage を即時反映（オフラインファースト）→ `/api/bookmarks` 経由で Supabase に非同期反映。
 - 書き込みは service key を使う API ルートのみ（フロントは anon key で read のみのため）。
@@ -15,7 +15,7 @@
 - ウォッチリストページに「保有株を取り込む」ボタンを設置し、オーナーが自分のブラウザで一度押して取り込む。
 
 ## ステップ
-- [x] Supabase `web_bookmarks` テーブル作成
+- [x] Supabase `app_bookmarks` テーブル作成
 - [x] 進捗ファイル作成
 - [x] `/api/bookmarks` ルート（GET/POST/DELETE）
 - [x] `lib/bookmarks.ts` を client_id + Supabase 同期に改修

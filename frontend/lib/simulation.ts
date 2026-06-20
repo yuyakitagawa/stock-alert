@@ -57,7 +57,7 @@ export interface SimSummary {
   annualizedReturnPct:number;
 }
 
-// QV戦略バックテスト結果（web_qv_sim）から実績シミュレーションを構築する。
+// QV戦略バックテスト結果（gen_qv_sim）から実績シミュレーションを構築する。
 // QV戦略: Piotroski>=0.67 × pos52<0.45 × 業績改善、90日保有。
 export async function fetchSimulation(): Promise<{
   positions: SimPosition[];
@@ -66,7 +66,7 @@ export async function fetchSimulation(): Promise<{
   const [qvRows, latestDate] = await Promise.all([
     (async () => {
       const res = await fetch(
-        sbUrl(`web_qv_sim?order=entry_date.asc&limit=200`),
+        sbUrl(`gen_qv_sim?order=entry_date.asc&limit=200`),
         { headers: anonHeaders(), cache: "no-store" }
       );
       if (!res.ok) return [] as QvRow[];
@@ -81,7 +81,7 @@ export async function fetchSimulation(): Promise<{
   if (activeCodes.length > 0 && latestDate) {
     const inFilter = activeCodes.map(c => `code.eq.${c}`).join(",");
     const res = await fetch(
-      sbUrl(`web_rankings?date=eq.${latestDate}&or=(${inFilter})&select=code,close,recommend`),
+      sbUrl(`gen_rankings?date=eq.${latestDate}&or=(${inFilter})&select=code,close,recommend`),
       { headers: anonHeaders(), cache: "no-store" }
     );
     if (res.ok) {

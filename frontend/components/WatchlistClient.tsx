@@ -72,7 +72,7 @@ function fmt(v: number | null | undefined, suffix = "") {
   return v == null ? "—" : `${v.toFixed(1)}${suffix}`;
 }
 
-// PER/PBR は自前データ(web_rankings)を優先し、欠損時のみYahooで補完
+// PER/PBR は自前データ(gen_rankings)を優先し、欠損時のみYahooで補完
 function valuation(r: Ranking | undefined, m: WatchMetrics | undefined) {
   return { per: r?.per ?? m?.per ?? null, pbr: r?.pbr ?? m?.pbr ?? null };
 }
