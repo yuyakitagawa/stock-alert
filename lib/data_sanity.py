@@ -247,7 +247,7 @@ def check_site(context: dict) -> list[Violation]:
       - rankings:     gen_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
       - stock_meta:   gen_stock_meta の行（code/name/sector）
       - gen_ai_analyses:  gen_ai_analyses の行（code/summary/verdict）
-      - earnings:     kabutan_earnings の行（code/...）
+      - earnings:     (廃止済み・互換性のため残存)
       - expected_ai:  AI解析が存在すべき件数（上位N）
       - descriptions: gen_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
       - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
@@ -321,11 +321,6 @@ def check_site(context: dict) -> list[Violation]:
             v.append(Violation(sev, "description_coverage",
                 f"会社説明が未登録の銘柄 {len(missing)}/{len(targets)}件"
                 f"（詳細ページで『概要情報を取得できませんでした』表示）(例 {missing[:5]})"))
-
-    # ── 決算カレンダー（任意・空なら warning）────────────────────────────
-    earnings = context.get("earnings")
-    if "earnings" in context and rankings and not earnings:
-        v.append(Violation("warning", "earnings_empty", "kabutan_earnings が空"))
 
     return v
 
