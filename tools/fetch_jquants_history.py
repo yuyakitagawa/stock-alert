@@ -67,7 +67,7 @@ def dry_run_check():
 
 
 def fetch_margin(start: str, end: str):
-    """信用残高（信用取引週末残高）を一括取得 → margin_data テーブルへ"""
+    """信用残高（信用取引週末残高）を一括取得 → kabutan_jquants_margin テーブルへ"""
     from lib.jquants import fetch_margin_history
     print(f"\n信用残高 取得中: {start} → {end} ...")
     saved = fetch_margin_history(start=start, end=end)
@@ -76,7 +76,7 @@ def fetch_margin(start: str, end: str):
 
 
 def fetch_short(start: str, end: str):
-    """空売り残高報告を一括取得 → short_interest テーブルへ"""
+    """空売り残高報告を一括取得 → jpx_short_interest テーブルへ"""
     from lib.jquants import fetch_short_history
     print(f"\n空売り残高 取得中: {start} → {end} ...")
     saved = fetch_short_history(start=start, end=end)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fetch_history.py — 全銘柄の株価履歴を10年分 Yahoo Finance から取得して price_cache に保存
+fetch_history.py — 全銘柄の株価履歴を10年分 Yahoo Finance から取得して yahoo_price_cache に保存
 
 使い方:
   python3 tools/fetch_history.py          # 全銘柄を10年分取得（初回: 数時間かかる）
@@ -76,14 +76,14 @@ def fetch_yahoo(code, days):
 
 
 def get_all_codes():
-    """price_cache 既存コード + JPX 銘柄リストを合わせた全コード"""
+    """yahoo_price_cache 既存コード + JPX 銘柄リストを合わせた全コード"""
     from lib.db import get_price_cache_codes
     codes_from_db = get_price_cache_codes()
     if codes_from_db:
         return codes_from_db
 
     # DB が空の場合は JPX から取得
-    print("price_cache が空のため JPX から銘柄リストを取得...")
+    print("yahoo_price_cache が空のため JPX から銘柄リストを取得...")
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
     try:
         r = requests.get(url, timeout=30)

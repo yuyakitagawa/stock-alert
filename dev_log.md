@@ -4,7 +4,7 @@
 
 ```
 原因: screen_catalyst_candidates.py の pbr = close / bps で
-      close=price_cache(分割調整済) と bps=fundamentals_annual(旧株ベース) の
+      close=yahoo_price_cache(分割調整済) と bps=kabutan_fundamentals(旧株ベース) の
       分割調整基準が不整合。株式分割銘柄でPBRが分割比率分だけ過小化。
       ※同じロジックが lib/fundamentals.py:219 にもあり、Web/メール表示PBRも影響。
         ただし bps は表示専用で60次元特徴量には不使用 → モデル精度には無害。
@@ -42,7 +42,7 @@
   1. tools/screen_catalyst_candidates.py
      - latest_bps_split_safe() を追加。jquants_fin_summary の直近開示BPS(>0)を採用。
        J-QuantsのBPSは開示ごとに分割後株数で再表示され、分割調整漏れが起きない。
-     - PBR算出で J-Quants BPS を優先、未取得銘柄のみ株探(fundamentals_annual)へフォールバック。
+     - PBR算出で J-Quants BPS を優先、未取得銘柄のみ株探(kabutan_fundamentals)へフォールバック。
   2. lib/fundamentals.py
      - _jq_split_safe_bps() を追加し get_pit_valuation(表示PER/PBR用)で優先採用。
        → Web/メール表示PBRの分割調整漏れを是正（全銘柄対象）。

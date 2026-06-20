@@ -4,7 +4,7 @@ sync_descriptions.py
 
 - シートが無ければ作成し、保有株＋値上げ力ウォッチリスト銘柄を seed（説明は一部プリセット）。
 - 既存シートは **絶対に clear しない**（手動編集を保護）。未登録の銘柄だけ行を追記する。
-- 説明が記入されている行を Supabase `ai_analyses`(model_version=company-desc-v1, date=1970-01-01)
+- 説明が記入されている行を Supabase `claude_ai_analyses`(model_version=company-desc-v1, date=1970-01-01)
   へ upsert。既存の `/api/stock/[code]/description` がこれをキャッシュとして返すため、
   手動説明が最優先・AIは未記入銘柄のフォールバックになる。
 
@@ -146,7 +146,7 @@ def upsert_supabase(items: list[dict]) -> None:
     if not rows:
         print("[supabase] 同期対象なし（説明が記入された銘柄が0件）。")
         return
-    url = f"{SUPABASE_URL}/rest/v1/ai_analyses"
+    url = f"{SUPABASE_URL}/rest/v1/claude_ai_analyses"
     headers = {
         "apikey":        SUPABASE_SERVICE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",

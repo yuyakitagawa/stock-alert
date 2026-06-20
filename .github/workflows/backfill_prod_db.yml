@@ -1,7 +1,7 @@
 name: Backfill Prod DB
 
 # Supabaseに「ファンダ＋EDINET全履歴」を一括投入する一回限りのジョブ。
-# 取得順: ①kabutanファンダ(fundamentals_annual) → ②J-Quants財務(jquants_fin_summary・①の開示日を使用)
+# 取得順: ①kabutanファンダ(kabutan_fundamentals) → ②J-Quants財務(jquants_fin_summary・①の開示日を使用)
 #         → ③EDINET大量保有(edinet_holdings) 全履歴。各ツールが直接Supabaseへupsertする。
 # メールは送らない。重複は各テーブルの主キーで排除されるため再実行安全。
 on:
@@ -44,7 +44,7 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
 
-      - name: ① ファンダ取得（kabutan → fundamentals_annual）※クラウドはIPブロックで取れないため任意
+      - name: ① ファンダ取得（kabutan → kabutan_fundamentals）※クラウドはIPブロックで取れないため任意
         continue-on-error: true
         run: |
           cd ~/stock-alert
@@ -72,7 +72,7 @@ jobs:
           cd ~/stock-alert && python -c "
           import lib.supabase_client as sb
           import requests
-          for t in ['price_cache','fundamentals_annual','jquants_fin_summary','edinet_holdings']:
+          for t in ['yahoo_price_cache','kabutan_fundamentals','jquants_fin_summary','edinet_holdings']:
               try:
                   url=f'{sb.SUPABASE_URL}/rest/v1/{t}?select=count'
                   h=sb._headers(); h['Prefer']='count=exact'

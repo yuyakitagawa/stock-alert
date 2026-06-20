@@ -244,10 +244,10 @@ def check_site(context: dict) -> list[Violation]:
       - date:         想定する最新日 "YYYY-MM-DD"
       - rankings:     web_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
       - stock_meta:   web_stock_meta の行（code/name/sector）
-      - ai_analyses:  ai_analyses の行（code/summary/verdict）
+      - claude_ai_analyses:  claude_ai_analyses の行（code/summary/verdict）
       - earnings:     web_earnings の行（code/...）
       - expected_ai:  AI解析が存在すべき件数（上位N）
-      - descriptions: ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
+      - descriptions: claude_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
       - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
     """
     v: list[Violation] = []
@@ -284,7 +284,7 @@ def check_site(context: dict) -> list[Violation]:
                 f"セクター未設定が{len(no_sector)}/{len(meta)}件（業種別成績が崩れる）"))
 
     # ── AI解析カバレッジ・空欠損 ─────────────────────────────────────────
-    ai = context.get("ai_analyses")
+    ai = context.get("claude_ai_analyses")
     expected_ai = context.get("expected_ai", 0)
     if ai is not None:
         if expected_ai and len(ai) < expected_ai:
@@ -302,7 +302,7 @@ def check_site(context: dict) -> list[Violation]:
                     f"AI解析が古い日付のみ（本日{expected_date}分なし）"))
 
     # ── 会社説明カバレッジ（詳細ページ「この会社について」）─────────────────
-    # descriptions: ai_analyses(model_version=company-desc-v1) の {code, summary}
+    # descriptions: claude_ai_analyses(model_version=company-desc-v1) の {code, summary}
     # desc_targets: 説明があるべき銘柄コード（ウォッチリスト＋保有株など）
     descriptions = context.get("descriptions")
     desc_targets = context.get("desc_targets")
@@ -323,7 +323,7 @@ def check_site(context: dict) -> list[Violation]:
     # ── 決算カレンダー（任意・空なら warning）────────────────────────────
     earnings = context.get("earnings")
     if "earnings" in context and rankings and not earnings:
-        v.append(Violation("warning", "earnings_empty", "web_earnings が空"))
+        v.append(Violation("warning", "earnings_empty", "kabutan_earnings が空"))
 
     return v
 

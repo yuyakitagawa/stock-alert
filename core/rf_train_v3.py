@@ -185,7 +185,7 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     var_fx = np.var(fr)
                     if var_fx > 0:
                         fx_beta_val = float(np.cov(sr, fr)[0, 1] / var_fx)
-        # point-in-timeファンダ（fundamentals_annual から、その日に既知だった値のみ）
+        # point-in-timeファンダ（kabutan_fundamentals から、その日に既知だった値のみ）
         fund = None
         if sample_code is not None:
             pit = get_pit_fundamentals(sample_code, dates[i])
@@ -314,7 +314,7 @@ def main():
     usdjpy_dates = sorted(usdjpy_df.index)                       if usdjpy_df is not None else []
     usdjpy_closes_arr = (usdjpy_df.loc[usdjpy_dates, "Close"].values
                          if usdjpy_df is not None else np.array([]))
-    # ファンダは fundamentals_annual から point-in-time で取得（事前に
+    # ファンダは kabutan_fundamentals から point-in-time で取得（事前に
     # tools/fetch_fundamentals_history.py で蓄積しておくこと）
     from lib.db import get_fundamentals_codes_count
     print(f"\nファンダDB: {get_fundamentals_codes_count()}銘柄分の年度別データを使用（point-in-time）")
