@@ -80,7 +80,11 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 3
 
-      - name: Step 2d - 空売り残高 日次更新（J-Quants → short_interest）
+      - name: Step 2d - J-Quants財務サマリー差分更新
+        continue-on-error: true
+        run: cd ~/stock-alert && pip install -q jquantsapi && python tools/fetch_jquants_fin.py --resume --all-days
+
+      - name: Step 2e - 空売り残高 日次更新（J-Quants → short_interest）
         continue-on-error: true
         run: |
           cd ~/stock-alert && python -c "
