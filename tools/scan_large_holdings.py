@@ -3,7 +3,7 @@
 tools/scan_large_holdings.py
 EDINET 大量保有スキャナー（GARP・イベント駆動の先回り検出）
 
-毎日 EDINET から大量保有報告書（5%ルール）をスキャンして edinet_holdings に蓄積し、
+毎日 EDINET から大量保有報告書（5%ルール）をスキャンして edinet_large_holdings に蓄積し、
 カタリスト候補（screen_catalyst_candidates.py の出力）と突合する。
 
   「構造的に改革・買収が起きやすい候補」× 「実際に誰かが 5%超を買い集めた事実」
@@ -21,7 +21,7 @@ import sys, os, csv, json, argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.edinet import scan_large_holdings, verify_api, _api_key
-from lib.db import get_edinet_holdings_recent
+from lib.db import get_edinet_large_holdings_recent
 
 
 def load_candidate_codes(path: str) -> dict:
@@ -120,7 +120,7 @@ def main():
     print(f"カタリスト候補: {len(cands)}銘柄（{args.candidates}）")
 
     # DB蓄積分から突合
-    holdings = get_edinet_holdings_recent(
+    holdings = get_edinet_large_holdings_recent(
         days=args.match_days,
         codes=list(cands.keys()) if cands else None,
     )
@@ -144,12 +144,14 @@ def main():
             if reason:
                 excluded[reason] += 1
                 continue
+        ratio = h.get("holding_ratio")
         matches.append({
             "code": code,
             "name": issuer_name,
             "filer_name": filer,
             "doc_type": "大量保有" if h.get("doc_type_code") == "350" else "変更",
             "disc_date": h.get("disc_date", ""),
+            "holding_ratio": ratio,
             "pbr": cand.get("pbr", ""),
             "roe": cand.get("roe", ""),
             "equity_ratio": cand.get("equity_ratio", ""),
@@ -160,18 +162,19 @@ def main():
     if not args.no_exclude and (excluded["self_filing"] or excluded["sell"]):
         print(f"\n（ノイズ除外: 自己申告{excluded['self_filing']}件 / 譲渡・売却{excluded['sell']}件）")
     print(f"\n🎯 {title}: {len(matches)}件\n")
-    print(f"{'コード':<6}{'銘柄名':<20}{'種別':<8}{'開示日':<12}{'提出者':<24}  概要")
-    print("-" * 100)
+    print(f"{'コード':<6}{'銘柄名':<20}{'種別':<8}{'開示日':<12}{'保有%':>6}  {'提出者':<24}  概要")
+    print("-" * 110)
     for m in matches[:60]:
         nm = (m["name"] or "")[:18]
         filer = (m["filer_name"] or "")[:22]
-        print(f"{m['code'] or '----':<6}{nm:<20}{m['doc_type']:<8}{m['disc_date']:<12}{filer:<24}  {m['doc_description'][:40]}")
+        ratio_str = f"{m['holding_ratio']:.1f}" if m.get("holding_ratio") is not None else "  -"
+        print(f"{m['code'] or '----':<6}{nm:<20}{m['doc_type']:<8}{m['disc_date']:<12}{ratio_str:>6}  {filer:<24}  {m['doc_description'][:40]}")
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
             "code", "name", "filer_name", "doc_type", "disc_date",
-            "pbr", "roe", "equity_ratio", "doc_description"])
+            "holding_ratio", "pbr", "roe", "equity_ratio", "doc_description"])
         w.writeheader()
         w.writerows(matches)
     print(f"\n全{len(matches)}件を保存: {args.out}")

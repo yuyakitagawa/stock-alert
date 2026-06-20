@@ -442,9 +442,9 @@ def get_tdnet_events_recent(code: str, days: int = 60):
     )
 
 
-# ── edinet_holdings ───────────────────────────────────────────────────────
+# ── edinet_large_holdings（大量保有報告書・5%ルール）───────────────────────
 
-def upsert_edinet_holdings(records: list):
+def upsert_edinet_large_holdings(records: list):
     if not records:
         return
     today_str = date.today().isoformat()
@@ -456,19 +456,20 @@ def upsert_edinet_holdings(records: list):
         "doc_description": r.get("doc_description"),
         "submit_date": r.get("submit_date"),
         "disc_date": r.get("disc_date"),
+        "holding_ratio": r.get("holding_ratio"),
         "fetched_date": today_str,
     } for r in records]
-    sb.upsert("edinet_holdings", sb_rows, on_conflict="doc_id")
+    sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 
-def get_edinet_holdings_recent(days: int = 30, codes: list | None = None):
+def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
-    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date"
+    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio"
     if codes:
         code_list = ",".join(str(c) for c in codes)
         q += f"&sec_code=in.({code_list})"
-    return sb.select("edinet_holdings", q)
+    return sb.select("edinet_large_holdings", q)
 
 
 # ── market_index_cache ────────────────────────────────────────────────────

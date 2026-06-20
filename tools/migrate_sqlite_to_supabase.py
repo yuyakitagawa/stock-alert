@@ -28,7 +28,7 @@ TABLE_MAP = {
     "tdnet_events":        ("tdnet_events",        "code,announce_date,title", None),
     "market_index_cache":  ("market_index_cache",  "ticker,date", None),
     "jquants_fin_summary": ("jquants_fin_summary", "code,disc_date", None),
-    "edinet_holdings":     ("edinet_holdings",     "doc_id", None),
+    "edinet_holdings":     ("edinet_large_holdings", "doc_id", None),
     "top10_sim":           ("top10_sim",           "entry_date,code", None),
     # daily_ranking は web_rankings に統合（rank列は後でexport_to_webが付与するためNULL可）
     "daily_ranking":       ("web_rankings",        "date,code", None),

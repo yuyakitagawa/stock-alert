@@ -9,7 +9,7 @@
 ## Phase 1: Supabaseテーブル作成 ✓
 - [x] price_cache / held_scores / simulation_results / yutai_cache
 - [x] fundamentals_annual / earnings_sentiment / margin_data / short_interest
-- [x] tdnet_events / market_index_cache / jquants_fin_summary / edinet_holdings / top10_sim
+- [x] tdnet_events / market_index_cache / jquants_fin_summary / edinet_large_holdings / top10_sim
 - [x] web_rankings に actual_return_63d 追加（daily_ranking統合）
 - [x] web_earnings に fetched_date 追加（earnings_cache統合）
 - [x] web_stock_meta に fetched_date 追加（sector_cache統合）
