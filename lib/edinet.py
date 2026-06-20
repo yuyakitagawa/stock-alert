@@ -251,6 +251,7 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
         results = fetch_documents_list(ds)
         recs = extract_large_holdings(results, disc_date=ds)
         if fetch_xbrl:
+            valid_recs = []
             for rec in recs:
                 details = fetch_xbrl_details(rec["doc_id"])
                 rec["holding_ratio"] = details["holding_ratio"]
