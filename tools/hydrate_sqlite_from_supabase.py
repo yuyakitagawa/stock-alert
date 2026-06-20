@@ -29,11 +29,6 @@ SCHEMAS = {
         ["code", "disc_date", "doc_type", "fy_end", "np", "cfo", "ta", "equity", "eps",
          "bps", "div_ann", "payout_ratio", "sh_out", "tr_sh", "fnp", "fop", "fsales", "op", "sales"],
     ),
-    "kabutan_fundamentals": (
-        "code TEXT, fy_end TEXT, announce_date TEXT, eps REAL, dps REAL, roe REAL, "
-        "bps REAL, fetched_date TEXT, PRIMARY KEY(code,fy_end)",
-        ["code", "fy_end", "announce_date", "eps", "dps", "roe", "bps", "fetched_date"],
-    ),
     "edinet_large_holdings": (
         "doc_id TEXT PRIMARY KEY, filer_name TEXT, doc_type_code TEXT, "
         "doc_description TEXT, submit_date TEXT, disc_date TEXT, holding_ratio REAL, "

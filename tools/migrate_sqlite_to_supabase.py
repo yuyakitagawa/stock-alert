@@ -19,7 +19,6 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 TABLE_MAP = {
     "price_cache":         ("yahoo_price_cache",   "code,date", None),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
-    "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),
     "tdnet_events":        ("tdnet_events",        "code,announce_date,title", None),
     "market_index_cache":  ("yahoo_market_index",  "ticker,date", None),
     "jquants_fin_summary": ("jquants_fin_summary", "code,disc_date", None),
@@ -27,8 +26,7 @@ TABLE_MAP = {
     "top10_sim":           ("gen_top10_sim",           "entry_date,code", None),
     # daily_ranking は gen_rankings に統合（rank列は後でexport_to_webが付与するためNULL可）
     "daily_ranking":       ("gen_rankings",        "date,code", None),
-    # earnings_cache → kabutan_earnings, sector_cache → gen_stock_meta
-    "earnings_cache":      ("kabutan_earnings",        "code", None),
+    # sector_cache → gen_stock_meta
     "sector_cache":        ("gen_stock_meta",      "code", None),
 }
 

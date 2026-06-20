@@ -468,16 +468,19 @@ def build_stock_fundamentals(kabutan_top_n=None):
         if d <= 30:   return f"🔔 {d}日後"
         return f"{d}日後"
 
-    # kabutan_fundamentals から DPS（配当）をバルク読み込み
-    div_map = {}  # code -> {dps, close_at_announce}
+    # jquants_fin_summary から DPS（年間配当）をバルク読み込み
+    div_map = {}  # code -> dps
     try:
-        from lib.db import load_all_fundamentals_annual
-        fund_hist = load_all_fundamentals_annual()
-        latest_date_iso = ranking_date  # daily_rankingの最新日
-        for code_fa, recs in fund_hist.items():
-            known = [r for r in recs if r.get("announce_date") and r["announce_date"] <= latest_date_iso]
-            if known and known[-1].get("dps") is not None:
-                div_map[code_fa] = known[-1]["dps"]
+        import lib.supabase_client as _sb
+        _jq_rows = _sb.select(
+            "jquants_fin_summary",
+            f"disc_date=lte.{ranking_date}&div_ann=not.is.null"
+            "&order=code.asc,disc_date.desc&select=code,div_ann"
+        )
+        for r in _jq_rows:
+            c = str(r["code"])
+            if c not in div_map and r.get("div_ann") is not None:
+                div_map[c] = r["div_ann"]
     except Exception:
         pass
 
