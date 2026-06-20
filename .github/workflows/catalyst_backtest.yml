@@ -1,0 +1,57 @@
+name: Catalyst Backtest
+
+# カタリスト候補スクリーン（A/B利益の質フィルター）のヒストリカルBT。
+# Supabaseから price_cache＋jquants_fin_summary をローカルSQLiteへhydrateし、point-in-timeで
+# 平均/勝率/大勝率を A/Bあり・なし で比較。メール未送信・Supabaseは読み取りのみ。
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: 'BT開始日 (YYYY-MM-DD)'
+        default: '2024-06-01'
+      end:
+        description: 'BT終了日 (YYYY-MM-DD)'
+        default: '2026-03-01'
+      hold:
+        description: '保有日数'
+        default: '90'
+      top:
+        description: '保有銘柄数'
+        default: '5'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas numpy python-dotenv
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+
+      - name: Supabase→ローカルSQLite hydrate（BT高速化）
+        run: cd ~/stock-alert && python tools/hydrate_sqlite_from_supabase.py price_cache jquants_fin_summary
+
+      - name: カタリストBT（A/Bあり vs なし）
+        run: cd ~/stock-alert && python tools/catalyst_backtest.py
+          --start "${{ github.event.inputs.start }}"
+          --end "${{ github.event.inputs.end }}"
+          --hold "${{ github.event.inputs.hold }}"
+          --top "${{ github.event.inputs.top }}"
