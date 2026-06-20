@@ -30,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_sector_cached, recommend_from_net, recommend_from_scores
 from core.rank_stocks import passes_buy_filter, fetch_us_sector_etf_returns, get_sector_etf, _load_sector_cache, STRONG_EFFECT_ETFS
-from lib.db import save_held_scores, get_earnings_cache, set_earnings_cache, CACHE_MISS, get_holding_days, get_yutai_cache
+from lib.db import get_earnings_cache, set_earnings_cache, CACHE_MISS, get_yutai_cache
 from config import (BASE_DIR, BEAR_MARKET_THRESHOLD, HOT_MARKET_THRESHOLD,
                     NEW_CANDIDATE_NET_MIN, NEW_CANDIDATE_NET_MAX,
                     CANDIDATE_DROP_PROB_MAX, CANDIDATE_EARNINGS_SKIP_DAYS,
@@ -827,24 +827,17 @@ def main():
         return
     feats_aug = _augmented_feature_matrix(raw_data)
 
-    # 購入日が取得できた銘柄は正確な保有日数を使用、それ以外はDBから推定
-    if buy_date_map:
-        from datetime import date as _date
-        today_d = _date.fromisoformat(today_date_str)
-        holding_days_map = {}
-        for code in held_stocks:
-            if code in buy_date_map:
-                try:
-                    buy_d = _date.fromisoformat(buy_date_map[code])
-                    holding_days_map[code] = (today_d - buy_d).days
-                except ValueError:
-                    pass
-        # 購入日がない銘柄はDBで補完
-        missing = [c for c in held_stocks if c not in holding_days_map]
-        if missing:
-            holding_days_map.update(get_holding_days(missing, today_date_str))
-    else:
-        holding_days_map = get_holding_days(list(held_stocks.keys()), today_date_str)
+    # 保有日数は購入日（Google Sheets の購入日列）から計算。未設定の銘柄は None。
+    from datetime import date as _date
+    today_d = _date.fromisoformat(today_date_str)
+    holding_days_map = {}
+    for code in held_stocks:
+        if code in buy_date_map:
+            try:
+                buy_d = _date.fromisoformat(buy_date_map[code])
+                holding_days_map[code] = (today_d - buy_d).days
+            except ValueError:
+                pass
 
     results = _held_results_from_models(raw_data, feats_aug, rise_model, drop_model, nk5, nk20,
                                         holding_days_map, buy_date_map)
@@ -889,8 +882,6 @@ def main():
         else:
             r["pnl"] = r["pnl_pct"] = None
 
-
-    save_held_scores(today_date_str, results)
 
     ranking_df = load_top_ranking(1000)
 

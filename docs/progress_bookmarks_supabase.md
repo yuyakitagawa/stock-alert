@@ -11,7 +11,7 @@
 - **制約**: 認証が無いため端末間同期は不可（client_id はブラウザ単位）。
 
 ## オーナー保有株(43銘柄)の移行
-- held_scores 由来の43コードを `frontend/lib/owner-holdings.ts` に定数化。
+- 43コードを `frontend/lib/owner-holdings.ts` に定数化。
 - ウォッチリストページに「保有株を取り込む」ボタンを設置し、オーナーが自分のブラウザで一度押して取り込む。
 
 ## ステップ
@@ -25,6 +25,7 @@
 - [x] commit & push
 - [ ] 本番(Vercel)反映確認（/watchlist HTTP200・取り込み動作）
 
-## 将来フェーズ（今回スコープ外）
-- メールパイプラインの保有日数計算(get_holding_days)を web_bookmarks.created_at に移行できれば held_scores を削除可能。
-  ただしサーバー側でオーナーの client_id を知る必要があり、識別設計が前提。それまで held_scores(date,code のみ) は残す。
+## held_scores 削除（完了）
+- held_scores テーブルは削除。保有日数計算は Google Sheets の購入日列のみを使用するよう変更。
+- 関連コード（save_held_scores / get_holding_days / migrate のマッピング）も除去。
+- ブックマークは手動で取り込み直す運用。

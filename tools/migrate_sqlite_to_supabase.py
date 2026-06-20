@@ -18,7 +18,6 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # 値が None のマップは「列名そのまま」
 TABLE_MAP = {
     "price_cache":         ("yahoo_price_cache",    "code,date", None),
-    "held_scores":         ("held_scores",         "date,code", {"date": "date", "code": "code"}),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
     "yutai_cache":         ("kabutan_yutai",        "code", None),
     "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),

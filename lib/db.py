@@ -100,14 +100,6 @@ def save_daily_ranking(date_str, rows):
     sb.upsert("web_rankings", sb_rows, on_conflict="date,code")
 
 
-# ── held_scores（保有追跡のみ。スコアは web_rankings から取得）────────────
-
-def save_held_scores(date_str, results):
-    """保有銘柄の date,code のみ記録（保有日数の追跡用）"""
-    sb_rows = [{"date": date_str, "code": r["code"]} for r in results]
-    sb.upsert("held_scores", sb_rows, on_conflict="date,code")
-
-
 # ── earnings_cache (→ kabutan_earnings) ───────────────────────────────────
 
 CACHE_MISS = object()
@@ -252,23 +244,6 @@ def load_simulation_results(run_date=None):
         "simulation_results",
         "order=run_date.asc,entry_date.asc,return_pct.desc"
     )
-
-
-def get_holding_days(codes, today_str):
-    if not codes:
-        return {}
-    from datetime import datetime as _dt
-    today = _dt.strptime(today_str, "%Y-%m-%d").date()
-    result = {}
-    for code in codes:
-        row = sb.select_one(
-            "held_scores",
-            f"code=eq.{code}&order=date.asc&select=date"
-        )
-        if row and row.get("date"):
-            first = _dt.strptime(row["date"], "%Y-%m-%d").date()
-            result[str(code)] = (today - first).days
-    return result
 
 
 # ── yahoo_price_cache ─────────────────────────────────────────────────────
