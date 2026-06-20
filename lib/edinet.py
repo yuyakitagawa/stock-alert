@@ -45,10 +45,12 @@ def _api_key() -> str:
 
 
 def _normalize_sec_code(sec_code: str) -> "str | None":
-    """EDINET の secCode（5桁。末尾0付き）を 4桁の証券コードに正規化。"""
+    """EDINET の secCode を 4桁の証券コードに正規化。
+    形式: 4桁数字（7794）、5桁末尾0（77940）、英字混じり（268A, 268A0）
+    """
     if not sec_code:
         return None
-    s = str(sec_code).strip()
+    s = str(sec_code).strip().upper()
     if len(s) == 5 and s.endswith("0"):
         return s[:4]
     if len(s) == 4:
@@ -157,9 +159,10 @@ def fetch_xbrl_details(doc_id: str) -> dict:
     # 対象銘柄の証券コード
     # 優先1: SecurityCodeOfIssuer（発行者コード = 対象銘柄）
     # 優先2: SecurityCodeDEI（nil でないもの）
+    # コード形式: 4桁数字 or 3桁数字+英字（268A等、2024年以降のIPO）
     sec_patterns = [
-        r'<[^>]*SecurityCodeOfIssuer[^>]*>\s*(\d{4,5})\s*<',
-        r'<[^>]*SecurityCodeDEI[^>]*(?<!nil="true")>\s*(\d{4,5})\s*<',
+        r'<[^>]*SecurityCodeOfIssuer[^>]*>\s*([0-9A-Za-z]{4,5})\s*<',
+        r'<[^>]*SecurityCodeDEI[^>]*(?<!nil="true")>\s*([0-9A-Za-z]{4,5})\s*<',
     ]
     for pat in sec_patterns:
         m = re.search(pat, xbrl_text)
