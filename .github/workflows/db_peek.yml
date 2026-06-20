@@ -1,0 +1,71 @@
+name: DB Peek
+
+# Supabaseの中身を数行のぞくだけの確認用ワークフロー（読み取りのみ・メール送信なし）。
+on:
+  workflow_dispatch:
+    inputs:
+      table:
+        description: 'のぞくテーブル名'
+        default: 'jquants_fin_summary'
+      code:
+        description: '特定銘柄コード（任意・例 7203）'
+        default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  peek:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+
+      - name: テーブルをのぞく（Supabase）
+        env:
+          PEEK_TABLE: ${{ github.event.inputs.table }}
+          PEEK_CODE: ${{ github.event.inputs.code }}
+        run: |
+          cd ~/stock-alert && python - <<'PY'
+          import os
+          import lib.supabase_client as sb
+          t = os.environ.get("PEEK_TABLE") or "jquants_fin_summary"
+          code = (os.environ.get("PEEK_CODE") or "").strip()
+
+          def show(rows):
+              for r in rows:
+                  print(" | ".join(f"{k}={v}" for k, v in r.items()))
+
+          if t == "jquants_fin_summary":
+              sel = "select=code,disc_date,doc_type,fy_end,sales,op,np,equity,ta,bps,fop,fsales,fnp"
+              if code:
+                  print(f"--- {code} の全開示（新しい順）---")
+                  show(sb.select(t, f"code=eq.{code}&order=disc_date.desc&{sel}"))
+              else:
+                  print("--- トヨタ(7203) の最新FY 1件 ---")
+                  show(sb.select(t, f"code=eq.7203&doc_type=eq.FY&order=disc_date.desc&limit=1&{sel}", limit=1))
+                  print("\n--- 直近開示 10件（全銘柄）---")
+                  show(sb.select(t, f"order=disc_date.desc&limit=10&{sel}", limit=10))
+                  print("\n--- op/sales が埋まっているFY行 5件 ---")
+                  show(sb.select(t, f"doc_type=eq.FY&op=not.is.null&order=disc_date.desc&limit=5&{sel}", limit=5))
+          else:
+              q = f"code=eq.{code}&limit=10" if code else "limit=10"
+              show(sb.select(t, q, limit=10))
+          PY

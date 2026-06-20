@@ -1,0 +1,122 @@
+name: Claude Instruction
+
+on:
+  workflow_dispatch:
+    inputs:
+      instruction:
+        description: 'Claudeへの指示（例: bearバックテストを実行して結果を要約して）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  instruct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost \
+            gspread google-auth yfinance anthropic
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
+          echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
+          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
+          echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
+          echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
+          echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Restore model cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-v35-weekly-${{ github.run_number }}
+          restore-keys: |
+            ml-models-v35-weekly-
+
+      - name: Configure git
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Claude Bot"
+
+      - name: Run Claude instruction
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          STOCK_ALERT_HOME: ${{ github.workspace }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          # 出力をファイルにも保存（後でLINEへ要約通知するため）
+          claude --dangerously-skip-permissions -p "${{ inputs.instruction }}" 2>&1 | tee /tmp/claude_out.txt
+
+      - name: Commit changes if any
+        run: |
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(instruct): ${{ inputs.instruction }}"
+            git push
+          else
+            echo "変更なし"
+          fi
+
+      - name: Notify result to LINE
+        if: always()
+        env:
+          INTERNAL_SEND_SECRET: ${{ secrets.INTERNAL_SEND_SECRET }}
+          INSTRUCTION: ${{ inputs.instruction }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          # Claudeの出力末尾を要約としてLINEへPush通知（オーナーのみに届く）
+          TAIL=$(tail -c 1500 /tmp/claude_out.txt 2>/dev/null || echo "(出力なし)")
+          export MSG="✅ 指示が完了しました（${JOB_STATUS}）
+          指示: ${INSTRUCTION}
+
+          --- 結果(末尾) ---
+          ${TAIL}"
+          python3 - <<'PY' || echo "通知送信に失敗（処理は継続）"
+          import json, os, urllib.request
+          data = json.dumps({"message": os.environ["MSG"]}).encode()
+          req = urllib.request.Request(
+              "https://stock-alert-web.vercel.app/api/line/notify",
+              data=data,
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": "Bearer " + os.environ["INTERNAL_SEND_SECRET"],
+              },
+          )
+          print(urllib.request.urlopen(req).read().decode())
+          PY

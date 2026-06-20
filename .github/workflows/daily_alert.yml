@@ -1,0 +1,128 @@
+name: Daily Stock Alert
+
+on:
+  schedule:
+    - cron: '30 8 * * 1-5'  # 平日08:30 UTC = 平日17:30 JST（市場閉場後2時間、低負荷帯）
+  workflow_dispatch:       # 手動実行ボタン
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost \
+            gspread google-auth yfinance anthropic
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
+          echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
+          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
+          echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
+          echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
+          echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
+          echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Create gcp_key.json from secret
+        run: |
+          echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
+
+      - name: Restore model cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-v35-weekly-${{ github.run_number }}
+          restore-keys: |
+            ml-models-v35-weekly-
+
+      - name: Step 1 - スクリーニング
+        run: cd ~/stock-alert && python core/screener.py
+
+      - name: Step 2 - モデル学習（金曜 or 初回のみ）
+        run: |
+          DAY=$(date +%u)
+          MODEL_PATH=~/stock-alert/rf_model.pkl
+          if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
+            echo "▶ モデル学習を実行します"
+            cd ~/stock-alert && python core/rf_train_v3.py
+          else
+            echo "⏭ モデルが存在するためスキップします"
+          fi
+
+      - name: Step 2b - カタリスト候補スクリーン（EDINET突合用）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500
+
+      - name: Step 2c - EDINET大量保有スキャン＋突合（イベント蓄積）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 3
+
+      - name: Step 3 - ランキング生成
+        run: cd ~/stock-alert && python core/rank_stocks.py
+
+      - name: Step 4 - メールアラート送信
+        if: ${{ false }}  # ユーザー依頼でデイリーAlertメール停止(2026-06-18)。復活はこのif行を削除
+        run: cd ~/stock-alert && python email/alert_email.py
+
+      - name: Step 5 - Webエクスポート（Supabase）
+        run: cd ~/stock-alert && python web/export_to_web.py
+
+      - name: Step 5a2 - 会社説明をAI生成（未生成の銘柄を差分補完）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/generate_descriptions.py --limit 400
+
+      - name: Step 5b - 会社説明をスプシから同期（手動説明で上書き優先）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/sync_descriptions.py
+
+      - name: Step 5c - 全Webページのスモーク検査（QA）
+        continue-on-error: true
+        run: cd ~/stock-alert && sleep 20 && python web/qa_pages.py
+
+      - name: Step 6 - ユーザーアラートメール送信
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/send_user_alerts.py
+
+      - name: Save model cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-v35-weekly-${{ github.run_number }}
+
+      - name: 結果をアーティファクトとして保存
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-results-${{ github.run_number }}
+          path: |
+            data/rankings/ranking_*.csv
+            data/screeners/screener_*.csv
+            data/catalyst_candidates.csv
+            data/edinet_holding_matches.csv
+          retention-days: 7

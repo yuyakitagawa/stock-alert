@@ -1,0 +1,164 @@
+============================================================
+rf_train_v3: TSE全銘柄 × 5年 ウォークフォワード学習
+分割境界: 2026-01-01 / サンプル間隔: 63日
+============================================================
+対象: 4038銘柄
+
+市場データ取得中...
+  日経225:    1472日分取得
+  VIX:        1515日分取得（恐怖指数）
+  S&P500:     1513日分取得（クロスアセット）
+
+ファンダDB: 3566銘柄分の年度別データを使用（point-in-time）
+
+株価取得中（30〜60分かかります）...
+  [100銘柄] 学習:1,276 テスト:97
+  [200銘柄] 学習:2,492 テスト:193
+  [300銘柄] 学習:3,727 テスト:292
+  [400銘柄] 学習:4,971 テスト:390
+  [500銘柄] 学習:6,242 テスト:489
+  [600銘柄] 学習:7,448 テスト:586
+  [700銘柄] 学習:8,698 テスト:680
+  [800銘柄] 学習:9,945 テスト:777
+  [900銘柄] 学習:11,177 テスト:874
+  [1000銘柄] 学習:12,414 テスト:971
+  [1100銘柄] 学習:13,653 テスト:1,071
+  [1200銘柄] 学習:14,891 テスト:1,167
+  [1300銘柄] 学習:16,171 テスト:1,264
+  [1400銘柄] 学習:17,401 テスト:1,363
+  [1500銘柄] 学習:18,675 テスト:1,460
+  [1600銘柄] 学習:19,946 テスト:1,558
+  [1700銘柄] 学習:21,165 テスト:1,656
+  [1800銘柄] 学習:22,443 テスト:1,754
+  [1900銘柄] 学習:23,705 テスト:1,852
+  [2000銘柄] 学習:24,973 テスト:1,952
+  [2100銘柄] 学習:26,195 テスト:2,048
+  [2200銘柄] 学習:27,431 テスト:2,147
+  [2300銘柄] 学習:28,700 テスト:2,247
+  [2400銘柄] 学習:29,924 テスト:2,345
+  [2500銘柄] 学習:31,171 テスト:2,443
+  [2600銘柄] 学習:32,379 テスト:2,537
+  [2700銘柄] 学習:33,659 テスト:2,636
+  [2800銘柄] 学習:34,899 テスト:2,734
+  [2900銘柄] 学習:36,127 テスト:2,833
+  [3000銘柄] 学習:37,380 テスト:2,931
+  [3100銘柄] 学習:38,578 テスト:3,027
+  [3200銘柄] 学習:39,830 テスト:3,126
+  [3300銘柄] 学習:41,097 テスト:3,223
+  [3400銘柄] 学習:42,334 テスト:3,322
+  [3500銘柄] 学習:43,600 テスト:3,421
+  [3600銘柄] 学習:44,853 テスト:3,521
+  [3700銘柄] 学習:46,082 テスト:3,617
+  [3800銘柄] 学習:47,333 テスト:3,716
+  [3900銘柄] 学習:48,595 テスト:3,815
+  [4000銘柄] 学習:49,849 テスト:3,914
+
+完了: 4013銘柄 / 学習:50,010 テスト:3,927
+
+クロスセクショナルランク特徴量を計算中...
+  特徴量次元: 47 → 53
+
+--- サンプル統計 ---
+絶対上昇ラベル(≥+15.0%):  学習 9,151/50,010 (18.3%)  テスト 433/3,927 (11.0%)
+絶対下落ラベル(≤-15.0%):  学習 3,801/50,010 (7.6%)  テスト 781/3,927 (19.9%)
+相対上昇ラベル(α≥+8.0%): 学習 9,972/50,010 (19.9%)  テスト 304/3,927 (7.7%)
+相対下落ラベル(α≤-8.0%): 学習 16,740/50,010 (33.5%)  テスト 3,082/3,927 (78.5%)
+
+キャリブレーション分割: 学習40,008 / キャリブレーション10,002 (最新20%)
+
+[学習] 絶対上昇モデル...
+  正例:6,578 負例:33,430 spw:5.08
+[0]	validation_0-auc:0.58833
+[100]	validation_0-auc:0.71092
+[175]	validation_0-auc:0.70590
+  テストAUC（生）: 0.7223
+  ✅ テストAUC（キャリブレーション後）: 0.7134
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+              precision    recall  f1-score   support
+
+          負例       0.89      1.00      0.94      3494
+          正例       0.00      0.00      0.00       433
+
+    accuracy                           0.89      3927
+   macro avg       0.44      0.50      0.47      3927
+weighted avg       0.79      0.89      0.84      3927
+
+
+[学習] 絶対下落モデル...
+  正例:3,198 負例:36,810 spw:11.51
+[0]	validation_0-auc:0.68960
+[100]	validation_0-auc:0.71663
+[161]	validation_0-auc:0.71630
+  テストAUC（生）: 0.7198
+  ✅ テストAUC（キャリブレーション後）: 0.7073
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+              precision    recall  f1-score   support
+
+          負例       0.80      1.00      0.89      3146
+          正例       0.00      0.00      0.00       781
+
+    accuracy                           0.80      3927
+   macro avg       0.40      0.50      0.44      3927
+weighted avg       0.64      0.80      0.71      3927
+
+
+[学習] 相対上昇(α)モデル...
+  正例:8,370 負例:31,638 spw:3.78
+[0]	validation_0-auc:0.48158
+[100]	validation_0-auc:0.73324
+[180]	validation_0-auc:0.73115
+  テストAUC（生）: 0.7370
+  ✅ テストAUC（キャリブレーション後）: 0.7280
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+/Users/kitagawayuuya/stock-alert/venv/lib/python3.11/site-packages/sklearn/metrics/_classification.py:1833: UndefinedMetricWarning: Precision is ill-defined and being set to 0.0 in labels with no predicted samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, f"{metric.capitalize()} is", result.shape[0])
+              precision    recall  f1-score   support
+
+          負例       0.92      1.00      0.96      3623
+          正例       0.00      0.00      0.00       304
+
+    accuracy                           0.92      3927
+   macro avg       0.46      0.50      0.48      3927
+weighted avg       0.85      0.92      0.89      3927
+
+
+[学習] 相対下落(α)モデル...
+  正例:11,462 負例:28,546 spw:2.49
+[0]	validation_0-auc:0.38006
+[100]	validation_0-auc:0.37160
+[154]	validation_0-auc:0.37457
+  テストAUC（生）: 0.3825
+  ✅ テストAUC（キャリブレーション後）: 0.3891
+              precision    recall  f1-score   support
+
+          負例       0.19      0.62      0.29       845
+          正例       0.71      0.25      0.37      3082
+
+    accuracy                           0.33      3927
+   macro avg       0.45      0.44      0.33      3927
+weighted avg       0.60      0.33      0.35      3927
+
+
+【AUC サマリー】
+  絶対上昇: 0.7134  絶対下落: 0.7073
+  相対上昇: 0.7280  相対下落: 0.3891
+  特徴量重要度: feature_importance.json
+  riseモデル最適閾値: 0.396 (F1=0.309)
+  dropモデル最適閾値: 0.085 (F1=0.428)
+
+データ保存: /Users/kitagawayuuya/stock-alert/training_data.npz
+
+保存完了 ✅  次: python3 validation.py  →  python3 rank_stocks.py

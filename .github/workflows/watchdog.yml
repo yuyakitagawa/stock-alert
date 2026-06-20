@@ -1,0 +1,35 @@
+name: Watchdog
+
+on:
+  schedule:
+    - cron: '30 9 * * 1-5'  # 09:30 UTC = 18:30 JST（daily_alertの1時間後）
+  workflow_dispatch:
+
+jobs:
+  check-and-trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if daily alert ran today
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          echo "Checking runs for $TODAY..."
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/workflows/daily_alert.yml/runs?per_page=5" \
+            --jq ".workflow_runs[] | select(.created_at | startswith(\"$TODAY\")) | .conclusion" \
+            | grep -v "^$" | head -1)
+          echo "Today's conclusion: '$CONCLUSION'"
+          if [ "$CONCLUSION" = "success" ]; then
+            echo "needs_trigger=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_trigger=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger daily alert if missing or failed
+        if: steps.check.outputs.needs_trigger == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Daily alert not completed today. Triggering..."
+          gh workflow run daily_alert.yml --repo "${{ github.repository }}"
