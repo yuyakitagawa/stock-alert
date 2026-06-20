@@ -1,6 +1,6 @@
 """
 utils.py - 共通関数モジュール
-rank_stocks.py / alert_email.py / backtest.py で共有
+rank_stocks.py / backtest.py で共有
 """
 import re
 import os
@@ -582,7 +582,7 @@ def get_fundamentals(code):
     return result
 
 
-# ── 推奨ラベル（rank_stocks / alert_email 共通） ───────────────────────────
+# ── 推奨ラベル（rank_stocks 共通） ───────────────────────────
 
 def recommend_from_net(net, allow_buy=True):
     if net < -10:
