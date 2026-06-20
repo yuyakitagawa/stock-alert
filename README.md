@@ -10,7 +10,6 @@
 【17:30 JST】アラートパイプライン（daily_alert.yml）
 core/screener.py → core/rank_stocks.py
 core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
-J-Quants空売り残高取得（short_interest、直近1週間分）
 web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 
 その他ワークフロー: ci.yml（テスト）、frontend_build.yml（ビルド検証）、
@@ -235,11 +234,11 @@ DBキャッシュは廃止。
 | `gen_qv_sim` | QV戦略バックテスト結果 |
 | `kabutan_earnings` | 決算日キャッシュ（`fetched_date` で当日判定）|
 | `kabutan_fundamentals` | 年次ファンダメンタル（kabutan） |
-| `kabutan_jquants_margin` | 信用残高（kabutan/J-Quants） |
+| `kabutan_jquants_margin` | 信用残高（kabutan スクレイピング） |
 | `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
-| `short_interest` | 空売り残高（J-Quants、日次取得）|
+| `short_interest` | 空売り残高（TSE/JPX 週次公開データ）|
 | `tdnet_events` | 適時開示イベント |
 | `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
 | `simulation_results` | 月次シミュレーション結果 |
@@ -260,7 +259,7 @@ DBキャッシュは廃止。
 | API | 取得データ | 用途 | 利用ファイル |
 |---|---|---|---|
 | **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
-| **J-Quants API v2** | 財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想）、信用残高（週次）、空売り残高 | ファンダ特徴量・IB特徴量・カタリストスクリーン | `lib/jquants.py`, `tools/fetch_jquants_fin.py` |
+| **J-Quants API v2** (Freeプラン) | 財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想） | ファンダ特徴量・IB特徴量・カタリストスクリーン | `tools/fetch_jquants_fin.py` |
 | **kabutan.jp** (スクレイピング) | PER/PBR/ROE、次回決算日、株主優待月、信用倍率、業績テキスト | ファンダ特徴量・決算フィルター・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
 | **EDINET API v2** | 大量保有報告書(350)/変更報告書(360) | 先回りシグナル（外部の買い集め検出） | `lib/edinet.py`, `tools/scan_large_holdings.py` |
 | **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
