@@ -8,7 +8,7 @@ J-Quants API v2 経由でデータ取得し stock_alert.db に保存するモジ
   - J-Quants Standard プラン以上（信用取引・空売りデータに必要）
 
 提供する関数:
-  fetch_margin_history(start, end)   → margin_data テーブルに保存
+  fetch_margin_history(start, end)   → kabutan_jquants_margin テーブルに保存
   fetch_short_history(start, end)    → short_interest テーブルに保存
   get_margin_ratio(code, date)       → float | None
   get_short_balance(code, date)      → float | None
@@ -53,7 +53,7 @@ def fetch_margin_history(
     codes: Optional[list] = None,
 ) -> int:
     """
-    信用取引週末残高を J-Quants から一括取得して margin_data テーブルへ保存。
+    信用取引週末残高を J-Quants から一括取得して kabutan_jquants_margin テーブルへ保存。
 
     Args:
         start: 取得開始日 YYYYMMDD（デフォルト 2020-01-01）

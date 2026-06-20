@@ -17,16 +17,15 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # SQLiteテーブル → (Supabaseテーブル, on_conflict列, カラム変換マップ)
 # 値が None のマップは「列名そのまま」
 TABLE_MAP = {
-    "price_cache":         ("price_cache",         "code,date", None),
-    "held_scores":         ("held_scores",         "date,code", None),
+    "price_cache":         ("yahoo_price_cache",   "code,date", None),
     "simulation_results":  ("simulation_results",  "run_date,entry_date,code", None),
-    "yutai_cache":         ("yutai_cache",         "code", None),
-    "fundamentals_annual": ("fundamentals_annual", "code,fy_end", None),
-    "earnings_sentiment":  ("earnings_sentiment",  "code,fetched_date", None),
-    "margin_data":         ("margin_data",         "code,week_date", None),
+    "yutai_cache":         ("kabutan_yutai",       "code", None),
+    "fundamentals_annual": ("kabutan_fundamentals", "code,fy_end", None),
+    "earnings_sentiment":  ("kabutan_sentiment",   "code,fetched_date", None),
+    "margin_data":         ("kabutan_jquants_margin", "code,week_date", None),
     "short_interest":      ("short_interest",      "code,week_date", None),
     "tdnet_events":        ("tdnet_events",        "code,announce_date,title", None),
-    "market_index_cache":  ("market_index_cache",  "ticker,date", None),
+    "market_index_cache":  ("yahoo_market_index",  "ticker,date", None),
     "jquants_fin_summary": ("jquants_fin_summary", "code,disc_date", None),
     "edinet_holdings":     ("edinet_large_holdings", "doc_id", None),
     "top10_sim":           ("top10_sim",           "entry_date,code", None),

@@ -88,7 +88,7 @@ def _sb_get(table: str, query: str) -> list[dict]:
 
 
 def _existing_codes() -> set[str]:
-    rows = _sb_get("ai_analyses",
+    rows = _sb_get("claude_ai_analyses",
                    f"model_version=eq.{MODEL_VER}&select=code,summary")
     # summary が空のものは未生成扱いにして再生成対象に含める
     return {str(r["code"]) for r in rows if str(r.get("summary") or "").strip()}
@@ -328,7 +328,7 @@ def _upsert_bulk(rows: list[dict]) -> None:
     chunk_size = 500
     for i in range(0, len(rows), chunk_size):
         chunk = rows[i:i + chunk_size]
-        r = requests.post(f"{SUPABASE_URL}/rest/v1/ai_analyses",
+        r = requests.post(f"{SUPABASE_URL}/rest/v1/claude_ai_analyses",
                           headers=_headers(), json=chunk, timeout=60)
         if not r.ok:
             print(f"[gen] upsert 失敗: {r.status_code} {r.text[:200]}")

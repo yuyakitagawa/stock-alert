@@ -333,7 +333,7 @@ def main():
         days_earn = (next_earn - today).days if next_earn and next_earn > today else None
         pit       = _get_pit(code, today) or {}
         per_live = fd_raw.get("PER"); pbr_live = fd_raw.get("PBR")
-        # PER/PBR は fundamentals_annual の eps/bps から全銘柄算出。
+        # PER/PBR は kabutan_fundamentals の eps/bps から全銘柄算出。
         # eps/bps はそれぞれ直近の非NULL値を使う（翌期予想行は bps=None のため）。
         # ライブ取得(yfinance)は日本株でNoneが多いのでフォールバックに留める。
         from lib.fundamentals import get_pit_valuation as _get_val

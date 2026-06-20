@@ -20,8 +20,8 @@ Supabase に接続できる状態にする。
 
 - [x] `web_rankings` 作成
 - [x] `web_stock_meta` 作成
-- [x] `web_earnings` 作成
-- [x] `ai_analyses` 作成
+- [x] `kabutan_earnings` 作成
+- [x] `claude_ai_analyses` 作成
 - [x] `push_subscriptions` 作成
 
 ---

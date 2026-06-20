@@ -1,15 +1,15 @@
 # SQLite → Supabase 全面移行
 
 ## 方針
-- パイプライン用テーブル（price_cache等16テーブル）をSupabaseに作成
+- パイプライン用テーブル（yahoo_price_cache等16テーブル）をSupabaseに作成
 - lib/db.py をSupabase REST API経由に書き換え
 - GitHub ActionsのSQLiteキャッシュを廃止
 - 既存Web用テーブル（web_rankings等）はそのまま維持（フロント用の読み取りビュー）
 
 ## Phase 1: Supabaseテーブル作成 ✓
-- [x] price_cache / held_scores / simulation_results / yutai_cache
-- [x] fundamentals_annual / earnings_sentiment / margin_data / short_interest
-- [x] tdnet_events / market_index_cache / jquants_fin_summary / edinet_large_holdings / top10_sim
+- [x] yahoo_price_cache / held_scores / simulation_results / kabutan_yutai
+- [x] kabutan_fundamentals / kabutan_sentiment / kabutan_jquants_margin / short_interest
+- [x] tdnet_events / yahoo_market_index / jquants_fin_summary / edinet_large_holdings / top10_sim
 - [x] web_rankings に actual_return_63d 追加（daily_ranking統合）
 - [x] web_earnings に fetched_date 追加（earnings_cache統合）
 - [x] web_stock_meta に fetched_date 追加（sector_cache統合）
@@ -42,5 +42,5 @@
 
 ## 残作業（ユーザー）
 1. GitHub Secrets に `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` 登録済みか確認（既存のはず）
-2. **Migrate SQLite to Supabase** ワークフローを手動実行 → 既存の price_cache(3.9M)/jquants(17K)/edinet(72K) 等を投入
+2. **Migrate SQLite to Supabase** ワークフローを手動実行 → 既存の yahoo_price_cache(3.9M)/jquants(17K)/edinet(72K) 等を投入
 3. 翌営業日の Daily Stock Alert が Supabase 読み書きで正常完走するか確認

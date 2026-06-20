@@ -521,7 +521,7 @@ def build_stock_fundamentals(kabutan_top_n=None):
         if d <= 30:   return f"🔔 {d}日後"
         return f"{d}日後"
 
-    # fundamentals_annual から DPS（配当）をバルク読み込み
+    # kabutan_fundamentals から DPS（配当）をバルク読み込み
     div_map = {}  # code -> {dps, close_at_announce}
     try:
         from lib.db import load_all_fundamentals_annual
