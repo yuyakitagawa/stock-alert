@@ -376,18 +376,25 @@ def upsert_edinet_large_holdings(records: list):
     if not records:
         return
     today_str = date.today().isoformat()
-    sb_rows = [{
-        "doc_id": r["doc_id"],
-        "sec_code": r.get("sec_code"),
-        "filer_name": r.get("filer_name"),
-        "doc_type_code": r.get("doc_type_code"),
-        "doc_description": r.get("doc_description"),
-        "submit_date": r.get("submit_date"),
-        "disc_date": r.get("disc_date"),
-        "holding_ratio": r.get("holding_ratio"),
-        "issuer_code": r.get("issuer_code"),
-        "fetched_date": today_str,
-    } for r in records]
+    seen = set()
+    sb_rows = []
+    for r in records:
+        did = r["doc_id"]
+        if did in seen:
+            continue
+        seen.add(did)
+        sb_rows.append({
+            "doc_id": did,
+            "sec_code": r.get("sec_code"),
+            "filer_name": r.get("filer_name"),
+            "doc_type_code": r.get("doc_type_code"),
+            "doc_description": r.get("doc_description"),
+            "submit_date": r.get("submit_date"),
+            "disc_date": r.get("disc_date"),
+            "holding_ratio": r.get("holding_ratio"),
+            "issuer_code": r.get("issuer_code"),
+            "fetched_date": today_str,
+        })
     sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 

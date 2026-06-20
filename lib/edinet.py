@@ -129,14 +129,17 @@ def _fetch_xbrl_text(doc_id: str) -> "str | None":
             timeout=30,
         )
         if resp.status_code != 200:
+            print(f"    XBRL HTTP {resp.status_code}: {doc_id}")
             return None
         zf = zipfile.ZipFile(io.BytesIO(resp.content))
         xbrl_names = [n for n in zf.namelist()
                       if "PublicDoc" in n and n.endswith(".xbrl")]
         if not xbrl_names:
+            print(f"    XBRL内に.xbrlファイルなし: {doc_id} files={zf.namelist()[:5]}")
             return None
         return zf.read(xbrl_names[0]).decode("utf-8", errors="replace")
-    except Exception:
+    except Exception as e:
+        print(f"    XBRL例外: {doc_id} {e}")
         return None
 
 
