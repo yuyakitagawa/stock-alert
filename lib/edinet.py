@@ -117,13 +117,8 @@ def verify_api(target_date: "str | date | None" = None) -> dict:
                 "total": 0, "large": 0, "date": target_date}
 
 
-def fetch_holding_ratio(doc_id: str) -> "float | None":
-    """XBRL本文（ZIP）から保有割合(%)を抽出する。取得失敗時は None。
-
-    EDINET API v2: GET /api/v2/documents/{docID}?type=1 → ZIP(XBRL一式)
-    大量保有報告書のXBRLには jpcrp_cor:HoldingRatioOfShareCertificatesEtcDEI 等の
-    タグで保有割合が記載されている。
-    """
+def _fetch_xbrl_text(doc_id: str) -> "str | None":
+    """XBRL本文（ZIP内 PublicDoc/*.xbrl）をテキストで返す。取得失敗時は None。"""
     key = _api_key()
     if not key or not doc_id:
         return None
@@ -136,26 +131,54 @@ def fetch_holding_ratio(doc_id: str) -> "float | None":
         if resp.status_code != 200:
             return None
         zf = zipfile.ZipFile(io.BytesIO(resp.content))
-        # XBRL本文（PublicDoc/内の .xbrl ファイル）を探す
         xbrl_names = [n for n in zf.namelist()
                       if "PublicDoc" in n and n.endswith(".xbrl")]
         if not xbrl_names:
             return None
-        xbrl_text = zf.read(xbrl_names[0]).decode("utf-8", errors="replace")
-        # 保有割合タグを探す（複数の名前空間パターンに対応）
-        # jpcrp_cor:HoldingRatioOfShareCertificatesEtcDEI（提出後保有割合）
-        # jpcrp_cor:HoldingRatioOfShareCertificatesEtcBeforeChangeReportDEI（変更前）
-        patterns = [
-            r'<[^>]*HoldingRatioOfShareCertificatesEtcDEI[^>]*>([0-9]+\.?[0-9]*)<',
-            r'<[^>]*HoldingRatioOfShareCertificatesEtc[^>]*DEI[^>]*>([0-9]+\.?[0-9]*)<',
-        ]
-        for pat in patterns:
-            m = re.search(pat, xbrl_text)
-            if m:
-                return float(m.group(1))
-        return None
+        return zf.read(xbrl_names[0]).decode("utf-8", errors="replace")
     except Exception:
         return None
+
+
+def fetch_xbrl_details(doc_id: str) -> dict:
+    """XBRL本文から対象銘柄コード(issuer_code)と保有割合(holding_ratio)を抽出する。
+
+    Returns: {"issuer_code": str|None, "holding_ratio": float|None}
+    """
+    result = {"issuer_code": None, "holding_ratio": None}
+    xbrl_text = _fetch_xbrl_text(doc_id)
+    if not xbrl_text:
+        return result
+
+    # 対象銘柄の証券コード（SecurityCodeDEI: 5桁 → 4桁に正規化）
+    sec_patterns = [
+        r'<[^>]*SecurityCodeDEI[^>]*>\s*(\d{4,5})\s*<',
+        r'<[^>]*:SecurityCodeDEI[^>]*>\s*(\d{4,5})\s*<',
+    ]
+    for pat in sec_patterns:
+        m = re.search(pat, xbrl_text)
+        if m:
+            result["issuer_code"] = _normalize_sec_code(m.group(1))
+            break
+
+    # 保有割合（提出後）
+    ratio_patterns = [
+        r'<[^>]*HoldingRatioOfShareCertificatesEtcDEI[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'<[^>]*HoldingRatioOfShareCertificatesEtc[^>]*DEI[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+        r'HoldingRatio[^>]*>\s*([0-9]+\.?[0-9]*)\s*<',
+    ]
+    for pat in ratio_patterns:
+        m = re.search(pat, xbrl_text)
+        if m:
+            result["holding_ratio"] = float(m.group(1))
+            break
+
+    return result
+
+
+def fetch_holding_ratio(doc_id: str) -> "float | None":
+    """後方互換: XBRL本文から保有割合(%)のみ返す。"""
+    return fetch_xbrl_details(doc_id).get("holding_ratio")
 
 
 def extract_large_holdings(results: list, disc_date: str) -> list:
@@ -177,7 +200,8 @@ def extract_large_holdings(results: list, disc_date: str) -> list:
             "doc_description": r.get("docDescription"),
             "submit_date": r.get("submitDateTime"),
             "disc_date": disc_date,
-            "holding_ratio": None,  # XBRL取得後に埋める
+            "holding_ratio": None,   # XBRL取得後に埋める
+            "issuer_code": None,     # XBRL取得後に埋める
         })
     return [x for x in records if x["doc_id"]]
 
@@ -217,8 +241,9 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
         recs = extract_large_holdings(results, disc_date=ds)
         if fetch_xbrl:
             for rec in recs:
-                ratio = fetch_holding_ratio(rec["doc_id"])
-                rec["holding_ratio"] = ratio
+                details = fetch_xbrl_details(rec["doc_id"])
+                rec["holding_ratio"] = details["holding_ratio"]
+                rec["issuer_code"] = details["issuer_code"]
                 if sleep_sec:
                     time.sleep(sleep_sec)
         if recs and persist:

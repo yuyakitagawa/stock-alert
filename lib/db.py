@@ -385,6 +385,7 @@ def upsert_edinet_large_holdings(records: list):
         "submit_date": r.get("submit_date"),
         "disc_date": r.get("disc_date"),
         "holding_ratio": r.get("holding_ratio"),
+        "issuer_code": r.get("issuer_code"),
         "fetched_date": today_str,
     } for r in records]
     sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
@@ -393,10 +394,10 @@ def upsert_edinet_large_holdings(records: list):
 def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
-    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio"
+    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio,issuer_code"
     if codes:
         code_list = ",".join(str(c) for c in codes)
-        q += f"&sec_code=in.({code_list})"
+        q += f"&issuer_code=in.({code_list})"
     return sb.select("edinet_large_holdings", q)
 
 
