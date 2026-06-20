@@ -8,7 +8,7 @@ tools/catalyst_backtest.py
 改善するか」を数値で確認する（CLAUDE.md §5 のマージ規律に沿った可否判断）。
 
 データ源（本番DBキャッシュ前提）:
-  - price_cache:        株価（基準日close・保有後close）
+  - yahoo_price_cache:   株価（基準日close・保有後close）
   - jquants_fin_summary: bps/equity/ta/op/sales/np（disc_date ≤ 基準日のみ＝先読み無し）
 
 ファンダは J-Quants 由来（kabutanクラウドブロック対策）。ROE は直近FYの np/equity で算出。
@@ -27,19 +27,19 @@ BIG_WIN = 15.0  # 大勝率の閾値(%)
 
 
 def close_asof(con, code, d):
-    r = con.execute("SELECT close FROM price_cache WHERE code=? AND date<=? "
+    r = con.execute("SELECT close FROM yahoo_price_cache WHERE code=? AND date<=? "
                     "ORDER BY date DESC LIMIT 1", (code, d)).fetchone()
     return r[0] if r and r[0] else None
 
 
 def close_on_or_after(con, code, d):
-    r = con.execute("SELECT close FROM price_cache WHERE code=? AND date>=? "
+    r = con.execute("SELECT close FROM yahoo_price_cache WHERE code=? AND date>=? "
                     "ORDER BY date ASC LIMIT 1", (code, d)).fetchone()
     return r[0] if r and r[0] else None
 
 
 def turnover_asof(con, code, d, days=20):
-    rows = con.execute("SELECT close, volume FROM price_cache WHERE code=? AND date<=? "
+    rows = con.execute("SELECT close, volume FROM yahoo_price_cache WHERE code=? AND date<=? "
                        "ORDER BY date DESC LIMIT ?", (code, d, days)).fetchall()
     vals = [c * v for c, v in rows if c and v]
     if len(vals) < max(5, days // 2):
@@ -151,7 +151,7 @@ def main():
     args = p.parse_args()
 
     con = sqlite3.connect(DB_PATH)
-    codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM price_cache").fetchall()]
+    codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM yahoo_price_cache").fetchall()]
 
     d0, d1 = date.fromisoformat(args.start), date.fromisoformat(args.end)
     dates = []

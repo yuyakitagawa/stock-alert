@@ -2,12 +2,15 @@
 import { useCallback, useEffect, useState } from "react";
 
 /**
- * ブックマーク（マイ・ウォッチリスト）を localStorage に保存する。
- * ログイン不要・端末/ブラウザごと。複数コンポーネント間とタブ間で同期する。
+ * ブックマーク（マイ・ウォッチリスト）。
+ * オフラインファースト: localStorage を即時の正本として扱い、
+ * 匿名 client_id をキーに Supabase(web_bookmarks) へ非同期同期する。
+ * 認証は無いため client_id はブラウザ単位（端末間同期は不可）。
  */
 const KEY = "stocksignal:bookmarks";
 const EVENT = "stocksignal:bookmarks-changed";
 const SEED_FLAG = "stocksignal:bookmarks-seeded";
+const CLIENT_ID_KEY = "stocksignal:client-id";
 
 /**
  * 初期デフォルト（旧キュレーション「値上げ力ウォッチリスト」の toC 独占ブランド銘柄）。
@@ -15,6 +18,19 @@ const SEED_FLAG = "stocksignal:bookmarks-seeded";
  * カゴメ/カルビー/日清食品HD/アサヒGHD/ユニ・チャーム/花王/資生堂/ロート製薬/ピジョン/シマノ
  */
 const DEFAULT_BOOKMARKS = ["2811", "2229", "2897", "2502", "8113", "4452", "4911", "4527", "7956", "7309"];
+
+function getClientId(): string {
+  if (typeof window === "undefined") return "";
+  let id = localStorage.getItem(CLIENT_ID_KEY);
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(CLIENT_ID_KEY, id);
+  }
+  return id;
+}
 
 function ensureSeeded() {
   if (typeof window === "undefined") return;
@@ -42,6 +58,56 @@ function write(codes: string[]) {
   window.dispatchEvent(new CustomEvent(EVENT));
 }
 
+// ── Supabase 同期（best-effort。失敗してもローカルは正本のまま）──────────────
+async function syncPush(codes: string[]) {
+  const clientId = getClientId();
+  try {
+    await fetch("/api/bookmarks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, codes }),
+    });
+  } catch {
+    /* オフライン時は無視 */
+  }
+}
+
+async function syncDelete(code: string) {
+  const clientId = getClientId();
+  try {
+    await fetch("/api/bookmarks", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, code }),
+    });
+  } catch {
+    /* オフライン時は無視 */
+  }
+}
+
+/** 起動時にサーバーの内容とローカルをマージし、差分をサーバーへ補完する。 */
+async function syncOnLoad(): Promise<string[]> {
+  const clientId = getClientId();
+  const local = read();
+  try {
+    const res = await fetch(`/api/bookmarks?clientId=${encodeURIComponent(clientId)}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return local;
+    const data = (await res.json()) as { codes?: string[] };
+    const remote = Array.isArray(data.codes) ? data.codes : [];
+    // 和集合（ローカルの並び順を優先）
+    const merged = [...local, ...remote.filter((c) => !local.includes(c))];
+    if (merged.length !== local.length) write(merged);
+    // ローカルにしか無いものをサーバーへ補完
+    const onlyLocal = local.filter((c) => !remote.includes(c));
+    if (onlyLocal.length) syncPush(onlyLocal);
+    return merged;
+  } catch {
+    return local;
+  }
+}
+
 export function useBookmarks() {
   // SSR とのハイドレーション不一致を避けるため、初期値は空 → マウント後に読み込む
   const [codes, setCodes] = useState<string[]>([]);
@@ -51,6 +117,8 @@ export function useBookmarks() {
     ensureSeeded();
     setCodes(read());
     setMounted(true);
+    // サーバーとマージ
+    syncOnLoad().then(setCodes);
     const sync = () => setCodes(read());
     window.addEventListener(EVENT, sync);
     window.addEventListener("storage", sync);
@@ -62,11 +130,27 @@ export function useBookmarks() {
 
   const toggle = useCallback((code: string) => {
     const cur = read();
-    write(cur.includes(code) ? cur.filter((c) => c !== code) : [code, ...cur]);
+    if (cur.includes(code)) {
+      write(cur.filter((c) => c !== code));
+      syncDelete(code);
+    } else {
+      write([code, ...cur]);
+      syncPush([code]);
+    }
   }, []);
 
   const remove = useCallback((code: string) => {
     write(read().filter((c) => c !== code));
+    syncDelete(code);
+  }, []);
+
+  /** 複数コードを一括で追加（オーナーの保有株取り込み等）。 */
+  const addMany = useCallback((newCodes: string[]) => {
+    const cur = read();
+    const toAdd = newCodes.filter((c) => c && !cur.includes(c));
+    if (!toAdd.length) return;
+    write([...toAdd, ...cur]);
+    syncPush(toAdd);
   }, []);
 
   return {
@@ -76,5 +160,6 @@ export function useBookmarks() {
     isBookmarked: (code: string) => codes.includes(code),
     toggle,
     remove,
+    addMany,
   };
 }

@@ -116,18 +116,18 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
         live_rankings = _sb_get("web_rankings",
                                 f"date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend")
         meta = _sb_get("web_stock_meta", "select=code,sector&limit=5000")
-        ai = _sb_get("ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
+        ai = _sb_get("claude_ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
         earnings = _sb_get("web_earnings", "select=code&limit=1")
         # 会社説明（詳細ページ「この会社について」）のカバレッジ検査用
         descriptions = _sb_get(
-            "ai_analyses",
+            "claude_ai_analyses",
             "model_version=eq.company-desc-v1&select=code,summary&limit=5000")
         desc_targets = _description_targets(live_rankings if live_rankings else ranking_rows)
         context = {
             "date":         today,
             "rankings":     live_rankings if live_rankings else ranking_rows,
             "stock_meta":   meta,
-            "ai_analyses":  ai,
+            "claude_ai_analyses":  ai,
             "earnings":     earnings,
             "expected_ai":  expected_ai,
             "descriptions": descriptions,
@@ -242,7 +242,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
 
     # 既存キャッシュ確認
     codes = [r["code"] for r in top_rows]
-    check_url = f"{SUPABASE_URL}/rest/v1/ai_analyses?date=eq.{today}&code=in.({','.join(codes)})&select=code"
+    check_url = f"{SUPABASE_URL}/rest/v1/claude_ai_analyses?date=eq.{today}&code=in.({','.join(codes)})&select=code"
     resp = requests.get(check_url, headers=_sb_headers(), timeout=10)
     cached_codes = {r["code"] for r in resp.json()} if resp.ok else set()
 
@@ -339,7 +339,7 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
         print(f"[export_to_web] {code}: AI解析完了 verdict={parsed.get('verdict','—')}")
 
     if ai_rows:
-        _upsert("ai_analyses", ai_rows)
+        _upsert("claude_ai_analyses", ai_rows)
 
 
 def export_risk_regime(today: str) -> None:

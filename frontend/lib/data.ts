@@ -82,7 +82,7 @@ export async function fetchEarnings(code: string): Promise<Earnings | null> {
 }
 
 export async function fetchAiAnalysis(code: string): Promise<AiAnalysis | null> {
-  const res = await sbFetch(`ai_analyses?code=eq.${code}&order=date.desc&limit=1`,
+  const res = await sbFetch(`claude_ai_analyses?code=eq.${code}&order=date.desc&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();

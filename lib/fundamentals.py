@@ -1,6 +1,6 @@
 """
 fundamentals.py
-fundamentals_annual テーブルから point-in-time（先読みバイアスなし）の
+kabutan_fundamentals テーブルから point-in-time（先読みバイアスなし）の
 ファンダメンタルを再構成する共有ロジック。学習(rf_train_v3)とバックテスト(backtest)で共用。
 
 特徴量（6次元）:
@@ -60,8 +60,8 @@ def _days_since_last_ex(target_date, record_months):
 def _jq_split_safe_bps(code, target_date):
     """J-Quants(jquants_fin_summary)の直近開示BPS(>0)を返す。
     開示ごとに分割後株数で再表示されるため、分割調整済み株価と整合する
-    （fundamentals_annual=株探値は分割調整漏れで表示PBRが過小化することがある）。
-    表示PER/PBR専用。Noneなら呼び出し側でfundamentals_annual値に委ねる。"""
+    （kabutan_fundamentals=株探値は分割調整漏れで表示PBRが過小化することがある）。
+    表示PER/PBR専用。Noneなら呼び出し側でkabutan_fundamentals値に委ねる。"""
     try:
         from lib.db import get_jquants_fin_history
         rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
@@ -116,7 +116,7 @@ def get_pit_fundamentals(code, target_date):
             est_next += timedelta(days=91)
         days_earn = (est_next - target_date).days
 
-    # 配当・優待の権利落ち後経過日数（yutai_cacheの確定月から計算）
+    # 配当・優待の権利落ち後経過日数（kabutan_yutaiの確定月から計算）
     ym = (_YUTAI_MONTH or {}).get(code)
     div_months = [ym] if ym else [3, 9]   # 優待月or典型的な配当月
     days_since_div  = _days_since_last_ex(target_date, div_months)
@@ -235,7 +235,7 @@ def pit_fundamental_features(code, target_date, price):
         bps = fd.get("bps")
         dps = fd.get("dps")
         result["per"]             = (price / eps) if eps and eps > 0 and price > 0 else None
-        # 注意: ここの pbr は60次元特徴量の一部。bps は fundamentals_annual(株探)由来で
+        # 注意: ここの pbr は60次元特徴量の一部。bps は kabutan_fundamentals(株探)由来で
         # 分割調整漏れの可能性があるが、学習済みモデルと特徴量分布の整合を保つため
         # ここでは敢えて変更しない（CLAUDE.md §0「特徴量は変更時要申告」）。
         # 分割調整済みBPSへの移行は金曜再学習時に申告のうえ一括で行うこと。

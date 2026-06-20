@@ -5,9 +5,9 @@
 
 ## 設計（最小変更）
 - 既存の説明表示: `StockLivePanel`「この会社について」→ `/api/stock/[code]/description`
-  → Supabase `ai_analyses`(model_version=`company-desc-v1`, date=`1970-01-01`) をキャッシュ参照。
+  → Supabase `claude_ai_analyses`(model_version=`company-desc-v1`, date=`1970-01-01`) をキャッシュ参照。
 - スプシ専用シート **「📝 会社説明」**（コード/銘柄名/説明）を新設し手動管理（自動上書きされない）。
-- `web/sync_descriptions.py`: シートを読み、説明が入っている行を `ai_analyses` の company-desc-v1 へ upsert。
+- `web/sync_descriptions.py`: シートを読み、説明が入っている行を `claude_ai_analyses` の company-desc-v1 へ upsert。
   → 既存の description API がそれをキャッシュとして返す＝手動説明が最優先・AIは未記入銘柄のフォールバック。
 - フロント・API・DBマイグレーションの変更は不要。
 

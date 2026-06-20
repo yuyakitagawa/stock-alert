@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Ranking, WatchMetrics } from "@/lib/types";
 import { useBookmarks } from "@/lib/bookmarks";
+import { OWNER_HOLDINGS } from "@/lib/owner-holdings";
 import { signFmtArrow } from "@/lib/signals";
 import { PRICING_POWER_META } from "@/lib/watchlist";
 import Sparkline from "@/components/Sparkline";
@@ -87,8 +88,21 @@ function MiniChart({ spark }: { spark: number[] | undefined }) {
   );
 }
 
+function OwnerImportButton({ codes, addMany }: { codes: string[]; addMany: (c: string[]) => void }) {
+  const missing = OWNER_HOLDINGS.filter((c) => !codes.includes(c));
+  if (missing.length === 0) return null;
+  return (
+    <button
+      onClick={() => addMany(OWNER_HOLDINGS)}
+      className="text-sm font-medium px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-700 text-blue-300 hover:bg-blue-500/20 transition-colors"
+    >
+      保有株を取り込む（{missing.length}銘柄）
+    </button>
+  );
+}
+
 export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
-  const { codes, mounted } = useBookmarks();
+  const { codes, mounted, addMany } = useBookmarks();
   const [metrics, setMetrics] = useState<Record<string, WatchMetrics>>({});
 
   // ブックマーク銘柄の お得度/ミニチャート/PER-PBR を API 経由で取得
@@ -130,18 +144,24 @@ export default function WatchlistClient({ rankMap, sectorMap, asOf }: Props) {
           <Link href="/rankings" className="text-green-400 hover:underline mx-1">ランキング</Link>
           のしおりアイコン <span className="inline-block align-middle text-gray-400">🔖</span> を押すと、ここに保存されます。
         </p>
-        <Link
-          href="/rankings"
-          className="inline-block mt-5 text-sm font-medium px-4 py-2 rounded-lg bg-green-500/10 border border-green-700 text-green-400 hover:bg-green-500/20 transition-colors"
-        >
-          ランキングから探す →
-        </Link>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/rankings"
+            className="text-sm font-medium px-4 py-2 rounded-lg bg-green-500/10 border border-green-700 text-green-400 hover:bg-green-500/20 transition-colors"
+          >
+            ランキングから探す →
+          </Link>
+          <OwnerImportButton codes={codes} addMany={addMany} />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <OwnerImportButton codes={codes} addMany={addMany} />
+      </div>
       {/* デスクトップ: テーブル */}
       <div className="hidden md:block bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
