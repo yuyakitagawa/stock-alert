@@ -172,15 +172,6 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
 
 
 
-def _make_tdnet_label(alt: dict) -> str:
-    """適時開示イベントを絵文字ラベルに変換"""
-    tags = []
-    if alt.get("has_buyback"):  tags.append("🔵買戻")
-    if alt.get("has_upward"):   tags.append("⬆️上方")
-    if alt.get("has_downward"): tags.append("⬇️下方")
-    if alt.get("has_ma"):       tags.append("🔀M&A")
-    return " ".join(tags) if tags else "—"
-
 
 def main():
     print("=" * 55)
@@ -514,16 +505,13 @@ def main():
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
     print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<16}  {'株価':>8}  {'ネット':>7}  {'判定':<12}  "
-          f"{'PER':>6}  {'PBR':>5}  {'適時':>7}  {'感情':>5}  {'Gトレ':>5}  推奨")
+          f"{'PER':>6}  {'PBR':>5}  {'感情':>5}  {'Gトレ':>5}  推奨")
     print("-" * 140)
     for _, row in result_df.head(dynamic_top_n).iterrows():
         stop_str  = f"({row['損切り幅(%)']:+.1f}%)"
         per_val = row.get("PER"); pbr_val = row.get("PBR")
         per_str = f"{per_val:>5.1f}x" if per_val is not None else "   N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
-
-        # 適時開示
-        tdnet_str = str(row.get("適時開示", "—"))[:7]
 
         # NLP感情
         sent = row.get("感情スコア", 0.0) or 0.0
@@ -541,7 +529,6 @@ def main():
             f"{row['ネット(%)']:>+6.1f}%  "
             f"{row['判定']:<12}  "
             f"{per_str}  {pbr_str}  "
-            f"{tdnet_str:>7}  "
             f"{sent_str:>5}  "
             f"{gtr_str:>5}  "
             f"{row['推奨']}"
@@ -550,12 +537,11 @@ def main():
     # フェーズ4b: オルタナティブデータ取得（上位20銘柄）
     ALT_TOP = min(20, len(result_df))
     print(f"\nオルタナティブデータ取得中（上位{ALT_TOP}銘柄）...")
-    print("  対象: 適時開示 / Googleトレンド")
+    print("  対象: Googleトレンド")
     alt_results = {}
     alt_errors = 0
     try:
         from lib.alt_data import get_alt_signals
-        import threading as _threading
 
         def _fetch_alt(code, name):
             try:
@@ -575,37 +561,14 @@ def main():
                 except Exception:
                     alt_errors += 1
 
-        # alt データをDataFrameに追加
         def _safe_get(code, key, default=None):
             return alt_results.get(str(code), {}).get(key, default)
 
-        result_df["適時開示"]       = result_df["銘柄コード"].astype(str).map(lambda x: _make_tdnet_label(alt_results.get(x, {})))
         result_df["Gトレンド"]      = result_df["銘柄コード"].astype(str).map(lambda x: _safe_get(x, "trend_score", 0.0))
 
-        # 下方修正あり: 💎 買い → 降格
-        degraded_down = []
-        for idx, row in result_df.iterrows():
-            if alt_results.get(str(row["銘柄コード"]), {}).get("has_downward") and row.get("推奨") == "💎 買い":
-                result_df.at[idx, "推奨"] = "⏳ 方向感なし"
-                degraded_down.append(f"{row['銘柄名']}({row['銘柄コード']})[下方修正]")
-        if degraded_down:
-            print(f"  ⚠️ 下方修正でS買い降格: {', '.join(degraded_down)}")
-
-        # 自社株買い / 上方修正: ✅ マーク表示（降格はしない）
-        boosted = [(row["銘柄名"], row["銘柄コード"], alt_results.get(str(row["銘柄コード"]), {}))
-                   for _, row in result_df.head(dynamic_top_n).iterrows()
-                   if alt_results.get(str(row["銘柄コード"]), {}).get("has_buyback") or
-                      alt_results.get(str(row["銘柄コード"]), {}).get("has_upward")]
-        if boosted:
-            for name, code, sig in boosted:
-                tags = []
-                if sig.get("has_buyback"): tags.append(f"自社株買い({sig.get('days_since_buyback',0)}日前)")
-                if sig.get("has_upward"):  tags.append(f"上方修正({sig.get('days_since_upward',0)}日前)")
-                print(f"  ✅ {name}({code}): {', '.join(tags)}")
         print(f"  取得完了: {len(alt_results)}件 / エラー: {alt_errors}件")
     except Exception as _ae:
         print(f"  オルタナティブデータ取得エラー: {_ae}")
-        result_df["適時開示"] = ""
         result_df["Gトレンド"] = 0.0
 
     # フェーズ4d: 上位銘柄の決算テキスト感情分析（Claude Haiku NLP）
