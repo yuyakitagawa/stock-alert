@@ -148,6 +148,7 @@ def fetch_xbrl_details(doc_id: str) -> dict:
     result = {"issuer_code": None, "holding_ratio": None}
     xbrl_text = _fetch_xbrl_text(doc_id)
     if not xbrl_text:
+        print(f"    ⚠ XBRL取得失敗: {doc_id}")
         return result
 
     # 対象銘柄の証券コード（SecurityCodeDEI: 5桁 → 4桁に正規化）
@@ -244,8 +245,11 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
                 details = fetch_xbrl_details(rec["doc_id"])
                 rec["holding_ratio"] = details["holding_ratio"]
                 rec["issuer_code"] = details["issuer_code"]
+                if not rec["issuer_code"]:
+                    print(f"    ⚠ issuer_code取得失敗: {rec['doc_id']} filer={rec.get('filer_name')}")
                 if sleep_sec:
                     time.sleep(sleep_sec)
+            recs = [r for r in recs if r.get("issuer_code")]
         if recs and persist:
             upsert_edinet_large_holdings(recs)
         all_records.extend(recs)
