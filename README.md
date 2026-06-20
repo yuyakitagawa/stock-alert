@@ -234,11 +234,9 @@ DBキャッシュは廃止。
 | `gen_qv_sim` | QV戦略バックテスト結果 |
 | `kabutan_earnings` | 決算日キャッシュ（`fetched_date` で当日判定）|
 | `kabutan_fundamentals` | 年次ファンダメンタル（kabutan） |
-| `kabutan_jquants_margin` | 信用残高（kabutan スクレイピング） |
 | `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
-| `short_interest` | 空売り残高（TSE/JPX 週次公開データ）|
 | `tdnet_events` | 適時開示イベント |
 | `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
 | `simulation_results` | 月次シミュレーション結果 |
