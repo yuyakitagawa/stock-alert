@@ -240,18 +240,12 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
         results = fetch_documents_list(ds)
         recs = extract_large_holdings(results, disc_date=ds)
         if fetch_xbrl:
-            valid_recs = []
             for rec in recs:
                 details = fetch_xbrl_details(rec["doc_id"])
                 rec["holding_ratio"] = details["holding_ratio"]
                 rec["issuer_code"] = details["issuer_code"]
-                if rec["issuer_code"]:
-                    valid_recs.append(rec)
                 if sleep_sec:
                     time.sleep(sleep_sec)
-            recs = valid_recs
-        else:
-            recs = [r for r in recs if r.get("issuer_code")]
         if recs and persist:
             upsert_edinet_large_holdings(recs)
         all_records.extend(recs)
