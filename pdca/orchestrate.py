@@ -269,6 +269,8 @@ def check_and_notify_stage_change(metrics):
     return goals_met
 
 def _send_stage_notification(stage):
+    # ユーザー依頼でモデル性能アラートメール停止(2026-06-20)。復活はこの2行を削除。
+    return
     gmail_addr = os.getenv("GMAIL_ADDRESS")
     gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
     if not gmail_addr or not gmail_pass:

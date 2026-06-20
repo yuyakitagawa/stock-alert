@@ -203,6 +203,8 @@ def format_violations(violations: list[Violation]) -> str:
 
 def send_qa_alert(violations: list[Violation], source: str = "") -> bool:
     """違反をメール通知する（alert-only: 処理は止めない）。送信成否を返す。"""
+    # ユーザー依頼でデータ整合性アラートメール停止(2026-06-20)。復活はこのreturnを削除。
+    return False
     if not violations:
         return False
     gmail_addr = os.getenv("GMAIL_ADDRESS")
