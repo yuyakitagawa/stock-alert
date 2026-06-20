@@ -21,7 +21,6 @@ from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
-EARNINGS_SKIP_DAYS = 21   # 決算発表N日以内のS買いを降格
 
 # 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
 SECTOR_TO_ETF = {
@@ -99,29 +98,6 @@ def fetch_us_sector_etf_returns() -> dict:
     except Exception as ex:
         print(f"  米国ETF取得失敗: {ex}")
         return {}
-
-_KABUTAN_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)"}
-
-
-def _get_next_earnings(code: str) -> "_date | None":
-    """kabutan.jp から次回決算発表予定日を取得。取得失敗時は None。"""
-    from lib.db import get_earnings_cache, set_earnings_cache, CACHE_MISS
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    cached = get_earnings_cache(code, today_str)
-    if cached is not CACHE_MISS:
-        return datetime.strptime(cached, "%Y-%m-%d").date() if cached else None
-    try:
-        resp = _requests.get(f"https://kabutan.jp/stock/?code={code}",
-                             headers=_KABUTAN_HEADERS, timeout=8)
-        d = None
-        if resp.status_code == 200:
-            m = re.search(r'決算発表予定日[^<]*<[^>]+>(\d{4}/\d{2}/\d{2})', resp.text)
-            if m:
-                d = datetime.strptime(m.group(1), "%Y/%m/%d").date()
-        set_earnings_cache(code, today_str, d.isoformat() if d else None)
-        return d
-    except Exception:
-        return None
 
 
 YUTAI_SKIP_DAYS = 21  # 権利落ち日N日前からS買いを除外
@@ -328,9 +304,7 @@ def main():
         # ファンダメンタル取得（PER/PBR/ROE/決算まで日数/権利落ち後経過日数）
         from lib.fundamentals import get_pit_fundamentals as _get_pit
         fd_raw    = get_fundamentals(code)
-        next_earn = _get_next_earnings(code)
         today     = _date.today()
-        days_earn = (next_earn - today).days if next_earn and next_earn > today else None
         pit       = _get_pit(code, today) or {}
         per_live = fd_raw.get("PER"); pbr_live = fd_raw.get("PBR")
         # PER/PBR は J-Quants の eps/bps から算出。
@@ -370,7 +344,7 @@ def main():
             "per":                 per_live,
             "pbr":                 pbr_live,
             "roe":                 fd_raw.get("ROE"),
-            "days_to_earnings":    days_earn,
+            "days_to_earnings":    None,
             "days_since_div_ex":   pit.get("days_since_div_ex"),
             "month":               today.month,
             "div_yield":           div_yield_live,
@@ -658,23 +632,7 @@ def main():
         print(f"  感情分析スキップ（APIキー未設定 or エラー: {_e}）")
         result_df["感情スコア"] = 0.0
 
-    # フェーズ5: S買い銘柄の決算チェック（S買い→方向感なし に降格）
-    buy_mask = result_df["推奨"] == "💎 買い"
-    buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
-    if buy_codes:
-        print(f"\n決算日チェック中（S買い {len(buy_codes)}銘柄）...")
-        today = datetime.now().date()
-        for code in buy_codes:
-            d = _get_next_earnings(code)
-            if d is not None:
-                days_to = (d - today).days
-                if 0 <= days_to <= EARNINGS_SKIP_DAYS:
-                    idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                    result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
-                    name = result_df.loc[idx, "銘柄名"].values[0]
-                    print(f"  ⚠️ {name}({code}): 決算{days_to}日後({d}) → S買いを方向感なしに降格")
-
-    # フェーズ5b: 株主優待権利落ち日チェック（権利落ち日21日前以内は除外）
+    # フェーズ5: 株主優待権利落ち日チェック（権利落ち日21日前以内は除外）
     buy_mask = result_df["推奨"] == "💎 買い"
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:

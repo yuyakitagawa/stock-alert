@@ -59,7 +59,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_net 等）|
-| `lib/db.py` | Supabase永続化層（gen_rankings / kabutan_earnings / gen_stock_meta / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
+| `lib/db.py` | Supabase永続化層（gen_rankings / gen_stock_meta / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
 | `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/send_user_alerts）で使用（alert-only：違反でも更新は止めずメール通知）|
 | `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
@@ -104,7 +104,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | 年率ボラティリティ | ≤ 25% |
 
 フェーズ5〜7 追加フィルター（`rank_stocks.py`）:
-- フェーズ5: 決算22日以内の銘柄はS買い→方向感なしに降格
+- フェーズ5: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格
 - フェーズ5b: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格（優待クロス売り圧力を回避）
 - フェーズ6: S買い1日最大3件のキャップ（net降順）。4件目以降は方向感なしに降格
 - フェーズ7: 対応する米国セクターETF（XLK/XLF/XLI/XLB/XLV/XLY）の前日リターンがマイナスならS買い→方向感なしに降格。リードラグ効果（US→JP翌日）を活用。21,416サンプル(2023-2026)で全26ペア正相関・avg +0.64pp効果を確認。キャッシュは `data/sector_map.json`。
@@ -232,7 +232,6 @@ DBキャッシュは廃止。
 | `gen_risk_regime` | リスクオン/オフ判定 |
 | `gen_dividend_strategy` | 配当戦略 |
 | `gen_qv_sim` | QV戦略バックテスト結果 |
-| `kabutan_earnings` | 決算日キャッシュ（`fetched_date` で当日判定）|
 | `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
@@ -257,7 +256,7 @@ DBキャッシュは廃止。
 |---|---|---|---|
 | **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
 | **J-Quants API v2** (Freeプラン) | 財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想） | ファンダ特徴量・IB特徴量・カタリストスクリーン | `tools/fetch_jquants_fin.py` |
-| **kabutan.jp** (スクレイピング) | PER/PBR/ROE、次回決算日、株主優待月、信用倍率、業績テキスト | ファンダ特徴量・決算フィルター・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
+| **kabutan.jp** (スクレイピング) | PER/PBR/ROE、株主優待月、業績テキスト | ファンダ特徴量・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
 | **EDINET API v2** | 大量保有報告書(350)/変更報告書(360) | 先回りシグナル（外部の買い集め検出） | `lib/edinet.py`, `tools/scan_large_holdings.py` |
 | **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
 | **yfinance** | セクターマッピング（米国ETF対応用） | 米国ETFリードラグフィルター（フェーズ7） | `core/rank_stocks.py` |
@@ -286,8 +285,7 @@ DBキャッシュは廃止。
 |---|---|---|
 | **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
 | **💎買い条件** (`recommend_from_scores`) | net≥16, drop_prob<2%, Piotroski≥6/9, pos52<0.45, vol≤20%, ret90>-25%, 売買代金≥100M, EPS surprise>2% or BPS成長+ | モデル予測＋jquants_fin_summary |
-| **決算フィルター** (フェーズ5) | 決算22日以内→S買い降格 | kabutan 決算日 |
-| **優待フィルター** (フェーズ5b) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
+| **優待フィルター** (フェーズ5) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
 | **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
 | **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
 | **カタリストスクリーン** (RPC) | PBR<1.0, ROE<8%, 自己資本比率>50%, 売買代金≥指定値 | jquants_fin_summary |

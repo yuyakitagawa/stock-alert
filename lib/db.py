@@ -87,28 +87,7 @@ def save_daily_ranking(date_str, rows):
     sb.upsert("gen_rankings", sb_rows, on_conflict="date,code")
 
 
-# ── earnings_cache (→ kabutan_earnings) ───────────────────────────────────────
-
 CACHE_MISS = object()
-
-def get_earnings_cache(code, today_str):
-    """今日キャッシュ済みなら next_date(str or None)を返す。未キャッシュはCACHE_MISS。"""
-    row = sb.select_one(
-        "kabutan_earnings",
-        f"code=eq.{code}&select=next_date,fetched_date"
-    )
-    if row and row.get("fetched_date") == today_str:
-        return row.get("next_date")
-    return CACHE_MISS
-
-
-def set_earnings_cache(code, today_str, next_date_str):
-    sb.upsert("kabutan_earnings", [{
-        "code": str(code),
-        "next_date": next_date_str,
-        "fetched_date": today_str,
-    }], on_conflict="code")
-
 
 def get_yutai_cache(code, today_str):
     """gen_stock_metaから優待情報を返す。キャッシュ済みなら (has_yutai, yutai_month)。"""
