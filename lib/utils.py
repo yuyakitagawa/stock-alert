@@ -376,7 +376,7 @@ def _days_to_nearest_event(from_date, months, day=25):
 
 
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
-    """53次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11 + マクロ拡張4 + 新規IB8
+    """54次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11 + マクロ拡張4 + 新規IB8 + EDINET1
     fundamentals dict keys (all optional):
       per, pbr, roe, days_to_earnings, days_since_div_ex,
       month（カレンダー月 1-12），div_yield（配当利回り%）
@@ -385,6 +385,7 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
       fx_beta（USD/JPY 60日ベータ），jpy5（USD/JPY 5日リターン%）
       eps_surprise（EPS実績-線形予測乖離），bps_growth（BPS前年比）
       piotroski（簡易Fスコア 0-1），payout（配当性向 DPS/EPS），accruals（BSアクルーアル）
+      edinet_holding（直近90日の大量保有報告 保有割合%）
     """
     if len(p) < 91 or p[-1] == 0:
         return None
@@ -470,6 +471,7 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _pio   = fd.get('piotroski')
     _pyout = fd.get('payout')
     _accr  = fd.get('accruals')
+    _ehold = fd.get('edinet_holding')
 
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
@@ -513,6 +515,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     payout_f      = float(np.clip(_pyout,          0.0, 1.5)) if _pyout is not None else 0.5
     # アクルーアル: J-Quants Sloan正確版 (NP-CFO)/TA×5 or BPSプロキシ（フォールバック）
     accruals_f    = float(np.clip(_accr,          -0.3, 0.5)) if _accr  is not None else 0.0
+    # EDINET大量保有報告: 直近90日以内の保有割合（0=なし, 0-1正規化）
+    edinet_hold_f = float(np.clip(_ehold / 50.0,   0.0, 1.0)) if _ehold is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
@@ -521,7 +525,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             sin_month, cos_month, div_yield_f, eps_growth_f,
             dps_growth_f, vix_feat, us5_f, us20_f,
             amihud_f, fx_beta_f, jpy5_f,
-            eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f]
+            eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f,
+            edinet_hold_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None

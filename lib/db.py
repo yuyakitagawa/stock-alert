@@ -240,6 +240,12 @@ def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     return sb.select("edinet_large_holdings", q)
 
 
+def get_edinet_all():
+    """学習用: edinet_large_holdings 全件を返す。"""
+    return sb.select("edinet_large_holdings",
+                     "order=submit_date.desc&select=issuer_code,submit_date,disc_date,holding_ratio")
+
+
 # ── yahoo_market_index ────────────────────────────────────────────────────
 
 def get_market_index_latest_date(ticker: str):
