@@ -100,12 +100,6 @@ export default async function StockDetailPage({ params }: Props) {
               <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
                 <span className="font-mono font-semibold text-gray-400">{ranking.code}</span>
                 {meta?.sector && <span>{meta.sector}</span>}
-                {meta?.market && (
-                  <>
-                    <span className="text-gray-600">·</span>
-                    <span>{meta.market}</span>
-                  </>
-                )}
               </div>
             </div>
             <div className="text-right">

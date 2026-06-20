@@ -30,8 +30,6 @@ export interface StockMeta {
   code:   string;
   name:   string;
   sector: string | null;
-  market: string | null;
-  per:    number | null;
   pbr:    number | null;
 }
 
