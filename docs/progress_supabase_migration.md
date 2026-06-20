@@ -1,17 +1,17 @@
 # SQLite → Supabase 全面移行
 
 ## 方針
-- パイプライン用テーブル（price_cache等16テーブル）をSupabaseに作成
+- パイプライン用テーブル（yahoo_price_cache等16テーブル）をSupabaseに作成
 - lib/db.py をSupabase REST API経由に書き換え
 - GitHub ActionsのSQLiteキャッシュを廃止
 - 既存Web用テーブル（web_rankings等）はそのまま維持（フロント用の読み取りビュー）
 
 ## Phase 1: Supabaseテーブル作成 ✓
 - [x] yahoo_price_cache / held_scores / simulation_results / kabutan_yutai
-- [x] kabutan_fundamentals / kabutan_sentiment / kabutan_jquants_margin / jpx_short_interest
-- [x] tdnet_events / yahoo_market_index / jquants_fin_summary / edinet_holdings / top10_sim
+- [x] kabutan_fundamentals / kabutan_sentiment / kabutan_jquants_margin / short_interest
+- [x] tdnet_events / yahoo_market_index / jquants_fin_summary / edinet_large_holdings / top10_sim
 - [x] web_rankings に actual_return_63d 追加（daily_ranking統合）
-- [x] kabutan_earnings に fetched_date 追加（earnings_cache統合）
+- [x] web_earnings に fetched_date 追加（earnings_cache統合）
 - [x] web_stock_meta に fetched_date 追加（sector_cache統合）
 - [x] インデックス・RLSポリシー（anon read）
 - [x] RPC `screen_catalyst_candidates()`（全銘柄スクリーンをサーバーサイド集計）

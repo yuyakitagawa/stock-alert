@@ -203,6 +203,8 @@ def format_violations(violations: list[Violation]) -> str:
 
 def send_qa_alert(violations: list[Violation], source: str = "") -> bool:
     """違反をメール通知する（alert-only: 処理は止めない）。送信成否を返す。"""
+    # ユーザー依頼でデータ整合性アラートメール停止(2026-06-20)。復活はこのreturnを削除。
+    return False
     if not violations:
         return False
     gmail_addr = os.getenv("GMAIL_ADDRESS")
@@ -245,7 +247,7 @@ def check_site(context: dict) -> list[Violation]:
       - rankings:     web_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
       - stock_meta:   web_stock_meta の行（code/name/sector）
       - claude_ai_analyses:  claude_ai_analyses の行（code/summary/verdict）
-      - earnings:     kabutan_earnings の行（code/...）
+      - earnings:     web_earnings の行（code/...）
       - expected_ai:  AI解析が存在すべき件数（上位N）
       - descriptions: claude_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
       - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
@@ -323,7 +325,7 @@ def check_site(context: dict) -> list[Violation]:
     # ── 決算カレンダー（任意・空なら warning）────────────────────────────
     earnings = context.get("earnings")
     if "earnings" in context and rankings and not earnings:
-        v.append(Violation("warning", "earnings_empty", "kabutan_earnings が空"))
+        v.append(Violation("warning", "earnings_empty", "web_earnings が空"))
 
     return v
 

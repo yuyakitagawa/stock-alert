@@ -77,7 +77,7 @@ Supabase `web_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `pdca/owner_directive.py` | オーナーの自然文の方針を、FMが feedback.md の要点に整理して書き込む（`python3 pdca/owner_directive.py "方針"`）|
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_net 等）|
-| `lib/db.py` | Supabase永続化層（web_rankings / kabutan_earnings / web_stock_meta / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
+| `lib/db.py` | Supabase永続化層（web_rankings / web_earnings / web_stock_meta / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
 | `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/alert_email/send_user_alerts）とPDCAで使用（alert-only：違反でも更新は止めずメール通知）|
 | `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist /activity /review ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
@@ -89,7 +89,7 @@ Supabase `web_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `tools/screen_catalyst_candidates.py` | カタリスト候補スクリーン（GARP補助）。PBR<1.0・ROE<8%・自己資本比率>50%・流動性の「安い箱」抽出は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計（ROEは kabutan_fundamentals 優先・無ければ J-Quants、BPSは分割調整漏れ防止のため J-Quants 優先）。通過候補に **利益の質フィルター(A/B)** で化粧決算（営業赤字・純利益>営業益×1.5）と斜陽事業（本業減益）を除外し、売上CAGR・営業利益率・会社予想方向で加減点。`data/catalyst_candidates.csv`（残）＋ `data/catalyst_excluded.csv`（除外理由付き・レビュー用）。`--no-quality` で品質フィルター無効 |
 | `tools/catalyst_backtest.py` | カタリスト候補スクリーンのヒストリカルBT（point-in-time・disc_date≤基準日）。A/Bあり/なしで平均・勝率・大勝率を比較。データは J-Quants財務＋yahoo_price_cache。ワークフロー `Catalyst Backtest` で本番DBに対して実行 |
 | `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
-| `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）と譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`EDINET_API_KEY` 必須 |
+| `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）と譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`EDINET_API_KEY` 必須 |
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
 | `tests/test_alert_email.py` | メール生成ヘルパーのユニットテスト（36件）|
@@ -270,14 +270,14 @@ DBキャッシュは廃止。
 | テーブル | 内容 |
 |---|---|
 | `web_rankings` | 毎日のランキングスコア（旧 `daily_ranking`。コード・確率・ネット・推奨・rank）|
-| `kabutan_earnings` | 決算日キャッシュ（旧 `earnings_cache`。`fetched_date` で当日判定）|
+| `web_earnings` | 決算日キャッシュ（旧 `earnings_cache`。`fetched_date` で当日判定）|
 | `web_stock_meta` | 業種分類ほかメタ（旧 `sector_cache` を統合）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `kabutan_fundamentals` / `jquants_fin_summary` | 年次・四半期ファンダ（J-Quants）|
-| `kabutan_jquants_margin` / `jpx_short_interest` / `tdnet_events` | 信用・空売り・適時開示（週次/日次）|
+| `kabutan_jquants_margin` / `short_interest` / `tdnet_events` | 信用・空売り・適時開示（週次/日次）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
 | `kabutan_yutai` / `kabutan_sentiment` / `simulation_results` / `top10_sim` | 優待・感情・BT・Top10シム |
-| `edinet_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
+| `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
 | `web_bookmarks` | Webのマイ・ウォッチリスト（匿名 `client_id` ごと。localStorageと双方向同期）|
 
 全銘柄スクリーン（カタリスト候補）は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計する

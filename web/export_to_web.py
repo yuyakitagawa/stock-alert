@@ -117,7 +117,7 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
                                 f"date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend")
         meta = _sb_get("web_stock_meta", "select=code,sector&limit=5000")
         ai = _sb_get("claude_ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
-        earnings = _sb_get("kabutan_earnings", "select=code&limit=1")
+        earnings = _sb_get("web_earnings", "select=code&limit=1")
         # 会社説明（詳細ページ「この会社について」）のカバレッジ検査用
         descriptions = _sb_get(
             "claude_ai_analyses",
@@ -224,12 +224,12 @@ def export_stock_meta(ranking_rows: list[dict]) -> None:
 
 
 def export_earnings(codes: list[str]) -> None:
-    # earnings_cache は kabutan_earnings に統合済み（set_earnings_cache が直接書込）。
+    # earnings_cache は web_earnings に統合済み（set_earnings_cache が直接書込）。
     # 既に next_date が入っているため、ここでの再エクスポートは不要。
     return
 
 
-def generate_claude_ai_analyses(today: str, top_rows: list[dict]) -> None:
+def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
     if not ANTHROPIC_API_KEY:
         print("[export_to_web] ANTHROPIC_API_KEY 未設定。AI解析スキップ。")
         return
@@ -397,7 +397,7 @@ def main() -> None:
 
     # 4. AI解析（ネットスコア上位10銘柄）
     top_rows = ranking_rows[:10]
-    generate_claude_ai_analyses(today, top_rows)
+    generate_ai_analyses(today, top_rows)
 
     # 5. Top10シミュレーション更新
     update_top10_simulation(ranking_rows, today)

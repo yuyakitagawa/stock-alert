@@ -74,7 +74,7 @@ export async function fetchStockMeta(code: string): Promise<StockMeta | null> {
 }
 
 export async function fetchEarnings(code: string): Promise<Earnings | null> {
-  const res = await sbFetch(`kabutan_earnings?code=eq.${code}&limit=1`,
+  const res = await sbFetch(`web_earnings?code=eq.${code}&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();

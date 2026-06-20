@@ -34,11 +34,11 @@ SCHEMAS = {
         "bps REAL, fetched_date TEXT, PRIMARY KEY(code,fy_end)",
         ["code", "fy_end", "announce_date", "eps", "dps", "roe", "bps", "fetched_date"],
     ),
-    "edinet_holdings": (
+    "edinet_large_holdings": (
         "doc_id TEXT PRIMARY KEY, sec_code TEXT, filer_name TEXT, doc_type_code TEXT, "
-        "doc_description TEXT, submit_date TEXT, disc_date TEXT, fetched_date TEXT",
+        "doc_description TEXT, submit_date TEXT, disc_date TEXT, holding_ratio REAL, fetched_date TEXT",
         ["doc_id", "sec_code", "filer_name", "doc_type_code", "doc_description",
-         "submit_date", "disc_date", "fetched_date"],
+         "submit_date", "disc_date", "holding_ratio", "fetched_date"],
     ),
 }
 

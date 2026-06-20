@@ -100,14 +100,14 @@ def save_daily_ranking(date_str, rows):
     sb.upsert("web_rankings", sb_rows, on_conflict="date,code")
 
 
-# ── earnings_cache (→ kabutan_earnings) ───────────────────────────────────
+# ── earnings_cache (→ web_earnings) ───────────────────────────────────────
 
 CACHE_MISS = object()
 
 def get_earnings_cache(code, today_str):
     """今日キャッシュ済みなら next_date(str or None)を返す。未キャッシュはCACHE_MISS。"""
     row = sb.select_one(
-        "kabutan_earnings",
+        "web_earnings",
         f"code=eq.{code}&select=next_date,fetched_date"
     )
     if row and row.get("fetched_date") == today_str:
@@ -116,14 +116,14 @@ def get_earnings_cache(code, today_str):
 
 
 def set_earnings_cache(code, today_str, next_date_str):
-    sb.upsert("kabutan_earnings", [{
+    sb.upsert("web_earnings", [{
         "code": str(code),
         "next_date": next_date_str,
         "fetched_date": today_str,
     }], on_conflict="code")
 
 
-# ── kabutan_yutai ─────────────────────────────────────────────────────────
+# ── kabutan_yutai ───────────────────────────────────────────────────────────
 
 def get_yutai_cache(code, today_str):
     """今日キャッシュ済みなら (has_yutai, record_month) を返す。未キャッシュは CACHE_MISS。"""
@@ -145,7 +145,7 @@ def set_yutai_cache(code, today_str, has_yutai, record_month):
     }], on_conflict="code")
 
 
-# ── kabutan_fundamentals ─────────────────────────────────────────────────
+# ── kabutan_fundamentals ──────────────────────────────────────────────────
 
 def upsert_fundamentals_annual(code, rows, today_str):
     """rows: list of dict(fy_end, announce_date, eps, dps, roe, bps)"""
@@ -246,7 +246,7 @@ def load_simulation_results(run_date=None):
     )
 
 
-# ── yahoo_price_cache ─────────────────────────────────────────────────────
+# ── yahoo_price_cache ───────────────────────────────────────────────────────────
 
 def get_price_cache_coverage(code):
     """キャッシュの (min_date_str, max_date_str) を返す。未キャッシュは None。"""
@@ -290,7 +290,7 @@ def save_price_cache(code, df):
         sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
 
 
-# ── kabutan_sentiment ─────────────────────────────────────────────────────
+# ── kabutan_sentiment ────────────────────────────────────────────────────
 
 def get_earnings_sentiment(code: str, today_str: str):
     """今日キャッシュ済みならスコア(float)を返す。未キャッシュは None。"""
@@ -309,7 +309,7 @@ def set_earnings_sentiment(code: str, today_str: str, score: float):
     }], on_conflict="code,fetched_date")
 
 
-# ── kabutan_jquants_margin ────────────────────────────────────────────────
+# ── kabutan_jquants_margin ──────────────────────────────────────────────────────────
 
 def upsert_margin_data(code: str, week_date: str, buy: float, sell: float, ratio: float):
     today_str = date.today().isoformat()
@@ -338,7 +338,7 @@ def get_margin_data_history(code: str, n: int = 8):
     )
 
 
-# ── jpx_short_interest ────────────────────────────────────────────────────
+# ── short_interest ────────────────────────────────────────────────────────
 
 def bulk_upsert_short_interest(rows):
     """rows: list of (code, week_date, short_balance, short_amount)"""
@@ -348,12 +348,12 @@ def bulk_upsert_short_interest(rows):
         "short_balance": r[2],
         "short_amount": r[3],
     } for r in rows]
-    sb.upsert("jpx_short_interest", sb_rows, on_conflict="code,week_date")
+    sb.upsert("short_interest", sb_rows, on_conflict="code,week_date")
 
 
 def get_short_interest_latest(code: str):
     return sb.select_one(
-        "jpx_short_interest",
+        "short_interest",
         f"code=eq.{code}&order=week_date.desc&select=week_date,short_balance,short_amount"
     )
 
@@ -391,9 +391,9 @@ def get_tdnet_events_recent(code: str, days: int = 60):
     )
 
 
-# ── edinet_holdings ───────────────────────────────────────────────────────
+# ── edinet_large_holdings（大量保有報告書・5%ルール）───────────────────────
 
-def upsert_edinet_holdings(records: list):
+def upsert_edinet_large_holdings(records: list):
     if not records:
         return
     today_str = date.today().isoformat()
@@ -405,19 +405,20 @@ def upsert_edinet_holdings(records: list):
         "doc_description": r.get("doc_description"),
         "submit_date": r.get("submit_date"),
         "disc_date": r.get("disc_date"),
+        "holding_ratio": r.get("holding_ratio"),
         "fetched_date": today_str,
     } for r in records]
-    sb.upsert("edinet_holdings", sb_rows, on_conflict="doc_id")
+    sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 
-def get_edinet_holdings_recent(days: int = 30, codes: list | None = None):
+def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
-    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date"
+    q += "&select=doc_id,sec_code,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio"
     if codes:
         code_list = ",".join(str(c) for c in codes)
         q += f"&sec_code=in.({code_list})"
-    return sb.select("edinet_holdings", q)
+    return sb.select("edinet_large_holdings", q)
 
 
 # ── yahoo_market_index ────────────────────────────────────────────────────
@@ -461,7 +462,7 @@ def load_market_index_data(ticker: str, days: int = 2200):
     return pd.DataFrame({"Close": closes}, index=idx)
 
 
-# ── kabutan_jquants_margin / jpx_short_interest: point-in-time lookup ─────
+# ── kabutan_jquants_margin / short_interest: point-in-time lookup ────────────────────
 
 def get_margin_ratio_at(code: str, as_of_date: str) -> "float | None":
     row = sb.select_one(
@@ -473,7 +474,7 @@ def get_margin_ratio_at(code: str, as_of_date: str) -> "float | None":
 
 def get_short_balance_at(code: str, as_of_date: str) -> "dict | None":
     return sb.select_one(
-        "jpx_short_interest",
+        "short_interest",
         f"code=eq.{code}&week_date=lte.{as_of_date}&order=week_date.desc"
         f"&select=week_date,short_balance,short_amount"
     )

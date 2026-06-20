@@ -9,7 +9,7 @@ J-Quants API v2 経由でデータ取得し stock_alert.db に保存するモジ
 
 提供する関数:
   fetch_margin_history(start, end)   → kabutan_jquants_margin テーブルに保存
-  fetch_short_history(start, end)    → jpx_short_interest テーブルに保存
+  fetch_short_history(start, end)    → short_interest テーブルに保存
   get_margin_ratio(code, date)       → float | None
   get_short_balance(code, date)      → float | None
 """
@@ -129,7 +129,7 @@ def fetch_short_history(
     codes: Optional[list] = None,
 ) -> int:
     """
-    空売り残高報告を J-Quants から一括取得して jpx_short_interest テーブルへ保存。
+    空売り残高報告を J-Quants から一括取得して short_interest テーブルへ保存。
 
     Returns:
         保存行数
