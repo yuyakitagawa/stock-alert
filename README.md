@@ -235,7 +235,6 @@ DBキャッシュは廃止。
 | `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
-| `tdnet_events` | 適時開示イベント |
 | `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
 | `simulation_results` | 月次シミュレーション結果 |
 | `app_bookmarks` | ウォッチリスト（ブックマーク）|

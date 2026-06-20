@@ -203,39 +203,6 @@ def save_price_cache(code, df):
 
 
 
-# ── tdnet_events ──────────────────────────────────────────────────────────
-
-def upsert_tdnet_events(code: str, events: list):
-    """events: list of {'announce_date', 'title', 'event_type'}"""
-    today_str = date.today().isoformat()
-    sb_rows = [{
-        "code": str(code),
-        "announce_date": e["announce_date"],
-        "title": e["title"],
-        "event_type": e["event_type"],
-        "fetched_date": today_str,
-    } for e in events]
-    sb.upsert("tdnet_events", sb_rows, on_conflict="code,announce_date,title")
-
-
-def tdnet_fetched_today(code: str, today_str: str) -> bool:
-    """当日に code の tdnet をフェッチ済みか。"""
-    row = sb.select_one(
-        "tdnet_events",
-        f"code=eq.{code}&fetched_date=eq.{today_str}&select=code"
-    )
-    return row is not None
-
-
-def get_tdnet_events_recent(code: str, days: int = 60):
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
-    return sb.select(
-        "tdnet_events",
-        f"code=eq.{code}&announce_date=gte.{cutoff}&order=announce_date.desc"
-        f"&select=announce_date,title,event_type"
-    )
-
-
 # ── edinet_large_holdings（大量保有報告書・5%ルール）───────────────────────
 
 def upsert_edinet_large_holdings(records: list):
