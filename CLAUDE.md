@@ -10,7 +10,6 @@
 - `lib/nlp_sentiment.py`: 決算テキスト感情分析（Claude Haiku × kabutan）。ランキング後処理に使用。
 - `core/rf_train_v3.py`: XGBoost学習(上昇/下落)。※金曜(再学習日)以外は触らない。
 - `core/screener.py` -> `core/rank_stocks.py`: 抽出 & ネットスコア計算。
-- `email/alert_email.py`: 出力系（Gmail送信）。
 - `web/export_to_web.py` + `web/send_user_alerts.py`: Webアプリ向けエクスポート。
 - `tools/backtest.py`: 検証。`bear`モード（2024/08下落相場）をテスト基準とする。
 
@@ -24,7 +23,6 @@
 
 ## 3. Operations (Commands)
 - Screening & Rank: `python3 core/screener.py && python3 core/rank_stocks.py`
-- Test (Daily): `python3 email/alert_email.py`
 - Deep Test: `python3 tools/backtest.py bear` (暴落耐性チェック)
 
 ## 4. Context & Workflow

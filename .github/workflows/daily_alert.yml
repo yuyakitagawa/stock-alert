@@ -95,26 +95,22 @@ jobs:
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
 
-      - name: Step 4 - メールアラート送信
-        if: ${{ false }}  # ユーザー依頼でデイリーAlertメール停止(2026-06-18)。復活はこのif行を削除
-        run: cd ~/stock-alert && python email/alert_email.py
-
-      - name: Step 5 - Webエクスポート（Supabase）
+      - name: Step 4 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
-      - name: Step 5a2 - 会社説明をAI生成（未生成の銘柄を差分補完）
+      - name: Step 4a - 会社説明をAI生成（未生成の銘柄を差分補完）
         continue-on-error: true
         run: cd ~/stock-alert && python web/generate_descriptions.py --limit 400
 
-      - name: Step 5b - 会社説明をスプシから同期（手動説明で上書き優先）
+      - name: Step 4b - 会社説明をスプシから同期（手動説明で上書き優先）
         continue-on-error: true
         run: cd ~/stock-alert && python web/sync_descriptions.py
 
-      - name: Step 5c - 全Webページのスモーク検査（QA）
+      - name: Step 4c - 全Webページのスモーク検査（QA）
         continue-on-error: true
         run: cd ~/stock-alert && sleep 20 && python web/qa_pages.py
 
-      - name: Step 6 - ユーザーアラートメール送信
+      - name: Step 5 - ユーザーアラートメール送信
         continue-on-error: true
         run: cd ~/stock-alert && python web/send_user_alerts.py
 
