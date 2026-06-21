@@ -146,11 +146,11 @@ def _fetch_xbrl_text(doc_id: str) -> "str | None":
 
 
 def fetch_xbrl_details(doc_id: str) -> dict:
-    """XBRL本文から対象銘柄コード(issuer_code)と保有割合(holding_ratio)を抽出する。
+    """XBRL本文から対象銘柄コード(issuer_code)、保有割合(holding_ratio)、発行者名(issuer_name)を抽出する。
 
-    Returns: {"issuer_code": str|None, "holding_ratio": float|None}
+    Returns: {"issuer_code": str|None, "holding_ratio": float|None, "issuer_name": str|None}
     """
-    result = {"issuer_code": None, "holding_ratio": None}
+    result = {"issuer_code": None, "holding_ratio": None, "issuer_name": None}
     xbrl_text = _fetch_xbrl_text(doc_id)
     if not xbrl_text:
         print(f"    ⚠ XBRL取得失敗: {doc_id}")
@@ -168,6 +168,17 @@ def fetch_xbrl_details(doc_id: str) -> dict:
         m = re.search(pat, xbrl_text)
         if m:
             result["issuer_code"] = _normalize_sec_code(m.group(1))
+            break
+
+    # 発行者名（対象企業名）
+    name_patterns = [
+        r'<[^>]*IssuerNameDEI[^>]*>\s*(.+?)\s*<',
+        r'<[^>]*NameOfIssuer[^>]*>\s*(.+?)\s*<',
+    ]
+    for pat in name_patterns:
+        m = re.search(pat, xbrl_text)
+        if m:
+            result["issuer_name"] = m.group(1).strip()
             break
 
     # 保有割合（提出後）
@@ -256,6 +267,7 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
                 details = fetch_xbrl_details(rec["doc_id"])
                 rec["holding_ratio"] = details["holding_ratio"]
                 rec["issuer_code"] = details["issuer_code"]
+                rec["issuer_name"] = details.get("issuer_name")
                 if not rec["issuer_code"]:
                     print(f"    ⚠ issuer_code取得失敗: {rec['doc_id']} filer={rec.get('filer_name')}")
                 if sleep_sec:
