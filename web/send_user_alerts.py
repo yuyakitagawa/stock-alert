@@ -1,5 +1,5 @@
 """
-Supabase の app_push_subscriptions を参照し、売りシグナルが出た保有株がある
+Supabase の app_push_subscriptions を参照し、
 サブスクリプションに Web Push 通知を送る（Step 6）。
 
 実行条件: export_to_web.py が実行済みで gen_rankings に本日データがある前提。
