@@ -216,7 +216,7 @@ def upsert_edinet_large_holdings(records: list):
         if did in seen:
             continue
         seen.add(did)
-        sb_rows.append({
+        row = {
             "doc_id": did,
             "filer_name": r.get("filer_name"),
             "doc_type_code": r.get("doc_type_code"),
@@ -226,7 +226,10 @@ def upsert_edinet_large_holdings(records: list):
             "holding_ratio": r.get("holding_ratio"),
             "issuer_code": r.get("issuer_code"),
             "fetched_date": today_str,
-        })
+        }
+        if r.get("issuer_name"):
+            row["issuer_name"] = r["issuer_name"]
+        sb_rows.append(row)
     sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 
