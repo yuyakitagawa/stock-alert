@@ -160,26 +160,14 @@ def get_market_index_df_cached(cache_key, ticker_encoded, days=2200):
 
 @functools.lru_cache(maxsize=1)
 def get_nikkei_returns():
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
-           f"?interval=1d&period1={int((datetime.now()-timedelta(days=400)).timestamp())}"
-           f"&period2={int(datetime.now().timestamp())}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None, None, None
-        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        closes = [c for c in closes if c is not None]
-        if len(closes) < 61:
-            return None, None, None
-        p = closes
-        r5  = round((p[-1]-p[-6]) /p[-6] *100, 2) if len(p)>=6  else 0
-        r20 = round((p[-1]-p[-21])/p[-21]*100, 2) if len(p)>=21 else 0
-        r60 = round((p[-1]-p[-61])/p[-61]*100, 2) if len(p)>=61 else 0
-        return r5, r20, r60
-    except Exception:
+    df = get_market_index_df_cached("N225", "%5EN225", 400)
+    if df is None or len(df) < 61:
         return None, None, None
+    p = df["Close"].values
+    r5  = round((p[-1]-p[-6]) /p[-6] *100, 2) if len(p)>=6  else 0
+    r20 = round((p[-1]-p[-21])/p[-21]*100, 2) if len(p)>=21 else 0
+    r60 = round((p[-1]-p[-61])/p[-61]*100, 2) if len(p)>=61 else 0
+    return r5, r20, r60
 
 
 def classify_market_regime(nk_prices):
