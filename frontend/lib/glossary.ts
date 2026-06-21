@@ -43,14 +43,9 @@ export const GLOSSARY: Record<string, Term> = {
     short: "株価が1株純資産の何倍か。1倍未満は割安サイン",
     long:  "株価 ÷ 1株あたり純資産。会社の資産価値に対する株価水準で、1倍未満だと解散価値より安く取引されている割安サインとされます。",
   },
-  stop_loss: {
-    term:  "損切りライン",
-    short: "下回ったら撤退を検討する価格の目安",
-    long:  "この価格を下回ったら損失確定の売り（撤退）を検討する目安。ボラティリティから自動算出しています。",
-  },
 };
 
 // 用語集に載せる順番（画面表示・凡例で使う）
 export const GLOSSARY_ORDER = [
-  "net", "rise_prob", "drop_prob", "rel20", "vol", "per", "pbr", "stop_loss",
+  "net", "rise_prob", "drop_prob", "rel20", "vol", "per", "pbr",
 ] as const;

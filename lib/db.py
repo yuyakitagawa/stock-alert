@@ -62,7 +62,6 @@ def get_all_yutai():
 # ── daily_ranking (→ gen_rankings) ────────────────────────────────────────
 
 def save_daily_ranking(date_str, rows):
-    """rows: list of dicts with keys: code, name, close, rise_prob, drop_prob, net, vol, recommend, rel20, stop_loss, per, pbr, piotroski, bps_growth, eps_surprise, pos52"""
     sb_rows = []
     for r in rows:
         sb_rows.append({
@@ -76,7 +75,6 @@ def save_daily_ranking(date_str, rows):
             "vol": r.get("vol"),
             "recommend": r.get("recommend"),
             "rel20": r.get("rel20"),
-            "stop_loss": r.get("stop_loss"),
             "per": r.get("per"),
             "pbr": r.get("pbr"),
             "piotroski": r.get("piotroski"),
