@@ -10,7 +10,6 @@ tools/backfill_history.py
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import math
 import threading
 import argparse
 import time
@@ -44,12 +43,9 @@ EMOJI_MAP = {
     "🥇 S買い":        "S買い",
     "🥈 A買い":        "A買い",
     "⏳ 方向感なし":   "方向感なし",
-    "🔴 下降シグナル": "下降シグナル",
-    "⚠️ 弱気シグナル": "弱気シグナル",
     "🟡 高値警戒":     "方向感なし",
     "高値警戒":        "方向感なし",
-    "🔻 売り検討":     "下降シグナル",
-    "売り検討":        "下降シグナル",
+    "—":               "—",
 }
 
 def clean_recommend(v):
@@ -278,7 +274,6 @@ def main():
             buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct, ret_504=ret_504, r2_504=r2_504)
             recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
 
-            stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
             p = closes
             s20 = (p[-1]-p[-21])/p[-21]*100 if len(p)>=21 else 0
             rel20 = round(s20 - nk20_pct, 2) if nk20_pct is not None else None
@@ -293,7 +288,6 @@ def main():
                 "vol":       vol,
                 "recommend": recommend,
                 "rel20":     rel20,
-                "stop_loss": stop_loss,
                 "per":       None,
                 "pbr":       None,
             })
@@ -362,7 +356,6 @@ def export_all_to_supabase(dates, names):
                 "vol":       r["vol"],
                 "recommend": clean_recommend(r["recommend"]),
                 "rel20":     r["rel20"],
-                "stop_loss": r["stop_loss"],
                 "per":       r["per"],
                 "pbr":       r["pbr"],
             })

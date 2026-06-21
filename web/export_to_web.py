@@ -141,12 +141,9 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
 _EMOJI_MAP = {
     "🥇 S買い":        "S買い",
     "⏳ 方向感なし":   "方向感なし",
-    "🔴 下降シグナル": "下降シグナル",
-    "⚠️ 弱気シグナル": "弱気シグナル",
     "🟡 高値警戒":     "方向感なし",
     "高値警戒":        "方向感なし",
-    "🔻 売り検討":     "下降シグナル",
-    "売り検討":        "下降シグナル",
+    "—":               "—",
 }
 
 
@@ -173,7 +170,7 @@ def export_rankings(today: str) -> list[dict]:
         "gen_rankings",
         f"date=eq.{today}&order=net.desc"
         "&select=date,code,name,close,rise_prob,drop_prob,net,vol,"
-        "recommend,rel20,stop_loss,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
+        "recommend,rel20,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
     )
 
     records = []
@@ -190,7 +187,6 @@ def export_rankings(today: str) -> list[dict]:
             "vol":        r["vol"],
             "recommend":  _clean_recommend(r["recommend"]),
             "rel20":      r["rel20"],
-            "stop_loss":  r["stop_loss"],
             "per":          r["per"],
             "pbr":          r["pbr"],
             "piotroski":    r["piotroski"],

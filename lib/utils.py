@@ -577,14 +577,6 @@ def get_fundamentals(code):
 
 # ── 推奨ラベル（rank_stocks 共通） ───────────────────────────
 
-def recommend_from_net(net, allow_buy=True):
-    if net < -10:
-        return "🔴 下降シグナル"
-    if net < -5:
-        return "⚠️ 弱気シグナル"
-    return "⏳ 方向感なし"
-
-
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
                           ret90=None, turnover_m=None):
@@ -603,4 +595,4 @@ def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
             and (turnover_m is None or turnover_m >= 50.0)
             and biz_ok):
         return "💎 買い"
-    return recommend_from_net(net, allow_buy=allow_buy)
+    return "—"
