@@ -7,8 +7,7 @@
  *    - 特徴量重要度・AUC・61次元内訳 … feature_importance.json / lib/utils.py(extract_features)
  *    - 品質フィルター            … core/rank_stocks.py passes_buy_filter
  *    - 💎買い条件               … lib/utils.py recommend_from_scores
- *    - 売り判定の段階・推奨ラベル  … lib/utils.py recommend_from_net + rank_stocks.py 判定閾値
- *    - 損切り式・レジーム調整      … core/rank_stocks.py
+ *    - レジーム調整              … core/rank_stocks.py
  */
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
@@ -17,7 +16,7 @@ import Footer from "@/components/Footer";
 export const metadata: Metadata = {
   title: "AI運用モデルの詳細 — StockSignal",
   description:
-    "予測モデルの素性と重要度、買いフィルター、売りロジックを公開。XGBoostによる63日先±15%の上昇/下落確率予測の中身を解説。",
+    "予測モデルの素性と重要度、買いフィルター、レジーム調整を公開。XGBoostによる63日先±15%の上昇/下落確率予測の中身を解説。",
 };
 
 /* ── 特徴量重要度（feature_importance.json 上位／2026 再学習時点）──────── */
@@ -216,72 +215,18 @@ export default function ModelPage() {
           </div>
         </section>
 
-        {/* 3. 売りロジック */}
+        {/* 3. レジーム調整 */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span className="text-blue-400">3.</span> 売りロジック
+              <span className="text-blue-400">3.</span> レジーム調整
             </h2>
-            <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
-              売り側は<strong className="text-gray-300">下落確率の高さ＝ネットスコアのマイナス幅</strong>で段階表示します。
-              判定ラベルと推奨は連動します。
-            </p>
-          </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-800/60 text-gray-400 text-xs">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium">ネットスコア</th>
-                  <th className="text-left px-4 py-2 font-medium">判定</th>
-                  <th className="text-left px-4 py-2 font-medium">推奨</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                <tr>
-                  <td className="px-4 py-2 tabular-nums text-gray-300">≥ +15</td>
-                  <td className="px-4 py-2">🟢 強気買い</td>
-                  <td className="px-4 py-2 text-gray-500">条件次第で 💎買い</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 tabular-nums text-gray-300">+5 〜 +15</td>
-                  <td className="px-4 py-2">🔵 やや強気</td>
-                  <td className="px-4 py-2 text-gray-500">—</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 tabular-nums text-gray-300">−5 〜 +5</td>
-                  <td className="px-4 py-2">🟡 中立</td>
-                  <td className="px-4 py-2 text-gray-500">⏳ 方向感なし</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 tabular-nums text-gray-300">−10 〜 −5</td>
-                  <td className="px-4 py-2">🟠 やや弱気</td>
-                  <td className="px-4 py-2 text-amber-400">⚠️ 弱気シグナル</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 tabular-nums text-gray-300">&lt; −10</td>
-                  <td className="px-4 py-2">🔴 売り検討</td>
-                  <td className="px-4 py-2 text-red-400">🔴 下降シグナル</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <h3 className="text-sm font-bold text-gray-200 mb-3">損切りライン（保有後の出口）</h3>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              各銘柄に <strong className="text-gray-300">1.5 ATR 相当の損切り価格</strong>を自動算出して表示します。
-              計算式は <code className="text-xs bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">
-              損切り = 株価 × (1 − 1.5 × 20日ボラ × √(20/252))</code>。
-              ボラが大きい銘柄ほど損切り幅は広く取り、ダマシでの早すぎる撤退を防ぎます。
-            </p>
           </div>
 
           <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-sm text-gray-400 leading-relaxed">
             <strong className="text-gray-200">地合いによる全体防御：</strong>
             日経20日リターンが閾値を下回る下落相場では、推奨銘柄数を 強気10→中立5→弱気3 へ動的に縮小。
             VIX &gt; 30 の恐怖相場ではさらに −1 し、リスクオフ判定時は 💎買いを全件見送ります。
-            <span className="text-gray-300">「買わない」も立派な売りシグナル</span>という設計です。
           </div>
         </section>
 

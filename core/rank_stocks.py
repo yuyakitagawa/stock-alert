@@ -2,7 +2,6 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
-import math
 import re
 import threading
 import pandas as pd
@@ -14,7 +13,7 @@ import requests as _requests
 from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores, classify_market_regime, get_market_index_df_cached
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_scores, classify_market_regime, get_market_index_df_cached
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
                    MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
@@ -416,10 +415,8 @@ def main():
             judgment = "🔵やや強気"
         elif net >= -5:
             judgment = "🟡中立    "
-        elif net >= -15:
-            judgment = "🟠やや弱気"
         else:
-            judgment = "🔴売り検討"
+            judgment = "🟠弱気    "
 
         volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
         p_arr = prices["Close"].values
@@ -444,10 +441,6 @@ def main():
             ret90=float(feat[3]),
             turnover_m=_turnover_m,
         )
-
-        # 損切りライン（1.5 ATR, 20日ボラベース）
-        stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
-        stop_pct  = round((stop_loss - close) / close * 100, 1)
 
         # 日経比相対リターン
         p = prices["Close"].values
@@ -478,8 +471,6 @@ def main():
             "日経比20日(%)": rel20 if rel20 is not None else "-",
             "日経比60日(%)": rel60 if rel60 is not None else "-",
             "相対強度": rs_score if rs_score is not None else "-",
-            "損切り価格(円)": stop_loss,
-            "損切り幅(%)": stop_pct,
             "PER": (fund_map.get(code) or {}).get("PER"),
             "PBR": (fund_map.get(code) or {}).get("PBR"),
             "ROE(%)": (fund_map.get(code) or {}).get("ROE"),
@@ -508,7 +499,6 @@ def main():
           f"{'PER':>6}  {'PBR':>5}  {'感情':>5}  {'Gトレ':>5}  推奨")
     print("-" * 140)
     for _, row in result_df.head(dynamic_top_n).iterrows():
-        stop_str  = f"({row['損切り幅(%)']:+.1f}%)"
         per_val = row.get("PER"); pbr_val = row.get("PBR")
         per_str = f"{per_val:>5.1f}x" if per_val is not None else "   N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
@@ -688,7 +678,6 @@ def main():
             "vol": row["ボラ(%)"],
             "recommend": row["推奨"],
             "rel20": row["日経比20日(%)"] if row["日経比20日(%)"] != "-" else None,
-            "stop_loss":    row["損切り価格(円)"],
             "per":          row.get("PER"),
             "pbr":          row.get("PBR"),
             "piotroski":    row.get("piotroski"),
