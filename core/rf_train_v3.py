@@ -71,7 +71,7 @@ def _fetch_index_df(ticker_encoded, days=2200):
     except Exception: return None
 
 def get_nikkei_df(days=2200):
-    return _fetch_index_df("%5EN225", days)   # 日経はDBキャッシュ不要（training直接使用）
+    return get_market_index_df_cached("N225", "%5EN225", days)
 
 def get_vix_df(days=2200):
     return get_market_index_df_cached("VIX",    "%5EVIX",    days)
