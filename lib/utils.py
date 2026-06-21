@@ -600,7 +600,7 @@ def recommend_from_net(net, allow_buy=True):
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
                           ret90=None, turnover_m=None):
-    """💎 買い: drop_prob<2% AND net>=16 AND Piotroski>=6/9 AND pos52<0.80
+    """💎 買い: drop_prob<2% AND net>=16 AND Piotroski>=6/9
                AND vol<=20% AND ret90>-25% AND turnover>=50M AND 業績改善（EPS>2% or BPS成長+ or データなし）"""
     has_fundamentals = (eps_surprise is not None or bps_growth is not None)
     biz_ok = (not has_fundamentals
@@ -610,7 +610,6 @@ def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
             and drop_prob is not None and drop_prob < 2.0
             and net >= 16.0
             and piotroski is not None and piotroski >= 0.67
-            and pos52 is not None and pos52 < 0.80
             and (vol is None or vol <= 20.0)
             and (ret90 is None or ret90 > -0.25)
             and (turnover_m is None or turnover_m >= 50.0)
