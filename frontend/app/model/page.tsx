@@ -200,11 +200,11 @@ export default function ModelPage() {
               <Cond>下落確率 &lt; 2%（モデルが下落をほぼ否定）</Cond>
               <Cond>ネットスコア ≥ +16（上昇 − 下落）</Cond>
               <Cond>Piotroskiスコア ≥ 6/9（財務健全性）</Cond>
-              <Cond>52週レンジ内位置 &lt; 0.45（高値圏ではない＝伸びしろ）</Cond>
+              <Cond>52週レンジ内位置 &lt; 0.65（高値圏ではない＝伸びしろ）</Cond>
               <Cond>20日ボラティリティ ≤ 20%（値動きが穏やか）</Cond>
               <Cond>90日リターン &gt; −25%（直近で崩れていない）</Cond>
-              <Cond>20日平均売買代金 ≥ 100百万円（十分な流動性）</Cond>
-              <Cond>業績改善：EPSサプライズ &gt; +2% または BPS成長 &gt; 0</Cond>
+              <Cond>20日平均売買代金 ≥ 50百万円（十分な流動性）</Cond>
+              <Cond>業績改善：EPSサプライズ &gt; +2% または BPS成長 &gt; 0（データなしは通過）</Cond>
             </ul>
           </div>
 
