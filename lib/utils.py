@@ -580,19 +580,13 @@ def get_fundamentals(code):
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
                           ret90=None, turnover_m=None):
-    """💎 買い: drop_prob<2% AND net>=16 AND Piotroski>=6/9
-               AND vol<=20% AND ret90>-25% AND turnover>=50M AND 業績改善（EPS>2% or BPS成長+ or データなし）"""
-    has_fundamentals = (eps_surprise is not None or bps_growth is not None)
-    biz_ok = (not has_fundamentals
-              or (eps_surprise is not None and eps_surprise > 2.0)
-              or (bps_growth is not None and bps_growth > 0))
+    """💎 買い: drop_prob<5% AND net>=20(4モデルアンサンブル) AND vol<=30%
+               AND ret90>-25% AND turnover>=50M"""
     if (allow_buy
-            and drop_prob is not None and drop_prob < 2.0
-            and net >= 16.0
-            and piotroski is not None and piotroski >= 0.67
-            and (vol is None or vol <= 20.0)
+            and drop_prob is not None and drop_prob < 5.0
+            and net >= 20.0
+            and (vol is None or vol <= 30.0)
             and (ret90 is None or ret90 > -0.25)
-            and (turnover_m is None or turnover_m >= 50.0)
-            and biz_ok):
+            and (turnover_m is None or turnover_m >= 50.0)):
         return "💎 買い"
     return "—"
