@@ -402,6 +402,20 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     drawdown60 = (c - rhi) / rhi
     hi52       = p[-252:].max() if len(p) >= 252 else p.max()
     from_hi52  = (c - hi52) / hi52
+
+    # 2年モメンタム (504日)
+    ret504 = (c - p[-505]) / p[-505] if len(p) >= 505 else ret90 * 2
+
+    # 60日トレンド傾き・品質
+    p60 = p[-60:] if len(p) >= 60 else p
+    t60 = np.arange(len(p60), dtype=float)
+    _coef60 = np.polyfit(t60, p60, 1)
+    _pred60 = np.polyval(_coef60, t60)
+    _ss_res60 = float(np.sum((p60 - _pred60)**2))
+    _ss_tot60 = float(np.sum((p60 - p60.mean())**2))
+    trend_r2_60 = 1.0 - _ss_res60 / _ss_tot60 if _ss_tot60 > 0 else 0.0
+    trend_slope60 = float(_coef60[0] / p60.mean() * 252) if p60.mean() > 0 else 0.0
+
     stk = 0
     for j in range(1, min(21, len(p))):
         if p[-j] < p[-j - 1]: stk += 1
@@ -514,7 +528,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             dps_growth_f, vix_feat, us5_f, us20_f,
             amihud_f, fx_beta_f, jpy5_f,
             eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f,
-            edinet_hold_f]
+            edinet_hold_f,
+            ret504, trend_slope60, trend_r2_60]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
