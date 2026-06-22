@@ -446,7 +446,7 @@ def main():
                    "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
 
     # C-1: 特徴量重要度を保存
-    # 61次元: 54基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB+1EDINET) + 7クロスセクション
+    # 64次元: 57基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB+1EDINET+3モメンタム拡張) + 7クロスセクション
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
@@ -459,6 +459,7 @@ def main():
                   "amihud_f","fx_beta_f","jpy5_f",
                   "eps_surprise_f","bps_growth_f","piotroski_f","payout_f","accruals_f",
                   "edinet_hold_f",
+                  "ret504","trend_slope60","trend_r2_60",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
                   "cs_sector_ret60"]
     imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
