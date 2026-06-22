@@ -4,7 +4,7 @@
  * ⚠️ このページの数値・条件はコードのミラー。ロジック/フィルターを変更したら
  *    必ず同じコミットでここも更新すること（CLAUDE.md §7 で厳守ルール化済み）。
  *    真実源（source of truth）:
- *    - 特徴量重要度・AUC・61次元内訳 … feature_importance.json / lib/utils.py(extract_features)
+ *    - 特徴量重要度・AUC・64次元内訳 … feature_importance.json / lib/utils.py(extract_features)
  *    - 品質フィルター            … core/rank_stocks.py passes_buy_filter
  *    - 💎買い条件               … lib/utils.py recommend_from_scores
  *    - レジーム調整              … core/rank_stocks.py
@@ -21,29 +21,29 @@ export const metadata: Metadata = {
 
 /* ── 特徴量重要度（feature_importance.json 上位／2026 再学習時点）──────── */
 const RISE_FEATURES: { name: string; imp: number; group: string }[] = [
-  { name: "USD/JPY 5日変動", imp: 15.3, group: "マクロ" },
-  { name: "季節性(sin・月周期)", imp: 12.3, group: "季節性" },
-  { name: "配当権利落ち経過日数", imp: 8.2, group: "ファンダ" },
-  { name: "S&P500 20日リターン", imp: 7.7, group: "マクロ" },
-  { name: "S&P500 5日リターン", imp: 7.1, group: "マクロ" },
-  { name: "VIX恐怖指数", imp: 6.4, group: "マクロ" },
-  { name: "日経比5日リターン", imp: 6.4, group: "相対強度" },
-  { name: "5日リターン", imp: 6.0, group: "テクニカル" },
-  { name: "モメンタム加速度", imp: 2.4, group: "テクニカル" },
-  { name: "アルファモメンタム", imp: 2.3, group: "相対強度" },
+  { name: "USD/JPY 5日変動", imp: 15.7, group: "マクロ" },
+  { name: "日経20日リターン", imp: 8.8, group: "マクロ" },
+  { name: "S&P500 20日リターン", imp: 7.4, group: "マクロ" },
+  { name: "5日リターン", imp: 6.6, group: "テクニカル" },
+  { name: "S&P500 5日リターン", imp: 6.6, group: "マクロ" },
+  { name: "VIX恐怖指数", imp: 6.1, group: "マクロ" },
+  { name: "日経比5日リターン", imp: 4.8, group: "相対強度" },
+  { name: "日経60日リターン", imp: 4.4, group: "マクロ" },
+  { name: "季節性(sin・月周期)", imp: 4.1, group: "季節性" },
+  { name: "季節性(cos・月周期)", imp: 2.6, group: "季節性" },
 ];
 
 const DROP_FEATURES: { name: string; imp: number; group: string }[] = [
-  { name: "USD/JPY 5日変動", imp: 10.6, group: "マクロ" },
-  { name: "ボラのセクター内相対", imp: 8.4, group: "断面" },
-  { name: "季節性(sin・月周期)", imp: 7.0, group: "季節性" },
-  { name: "配当権利落ち経過日数", imp: 6.6, group: "ファンダ" },
-  { name: "S&P500 20日リターン", imp: 5.5, group: "マクロ" },
-  { name: "VIX恐怖指数", imp: 5.0, group: "マクロ" },
-  { name: "20日ボラティリティ", imp: 4.2, group: "テクニカル" },
-  { name: "S&P500 5日リターン", imp: 3.9, group: "マクロ" },
-  { name: "60日ボラティリティ", imp: 3.4, group: "テクニカル" },
-  { name: "季節性(cos・月周期)", imp: 3.1, group: "季節性" },
+  { name: "日経60日リターン", imp: 11.9, group: "マクロ" },
+  { name: "日経20日リターン", imp: 10.5, group: "マクロ" },
+  { name: "USD/JPY 5日変動", imp: 9.9, group: "マクロ" },
+  { name: "ボラのセクター内相対", imp: 7.2, group: "断面" },
+  { name: "VIX恐怖指数", imp: 4.7, group: "マクロ" },
+  { name: "S&P500 20日リターン", imp: 4.2, group: "マクロ" },
+  { name: "60日ボラティリティ", imp: 3.9, group: "テクニカル" },
+  { name: "20日ボラティリティ", imp: 3.8, group: "テクニカル" },
+  { name: "S&P500 5日リターン", imp: 3.6, group: "マクロ" },
+  { name: "最大日次リターン", imp: 3.1, group: "テクニカル" },
 ];
 
 const GROUP_COLOR: Record<string, string> = {
@@ -132,9 +132,10 @@ export default function ModelPage() {
               <span className="text-blue-400">1.</span> 予測モデルの素性と重要度
             </h2>
             <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
-              モデルは <strong className="text-gray-300">61次元の特徴量（素性）</strong>を入力します。内訳は
+              モデルは <strong className="text-gray-300">64次元の特徴量（素性）</strong>を入力します。内訳は
               テクニカル32 ＋ ファンダ11 ＋ マクロ4（VIX・米5日・米20日・USD/JPY）＋ 新規8 ＋ EDINET1 ＋
-              断面ランク7。下のバーは、学習済みモデルが実際にどの素性を重視しているか（重要度）を上位10個だけ抜き出したものです。
+              モメンタム拡張3（2年モメンタム・60日トレンド傾き・トレンド品質R²）＋ 断面ランク7。
+              下のバーは、学習済みモデルが実際にどの素性を重視しているか（重要度）を上位10個だけ抜き出したものです。
             </p>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
@@ -147,20 +148,19 @@ export default function ModelPage() {
             <FeatureBars
               title="下落モデル（リスク回避）"
               features={DROP_FEATURES}
-              auc="0.766"
+              auc="0.753"
               barColor="bg-rose-500"
             />
           </div>
           <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-sm text-gray-400 leading-relaxed space-y-2">
             <p>
               <strong className="text-gray-200">読み取りポイント：</strong>
-              上昇は<span className="text-amber-400">「USD/JPY・VIX・米国株」</span>のマクロ環境と
-              <span className="text-rose-400">季節性</span>、<span className="text-violet-400">配当権利落ち</span>が上位を占めます。
+              上昇は<span className="text-amber-400">「USD/JPY・日経・VIX・米国株」</span>のマクロ環境が上位を独占。
               個別銘柄の細かいテクニカルより、<strong className="text-gray-200">地合い</strong>の比重が圧倒的に大きいのが特徴です。
             </p>
             <p>
-              下落モデルは<span className="text-amber-400">USD/JPY</span>と<span className="text-teal-400">セクター内ボラ</span>に強く反応し、
-              AUC 0.766 と上昇（0.642）より精度が高い。設計思想として
+              下落モデルは<span className="text-amber-400">日経60日/20日リターン</span>と<span className="text-teal-400">セクター内ボラ</span>に強く反応し、
+              AUC 0.753 と上昇（0.642）より精度が高い。設計思想として
               <strong className="text-gray-200">「上昇を当てる」より「下落を避ける」を優先</strong>しています。
             </p>
           </div>
