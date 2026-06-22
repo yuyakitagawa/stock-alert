@@ -117,10 +117,11 @@ export default function ModelPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-white">AI運用モデルの詳細</h1>
           <p className="text-sm text-gray-500 mt-2 leading-relaxed">
             このサイトのシグナルは、<strong className="text-gray-300">XGBoost（勾配ブースティング木）</strong>
-            による2つのモデル（上昇／下落）が出力する確率から計算しています。予測対象は
+            による4つのモデル（絶対上昇／下落＋相対α上昇／下落）が出力する確率から計算しています。予測対象は
             <strong className="text-gray-300">「63営業日（約3ヶ月）先に株価が±15%動くか」</strong>。
-            ネットスコア＝<span className="text-green-400">上昇確率</span> −{" "}
-            <span className="text-red-400">下落確率</span> を銘柄選別の中心に据えています。
+            ネットスコア＝（<span className="text-green-400">上昇確率</span> −{" "}
+            <span className="text-red-400">下落確率</span>）＋（<span className="text-green-400">α上昇確率</span> −{" "}
+            <span className="text-red-400">α下落確率</span>）を銘柄選別の中心に据えています。
           </p>
         </div>
 
@@ -193,16 +194,14 @@ export default function ModelPage() {
               ② 💎 買い 判定（下記を<span className="underline">すべて</span>満たす）
             </h3>
             <p className="text-xs text-gray-500 mb-3">
-              極めて厳しく、地合いと業績の両輪が揃った銘柄だけに付く最上位シグナル。
+              4モデルアンサンブル（絶対上昇/下落＋相対α上昇/下落）で厳選した最上位シグナル。
             </p>
             <ul className="space-y-2">
-              <Cond>下落確率 &lt; 2%（モデルが下落をほぼ否定）</Cond>
-              <Cond>ネットスコア ≥ +16（上昇 − 下落）</Cond>
-              <Cond>Piotroskiスコア ≥ 6/9（財務健全性）</Cond>
-              <Cond>20日ボラティリティ ≤ 20%（値動きが穏やか）</Cond>
+              <Cond>下落確率 &lt; 5%（モデルが下落をほぼ否定）</Cond>
+              <Cond>ネットスコア ≥ +20（4モデルアンサンブル: 絶対＋相対α）</Cond>
+              <Cond>20日ボラティリティ ≤ 30%（値動きが許容範囲内）</Cond>
               <Cond>90日リターン &gt; −25%（直近で崩れていない）</Cond>
               <Cond>20日平均売買代金 ≥ 50百万円（十分な流動性）</Cond>
-              <Cond>業績改善：EPSサプライズ &gt; +2% または BPS成長 &gt; 0（データなしは通過）</Cond>
             </ul>
           </div>
 
