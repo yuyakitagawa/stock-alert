@@ -178,16 +178,22 @@ def main():
     print(f"スクリーナー通過銘柄に上昇確率スコアをつけてランキング")
     print("=" * 55)
 
-    # モデル読み込み（上昇・下落）
+    # モデル読み込み（上昇・下落 × 絶対・相対 = 4モデル）
     rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
     drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    alpha_rise_path = os.path.join(BASE_DIR, "rf_alpha_model.pkl")
+    alpha_drop_path = os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl")
     if not os.path.exists(rise_path):
         print("ERROR: rf_model.pkl が見つかりません。先に rf_train_v3.py を実行してください")
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
+    alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
     print(f"\n上昇モデル読み込み: {rise_path}")
-    if drop_model:   print(f"下落モデル読み込み: {drop_path}")
+    if drop_model:        print(f"下落モデル読み込み: {drop_path}")
+    if alpha_rise_model:  print(f"α上昇モデル読み込み: {alpha_rise_path}")
+    if alpha_drop_model:  print(f"α下落モデル読み込み: {alpha_drop_path}")
 
     # 日経225リターン取得 + 相場レジーム判定
     print("\n日経225リターン取得中...")
@@ -391,11 +397,17 @@ def main():
         feat_aug = feats_aug[idx]
         rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
+        alpha_rise_prob = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) if alpha_rise_model else None
+        alpha_drop_prob = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) if alpha_drop_model else None
         close = float(prices["Close"].iloc[-1])
         rise_pct = round(rise_prob * 100, 1)
         drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
-        # ネットスコア = 上昇確率 − 下落確率（アプリ・メール表示の定義と一致）
-        net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
+        # 4モデルアンサンブル: net = (rise-drop) + (alpha_rise-alpha_drop)
+        abs_net = (rise_pct - drop_pct) if drop_pct is not None else rise_pct
+        alpha_net = 0.0
+        if alpha_rise_prob is not None and alpha_drop_prob is not None:
+            alpha_net = (alpha_rise_prob - alpha_drop_prob) * 100
+        net = round(abs_net + alpha_net, 1)
 
         # ボラティリティ（feat[7] = vol20, 年率換算%）
         vol = round(feat[7], 1)
