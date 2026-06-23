@@ -57,8 +57,8 @@ export interface SimSummary {
   annualizedReturnPct:number;
 }
 
-// QV戦略バックテスト結果（gen_qv_sim）から実績シミュレーションを構築する。
-// QV戦略: Piotroski>=0.67 × pos52<0.45 × 業績改善、90日保有。
+// 💎買いシグナルの実績シミュレーションを構築する（gen_qv_sim テーブルから取得）。
+// 💎条件: drop<5% × net≥20 × vol≤30% × ret90>-25% × 流動性≥50M、最大90日保有。
 export async function fetchSimulation(): Promise<{
   positions: SimPosition[];
   summary: SimSummary;
