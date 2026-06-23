@@ -19,6 +19,7 @@
 - **Hard Filters (Don't Touch)**:
   - `down_streak > 3日` (0.15換算): 除外
   - `drawdown60 < -15%`: 除外
+- **βフィルター**: 日経強気時(N225>20SMA)はβ≥0.4の銘柄のみ💎対象。低β(ディフェンシブ)は降格。
 - **Note**: AUC 0.642 (上昇) / 0.766 (下落)。下落予測の精度を重視せよ。
 
 ## 3. Operations (Commands)
