@@ -20,6 +20,8 @@ from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
+BULL_SMA_PERIOD  = 20     # 強気判定に使うSMA期間（日）
+BETA_MIN_BULL    = 0.4    # 強気相場時の最低β（日経との連動性）
 
 # 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
 SECTOR_TO_ETF = {
@@ -172,6 +174,30 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
 
 
 
+def _is_nk225_bull(nk_closes, sma_period=BULL_SMA_PERIOD):
+    """N225終値系列から短期SMAで強気判定。N225 > SMA(period) なら True。"""
+    if nk_closes is None or len(nk_closes) < sma_period:
+        return False
+    return float(nk_closes[-1]) >= float(np.mean(nk_closes[-sma_period:]))
+
+
+def _calc_nk225_beta(stock_prices, nk_closes, window=60):
+    """直近window日の株価 vs N225のβ値を計算。"""
+    if stock_prices is None or nk_closes is None:
+        return None
+    s = stock_prices[-window-1:] if len(stock_prices) >= window+1 else stock_prices
+    n = nk_closes[-window-1:] if len(nk_closes) >= window+1 else nk_closes
+    min_len = min(len(s), len(n))
+    if min_len < 21:
+        return None
+    s_ret = np.diff(s[-min_len:]) / s[-min_len:-1]
+    n_ret = np.diff(n[-min_len:]) / n[-min_len:-1]
+    var_n = np.var(n_ret)
+    if var_n == 0:
+        return None
+    return float(np.cov(s_ret, n_ret)[0][1] / var_n)
+
+
 def main():
     print("=" * 55)
     print("スクリーナー × RF ランキング  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -252,10 +278,23 @@ def main():
         dynamic_top_n = max(1, dynamic_top_n - 1)
         print(f"  ⚠️ 高VIX({vix_val:.1f} > 30): 推奨銘柄数を {dynamic_top_n + 1}→{dynamic_top_n}に縮小")
 
+    # N225終値系列を取得して強気判定（βフィルター用）
+    _nk225_closes = None
+    _nk225_bull = False
+    try:
+        _nk_df = get_market_index_df_cached("N225", "%5EN225", 400)
+        if _nk_df is not None and len(_nk_df) >= BULL_SMA_PERIOD:
+            _nk225_closes = _nk_df["Close"].values
+            _nk225_bull = _is_nk225_bull(_nk225_closes, BULL_SMA_PERIOD)
+    except Exception:
+        pass
+
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
         regime_label = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
+        bull_label = "強気(SMA20超)" if _nk225_bull else "非強気"
         print(f"  相場レジーム: {regime_label}  →  推奨銘柄数: {dynamic_top_n}銘柄")
+        print(f"  βフィルター: {bull_label} → {'β>={:.1f}の銘柄のみ💎対象'.format(BETA_MIN_BULL) if _nk225_bull else 'フィルターなし'}")
         if is_bear:
             print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）")
     else:
@@ -453,6 +492,13 @@ def main():
             ret90=float(feat[3]),
             turnover_m=_turnover_m,
         )
+
+        # βフィルター: 日経強気時に低β銘柄の💎買いを降格
+        if recommend == "💎 買い" and _nk225_bull and _nk225_closes is not None:
+            p_arr_beta = prices["Close"].values
+            beta = _calc_nk225_beta(p_arr_beta, _nk225_closes)
+            if beta is not None and beta < BETA_MIN_BULL:
+                recommend = "⏳ 方向感なし"
 
         # 日経比相対リターン
         p = prices["Close"].values
