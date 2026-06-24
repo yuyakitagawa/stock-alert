@@ -90,6 +90,10 @@ jobs:
       - name: Step 4 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
+      - name: Step 4s - 💎シミュレーション更新（gen_qv_sim）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/update_gem_sim.py --reset
+
       - name: Step 4a - 会社説明をAI生成（未生成の銘柄を差分補完）
         continue-on-error: true
         run: cd ~/stock-alert && python web/generate_descriptions.py --limit 400
