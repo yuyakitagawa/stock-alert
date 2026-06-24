@@ -66,7 +66,7 @@ export async function fetchSimulation(): Promise<{
   const [qvRows, latestDate] = await Promise.all([
     (async () => {
       const res = await fetch(
-        sbUrl(`gen_qv_sim?order=entry_date.asc&limit=200`),
+        sbUrl(`gen_qv_sim?entry_date=gte.${SIM_START}&order=entry_date.asc&limit=200`),
         { headers: anonHeaders(), cache: "no-store" }
       );
       if (!res.ok) return [] as QvRow[];
