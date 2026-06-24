@@ -14,6 +14,19 @@ export const UI = {
     searchPlaceholder: "銘柄名・コードで検索",
     chartPeriods: { "1M": "1ヶ月", "3M": "3ヶ月", "6M": "6ヶ月", "1Y": "1年" },
     loading: "読み込み中...",
+    pageTitle: "日本株 AIシグナル",
+    aiScoreAt: (d: string) => `${d} 時点のAIスコア`,
+    fetching: "データを取得中…",
+    noData: "本日のデータはまだありません",
+    noDataSub: "平日16時以降に更新されます",
+    featured: "注目銘柄",
+    top10: "Top 10",
+    viewAll: "全銘柄を見る →",
+    gemBuyDesc: (buyCount: number, totalCount: string) =>
+      `💎 買い条件（下落確率<5% × ネット≥20 × ボラ≤30% × 90日リターン>−25%）の該当 ${buyCount} 銘柄中 上位10件。全 ${totalCount} 銘柄中。`,
+    noGemDesc: (totalCount: string) =>
+      `本日は💎買い条件の該当銘柄なし。ネットスコア上位10銘柄を表示。全 ${totalCount} 銘柄中。`,
+    nikkeiRecommend: "日経225が上昇基調のため、個別株より日経225連動ETF（1321等）の検討を推奨します。",
   },
   en: {
     top: "TOP",
@@ -28,5 +41,18 @@ export const UI = {
     searchPlaceholder: "Search by name or code",
     chartPeriods: { "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1Y" },
     loading: "Loading...",
+    pageTitle: "Japan Stock AI Signals",
+    aiScoreAt: (d: string) => `AI scores as of ${d}`,
+    fetching: "Fetching data…",
+    noData: "No data available today",
+    noDataSub: "Updated after 4 PM JST on weekdays",
+    featured: "Featured Stocks",
+    top10: "Top 10",
+    viewAll: "View All →",
+    gemBuyDesc: (buyCount: number, totalCount: string) =>
+      `${buyCount} stocks meeting 💎 Buy criteria (drop<5%, net≥20, vol≤30%, 90d return>-25%). Top 10 shown out of ${totalCount} total.`,
+    noGemDesc: (totalCount: string) =>
+      `No stocks meet 💎 Buy criteria today. Showing top 10 by net score out of ${totalCount} total.`,
+    nikkeiRecommend: "Nikkei 225 is trending up — consider Nikkei 225 ETFs (e.g. 1321) over individual stocks.",
   },
 } as const;
