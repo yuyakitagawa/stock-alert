@@ -2,7 +2,7 @@ import { anonHeaders, sbUrl } from "./supabase";
 import { fetchLatestDate } from "./data";
 
 const SHARES = 100;
-const SIM_START = "2026-01-01"; // シミュレーション開始日（固定）
+const SIM_START = "2025-01-06"; // シミュレーション開始日（最初の💎エントリー日）
 
 interface QvRow {
   id:           number;
