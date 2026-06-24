@@ -1,8 +1,6 @@
 export type Recommend =
   | "💎 買い"
-  | "方向感なし"
-  | "弱気シグナル"
-  | "下降シグナル"
+  | "—"
   | string;
 
 export interface Ranking {
@@ -17,7 +15,6 @@ export interface Ranking {
   vol:          number;
   recommend:    Recommend;
   rel20:        number;
-  stop_loss:    number | null;
   per:          number | null;
   pbr:          number | null;
   piotroski:    number | null;

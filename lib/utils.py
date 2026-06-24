@@ -160,26 +160,14 @@ def get_market_index_df_cached(cache_key, ticker_encoded, days=2200):
 
 @functools.lru_cache(maxsize=1)
 def get_nikkei_returns():
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
-           f"?interval=1d&period1={int((datetime.now()-timedelta(days=400)).timestamp())}"
-           f"&period2={int(datetime.now().timestamp())}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None, None, None
-        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        closes = [c for c in closes if c is not None]
-        if len(closes) < 61:
-            return None, None, None
-        p = closes
-        r5  = round((p[-1]-p[-6]) /p[-6] *100, 2) if len(p)>=6  else 0
-        r20 = round((p[-1]-p[-21])/p[-21]*100, 2) if len(p)>=21 else 0
-        r60 = round((p[-1]-p[-61])/p[-61]*100, 2) if len(p)>=61 else 0
-        return r5, r20, r60
-    except Exception:
+    df = get_market_index_df_cached("N225", "%5EN225", 400)
+    if df is None or len(df) < 61:
         return None, None, None
+    p = df["Close"].values
+    r5  = round((p[-1]-p[-6]) /p[-6] *100, 2) if len(p)>=6  else 0
+    r20 = round((p[-1]-p[-21])/p[-21]*100, 2) if len(p)>=21 else 0
+    r60 = round((p[-1]-p[-61])/p[-61]*100, 2) if len(p)>=61 else 0
+    return r5, r20, r60
 
 
 def classify_market_regime(nk_prices):
@@ -376,7 +364,7 @@ def _days_to_nearest_event(from_date, months, day=25):
 
 
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
-    """53次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11 + マクロ拡張4 + 新規IB8
+    """54次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11 + マクロ拡張4 + 新規IB8 + EDINET1
     fundamentals dict keys (all optional):
       per, pbr, roe, days_to_earnings, days_since_div_ex,
       month（カレンダー月 1-12），div_yield（配当利回り%）
@@ -385,6 +373,7 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
       fx_beta（USD/JPY 60日ベータ），jpy5（USD/JPY 5日リターン%）
       eps_surprise（EPS実績-線形予測乖離），bps_growth（BPS前年比）
       piotroski（簡易Fスコア 0-1），payout（配当性向 DPS/EPS），accruals（BSアクルーアル）
+      edinet_holding（直近90日の大量保有報告 保有割合%）
     """
     if len(p) < 91 or p[-1] == 0:
         return None
@@ -413,6 +402,20 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     drawdown60 = (c - rhi) / rhi
     hi52       = p[-252:].max() if len(p) >= 252 else p.max()
     from_hi52  = (c - hi52) / hi52
+
+    # 2年モメンタム (504日)
+    ret504 = (c - p[-505]) / p[-505] if len(p) >= 505 else ret90 * 2
+
+    # 60日トレンド傾き・品質
+    p60 = p[-60:] if len(p) >= 60 else p
+    t60 = np.arange(len(p60), dtype=float)
+    _coef60 = np.polyfit(t60, p60, 1)
+    _pred60 = np.polyval(_coef60, t60)
+    _ss_res60 = float(np.sum((p60 - _pred60)**2))
+    _ss_tot60 = float(np.sum((p60 - p60.mean())**2))
+    trend_r2_60 = 1.0 - _ss_res60 / _ss_tot60 if _ss_tot60 > 0 else 0.0
+    trend_slope60 = float(_coef60[0] / p60.mean() * 252) if p60.mean() > 0 else 0.0
+
     stk = 0
     for j in range(1, min(21, len(p))):
         if p[-j] < p[-j - 1]: stk += 1
@@ -470,6 +473,7 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _pio   = fd.get('piotroski')
     _pyout = fd.get('payout')
     _accr  = fd.get('accruals')
+    _ehold = fd.get('edinet_holding')
 
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
@@ -513,6 +517,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     payout_f      = float(np.clip(_pyout,          0.0, 1.5)) if _pyout is not None else 0.5
     # アクルーアル: J-Quants Sloan正確版 (NP-CFO)/TA×5 or BPSプロキシ（フォールバック）
     accruals_f    = float(np.clip(_accr,          -0.3, 0.5)) if _accr  is not None else 0.0
+    # EDINET大量保有報告: 直近90日以内の保有割合（0=なし, 0-1正規化）
+    edinet_hold_f = float(np.clip(_ehold / 50.0,   0.0, 1.0)) if _ehold is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
@@ -521,7 +527,9 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             sin_month, cos_month, div_yield_f, eps_growth_f,
             dps_growth_f, vix_feat, us5_f, us20_f,
             amihud_f, fx_beta_f, jpy5_f,
-            eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f]
+            eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f,
+            edinet_hold_f,
+            ret504, trend_slope60, trend_r2_60]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
@@ -584,30 +592,16 @@ def get_fundamentals(code):
 
 # ── 推奨ラベル（rank_stocks 共通） ───────────────────────────
 
-def recommend_from_net(net, allow_buy=True):
-    if net < -10:
-        return "🔴 下降シグナル"
-    if net < -5:
-        return "⚠️ 弱気シグナル"
-    return "⏳ 方向感なし"
-
-
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
                           ret90=None, turnover_m=None):
-    """💎 買い: drop_prob<2% AND net>=16 AND Piotroski>=6/9 AND pos52<0.45
-               AND vol<=20% AND ret90>-25% AND turnover>=100M AND 業績改善（EPS>2% or BPS成長+）"""
+    """💎 買い: drop_prob<5% AND net>=20(4モデルアンサンブル) AND vol<=30%
+               AND ret90>-25% AND turnover>=50M"""
     if (allow_buy
-            and drop_prob is not None and drop_prob < 2.0
-            and net >= 16.0
-            and piotroski is not None and piotroski >= 0.67
-            and pos52 is not None and pos52 < 0.45
-            and (vol is None or vol <= 20.0)
+            and drop_prob is not None and drop_prob < 5.0
+            and net >= 20.0
+            and (vol is None or vol <= 30.0)
             and (ret90 is None or ret90 > -0.25)
-            and (turnover_m is None or turnover_m >= 100.0)
-            and (
-                (eps_surprise is not None and eps_surprise > 2.0)
-                or (bps_growth is not None and bps_growth > 0)
-            )):
+            and (turnover_m is None or turnover_m >= 50.0)):
         return "💎 買い"
-    return recommend_from_net(net, allow_buy=allow_buy)
+    return "—"

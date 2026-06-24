@@ -62,7 +62,6 @@ def get_all_yutai():
 # ── daily_ranking (→ gen_rankings) ────────────────────────────────────────
 
 def save_daily_ranking(date_str, rows):
-    """rows: list of dicts with keys: code, name, close, rise_prob, drop_prob, net, vol, recommend, rel20, stop_loss, per, pbr, piotroski, bps_growth, eps_surprise, pos52"""
     sb_rows = []
     for r in rows:
         sb_rows.append({
@@ -76,7 +75,6 @@ def save_daily_ranking(date_str, rows):
             "vol": r.get("vol"),
             "recommend": r.get("recommend"),
             "rel20": r.get("rel20"),
-            "stop_loss": r.get("stop_loss"),
             "per": r.get("per"),
             "pbr": r.get("pbr"),
             "piotroski": r.get("piotroski"),
@@ -216,7 +214,7 @@ def upsert_edinet_large_holdings(records: list):
         if did in seen:
             continue
         seen.add(did)
-        sb_rows.append({
+        row = {
             "doc_id": did,
             "filer_name": r.get("filer_name"),
             "doc_type_code": r.get("doc_type_code"),
@@ -226,7 +224,10 @@ def upsert_edinet_large_holdings(records: list):
             "holding_ratio": r.get("holding_ratio"),
             "issuer_code": r.get("issuer_code"),
             "fetched_date": today_str,
-        })
+        }
+        if r.get("issuer_name"):
+            row["issuer_name"] = r["issuer_name"]
+        sb_rows.append(row)
     sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 
@@ -238,6 +239,12 @@ def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
         code_list = ",".join(str(c) for c in codes)
         q += f"&issuer_code=in.({code_list})"
     return sb.select("edinet_large_holdings", q)
+
+
+def get_edinet_all():
+    """学習用: edinet_large_holdings 全件を返す。"""
+    return sb.select("edinet_large_holdings",
+                     "order=submit_date.desc&select=issuer_code,submit_date,disc_date,holding_ratio")
 
 
 # ── yahoo_market_index ────────────────────────────────────────────────────

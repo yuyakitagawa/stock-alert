@@ -32,7 +32,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
         <p className="text-xs text-gray-600 leading-relaxed">
-          QV戦略（Piotroski財務健全度0.67以上 × 52週安値圏 × 業績改善）でエントリーし、最大90日保有または条件消失で売却した場合の仮想成績です。
+          💎買いシグナル（下落確率&lt;5% × ネットスコア≥20 × ボラ≤30% × 90日リターン&gt;−25%）でエントリーし、最大90日保有または条件消失で売却した場合の仮想成績です。
           手数料・税金は含みません。
         </p>
       </div>

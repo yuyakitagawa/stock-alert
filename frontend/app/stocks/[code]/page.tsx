@@ -177,19 +177,6 @@ export default async function StockDetailPage({ params }: Props) {
           </div>
         </section>
 
-        {/* Stop loss */}
-        {ranking.stop_loss != null && (
-          <section className="bg-red-950/20 border border-red-900/30 rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <span className="text-red-400 font-bold text-sm uppercase tracking-wide">損切りライン</span>
-              <span className="font-mono text-white font-bold text-lg">
-                ¥{ranking.stop_loss.toLocaleString()}
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1.5">{GLOSSARY.stop_loss.short}</p>
-          </section>
-        )}
-
         {/* AI Analysis */}
         {ai ? (
           <section className="space-y-4">
