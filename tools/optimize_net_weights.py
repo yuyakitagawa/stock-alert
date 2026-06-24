@@ -64,8 +64,8 @@ for code, rows in price_cache.items():
 trading_days = sorted(d for d in all_dates if START <= d <= END)
 print(f"対象営業日: {len(trading_days)} ({trading_days[0]} ~ {trading_days[-1]})")
 
-# 営業日を2週間おきにサンプリング（計算コスト削減）
-SAMPLE_INTERVAL = 14
+# 営業日を1週間おきにサンプリング
+SAMPLE_INTERVAL = 7
 sample_days = trading_days[::SAMPLE_INTERVAL]
 print(f"サンプル日: {len(sample_days)} 日（{SAMPLE_INTERVAL}日おき）")
 
@@ -219,8 +219,8 @@ def simulate_with_weights(weights, return_details=False):
         if di - last_entry_idx >= INTERVAL - 1:
             positions.clear()
 
-    if not trades:
-        return (0.0, 0, 0.0, 0) if return_details else 999.0
+    if not trades or len(trades) < 5:
+        return (0.0, len(trades), 0.0, 0) if return_details else 999.0
 
     avg_ret = np.mean(trades)
     win_rate = sum(1 for t in trades if t > 0) / len(trades) * 100
@@ -239,7 +239,7 @@ print(f"現行 (1,1,1,1): 平均={current[0]:+.2f}%, 件数={current[1]}, 勝率
 print("\nグリッドサーチ中...")
 best_score = 999
 best_w = [1, 1, 1, 1]
-candidates = [0.0, 0.5, 1.0, 1.5, 2.0]
+candidates = [0.0, 0.3, 0.5, 0.7, 1.0, 1.3, 1.5, 2.0]
 
 count = 0
 total = len(candidates) ** 4
