@@ -2,7 +2,6 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
-import math
 import re
 import threading
 import pandas as pd
@@ -14,13 +13,15 @@ import requests as _requests
 from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_net, recommend_from_scores, classify_market_regime, get_market_index_df_cached
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_scores, classify_market_regime, get_market_index_df_cached
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
                    MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
+BULL_SMA_PERIOD  = 20     # 強気判定に使うSMA期間（日）
+BETA_MIN_BULL    = 0.4    # 強気相場時の最低β（日経との連動性）
 
 # 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
 SECTOR_TO_ETF = {
@@ -173,22 +174,56 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
 
 
 
+
+
+def _is_nk225_bull(nk_closes, sma_period=BULL_SMA_PERIOD):
+    """N225終値系列から短期SMAで強気判定。N225 > SMA(period) なら True。"""
+    if nk_closes is None or len(nk_closes) < sma_period:
+        return False
+    return float(nk_closes[-1]) >= float(np.mean(nk_closes[-sma_period:]))
+
+
+def _calc_nk225_beta(stock_prices, nk_closes, window=60):
+    """直近window日の株価 vs N225のβ値を計算。"""
+    if stock_prices is None or nk_closes is None:
+        return None
+    s = stock_prices[-window-1:] if len(stock_prices) >= window+1 else stock_prices
+    n = nk_closes[-window-1:] if len(nk_closes) >= window+1 else nk_closes
+    min_len = min(len(s), len(n))
+    if min_len < 21:
+        return None
+    s_ret = np.diff(s[-min_len:]) / s[-min_len:-1]
+    n_ret = np.diff(n[-min_len:]) / n[-min_len:-1]
+    var_n = np.var(n_ret)
+    if var_n == 0:
+        return None
+    return float(np.cov(s_ret, n_ret)[0][1] / var_n)
+
+
+
+
 def main():
     print("=" * 55)
     print("スクリーナー × RF ランキング  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
     print(f"スクリーナー通過銘柄に上昇確率スコアをつけてランキング")
     print("=" * 55)
 
-    # モデル読み込み（上昇・下落）
+    # モデル読み込み（上昇・下落 × 絶対・相対 = 4モデル）
     rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
     drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    alpha_rise_path = os.path.join(BASE_DIR, "rf_alpha_model.pkl")
+    alpha_drop_path = os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl")
     if not os.path.exists(rise_path):
         print("ERROR: rf_model.pkl が見つかりません。先に rf_train_v3.py を実行してください")
         return
     rise_model = joblib.load(rise_path)
     drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
+    alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
     print(f"\n上昇モデル読み込み: {rise_path}")
-    if drop_model:   print(f"下落モデル読み込み: {drop_path}")
+    if drop_model:        print(f"下落モデル読み込み: {drop_path}")
+    if alpha_rise_model:  print(f"α上昇モデル読み込み: {alpha_rise_path}")
+    if alpha_drop_model:  print(f"α下落モデル読み込み: {alpha_drop_path}")
 
     # 日経225リターン取得 + 相場レジーム判定
     print("\n日経225リターン取得中...")
@@ -247,10 +282,23 @@ def main():
         dynamic_top_n = max(1, dynamic_top_n - 1)
         print(f"  ⚠️ 高VIX({vix_val:.1f} > 30): 推奨銘柄数を {dynamic_top_n + 1}→{dynamic_top_n}に縮小")
 
+    # N225終値系列を取得して強気判定（βフィルター用）
+    _nk225_closes = None
+    _nk225_bull = False
+    try:
+        _nk_df = get_market_index_df_cached("N225", "%5EN225", 400)
+        if _nk_df is not None and len(_nk_df) >= BULL_SMA_PERIOD:
+            _nk225_closes = _nk_df["Close"].values
+            _nk225_bull = _is_nk225_bull(_nk225_closes, BULL_SMA_PERIOD)
+    except Exception:
+        pass
+
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
         regime_label = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
+        bull_label = "強気(SMA20超)" if _nk225_bull else "非強気"
         print(f"  相場レジーム: {regime_label}  →  推奨銘柄数: {dynamic_top_n}銘柄")
+        print(f"  βフィルター: {bull_label} → {'β>={:.1f}の銘柄のみ💎対象'.format(BETA_MIN_BULL) if _nk225_bull else 'フィルターなし'}")
         if is_bear:
             print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）")
     else:
@@ -392,11 +440,17 @@ def main():
         feat_aug = feats_aug[idx]
         rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
+        alpha_rise_prob = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) if alpha_rise_model else None
+        alpha_drop_prob = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) if alpha_drop_model else None
         close = float(prices["Close"].iloc[-1])
         rise_pct = round(rise_prob * 100, 1)
         drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
-        # ネットスコア = 上昇確率 − 下落確率（アプリ・メール表示の定義と一致）
-        net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
+        # 4モデルアンサンブル: net = (rise-drop) + (alpha_rise-alpha_drop)
+        abs_net = (rise_pct - drop_pct) if drop_pct is not None else rise_pct
+        alpha_net = 0.0
+        if alpha_rise_prob is not None and alpha_drop_prob is not None:
+            alpha_net = (alpha_rise_prob - alpha_drop_prob) * 100
+        net = round(abs_net + alpha_net, 1)
 
         # ボラティリティ（feat[7] = vol20, 年率換算%）
         vol = round(feat[7], 1)
@@ -416,10 +470,8 @@ def main():
             judgment = "🔵やや強気"
         elif net >= -5:
             judgment = "🟡中立    "
-        elif net >= -15:
-            judgment = "🟠やや弱気"
         else:
-            judgment = "🔴売り検討"
+            judgment = "🟠弱気    "
 
         volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
         p_arr = prices["Close"].values
@@ -445,9 +497,12 @@ def main():
             turnover_m=_turnover_m,
         )
 
-        # 損切りライン（1.5 ATR, 20日ボラベース）
-        stop_loss = round(close * (1 - 1.5 * vol / 100 * math.sqrt(20 / 252)), 0)
-        stop_pct  = round((stop_loss - close) / close * 100, 1)
+        # βフィルター: 日経強気時に低β銘柄の💎買いを降格
+        if recommend == "💎 買い" and _nk225_bull and _nk225_closes is not None:
+            p_arr_beta = prices["Close"].values
+            beta = _calc_nk225_beta(p_arr_beta, _nk225_closes)
+            if beta is not None and beta < BETA_MIN_BULL:
+                recommend = "⏳ 方向感なし"
 
         # 日経比相対リターン
         p = prices["Close"].values
@@ -478,8 +533,6 @@ def main():
             "日経比20日(%)": rel20 if rel20 is not None else "-",
             "日経比60日(%)": rel60 if rel60 is not None else "-",
             "相対強度": rs_score if rs_score is not None else "-",
-            "損切り価格(円)": stop_loss,
-            "損切り幅(%)": stop_pct,
             "PER": (fund_map.get(code) or {}).get("PER"),
             "PBR": (fund_map.get(code) or {}).get("PBR"),
             "ROE(%)": (fund_map.get(code) or {}).get("ROE"),
@@ -508,7 +561,6 @@ def main():
           f"{'PER':>6}  {'PBR':>5}  {'感情':>5}  {'Gトレ':>5}  推奨")
     print("-" * 140)
     for _, row in result_df.head(dynamic_top_n).iterrows():
-        stop_str  = f"({row['損切り幅(%)']:+.1f}%)"
         per_val = row.get("PER"); pbr_val = row.get("PBR")
         per_str = f"{per_val:>5.1f}x" if per_val is not None else "   N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
@@ -688,7 +740,6 @@ def main():
             "vol": row["ボラ(%)"],
             "recommend": row["推奨"],
             "rel20": row["日経比20日(%)"] if row["日経比20日(%)"] != "-" else None,
-            "stop_loss":    row["損切り価格(円)"],
             "per":          row.get("PER"),
             "pbr":          row.get("PBR"),
             "piotroski":    row.get("piotroski"),

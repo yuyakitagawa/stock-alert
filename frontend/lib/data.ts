@@ -21,7 +21,6 @@ async function sbFetch(path: string, init: RequestInit): Promise<Response | null
 
 const RECOMMEND_REMAP: Record<string, string> = {
   "高値警戒": "方向感なし",
-  "売り検討": "下降シグナル",
 };
 function remapRecommend(r: Ranking): Ranking {
   const mapped = RECOMMEND_REMAP[r.recommend];

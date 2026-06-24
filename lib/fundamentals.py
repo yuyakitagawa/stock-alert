@@ -104,34 +104,102 @@ def get_pit_fundamentals(code, target_date):
     days_since_div  = _days_since_last_ex(target_date, div_months)
     days_since_yutai = _days_since_last_ex(target_date, [ym]) if ym else None
 
-    # Sloanアクルーアル（J-Quants CFO/NP/TAから正確版）
-    accruals = None
+    eps = bps = roe = dps = None
+    eps_growth = bps_growth = eps_surprise = piotroski_score = payout = accruals = dps_growth = None
+    has_jq = False
+
     try:
-        from lib.db import get_jquants_fin_history_fy
-        jq_fy = get_jquants_fin_history_fy(str(code), target_date.isoformat(), n=3)
-        if len(jq_fy) >= 1:
+        from lib.db import get_jquants_fin_history, get_jquants_fin_history_fy
+        td_iso = target_date.isoformat()
+
+        rows = get_jquants_fin_history(code, td_iso, n=4)
+        if rows:
+            has_jq = True
+            latest = rows[0]
+            eps = latest.get("eps")
+            bps = _jq_split_safe_bps(code, target_date)
+            dps = latest.get("div_ann")
+            pr = latest.get("payout_ratio")
+            if pr is not None:
+                payout = pr / 100.0 if pr > 1.5 else pr
+
+            np_v = latest.get("np")
+            eq = latest.get("equity")
+            if np_v is not None and eq and eq > 0:
+                roe = (np_v / eq) * 100
+
+            # EPS surprise: actual NP vs forecast NP
+            fnp = latest.get("fnp")
+            if np_v is not None and fnp is not None and fnp != 0:
+                eps_surprise = (np_v - fnp) / abs(fnp)
+
+        jq_fy = get_jquants_fin_history_fy(code, td_iso, n=3)
+        if len(jq_fy) >= 2:
+            has_jq = True
+            curr, prev = jq_fy[0], jq_fy[1]
+
+            curr_eps, prev_eps = curr.get("eps"), prev.get("eps")
+            if curr_eps is not None and prev_eps is not None and prev_eps != 0:
+                eps_growth = (curr_eps - prev_eps) / abs(prev_eps)
+
+            curr_bps, prev_bps = curr.get("bps"), prev.get("bps")
+            if curr_bps is not None and prev_bps is not None and prev_bps > 0:
+                bps_growth = (curr_bps - prev_bps) / prev_bps
+
+            curr_div, prev_div = curr.get("div_ann"), prev.get("div_ann")
+            if curr_div is not None and prev_div is not None and prev_div > 0:
+                dps_growth = (curr_div - prev_div) / prev_div
+
+            # Piotroski F-Score (7 computable items, normalized to 0-1)
+            score = 0
+            items = 0
+            if curr.get("np") is not None and curr.get("ta") and curr["ta"] > 0:
+                items += 1
+                if curr["np"] / curr["ta"] > 0: score += 1
+            if curr.get("cfo") is not None:
+                items += 1
+                if curr["cfo"] > 0: score += 1
+            if (curr.get("np") and curr.get("ta") and curr["ta"] > 0 and
+                prev.get("np") and prev.get("ta") and prev["ta"] > 0):
+                items += 1
+                if curr["np"]/curr["ta"] > prev["np"]/prev["ta"]: score += 1
+            if curr.get("cfo") is not None and curr.get("np") is not None:
+                items += 1
+                if curr["cfo"] > curr["np"]: score += 1
+            if (curr.get("op") and curr.get("sales") and curr["sales"] > 0 and
+                prev.get("op") and prev.get("sales") and prev["sales"] > 0):
+                items += 1
+                if curr["op"]/curr["sales"] > prev["op"]/prev["sales"]: score += 1
+            if (curr.get("sales") and curr.get("ta") and curr["ta"] > 0 and
+                prev.get("sales") and prev.get("ta") and prev["ta"] > 0):
+                items += 1
+                if curr["sales"]/curr["ta"] > prev["sales"]/prev["ta"]: score += 1
+            if items >= 3:
+                piotroski_score = score / items
+
+        # Sloan accruals
+        if jq_fy:
             lq = jq_fy[0]
             np_v, cfo_v, ta_v = lq.get("np"), lq.get("cfo"), lq.get("ta")
             if np_v is not None and cfo_v is not None and ta_v and abs(ta_v) > 0:
-                sloan_accruals = (np_v - cfo_v) / ta_v
-                accruals = sloan_accruals * 5.0
+                accruals = ((np_v - cfo_v) / ta_v) * 5.0
     except Exception:
         pass
 
-    if ym is None and accruals is None:
+    if not has_jq and ym is None:
         return None
     return {
-        "eps": None, "bps": None, "roe": None, "dps": None,
+        "eps": eps, "bps": bps, "roe": roe, "dps": dps,
         "days_to_earnings":    None,
         "days_since_div_ex":   days_since_div,
         "days_since_yutai_ex": days_since_yutai,
-        "eps_growth":          None,
+        "eps_growth":          eps_growth,
         "roe_trend":           None,
-        "dps_growth":          None,
-        "eps_surprise":        None,
-        "bps_growth":          None,
-        "piotroski":           None,
-        "payout":              None,
+        "dps_growth":          dps_growth,
+        "eps_surprise":        eps_surprise,
+        "bps_growth":          bps_growth,
+        "piotroski":           piotroski_score,
+        "payout":              payout,
         "accruals":            accruals,
     }
 

@@ -48,7 +48,7 @@ export default async function HomePage() {
     }))
     .sort((a, b) => b.avgReturn - a.avgReturn);
 
-  // 注目銘柄 = 「💎 買い」条件（drop<1%+net≥20+QV）の上位10銘柄
+  // 注目銘柄 = 「💎 買い」条件（drop<5%+net≥20+vol≤30%+ret90>-25%+流動性）の上位10銘柄
   const buyRows = rows.filter(r => r.recommend === "💎 買い");
   const featured = (buyRows.length > 0 ? buyRows : rows).slice(0, 10);
   const dateLabel = formatDate(date);
@@ -90,7 +90,7 @@ export default async function HomePage() {
               </div>
               <p className="text-xs text-gray-600 mb-4">
                 {buyRows.length > 0
-                  ? <>💎 買い条件（下落確率&lt;2% × ネット≥16% × 財務健全 × 株価低迷 × 業績改善）の該当 <span className="text-green-400">{buyRows.length}</span> 銘柄中 上位10件。全 {rows.length.toLocaleString()} 銘柄中。</>
+                  ? <>💎 買い条件（下落確率&lt;5% × ネット≥20 × ボラ≤30% × 90日リターン&gt;−25%）の該当 <span className="text-green-400">{buyRows.length}</span> 銘柄中 上位10件。全 {rows.length.toLocaleString()} 銘柄中。</>
                   : <>本日は💎買い条件の該当銘柄なし。ネットスコア上位10銘柄を表示。全 {rows.length.toLocaleString()} 銘柄中。</>
                 }
               </p>

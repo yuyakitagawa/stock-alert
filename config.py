@@ -22,12 +22,6 @@ MARKET_TIMING_20D_THRESH = -3.0   # 日経20日リターンがこれ以下でも
 FORECAST        = 63            # 予測ホライズン（営業日）
 RISE_THRESHOLD  = 15.0          # 上昇判定の閾値（%）
 MAX_BUY_VOL20   = 22.0          # 直近20日ボラ上限（BT: vol<22%で勝率77%+9.4%維持、高vol除外）
-# 保有株売りシグナル閾値（下降シグナル=net<-10に統一。バックテスト75%勝率+9.4%）
-SELL_DAYS_MID           =  3    # 使用継続（将来拡張用）
-SELL_DAYS_LATE          = 63    # 使用継続（将来拡張用）
-NET_SELL_THRESHOLD_MID  = -10.0  # 下降シグナル基準（net<-10）
-NET_SELL_THRESHOLD_LATE = -10.0  # 同上
-
 # ── スクリーナー条件（screener.py / backtest.py / rf_train_v3.py と同値に保つ） ──
 SCREENER_MOM_3M_MIN   =  8.0   # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
 SCREENER_MOM_3M_MAX   = 30.0
