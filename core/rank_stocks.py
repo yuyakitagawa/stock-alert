@@ -174,6 +174,8 @@ def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None
 
 
 
+
+
 def _is_nk225_bull(nk_closes, sma_period=BULL_SMA_PERIOD):
     """N225終値系列から短期SMAで強気判定。N225 > SMA(period) なら True。"""
     if nk_closes is None or len(nk_closes) < sma_period:
@@ -196,6 +198,8 @@ def _calc_nk225_beta(stock_prices, nk_closes, window=60):
     if var_n == 0:
         return None
     return float(np.cov(s_ret, n_ret)[0][1] / var_n)
+
+
 
 
 def main():
