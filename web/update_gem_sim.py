@@ -199,7 +199,6 @@ def main():
         sb_delete("gen_qv_sim", "id=gt.0")
 
     trades = build_simulation()
-    trades = [t for t in trades if t["entry_date"] >= "2026-01-01"]
     if not trades:
         print("トレードなし"); return
 
