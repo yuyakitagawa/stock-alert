@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
 import type { SimPosition, SimSummary } from "@/lib/simulation";
+import { useLang } from "@/contexts/LanguageContext";
+import { UI } from "@/lib/i18n";
 
-function fmtYen(n: number) {
-  return (n >= 0 ? "+" : "") + n.toLocaleString("ja-JP", { maximumFractionDigits: 0 }) + "円";
+function fmtMoney(n: number, suffix: string) {
+  return (n >= 0 ? "+" : "") + n.toLocaleString("ja-JP", { maximumFractionDigits: 0 }) + suffix;
 }
 function fmtPct(n: number) {
   return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
@@ -15,31 +17,28 @@ interface Props {
 }
 
 export default function SimulationPanel({ positions, summary }: Props) {
+  const { lang } = useLang();
+  const ui = UI[lang];
+
   const held = positions.filter(p => p.status === "held");
   const sold = positions.filter(p => p.status === "sold");
-
   const noData = positions.length === 0;
-
   const pnlColor = summary.totalPnl >= 0 ? "text-green-400" : "text-red-400";
   const annColor = summary.annualizedReturnPct >= 0 ? "text-green-400" : "text-red-400";
 
   return (
     <section className="space-y-6">
-      {/* Header */}
       <div className="space-y-1">
         <div className="flex items-baseline gap-3">
-          <h2 className="text-lg font-bold text-white">シミュレーション</h2>
+          <h2 className="text-lg font-bold text-white">{ui.simTitle}</h2>
           <span className="text-xs text-gray-600 font-mono">{summary.since}〜</span>
         </div>
-        <p className="text-xs text-gray-600 leading-relaxed">
-          💎買いシグナル（下落確率&lt;5% × ネットスコア≥20 × ボラ≤30% × 90日リターン&gt;−25%）でエントリーし、最大90日保有または条件消失で売却した場合の仮想成績です。
-          手数料・税金は含みません。
-        </p>
+        <p className="text-xs text-gray-600 leading-relaxed">{ui.simDesc}</p>
       </div>
 
       {noData && (
         <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-6 text-center text-gray-600 text-sm">
-          データが蓄積されると実績が表示されます
+          {ui.simNoData}
         </div>
       )}
 
@@ -50,30 +49,30 @@ export default function SimulationPanel({ positions, summary }: Props) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-1.5 mb-2">
-                <span className="text-xs font-semibold text-green-500 tracking-wide uppercase">年率換算リターン</span>
-                <span className="text-xs text-gray-600" title="全シグナルを順次複利で再投資した場合の年率換算。観測期間のリターンを1年間にスケールした参考値です。">(?)</span>
+                <span className="text-xs font-semibold text-green-500 tracking-wide uppercase">{ui.simAnnualized}</span>
+                <span className="text-xs text-gray-600" title={ui.simAnnualizedTip}>(?)</span>
               </div>
               <div className={`text-5xl font-bold font-mono ${annColor}`}>
                 {summary.annualizedReturnPct >= 0 ? "+" : ""}{summary.annualizedReturnPct.toFixed(1)}
                 <span className="text-2xl text-gray-500">%</span>
               </div>
               <div className="text-xs text-gray-500 mt-1.5">
-                期間リターン {summary.compoundReturnPct >= 0 ? "+" : ""}{summary.compoundReturnPct.toFixed(1)}%
-                <span className="text-gray-600 ml-2">（損益合計÷総投資額）を {summary.since} 〜 今日まで年率換算</span>
+                {ui.simPeriodReturn} {summary.compoundReturnPct >= 0 ? "+" : ""}{summary.compoundReturnPct.toFixed(1)}%
+                <span className="text-gray-600 ml-2">{ui.simPeriodReturnDesc(summary.since)}</span>
               </div>
             </div>
             <div className="text-right space-y-2 shrink-0 pt-1">
               <div className="text-xs text-gray-500">
                 <span className="text-gray-300 font-bold text-base">{summary.allCount}</span>
-                <span className="ml-1">シグナル</span>
+                <span className="ml-1">{ui.simSignals}</span>
               </div>
               <div className="text-xs text-gray-500">
-                勝率 <span className="text-white font-bold">
+                {ui.simWinRate} <span className="text-white font-bold">
                   {summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}%
                 </span>
               </div>
               <div className="text-xs text-gray-500">
-                平均 <span className={`font-bold ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {ui.simAvg} <span className={`font-bold ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
                   {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(2)}%
                 </span>
               </div>
@@ -84,15 +83,14 @@ export default function SimulationPanel({ positions, summary }: Props) {
         {/* Accuracy summary */}
         <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500 font-semibold tracking-wide uppercase">シグナル精度</span>
-            <span className="text-xs text-gray-600">全 {summary.allCount} シグナル（保有中 {summary.heldCount} + 売却済 {summary.soldCount}）</span>
+            <span className="text-xs text-gray-500 font-semibold tracking-wide uppercase">{ui.simAccuracy}</span>
+            <span className="text-xs text-gray-600">{ui.simAccuracySub(summary.allCount, summary.heldCount, summary.soldCount)}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {/* Win rate */}
             <div className="space-y-2">
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-500">勝率</span>
-                <span className="text-xs text-gray-600" title="買付時より現在値または売値が高い銘柄の割合">(?)</span>
+                <span className="text-xs text-gray-500">{ui.simWinRate}</span>
+                <span className="text-xs text-gray-600" title={ui.simWinRateTip}>(?)</span>
               </div>
               <div className="text-2xl font-bold font-mono text-white">
                 {summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}
@@ -104,26 +102,24 @@ export default function SimulationPanel({ positions, summary }: Props) {
                   style={{ width: `${summary.allCount > 0 ? Math.round(summary.allWinCount / summary.allCount * 100) : 0}%` }}
                 />
               </div>
-              <div className="text-xs text-gray-600">{summary.allWinCount} 勝 / {summary.allCount - summary.allWinCount} 負</div>
+              <div className="text-xs text-gray-600">{summary.allWinCount} {ui.simWin} / {summary.allCount - summary.allWinCount} {ui.simLoss}</div>
             </div>
 
-            {/* Avg return */}
             <div className="space-y-2">
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-500">平均騰落率</span>
-                <span className="text-xs text-gray-600" title="全ポジションの騰落率の単純平均">(?)</span>
+                <span className="text-xs text-gray-500">{ui.simAvgChange}</span>
+                <span className="text-xs text-gray-600" title={ui.simAvgChangeTip}>(?)</span>
               </div>
               <div className={`text-2xl font-bold font-mono ${summary.avgReturnPct >= 0 ? "text-green-400" : "text-red-400"}`}>
                 {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(2)}
                 <span className="text-base text-gray-500">%</span>
               </div>
               <div className="h-1.5 bg-gray-800 rounded-full" />
-              <div className="text-xs text-gray-600">買いシグナル後の平均</div>
+              <div className="text-xs text-gray-600">{ui.simAvgAfterSignal}</div>
             </div>
 
-            {/* Max gain */}
             <div className="space-y-2">
-              <div className="text-xs text-gray-500">最大利益</div>
+              <div className="text-xs text-gray-500">{ui.simMaxGain}</div>
               <div className="text-2xl font-bold font-mono text-green-400">
                 +{summary.maxGainPct.toFixed(2)}
                 <span className="text-base text-gray-500">%</span>
@@ -131,12 +127,11 @@ export default function SimulationPanel({ positions, summary }: Props) {
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div className="h-full bg-green-800 rounded-full w-full" />
               </div>
-              <div className="text-xs text-gray-600">ベストパフォーマー</div>
+              <div className="text-xs text-gray-600">{ui.simBestPerformer}</div>
             </div>
 
-            {/* Max loss */}
             <div className="space-y-2">
-              <div className="text-xs text-gray-500">最大損失</div>
+              <div className="text-xs text-gray-500">{ui.simMaxLoss}</div>
               <div className="text-2xl font-bold font-mono text-red-400">
                 {summary.maxLossPct.toFixed(2)}
                 <span className="text-base text-gray-500">%</span>
@@ -144,35 +139,35 @@ export default function SimulationPanel({ positions, summary }: Props) {
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div className="h-full bg-red-900 rounded-full w-full" />
               </div>
-              <div className="text-xs text-gray-600">ワーストパフォーマー</div>
+              <div className="text-xs text-gray-600">{ui.simWorstPerformer}</div>
             </div>
           </div>
         </div>
 
         {/* Portfolio summary */}
         <div className="space-y-2">
-          <p className="text-xs text-gray-600">全シグナルの損益合計（保有中の含み損益 + 売却済みの確定損益）</p>
+          <p className="text-xs text-gray-600">{ui.simPortfolioDesc}</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">総投資額</div>
+              <div className="text-xs text-gray-500 mb-1">{ui.simTotalInvest}</div>
               <div className="font-mono font-bold text-white text-sm">
-                {summary.totalCost.toLocaleString("ja-JP")}円
+                {summary.totalCost.toLocaleString("ja-JP")}{ui.yen}
               </div>
-              <div className="text-xs text-gray-600 mt-1">全買付価格 × 100株の合計</div>
+              <div className="text-xs text-gray-600 mt-1">{ui.simTotalInvestDesc}</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">損益合計</div>
+              <div className="text-xs text-gray-500 mb-1">{ui.simTotalPnl}</div>
               <div className={`font-mono font-bold text-sm ${pnlColor}`}>
-                {fmtYen(summary.totalPnl)}
+                {fmtMoney(summary.totalPnl, ui.yen)}
               </div>
-              <div className="text-xs text-gray-600 mt-1">確定 + 含み損益の合計</div>
+              <div className="text-xs text-gray-600 mt-1">{ui.simTotalPnlDesc}</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-xs text-gray-500 mb-1">単純平均リターン</div>
+              <div className="text-xs text-gray-500 mb-1">{ui.simSimpleAvgReturn}</div>
               <div className={`font-mono font-bold text-sm ${pnlColor}`}>
                 {fmtPct(summary.totalPnlPct)}
               </div>
-              <div className="text-xs text-gray-600 mt-1">損益合計 ÷ 総投資額（参考）</div>
+              <div className="text-xs text-gray-600 mt-1">{ui.simSimpleAvgReturnDesc}</div>
             </div>
           </div>
         </div>
@@ -181,19 +176,19 @@ export default function SimulationPanel({ positions, summary }: Props) {
         {held.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
-              <h3 className="text-sm font-semibold text-gray-400">保有中 ({held.length}銘柄)</h3>
-              <span className="text-xs text-gray-600">買いシグナル日に買付、まだ売りシグナルが出ていない</span>
+              <h3 className="text-sm font-semibold text-gray-400">{ui.simHeld(held.length)}</h3>
+              <span className="text-xs text-gray-600">{ui.simHeldDesc}</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800">
               <table className="w-full text-xs font-mono">
                 <thead>
                   <tr className="border-b border-gray-800 text-gray-600">
-                    <th className="text-left px-3 py-2 font-medium">銘柄</th>
-                    <th className="text-right px-3 py-2 font-medium">買付日</th>
-                    <th className="text-right px-3 py-2 font-medium">買値</th>
-                    <th className="text-right px-3 py-2 font-medium">現在値</th>
-                    <th className="text-right px-3 py-2 font-medium">損益 (100株)</th>
-                    <th className="text-right px-3 py-2 font-medium">騰落率</th>
+                    <th className="text-left px-3 py-2 font-medium">{ui.simStock}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simBuyDate}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simBuyPrice}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simCurrentPrice}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simPnl100}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simChangePct}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/50">
@@ -213,7 +208,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
                           <td className="text-right px-3 py-2 text-gray-400">{p.buyPrice.toLocaleString()}</td>
                           <td className="text-right px-3 py-2 text-gray-300">{p.currentPrice?.toLocaleString() ?? "—"}</td>
                           <td className={`text-right px-3 py-2 font-bold ${up ? "text-green-400" : "text-red-400"}`}>
-                            {fmtYen(p.pnl)}
+                            {fmtMoney(p.pnl, ui.yen)}
                           </td>
                           <td className={`text-right px-3 py-2 font-bold ${up ? "text-green-400" : "text-red-400"}`}>
                             {fmtPct(p.pnlPct)}
@@ -231,20 +226,20 @@ export default function SimulationPanel({ positions, summary }: Props) {
         {sold.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-baseline gap-2">
-              <h3 className="text-sm font-semibold text-gray-600">売却済み ({sold.length}銘柄)</h3>
-              <span className="text-xs text-gray-600">最大90日保有または条件消失（時間切れ/期末/drop急騰）で売却</span>
+              <h3 className="text-sm font-semibold text-gray-600">{ui.simSold(sold.length)}</h3>
+              <span className="text-xs text-gray-600">{ui.simSoldDesc}</span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-800/50">
               <table className="w-full text-xs font-mono opacity-60">
                 <thead>
                   <tr className="border-b border-gray-800/50 text-gray-600">
-                    <th className="text-left px-3 py-2 font-medium">銘柄</th>
-                    <th className="text-right px-3 py-2 font-medium">買付日</th>
-                    <th className="text-right px-3 py-2 font-medium">売却日</th>
-                    <th className="text-right px-3 py-2 font-medium">買値</th>
-                    <th className="text-right px-3 py-2 font-medium">売値</th>
-                    <th className="text-right px-3 py-2 font-medium">損益 (100株)</th>
-                    <th className="text-right px-3 py-2 font-medium">騰落率</th>
+                    <th className="text-left px-3 py-2 font-medium">{ui.simStock}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simBuyDate}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simSellDate}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simBuyPrice}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simSellPrice}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simPnl100}</th>
+                    <th className="text-right px-3 py-2 font-medium">{ui.simChangePct}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/30">
@@ -265,7 +260,7 @@ export default function SimulationPanel({ positions, summary }: Props) {
                           <td className="text-right px-3 py-2 text-gray-600">{p.buyPrice.toLocaleString()}</td>
                           <td className="text-right px-3 py-2 text-gray-600">{p.sellPrice?.toLocaleString() ?? "—"}</td>
                           <td className={`text-right px-3 py-2 ${up ? "text-green-600" : "text-red-600"}`}>
-                            {fmtYen(p.pnl)}
+                            {fmtMoney(p.pnl, ui.yen)}
                           </td>
                           <td className={`text-right px-3 py-2 ${up ? "text-green-600" : "text-red-600"}`}>
                             {fmtPct(p.pnlPct)}
@@ -279,11 +274,8 @@ export default function SimulationPanel({ positions, summary }: Props) {
           </div>
         )}
 
-        {/* Disclaimer */}
         <p className="text-xs text-gray-600 border-t border-gray-800/60 pt-4">
-          ※ 本シミュレーションは参考情報です。実際の投資判断はご自身の責任で行ってください。
-          年率換算は「損益合計÷総投資額」を観測期間から年率換算したもので、将来の成果を保証するものではありません。
-          売買タイミングはシグナル発生日の終値を使用。手数料・スリッページ・税金は考慮していません。
+          {ui.simDisclaimer}
         </p>
       </>)}
     </section>

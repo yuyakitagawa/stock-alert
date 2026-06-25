@@ -1,9 +1,12 @@
+"use client";
 import { signFmtArrow } from "@/lib/signals";
+import { useLang } from "@/contexts/LanguageContext";
+import { UI } from "@/lib/i18n";
 
 interface SectorStat {
   sector:    string;
   count:     number;
-  avgReturn: number;   // 業種内銘柄の平均20日リターン(%)（絶対値）
+  avgReturn: number;
 }
 
 interface Props {
@@ -12,6 +15,9 @@ interface Props {
 }
 
 export default function SectorPerformancePanel({ stats, date }: Props) {
+  const { lang } = useLang();
+  const ui = UI[lang];
+
   if (stats.length === 0) return null;
 
   const max = Math.max(...stats.map(s => Math.abs(s.avgReturn)), 1);
@@ -19,8 +25,8 @@ export default function SectorPerformancePanel({ stats, date }: Props) {
   return (
     <section>
       <div className="flex items-baseline gap-2 mb-3">
-        <h2 className="text-lg font-bold text-white">業種別成績</h2>
-        <span className="text-xs text-gray-600">{date} · 平均20日リターン順</span>
+        <h2 className="text-lg font-bold text-white">{ui.sectorTitle}</h2>
+        <span className="text-xs text-gray-600">{ui.sectorSub(date)}</span>
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-3">
