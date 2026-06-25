@@ -1,6 +1,6 @@
 # Next.js フロントエンド構築進捗
 
-最終更新: 2026-05-19
+最終更新: 2026-06-25
 
 ## ゴール
 `stocksignal.jp` で動くNext.jsアプリを作り、Vercelにデプロイする。
@@ -31,6 +31,12 @@
 - [x] Supabase recommend値から絵文字除去（ランキング0銘柄バグ修正）
 - [x] Vercel rootDirectory=frontend をAPIで設定
 - [x] GitHub連携によるCI/CDデプロイ確立
+- [x] EN/JP切替機能の完全削除（i18n基盤・LanguageContext・切替ボタン全撤去、全コンポーネント日本語ハードコード化）
+- [x] 💎買い銘柄なし時の表示改善（注目銘柄セクション非表示、該当なしメッセージ、日経225上昇基調時はETF推奨）
+- [x] HomeContent.tsxをクライアントコンポーネントとして分離（page.tsxはサーバーコンポーネント専任）
+- [x] CI smoke testの/review→/model修正（PR #44）
+- [x] CIにVercel本番デプロイ確認ステップ追加（VERCEL_TOKEN使用）（PR #44）
+- [x] CI障害通知メール停止（ユーザー依頼 2026-06-18）
 
 ---
 
@@ -40,6 +46,19 @@
 - [ ] `INTERNAL_SEND_SECRET` を GitHub Secrets に設定済み → Vercelにも登録
 - [ ] アイコン画像（icon-192.png / icon-512.png）追加
 - [ ] AI解析データが蓄積されたら銘柄詳細ページで確認
+
+---
+
+## 変更履歴（2026-06）
+
+### 2026-06-24: EN/JP切替削除 & 💎なし表示改善 & CI修正
+- **削除**: `frontend/contexts/LanguageContext.tsx`, `frontend/lib/i18n.ts`
+- **変更**: Navbar, StockCard, SimulationPanel, SectorPerformancePanel, RiskRegimeBanner, Footer, StockChart, RankingsTable, layout.tsx — i18n依存除去、日本語ハードコード化
+- **変更**: `HomeContent.tsx` — 💎買い銘柄0件時は注目銘柄セクション非表示、「該当銘柄なし」メッセージ表示。日経225上昇基調時はETF推奨
+- **変更**: `page.tsx` — サーバーコンポーネント専任化
+- **修正**: `.github/workflows/frontend_build.yml` — smoke test `/review`→`/model`、Vercelデプロイ確認ステップ追加、障害通知メール停止
+- **GitHub Secrets追加**: `VERCEL_TOKEN`（Vercel API経由のデプロイ状態確認用）
+- **PR #44**: マージ済み（2026-06-25）
 
 ---
 
