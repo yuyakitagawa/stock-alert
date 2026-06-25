@@ -70,7 +70,7 @@ jobs:
 
           check_page "/"          "StockSignal"
           check_page "/rankings"  "StockSignal"
-          check_page "/review"    "StockSignal"
+          check_page "/model"     "StockSignal"
 
           kill $SERVER_PID 2>/dev/null || true
 
