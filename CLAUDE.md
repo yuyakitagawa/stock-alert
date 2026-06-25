@@ -52,7 +52,7 @@
 - **AIモデル説明ページを同一コミットで更新（絶対厳守）**: 予測モデルの素性・特徴量重要度・買いフィルター・レジーム調整のいずれかを変更したら、**必ず同じコミットで** `frontend/app/model/page.tsx` の該当数値・条件を実コードに合わせて更新せよ。対象の真実源（source of truth）は次の通り。乖離は放置禁止。
   - 特徴量重要度・AUC・61次元の内訳 → `feature_importance.json` / `lib/utils.py`（`extract_features`）
   - 品質フィルター（株価/DD/連続下落/RSI/流動性） → `core/rank_stocks.py` の `passes_buy_filter`
-  - 💎買い条件 → `lib/utils.py` の `recommend_from_scores`
+  - 💎買い条件（QV4+レジーム） → `lib/utils.py` の `recommend_from_scores`
   - レジーム別銘柄数・VIX/リスクオフ調整 → `core/rank_stocks.py`
   - ユーザーから毎回指示がなくても、ロジック/フィルター変更を実装した時点で本ページ更新を自動的にセットで行うこと。`re-train`（金曜再学習）で重要度が変わった場合も同様。
 
