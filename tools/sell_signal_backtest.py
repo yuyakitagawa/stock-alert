@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
 import requests
-import yfinance as yf
 import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
@@ -71,10 +70,13 @@ print(f"  S買い: {len(buy_rows)}行  売りシグナル全: {len(all_sell)}行
 # ── 日経225 5日リターン計算 ────────────────────────────────────────────────
 
 print("日経225データ取得中...")
-nk = yf.download("^N225", start="2025-12-01", end=args.end,
-                  interval="1d", progress=False, auto_adjust=True)
-nk_close = nk["Close"].squeeze()
-nk_close.index = pd.to_datetime(nk_close.index).strftime("%Y-%m-%d")
+from lib.db import load_market_index_data
+_nk_df = load_market_index_data("N225", days=2200)
+if _nk_df is not None and len(_nk_df) > 0:
+    nk_close = _nk_df["Close"].squeeze()
+    nk_close.index = pd.Index([d.strftime("%Y-%m-%d") for d in _nk_df.index])
+else:
+    nk_close = pd.Series(dtype=float)
 nk_5d_ret = {}  # date -> 5日前比リターン(%)
 dates_sorted = sorted(nk_close.index)
 for i, d in enumerate(dates_sorted):
