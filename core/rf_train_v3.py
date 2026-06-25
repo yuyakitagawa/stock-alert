@@ -53,22 +53,8 @@ def _load_edinet_map():
 
 
 def _fetch_index_df(ticker_encoded, days=2200):
-    """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す"""
-    end_ts=int(datetime.now().timestamp())
-    start_ts=int((datetime.now()-timedelta(days=days)).timestamp())
-    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_encoded}?interval=1d&period1={start_ts}&period2={end_ts}"
-    try:
-        resp=requests.get(url,headers=HEADERS,timeout=15)
-        data=resp.json()
-        result=data.get("chart",{}).get("result",[])
-        if not result: return None
-        ts=result[0].get("timestamp",[])
-        closes=result[0].get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[])
-        idx=pd.to_datetime(ts,unit="s",utc=True).tz_convert("Asia/Tokyo")
-        df=pd.DataFrame({"Close":closes},index=idx)
-        df=df.dropna(); df.index=df.index.date
-        return df
-    except Exception: return None
+    """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す (legacy stub)"""
+    return None
 
 def get_nikkei_df(days=2200):
     return get_market_index_df_cached("N225", "%5EN225", days)
@@ -99,25 +85,8 @@ def get_tse_stock_list():
         print(f"銘柄リスト取得失敗: {e}"); return None
 
 def get_prices(code,days=HISTORY_DAYS):
-    ticker=f"{code}.T"
-    end_ts=int(datetime.now().timestamp())
-    start_ts=int((datetime.now()-timedelta(days=days)).timestamp())
-    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&period1={start_ts}&period2={end_ts}"
-    try:
-        resp=requests.get(url,headers=HEADERS,timeout=15)
-        if resp.status_code!=200: return None
-        data=resp.json()
-        result=data.get("chart",{}).get("result",[])
-        if not result: return None
-        ts=result[0].get("timestamp",[])
-        closes=result[0].get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[])
-        volumes=result[0].get("indicators",{}).get("quote",[{}])[0].get("volume",[])
-        if not ts or not closes: return None
-        idx=pd.to_datetime(ts,unit="s",utc=True).tz_convert("Asia/Tokyo")
-        df=pd.DataFrame({"Close":closes,"Volume":volumes},index=idx).dropna()
-        df.index=df.index.date
-        return df
-    except: return None
+    from lib.db import get_price_df
+    return get_price_df(code, days=days)
 
 
 def passes_screener_at(p, v_slice, nk_ret_3m):
