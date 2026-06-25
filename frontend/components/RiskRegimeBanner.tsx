@@ -6,10 +6,6 @@ const STYLE: Record<string, { bg: string; border: string; text: string }> = {
   risk_on:  { bg: "bg-green-950/25",  border: "border-green-900",  text: "text-green-300" },
 };
 
-/**
- * 相場リスク管制官の当日判定をトップに表示するバナー。
- * マクロ（日経・VIX・ドル円・米国）からリスクオン/オフを判定した結果。
- */
 export default function RiskRegimeBanner({ risk }: { risk: RiskRegime | null }) {
   if (!risk) return null;
   const s = STYLE[risk.regime] ?? STYLE.risk_on;
