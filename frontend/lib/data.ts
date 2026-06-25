@@ -1,6 +1,5 @@
 import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WatchMetrics, RiskRegime } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
-import { yfQuoteSummary, yfQuoteSummaryWithAuth, getAuth } from "./yahoo";
 
 const CACHE: RequestInit = { next: { revalidate: 300 } };
 
@@ -107,35 +106,35 @@ export async function fetchSectorMap(): Promise<Record<string, string>> {
 }
 
 export async function fetchCompanyProfile(code: string): Promise<CompanyProfile> {
-  try {
-    const result = await yfQuoteSummary(code, "assetProfile");
-    if (!result) return { description: null, website: null, employees: null };
-    const p = result.assetProfile as Record<string, unknown> | undefined;
-    return {
-      description: (p?.longBusinessSummary as string) ?? null,
-      website:     (p?.website as string) ?? null,
-      employees:   (p?.fullTimeEmployees as number) ?? null,
-    };
-  } catch {
-    return { description: null, website: null, employees: null };
-  }
+  const res = await sbFetch(`gen_stock_meta?code=eq.${code}&limit=1&select=description,website,employees`,
+    { headers: anonHeaders(), ...CACHE });
+  if (!res || !res.ok) return { description: null, website: null, employees: null };
+  const rows = await res.json();
+  const r = rows[0] as Record<string, unknown> | undefined;
+  return {
+    description: (r?.description as string) ?? null,
+    website:     (r?.website as string) ?? null,
+    employees:   (r?.employees as number) ?? null,
+  };
 }
 
 export async function fetchRecentEarnings(code: string): Promise<QuarterlyEarning[]> {
-  try {
-    const result = await yfQuoteSummary(code, "incomeStatementHistoryQuarterly");
-    if (!result) return [];
-    const history = (result.incomeStatementHistoryQuarterly as Record<string, unknown>)
-      ?.incomeStatementHistory;
-    if (!Array.isArray(history)) return [];
-    return (history as Record<string, unknown>[]).slice(0, 4).map(q => ({
-      period:    (q.endDate as Record<string, unknown>)?.fmt as string ?? "—",
-      revenue:   (q.totalRevenue as Record<string, unknown>)?.raw as number ?? null,
-      netIncome: (q.netIncome as Record<string, unknown>)?.raw as number ?? null,
-    }));
-  } catch {
-    return [];
+  const res = await sbFetch(
+    `jquants_fin_summary?code=eq.${code}&order=fy_end.desc,disc_date.desc&limit=8&select=fy_end,doc_type,sales,np`,
+    { headers: anonHeaders(), ...CACHE });
+  if (!res || !res.ok) return [];
+  const rows: { fy_end: string; doc_type: string; sales: number | null; np: number | null }[] = await res.json();
+  const seen = new Set<string>();
+  const unique: typeof rows = [];
+  for (const r of rows) {
+    const key = `${r.fy_end}_${r.doc_type}`;
+    if (!seen.has(key)) { seen.add(key); unique.push(r); }
   }
+  return unique.slice(0, 4).map(r => ({
+    period:    `${r.fy_end} (${r.doc_type})`,
+    revenue:   r.sales,
+    netIncome: r.np,
+  }));
 }
 
 export async function fetchDailyQuote(code: string): Promise<import("./types").DailyQuote | null> {
@@ -221,13 +220,7 @@ export async function fetchRiskRegime(): Promise<RiskRegime | null> {
   return (rows[0] as RiskRegime) ?? null;
 }
 
-// ウォッチリスト用: 52週高値からの下落率（お得度）＋ ミニチャート ＋ PER/PBR
-// 認証(crumb)は1回だけ取得して全銘柄で使い回す。全fetchにタイムアウトを入れ、
-// 失敗時は null を返して描画をブロックしない（Vercelタイムアウト回避）。
-export async function fetchWatchMetrics(
-  code: string,
-  auth: import("./yahoo").YahooAuth | null,
-): Promise<WatchMetrics> {
+export async function fetchWatchMetrics(code: string): Promise<WatchMetrics> {
   let price: number | null = null;
   let high52: number | null = null;
   let spark: number[] = [];
@@ -259,27 +252,28 @@ export async function fetchWatchMetrics(
       ? ((price - high52) / high52) * 100
       : null;
 
-  // 2) PER / PBR（quoteSummary・共有認証）
   let per: number | null = null;
   let pbr: number | null = null;
-  if (auth) {
-    try {
-      const r = await yfQuoteSummaryWithAuth(code, "summaryDetail,defaultKeyStatistics", auth);
-      const sd = r?.summaryDetail as Record<string, { raw?: number }> | undefined;
-      const ks = r?.defaultKeyStatistics as Record<string, { raw?: number }> | undefined;
-      per = sd?.trailingPE?.raw ?? null;
-      pbr = ks?.priceToBook?.raw ?? null;
-    } catch { /* graceful */ }
-  }
+  try {
+    const res3 = await sbFetch(
+      `gen_stock_meta?code=eq.${code}&limit=1&select=per,pbr`,
+      { headers: anonHeaders(), ...CACHE },
+    );
+    if (res3 && res3.ok) {
+      const rows3 = await res3.json();
+      if (rows3[0]) {
+        per = rows3[0].per ?? null;
+        pbr = rows3[0].pbr ?? null;
+      }
+    }
+  } catch { /* graceful */ }
 
   return { price, high52, drawdownPct, per, pbr, spark };
 }
 
-// 複数銘柄を並列取得（認証は1回だけ）
 export async function fetchWatchMetricsMap(codes: string[]): Promise<Record<string, WatchMetrics>> {
-  const auth = await getAuth();
   const results = await Promise.all(
-    codes.map(c => fetchWatchMetrics(c, auth).catch((): WatchMetrics | null => null)),
+    codes.map(c => fetchWatchMetrics(c).catch((): WatchMetrics | null => null)),
   );
   const map: Record<string, WatchMetrics> = {};
   codes.forEach((c, i) => { const m = results[i]; if (m) map[c] = m; });
