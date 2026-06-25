@@ -3,7 +3,7 @@ import { signFmtArrow } from "@/lib/signals";
 interface SectorStat {
   sector:    string;
   count:     number;
-  avgReturn: number;   // 業種内銘柄の平均20日リターン(%)（絶対値）
+  avgReturn: number;
 }
 
 interface Props {
