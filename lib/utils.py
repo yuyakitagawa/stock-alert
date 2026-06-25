@@ -22,64 +22,26 @@ if not os.path.isdir(BASE_DIR):
 
 
 def get_prices(code, days=400):
-    ticker = f"{code}.T"
-    end_ts   = int(datetime.now().timestamp())
-    start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-           f"?interval=1d&period1={start_ts}&period2={end_ts}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        adjcloses  = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        raw_closes = result[0].get("indicators", {}).get("quote",    [{}])[0].get("close",    [])
-        volumes    = result[0].get("indicators", {}).get("quote",    [{}])[0].get("volume",   [])
-        if not timestamps or not adjcloses:
-            return None
-        # adjcloseがNoneの行はraw closeで補完（市場終了直後の計算ラグ対策）
-        closes = [a if a is not None else r for a, r in zip(adjcloses, raw_closes)]
-        df = pd.DataFrame(
-            {"Close": closes, "Volume": volumes},
-            index=pd.to_datetime(timestamps, unit="s", utc=True)
-        )
-        return df.dropna(subset=["Close"])
-    except Exception:
-        return None
+    from lib.db import get_price_df
+    return get_price_df(code, days=days)
 
 
 def get_price_at_date(code, target_date):
     """target_date前後の最も近い終値を返す（±14日範囲で探索）"""
-    start_ts = int((target_date - timedelta(days=14)).timestamp())
-    end_ts   = int((target_date + timedelta(days=14)).timestamp())
-    ticker = f"{code}.T"
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-           f"?interval=1d&period1={start_ts}&period2={end_ts}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        target_ts = target_date.timestamp()
-        best_price, best_diff = None, float("inf")
-        for ts, c in zip(timestamps, closes):
-            if c is None:
-                continue
-            diff = abs(ts - target_ts)
-            if diff < best_diff:
-                best_diff, best_price = diff, c
-        return best_price
-    except Exception:
+    from lib.db import get_price_df
+    df = get_price_df(code, days=400)
+    if df is None or len(df) == 0:
         return None
+    from datetime import date as _date
+    td = target_date.date() if hasattr(target_date, 'date') else target_date
+    best_price, best_diff = None, float("inf")
+    for idx_date, row in zip(df.index, df["Close"]):
+        d = idx_date if isinstance(idx_date, _date) else _date.fromisoformat(str(idx_date)[:10])
+        diff = abs((d - td).days)
+        if diff < best_diff and diff <= 14:
+            best_diff = diff
+            best_price = float(row)
+    return best_price
 
 
 def get_market_index_df(ticker_encoded, days=2200):

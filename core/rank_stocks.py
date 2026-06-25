@@ -233,17 +233,9 @@ def main():
     # 相場レジーム判定（SMA63/200ベース）
     regime = 'uncertain'
     try:
-        from lib.utils import get_nikkei_returns as _gnr
-        import requests as _req
-        from datetime import timedelta as _td
-        _url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
-                f"?interval=1d&period1={int((__import__('datetime').datetime.now()-_td(days=400)).timestamp())}"
-                f"&period2={int(__import__('datetime').datetime.now().timestamp())}")
-        _resp = _req.get(_url, headers=HEADERS, timeout=15)
-        _data = _resp.json()
-        _result = _data.get("chart", {}).get("result", [])
-        if _result:
-            _closes = [c for c in _result[0].get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[]) if c]
+        _nk_regime_df = get_market_index_df_cached("N225", "%5EN225", 400)
+        if _nk_regime_df is not None and len(_nk_regime_df) >= 200:
+            _closes = _nk_regime_df["Close"].tolist()
             regime = classify_market_regime(_closes)
     except Exception:
         pass
