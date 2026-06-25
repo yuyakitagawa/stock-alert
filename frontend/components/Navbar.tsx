@@ -2,24 +2,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useLang } from "@/contexts/LanguageContext";
-import { UI } from "@/lib/i18n";
 
 interface Props {
   dateLabel?: string;
 }
 
 export default function Navbar({ dateLabel }: Props) {
-  const { lang, setLang } = useLang();
-  const ui = UI[lang];
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const links: { href: string; label: string }[] = [
-    { href: "/",          label: ui.top },
-    { href: "/rankings",  label: ui.rankings },
-    { href: "/watchlist", label: ui.watchlist },
-    { href: "/model",     label: ui.model },
+  const links = [
+    { href: "/",          label: "TOP" },
+    { href: "/rankings",  label: "ランキング" },
+    { href: "/watchlist", label: "ウォッチリスト" },
+    { href: "/model",     label: "AIモデル" },
   ];
 
   const isActive = (href: string) =>
@@ -35,14 +31,12 @@ export default function Navbar({ dateLabel }: Props) {
             <div className="font-bold text-base tracking-tight text-white leading-tight">
               Stock<span className="text-green-400">Signal</span>
             </div>
-            <div className="text-[9px] text-gray-600 leading-none" suppressHydrationWarning>
-              {lang === "ja" ? "日本株 AI" : "Japan Stocks AI"}
-            </div>
+            <div className="text-[9px] text-gray-600 leading-none">日本株 AI</div>
           </div>
         </Link>
 
         {/* Desktop nav links */}
-        <nav className="hidden sm:flex items-center gap-6 text-sm font-medium" suppressHydrationWarning>
+        <nav className="hidden sm:flex items-center gap-6 text-sm font-medium">
           {links.map(l => (
             <Link
               key={l.href}
@@ -61,13 +55,6 @@ export default function Navbar({ dateLabel }: Props) {
               {dateLabel}
             </span>
           )}
-          <button
-            onClick={() => setLang(lang === "ja" ? "en" : "ja")}
-            className="text-xs font-bold bg-gray-800 border border-gray-700 px-2.5 py-1 rounded-md hover:bg-gray-700 transition-colors text-gray-400 hover:text-white"
-            suppressHydrationWarning
-          >
-            {lang === "ja" ? "EN" : "JP"}
-          </button>
 
           {/* Hamburger (mobile only) */}
           <button
@@ -91,7 +78,7 @@ export default function Navbar({ dateLabel }: Props) {
 
       {/* Mobile dropdown menu */}
       {open && (
-        <nav className="sm:hidden border-t border-gray-800 bg-gray-950/95 backdrop-blur-sm" suppressHydrationWarning>
+        <nav className="sm:hidden border-t border-gray-800 bg-gray-950/95 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto px-4 py-2 flex flex-col">
             {links.map(l => (
               <Link

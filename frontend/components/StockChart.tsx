@@ -1,8 +1,5 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLang } from "@/contexts/LanguageContext";
-import { UI } from "@/lib/i18n";
-
 type Period = "1M" | "3M" | "6M" | "1Y";
 
 interface DataPoint {
@@ -29,8 +26,7 @@ const CW = W - PAD.left - PAD.right;
 const CH = H - PAD.top - PAD.bottom;
 
 export default function StockChart({ code }: Props) {
-  const { lang } = useLang();
-  const ui = UI[lang];
+  const chartPeriods: Record<Period, string> = { "1M": "1ヶ月", "3M": "3ヶ月", "6M": "6ヶ月", "1Y": "1年" };
   const [period, setPeriod] = useState<Period>("1M");
   const [data, setData] = useState<DataPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +125,7 @@ export default function StockChart({ code }: Props) {
               }`}
               suppressHydrationWarning
             >
-              {ui.chartPeriods[p]}
+              {chartPeriods[p]}
             </button>
           ))}
         </div>
@@ -139,7 +135,7 @@ export default function StockChart({ code }: Props) {
       <div className="relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/70 z-10">
-            <span className="text-gray-500 text-sm">{ui.loading}</span>
+            <span className="text-gray-500 text-sm">読み込み中...</span>
           </div>
         )}
         {!loading && valid.length < 2 ? (

@@ -20,7 +20,6 @@ export default function StockCard({ r, sparkline }: Props) {
       href={`/stocks/${r.code}`}
       className={`group block rounded-xl border ${s.border} bg-gray-900 hover:bg-gray-800 transition-colors overflow-hidden`}
     >
-      {/* Chart hero — top of card */}
       {sparkline && sparkline.length >= 2 ? (
         <div className="border-b border-gray-800/60">
           <Sparkline prices={sparkline} color={s.color} showLabel />
@@ -30,7 +29,6 @@ export default function StockCard({ r, sparkline }: Props) {
       )}
 
       <div className="p-4 space-y-3">
-        {/* Header */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="font-semibold text-sm text-white truncate">{r.name}</p>
@@ -38,7 +36,6 @@ export default function StockCard({ r, sparkline }: Props) {
           </div>
         </div>
 
-        {/* Price */}
         <div className="flex items-baseline justify-between">
           <span className="font-mono text-xl font-bold text-white">
             ¥{r.close?.toLocaleString() ?? "—"}
@@ -49,7 +46,6 @@ export default function StockCard({ r, sparkline }: Props) {
           </span>
         </div>
 
-        {/* Probability bar */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
             <span>上昇 {probBand(r.rise_prob)}</span>
@@ -63,7 +59,6 @@ export default function StockCard({ r, sparkline }: Props) {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex justify-between text-xs font-mono pt-1 border-t border-gray-800">
           <span className={r.rel20 == null ? "text-gray-600" : r.rel20 >= 0 ? "text-blue-400" : "text-orange-400"}>
             <span className="text-gray-600 mr-1">日経比</span>{signFmtArrow(r.rel20)}
