@@ -1,10 +1,7 @@
-"use client";
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
 import Sparkline from "./Sparkline";
 import { netStyle, signFmtArrow, probBand } from "@/lib/signals";
-import { useLang } from "@/contexts/LanguageContext";
-import { UI } from "@/lib/i18n";
 
 function fmt(n: number | null, digits = 1) {
   if (n == null) return "—";
@@ -17,8 +14,6 @@ interface Props {
 }
 
 export default function StockCard({ r, sparkline }: Props) {
-  const { lang } = useLang();
-  const ui = UI[lang];
   const s = netStyle(r.net ?? 0);
   return (
     <Link
@@ -46,15 +41,15 @@ export default function StockCard({ r, sparkline }: Props) {
             ¥{r.close?.toLocaleString() ?? "—"}
           </span>
           <span className={`font-mono text-sm font-bold ${r.net >= 0 ? "text-green-400" : "text-red-400"}`}>
-            <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">{ui.net}</span>
+            <span className="text-[10px] text-gray-500 font-sans font-normal mr-1">ネット</span>
             {signFmtArrow(r.net)}
           </span>
         </div>
 
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>{ui.rise} {probBand(r.rise_prob)}</span>
-            <span>{ui.drop} {probBand(r.drop_prob)}</span>
+            <span>上昇 {probBand(r.rise_prob)}</span>
+            <span>下落 {probBand(r.drop_prob)}</span>
           </div>
           <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
             <div
@@ -66,9 +61,9 @@ export default function StockCard({ r, sparkline }: Props) {
 
         <div className="flex justify-between text-xs font-mono pt-1 border-t border-gray-800">
           <span className={r.rel20 == null ? "text-gray-600" : r.rel20 >= 0 ? "text-blue-400" : "text-orange-400"}>
-            <span className="text-gray-600 mr-1">{ui.nikkei}</span>{signFmtArrow(r.rel20)}
+            <span className="text-gray-600 mr-1">日経比</span>{signFmtArrow(r.rel20)}
           </span>
-          <span className="text-gray-600 group-hover:text-gray-400 transition-colors">{ui.detail}</span>
+          <span className="text-gray-600 group-hover:text-gray-400 transition-colors">詳細 →</span>
         </div>
       </div>
     </Link>

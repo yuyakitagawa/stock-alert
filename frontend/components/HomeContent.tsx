@@ -1,7 +1,4 @@
 "use client";
-import Link from "next/link";
-import { useLang } from "@/contexts/LanguageContext";
-import { UI } from "@/lib/i18n";
 import type { Ranking } from "@/lib/types";
 import type { SimPosition, SimSummary } from "@/lib/simulation";
 import type { RiskRegime } from "@/lib/types";
@@ -33,18 +30,15 @@ export default function HomeContent({
   date, dateLabel, rows, buyRows, featured, sparklineMap,
   sectorStats, sim, risk, nikkei20,
 }: Props) {
-  const { lang } = useLang();
-  const ui = UI[lang];
-
   const nikkeiBullish = nikkei20 > 0;
   const noGems = buyRows.length === 0;
 
   return (
     <>
       <header className="space-y-1">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">{ui.pageTitle}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">日本株 AIシグナル</h1>
         <p className="text-sm text-gray-500">
-          {date ? ui.aiScoreAt(dateLabel) : ui.fetching}
+          {date ? `${dateLabel} 時点のAIスコア` : "データを取得中…"}
         </p>
       </header>
 
@@ -52,41 +46,43 @@ export default function HomeContent({
       {rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-32 text-gray-600 space-y-3">
           <span className="text-5xl">📊</span>
-          <p className="text-lg font-medium text-gray-500">{ui.noData}</p>
-          <p className="text-sm">{ui.noDataSub}</p>
+          <p className="text-lg font-medium text-gray-500">本日のデータはまだありません</p>
+          <p className="text-sm">平日16時以降に更新されます</p>
         </div>
       ) : (
         <>
-          <section>
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h2 className="text-lg font-bold text-white whitespace-nowrap">
-                {ui.featured} <span className="text-gray-500 font-normal">{ui.top10}</span>
-              </h2>
-              <Link href="/rankings" className="text-sm text-green-500 hover:text-green-400 transition-colors font-medium whitespace-nowrap">
-                {ui.viewAll}
-              </Link>
-            </div>
-            <p className="text-xs text-gray-600 mb-4">
-              {buyRows.length > 0
-                ? ui.gemBuyDesc(buyRows.length, rows.length.toLocaleString())
-                : noGems && nikkeiBullish
-                  ? (<>
-                      {ui.noGemDesc(rows.length.toLocaleString())}
-                      <br />
-                      <span className="text-yellow-400 font-medium">{ui.nikkeiRecommend}</span>
-                    </>)
-                  : ui.noGemDesc(rows.length.toLocaleString())
-              }
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {featured.map(r => (
-                <StockCard key={r.code} r={r} sparkline={sparklineMap[r.code]} />
-              ))}
-            </div>
-          </section>
+          {noGems ? (
+            <section>
+              <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-6 py-8 text-center space-y-3">
+                <p className="text-gray-400">
+                  本日は💎買い条件（下落確率&lt;5% × ネット≥20 × ボラ≤30% × 90日リターン&gt;−25%）の該当銘柄はありません。
+                </p>
+                {nikkeiBullish && (
+                  <p className="text-yellow-400 font-medium">
+                    📈 日経225が上昇基調のため、個別株より日経225連動ETF（1321等）の検討を推奨します。
+                  </p>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="text-lg font-bold text-white whitespace-nowrap">
+                  注目銘柄 <span className="text-gray-500 font-normal">Top {featured.length}</span>
+                </h2>
+              </div>
+              <p className="text-xs text-gray-600 mb-4">
+                💎 買い条件（下落確率&lt;5% × ネット≥20 × ボラ≤30% × 90日リターン&gt;−25%）の該当 <span className="text-green-400">{buyRows.length}</span> 銘柄中 上位10件。全 {rows.length.toLocaleString()} 銘柄中。
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {featured.map(r => (
+                  <StockCard key={r.code} r={r} sparkline={sparklineMap[r.code]} />
+                ))}
+              </div>
+            </section>
+          )}
 
           <SectorPerformancePanel stats={sectorStats} date={dateLabel} />
-
           <SimulationPanel positions={sim.positions} summary={sim.summary} />
         </>
       )}

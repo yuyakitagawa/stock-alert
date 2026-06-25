@@ -2,8 +2,6 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import type { Ranking } from "@/lib/types";
-import { useLang } from "@/contexts/LanguageContext";
-import { UI } from "@/lib/i18n";
 import { GLOSSARY } from "@/lib/glossary";
 import { signFmtArrow, probBand } from "@/lib/signals";
 import BookmarkButton from "@/components/BookmarkButton";
@@ -27,9 +25,6 @@ interface Props {
 }
 
 export default function RankingsTable({ rows, sectorMap }: Props) {
-  const { lang } = useLang();
-  const ui = UI[lang];
-
   const [search,   setSearch]   = useState("");
   const [sector,   setSector]   = useState("");
   const [buyOnly,  setBuyOnly]  = useState(false);
@@ -109,7 +104,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
             className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/30 sm:w-52"
             suppressHydrationWarning
           >
-            <option value="" suppressHydrationWarning>{ui.allSectors}</option>
+            <option value="">全業種</option>
             {sectors.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -117,7 +112,7 @@ export default function RankingsTable({ rows, sectorMap }: Props) {
         )}
         <input
           type="search"
-          placeholder={ui.searchPlaceholder}
+          placeholder="銘柄名・コードで検索"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/30"
