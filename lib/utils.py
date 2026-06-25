@@ -556,13 +556,21 @@ def get_fundamentals(code):
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
-                          ret90=None, turnover_m=None):
-    """💎 買い: drop_prob<5% AND net>=20(4モデルアンサンブル) AND vol<=30%
-               AND ret90>-25% AND turnover>=50M"""
-    if (allow_buy
-            and drop_prob is not None and drop_prob < 5.0
-            and net >= 20.0
-            and (vol is None or vol <= 30.0)
+                          ret90=None, turnover_m=None, regime=None):
+    """💎 買い: QV4条件(業績強×株価低迷) + モデルスコア + レジーム防御。
+    bear時は💎を出さない。"""
+    if not allow_buy or regime == 'bear':
+        return "—"
+    qv_ok = (
+        piotroski is not None and piotroski >= 0.67
+        and pos52 is not None and pos52 < 0.45
+        and ((eps_surprise is not None and eps_surprise > 2.0)
+             or (bps_growth is not None and bps_growth > 0))
+    )
+    if (qv_ok
+            and drop_prob is not None and drop_prob < 8.0
+            and net >= 10.0
+            and (vol is None or vol <= 20.0)
             and (ret90 is None or ret90 > -0.25)
             and (turnover_m is None or turnover_m >= 50.0)):
         return "💎 買い"

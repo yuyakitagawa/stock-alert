@@ -487,6 +487,7 @@ def main():
             eps_surprise=_fm.get("eps_surprise"),
             ret90=float(feat[3]),
             turnover_m=_turnover_m,
+            regime=regime,
         )
 
         # βフィルター: 日経強気時に低β銘柄の💎買いを降格
