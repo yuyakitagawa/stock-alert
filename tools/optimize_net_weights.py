@@ -39,14 +39,15 @@ with open(os.path.join(BASE_DIR, "_local_prices.pkl"), "rb") as f:
     price_cache = pickle.load(f)
 print(f"価格キャッシュ: {len(price_cache)} 銘柄")
 
-# 日経225データ取得
-nk_codes = [c for c in price_cache if c.startswith("^N225") or c == "N225"]
-# 日経はキャッシュにないのでyfinanceから取得
+# 日経225データ取得（Supabase yahoo_market_index テーブルから）
 try:
-    import yfinance as yf
-    nk_data = yf.download("^N225", start="2024-01-01", end="2026-07-01", auto_adjust=True, progress=False)
-    nk_hist = {d.strftime("%Y-%m-%d"): float(c) for d, c in nk_data["Close"].items()}
-    print(f"日経225: {len(nk_hist)} 日分")
+    from lib.db import load_market_index_data
+    nk_df = load_market_index_data("N225", days=2200)
+    if nk_df is not None and len(nk_df) > 0:
+        nk_hist = {d.strftime("%Y-%m-%d"): float(c) for d, c in zip(nk_df.index, nk_df["Close"])}
+    else:
+        nk_hist = {}
+    print(f"日経225（DB）: {len(nk_hist)} 日分")
 except Exception as e:
     print(f"日経225取得失敗: {e}")
     nk_hist = {}
