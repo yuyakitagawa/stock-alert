@@ -10,13 +10,14 @@ net = w_rise * rise_prob - w_drop * drop_prob + w_alpha_rise * alpha_rise - w_al
   python3 tools/optimize_net_weights.py
   python3 tools/optimize_net_weights.py --start 2025-01-01
 """
-import sys, os, argparse, pickle, time
+import sys, os, argparse, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import joblib
 from datetime import datetime
 from lib.utils import extract_features, add_cs_rank_features, HEADERS
+from lib.db import load_market_index_data, get_price_raw, get_price_cache_codes
 from config import BASE_DIR
 
 parser = argparse.ArgumentParser()
@@ -34,27 +35,29 @@ alpha_rise_model = joblib.load(os.path.join(BASE_DIR, "rf_alpha_model.pkl"))
 alpha_drop_model = joblib.load(os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl"))
 print("4モデル読み込み完了")
 
-# 価格データ読み込み
-with open(os.path.join(BASE_DIR, "_local_prices.pkl"), "rb") as f:
-    price_cache = pickle.load(f)
-print(f"価格キャッシュ: {len(price_cache)} 銘柄")
+# 価格データ読み込み（Supabase yahoo_price_cache）
+print("価格データをDBから読み込み中...")
+codes = get_price_cache_codes()
+price_cache = {}
+for i, code in enumerate(codes):
+    rows = get_price_raw(code)
+    if rows:
+        price_cache[code] = rows
+    if (i + 1) % 500 == 0:
+        print(f"  {i+1}/{len(codes)} 銘柄読み込み済...")
+print(f"価格キャッシュ（DB）: {len(price_cache)} 銘柄")
 
 # 日経225データ取得（Supabase yahoo_market_index テーブルから）
-try:
-    from lib.db import load_market_index_data
-    nk_df = load_market_index_data("N225", days=2200)
-    if nk_df is not None and len(nk_df) > 0:
-        nk_hist = {d.strftime("%Y-%m-%d"): float(c) for d, c in zip(nk_df.index, nk_df["Close"])}
-    else:
-        nk_hist = {}
-    print(f"日経225（DB）: {len(nk_hist)} 日分")
-except Exception as e:
-    print(f"日経225取得失敗: {e}")
+nk_df = load_market_index_data("N225", days=2200)
+if nk_df is not None and len(nk_df) > 0:
+    nk_hist = {d.strftime("%Y-%m-%d"): float(c) for d, c in zip(nk_df.index, nk_df["Close"])}
+else:
     nk_hist = {}
+print(f"日経225（DB）: {len(nk_hist)} 日分")
 
 # 全コードの日付→インデックスマップ構築
 all_dates = set()
-code_date_map = {}  # {code: {date: idx}}
+code_date_map = {}
 for code, rows in price_cache.items():
     cdm = {}
     for i, (d, c, v) in enumerate(rows):

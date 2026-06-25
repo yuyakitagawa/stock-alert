@@ -185,6 +185,36 @@ def get_price_cache(code, start_date_str, end_date_str):
     return pd.DataFrame({"Close": closes, "Volume": vols}, index=idx)
 
 
+def get_price_raw(code, min_rows=0):
+    """yahoo_price_cacheから全期間の(date, close, volume)リストを返す。"""
+    rows = sb.select(
+        "yahoo_price_cache",
+        f"code=eq.{code}&order=date.asc&select=date,close,volume"
+    )
+    if min_rows and len(rows) < min_rows:
+        return None
+    return [(r["date"], r["close"], r["volume"]) for r in rows]
+
+
+def get_price_df(code, days=None):
+    """yahoo_price_cacheからDataFrame(Close, Volume)を返す。"""
+    import pandas as pd
+    from datetime import date as _date
+    query = f"code=eq.{code}&order=date.asc&select=date,close,volume"
+    if days:
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        query = f"code=eq.{code}&date=gte.{cutoff}&order=date.asc&select=date,close,volume"
+    rows = sb.select("yahoo_price_cache", query)
+    if not rows:
+        return None
+    idx = [_date.fromisoformat(r["date"]) for r in rows]
+    return pd.DataFrame(
+        {"Close": [r["close"] for r in rows],
+         "Volume": [r["volume"] for r in rows]},
+        index=idx,
+    )
+
+
 def save_price_cache(code, df):
     """DataFrame を yahoo_price_cache に INSERT IGNORE で保存。"""
     import math
