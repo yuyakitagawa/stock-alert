@@ -280,7 +280,7 @@ DBキャッシュは廃止。
 | フィルター | 条件 | データ出所 |
 |---|---|---|
 | **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
-| **💎買い条件** (`recommend_from_scores`) | net≥16, drop_prob<2%, Piotroski≥6/9, vol≤20%, ret90>-25%, 売買代金≥50M, EPS surprise>2% or BPS成長+（データなしは通過） | モデル予測＋jquants_fin_summary |
+| **💎買い条件** (`recommend_from_scores`) | QV4条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + drop_prob<8%, net≥10, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
 | **優待フィルター** (フェーズ5) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
 | **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
 | **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
