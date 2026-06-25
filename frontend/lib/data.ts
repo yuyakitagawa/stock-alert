@@ -140,38 +140,32 @@ export async function fetchRecentEarnings(code: string): Promise<QuarterlyEarnin
 
 export async function fetchDailyQuote(code: string): Promise<import("./types").DailyQuote | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=5d&interval=1d`;
-    const res = await fetch(url, {
-      next: { revalidate: 3600 },
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
+    const res = await sbFetch(
+      `yahoo_price_cache?code=eq.${code}&order=date.desc&limit=5&select=date,close,volume`,
+      { headers: anonHeaders(), next: { revalidate: 3600 } },
+    );
+    if (!res || !res.ok) return null;
+    const rows: { date: string; close: number | null; volume: number | null }[] = await res.json();
+    if (rows.length === 0) return null;
 
-    const meta = result.meta ?? {};
-    const timestamps: number[] = result.timestamp ?? [];
-    const q = result.indicators?.quote?.[0] ?? {};
-    const n = timestamps.length - 1;
-    if (n < 0) return null;
-
-    const price = (meta.regularMarketPrice as number) ?? null;
-    const prev  = (meta.chartPreviousClose as number) ?? null;
+    const latest = rows[0];
+    const prev = rows.length >= 2 ? rows[1] : null;
+    const price = latest.close;
+    const prevClose = prev?.close ?? null;
 
     return {
-      date:             timestamps[n] ? new Date(timestamps[n] * 1000).toISOString().split("T")[0] : null,
+      date:             latest.date,
       price,
-      open:             (q.open?.[n]   as number) ?? null,
-      high:             (q.high?.[n]   as number) ?? null,
-      low:              (q.low?.[n]    as number) ?? null,
-      close:            (q.close?.[n]  as number) ?? null,
-      volume:           (q.volume?.[n] as number) ?? null,
-      prevClose:        prev,
-      change:           price != null && prev != null ? price - prev : null,
-      changePct:        price != null && prev != null ? ((price - prev) / prev) * 100 : null,
-      fiftyTwoWeekHigh: (meta.fiftyTwoWeekHigh as number) ?? null,
-      fiftyTwoWeekLow:  (meta.fiftyTwoWeekLow  as number) ?? null,
+      open:             null,
+      high:             null,
+      low:              null,
+      close:            price,
+      volume:           latest.volume,
+      prevClose,
+      change:           price != null && prevClose != null ? price - prevClose : null,
+      changePct:        price != null && prevClose != null ? ((price - prevClose) / prevClose) * 100 : null,
+      fiftyTwoWeekHigh: null,
+      fiftyTwoWeekLow:  null,
     };
   } catch {
     return null;
@@ -181,15 +175,14 @@ export async function fetchDailyQuote(code: string): Promise<import("./types").D
 
 export async function fetchSparkline(code: string): Promise<number[]> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=1mo&interval=1d`;
-    const res = await fetch(url, {
-      next: { revalidate: 3600 },
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const closes: (number | null)[] = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
-    return closes.filter((v): v is number => v !== null);
+    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+    const res = await sbFetch(
+      `yahoo_price_cache?code=eq.${code}&date=gte.${cutoff}&order=date.asc&select=close`,
+      { headers: anonHeaders(), next: { revalidate: 3600 } },
+    );
+    if (!res || !res.ok) return [];
+    const rows: { close: number | null }[] = await res.json();
+    return rows.map(r => r.close).filter((v): v is number => v !== null);
   } catch {
     return [];
   }
@@ -199,14 +192,14 @@ export async function fetchSparkline(code: string): Promise<number[]> {
 // （gen_rankings には日経比 rel20 しか無いため、絶対リターン = rel20 + 日経20日 で復元する）
 export async function fetchNikkeiReturn(days = 20): Promise<number> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?range=3mo&interval=1d`;
-    const res = await fetch(url, {
-      next: { revalidate: 3600 },
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
-    });
-    if (!res.ok) return 0;
-    const data = await res.json();
-    const closes: number[] = (data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [])
+    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().split("T")[0];
+    const res = await sbFetch(
+      `yahoo_market_index?ticker=eq.N225&date=gte.${cutoff}&order=date.asc&select=close`,
+      { headers: anonHeaders(), next: { revalidate: 3600 } },
+    );
+    if (!res || !res.ok) return 0;
+    const rows: { close: number | null }[] = await res.json();
+    const closes: number[] = rows.map(r => r.close).filter((v): v is number => v !== null)
       .filter((v: number | null): v is number => v !== null);
     if (closes.length <= days) return 0;
     const last = closes[closes.length - 1];
@@ -235,26 +228,29 @@ export async function fetchWatchMetrics(
   code: string,
   auth: import("./yahoo").YahooAuth | null,
 ): Promise<WatchMetrics> {
-  // 1) chart API（認証不要・Vercelでも安定）から現在値＋52週高値＋ミニチャート用終値。
-  //    range=1mo で meta（高値・現在値）と直近1ヶ月の終値を1コールで両取り。
   let price: number | null = null;
   let high52: number | null = null;
   let spark: number[] = [];
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=1mo&interval=1d`;
-    const res = await fetch(url, {
-      next: { revalidate: 3600 },
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const result = data?.chart?.result?.[0];
-      const meta = result?.meta;
-      price = (meta?.regularMarketPrice as number) ?? null;
-      high52 = (meta?.fiftyTwoWeekHigh as number) ?? null;
-      const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
-      spark = closes.filter((v): v is number => v != null);
+    const cutoff1m = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+    const res1 = await sbFetch(
+      `yahoo_price_cache?code=eq.${code}&date=gte.${cutoff1m}&order=date.asc&select=close`,
+      { headers: anonHeaders(), next: { revalidate: 3600 } },
+    );
+    if (res1 && res1.ok) {
+      const rows: { close: number | null }[] = await res1.json();
+      spark = rows.map(r => r.close).filter((v): v is number => v != null);
+      if (spark.length > 0) price = spark[spark.length - 1];
+    }
+    const cutoff1y = new Date(Date.now() - 365 * 86400000).toISOString().split("T")[0];
+    const res2 = await sbFetch(
+      `yahoo_price_cache?code=eq.${code}&date=gte.${cutoff1y}&order=date.asc&select=close`,
+      { headers: anonHeaders(), next: { revalidate: 3600 } },
+    );
+    if (res2 && res2.ok) {
+      const rows2: { close: number | null }[] = await res2.json();
+      const closes52 = rows2.map(r => r.close).filter((v): v is number => v != null);
+      high52 = closes52.length > 0 ? Math.max(...closes52) : null;
     }
   } catch { /* graceful */ }
 

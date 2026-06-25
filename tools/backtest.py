@@ -99,37 +99,13 @@ _SC_MIN_RSI          = 45.0
 _SC_MAX_RSI          = 70.0
 
 def _fetch_yahoo(ticker, days=800):
-    """Yahoo Finance APIから株価DataFrameを取得"""
-    end_ts   = int(datetime.now().timestamp())
-    start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval=1d&period1={start_ts}&period2={end_ts}"
-    )
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        closes = (result[0].get("indicators", {})
-                          .get("adjclose", [{}])[0]
-                          .get("adjclose", []))
-        volumes = (result[0].get("indicators", {})
-                           .get("quote", [{}])[0]
-                           .get("volume", []))
-        if not timestamps or not closes:
-            return None
-        idx = pd.to_datetime(timestamps, unit="s", utc=True).tz_convert("Asia/Tokyo").normalize()
-        df = pd.DataFrame({"Close": closes, "Volume": volumes}, index=idx)
-        df = df.dropna(subset=["Close"])
-        df.index = df.index.date
-        return df
-    except Exception:
-        return None
+    """Supabaseから株価DataFrameを取得（個別株・市場指数共用）"""
+    if "N225" in ticker or "%5EN225" in ticker:
+        from lib.db import load_market_index_data
+        return load_market_index_data("N225", days=days)
+    code = ticker.replace(".T", "")
+    from lib.db import get_price_df
+    return get_price_df(code, days=days)
 
 
 def get_hist_for_features(code):
