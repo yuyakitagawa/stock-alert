@@ -368,11 +368,150 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
   return lines.join("\n");
 }
 
-// ── Claude API ──────────────────────────────────────────
+// ── Claude API (tool use で自然言語からウォッチ操作) ─────
+
+const TOOLS: Anthropic.Tool[] = [
+  {
+    name: "add_watchlist",
+    description:
+      "ウォッチリストに銘柄を追加する。ユーザーが「〇〇をウォッチして」「〇〇を監視したい」「〇〇が下がったら教えて」等と言ったとき使う。",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "銘柄コード(4桁)または銘柄名の一部。例: '8473', 'SBI', '三菱UFJ'",
+        },
+        buy_threshold: {
+          type: "number",
+          description: "買い閾値(dp%)。指定なければ8.0",
+        },
+        sell_threshold: {
+          type: "number",
+          description: "売り閾値(dp%)。指定なければ20.0",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "remove_watchlist",
+    description:
+      "ウォッチリストから銘柄を削除する。「〇〇を外して」「〇〇の監視やめて」等と言ったとき使う。",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "銘柄コード(4桁)または銘柄名の一部",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "show_watchlist",
+    description:
+      "ウォッチリストの一覧を表示する。「ウォッチリスト見せて」「今何を監視してる？」等と言ったとき使う。",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "lookup_stock",
+    description:
+      "特定銘柄の現在の詳細情報を調べる。「〇〇の状況は？」「〇〇って今どう？」等と言ったとき使う。",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "銘柄コード(4桁)または銘柄名の一部",
+        },
+      },
+      required: ["query"],
+    },
+  },
+];
+
+async function resolveCode(
+  query: string
+): Promise<{ code: string; name: string } | { candidates: { code: string; name: string }[] } | null> {
+  if (/^\d{4}$/.test(query)) {
+    const stock = await lookupStock(query);
+    return stock ? { code: stock.code, name: stock.name } : null;
+  }
+  const matches = await searchStockByName(query);
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  return { candidates: matches };
+}
+
+async function executeToolCall(
+  toolName: string,
+  input: Record<string, any>,
+  userId: string
+): Promise<string> {
+  if (toolName === "show_watchlist") {
+    const list = await getWatchlist(userId);
+    if (list.length === 0) return "ウォッチリストは空です。銘柄名やコードを言ってもらえれば追加します。";
+    const lines = ["📋 ウォッチリスト:"];
+    for (const item of list) {
+      const stock = await lookupStock(item.code);
+      const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
+      const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
+      let status = "";
+      if (stock) {
+        if (stock.drop_prob < item.dp_threshold) status = "🔔買い時！";
+        else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
+      }
+      lines.push(`  ${item.code} ${item.name}\n  買<${item.dp_threshold} 売≥${item.dp_sell_threshold ?? 20} ${dpStr} ${priceStr} ${status}`);
+    }
+    return lines.join("\n");
+  }
+
+  if (toolName === "add_watchlist") {
+    const resolved = await resolveCode(input.query);
+    if (!resolved) return `「${input.query}」に該当する銘柄が見つかりません。`;
+    if ("candidates" in resolved) {
+      return `「${input.query}」に複数該当:\n${resolved.candidates.map((m) => `  ${m.code} ${m.name}`).join("\n")}\nどの銘柄か教えてください。`;
+    }
+    const buyTh = input.buy_threshold ?? 8.0;
+    const sellTh = input.sell_threshold ?? 20.0;
+    await addToWatchlist(userId, resolved.code, resolved.name, buyTh, sellTh);
+    const stock = await lookupStock(resolved.code);
+    return `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加\n買い閾値: dp < ${buyTh} / 売り閾値: dp ≥ ${sellTh}` +
+      (stock ? `\n現在のdp: ${stock.drop_prob}% / 株価: ${stock.close.toLocaleString()}円` : "");
+  }
+
+  if (toolName === "remove_watchlist") {
+    const resolved = await resolveCode(input.query);
+    if (!resolved) return `「${input.query}」に該当する銘柄が見つかりません。`;
+    if ("candidates" in resolved) {
+      return `「${input.query}」に複数該当:\n${resolved.candidates.map((m) => `  ${m.code} ${m.name}`).join("\n")}\nどの銘柄か教えてください。`;
+    }
+    await removeFromWatchlist(userId, resolved.code);
+    return `🗑 ${resolved.name}(${resolved.code}) をウォッチリストから削除しました。`;
+  }
+
+  if (toolName === "lookup_stock") {
+    const resolved = await resolveCode(input.query);
+    if (!resolved) return `「${input.query}」に該当する銘柄が見つかりません。`;
+    if ("candidates" in resolved) {
+      return `「${input.query}」に複数該当:\n${resolved.candidates.map((m) => `  ${m.code} ${m.name}`).join("\n")}\nどの銘柄か教えてください。`;
+    }
+    const detail = await fetchStockDetail(resolved.code);
+    return detail || `${resolved.code} のデータが見つかりません。`;
+  }
+
+  return "不明な操作です。";
+}
 
 async function askClaude(
   userMessage: string,
-  context: string
+  context: string,
+  userId: string
 ): Promise<string> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
@@ -394,31 +533,71 @@ ${context || "（本日のデータはまだありません）"}
 - データにある指標（dp, PER, PBR, Piotroski, BPS成長, EPSサプライズ等）を使って具体的に分析する
 - 「この株は買いか？」→ dpの水準、ファンダメンタルズ、市場環境を総合的に判断
 - セクター動向や同業比較も可能な範囲で言及する
-- メガバンク(8306三菱UFJ/8316三井住友FG/8411みずほ)は金利上昇で構造的に強い
-
-コマンド案内（やり方を聞かれたら教える）:
-- 「ウォッチ 8473」→ 追加（買dp<8/売dp≥20）
-- 「ウォッチ 8473 10 25」→ 買dp<10/売dp≥25で追加
-- 「ウォッチ SBI」→ 名前検索で追加
-- 「解除 8473」→ 削除
-- 「リスト」→ 一覧
-- 「8473」→ 銘柄詳細
+- ユーザーが銘柄の監視や通知を求めたら、toolを使ってウォッチリストを操作する
+- 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
 
 ルール:
 - 投資は自己責任である旨を必要に応じて添える
 - 800文字以内で回答する
 - データがない質問には正直に「わからない」と答える`;
 
-  const msg = await client.messages.create({
+  const messages: Anthropic.MessageParam[] = [
+    { role: "user", content: userMessage },
+  ];
+
+  const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
     system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
+    tools: TOOLS,
+    messages,
   });
 
-  return msg.content[0].type === "text"
-    ? msg.content[0].text
-    : "回答を生成できませんでした。";
+  // tool_use がなければテキストをそのまま返す
+  const textBlocks = response.content.filter(
+    (b): b is Anthropic.TextBlock => b.type === "text"
+  );
+  const toolBlocks = response.content.filter(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+  );
+
+  if (toolBlocks.length === 0) {
+    return textBlocks.map((b) => b.text).join("\n") || "回答を生成できませんでした。";
+  }
+
+  // tool を実行して結果を返す
+  const toolResults: Anthropic.ToolResultBlockParam[] = [];
+  for (const tool of toolBlocks) {
+    const result = await executeToolCall(
+      tool.name,
+      tool.input as Record<string, any>,
+      userId
+    );
+    toolResults.push({
+      type: "tool_result",
+      tool_use_id: tool.id,
+      content: result,
+    });
+  }
+
+  // tool結果を含めて再度Claudeに投げ、最終回答を得る
+  messages.push({ role: "assistant", content: response.content });
+  messages.push({ role: "user", content: toolResults });
+
+  const finalResponse = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    system: systemPrompt,
+    tools: TOOLS,
+    messages,
+  });
+
+  const finalText = finalResponse.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+
+  return finalText || "操作が完了しました。";
 }
 
 // ── Webhook エントリポイント ─────────────────────────────
@@ -451,7 +630,7 @@ export async function POST(req: NextRequest) {
       }
 
       const context = await fetchMarketContext(userId, userMessage);
-      const reply = await askClaude(userMessage, context);
+      const reply = await askClaude(userMessage, context, userId);
       await replyToLine(replyToken, reply);
     } catch (e: any) {
       console.error("[LINE webhook] Error:", e);
