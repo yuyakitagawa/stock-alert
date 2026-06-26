@@ -4,6 +4,8 @@
 - **Think Small**: 大規模なリファクタリングより、バグ修正とパラメータ調整を優先せよ。
 - **No Hallucination**: utils.pyの64次元特徴量の定義を勝手に変えないこと。
 - **Token Saving**: 解説は最小限にし、実行結果や修正コードを即座に提示せよ。
+- **SQL Batch & No-Ask**: Supabase SQL は許可不要で勝手に叩いてよい（許可確認は一切しない）。実行前に「何を知りたいか」を洗い出し、必要なデータは**1クエリにまとめて取得**せよ（銘柄リストは配列＝`unnest(ARRAY[...])` / `IN (...)`、複数指標は CTE で横断結合）。同じ調査で何度も往復クエリを投げない。やむを得ず分割する場合も並列でまとめて実行する。
+- **SQL PIT規律**: 「上がる前/買う前」のファンダを語るときは、必ず point-in-time で取得せよ。株価は対象日の終値、決算は `disc_date <= 対象日` の最新開示を使う。直近スナップショット（上昇後の株価でPER/PBR等）を「買う前の数字」として提示するのは禁止。
 
 ## 1. File Map (Core Only)
 - `lib/utils.py`: 特徴量定義(64次元: 57基本[32テクニカル+11ファンダ+4マクロ(VIX/US5/US20/JPY5)+8新規IB(Amihud非流動性/FXβ/JPY5/EPSサプライズ/BPS成長/Piotroski/配当性向/アクルーアル)+1EDINET大量保有+3モメンタム拡張(ret504/trend_slope60/trend_r2_60)]+7CS[6標準+1セクター内相対モメンタム]) & 共通関数。※変更時は要申告。
@@ -52,7 +54,7 @@
 - **AIモデル説明ページを同一コミットで更新（絶対厳守）**: 予測モデルの素性・特徴量重要度・買いフィルター・レジーム調整のいずれかを変更したら、**必ず同じコミットで** `frontend/app/model/page.tsx` の該当数値・条件を実コードに合わせて更新せよ。対象の真実源（source of truth）は次の通り。乖離は放置禁止。
   - 特徴量重要度・AUC・61次元の内訳 → `feature_importance.json` / `lib/utils.py`（`extract_features`）
   - 品質フィルター（株価/DD/連続下落/RSI/流動性） → `core/rank_stocks.py` の `passes_buy_filter`
-  - 💎買い条件 → `lib/utils.py` の `recommend_from_scores`
+  - 💎買い条件（QV4+レジーム） → `lib/utils.py` の `recommend_from_scores`
   - レジーム別銘柄数・VIX/リスクオフ調整 → `core/rank_stocks.py`
   - ユーザーから毎回指示がなくても、ロジック/フィルター変更を実装した時点で本ページ更新を自動的にセットで行うこと。`re-train`（金曜再学習）で重要度が変わった場合も同様。
 

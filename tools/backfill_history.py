@@ -73,27 +73,12 @@ def upsert(table, rows):
 
 
 def fetch_nikkei_history():
-    """日経225の終値を {date_str: close} で返す（約400日分）"""
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/%5EN225"
-           f"?interval=1d&period1={int((datetime.now()-timedelta(days=500)).timestamp())}"
-           f"&period2={int(datetime.now().timestamp())}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return {}
-        timestamps = result[0].get("timestamp", [])
-        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        out = {}
-        for ts, c in zip(timestamps, closes):
-            if c is not None:
-                d = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
-                out[d] = c
-        return out
-    except Exception as e:
-        print(f"  日経取得失敗: {e}")
+    """日経225の終値を {date_str: close} で返す（DBから取得）"""
+    from lib.db import load_market_index_data
+    nk_df = load_market_index_data("N225", days=2200)
+    if nk_df is None or len(nk_df) == 0:
         return {}
+    return {d.strftime("%Y-%m-%d"): float(c) for d, c in zip(nk_df.index, nk_df["Close"])}
 
 
 def fetch_etf_history():
