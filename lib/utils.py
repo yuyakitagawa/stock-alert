@@ -22,64 +22,26 @@ if not os.path.isdir(BASE_DIR):
 
 
 def get_prices(code, days=400):
-    ticker = f"{code}.T"
-    end_ts   = int(datetime.now().timestamp())
-    start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-           f"?interval=1d&period1={start_ts}&period2={end_ts}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        adjcloses  = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        raw_closes = result[0].get("indicators", {}).get("quote",    [{}])[0].get("close",    [])
-        volumes    = result[0].get("indicators", {}).get("quote",    [{}])[0].get("volume",   [])
-        if not timestamps or not adjcloses:
-            return None
-        # adjcloseがNoneの行はraw closeで補完（市場終了直後の計算ラグ対策）
-        closes = [a if a is not None else r for a, r in zip(adjcloses, raw_closes)]
-        df = pd.DataFrame(
-            {"Close": closes, "Volume": volumes},
-            index=pd.to_datetime(timestamps, unit="s", utc=True)
-        )
-        return df.dropna(subset=["Close"])
-    except Exception:
-        return None
+    from lib.db import get_price_df
+    return get_price_df(code, days=days)
 
 
 def get_price_at_date(code, target_date):
     """target_date前後の最も近い終値を返す（±14日範囲で探索）"""
-    start_ts = int((target_date - timedelta(days=14)).timestamp())
-    end_ts   = int((target_date + timedelta(days=14)).timestamp())
-    ticker = f"{code}.T"
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-           f"?interval=1d&period1={start_ts}&period2={end_ts}")
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = data.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        timestamps = result[0].get("timestamp", [])
-        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        target_ts = target_date.timestamp()
-        best_price, best_diff = None, float("inf")
-        for ts, c in zip(timestamps, closes):
-            if c is None:
-                continue
-            diff = abs(ts - target_ts)
-            if diff < best_diff:
-                best_diff, best_price = diff, c
-        return best_price
-    except Exception:
+    from lib.db import get_price_df
+    df = get_price_df(code, days=400)
+    if df is None or len(df) == 0:
         return None
+    from datetime import date as _date
+    td = target_date.date() if hasattr(target_date, 'date') else target_date
+    best_price, best_diff = None, float("inf")
+    for idx_date, row in zip(df.index, df["Close"]):
+        d = idx_date if isinstance(idx_date, _date) else _date.fromisoformat(str(idx_date)[:10])
+        diff = abs((d - td).days)
+        if diff < best_diff and diff <= 14:
+            best_diff = diff
+            best_price = float(row)
+    return best_price
 
 
 def get_market_index_df(ticker_encoded, days=2200):
@@ -594,13 +556,36 @@ def get_fundamentals(code):
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
-                          ret90=None, turnover_m=None):
-    """💎 買い: drop_prob<5% AND net>=20(4モデルアンサンブル) AND vol<=30%
-               AND ret90>-25% AND turnover>=50M"""
-    if (allow_buy
-            and drop_prob is not None and drop_prob < 5.0
-            and net >= 20.0
-            and (vol is None or vol <= 30.0)
+                          ret90=None, turnover_m=None, regime=None,
+                          drawdown60=None, down_streak_raw=None,
+                          cfo_margin=None, leverage=None, op_margin_improve=None):
+    """💎 買い: QV条件(業績強×株価低迷) + ファンダ品質 + モデルスコア + レジーム防御。
+    🔴 売り検討: drop_probやnetが危険域に入った銘柄を警告。"""
+    if drop_prob is not None and drop_prob >= 10.0:
+        return "🔴 売り検討"
+    if net < -5.0:
+        return "🔴 売り検討"
+    if drawdown60 is not None and drawdown60 < -0.20:
+        return "🔴 売り検討"
+    if down_streak_raw is not None and down_streak_raw >= 5:
+        return "🔴 売り検討"
+
+    if not allow_buy or regime == 'bear':
+        return "—"
+    qv_ok = (
+        piotroski is not None and piotroski >= 0.67
+        and pos52 is not None and pos52 < 0.45
+        and ((eps_surprise is not None and eps_surprise > 2.0)
+             or (bps_growth is not None and bps_growth > 0))
+    )
+    quality_ok = (
+        (cfo_margin is None or cfo_margin > 0)
+        and (leverage is None or leverage < 5.0)
+    )
+    if (qv_ok and quality_ok
+            and drop_prob is not None and drop_prob < 8.0
+            and net >= 10.0
+            and (vol is None or vol <= 20.0)
             and (ret90 is None or ret90 > -0.25)
             and (turnover_m is None or turnover_m >= 50.0)):
         return "💎 買い"

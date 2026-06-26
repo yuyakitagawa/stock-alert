@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const RANGE_MAP: Record<string, { range: string; interval: string }> = {
-  "1M": { range: "1mo",  interval: "1d"  },
-  "3M": { range: "3mo",  interval: "1d"  },
-  "6M": { range: "6mo",  interval: "1wk" },
-  "1Y": { range: "1y",   interval: "1wk" },
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
+const PERIOD_DAYS: Record<string, number> = {
+  "1M": 30,
+  "3M": 90,
+  "6M": 180,
+  "1Y": 365,
 };
 
 export async function GET(
@@ -13,30 +16,28 @@ export async function GET(
 ) {
   const { code } = await params;
   const period = req.nextUrl.searchParams.get("period") ?? "1M";
-  const { range, interval } = RANGE_MAP[period] ?? RANGE_MAP["1M"];
+  const days = PERIOD_DAYS[period] ?? 30;
 
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=${range}&interval=${interval}`;
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return NextResponse.json([]);
+  }
 
   try {
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
+    const url = `${SUPABASE_URL}/rest/v1/yahoo_price_cache?code=eq.${code}&date=gte.${cutoff}&order=date.asc&select=date,close`;
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StockSignal/1.0)" },
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
       next: { revalidate: 3600 },
     });
-    if (!res.ok) return NextResponse.json([], { status: 200 });
+    if (!res.ok) return NextResponse.json([]);
 
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) return NextResponse.json([]);
-
-    const timestamps: number[] = result.timestamp ?? [];
-    const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
-
-    const points = timestamps
-      .map((t, i) => ({
-        date: new Date(t * 1000).toISOString().split("T")[0],
-        close: closes[i],
-      }))
-      .filter((d): d is { date: string; close: number } => d.close !== null);
+    const rows: { date: string; close: number | null }[] = await res.json();
+    const points = rows
+      .filter((r): r is { date: string; close: number } => r.close !== null)
+      .map((r) => ({ date: r.date, close: r.close }));
 
     return NextResponse.json(points);
   } catch {

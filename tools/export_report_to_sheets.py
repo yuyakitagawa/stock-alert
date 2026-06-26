@@ -5,7 +5,6 @@ export_report_to_sheets.py
 import sys, os, re, csv, glob
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import date, datetime
@@ -68,8 +67,12 @@ def write_sheet(ws, data: list[list], header_rows=1):
 # ────────────────────────────────────────────────────────────
 
 def build_backtest_data():
-    nk = yf.download("^N225", start="2022-01-01", end="2026-06-10", progress=False, auto_adjust=True)
-    nk_series = nk["Close"].squeeze()
+    from lib.db import load_market_index_data
+    _nk_df = load_market_index_data("N225", days=2200)
+    if _nk_df is not None and len(_nk_df) > 0:
+        nk_series = _nk_df["Close"].squeeze()
+    else:
+        nk_series = pd.Series(dtype=float)
 
     def get_nk(d):
         dt = pd.Timestamp(d)
