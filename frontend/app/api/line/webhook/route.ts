@@ -50,12 +50,13 @@ interface WatchItem {
   code: string;
   name: string;
   dp_threshold: number;
+  dp_sell_threshold: number;
   line_user_id: string;
 }
 
 async function getWatchlist(userId: string): Promise<WatchItem[]> {
   const res = await fetch(
-    `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold&order=created_at`,
+    `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold,dp_sell_threshold&order=created_at`,
     { headers: sbHeaders() }
   );
   return res.ok ? await res.json() : [];
@@ -65,7 +66,8 @@ async function addToWatchlist(
   userId: string,
   code: string,
   name: string,
-  threshold: number
+  threshold: number,
+  sellThreshold: number = 20.0
 ): Promise<boolean> {
   const res = await fetch(`${SB_URL}/rest/v1/dp_watchlist`, {
     method: "POST",
@@ -75,6 +77,7 @@ async function addToWatchlist(
       code,
       name,
       dp_threshold: threshold,
+      dp_sell_threshold: sellThreshold,
     }),
   });
   return res.ok;
@@ -143,10 +146,13 @@ async function handleCommand(
       const stock = await lookupStock(item.code);
       const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
-      const status =
-        stock && stock.drop_prob < item.dp_threshold ? "🔔買い時！" : "";
+      let status = "";
+      if (stock) {
+        if (stock.drop_prob < item.dp_threshold) status = "🔔買い時！";
+        else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
+      }
       lines.push(
-        `  ${item.code} ${item.name} (閾値dp<${item.dp_threshold}) ${dpStr} ${priceStr} ${status}`
+        `  ${item.code} ${item.name}\n  買<${item.dp_threshold} 売≥${item.dp_sell_threshold ?? 20} ${dpStr} ${priceStr} ${status}`
       );
     }
     lines.push("\n「ウォッチ 銘柄コード」で追加");
@@ -154,13 +160,14 @@ async function handleCommand(
     return { handled: true, reply: lines.join("\n") };
   }
 
-  // ウォッチ追加: 「ウォッチ 8473」「ウォッチ 8473 10」「ウォッチ SBI」
+  // ウォッチ追加: 「ウォッチ 8473」「ウォッチ 8473 10」「ウォッチ 8473 10 20」「ウォッチ SBI」
   const addMatch = trimmed.match(
-    /^ウォッチ\s+(.+?)(?:\s+(\d+(?:\.\d+)?))?$/i
+    /^ウォッチ\s+(.+?)(?:\s+(\d+(?:\.\d+)?))?(?:\s+(\d+(?:\.\d+)?))?$/i
   );
   if (addMatch) {
     const target = addMatch[1].trim();
     const threshold = addMatch[2] ? parseFloat(addMatch[2]) : 8.0;
+    const sellThreshold = addMatch[3] ? parseFloat(addMatch[3]) : 20.0;
 
     if (/^\d{4}$/.test(target)) {
       const stock = await lookupStock(target);
@@ -170,12 +177,13 @@ async function handleCommand(
           reply: `${target} はランキングに見つかりません。銘柄コード4桁で指定してください。`,
         };
       }
-      await addToWatchlist(userId, stock.code, stock.name, threshold);
+      await addToWatchlist(userId, stock.code, stock.name, threshold, sellThreshold);
       return {
         handled: true,
         reply:
           `✅ ${stock.name}(${stock.code}) をウォッチリストに追加\n` +
-          `閾値: dp < ${threshold}\n` +
+          `買い閾値: dp < ${threshold}\n` +
+          `売り閾値: dp ≥ ${sellThreshold}\n` +
           `現在のdp: ${stock.drop_prob}%\n` +
           `株価: ${stock.close.toLocaleString()}円`,
       };
@@ -191,12 +199,13 @@ async function handleCommand(
     if (matches.length === 1) {
       const stock = await lookupStock(matches[0].code);
       const name = stock?.name ?? matches[0].name;
-      await addToWatchlist(userId, matches[0].code, name, threshold);
+      await addToWatchlist(userId, matches[0].code, name, threshold, sellThreshold);
       return {
         handled: true,
         reply:
           `✅ ${name}(${matches[0].code}) をウォッチリストに追加\n` +
-          `閾値: dp < ${threshold}\n` +
+          `買い閾値: dp < ${threshold}\n` +
+          `売り閾値: dp ≥ ${sellThreshold}\n` +
           (stock
             ? `現在のdp: ${stock.drop_prob}%\n株価: ${stock.close.toLocaleString()}円`
             : ""),
@@ -247,14 +256,53 @@ async function handleCommand(
 
 // ── 市場データ取得 ───────────────────────────────────────
 
-async function fetchMarketContext(userId: string): Promise<string> {
+async function fetchStockDetail(code: string): Promise<string> {
+  if (!SB_URL || !SB_KEY) return "";
+
+  const [rankRes, finRes] = await Promise.all([
+    fetch(
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,rise_prob,net,recommend,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      { headers: sbHeaders() }
+    ),
+    fetch(
+      `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,eps,bps,div_ann,payout_ratio&order=disc_date.desc&limit=1`,
+      { headers: sbHeaders() }
+    ),
+  ]);
+
+  const ranks = rankRes.ok ? await rankRes.json() : [];
+  const fins = finRes.ok ? await finRes.json() : [];
+  const lines: string[] = [];
+
+  if (ranks.length > 0) {
+    const r = ranks[0];
+    lines.push(`【${r.name}(${r.code})の詳細データ】`);
+    lines.push(`株価: ${r.close}円, dp: ${r.drop_prob}%, net: ${r.net}%`);
+    lines.push(`PER: ${r.per}, PBR: ${r.pbr}, Piotroski: ${r.piotroski}`);
+    lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
+    lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
+    lines.push(`推奨: ${r.recommend ?? "なし"}`);
+    if (ranks.length > 1) {
+      lines.push(`過去5日のdp推移: ${ranks.map((x: any) => x.drop_prob).join(" → ")}`);
+    }
+  }
+  if (fins.length > 0) {
+    const f = fins[0];
+    lines.push(`\n【決算データ(${f.disc_date})】`);
+    lines.push(`EPS: ${f.eps}, BPS: ${f.bps}, 年間配当: ${f.div_ann}, 配当性向: ${f.payout_ratio}`);
+  }
+
+  return lines.join("\n");
+}
+
+async function fetchMarketContext(userId: string, userMessage: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
 
   const today = new Date().toISOString().slice(0, 10);
 
   const [rankRes, n225Res, watchRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,rise_prob,net,recommend&order=net.desc&limit=20`,
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,rise_prob,net,recommend,per,pbr&order=net.desc&limit=20`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -262,7 +310,7 @@ async function fetchMarketContext(userId: string): Promise<string> {
       { headers: sbHeaders() }
     ),
     fetch(
-      `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold`,
+      `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold,dp_sell_threshold`,
       { headers: sbHeaders() }
     ),
   ]);
@@ -294,7 +342,7 @@ async function fetchMarketContext(userId: string): Promise<string> {
     lines.push(`\n本日のトップ10:`);
     for (const r of rankings.slice(0, 10)) {
       lines.push(
-        `  ${r.code} ${r.name}: net=${r.net}% dp=${r.drop_prob}% ${r.recommend ?? ""}`
+        `  ${r.code} ${r.name}: net=${r.net}% dp=${r.drop_prob}% PER=${r.per} PBR=${r.pbr} ${r.recommend ?? ""}`
       );
     }
   }
@@ -305,9 +353,16 @@ async function fetchMarketContext(userId: string): Promise<string> {
       const stock = rankings.find((r: any) => r.code === w.code);
       const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
       lines.push(
-        `  ${w.code} ${w.name}: ${dpStr} (閾値dp<${w.dp_threshold})`
+        `  ${w.code} ${w.name}: ${dpStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`
       );
     }
+  }
+
+  // ユーザーが特定銘柄について質問している場合、詳細データを追加取得
+  const codeMatch = userMessage.match(/(\d{4})/);
+  if (codeMatch) {
+    const detail = await fetchStockDetail(codeMatch[1]);
+    if (detail) lines.push("\n" + detail);
   }
 
   return lines.join("\n");
@@ -321,34 +376,41 @@ async function askClaude(
 ): Promise<string> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
-  const systemPrompt = `あなたは日本株投資のアシスタントBot「stock-alert」です。
-ユーザーの質問に簡潔に日本語で答えてください。
+  const systemPrompt = `あなたは日本株投資の専門アシスタントBot「stock-alert」です。
+ユーザーの株に関する相談に、実際のデータに基づいて日本語で答えてください。
 
 以下はリアルタイムの市場データです:
 ${context || "（本日のデータはまだありません）"}
 
-あなたが知っていること:
-- XGBoostで63日先の±15%変動を予測するモデルを使用
-- drop_prob(dp): 下落確率。dp<8は安全圏、dp≥15は危険
-- 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき
-- ウォッチリストの銘柄はdpが閾値を下回ったら買いタイミング
+あなたの分析フレームワーク:
+- XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.766)の精度が高い
+- drop_prob(dp): 下落確率。dp<8は安全圏、dp≥15は危険水準
+- net = rise_prob - drop_prob。高いほど上昇期待
+- 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
+- PBR<1は割安、PER<15は割安圏、Piotroski≥7は財務健全
+- ウォッチリストの銘柄はdpが買い閾値を下回ったら買い、売り閾値以上なら売り検討
+
+株の相談の答え方:
+- データにある指標（dp, PER, PBR, Piotroski, BPS成長, EPSサプライズ等）を使って具体的に分析する
+- 「この株は買いか？」→ dpの水準、ファンダメンタルズ、市場環境を総合的に判断
+- セクター動向や同業比較も可能な範囲で言及する
 - メガバンク(8306三菱UFJ/8316三井住友FG/8411みずほ)は金利上昇で構造的に強い
 
-コマンドの案内（ユーザーがやり方を聞いたら教える）:
-- 「ウォッチ 8473」→ ウォッチリストに追加（dp<8で通知）
-- 「ウォッチ 8473 10」→ 閾値dp<10で追加
-- 「ウォッチ SBI」→ 名前で検索して追加
-- 「解除 8473」→ ウォッチリストから削除
-- 「リスト」→ ウォッチリスト一覧
-- 「8473」→ 銘柄の現在状況を表示
+コマンド案内（やり方を聞かれたら教える）:
+- 「ウォッチ 8473」→ 追加（買dp<8/売dp≥20）
+- 「ウォッチ 8473 10 25」→ 買dp<10/売dp≥25で追加
+- 「ウォッチ SBI」→ 名前検索で追加
+- 「解除 8473」→ 削除
+- 「リスト」→ 一覧
+- 「8473」→ 銘柄詳細
 
 ルール:
 - 投資は自己責任である旨を必要に応じて添える
-- 500文字以内で回答する
+- 800文字以内で回答する
 - データがない質問には正直に「わからない」と答える`;
 
   const msg = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-sonnet-4-6",
     max_tokens: 1024,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
@@ -388,7 +450,7 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const context = await fetchMarketContext(userId);
+      const context = await fetchMarketContext(userId, userMessage);
       const reply = await askClaude(userMessage, context);
       await replyToLine(replyToken, reply);
     } catch (e: any) {

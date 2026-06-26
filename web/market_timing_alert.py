@@ -49,7 +49,7 @@ def get_today_rankings(today_str: str) -> list[dict]:
 
 
 def get_all_watchlists() -> dict[str, list[dict]]:
-    rows = sb_get("dp_watchlist?select=line_user_id,code,name,dp_threshold&order=line_user_id,created_at")
+    rows = sb_get("dp_watchlist?select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at")
     by_user: dict[str, list[dict]] = {}
     for r in rows:
         uid = r["line_user_id"]
@@ -86,15 +86,20 @@ def build_watchlist_section(
         dp = r.get("drop_prob")
         if dp is None:
             continue
-        threshold = w.get("dp_threshold", 8.0)
+        buy_th = w.get("dp_threshold", 8.0)
+        sell_th = w.get("dp_sell_threshold", 20.0)
         close = r.get("close", 0)
-        if dp < threshold:
+        if dp < buy_th:
             alerts.append({
-                "code": w["code"],
-                "name": w["name"],
-                "dp": dp,
-                "threshold": threshold,
-                "close": close,
+                "code": w["code"], "name": w["name"],
+                "dp": dp, "threshold": buy_th, "close": close,
+                "signal": "buy",
+            })
+        elif dp >= sell_th:
+            alerts.append({
+                "code": w["code"], "name": w["name"],
+                "dp": dp, "threshold": sell_th, "close": close,
+                "signal": "sell",
             })
 
     if not alerts:
@@ -102,12 +107,20 @@ def build_watchlist_section(
 
     lines = []
     for a in alerts:
-        lines.append(
-            f"🔔 {a['name']}({a['code']})\n"
-            f"dp={a['dp']:.1f}% < 閾値{a['threshold']}\n"
-            f"株価: {a['close']:,.0f}円\n"
-            f"→ 買いタイミング到来！"
-        )
+        if a["signal"] == "buy":
+            lines.append(
+                f"🔔 {a['name']}({a['code']})\n"
+                f"dp={a['dp']:.1f}% < 買い閾値{a['threshold']}\n"
+                f"株価: {a['close']:,.0f}円\n"
+                f"→ 買いタイミング到来！"
+            )
+        else:
+            lines.append(
+                f"⚠️ {a['name']}({a['code']})\n"
+                f"dp={a['dp']:.1f}% ≥ 売り閾値{a['threshold']}\n"
+                f"株価: {a['close']:,.0f}円\n"
+                f"→ 売り検討タイミング！"
+            )
     return "\n".join(lines), alerts
 
 
