@@ -1,0 +1,227 @@
+"""
+マーケットタイミング＆ウォッチリストアラート（Step 5b）
+
+毎日のパイプライン終了後に実行:
+1. 全銘柄の平均 drop_prob → N225 投資/キャッシュ判定
+2. ユーザー別ウォッチ銘柄の dp 閾値アラート
+
+通知先: LINE Messaging API (Push Message) × ユーザーごと
+データ源: Supabase (gen_rankings, dp_watchlist)
+必要な環境変数: LINE_CHANNEL_ACCESS_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+依存: rank_stocks.py → export_to_web.py 実行後
+"""
+import json
+import os
+import sys
+from datetime import date
+
+import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from dotenv import load_dotenv
+
+load_dotenv()
+
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
+MARKET_DP_CASH_THRESHOLD = 15.0
+
+
+def sb_get(path: str) -> list[dict]:
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+    }
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_today_rankings(today_str: str) -> list[dict]:
+    return sb_get(
+        f"gen_rankings?date=eq.{today_str}"
+        f"&select=code,name,close,drop_prob"
+    )
+
+
+def get_all_watchlists() -> dict[str, list[dict]]:
+    rows = sb_get("dp_watchlist?select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at")
+    by_user: dict[str, list[dict]] = {}
+    for r in rows:
+        uid = r["line_user_id"]
+        by_user.setdefault(uid, []).append(r)
+    return by_user
+
+
+def calc_market_dp(rankings: list[dict]) -> float | None:
+    dps = [r["drop_prob"] for r in rankings if r.get("drop_prob") is not None]
+    if not dps:
+        return None
+    return sum(dps) / len(dps)
+
+
+def build_market_section(today_str: str, avg_dp: float | None) -> str:
+    if avg_dp is None:
+        return ""
+    if avg_dp >= MARKET_DP_CASH_THRESHOLD:
+        signal = "🔴 キャッシュ推奨"
+    else:
+        signal = "🟢 投資継続OK"
+    return f"📊 N225シグナル ({today_str})\n平均dp: {avg_dp:.1f}% → {signal}"
+
+
+def build_watchlist_section(
+    watchlist: list[dict],
+    ranking_map: dict[str, dict],
+) -> tuple[str, list[dict]]:
+    alerts: list[dict] = []
+    for w in watchlist:
+        r = ranking_map.get(w["code"])
+        if r is None:
+            continue
+        dp = r.get("drop_prob")
+        if dp is None:
+            continue
+        buy_th = w.get("dp_threshold", 8.0)
+        sell_th = w.get("dp_sell_threshold", 20.0)
+        close = r.get("close", 0)
+        if dp < buy_th:
+            alerts.append({
+                "code": w["code"], "name": w["name"],
+                "dp": dp, "threshold": buy_th, "close": close,
+                "signal": "buy",
+            })
+        elif dp >= sell_th:
+            alerts.append({
+                "code": w["code"], "name": w["name"],
+                "dp": dp, "threshold": sell_th, "close": close,
+                "signal": "sell",
+            })
+
+    if not alerts:
+        return "", alerts
+
+    lines = []
+    for a in alerts:
+        if a["signal"] == "buy":
+            lines.append(
+                f"🔔 {a['name']}({a['code']})\n"
+                f"dp={a['dp']:.1f}% < 買い閾値{a['threshold']}\n"
+                f"株価: {a['close']:,.0f}円\n"
+                f"→ 買いタイミング到来！"
+            )
+        else:
+            lines.append(
+                f"⚠️ {a['name']}({a['code']})\n"
+                f"dp={a['dp']:.1f}% ≥ 売り閾値{a['threshold']}\n"
+                f"株価: {a['close']:,.0f}円\n"
+                f"→ 売り検討タイミング！"
+            )
+    return "\n".join(lines), alerts
+
+
+def send_line_push(user_id: str, message: str) -> bool:
+    if not LINE_CHANNEL_ACCESS_TOKEN:
+        print("[market_timing] LINE_CHANNEL_ACCESS_TOKEN 未設定。送信スキップ。")
+        return False
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+    }
+    payload = {
+        "to": user_id,
+        "messages": [{"type": "text", "text": message}],
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        if resp.ok:
+            print(f"[market_timing] LINE送信完了 → {user_id[:8]}...")
+            return True
+        else:
+            print(f"[market_timing] LINE送信失敗 ({user_id[:8]}...): {resp.status_code} {resp.text[:200]}")
+            return False
+    except Exception as e:
+        print(f"[market_timing] LINE送信エラー ({user_id[:8]}...): {e}")
+        return False
+
+
+def main() -> None:
+    today_str = date.today().isoformat()
+    print(f"[market_timing] {today_str} マーケットタイミング判定開始")
+
+    rankings = get_today_rankings(today_str)
+    if not rankings:
+        print("[market_timing] 当日ランキングなし。終了。")
+        return
+
+    avg_dp = calc_market_dp(rankings)
+    if avg_dp is not None:
+        status = "キャッシュ推奨" if avg_dp >= MARKET_DP_CASH_THRESHOLD else "投資継続"
+        print(f"[market_timing] 市場平均dp: {avg_dp:.1f}% → {status}")
+
+    market_msg = build_market_section(today_str, avg_dp)
+    ranking_map = {r["code"]: r for r in rankings}
+
+    # ユーザー別ウォッチリストを取得して個別通知
+    user_watchlists = get_all_watchlists()
+    all_alerts: list[dict] = []
+
+    if not user_watchlists:
+        # ウォッチリスト登録ユーザーがいなくても、LINE_USER_IDがあれば市場シグナルだけ送信
+        fallback_uid = os.getenv("LINE_USER_ID", "")
+        if fallback_uid and market_msg:
+            print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
+            send_line_push(fallback_uid, market_msg)
+    else:
+        for user_id, watchlist in user_watchlists.items():
+            watch_msg, alerts = build_watchlist_section(watchlist, ranking_map)
+            all_alerts.extend(alerts)
+
+            parts = []
+            if market_msg:
+                parts.append(market_msg)
+            if watch_msg:
+                parts.append(watch_msg)
+
+            if parts:
+                message = "\n\n".join(parts)
+                print(f"\n--- {user_id[:8]}... ---\n{message}\n")
+                send_line_push(user_id, message)
+            else:
+                print(f"[market_timing] {user_id[:8]}...: 通知すべき内容なし。")
+
+            # ウォッチリストのdp状況をログ
+            for w in watchlist:
+                r = ranking_map.get(w["code"])
+                if r and r.get("drop_prob") is not None:
+                    dp = r["drop_prob"]
+                    th = w.get("dp_threshold", 8.0)
+                    if dp < th:
+                        print(f"[market_timing] 🔔 {w['name']}({w['code']}): dp={dp:.1f} < {th} → アラート!")
+                    else:
+                        print(f"[market_timing] {w['name']}({w['code']}): dp={dp:.1f} (閾値{th}未到達)")
+
+    # 結果をJSONに保存（Webアプリ連携用）
+    output = {
+        "date": today_str,
+        "avg_dp": round(avg_dp, 1) if avg_dp is not None else None,
+        "n225_signal": "cash" if avg_dp and avg_dp >= MARKET_DP_CASH_THRESHOLD else "invest",
+        "watchlist_alerts": all_alerts,
+    }
+    out_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "market_timing.json",
+    )
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+    print(f"[market_timing] 結果保存: {out_path}")
+
+
+if __name__ == "__main__":
+    main()

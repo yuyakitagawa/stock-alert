@@ -194,14 +194,35 @@ export default function ModelPage() {
               ② 💎 買い 判定（下記を<span className="underline">すべて</span>満たす）
             </h3>
             <p className="text-xs text-gray-500 mb-3">
-              4モデルアンサンブル（絶対上昇/下落＋相対α上昇/下落）で厳選した最上位シグナル。
+              QV条件（業績強×株価低迷）＋ファンダ品質＋モデルスコアで厳選。弱気レジームでは💎を出さない防御機構付き。
             </p>
             <ul className="space-y-2">
-              <Cond>下落確率 &lt; 5%（モデルが下落をほぼ否定）</Cond>
-              <Cond>ネットスコア ≥ +20（4モデルアンサンブル: 絶対＋相対α）</Cond>
-              <Cond>20日ボラティリティ ≤ 30%（値動きが許容範囲内）</Cond>
-              <Cond>90日リターン &gt; −25%（直近で崩れていない）</Cond>
+              <Cond>Piotroski F-Score ≥ 6/9（財務健全性）</Cond>
+              <Cond>52週レンジ位置 &lt; 45%（安値圏＝割安候補）</Cond>
+              <Cond>EPSサプライズ &gt; 2% または BPS成長 &gt; 0（業績改善シグナル）</Cond>
+              <Cond>営業CFマージン &gt; 0（本業でキャッシュ創出）</Cond>
+              <Cond>レバレッジ(負債/自己資本) &lt; 5倍（過剰債務排除）</Cond>
+              <Cond>下落確率 &lt; 8%（モデルが下落リスク低と判定）</Cond>
+              <Cond>ネットスコア ≥ +10（上昇−下落の差が十分）</Cond>
+              <Cond>20日ボラティリティ ≤ 20%（過度な値動きなし）</Cond>
+              <Cond>90日リターン &gt; −25%（バリュートラップ回避）</Cond>
               <Cond>20日平均売買代金 ≥ 50百万円（十分な流動性）</Cond>
+              <Cond>相場レジーム ≠ 弱気（bear時は💎を自動抑制）</Cond>
+            </ul>
+          </div>
+
+          <div className="bg-gray-900 border border-red-900/50 rounded-xl p-4">
+            <h3 className="text-sm font-bold text-red-400 mb-1">
+              ③ 🔴 売り検討（下記の<span className="underline">いずれか</span>に該当）
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              下落予測モデル（AUC 0.766）を活かした撤退シグナル。保有銘柄の危険検知に使用。
+            </p>
+            <ul className="space-y-2">
+              <Cond>下落確率 ≥ 10%（モデルが下落リスク高と判定）</Cond>
+              <Cond>ネットスコア &lt; −5（上昇見込みを下落が大きく上回る）</Cond>
+              <Cond>60日ドローダウン &lt; −20%（急落進行中）</Cond>
+              <Cond>連続下落 ≥ 5日（下降トレンド入り）</Cond>
             </ul>
           </div>
 
@@ -226,7 +247,8 @@ export default function ModelPage() {
 
           <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-sm text-gray-400 leading-relaxed">
             <strong className="text-gray-200">地合いによる全体防御：</strong>
-            日経20日リターンが閾値を下回る下落相場では、推奨銘柄数を 強気10→中立5→弱気3 へ動的に縮小。
+            弱気レジーム（日経 &lt; SMA63）では💎買いを入口で遮断。
+            推奨銘柄数を 強気10→中立5→弱気3 へ動的に縮小。
             VIX &gt; 30 の恐怖相場ではさらに −1 し、リスクオフ判定時は 💎買いを全件見送ります。
           </div>
         </section>
