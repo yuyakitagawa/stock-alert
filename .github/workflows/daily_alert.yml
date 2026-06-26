@@ -43,6 +43,8 @@ jobs:
           echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
           echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+          echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> ~/stock-alert/.env
+          echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
 
       - name: Create gcp_key.json from secret
         run: |
@@ -109,6 +111,10 @@ jobs:
       - name: Step 5 - ユーザーアラートメール送信
         continue-on-error: true
         run: cd ~/stock-alert && python web/send_user_alerts.py
+
+      - name: Step 5b - マーケットタイミング＆dpウォッチアラート
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/market_timing_alert.py
 
       - name: Save model cache
         if: always()
