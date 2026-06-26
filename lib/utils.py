@@ -556,9 +556,20 @@ def get_fundamentals(code):
 
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
-                          ret90=None, turnover_m=None, regime=None):
-    """💎 買い: QV4条件(業績強×株価低迷) + モデルスコア + レジーム防御。
-    bear時は💎を出さない。"""
+                          ret90=None, turnover_m=None, regime=None,
+                          drawdown60=None, down_streak_raw=None,
+                          cfo_margin=None, leverage=None, op_margin_improve=None):
+    """💎 買い: QV条件(業績強×株価低迷) + ファンダ品質 + モデルスコア + レジーム防御。
+    🔴 売り検討: drop_probやnetが危険域に入った銘柄を警告。"""
+    if drop_prob is not None and drop_prob >= 10.0:
+        return "🔴 売り検討"
+    if net < -5.0:
+        return "🔴 売り検討"
+    if drawdown60 is not None and drawdown60 < -0.20:
+        return "🔴 売り検討"
+    if down_streak_raw is not None and down_streak_raw >= 5:
+        return "🔴 売り検討"
+
     if not allow_buy or regime == 'bear':
         return "—"
     qv_ok = (
@@ -567,7 +578,11 @@ def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
         and ((eps_surprise is not None and eps_surprise > 2.0)
              or (bps_growth is not None and bps_growth > 0))
     )
-    if (qv_ok
+    quality_ok = (
+        (cfo_margin is None or cfo_margin > 0)
+        and (leverage is None or leverage < 5.0)
+    )
+    if (qv_ok and quality_ok
             and drop_prob is not None and drop_prob < 8.0
             and net >= 10.0
             and (vol is None or vol <= 20.0)
