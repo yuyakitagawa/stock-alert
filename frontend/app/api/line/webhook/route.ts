@@ -144,7 +144,7 @@ async function handleCommand(
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
       const stock = await lookupStock(item.code);
-      const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
+      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
       let status = "";
       if (stock) {
@@ -261,11 +261,11 @@ async function fetchStockDetail(code: string): Promise<string> {
 
   const [rankRes, finRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,rise_prob,net,recommend,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
       { headers: sbHeaders() }
     ),
     fetch(
-      `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,eps,bps,div_ann,payout_ratio&order=disc_date.desc&limit=1`,
+      `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,doc_type,eps,bps,div_ann,payout_ratio,np,cfo,ta,equity,op,sales,fnp,fop,fsales&order=disc_date.desc&limit=4`,
       { headers: sbHeaders() }
     ),
   ]);
@@ -277,19 +277,48 @@ async function fetchStockDetail(code: string): Promise<string> {
   if (ranks.length > 0) {
     const r = ranks[0];
     lines.push(`【${r.name}(${r.code})の詳細データ】`);
-    lines.push(`株価: ${r.close}円, dp: ${r.drop_prob}%, net: ${r.net}%`);
+    lines.push(`株価: ${r.close}円, 下落確率: ${r.drop_prob}%, net: ${r.net}%`);
     lines.push(`PER: ${r.per}, PBR: ${r.pbr}, Piotroski: ${r.piotroski}`);
     lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
     lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
-    lines.push(`推奨: ${r.recommend ?? "なし"}`);
     if (ranks.length > 1) {
-      lines.push(`過去5日のdp推移: ${ranks.map((x: any) => x.drop_prob).join(" → ")}`);
+      lines.push(`過去5日の下落確率推移: ${ranks.map((x: any) => x.drop_prob).join(" → ")}`);
     }
   }
   if (fins.length > 0) {
     const f = fins[0];
-    lines.push(`\n【決算データ(${f.disc_date})】`);
-    lines.push(`EPS: ${f.eps}, BPS: ${f.bps}, 年間配当: ${f.div_ann}, 配当性向: ${f.payout_ratio}`);
+    const close = ranks.length > 0 ? Number(ranks[0].close) : 0;
+    const divYield = close > 0 && f.div_ann ? ((f.div_ann / close) * 100).toFixed(2) : null;
+    const roe = f.equity && f.equity > 0 && f.np ? ((f.np / f.equity) * 100).toFixed(1) : null;
+    const equityRatio = f.ta && f.ta > 0 && f.equity ? ((f.equity / f.ta) * 100).toFixed(1) : null;
+    const opMargin = f.sales && f.sales > 0 && f.op ? ((f.op / f.sales) * 100).toFixed(1) : null;
+
+    lines.push(`\n【決算データ(${f.disc_date} ${f.doc_type})】`);
+    lines.push(`EPS: ${f.eps}, BPS: ${f.bps}`);
+    if (divYield) lines.push(`配当利回り: ${divYield}%, 年間配当: ${f.div_ann}円, 配当性向: ${f.payout_ratio ? (f.payout_ratio * 100).toFixed(1) + "%" : "N/A"}`);
+    if (roe) lines.push(`ROE: ${roe}%`);
+    if (equityRatio) lines.push(`自己資本比率: ${equityRatio}%`);
+    if (opMargin) lines.push(`営業利益率: ${opMargin}%`);
+    if (f.cfo != null) lines.push(`営業CF: ${(f.cfo / 1e6).toFixed(0)}百万円`);
+    if (f.fnp != null && f.np != null && f.fnp > 0) {
+      const progress = ((f.np / f.fnp) * 100).toFixed(1);
+      lines.push(`通期予想進捗率: ${progress}% (実績NP: ${(f.np / 1e6).toFixed(0)}百万 / 予想: ${(f.fnp / 1e6).toFixed(0)}百万)`);
+    }
+
+    // 前期比較（直近FYが2件以上あれば）
+    const fyRecords = fins.filter((x: any) => x.doc_type === "FY");
+    if (fyRecords.length >= 2) {
+      const cur = fyRecords[0];
+      const prev = fyRecords[1];
+      if (cur.np != null && prev.np != null && prev.np !== 0) {
+        const npGrowth = (((cur.np - prev.np) / Math.abs(prev.np)) * 100).toFixed(1);
+        lines.push(`純利益成長率(前期比): ${npGrowth}%`);
+      }
+      if (cur.sales != null && prev.sales != null && prev.sales !== 0) {
+        const salesGrowth = (((cur.sales - prev.sales) / Math.abs(prev.sales)) * 100).toFixed(1);
+        lines.push(`売上成長率(前期比): ${salesGrowth}%`);
+      }
+    }
   }
 
   return lines.join("\n");
@@ -302,7 +331,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   const [rankRes, n225Res, watchRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,rise_prob,net,recommend,per,pbr&order=net.desc&limit=20`,
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,net,per,pbr&order=net.desc&limit=20`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -336,13 +365,13 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
     if (avgDp != null) {
       const signal = avgDp >= 15 ? "🔴キャッシュ推奨" : "🟢投資継続OK";
-      lines.push(`市場平均dp: ${avgDp.toFixed(1)}% → ${signal}`);
+      lines.push(`市場平均下落確率: ${avgDp.toFixed(1)}% → ${signal}`);
     }
 
     lines.push(`\n本日のトップ10:`);
     for (const r of rankings.slice(0, 10)) {
       lines.push(
-        `  ${r.code} ${r.name}: net=${r.net}% dp=${r.drop_prob}% PER=${r.per} PBR=${r.pbr} ${r.recommend ?? ""}`
+        `  ${r.code} ${r.name}: net=${r.net}% 下落確率=${r.drop_prob}% PER=${r.per} PBR=${r.pbr}`
       );
     }
   }
@@ -351,7 +380,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
     lines.push(`\nこのユーザーのウォッチリスト:`);
     for (const w of watchlist) {
       const stock = rankings.find((r: any) => r.code === w.code);
-      const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
+      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
       lines.push(
         `  ${w.code} ${w.name}: ${dpStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`
       );
@@ -459,7 +488,7 @@ async function executeToolCall(
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
       const stock = await lookupStock(item.code);
-      const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
+      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
       let status = "";
       if (stock) {
@@ -522,23 +551,37 @@ async function askClaude(
 ${context || "（本日のデータはまだありません）"}
 
 あなたの分析フレームワーク:
-- XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.766)の精度が高い
-- drop_prob(dp): 下落確率。dp<8は安全圏、dp≥15は危険水準
+- XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.771)の精度が高い
+- 下落確率(dp): dp<8は安全圏、dp≥15は危険水準
 - net = rise_prob - drop_prob。高いほど上昇期待
 - 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
-- PBR<1は割安、PER<15は割安圏、Piotroski≥7は財務健全
-- ウォッチリストの銘柄はdpが買い閾値を下回ったら買い、売り閾値以上なら売り検討
+
+ファンダメンタル指標の見方:
+- PER<15: 割安圏、PBR<1: 純資産割れ（割安候補）
+- ROE>10%: 資本効率良好、ROE>15%: 優秀
+- 配当利回り>3%: 高配当、>5%: 超高配当（持続性要確認）
+- 配当性向>80%: 配当維持リスクあり
+- Piotroski≥7: 財務健全（9点満点）
+- 自己資本比率>40%: 安定、<20%: 財務リスク
+- 営業利益率>10%: 高収益体質
+- 営業CF黒字: キャッシュ創出力あり
+- 通期予想進捗率: 1Q>25%, 2Q>50%, 3Q>75%で順調
 
 株の相談の答え方:
-- データにある指標（dp, PER, PBR, Piotroski, BPS成長, EPSサプライズ等）を使って具体的に分析する
-- 「この株は買いか？」→ dpの水準、ファンダメンタルズ、市場環境を総合的に判断
-- セクター動向や同業比較も可能な範囲で言及する
+- ユーザーの質問意図に合わせて関連する指標を選んで回答する
+  - 「買いか？」→ 下落確率 + PER/PBR + ROE + 配当利回り + 市場環境
+  - 「配当は？」→ 配当利回り + 配当性向 + 純利益成長率 + 営業CF
+  - 「安全？」→ 下落確率 + 自己資本比率 + Piotroski + 営業CF
+  - 「割安？」→ PER + PBR + ROE + BPS成長 + EPSサプライズ
+  - 「成長性は？」→ 売上/純利益成長率 + 営業利益率 + 通期進捗率
+- 全指標を列挙せず、質問に最も関連する3-5指標を選んで分析する
 - ユーザーが銘柄の監視や通知を求めたら、toolを使ってウォッチリストを操作する
 - 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
 
 ルール:
 - 投資は自己責任である旨を必要に応じて添える
 - 800文字以内で回答する
+- 「下落確率」と表記する（dpとは言わない）
 - データがない質問には正直に「わからない」と答える`;
 
   const messages: Anthropic.MessageParam[] = [
