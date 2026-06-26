@@ -82,7 +82,21 @@ def get_tse_stock_list():
         result=result[result["code"].str.match(r"^[1-9]\d{3}$")]
         return result.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
     except Exception as e:
-        print(f"銘柄リスト取得失敗: {e}"); return None
+        print(f"銘柄リスト取得失敗(JPX): {e}")
+        return _fallback_stock_list()
+
+def _fallback_stock_list():
+    cache_path=os.path.join(SAVE_DIR,"_local_prices.pkl")
+    if os.path.exists(cache_path):
+        import pickle
+        with open(cache_path,"rb") as f:
+            d=pickle.load(f)
+        codes=[c for c in d.keys() if len(c)==4 and c[0].isdigit()]
+        if codes:
+            df=pd.DataFrame({"code":codes,"name":""})
+            print(f"  ローカルキャッシュから{len(codes)}銘柄取得（フォールバック）")
+            return df.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
+    print("フォールバック銘柄リストなし"); return None
 
 def get_prices(code,days=HISTORY_DAYS):
     from lib.db import get_price_df
