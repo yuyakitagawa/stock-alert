@@ -111,14 +111,28 @@ async function lookupStock(
   return rows.length > 0 ? rows[0] : null;
 }
 
+function toFullWidth(s: string): string {
+  return s.replace(/[A-Za-z0-9]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) + 0xfee0)
+  );
+}
+
 async function searchStockByName(
   keyword: string
 ): Promise<{ code: string; name: string }[]> {
-  const res = await fetch(
-    `${SB_URL}/rest/v1/gen_stock_meta?name=ilike.*${encodeURIComponent(keyword)}*&select=code,name&limit=5`,
-    { headers: sbHeaders() }
-  );
-  return res.ok ? await res.json() : [];
+  const queries = [keyword];
+  const fw = toFullWidth(keyword);
+  if (fw !== keyword) queries.push(fw);
+
+  for (const q of queries) {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/gen_stock_meta?name=ilike.*${encodeURIComponent(q)}*&select=code,name&limit=5`,
+      { headers: sbHeaders() }
+    );
+    const rows = res.ok ? await res.json() : [];
+    if (rows.length > 0) return rows;
+  }
+  return [];
 }
 
 // ── コマンド処理 ─────────────────────────────────────────
@@ -528,6 +542,13 @@ ${context || "（本日のデータはまだありません）"}
 - 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
 - PBR<1は割安、PER<15は割安圏、Piotroski≥7は財務健全
 - ウォッチリストの銘柄はdpが買い閾値を下回ったら買い、売り閾値以上なら売り検討
+
+銘柄の表記揺れ対応:
+- DBの銘柄名は全角英数字（例: ＳＢＩホールディングス、ＫＤＤＩ）
+- ユーザーは半角・略称・通称で入力する（SBI, SBIホールディングス, KDDI, トヨタ, 三菱UFJ等）
+- toolのqueryには銘柄コード4桁を使うのが最も確実。わかる銘柄はコードで指定せよ
+- 主要銘柄コード: トヨタ=7203, ソニー=6758, 任天堂=7974, キーエンス=6861, 三菱UFJ=8306, 三井住友FG=8316, みずほ=8411, SBI HD=8473, ソフトバンクG=9984, NTT=9432, KDDI=9433, ファーストリテイリング=9983, 東京エレクトロン=8035, 信越化学=4063
+- 上記にない銘柄は名前の一部（漢字部分やカタカナ部分）をqueryに渡す
 
 株の相談の答え方:
 - データにある指標（dp, PER, PBR, Piotroski, BPS成長, EPSサプライズ等）を使って具体的に分析する
