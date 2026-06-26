@@ -86,6 +86,10 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/fetch_jquants_fin.py --resume --all-days
 
+      - name: Step 2e - EDINET決算XBRL取得（J-Quants補完）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 7
+
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
 
