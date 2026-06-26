@@ -272,7 +272,7 @@ async function fetchStockDetail(code: string): Promise<string> {
 
   const [rankRes, finRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,rise_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -313,7 +313,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   const [rankRes, n225Res, watchRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,rise_prob,net,per,pbr&order=net.desc&limit=20`,
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,net,per,pbr&order=net.desc&limit=20`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -537,7 +537,7 @@ ${context || "（本日のデータはまだありません）"}
 あなたの分析フレームワーク:
 - XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.766)の精度が高い
 - drop_prob(dp): 下落確率。dp<8は安全圏、dp≥15は危険水準
-- net = rise_prob - drop_prob。高いほど上昇期待
+- net: 上昇期待度のスコア。高いほど良い
 - 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
 - PBR<1は割安、PER<15は割安圏、Piotroski≥7は財務健全
 - ウォッチリストの銘柄はdpが買い閾値を下回ったら買い、売り閾値以上なら売り検討
