@@ -110,7 +110,8 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 - フェーズ7: 対応する米国セクターETF（XLK/XLF/XLI/XLB/XLV/XLY）の前日リターンがマイナスならS買い→方向感なしに降格。リードラグ効果（US→JP翌日）を活用。21,416サンプル(2023-2026)で全26ペア正相関・avg +0.64pp効果を確認。キャッシュは `data/sector_map.json`。
 
 **推奨ラベル**:
-- 💎 買い: 全条件クリア
+- 💎 買い: QV条件+ファンダ品質+モデルスコア全条件クリア
+- 🔴 売り検討: drop_prob≥10% / net<-5 / drawdown60<-20% / 連続下落≥5日
 - —: それ以外
 
 ## スクリーナー条件（screener.py / 前段フィルター）
@@ -280,7 +281,8 @@ DBキャッシュは廃止。
 | フィルター | 条件 | データ出所 |
 |---|---|---|
 | **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
-| **💎買い条件** (`recommend_from_scores`) | QV4条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + drop_prob<8%, net≥10, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
+| **💎買い条件** (`recommend_from_scores`) | QV条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + 品質(CFOマージン>0, レバレッジ<5x) + drop_prob<8%, net≥10, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
+| **🔴売り検討** (`recommend_from_scores`) | drop_prob≥10% / net<-5 / drawdown60<-20% / 連続下落≥5日（いずれか該当で警告） | モデル予測＋株価データ |
 | **優待フィルター** (フェーズ5) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
 | **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
 | **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |

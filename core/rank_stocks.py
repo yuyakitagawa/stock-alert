@@ -353,6 +353,9 @@ def main():
                 "piotroski":    pit.get("piotroski"),
                 "bps_growth":   pit.get("bps_growth"),
                 "eps_surprise": pit.get("eps_surprise"),
+                "cfo_margin":   pit.get("cfo_margin"),
+                "leverage":     pit.get("leverage"),
+                "op_margin_improve": pit.get("op_margin_improve"),
             }
         # 配当利回り: ライブ株価 × PBR/PER から配当を逆算 or pit.dps使用
         _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
@@ -479,6 +482,7 @@ def main():
         _fm = fund_map.get(code) or {}
         valid_vols = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
         _turnover_m = float(np.mean(valid_vols) * close / 1e6) if len(valid_vols) >= 10 else None
+        _down_streak_raw = round(feat[12] * 20)
         recommend = recommend_from_scores(
             net, drop_pct, allow_buy=buy_ok, vol=vol,
             piotroski=_fm.get("piotroski"),
@@ -488,6 +492,11 @@ def main():
             ret90=float(feat[3]),
             turnover_m=_turnover_m,
             regime=regime,
+            drawdown60=float(feat[10]),
+            down_streak_raw=_down_streak_raw,
+            cfo_margin=_fm.get("cfo_margin"),
+            leverage=_fm.get("leverage"),
+            op_margin_improve=_fm.get("op_margin_improve"),
         )
 
         # βフィルター: 日経強気時に低β銘柄の💎買いを降格

@@ -106,6 +106,7 @@ def get_pit_fundamentals(code, target_date):
 
     eps = bps = roe = dps = None
     eps_growth = bps_growth = eps_surprise = piotroski_score = payout = accruals = dps_growth = None
+    cfo_margin = leverage = op_margin_improve = None
     has_jq = False
 
     try:
@@ -177,6 +178,28 @@ def get_pit_fundamentals(code, target_date):
             if items >= 3:
                 piotroski_score = score / items
 
+        # 営業CFマージン (cfo/sales): キャッシュ創出力
+        if jq_fy:
+            lq = jq_fy[0]
+            _cfo = lq.get("cfo"); _sales = lq.get("sales")
+            if _cfo is not None and _sales and _sales > 0:
+                cfo_margin = _cfo / _sales
+
+        # 有利子負債比率 ((ta-equity)/equity): 財務レバレッジ
+        if jq_fy:
+            lq = jq_fy[0]
+            _ta = lq.get("ta"); _eq = lq.get("equity")
+            if _ta is not None and _eq and _eq > 0:
+                leverage = (_ta - _eq) / _eq
+
+        # 営業利益率改善 (op/sales YoY差分)
+        if len(jq_fy) >= 2:
+            c_op, c_sal = curr.get("op"), curr.get("sales")
+            p_op, p_sal = prev.get("op"), prev.get("sales")
+            if (c_op is not None and c_sal and c_sal > 0 and
+                p_op is not None and p_sal and p_sal > 0):
+                op_margin_improve = (c_op / c_sal) - (p_op / p_sal)
+
         # Sloan accruals
         if jq_fy:
             lq = jq_fy[0]
@@ -201,6 +224,9 @@ def get_pit_fundamentals(code, target_date):
         "piotroski":           piotroski_score,
         "payout":              payout,
         "accruals":            accruals,
+        "cfo_margin":          cfo_margin,
+        "leverage":            leverage,
+        "op_margin_improve":   op_margin_improve,
     }
 
 
