@@ -272,7 +272,7 @@ async function fetchStockDetail(code: string): Promise<string> {
 
   const [rankRes, finRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,rise_prob,net,recommend,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,rise_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -292,7 +292,7 @@ async function fetchStockDetail(code: string): Promise<string> {
     lines.push(`PER: ${r.per}, PBR: ${r.pbr}, Piotroski: ${r.piotroski}`);
     lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
     lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
-    lines.push(`推奨: ${r.recommend ?? "なし"}`);
+    lines.push(`net: ${r.net}%`);
     if (ranks.length > 1) {
       lines.push(`過去5日のdp推移: ${ranks.map((x: any) => x.drop_prob).join(" → ")}`);
     }
@@ -313,7 +313,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   const [rankRes, n225Res, watchRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,rise_prob,net,recommend,per,pbr&order=net.desc&limit=20`,
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,rise_prob,net,per,pbr&order=net.desc&limit=20`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -353,7 +353,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
     lines.push(`\n本日のトップ10:`);
     for (const r of rankings.slice(0, 10)) {
       lines.push(
-        `  ${r.code} ${r.name}: net=${r.net}% dp=${r.drop_prob}% PER=${r.per} PBR=${r.pbr} ${r.recommend ?? ""}`
+        `  ${r.code} ${r.name}: net=${r.net}% dp=${r.drop_prob}% PER=${r.per} PBR=${r.pbr}`
       );
     }
   }
