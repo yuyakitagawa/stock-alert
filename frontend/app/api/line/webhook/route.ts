@@ -158,7 +158,7 @@ async function handleCommand(
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
       const stock = await lookupStock(item.code);
-      const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
+      const dpStr = stock ? `下落確率${stock.drop_prob}%` : "";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
       let status = "";
       if (stock) {
@@ -166,11 +166,10 @@ async function handleCommand(
         else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
       }
       lines.push(
-        `  ${item.code} ${item.name}\n  買<${item.dp_threshold} 売≥${item.dp_sell_threshold ?? 20} ${dpStr} ${priceStr} ${status}`
+        `  ${item.code} ${item.name} ${priceStr} ${dpStr} ${status}`
       );
     }
-    lines.push("\n「ウォッチ 銘柄コード」で追加");
-    lines.push("「解除 銘柄コード」で削除");
+    lines.push(`\n※ 下落確率が買い閾値未満で買い通知、売り閾値以上で売り通知`);
     return { handled: true, reply: lines.join("\n") };
   }
 
@@ -196,10 +195,9 @@ async function handleCommand(
         handled: true,
         reply:
           `✅ ${stock.name}(${stock.code}) をウォッチリストに追加\n` +
-          `買い閾値: dp < ${threshold}\n` +
-          `売り閾値: dp ≥ ${sellThreshold}\n` +
-          `現在のdp: ${stock.drop_prob}%\n` +
-          `株価: ${stock.close.toLocaleString()}円`,
+          `株価: ${stock.close.toLocaleString()}円\n` +
+          `下落確率: ${stock.drop_prob}%\n` +
+          `\n※ 下落確率 < ${threshold}%で買い通知 / ≥ ${sellThreshold}%で売り通知`,
       };
     }
 
@@ -218,11 +216,10 @@ async function handleCommand(
         handled: true,
         reply:
           `✅ ${name}(${matches[0].code}) をウォッチリストに追加\n` +
-          `買い閾値: dp < ${threshold}\n` +
-          `売り閾値: dp ≥ ${sellThreshold}\n` +
           (stock
-            ? `現在のdp: ${stock.drop_prob}%\n株価: ${stock.close.toLocaleString()}円`
-            : ""),
+            ? `株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%\n`
+            : "") +
+          `\n※ 下落確率 < ${threshold}%で買い通知 / ≥ ${sellThreshold}%で売り通知`,
       };
     }
     const options = matches.map((m) => `  ${m.code} ${m.name}`).join("\n");
@@ -260,7 +257,7 @@ async function handleCommand(
       reply:
         `📊 ${stock.name}(${stock.code})\n` +
         `株価: ${stock.close.toLocaleString()}円\n` +
-        `dp: ${stock.drop_prob}% ${dpStatus}\n\n` +
+        `下落確率: ${stock.drop_prob}% ${dpStatus}\n\n` +
         `「ウォッチ ${stock.code}」でウォッチに追加`,
     };
   }
@@ -473,15 +470,16 @@ async function executeToolCall(
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
       const stock = await lookupStock(item.code);
-      const dpStr = stock ? `dp=${stock.drop_prob}%` : "dp=--";
+      const dpStr = stock ? `下落確率${stock.drop_prob}%` : "";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
       let status = "";
       if (stock) {
         if (stock.drop_prob < item.dp_threshold) status = "🔔買い時！";
         else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
       }
-      lines.push(`  ${item.code} ${item.name}\n  買<${item.dp_threshold} 売≥${item.dp_sell_threshold ?? 20} ${dpStr} ${priceStr} ${status}`);
+      lines.push(`  ${item.code} ${item.name} ${priceStr} ${dpStr} ${status}`);
     }
+    lines.push(`\n※ 下落確率が買い閾値未満で買い通知、売り閾値以上で売り通知`);
     return lines.join("\n");
   }
 
@@ -495,8 +493,9 @@ async function executeToolCall(
     const sellTh = input.sell_threshold ?? 20.0;
     await addToWatchlist(userId, resolved.code, resolved.name, buyTh, sellTh);
     const stock = await lookupStock(resolved.code);
-    return `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加\n買い閾値: dp < ${buyTh} / 売り閾値: dp ≥ ${sellTh}` +
-      (stock ? `\n現在のdp: ${stock.drop_prob}% / 株価: ${stock.close.toLocaleString()}円` : "");
+    return `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加` +
+      (stock ? `\n株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%` : "") +
+      `\n\n※ 下落確率 < ${buyTh}%で買い通知 / ≥ ${sellTh}%で売り通知`;
   }
 
   if (toolName === "remove_watchlist") {
@@ -558,6 +557,7 @@ ${context || "（本日のデータはまだありません）"}
 - 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
 
 ルール:
+- ユーザー向けの表示では「dp」ではなく「下落確率」と表記する
 - 投資は自己責任である旨を必要に応じて添える
 - 800文字以内で回答する
 - データがない質問には正直に「わからない」と答える`;
