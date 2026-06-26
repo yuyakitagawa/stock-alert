@@ -5,23 +5,25 @@
 1. 全銘柄の平均 drop_prob → N225 投資/キャッシュ判定
 2. ウォッチ銘柄の dp 閾値アラート（SBI HD 等）
 
+通知先: LINE Messaging API (Push Message)
+必要な環境変数: LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID
+
 依存: rank_stocks.py → export_to_web.py 実行後
 """
 import json
 import os
-import smtplib
 import sys
 from datetime import date
-from email.mime.text import MIMEText
+
+import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
-ALERT_TO = os.getenv("ALERT_TO", "dosankoure@gmail.com")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_USER_ID = os.getenv("LINE_USER_ID", "")
 
 WATCHLIST_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -46,8 +48,6 @@ def load_watchlist() -> list[dict]:
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
-    """ローカルDB から当日ランキングを取得"""
-    from lib.db import init_db
     import sqlite3
     db_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -72,66 +72,62 @@ def calc_market_dp(rankings: list[dict]) -> float | None:
     return sum(dps) / len(dps)
 
 
-def build_alert_email(
+def build_line_message(
     today_str: str,
     avg_dp: float | None,
     watchlist_alerts: list[dict],
-) -> tuple[str, str] | None:
-    """件名と本文を生成。通知すべき内容がなければ None。"""
+) -> str | None:
+    """LINE用メッセージを生成。通知すべき内容がなければ None。"""
     lines = []
-    subject_parts = []
 
-    # --- N225 タイミングシグナル ---
     if avg_dp is not None:
         if avg_dp >= MARKET_DP_CASH_THRESHOLD:
-            signal = "🔴 キャッシュ推奨（avg_dp ≥ 15）"
-            subject_parts.append("🔴N225→キャッシュ")
+            signal = "🔴 キャッシュ推奨"
         else:
-            signal = "🟢 N225 投資継続OK"
-            subject_parts.append("🟢N225→投資継続")
-        lines.append("━━ N225 タイミングシグナル ━━")
-        lines.append(f"  全銘柄 平均dp: {avg_dp:.1f}%")
-        lines.append(f"  判定: {signal}")
-        lines.append(f"  ルール: avg_dp < {MARKET_DP_CASH_THRESHOLD} → N225 ETF 保有")
-        lines.append(f"          avg_dp ≥ {MARKET_DP_CASH_THRESHOLD} → キャッシュへ退避")
+            signal = "🟢 投資継続OK"
+        lines.append(f"📊 N225シグナル ({today_str})")
+        lines.append(f"平均dp: {avg_dp:.1f}% → {signal}")
         lines.append("")
 
-    # --- ウォッチ銘柄アラート ---
     if watchlist_alerts:
-        lines.append("━━ ウォッチ銘柄アラート ━━")
         for a in watchlist_alerts:
             lines.append(
-                f"  🔔 {a['name']}({a['code']}): dp = {a['dp']:.1f}% "
-                f"→ 閾値 {a['threshold']} を下回りました！"
+                f"🔔 {a['name']}({a['code']})\n"
+                f"dp={a['dp']:.1f}% < 閾値{a['threshold']}\n"
+                f"株価: {a['close']:,.0f}円\n"
+                f"→ 買いタイミング到来！"
             )
-            lines.append(f"     株価: {a['close']:,.0f}円")
-            subject_parts.append(f"🔔{a['name']} dp<{a['threshold']}")
         lines.append("")
 
-    if not subject_parts:
+    if not lines:
         return None
 
-    subject = f"[stock-alert] {today_str} {' / '.join(subject_parts)}"
-    body = "\n".join(lines) + "\n※ このメールは stock-alert パイプラインが自動送信しています。\n"
-    return subject, body
+    return "\n".join(lines).strip()
 
 
-def send_email(subject: str, body: str) -> bool:
-    if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        print("[market_timing] GMAIL未設定。メール送信スキップ。")
+def send_line(message: str) -> bool:
+    if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_USER_ID:
+        print("[market_timing] LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID 未設定。送信スキップ。")
         return False
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = GMAIL_ADDRESS
-    msg["To"] = ALERT_TO
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+    }
+    payload = {
+        "to": LINE_USER_ID,
+        "messages": [{"type": "text", "text": message}],
+    }
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-            server.sendmail(GMAIL_ADDRESS, ALERT_TO, msg.as_string())
-        print(f"[market_timing] メール送信完了: {subject}")
-        return True
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        if resp.ok:
+            print(f"[market_timing] LINE送信完了")
+            return True
+        else:
+            print(f"[market_timing] LINE送信失敗: {resp.status_code} {resp.text[:200]}")
+            return False
     except Exception as e:
-        print(f"[market_timing] メール送信失敗: {e}")
+        print(f"[market_timing] LINE送信エラー: {e}")
         return False
 
 
@@ -175,12 +171,11 @@ def main() -> None:
         else:
             print(f"[market_timing] {w['name']}({w['code']}): dp={dp:.1f} (閾値{threshold}未到達)")
 
-    # 3. メール送信
-    result = build_alert_email(today_str, avg_dp, watchlist_alerts)
-    if result:
-        subject, body = result
-        print(f"\n{body}")
-        send_email(subject, body)
+    # 3. LINE送信
+    message = build_line_message(today_str, avg_dp, watchlist_alerts)
+    if message:
+        print(f"\n{message}\n")
+        send_line(message)
     else:
         print("[market_timing] 通知すべき内容なし。")
 
