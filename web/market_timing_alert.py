@@ -71,7 +71,7 @@ def build_market_section(today_str: str, avg_dp: float | None) -> str:
         signal = "🔴 キャッシュ推奨"
     else:
         signal = "🟢 投資継続OK"
-    return f"📊 N225シグナル ({today_str})\n平均dp: {avg_dp:.1f}% → {signal}"
+    return f"📊 N225シグナル ({today_str})\n平均下落確率: {avg_dp:.1f}% → {signal}"
 
 
 def build_watchlist_section(
@@ -79,48 +79,46 @@ def build_watchlist_section(
     ranking_map: dict[str, dict],
 ) -> tuple[str, list[dict]]:
     alerts: list[dict] = []
+    lines = ["📋 ウォッチリスト状況:"]
+
     for w in watchlist:
         r = ranking_map.get(w["code"])
         if r is None:
+            lines.append(f"  {w['name']}({w['code']}): データなし")
             continue
         dp = r.get("drop_prob")
         if dp is None:
+            lines.append(f"  {w['name']}({w['code']}): データなし")
             continue
         buy_th = w.get("dp_threshold", 8.0)
         sell_th = w.get("dp_sell_threshold", 20.0)
         close = r.get("close", 0)
+
         if dp < buy_th:
+            mark = "🔔買い時！"
             alerts.append({
                 "code": w["code"], "name": w["name"],
                 "dp": dp, "threshold": buy_th, "close": close,
                 "signal": "buy",
             })
         elif dp >= sell_th:
+            mark = "⚠️売り検討"
             alerts.append({
                 "code": w["code"], "name": w["name"],
                 "dp": dp, "threshold": sell_th, "close": close,
                 "signal": "sell",
             })
+        else:
+            mark = ""
 
-    if not alerts:
+        lines.append(
+            f"  {w['name']}({w['code']}) {close:,.0f}円"
+            f" 下落確率{dp:.1f}% {mark}"
+        )
+
+    if len(lines) <= 1:
         return "", alerts
 
-    lines = []
-    for a in alerts:
-        if a["signal"] == "buy":
-            lines.append(
-                f"🔔 {a['name']}({a['code']})\n"
-                f"dp={a['dp']:.1f}% < 買い閾値{a['threshold']}\n"
-                f"株価: {a['close']:,.0f}円\n"
-                f"→ 買いタイミング到来！"
-            )
-        else:
-            lines.append(
-                f"⚠️ {a['name']}({a['code']})\n"
-                f"dp={a['dp']:.1f}% ≥ 売り閾値{a['threshold']}\n"
-                f"株価: {a['close']:,.0f}円\n"
-                f"→ 売り検討タイミング！"
-            )
     return "\n".join(lines), alerts
 
 
@@ -187,6 +185,9 @@ def main() -> None:
                 parts.append(market_msg)
             if watch_msg:
                 parts.append(watch_msg)
+
+            if not parts and market_msg:
+                parts.append(market_msg)
 
             if parts:
                 message = "\n\n".join(parts)
