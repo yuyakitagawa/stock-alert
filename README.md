@@ -207,8 +207,6 @@ stock-alert/
 
 | Secret | 内容 |
 |---|---|
-| `GMAIL_ADDRESS` | 送信元Gmailアドレス |
-| `GMAIL_APP_PASSWORD` | Gmailアプリパスワード |
 | `SUPABASE_URL` | Supabase プロジェクトURL |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role キー |
 | `EDINET_API_KEY` | EDINET API v2 キー（任意） |
@@ -243,16 +241,3 @@ python3 tools/multi_backtest.py        # 33期間一括
 python -m pytest tests/ -v
 ```
 
----
-
-## バックテスト実績
-
-33期間ウォークフォワード（2021〜2025年）: avg +6.7% / 日経アルファ +4.4%
-
-37銘柄シミュレーション（2025/05〜11月エントリー、2026-05-16時点）:
-
-| 指標 | 値 |
-|---|---|
-| 平均リターン | +18.0% |
-| 勝率 | 89.2%（33/37銘柄） |
-| 大勝率（+15%以上） | 54.1%（20/37銘柄） |
