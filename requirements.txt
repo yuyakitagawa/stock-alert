@@ -1,0 +1,14 @@
+requests
+pandas
+numpy
+scikit-learn
+joblib
+python-dotenv
+openpyxl
+xlrd
+xgboost
+gspread
+google-auth
+yfinance
+anthropic
+pytest
