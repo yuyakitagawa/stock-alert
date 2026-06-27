@@ -5,9 +5,6 @@ on:
     - cron: '0 11 * * 1-5'  # 平日11:00 UTC = 平日20:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -21,6 +18,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
