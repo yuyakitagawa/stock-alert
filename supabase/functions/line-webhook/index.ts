@@ -844,7 +844,7 @@ Deno.serve(async (req) => {
   const rawBody = await req.text();
   const signature = req.headers.get("x-line-signature") ?? "";
 
-  if (LINE_CHANNEL_SECRET && !(await verifySignature(rawBody, signature))) {
+  if (!(await verifySignature(rawBody, signature))) {
     return Response.json({ error: "Invalid signature" }, { status: 403 });
   }
 
