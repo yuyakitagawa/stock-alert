@@ -4,9 +4,8 @@ sync_descriptions.py
 
 - シートが無ければ作成し、保有株＋値上げ力ウォッチリスト銘柄を seed（説明は一部プリセット）。
 - 既存シートは **絶対に clear しない**（手動編集を保護）。未登録の銘柄だけ行を追記する。
-- 説明が記入されている行を Supabase `gen_ai_analyses`(model_version=company-desc-v1, date=1970-01-01)
-  へ upsert。既存の `/api/stock/[code]/description` がこれをキャッシュとして返すため、
-  手動説明が最優先・AIは未記入銘柄のフォールバックになる。
+- 説明が記入されている行を Supabase `gen_ai_analyses`(model_version=company-desc-v1, date=当日)
+  へ upsert。フロントはmodel_versionで種別を判別する。
 
 使い方:
   python3 web/sync_descriptions.py          # シート整備 + Supabase同期
@@ -32,7 +31,8 @@ SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 SHEET_TITLE   = "📝 会社説明"
 HEADER        = ["コード", "銘柄名", "説明"]
 MODEL_VER     = "company-desc-v1"   # description API の getCached と一致させる
-CACHE_DATE    = "1970-01-01"        # description API の saveCache と一致させる
+from datetime import date as _date
+CACHE_DATE    = _date.today().isoformat()
 
 SUPABASE_URL         = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
