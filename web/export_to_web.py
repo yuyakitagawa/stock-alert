@@ -212,9 +212,6 @@ def export_stock_meta(ranking_rows: list[dict]) -> None:
             "code":    code,
             "name":    r["name"],
             "sector":  sector_map.get(str(code)),
-            "market":  None,
-            "per":     r["per"],
-            "pbr":     r["pbr"],
         })
     _upsert("gen_stock_meta", meta_rows)
 
