@@ -226,8 +226,6 @@ DBキャッシュは廃止。
 | `gen_ai_analyses` | AI分析（会社説明・企業インサイト）|
 | `gen_simulation` | バックテスト結果 |
 | `gen_risk_regime` | リスクオン/オフ判定 |
-| `gen_dividend_strategy` | 配当戦略 |
-| `gen_qv_sim` | QV戦略バックテスト結果 |
 | `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |

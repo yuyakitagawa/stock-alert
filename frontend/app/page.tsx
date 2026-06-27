@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { fetchRankings, fetchSparkline, fetchSectorMap, fetchNikkeiReturn, fetchRiskRegime } from "@/lib/data";
-import { fetchSimulation } from "@/lib/simulation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HomeContent from "@/components/HomeContent";
@@ -19,9 +18,8 @@ function formatDate(date: string) {
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sim, sectorMap, nikkei20, risk] = await Promise.all([
+  const [{ date, rows }, sectorMap, nikkei20, risk] = await Promise.all([
     fetchRankings(),
-    fetchSimulation(),
     fetchSectorMap(),
     fetchNikkeiReturn(20),
     fetchRiskRegime(),
@@ -62,7 +60,6 @@ export default async function HomePage() {
           featured={featured}
           sparklineMap={sparklineMap}
           sectorStats={sectorStats}
-          sim={sim}
           risk={risk}
           nikkei20={nikkei20}
         />
