@@ -55,8 +55,8 @@ def get_jquants_disc_dates():
 
 
 def get_all_yutai():
-    """gen_stock_meta から優待情報を返す。"""
-    return sb.select("gen_stock_meta", "select=code,has_yutai,yutai_month&has_yutai=eq.true")
+    """jpx_stock_list から優待情報を返す。"""
+    return sb.select("jpx_stock_list", "select=code,has_yutai,yutai_month&has_yutai=eq.true")
 
 
 # ── daily_ranking (→ gen_rankings) ────────────────────────────────────────
@@ -88,9 +88,9 @@ def save_daily_ranking(date_str, rows):
 CACHE_MISS = object()
 
 def get_yutai_cache(code, today_str):
-    """gen_stock_metaから優待情報を返す。キャッシュ済みなら (has_yutai, yutai_month)。"""
+    """jpx_stock_listから優待情報を返す。キャッシュ済みなら (has_yutai, yutai_month)。"""
     row = sb.select_one(
-        "gen_stock_meta",
+        "jpx_stock_list",
         f"code=eq.{code}&select=has_yutai,yutai_month,fetched_date"
     )
     if row and row.get("fetched_date") == today_str:
@@ -99,7 +99,7 @@ def get_yutai_cache(code, today_str):
 
 
 def set_yutai_cache(code, today_str, has_yutai, record_month):
-    sb.upsert("gen_stock_meta", [{
+    sb.upsert("jpx_stock_list", [{
         "code": str(code),
         "has_yutai": bool(has_yutai),
         "yutai_month": record_month,
@@ -108,10 +108,10 @@ def set_yutai_cache(code, today_str, has_yutai, record_month):
 
 
 
-# ── sector_cache (→ gen_stock_meta) ───────────────────────────────────────
+# ── sector_cache (→ jpx_stock_list) ───────────────────────────────────────
 
 def get_all_sectors():
-    rows = sb.select("gen_stock_meta", "select=code,sector")
+    rows = sb.select("jpx_stock_list", "select=code,sector")
     return {r["code"]: r["sector"] for r in rows if r.get("sector")}
 
 
@@ -122,17 +122,17 @@ def save_all_sectors(sector_map):
         "sector": sector,
         "fetched_date": today_str,
     } for code, sector in sector_map.items()]
-    sb.upsert("gen_stock_meta", sb_rows, on_conflict="code")
+    sb.upsert("jpx_stock_list", sb_rows, on_conflict="code")
 
 
 def count_null_names() -> int:
-    """gen_stock_meta で name が NULL の行数を返す。"""
-    rows = sb.select("gen_stock_meta", "name=is.null&select=code")
+    """jpx_stock_list で name が NULL の行数を返す。"""
+    rows = sb.select("jpx_stock_list", "name=is.null&select=code")
     return len(rows)
 
 
 def save_stock_meta_bulk(rows: list[dict]):
-    """gen_stock_meta に code/name/sector をまとめて upsert。"""
+    """jpx_stock_list に code/name/sector をまとめて upsert。"""
     today_str = date.today().isoformat()
     sb_rows = []
     for r in rows:
@@ -143,7 +143,7 @@ def save_stock_meta_bulk(rows: list[dict]):
             entry["name"] = r["name"]
         sb_rows.append(entry)
     if sb_rows:
-        sb.upsert("gen_stock_meta", sb_rows, on_conflict="code")
+        sb.upsert("jpx_stock_list", sb_rows, on_conflict="code")
 
 
 # ── yahoo_price_cache ───────────────────────────────────────────────────────────
