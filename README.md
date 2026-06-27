@@ -7,7 +7,7 @@
 平日にGitHub Actionsが自動実行される。
 
 ```
-【17:30 JST】アラートパイプライン（daily_alert.yml）
+【20:00 JST】アラートパイプライン（daily_alert.yml）
 core/screener.py → core/rank_stocks.py
 core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
 web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
@@ -240,6 +240,7 @@ DBキャッシュは廃止。
 | `simulation_results` | 月次シミュレーション結果 |
 | `app_bookmarks` | ウォッチリスト（ブックマーク）|
 | `app_push_subscriptions` | プッシュ通知サブスクリプション |
+| `line_chat_history` | LINE Bot会話履歴（直近3往復、文脈保持用） |
 
 全銘柄スクリーン（カタリスト候補）は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計する
 （REST per-code を避け高速化）。
