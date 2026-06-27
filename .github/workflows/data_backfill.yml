@@ -1,0 +1,79 @@
+name: Data Backfill (JPX / TDnet / EDINET)
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: '取得対象（カンマ区切り: jpx,tdnet,edinet）'
+        required: false
+        default: 'jpx,tdnet'
+      tdnet_days:
+        description: 'TDnet遡る日数'
+        required: false
+        default: '30'
+      edinet_days:
+        description: 'EDINET遡る日数'
+        required: false
+        default: '90'
+      edinet_start_date:
+        description: 'EDINET開始日 (YYYY-MM-DD, 指定時はdays無視)'
+        required: false
+        default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas numpy openpyxl xlrd python-dotenv
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Verify secrets
+        run: |
+          cd ~/stock-alert
+          python3 -c "
+          import os
+          from dotenv import load_dotenv; load_dotenv()
+          for k in ['SUPABASE_URL','SUPABASE_SERVICE_KEY','EDINET_API_KEY']:
+              v = os.environ.get(k,'')
+              print(f'{k}: {\"SET (len={len(v)})\" if v else \"MISSING\"}')"
+
+      - name: JPX 空売り・信用残取得
+        if: contains(github.event.inputs.targets, 'jpx')
+        run: cd ~/stock-alert && python tools/fetch_jpx_market.py
+
+      - name: TDnet 適時開示取得
+        if: contains(github.event.inputs.targets, 'tdnet')
+        run: cd ~/stock-alert && python tools/fetch_tdnet.py --days ${{ github.event.inputs.tdnet_days }}
+
+      - name: EDINET 決算XBRL取得
+        if: contains(github.event.inputs.targets, 'edinet')
+        run: |
+          cd ~/stock-alert
+          python tools/fetch_edinet_financials.py --verify
+          if [ -n "${{ github.event.inputs.edinet_start_date }}" ]; then
+            python tools/fetch_edinet_financials.py --start "${{ github.event.inputs.edinet_start_date }}" --sleep 1.5
+          else
+            python tools/fetch_edinet_financials.py --days "${{ github.event.inputs.edinet_days }}" --sleep 1.5
+          fi
