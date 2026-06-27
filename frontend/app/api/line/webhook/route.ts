@@ -614,59 +614,77 @@ ${context || "（本日のデータはまだありません）"}
     { role: "user", content: userMessage },
   ];
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
-    system: systemPrompt,
-    tools: TOOLS,
-    messages,
-  });
+  // tool呼び出しが無くなるまでループ（複数ツールを連鎖して使うケースに対応）
+  const MAX_TURNS = 5;
+  let lastText = "";
 
-  // tool_use がなければテキストをそのまま返す
-  const textBlocks = response.content.filter(
-    (b): b is Anthropic.TextBlock => b.type === "text"
-  );
-  const toolBlocks = response.content.filter(
-    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
-  );
-
-  if (toolBlocks.length === 0) {
-    return textBlocks.map((b) => b.text).join("\n") || "回答を生成できませんでした。";
-  }
-
-  // tool を実行して結果を返す
-  const toolResults: Anthropic.ToolResultBlockParam[] = [];
-  for (const tool of toolBlocks) {
-    const result = await executeToolCall(
-      tool.name,
-      tool.input as Record<string, any>,
-      userId
-    );
-    toolResults.push({
-      type: "tool_result",
-      tool_use_id: tool.id,
-      content: result,
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: systemPrompt,
+      tools: TOOLS,
+      messages,
     });
+
+    const textBlocks = response.content.filter(
+      (b): b is Anthropic.TextBlock => b.type === "text"
+    );
+    const toolBlocks = response.content.filter(
+      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+    );
+
+    if (textBlocks.length > 0) {
+      lastText = textBlocks.map((b) => b.text).join("\n");
+    }
+
+    // ツール呼び出しが無ければ最終回答として返す
+    if (toolBlocks.length === 0) {
+      return lastText || "回答を生成できませんでした。";
+    }
+
+    // ツールを実行して結果をmessagesに積む
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    for (const tool of toolBlocks) {
+      const result = await executeToolCall(
+        tool.name,
+        tool.input as Record<string, any>,
+        userId
+      );
+      toolResults.push({
+        type: "tool_result",
+        tool_use_id: tool.id,
+        content: result,
+      });
+    }
+
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({ role: "user", content: toolResults });
   }
 
-  // tool結果を含めて再度Claudeに投げ、最終回答を得る
-  messages.push({ role: "assistant", content: response.content });
-  messages.push({ role: "user", content: toolResults });
+  // MAX_TURNS到達: それまでに得たテキストがあれば返す。
+  // 無ければ最後のツール結果から回答を作るようClaudeに最終指示。
+  if (lastText) return lastText;
 
   const finalResponse = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
     system: systemPrompt,
-    tools: TOOLS,
-    messages,
+    messages: [
+      ...messages,
+      {
+        role: "user",
+        content:
+          "ここまでのツール結果をもとに、ユーザーの質問に日本語で簡潔に答えてください。",
+      },
+    ],
   });
-
   const finalText = finalResponse.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n");
 
-  return finalText || "操作が完了しました。";
+  return finalText || "うまく回答できませんでした。もう一度お試しください。";
 }
 
 // ── Webhook エントリポイント ─────────────────────────────
