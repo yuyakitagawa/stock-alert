@@ -82,7 +82,21 @@ def get_tse_stock_list():
         result=result[result["code"].str.match(r"^[1-9]\d{3}$")]
         return result.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
     except Exception as e:
-        print(f"銘柄リスト取得失敗: {e}"); return None
+        print(f"銘柄リスト取得失敗(JPX): {e}")
+        return _fallback_stock_list()
+
+def _fallback_stock_list():
+    cache_path=os.path.join(SAVE_DIR,"_local_prices.pkl")
+    if os.path.exists(cache_path):
+        import pickle
+        with open(cache_path,"rb") as f:
+            d=pickle.load(f)
+        codes=[c for c in d.keys() if len(c)==4 and c[0].isdigit()]
+        if codes:
+            df=pd.DataFrame({"code":codes,"name":""})
+            print(f"  ローカルキャッシュから{len(codes)}銘柄取得（フォールバック）")
+            return df.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
+    print("フォールバック銘柄リストなし"); return None
 
 def get_prices(code,days=HISTORY_DAYS):
     from lib.db import get_price_df
@@ -262,8 +276,8 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-    m=XGBClassifier(n_estimators=5000,max_depth=5,learning_rate=0.005,subsample=0.65,early_stopping_rounds=150,
-        colsample_bytree=0.45,min_child_weight=60,reg_alpha=1.5,reg_lambda=5,gamma=0.5,scale_pos_weight=spw,
+    m=XGBClassifier(n_estimators=5000,max_depth=7,learning_rate=0.024,subsample=0.52,early_stopping_rounds=150,
+        colsample_bytree=0.61,min_child_weight=71,reg_alpha=0.04,reg_lambda=1.4,gamma=0.29,scale_pos_weight=spw,
         eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
     m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
     auc_raw=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
