@@ -185,11 +185,12 @@ _JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001
 _SECTOR_CACHE = None  # プロセス内キャッシュ {code: sector}
 
 def _load_jpx_sector_map():
-    """JPX Excelから {code: 33業種区分} を一括取得してDBキャッシュに保存"""
-    from lib.db import get_all_sectors, save_all_sectors
+    """JPX Excelから {code: 33業種区分} を一括取得してDBキャッシュに保存。
+    銘柄名も同時に jpx_stock_list へ書き込む。"""
+    from lib.db import get_all_sectors, save_stock_meta_bulk, count_null_names
     import io
     cache = get_all_sectors()
-    if cache:
+    if cache and count_null_names() == 0:
         return cache
     try:
         resp = requests.get(_JPX_URL, headers=HEADERS, timeout=30)
@@ -197,14 +198,22 @@ def _load_jpx_sector_map():
         df.columns = df.columns.str.strip()
         code_col = next((c for c in df.columns if "コード" in c), None)
         sec_col  = next((c for c in df.columns if "33業種区分" in c), None)
+        name_col = next((c for c in df.columns if "銘柄名" in c), None)
         if code_col and sec_col:
+            meta_rows = []
             for _, row in df.iterrows():
                 code = str(row[code_col]).strip()
                 sec  = str(row[sec_col]).strip()
                 if code and sec and sec != "nan":
                     cache[code] = sec
+                    entry = {"code": code, "sector": sec}
+                    if name_col:
+                        name = str(row[name_col]).strip()
+                        if name and name != "nan":
+                            entry["name"] = name
+                    meta_rows.append(entry)
             try:
-                save_all_sectors(cache)
+                save_stock_meta_bulk(meta_rows)
             except Exception:
                 pass
     except (requests.RequestException, ValueError, OSError) as e:
