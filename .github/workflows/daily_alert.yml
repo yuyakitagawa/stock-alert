@@ -90,6 +90,14 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 7
 
+      - name: Step 2f - TDnet適時開示取得（やのしん・隔離テーブル）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_tdnet.py --days 3 --catalyst-only
+
+      - name: Step 2g - JPX空売り・信用残取得
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_jpx_market.py
+
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
 
