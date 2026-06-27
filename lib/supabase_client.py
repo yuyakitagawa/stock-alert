@@ -41,6 +41,18 @@ def is_configured() -> bool:
     return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 
 
+def _dedup_batch(batch: list[dict], on_conflict: str) -> list[dict]:
+    """バッチ内の重複キーを除去（後勝ち）。同一バッチに同じキーが2回あるとPostgreSQLがエラーになる。"""
+    if not on_conflict:
+        return batch
+    keys = [k.strip() for k in on_conflict.split(",")]
+    seen: dict[tuple, int] = {}
+    for i, row in enumerate(batch):
+        key = tuple(str(row.get(k, "")) for k in keys)
+        seen[key] = i
+    return [batch[i] for i in sorted(seen.values())]
+
+
 def upsert(table: str, rows: list[dict], on_conflict: str = "") -> None:
     if not rows or not is_configured():
         return
@@ -49,7 +61,7 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> None:
         url += f"?on_conflict={on_conflict}"
     rows = _sanitize(rows)
     for i in range(0, len(rows), _BATCH_SIZE):
-        batch = rows[i: i + _BATCH_SIZE]
+        batch = _dedup_batch(rows[i: i + _BATCH_SIZE], on_conflict)
         try:
             resp = requests.post(url, headers=_headers(), json=batch, timeout=_TIMEOUT)
         except Exception as e:
