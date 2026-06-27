@@ -393,10 +393,7 @@ def main() -> None:
     top_rows = ranking_rows[:10]
     generate_ai_analyses(today, top_rows)
 
-    # 5. Top10シミュレーション更新
-    update_top10_simulation(ranking_rows, today)
-
-    # 5c. 相場リスク管制官の当日判定をエクスポート
+    # 5. 相場リスク管制官の当日判定をエクスポート
     export_risk_regime(today)
 
     # 6. QA: サイト全体の整合性チェック（全upsert後にライブ状態を読み戻して検証）
@@ -430,55 +427,6 @@ def _upsert_simulation(rows: list[dict]) -> None:
             print(f"[export_simulation] {len(batch)} 行 upsert 完了")
 
 
-TOP10_SIM_SELL_THRESH = 5.0  # net < 5% で売却（信号消滅基準）
-
-
-def update_top10_simulation(ranking_rows: list[dict], today: str) -> None:
-    """
-    Top10シミュレーション日次更新:
-    1. アクティブポジションを今日のnetスコアでチェック → net<5%なら決済
-    2. 今日のtop10に新規入りした銘柄を追加
-    3. Supabase gen_top10_sim テーブルへ upsert
-    """
-    from lib.db import (init_db, get_top10_sim_active,
-                        upsert_top10_sim_entry, close_top10_sim_position)
-    init_db()
-
-    # 今日のnet辞書
-    today_net   = {r["code"]: r.get("net", 0) or 0 for r in ranking_rows}
-    today_price = {r["code"]: r.get("close")        for r in ranking_rows}
-    today_name  = {r["code"]: r.get("name")         for r in ranking_rows}
-    top10_codes = {r["code"] for r in ranking_rows[:10]}
-
-    # ── 1. アクティブポジションの決済チェック ──────────────────────────────
-    active = get_top10_sim_active()
-    active_codes = {p["code"] for p in active}
-    for pos in active:
-        code = pos["code"]
-        cur_net   = today_net.get(code, 0)
-        cur_price = today_price.get(code)
-        if cur_net < TOP10_SIM_SELL_THRESH and cur_price:
-            close_top10_sim_position(
-                pos["entry_date"], code, today, cur_net, cur_price
-            )
-            print(f"[top10_sim] 決済: {code} net={cur_net:.1f}% entry={pos['entry_date']}")
-
-    # ── 2. 新規エントリー（top10に入ってかつ未保有） ─────────────────────
-    for code in top10_codes:
-        if code not in active_codes:
-            net   = today_net.get(code, 0)
-            price = today_price.get(code)
-            name  = today_name.get(code, "")
-            if price and net >= TOP10_SIM_SELL_THRESH:
-                upsert_top10_sim_entry(today, code, name, net, price)
-                print(f"[top10_sim] エントリー: {code} {name} net={net:.1f}%")
-
-    # ── 3. Supabase へ upsert ──────────────────────────────────────────────
-    from lib.db import get_top10_sim_active, get_top10_sim_recent_exits
-    all_rows = get_top10_sim_active() + get_top10_sim_recent_exits(30)
-    if all_rows:
-        _upsert("gen_top10_sim", all_rows)
-        print(f"[top10_sim] {len(all_rows)}件 upsert完了")
 
 
 def export_simulation_results() -> None:
