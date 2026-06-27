@@ -234,6 +234,9 @@ DBキャッシュは廃止。
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
 | `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
+| `ext_tdnet_disclosures` | TDnet適時開示（やのしん・⚠️個人運営ソースのため `ext_` で隔離）|
+| `jpx_short_selling` | JPX空売り残高報告（0.5%以上）|
+| `jpx_margin_balance` | JPX個別銘柄信用取引週末残高 |
 | `simulation_results` | 月次シミュレーション結果 |
 | `app_bookmarks` | ウォッチリスト（ブックマーク）|
 | `app_push_subscriptions` | プッシュ通知サブスクリプション |
@@ -254,7 +257,9 @@ DBキャッシュは廃止。
 | **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
 | **J-Quants API v2** (Freeプラン) | 財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想） | ファンダ特徴量・IB特徴量・カタリストスクリーン | `tools/fetch_jquants_fin.py` |
 | **kabutan.jp** (スクレイピング) | PER/PBR/ROE、株主優待月、業績テキスト | ファンダ特徴量・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
-| **EDINET API v2** | 大量保有報告書(350)/変更報告書(360) | 先回りシグナル（外部の買い集め検出） | `lib/edinet.py`, `tools/scan_large_holdings.py` |
+| **EDINET API v2** | 大量保有報告書(350)/変更報告書(360)、有報/四半期報の決算XBRL(BS/PL/CF) | 先回りシグナル・J-Quants期限切れ後の財務データ補完 | `lib/edinet.py`, `lib/edinet_financials.py`, `tools/scan_large_holdings.py`, `tools/fetch_edinet_financials.py` |
+| **TDnet適時開示** (やのしんWEB-API・⚠️個人運営) | 適時開示（業績修正/増配/自社株買い/M&A等のカタリスト） | 企業イベント情報（LINE通知用）。停止リスク隔離のため `ext_` テーブルに保存 | `lib/tdnet.py`, `tools/fetch_tdnet.py` |
+| **JPX 空売り残高/信用取引残高** (公式Excel/CSV) | 空売り残高報告(0.5%以上)、個別銘柄信用週末残高 | 需給シグナル（逆張り/買い残） | `lib/jpx_market_data.py`, `tools/fetch_jpx_market.py` |
 | **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
 | **yfinance** | セクターマッピング（米国ETF対応用） | 米国ETFリードラグフィルター（フェーズ7） | `core/rank_stocks.py` |
 | **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
