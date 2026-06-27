@@ -13,7 +13,8 @@
 - `lib/nlp_sentiment.py`: 決算テキスト感情分析（Claude Haiku × kabutan）。ランキング後処理に使用。
 - `core/rf_train_v3.py`: XGBoost学習(上昇/下落)。※金曜(再学習日)以外は触らない。
 - `core/screener.py` -> `core/rank_stocks.py`: 抽出 & ネットスコア計算。
-- `web/export_to_web.py` + `web/send_user_alerts.py`: Webアプリ向けエクスポート。
+- `web/export_to_web.py` + `web/send_user_alerts.py`: Supabaseへデータエクスポート。
+- `supabase/functions/line-webhook/index.ts`: LINE Bot AI相談機能（Supabase Edge Function）。
 - `tools/backtest.py`: 検証。`bear`モード（2024/08下落相場）をテスト基準とする。
 
 ## 2. Model & Strategy (規律)
@@ -52,12 +53,7 @@
 - **不採用機能はコードからも消す**: A/Bテストで不採用になった条件はコード・定数・分岐ごと削除せよ。コメントアウトも禁止。
 - **テストは対象と一緒に消す**: 関数を削除したら、そのテストも同じコミットで削除せよ。
 - **READMEは同一コミットで更新**: 機能追加・変更・削除を実装したら、必ず同じコミットで README.md を更新せよ。フィルター値・コマンド・ファイル構成・テスト件数も合わせること。
-- **AIモデル説明ページを同一コミットで更新（絶対厳守）**: 予測モデルの素性・特徴量重要度・買いフィルター・レジーム調整のいずれかを変更したら、**必ず同じコミットで** `frontend/app/model/page.tsx` の該当数値・条件を実コードに合わせて更新せよ。対象の真実源（source of truth）は次の通り。乖離は放置禁止。
-  - 特徴量重要度・AUC・61次元の内訳 → `feature_importance.json` / `lib/utils.py`（`extract_features`）
-  - 品質フィルター（株価/DD/連続下落/RSI/流動性） → `core/rank_stocks.py` の `passes_buy_filter`
-  - 💎買い条件（QV4+レジーム） → `lib/utils.py` の `recommend_from_scores`
-  - レジーム別銘柄数・VIX/リスクオフ調整 → `core/rank_stocks.py`
-  - ユーザーから毎回指示がなくても、ロジック/フィルター変更を実装した時点で本ページ更新を自動的にセットで行うこと。`re-train`（金曜再学習）で重要度が変わった場合も同様。
+- **frontendは削除済み**: Webアプリ（Next.js/Vercel）は削除済み。LINE webhook は Supabase Edge Function (`supabase/functions/line-webhook/`) に移行済み。Webアプリは後日再作成予定。
 
 ## 8. デプロイ反映確認（Web変更時・絶対厳守）
 - **「push した」で完了報告するな**: フロント（`frontend/`）や web 出力を変更して push したら、**本番（https://stock-alert-web.vercel.app）に実際に反映されたことを確認するまでが1タスク**。コミット成功＝反映完了ではない。

@@ -1,13 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
-import * as crypto from "crypto";
+import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.39.0";
 
-const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? "";
-const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+const LINE_CHANNEL_SECRET = Deno.env.get("LINE_CHANNEL_SECRET") ?? "";
+const LINE_CHANNEL_ACCESS_TOKEN = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN") ?? "";
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 
-const SB_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-const SB_KEY = (process.env.SUPABASE_SERVICE_KEY ?? "").trim();
+const SB_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
+const SB_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
@@ -18,19 +16,24 @@ function sbHeaders(extra: Record<string, string> = {}) {
   };
 }
 
-function verifySignature(body: string, signature: string): boolean {
+async function verifySignature(body: string, signature: string): Promise<boolean> {
   if (!LINE_CHANNEL_SECRET) return false;
-  const hash = crypto
-    .createHmac("SHA256", LINE_CHANNEL_SECRET)
-    .update(body)
-    .digest("base64");
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(LINE_CHANNEL_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
+  const hash = btoa(String.fromCharCode(...new Uint8Array(sig)));
   return hash === signature;
 }
 
 async function replyToLine(replyToken: string, text: string): Promise<void> {
   const maxLen = 5000;
-  const truncated =
-    text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
+  const truncated = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
   await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
@@ -44,7 +47,7 @@ async function replyToLine(replyToken: string, text: string): Promise<void> {
   });
 }
 
-// ── ウォッチリスト管理（ユーザー別） ────────────────────────
+// ── ウォッチリスト管理 ────────────────────────
 
 interface WatchItem {
   code: string;
@@ -57,7 +60,7 @@ interface WatchItem {
 async function getWatchlist(userId: string): Promise<WatchItem[]> {
   const res = await fetch(
     `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold,dp_sell_threshold&order=created_at`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   return res.ok ? await res.json() : [];
 }
@@ -67,7 +70,7 @@ async function addToWatchlist(
   code: string,
   name: string,
   threshold: number,
-  sellThreshold: number = 20.0
+  sellThreshold: number = 20.0,
 ): Promise<boolean> {
   const res = await fetch(`${SB_URL}/rest/v1/dp_watchlist`, {
     method: "POST",
@@ -83,28 +86,20 @@ async function addToWatchlist(
   return res.ok;
 }
 
-async function removeFromWatchlist(
-  userId: string,
-  code: string
-): Promise<boolean> {
+async function removeFromWatchlist(userId: string, code: string): Promise<boolean> {
   const res = await fetch(
     `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&code=eq.${code}`,
-    { method: "DELETE", headers: sbHeaders() }
+    { method: "DELETE", headers: sbHeaders() },
   );
   return res.ok;
 }
 
 async function lookupStock(
-  code: string
-): Promise<{
-  code: string;
-  name: string;
-  close: number;
-  drop_prob: number;
-} | null> {
+  code: string,
+): Promise<{ code: string; name: string; close: number; drop_prob: number } | null> {
   const res = await fetch(
     `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob&order=date.desc&limit=1`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   if (!res.ok) return null;
   const rows = await res.json();
@@ -112,14 +107,10 @@ async function lookupStock(
 }
 
 function toFullWidth(s: string): string {
-  return s.replace(/[A-Za-z0-9]/g, (c) =>
-    String.fromCharCode(c.charCodeAt(0) + 0xfee0)
-  );
+  return s.replace(/[A-Za-z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0));
 }
 
-async function searchStockByName(
-  keyword: string
-): Promise<{ code: string; name: string }[]> {
+async function searchStockByName(keyword: string): Promise<{ code: string; name: string }[]> {
   const queries = [keyword];
   const fw = toFullWidth(keyword);
   if (fw !== keyword) queries.push(fw);
@@ -127,7 +118,7 @@ async function searchStockByName(
   for (const q of queries) {
     const res = await fetch(
       `${SB_URL}/rest/v1/jpx_stock_list?name=ilike.*${encodeURIComponent(q)}*&select=code,name&limit=5`,
-      { headers: sbHeaders() }
+      { headers: sbHeaders() },
     );
     const rows = res.ok ? await res.json() : [];
     if (rows.length > 0) return rows;
@@ -135,25 +126,17 @@ async function searchStockByName(
   return [];
 }
 
-// ── コマンド処理 ─────────────────────────────────────────
+// ── コマンド処理 ─────────────────────────────
 
 type CommandResult = { handled: true; reply: string } | { handled: false };
 
-async function handleCommand(
-  text: string,
-  userId: string
-): Promise<CommandResult> {
+async function handleCommand(text: string, userId: string): Promise<CommandResult> {
   const trimmed = text.trim();
 
-  // ウォッチリスト一覧
   if (/^(ウォッチ|リスト|一覧)$/i.test(trimmed)) {
     const list = await getWatchlist(userId);
     if (list.length === 0) {
-      return {
-        handled: true,
-        reply:
-          "ウォッチリストは空です。\n「ウォッチ 8473」で追加できます。",
-      };
+      return { handled: true, reply: "ウォッチリストは空です。\n「ウォッチ 8473」で追加できます。" };
     }
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
@@ -165,17 +148,14 @@ async function handleCommand(
         if (stock.drop_prob < item.dp_threshold) status = "🔔買い時！";
         else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
       }
-      lines.push(
-        `  ${item.code} ${item.name} ${priceStr} ${dpStr} ${status}`
-      );
+      lines.push(`  ${item.code} ${item.name} ${priceStr} ${dpStr} ${status}`);
     }
     lines.push(`\n※ 下落確率が買い閾値未満で買い通知、売り閾値以上で売り通知`);
     return { handled: true, reply: lines.join("\n") };
   }
 
-  // ウォッチ追加: 「ウォッチ 8473」「ウォッチ 8473 10」「ウォッチ 8473 10 20」「ウォッチ SBI」
   const addMatch = trimmed.match(
-    /^ウォッチ\s+(.+?)(?:\s+(\d+(?:\.\d+)?))?(?:\s+(\d+(?:\.\d+)?))?$/i
+    /^ウォッチ\s+(.+?)(?:\s+(\d+(?:\.\d+)?))?(?:\s+(\d+(?:\.\d+)?))?$/i,
   );
   if (addMatch) {
     const target = addMatch[1].trim();
@@ -185,10 +165,7 @@ async function handleCommand(
     if (/^\d{4}$/.test(target)) {
       const stock = await lookupStock(target);
       if (!stock) {
-        return {
-          handled: true,
-          reply: `${target} はランキングに見つかりません。銘柄コード4桁で指定してください。`,
-        };
+        return { handled: true, reply: `${target} はランキングに見つかりません。銘柄コード4桁で指定してください。` };
       }
       await addToWatchlist(userId, stock.code, stock.name, threshold, sellThreshold);
       return {
@@ -203,10 +180,7 @@ async function handleCommand(
 
     const matches = await searchStockByName(target);
     if (matches.length === 0) {
-      return {
-        handled: true,
-        reply: `「${target}」に該当する銘柄が見つかりません。コード4桁で指定してください。`,
-      };
+      return { handled: true, reply: `「${target}」に該当する銘柄が見つかりません。コード4桁で指定してください。` };
     }
     if (matches.length === 1) {
       const stock = await lookupStock(matches[0].code);
@@ -216,9 +190,7 @@ async function handleCommand(
         handled: true,
         reply:
           `✅ ${name}(${matches[0].code}) をウォッチリストに追加\n` +
-          (stock
-            ? `株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%\n`
-            : "") +
+          (stock ? `株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%\n` : "") +
           `\n※ 下落確率 < ${threshold}%で買い通知 / ≥ ${sellThreshold}%で売り通知`,
       };
     }
@@ -229,29 +201,20 @@ async function handleCommand(
     };
   }
 
-  // ウォッチ解除: 「解除 8473」
   const removeMatch = trimmed.match(/^(解除|削除|外す)\s+(\d{4})$/i);
   if (removeMatch) {
     const code = removeMatch[2];
     await removeFromWatchlist(userId, code);
-    return {
-      handled: true,
-      reply: `🗑 ${code} をウォッチリストから削除しました。`,
-    };
+    return { handled: true, reply: `🗑 ${code} をウォッチリストから削除しました。` };
   }
 
-  // 銘柄照会: 「8473」（4桁数字のみ）
   if (/^\d{4}$/.test(trimmed)) {
     const stock = await lookupStock(trimmed);
     if (!stock) {
       return { handled: true, reply: `${trimmed} のデータが見つかりません。` };
     }
     const dpStatus =
-      stock.drop_prob < 8
-        ? "🟢安全圏"
-        : stock.drop_prob >= 15
-          ? "🔴危険"
-          : "🟡通常";
+      stock.drop_prob < 8 ? "🟢安全圏" : stock.drop_prob >= 15 ? "🔴危険" : "🟡通常";
     return {
       handled: true,
       reply:
@@ -265,7 +228,7 @@ async function handleCommand(
   return { handled: false };
 }
 
-// ── 会話履歴（直近メッセージ保持） ─────────────────────────
+// ── 会話履歴 ─────────────────────────────────
 
 async function saveMessage(userId: string, role: "user" | "assistant", content: string): Promise<void> {
   if (!SB_URL || !SB_KEY) return;
@@ -274,19 +237,18 @@ async function saveMessage(userId: string, role: "user" | "assistant", content: 
     headers: sbHeaders({ Prefer: "return=minimal" }),
     body: JSON.stringify({ line_user_id: userId, role, content: content.slice(0, 2000) }),
   });
-  // 古い履歴を削除（6件 = 3往復より古いもの）
   const res = await fetch(
     `${SB_URL}/rest/v1/line_chat_history?line_user_id=eq.${userId}&order=created_at.desc&select=id&offset=6&limit=100`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   if (res.ok) {
     const old = await res.json();
     if (old.length > 0) {
-      const ids = old.map((r: any) => r.id);
-      await fetch(
-        `${SB_URL}/rest/v1/line_chat_history?id=in.(${ids.join(",")})`,
-        { method: "DELETE", headers: sbHeaders() }
-      );
+      const ids = old.map((r: { id: string }) => r.id);
+      await fetch(`${SB_URL}/rest/v1/line_chat_history?id=in.(${ids.join(",")})`, {
+        method: "DELETE",
+        headers: sbHeaders(),
+      });
     }
   }
 }
@@ -295,20 +257,20 @@ async function getRecentMessages(userId: string): Promise<{ role: string; conten
   if (!SB_URL || !SB_KEY) return [];
   const res = await fetch(
     `${SB_URL}/rest/v1/line_chat_history?line_user_id=eq.${userId}&order=created_at.desc&limit=6&select=role,content`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   if (!res.ok) return [];
   const rows = await res.json();
   return rows.reverse();
 }
 
-// ── 企業情報データ取得（TDnet/JPX） ────────────────────────
+// ── 企業情報データ取得 ────────────────────────
 
 async function fetchTdnetDisclosures(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
   const res = await fetch(
     `${SB_URL}/rest/v1/ext_tdnet_disclosures?code=eq.${code}&order=disclosed_at.desc&select=disclosed_at,title,category&limit=5`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   if (!res.ok) return "";
   const rows = await res.json();
@@ -326,7 +288,7 @@ async function fetchJpxShortSelling(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
   const res = await fetch(
     `${SB_URL}/rest/v1/jpx_short_selling?code=eq.${code}&order=calc_date.desc&select=calc_date,short_seller,short_ratio&limit=5`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   if (!res.ok) return "";
   const rows = await res.json();
@@ -342,7 +304,7 @@ async function fetchJpxMarginBalance(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
   const res = await fetch(
     `${SB_URL}/rest/v1/jpx_margin_balance?code=eq.${code}&order=record_date.desc&select=record_date,margin_buy,margin_sell&limit=3`,
-    { headers: sbHeaders() }
+    { headers: sbHeaders() },
   );
   if (!res.ok) return "";
   const rows = await res.json();
@@ -354,19 +316,19 @@ async function fetchJpxMarginBalance(code: string): Promise<string> {
   return lines.join("\n");
 }
 
-// ── 市場データ取得 ───────────────────────────────────────
+// ── 市場データ取得 ───────────────────────────
 
 async function fetchStockDetail(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
 
   const [rankRes, finRes, tdnetStr, shortStr, marginStr] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
-      { headers: sbHeaders() }
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      { headers: sbHeaders() },
     ),
     fetch(
       `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,doc_type,eps,bps,div_ann,payout_ratio,np,cfo,ta,equity,op,sales,fnp,fop,fsales&order=disc_date.desc&limit=4`,
-      { headers: sbHeaders() }
+      { headers: sbHeaders() },
     ),
     fetchTdnetDisclosures(code),
     fetchJpxShortSelling(code),
@@ -380,12 +342,12 @@ async function fetchStockDetail(code: string): Promise<string> {
   if (ranks.length > 0) {
     const r = ranks[0];
     lines.push(`【${r.name}(${r.code})の詳細データ】`);
-    lines.push(`株価: ${r.close}円, 下落確率: ${r.drop_prob}%`);
+    lines.push(`株価: ${r.close}円, 下落確率: ${r.drop_prob}%, net: ${r.net}%`);
     lines.push(`PER: ${r.per}, PBR: ${r.pbr}, Piotroski: ${r.piotroski}`);
     lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
     lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
     if (ranks.length > 1) {
-      lines.push(`下落確率の直近5日推移: ${ranks.map((x: any) => x.drop_prob + "%").join(" → ")}`);
+      lines.push(`過去5日の下落確率推移: ${ranks.map((x: { drop_prob: number }) => x.drop_prob).join(" → ")}`);
     }
   }
   if (fins.length > 0) {
@@ -398,18 +360,22 @@ async function fetchStockDetail(code: string): Promise<string> {
 
     lines.push(`\n【決算データ(${f.disc_date} ${f.doc_type})】`);
     lines.push(`EPS: ${f.eps}, BPS: ${f.bps}`);
-    if (divYield) lines.push(`配当利回り: ${divYield}%, 年間配当: ${f.div_ann}円, 配当性向: ${f.payout_ratio ? (f.payout_ratio * 100).toFixed(1) + "%" : "N/A"}`);
+    if (divYield)
+      lines.push(
+        `配当利回り: ${divYield}%, 年間配当: ${f.div_ann}円, 配当性向: ${f.payout_ratio ? (f.payout_ratio * 100).toFixed(1) + "%" : "N/A"}`,
+      );
     if (roe) lines.push(`ROE: ${roe}%`);
     if (equityRatio) lines.push(`自己資本比率: ${equityRatio}%`);
     if (opMargin) lines.push(`営業利益率: ${opMargin}%`);
     if (f.cfo != null) lines.push(`営業CF: ${(f.cfo / 1e6).toFixed(0)}百万円`);
     if (f.fnp != null && f.np != null && f.fnp > 0) {
       const progress = ((f.np / f.fnp) * 100).toFixed(1);
-      lines.push(`通期予想進捗率: ${progress}% (実績NP: ${(f.np / 1e6).toFixed(0)}百万 / 予想: ${(f.fnp / 1e6).toFixed(0)}百万)`);
+      lines.push(
+        `通期予想進捗率: ${progress}% (実績NP: ${(f.np / 1e6).toFixed(0)}百万 / 予想: ${(f.fnp / 1e6).toFixed(0)}百万)`,
+      );
     }
 
-    // 前期比較（直近FYが2件以上あれば）
-    const fyRecords = fins.filter((x: any) => x.doc_type === "FY");
+    const fyRecords = fins.filter((x: { doc_type: string }) => x.doc_type === "FY");
     if (fyRecords.length >= 2) {
       const cur = fyRecords[0];
       const prev = fyRecords[1];
@@ -438,16 +404,16 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   const [rankRes, n225Res, watchRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,per,pbr&order=drop_prob.asc&limit=20`,
-      { headers: sbHeaders() }
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,net,per,pbr&order=net.desc&limit=20`,
+      { headers: sbHeaders() },
     ),
     fetch(
       `${SB_URL}/rest/v1/yahoo_market_index?ticker=eq.N225&order=date.desc&limit=1&select=date,close`,
-      { headers: sbHeaders() }
+      { headers: sbHeaders() },
     ),
     fetch(
       `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold,dp_sell_threshold`,
-      { headers: sbHeaders() }
+      { headers: sbHeaders() },
     ),
   ]);
 
@@ -463,12 +429,9 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   if (rankings.length > 0) {
     const dps = rankings
-      .filter((r: any) => r.drop_prob != null)
-      .map((r: any) => r.drop_prob);
-    const avgDp =
-      dps.length > 0
-        ? dps.reduce((a: number, b: number) => a + b, 0) / dps.length
-        : null;
+      .filter((r: { drop_prob: number | null }) => r.drop_prob != null)
+      .map((r: { drop_prob: number }) => r.drop_prob);
+    const avgDp = dps.length > 0 ? dps.reduce((a: number, b: number) => a + b, 0) / dps.length : null;
 
     if (avgDp != null) {
       const signal = avgDp >= 15 ? "🔴キャッシュ推奨" : "🟢投資継続OK";
@@ -477,24 +440,19 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
     lines.push(`\n本日のトップ10:`);
     for (const r of rankings.slice(0, 10)) {
-      lines.push(
-        `  ${r.code} ${r.name}: 下落確率=${r.drop_prob}% PER=${r.per} PBR=${r.pbr}`
-      );
+      lines.push(`  ${r.code} ${r.name}: net=${r.net}% 下落確率=${r.drop_prob}% PER=${r.per} PBR=${r.pbr}`);
     }
   }
 
   if (watchlist.length > 0) {
     lines.push(`\nこのユーザーのウォッチリスト:`);
     for (const w of watchlist) {
-      const stock = rankings.find((r: any) => r.code === w.code);
+      const stock = rankings.find((r: { code: string }) => r.code === w.code);
       const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
-      lines.push(
-        `  ${w.code} ${w.name}: ${dpStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`
-      );
+      lines.push(`  ${w.code} ${w.name}: ${dpStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`);
     }
   }
 
-  // ユーザーが特定銘柄について質問している場合、詳細データを追加取得
   const codeMatch = userMessage.match(/(\d{4})/);
   if (codeMatch) {
     const detail = await fetchStockDetail(codeMatch[1]);
@@ -504,7 +462,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
   return lines.join("\n");
 }
 
-// ── Claude API (tool use で自然言語からウォッチ操作) ─────
+// ── Claude API (tool use) ─────────────────────
 
 const TOOLS: Anthropic.Tool[] = [
   {
@@ -514,41 +472,27 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        query: {
-          type: "string",
-          description: "銘柄コード(4桁)または銘柄名の一部。例: '8473', 'SBI', '三菱UFJ'",
-        },
-        buy_threshold: {
-          type: "number",
-          description: "買い閾値(dp%)。指定なければ8.0",
-        },
-        sell_threshold: {
-          type: "number",
-          description: "売り閾値(dp%)。指定なければ20.0",
-        },
+        query: { type: "string", description: "銘柄コード(4桁)または銘柄名の一部。例: '8473', 'SBI', '三菱UFJ'" },
+        buy_threshold: { type: "number", description: "買い閾値(dp%)。指定なければ8.0" },
+        sell_threshold: { type: "number", description: "売り閾値(dp%)。指定なければ20.0" },
       },
       required: ["query"],
     },
   },
   {
     name: "remove_watchlist",
-    description:
-      "ウォッチリストから銘柄を削除する。「〇〇を外して」「〇〇の監視やめて」等と言ったとき使う。",
+    description: "ウォッチリストから銘柄を削除する。「〇〇を外して」「〇〇の監視やめて」等と言ったとき使う。",
     input_schema: {
       type: "object" as const,
       properties: {
-        query: {
-          type: "string",
-          description: "銘柄コード(4桁)または銘柄名の一部",
-        },
+        query: { type: "string", description: "銘柄コード(4桁)または銘柄名の一部" },
       },
       required: ["query"],
     },
   },
   {
     name: "show_watchlist",
-    description:
-      "ウォッチリストの一覧を表示する。「ウォッチリスト見せて」「今何を監視してる？」等と言ったとき使う。",
+    description: "ウォッチリストの一覧を表示する。「ウォッチリスト見せて」「今何を監視してる？」等と言ったとき使う。",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -556,15 +500,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lookup_stock",
-    description:
-      "特定銘柄の現在の詳細情報を調べる。「〇〇の状況は？」「〇〇って今どう？」等と言ったとき使う。",
+    description: "特定銘柄の現在の詳細情報を調べる。「〇〇の状況は？」「〇〇って今どう？」等と言ったとき使う。",
     input_schema: {
       type: "object" as const,
       properties: {
-        query: {
-          type: "string",
-          description: "銘柄コード(4桁)または銘柄名の一部",
-        },
+        query: { type: "string", description: "銘柄コード(4桁)または銘柄名の一部" },
       },
       required: ["query"],
     },
@@ -572,7 +512,7 @@ const TOOLS: Anthropic.Tool[] = [
 ];
 
 async function resolveCode(
-  query: string
+  query: string,
 ): Promise<{ code: string; name: string } | { candidates: { code: string; name: string }[] } | null> {
   if (/^\d{4}$/.test(query)) {
     const stock = await lookupStock(query);
@@ -586,8 +526,8 @@ async function resolveCode(
 
 async function executeToolCall(
   toolName: string,
-  input: Record<string, any>,
-  userId: string
+  input: Record<string, unknown>,
+  userId: string,
 ): Promise<string> {
   if (toolName === "show_watchlist") {
     const list = await getWatchlist(userId);
@@ -609,22 +549,24 @@ async function executeToolCall(
   }
 
   if (toolName === "add_watchlist") {
-    const resolved = await resolveCode(input.query);
+    const resolved = await resolveCode(input.query as string);
     if (!resolved) return `「${input.query}」に該当する銘柄が見つかりません。`;
     if ("candidates" in resolved) {
       return `「${input.query}」に複数該当:\n${resolved.candidates.map((m) => `  ${m.code} ${m.name}`).join("\n")}\nどの銘柄か教えてください。`;
     }
-    const buyTh = input.buy_threshold ?? 8.0;
-    const sellTh = input.sell_threshold ?? 20.0;
+    const buyTh = (input.buy_threshold as number) ?? 8.0;
+    const sellTh = (input.sell_threshold as number) ?? 20.0;
     await addToWatchlist(userId, resolved.code, resolved.name, buyTh, sellTh);
     const stock = await lookupStock(resolved.code);
-    return `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加` +
+    return (
+      `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加` +
       (stock ? `\n株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%` : "") +
-      `\n\n※ 下落確率 < ${buyTh}%で買い通知 / ≥ ${sellTh}%で売り通知`;
+      `\n\n※ 下落確率 < ${buyTh}%で買い通知 / ≥ ${sellTh}%で売り通知`
+    );
   }
 
   if (toolName === "remove_watchlist") {
-    const resolved = await resolveCode(input.query);
+    const resolved = await resolveCode(input.query as string);
     if (!resolved) return `「${input.query}」に該当する銘柄が見つかりません。`;
     if ("candidates" in resolved) {
       return `「${input.query}」に複数該当:\n${resolved.candidates.map((m) => `  ${m.code} ${m.name}`).join("\n")}\nどの銘柄か教えてください。`;
@@ -634,7 +576,7 @@ async function executeToolCall(
   }
 
   if (toolName === "lookup_stock") {
-    const resolved = await resolveCode(input.query);
+    const resolved = await resolveCode(input.query as string);
     if (!resolved) return `「${input.query}」に該当する銘柄が見つかりません。`;
     if ("candidates" in resolved) {
       return `「${input.query}」に複数該当:\n${resolved.candidates.map((m) => `  ${m.code} ${m.name}`).join("\n")}\nどの銘柄か教えてください。`;
@@ -646,11 +588,7 @@ async function executeToolCall(
   return "不明な操作です。";
 }
 
-async function askClaude(
-  userMessage: string,
-  context: string,
-  userId: string
-): Promise<string> {
+async function askClaude(userMessage: string, context: string, userId: string): Promise<string> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
   const systemPrompt = `あなたは日本株投資の専門アシスタントBot「stock-alert」です。
@@ -662,7 +600,7 @@ ${context || "（本日のデータはまだありません）"}
 あなたの分析フレームワーク:
 - XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.771)の精度が高い
 - 下落確率(dp): dp<8は安全圏、dp≥15は危険水準
-- 上昇モデルは精度が低いため、netスコアは参考値に留める。回答ではnetを前面に出さず、下落確率を中心に判断すること
+- net = rise_prob - drop_prob。高いほど上昇期待
 - 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
 
 ファンダメンタル指標の見方:
@@ -715,25 +653,21 @@ ${context || "（本日のデータはまだありません）"}
 - 「下落確率」と表記する（dpとは言わない）
 - データがない質問には正直に「わからない」と答える`;
 
-  // 直近の会話履歴を取得してコンテキストに含める
   const history = await getRecentMessages(userId);
   const messages: Anthropic.MessageParam[] = [];
 
-  // 履歴を messages に復元（role が交互になるよう整形）
   let lastRole = "";
   for (const h of history) {
-    if (h.role === lastRole) continue; // 同じroleが連続する場合スキップ
+    if (h.role === lastRole) continue;
     messages.push({ role: h.role as "user" | "assistant", content: h.content });
     lastRole = h.role;
   }
-  // 最後のメッセージが今回のuserメッセージと同じなら重複を避ける
   if (messages.length > 0 && messages[messages.length - 1].role === "user") {
     messages[messages.length - 1] = { role: "user", content: userMessage };
   } else {
     messages.push({ role: "user", content: userMessage });
   }
 
-  // tool呼び出しが無くなるまでループ（複数ツールを連鎖して使うケースに対応）
   const MAX_TURNS = 5;
   let lastText = "";
 
@@ -747,42 +681,30 @@ ${context || "（本日のデータはまだありません）"}
     });
 
     const textBlocks = response.content.filter(
-      (b): b is Anthropic.TextBlock => b.type === "text"
+      (b): b is Anthropic.TextBlock => b.type === "text",
     );
     const toolBlocks = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
     );
 
     if (textBlocks.length > 0) {
       lastText = textBlocks.map((b) => b.text).join("\n");
     }
 
-    // ツール呼び出しが無ければ最終回答として返す
     if (toolBlocks.length === 0) {
       return lastText || "回答を生成できませんでした。";
     }
 
-    // ツールを実行して結果をmessagesに積む
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const tool of toolBlocks) {
-      const result = await executeToolCall(
-        tool.name,
-        tool.input as Record<string, any>,
-        userId
-      );
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: tool.id,
-        content: result,
-      });
+      const result = await executeToolCall(tool.name, tool.input as Record<string, unknown>, userId);
+      toolResults.push({ type: "tool_result", tool_use_id: tool.id, content: result });
     }
 
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: toolResults });
   }
 
-  // MAX_TURNS到達: それまでに得たテキストがあれば返す。
-  // 無ければ最後のツール結果から回答を作るようClaudeに最終指示。
   if (lastText) return lastText;
 
   const finalResponse = await client.messages.create({
@@ -791,11 +713,7 @@ ${context || "（本日のデータはまだありません）"}
     system: systemPrompt,
     messages: [
       ...messages,
-      {
-        role: "user",
-        content:
-          "ここまでのツール結果をもとに、ユーザーの質問に日本語で簡潔に答えてください。",
-      },
+      { role: "user", content: "ここまでのツール結果をもとに、ユーザーの質問に日本語で簡潔に答えてください。" },
     ],
   });
   const finalText = finalResponse.content
@@ -806,14 +724,22 @@ ${context || "（本日のデータはまだありません）"}
   return finalText || "うまく回答できませんでした。もう一度お試しください。";
 }
 
-// ── Webhook エントリポイント ─────────────────────────────
+// ── Webhook エントリポイント ─────────────────
 
-export async function POST(req: NextRequest) {
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200 });
+  }
+
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
   const rawBody = await req.text();
   const signature = req.headers.get("x-line-signature") ?? "";
 
-  if (LINE_CHANNEL_SECRET && !verifySignature(rawBody, signature)) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
+  if (LINE_CHANNEL_SECRET && !(await verifySignature(rawBody, signature))) {
+    return Response.json({ error: "Invalid signature" }, { status: 403 });
   }
 
   const body = JSON.parse(rawBody);
@@ -829,7 +755,6 @@ export async function POST(req: NextRequest) {
     if (!userId) continue;
 
     try {
-      // ユーザーメッセージを履歴に保存
       await saveMessage(userId, "user", userMessage);
 
       const cmd = await handleCommand(userMessage, userId);
@@ -843,14 +768,11 @@ export async function POST(req: NextRequest) {
       const reply = await askClaude(userMessage, context, userId);
       await saveMessage(userId, "assistant", reply);
       await replyToLine(replyToken, reply);
-    } catch (e: any) {
+    } catch (e) {
       console.error("[LINE webhook] Error:", e);
-      await replyToLine(
-        replyToken,
-        "エラーが発生しました。しばらくしてからお試しください。"
-      );
+      await replyToLine(replyToken, "エラーが発生しました。しばらくしてからお試しください。");
     }
   }
 
-  return NextResponse.json({ ok: true });
-}
+  return Response.json({ ok: true });
+});

@@ -333,32 +333,6 @@ def generate_ai_analyses(today: str, top_rows: list[dict]) -> None:
         _upsert("gen_ai_analyses", ai_rows)
 
 
-def export_risk_regime(today: str) -> None:
-    """相場リスク管制官の当日判定（data/risk_regime.json）をSupabaseへupsert。"""
-    import json as _json
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path = os.path.join(root, "data", "risk_regime.json")
-    if not os.path.exists(path):
-        print("[export_to_web] risk_regime.json なし。リスク判定エクスポートをスキップ。")
-        return
-    try:
-        with open(path, encoding="utf-8") as f:
-            v = _json.load(f)
-    except Exception as e:
-        print(f"[export_to_web] risk_regime.json 読み込み失敗: {e}")
-        return
-    row = {
-        "date":         today,
-        "regime":       v.get("regime"),
-        "score":        v.get("score"),
-        "action":       v.get("action"),
-        "label":        v.get("label"),
-        "reasons":      v.get("reasons", []),
-        "suppress_buy": bool(v.get("suppress_buy")),
-    }
-    _upsert("gen_risk_regime?on_conflict=date", [row])
-
-
 def main() -> None:
     today = date.today().isoformat()
     print(f"[export_to_web] {today} のデータをエクスポート開始")
@@ -390,21 +364,8 @@ def main() -> None:
     top_rows = ranking_rows[:10]
     generate_ai_analyses(today, top_rows)
 
-    # 5. 相場リスク管制官の当日判定をエクスポート
-    export_risk_regime(today)
-
-    # 6. QA: サイト全体の整合性チェック（全upsert後にライブ状態を読み戻して検証）
+    # 5. QA: サイト全体の整合性チェック（全upsert後にライブ状態を読み戻して検証）
     qa_site_check(today, ranking_rows, expected_ai=len(top_rows))
-
-    # 7. Next.js ISRキャッシュを即時無効化
-    site_url = os.getenv("SITE_URL", "")
-    secret = os.getenv("INTERNAL_SEND_SECRET", "")
-    if site_url:
-        try:
-            r = requests.get(f"{site_url}/api/revalidate?secret={secret}", timeout=15)
-            print(f"[export_to_web] キャッシュ無効化: {r.status_code}")
-        except Exception as e:
-            print(f"[export_to_web] キャッシュ無効化失敗（無視）: {e}")
 
     print("[export_to_web] エクスポート完了")
 
