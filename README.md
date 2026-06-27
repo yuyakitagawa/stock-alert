@@ -10,39 +10,14 @@
 【20:00 JST】アラートパイプライン（daily_alert.yml）
 core/screener.py → core/rank_stocks.py
 core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
-web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
+web/export_to_web.py → web/send_user_alerts.py（データエクスポート）
 
-その他ワークフロー: ci.yml（テスト）、frontend_build.yml（ビルド検証）、
-keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）
+その他ワークフロー: ci.yml（テスト）、keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）
 ```
 
-**ウォッチリスト**（/watchlist）は、ユーザーが自分で銘柄をブックマークして監視する**マイ・ウォッチリスト**。
-ログイン不要で、ブックマークは `localStorage`（即時の正本・オフラインファースト）に保存しつつ、ブラウザ発行の匿名 `client_id`（キー `stocksignal:client-id`）を識別子に
-Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookmarks.ts` の `useBookmarks` フック、キー `stocksignal:bookmarks`、API ルート `app/api/bookmarks` の GET/POST/DELETE・service key）。
-認証が無いため `client_id` はブラウザ単位で、端末間同期は不可（サーバーに記録が残るのみ）。銘柄詳細ページのヘッダーとランキング各行の**しおりアイコン**（`frontend/components/BookmarkButton.tsx`）で追加/削除する。
-ウォッチリストには**「保有株を取り込む」ボタン**があり、オーナーの保有43銘柄（`frontend/lib/owner-holdings.ts`）を自分のブラウザで一括ブックマークできる。
-ウォッチリスト本体は当日の `gen_rankings`（全銘柄スコア）から該当コードを引き、銘柄名・**直近1ヶ月ミニチャート**（Sparkline・緑=上昇/赤=下落）・
-**お得度**（52週高値からの下落率: −30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）・**PER/PBR**・**ネットスコア（上昇↑/下落↓確率）**・推奨ラベルを表示する
-（`frontend/components/WatchlistClient.tsx`、デスクトップはテーブル/モバイルはカード）。ミニチャート・お得度・PER/PBR の市場データは API ルート `app/api/watch-metrics`（`fetchWatchMetricsMap`・Yahoo・ISR 1h）から
-ブックマークしたコードぶんだけ取得する（ブックマークは client 管理のため）。当日スコアが無い銘柄（上場廃止・売買停止・対象外等）は「未取得」と表示。ブックマークが0件のときは空状態を表示する。
-初回訪問時は旧キュレーション（toC独占ブランド10銘柄＝`data/pricing_power_watchlist.csv` 由来）を**デフォルトとして一度だけ種まき**する（`DEFAULT_BOOKMARKS`、フラグ `stocksignal:bookmarks-seeded`）。以後ユーザーが削除したものは復活しない。
-
-**会社説明**（銘柄詳細ページ /stocks/[code] の「この会社について」）は**全銘柄が対象**。
-- `web/generate_descriptions.py`：**2段階生成**で事実精度を重視。
-  Phase1: Yahoo Finance JPの「特色」（会社四季報データ）をスクレイプ → 事実確実なテキストを直接保存。
-  Phase2: スクレイプ失敗分のみ Claude Haiku でバッチ生成（20件/リクエスト・429リトライ・フォールバック）。
-  → Supabase `gen_ai_analyses`(model_version=`company-desc-v1`) に保存。
-  日次パイプライン Step 5a2 で差分補完（`--limit` で1回の上限）。`--all` で全件。`--refresh` で全銘柄を再スクレイプ（事実精度向上）。
-- `web/sync_descriptions.py`：スプレッドシートのシート **「📝 会社説明」**（コード/銘柄名/説明）の手動説明を
-  同じテーブルへ upsert（手動が AI 生成を上書き＝最優先）。日次パイプライン Step 5b。
-- 既存の `/api/stock/[code]/description` がこのキャッシュを返す。QA `description_coverage` が全銘柄のカバレッジ欠損を指摘。
-
-**企業インサイト**（銘柄詳細ページ /stocks/[code] の「企業インサイト」・**AI生成/参考**）は、事業概要(拡張)・主要取引先・カタリスト評価・リスクの定性解説。
-- API `/api/stock/[code]/insight`（Claude Haiku、Supabase `gen_ai_analyses` の model_version=`company-insight-v1` にJSONキャッシュ）→ `components/StockInsightPanel.tsx` が「🤖 AI生成・参考」免責付きで表示。取引先は要確認（一次情報＝有価証券報告書）の注記あり。
-- 「利益の質（化粧／本業シュリンク／営業益トレンド）」の**実データ表示はフェーズ2**（営業利益等のSupabaseエクスポートが必要・`docs/handoff_web_quality_section.md`）。
-
-`frontend/` を変更して push すると `.github/workflows/frontend_build.yml` が自動でビルド検証し、
-失敗時（=Vercelデプロイも失敗する）は Gmail に通知する。フロント変更前のローカル `npm run build` 確認も推奨。
+**LINE Bot AI相談機能**: Supabase Edge Function (`supabase/functions/line-webhook/`) で稼働。
+Claude APIを使った株式相談AI（銘柄検索・ウォッチリスト管理・TDnet/JPX情報取得）をLINE経由で提供。
+Webアプリ（Next.js/Vercel）は削除済み。後日再作成予定。
 
 ---
 
@@ -54,9 +29,10 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `core/rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存。フェーズ5(決算チェック)→フェーズ6(3件cap)→フェーズ7(米国ETFリードラグフィルター) |
 | `web/export_to_web.py` | Supabaseへランキング・AI解析をエクスポート（Step 5）|
-| `web/generate_descriptions.py` | 全銘柄の会社説明を2段階で生成（Phase1: Yahoo特色スクレイプ／Phase2: Haiku Haikuフォールバック）→ `gen_ai_analyses`(company-desc-v1)。`--refresh` で全銘柄再スクレイプ。Step 5a2 |
-| `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期（AI生成を上書き）。Step 5b |
-| `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
+| `web/generate_descriptions.py` | 全銘柄の会社説明を2段階で生成（Phase1: Yahoo特色スクレイプ／Phase2: Haikuフォールバック）→ `gen_ai_analyses`(company-desc-v1) |
+| `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期 |
+| `web/send_user_alerts.py` | ユーザーへのプッシュ通知送信（Step 6）|
+| `supabase/functions/line-webhook/index.ts` | LINE Bot AI相談機能（Supabase Edge Function） |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
@@ -126,13 +102,10 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 バックテスト（33期間ウォークフォワード: 2021〜2025年）: 現行フィルター avg+6.7% / 日経アルファ+4.4%（有効16/33期間）
 net10〜13%帯（実運用相当）に絞ると avg+7.4% 勝率73%と更に良化。3〜5月エントリーが最も好成績（avg+8〜10%）。
 
-### Top10シミュレーション（Webアプリ・メールに表示）
+### Top10シミュレーション
 
 毎日のネットスコア上位10銘柄（`gen_rankings.rank ≤ 10`）を100株ずつ購入し、
 ネットスコアが **5%未満** に下がった日に売却するロジック。手数料・税金は含まない。
-
-- Web版（`frontend/lib/simulation.ts`）: `gen_rankings` の履歴から遡って集計（即時表示）
-- 売却基準は `SELL_NET_THRESH = 5`（信号消滅）。銘柄ごとに最初のtop10入り日を購入日とする。
 
 ### シミュレーション実績（2025/05〜11月エントリー組・2026-05-16時点）
 
