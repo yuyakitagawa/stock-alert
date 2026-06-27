@@ -106,15 +106,15 @@ export async function fetchSectorMap(): Promise<Record<string, string>> {
 }
 
 export async function fetchCompanyProfile(code: string): Promise<CompanyProfile> {
-  const res = await sbFetch(`gen_stock_meta?code=eq.${code}&limit=1&select=description,website,employees`,
+  const res = await sbFetch(`gen_ai_analyses?code=eq.${code}&order=date.desc&limit=1&select=summary`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return { description: null, website: null, employees: null };
   const rows = await res.json();
   const r = rows[0] as Record<string, unknown> | undefined;
   return {
-    description: (r?.description as string) ?? null,
-    website:     (r?.website as string) ?? null,
-    employees:   (r?.employees as number) ?? null,
+    description: (r?.summary as string) ?? null,
+    website:     null,
+    employees:   null,
   };
 }
 
@@ -256,14 +256,16 @@ export async function fetchWatchMetrics(code: string): Promise<WatchMetrics> {
   let pbr: number | null = null;
   try {
     const res3 = await sbFetch(
-      `gen_stock_meta?code=eq.${code}&limit=1&select=per,pbr`,
+      `jquants_fin_summary?code=eq.${code}&order=disc_date.desc&limit=1&select=eps,bps,div_ann`,
       { headers: anonHeaders(), ...CACHE },
     );
     if (res3 && res3.ok) {
       const rows3 = await res3.json();
-      if (rows3[0]) {
-        per = rows3[0].per ?? null;
-        pbr = rows3[0].pbr ?? null;
+      if (rows3[0] && price != null) {
+        const eps = rows3[0].eps as number | null;
+        const bps = rows3[0].bps as number | null;
+        if (eps && eps > 0) per = Math.round((price / eps) * 10) / 10;
+        if (bps && bps > 0) pbr = Math.round((price / bps) * 100) / 100;
       }
     }
   } catch { /* graceful */ }

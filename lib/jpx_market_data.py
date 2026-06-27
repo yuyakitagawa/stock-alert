@@ -230,29 +230,41 @@ def _parse_margin_file(content: bytes, url: str = "") -> list[dict]:
     if df is None or df.empty:
         return []
 
-    # ヘッダー行を探す
+    # ヘッダー行を探す（「コード」or「銘柄」を含む行）
     header_row = None
-    for i in range(min(15, len(df))):
+    for i in range(min(20, len(df))):
         row_vals = [str(x) for x in df.iloc[i].tolist()]
-        if any("コード" in v for v in row_vals):
+        if any("コード" in v or "銘柄コード" in v for v in row_vals):
             header_row = i
             break
     if header_row is None:
+        print(f"[jpx] margin ヘッダー行が見つからない。先頭10行:")
+        for i in range(min(10, len(df))):
+            print(f"  row{i}: {df.iloc[i].tolist()}")
         return []
-    df.columns = df.iloc[header_row]
+    df.columns = [str(c).strip() for c in df.iloc[header_row].tolist()]
     df = df.iloc[header_row + 1:].reset_index(drop=True)
 
-    c_code = _find_col(df, "コード")
-    c_date = _find_col(df, "申込日付", "年月日", "日付")
-    c_buy  = _find_col(df, "信用買", "買残", "買い残")
-    c_sell = _find_col(df, "信用売", "売残", "売り残")
-    if not (c_code and c_date):
+    c_code = _find_col(df, "銘柄コード", "コード")
+    c_date = _find_col(df, "申込日付", "年月日", "日付", "残高日付")
+    c_buy  = _find_col(df, "信用買残", "信用買", "買残", "買い残", "融資残高")
+    c_sell = _find_col(df, "信用売残", "信用売", "売残", "売り残", "貸株残高")
+    if not c_code:
+        print(f"[jpx] margin コード列が見つからない。列名: {list(df.columns)}")
         return []
+    # 日付列がない場合、ファイル名から日付を推定
+    fallback_date = None
+    if not c_date:
+        print(f"[jpx] margin 日付列なし。列名: {list(df.columns)}")
+        m = re.search(r"(\d{4})(\d{2})(\d{2})", url)
+        if m:
+            fallback_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+            print(f"[jpx] ファイル名から日付推定: {fallback_date}")
 
     out = []
     for _, r in df.iterrows():
         code = _normalize_code(r.get(c_code))
-        rec_date = _parse_jpx_date(r.get(c_date))
+        rec_date = _parse_jpx_date(r.get(c_date)) if c_date else fallback_date
         if not code or not rec_date:
             continue
         out.append({
