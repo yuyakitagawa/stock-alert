@@ -245,7 +245,7 @@ def check_site(context: dict) -> list[Violation]:
     context（提供された項目だけ検査。未提供のキーはスキップ）:
       - date:         想定する最新日 "YYYY-MM-DD"
       - rankings:     gen_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
-      - stock_meta:   gen_stock_meta の行（code/name/sector）
+      - stock_meta:   jpx_stock_list の行（code/name/sector）
       - gen_ai_analyses:  gen_ai_analyses の行（code/summary/verdict）
       - earnings:     (廃止済み・互換性のため残存)
       - expected_ai:  AI解析が存在すべき件数（上位N）
