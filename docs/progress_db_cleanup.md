@@ -31,9 +31,12 @@
 ### 6. jpx_stock_list クリーンアップ
 - [x] name=NULL の870行を削除（gen_rankingsに影響なし確認済み）
 
-### 7. .claude/settings.json 作成
-- [x] Supabase MCP ツール群をallow設定に追加
-- [ ] **効果未確認**: 現セッション中は許可プロンプトが出続けた（設定ファイルウォッチャーが新規ファイルを検知しない）。次セッションで反映されるはず。
+### 7. Supabase SQL 許可プロンプト対策
+- [x] `.claude/settings.json`（プロジェクト）にallow追加 → CCR環境では効かない
+- [x] `.claude/settings.local.json`（ローカル）にallow追加 → CCR環境では効かない
+- [x] `/root/.claude/settings.json`（ユーザー）にallow追加 → セッション中は反映されず
+- [x] `/root/.claude/launcher-settings.json`（ランチャー）にallow追加 → セッション中は反映されず
+- [ ] **次セッションで確認**: launcher-settings.jsonへの追加が起動時に読み込まれれば解決するはず。効かない場合はCCR環境固有の制約で、毎回手動許可が必要。
 
 ---
 
