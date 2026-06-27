@@ -193,6 +193,48 @@ def fetch_short_selling(max_files: int = 3, persist: bool = True) -> list[dict]:
     return all_recs
 
 
+# ── mtdailyk 位置ベースパーサー ─────────────────────────────────
+
+# mtdailyk の列レイアウト（0-indexed）
+_MT_C_CODE = 6
+_MT_C_SELL = 8
+_MT_C_BUY  = 11
+
+
+def _parse_mtdailyk(df: pd.DataFrame, fallback_date: str | None) -> list[dict]:
+    """mtdailyk XLS の位置ベースパース。ヘッダー行をスキップしてデータ行を取得。"""
+    if df.shape[1] <= _MT_C_BUY:
+        print(f"[jpx] mtdailyk 列数不足: {df.shape[1]}列（12列以上必要）")
+        return []
+    if not fallback_date:
+        print("[jpx] mtdailyk 日付推定失敗")
+        return []
+
+    # データ開始行を探す（コード列に4-5桁数値が入っている最初の行）
+    start = 0
+    for i in range(min(20, len(df))):
+        val = str(df.iloc[i, _MT_C_CODE]).strip().replace(".0", "")
+        if re.match(r"^\d{4,5}$", val):
+            start = i
+            break
+
+    out = []
+    for i in range(start, len(df)):
+        row = df.iloc[i]
+        code = _normalize_code(row.iloc[_MT_C_CODE])
+        if not code:
+            continue
+        out.append({
+            "code": code,
+            "record_date": fallback_date,
+            "margin_buy": _to_float(row.iloc[_MT_C_BUY]),
+            "margin_sell": _to_float(row.iloc[_MT_C_SELL]),
+        })
+    if out:
+        print(f"[jpx] mtdailyk パース成功: {len(out)}件 (日付={fallback_date})")
+    return out
+
+
 # ── 個別銘柄信用取引週末残高 ────────────────────────────────────
 
 def _parse_margin_file(content: bytes, url: str = "") -> list[dict]:
@@ -230,6 +272,16 @@ def _parse_margin_file(content: bytes, url: str = "") -> list[dict]:
     if df is None or df.empty:
         return []
 
+    # ファイル名から日付を推定（mtdailyk20260625 → 2026-06-25）
+    fallback_date = None
+    m_url_date = re.search(r"(\d{4})(\d{2})(\d{2})", url)
+    if m_url_date:
+        fallback_date = f"{m_url_date.group(1)}-{m_url_date.group(2)}-{m_url_date.group(3)}"
+
+    # mtdailyk 形式: 位置ベースの列レイアウト（キーワードヘッダーなし）
+    if "mtdailyk" in url.lower():
+        return _parse_mtdailyk(df, fallback_date)
+
     # ヘッダー行を探す（「コード」or「銘柄」を含む行）
     header_row = None
     for i in range(min(20, len(df))):
@@ -252,14 +304,9 @@ def _parse_margin_file(content: bytes, url: str = "") -> list[dict]:
     if not c_code:
         print(f"[jpx] margin コード列が見つからない。列名: {list(df.columns)}")
         return []
-    # 日付列がない場合、ファイル名から日付を推定
-    fallback_date = None
-    if not c_date:
-        print(f"[jpx] margin 日付列なし。列名: {list(df.columns)}")
-        m = re.search(r"(\d{4})(\d{2})(\d{2})", url)
-        if m:
-            fallback_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
-            print(f"[jpx] ファイル名から日付推定: {fallback_date}")
+    if not c_date and not fallback_date:
+        print(f"[jpx] margin 日付列なし＆ファイル名日付なし。列名: {list(df.columns)}")
+        return []
 
     out = []
     for _, r in df.iterrows():
