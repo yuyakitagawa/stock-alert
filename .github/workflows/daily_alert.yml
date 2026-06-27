@@ -2,7 +2,7 @@ name: Daily Stock Alert
 
 on:
   schedule:
-    - cron: '30 8 * * 1-5'  # 平日08:30 UTC = 平日17:30 JST（市場閉場後2時間、低負荷帯）
+    - cron: '0 11 * * 1-5'  # 平日11:00 UTC = 平日20:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
 
 env:
@@ -85,6 +85,10 @@ jobs:
       - name: Step 2d - J-Quants財務サマリー差分更新
         continue-on-error: true
         run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/fetch_jquants_fin.py --resume --all-days
+
+      - name: Step 2e - EDINET決算XBRL取得（J-Quants補完）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 7
 
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
