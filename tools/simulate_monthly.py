@@ -14,7 +14,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 from config import (BASE_DIR, NEW_CANDIDATE_NET_MIN, CANDIDATE_DROP_PROB_MAX,
                     CANDIDATE_CONFLICT_NET_MIN, CANDIDATE_CONFLICT_DROP_MIN)
-from lib.db import save_simulation_results
 from lib.utils import get_prices, get_price_at_date
 
 
@@ -213,8 +212,7 @@ def main():
             "net_at_entry": r["net"],
             "drop_prob_at_entry": r.get("drop_prob"),
         })
-    save_simulation_results(run_key, rows)
-    print(f"\nDB保存: {len(rows)}件 → simulation_results (run_date={run_key})")
+    print(f"\n集計完了: {len(rows)}件")
 
     horizon_label = "現在まで" if args.horizon == 30 else "3ヶ月後（entry+90日）"
     _print_summary(df, horizon_label)
