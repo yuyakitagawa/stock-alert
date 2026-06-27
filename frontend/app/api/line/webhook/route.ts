@@ -361,7 +361,7 @@ async function fetchStockDetail(code: string): Promise<string> {
 
   const [rankRes, finRes, tdnetStr, shortStr, marginStr] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -380,12 +380,12 @@ async function fetchStockDetail(code: string): Promise<string> {
   if (ranks.length > 0) {
     const r = ranks[0];
     lines.push(`【${r.name}(${r.code})の詳細データ】`);
-    lines.push(`株価: ${r.close}円, 下落確率: ${r.drop_prob}%, net: ${r.net}%`);
+    lines.push(`株価: ${r.close}円, 下落確率: ${r.drop_prob}%`);
     lines.push(`PER: ${r.per}, PBR: ${r.pbr}, Piotroski: ${r.piotroski}`);
     lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
     lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
     if (ranks.length > 1) {
-      lines.push(`過去5日の下落確率推移: ${ranks.map((x: any) => x.drop_prob).join(" → ")}`);
+      lines.push(`下落確率の直近5日推移: ${ranks.map((x: any) => x.drop_prob + "%").join(" → ")}`);
     }
   }
   if (fins.length > 0) {
@@ -438,7 +438,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   const [rankRes, n225Res, watchRes] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,net,per,pbr&order=net.desc&limit=20`,
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,per,pbr&order=drop_prob.asc&limit=20`,
       { headers: sbHeaders() }
     ),
     fetch(
@@ -478,7 +478,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
     lines.push(`\n本日のトップ10:`);
     for (const r of rankings.slice(0, 10)) {
       lines.push(
-        `  ${r.code} ${r.name}: net=${r.net}% 下落確率=${r.drop_prob}% PER=${r.per} PBR=${r.pbr}`
+        `  ${r.code} ${r.name}: 下落確率=${r.drop_prob}% PER=${r.per} PBR=${r.pbr}`
       );
     }
   }
@@ -662,7 +662,7 @@ ${context || "（本日のデータはまだありません）"}
 あなたの分析フレームワーク:
 - XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.771)の精度が高い
 - 下落確率(dp): dp<8は安全圏、dp≥15は危険水準
-- net = rise_prob - drop_prob。高いほど上昇期待
+- 上昇モデルは精度が低いため、netスコアは参考値に留める。回答ではnetを前面に出さず、下落確率を中心に判断すること
 - 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
 
 ファンダメンタル指標の見方:
