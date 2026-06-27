@@ -1,322 +1,258 @@
 # stock-alert
 
-東証上場株式の機械学習スクリーニング・アラートシステム。毎日自動でランキングを生成し、Gmailでメール通知する。
+東証上場株式の機械学習スクリーニングシステム。XGBoostで3ヶ月先の株価変動を予測し、毎日ランキングを生成してGmail・LINEで通知する。
 
-## システム概要
-
-平日にGitHub Actionsが自動実行される。
+## アーキテクチャ
 
 ```
-【20:00 JST】アラートパイプライン（daily_alert.yml）
-core/screener.py → core/rank_stocks.py
-core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
-web/export_to_web.py → web/send_user_alerts.py（データエクスポート）
+┌─────────────────────────────────────────────────────────┐
+│  GitHub Actions（平日 20:00 JST）                        │
+│                                                         │
+│  screener.py → rank_stocks.py → export_to_web.py        │
+│       ↓              ↓               ↓                  │
+│  銘柄抽出      XGBoost予測     Supabase書込              │
+│                                      ↓                  │
+│                            send_user_alerts.py（メール） │
+│                            market_timing_alert.py（LINE）│
+└─────────────────────────────────────────────────────────┘
 
-その他ワークフロー: ci.yml（テスト）、keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）
+┌─────────────────────────────────────────────────────────┐
+│  Supabase Edge Function                                 │
+│                                                         │
+│  line-webhook/index.ts                                  │
+│  → Claude API でリアルタイム株式相談                      │
+│  → ウォッチリスト管理・銘柄検索・需給情報                  │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  Supabase (Postgres)                                    │
+│  全データの一元管理（ランキング・株価・財務・開示等）       │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**LINE Bot AI相談機能**: Supabase Edge Function (`supabase/functions/line-webhook/`) で稼働。
-Claude APIを使った株式相談AI（銘柄検索・ウォッチリスト管理・TDnet/JPX情報取得）をLINE経由で提供。
-Webアプリ（Next.js/Vercel）は削除済み。後日再作成予定。
+## 主な機能
+
+### 1. 日次スクリーニング & ランキング
+- 東証全銘柄（約3,500〜4,000銘柄）を毎日スクリーニング
+- XGBoostで63日先（約3ヶ月）の上昇/下落確率を予測
+- ネットスコア（上昇確率 − 下落確率）でランキング生成
+- 品質フィルター + 複数フェーズの追加フィルターで精度向上
+
+### 2. LINE Bot AI相談（Supabase Edge Function）
+- LINEで話しかけるだけで株式相談ができるAIアシスタント
+- Claude APIによるリアルタイム分析（銘柄データ・決算・需給情報を参照）
+- ウォッチリスト管理（自然言語で追加/削除/一覧）
+- TDnet適時開示・JPX空売り残高・信用残高の表示
+- 会話履歴を記憶（直近3往復）
+
+### 3. 通知
+- **Gmail**: 毎日のランキング・推奨銘柄をメール配信
+- **LINE Push**: 日経225シグナル（投資継続OK/キャッシュ推奨）+ ウォッチリスト銘柄の状態
 
 ---
 
-## ファイル構成
+## ディレクトリ構成
 
-| ファイル | 役割 |
-|---|---|
-| `core/screener.py` | JPX全銘柄から条件通過銘柄を抽出して `data/screeners/` に保存 |
-| `core/rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
-| `core/rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存。フェーズ5(決算チェック)→フェーズ6(3件cap)→フェーズ7(米国ETFリードラグフィルター) |
-| `web/export_to_web.py` | Supabaseへランキング・AI解析をエクスポート（Step 5）|
-| `web/generate_descriptions.py` | 全銘柄の会社説明を2段階で生成（Phase1: Yahoo特色スクレイプ／Phase2: Haikuフォールバック）→ `gen_ai_analyses`(company-desc-v1) |
-| `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期 |
-| `web/send_user_alerts.py` | ユーザーへのプッシュ通知送信（Step 6）|
-| `supabase/functions/line-webhook/index.ts` | LINE Bot AI相談機能（Supabase Edge Function） |
-| `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
-| `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
-| `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
-| `lib/sheets_helper.py` | Googleスプレッドシート連携 |
-| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/send_user_alerts）で使用（alert-only：違反でも更新は止めずメール通知）|
-| `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
-| `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
-| `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
-| `tools/backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存。`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
-| `tools/multi_backtest.py` | 33期間一括バックテスト＋フィルター比較分析（ウォークフォワード対応） |
-| `tools/simulate_monthly.py` | 月次シミュレーション（保有シナリオ分析）|
-| `tools/screen_catalyst_candidates.py` | カタリスト候補スクリーン（GARP補助）。PBR<1.0・ROE<8%・自己資本比率>50%・流動性の「安い箱」抽出は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計（J-Quants財務データ使用）。通過候補に **利益の質フィルター(A/B)** で化粧決算（営業赤字・純利益>営業益×1.5）と斜陽事業（本業減益）を除外し、売上CAGR・営業利益率・会社予想方向で加減点。`data/catalyst_candidates.csv`（残）＋ `data/catalyst_excluded.csv`（除外理由付き・レビュー用）。`--no-quality` で品質フィルター無効 |
-| `tools/catalyst_backtest.py` | カタリスト候補スクリーンのヒストリカルBT（point-in-time・disc_date≤基準日）。A/Bあり/なしで平均・勝率・大勝率を比較。データは J-Quants財務＋yahoo_price_cache |
-| `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
-| `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）と譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`EDINET_API_KEY` 必須 |
-| `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
-| `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
-| `tests/test_data_sanity.py` | QA（データ整合性・サイト全体・会社説明カバレッジ・全ページスモーク）のユニットテスト（29件）|
+```
+stock-alert/
+├── core/                     # コアロジック
+│   ├── screener.py           # 全銘柄スクリーニング
+│   ├── rank_stocks.py        # ランキング生成（8フェーズ）
+│   └── rf_train_v3.py        # XGBoostモデル学習（金曜のみ）
+│
+├── lib/                      # 共通ライブラリ
+│   ├── utils.py              # 特徴量抽出（64次元）・共通関数
+│   ├── db.py                 # Supabase永続化層
+│   ├── supabase_client.py    # Supabase REST APIクライアント
+│   ├── risk_regime.py        # 相場リスク管制官（リスクオン/オフ判定）
+│   ├── data_sanity.py        # QA（データ整合性検証）
+│   ├── nlp_sentiment.py      # 決算テキスト感情分析（Claude Haiku）
+│   ├── kabutan_earnings.py   # kabutan.jp 決算業績取得
+│   ├── earnings_quality.py   # 利益の質フィルター
+│   ├── edinet.py             # EDINET API連携
+│   ├── edinet_financials.py  # EDINET 決算XBRL解析
+│   ├── tdnet.py              # TDnet適時開示取得
+│   ├── jpx_market_data.py    # JPX空売り・信用残高取得
+│   ├── alt_data.py           # kabutan PER/PBR/ROE取得
+│   ├── fundamentals.py       # ファンダメンタル計算
+│   └── sheets_helper.py      # Googleスプレッドシート連携
+│
+├── web/                      # データエクスポート・通知
+│   ├── export_to_web.py      # Supabaseへランキング・AI解析エクスポート
+│   ├── send_user_alerts.py   # ユーザー通知送信
+│   ├── market_timing_alert.py # LINE Push通知（日経シグナル）
+│   ├── generate_descriptions.py # 会社説明生成（Yahoo特色 + Claude）
+│   ├── sync_descriptions.py  # スプシ手動説明同期
+│   └── qa_pages.py           # QAサイト巡回検査
+│
+├── tools/                    # ツール・バックテスト
+│   ├── backtest.py           # バックテスト（bearモード対応）
+│   ├── multi_backtest.py     # 33期間一括バックテスト
+│   ├── simulate_monthly.py   # 月次シミュレーション
+│   ├── screen_catalyst_candidates.py # カタリスト候補スクリーン
+│   ├── catalyst_backtest.py  # カタリストBT
+│   ├── scan_large_holdings.py # EDINET大量保有スキャン
+│   ├── fetch_tdnet.py        # TDnet取得
+│   ├── fetch_jpx_market.py   # JPX空売り/信用残取得
+│   ├── fetch_jquants_fin.py  # J-Quants財務取得
+│   ├── fetch_edinet_financials.py # EDINET決算XBRL取得
+│   ├── fetch_history.py      # 株価履歴取得
+│   ├── backfill_history.py   # 株価履歴バックフィル
+│   ├── optimize_net_weights.py # ネットスコア最適化
+│   └── export_report_to_sheets.py # レポートスプシ出力
+│
+├── supabase/functions/
+│   └── line-webhook/index.ts # LINE Bot AI相談（Edge Function）
+│
+├── tests/
+│   ├── test_screener.py      # スクリーナーテスト（9件）
+│   ├── test_earnings_quality.py # 利益の質テスト（8件）
+│   └── test_data_sanity.py   # QAテスト（29件）
+│
+├── .github/workflows/
+│   ├── daily_alert.yml       # 日次パイプライン（平日20:00 JST）
+│   ├── ci.yml                # テスト（main push時）
+│   ├── data_backfill.yml     # データバックフィル（手動実行）
+│   ├── keepalive.yml         # Supabase keepalive（月曜のみ）
+│   └── watchdog.yml          # パイプライン監視
+│
+├── config.py                 # 戦略パラメータ一元管理
+├── requirements.txt          # Python依存パッケージ
+└── data/                     # ランキングCSV等（gitignore対象）
+```
 
 ---
 
-## S買い 発令条件（passes_buy_filter + rank_stocks.py フェーズ5〜7）
+## 予測モデル（XGBoost）
 
-品質フィルター（`passes_buy_filter`）:
+### 概要
+- **目的**: 63日後（約3ヶ月）に日経225を±5%以上上回る/下回る銘柄を予測
+- **AUC**: 上昇 0.642 / 下落 0.766（下落予測の精度が高い）
+- **学習**: 東証全銘柄×5年、20営業日ごとサンプリング、金曜に再学習
 
-| 条件 | 値 | 意図 |
+### 特徴量（64次元）
+
+| カテゴリ | 数 | 内容 |
 |---|---|---|
-| 株価 ≥ | 300円 | 低位株除外 |
-| 3ヶ月モメンタム ≥ | +8% | 上昇トレンド確認（5%→8%: 10期間BTで勝率+7pp）|
-| 2年モメンタム | プラス | 長期下落株を除外（2年<0は勝率25%・avg-3.1%）|
-| 2年トレンド R²（504日） ≥ | 0.4 | 長期トレンド一貫性確保（R²<0.4は勝率18%・avg-2.8%）|
-| RSI（14日） | < 75 | 過熱除外のみ（下限撤廃: 30〜45帯が有効と判明）|
-| 出来高比 vr2060 ≥ | 1.0 | 出来高増加トレンド確認 |
-| 直近20日ボラ (vol20) ≤ | 22% | 高ボラ時は見送り（BT: vol>22%は平均▼0.9pp）|
-| 連続下落日数 ≤ | 3日 | 急落継続銘柄の除外 |
-| 60日ドローダウン ≥ | −15% | 深い下落銘柄の除外 |
-| 20日平均売買代金 ≥ | 50百万円 | 流動性確保（板薄銘柄除外）|
+| テクニカル | 10 | ret5/20/60/90, MA乖離, RSI, ボラ, 52週位置 |
+| トレンド反転 | 5 | ドローダウン, 52週高値比, 連続下落, モメンタム加速 |
+| 出来高 | 3 | 出来高比率（短期/中期/急増） |
+| 日経マクロ | 3 | 日経225の5/20/60日リターン |
+| 60日系列要約 | 7 | 自己相関, 歪度, 最大/最小リターン等 |
+| 日経相対 | 4 | 相対強度, アルファモメンタム |
+| ファンダメンタル | 11 | PER, PBR, ROE, 配当, 決算距離, 季節性 |
+| マクロ拡張 | 4 | VIX, S&P500, USD/JPY |
+| IB特徴量 | 8 | Amihud, FXβ, Piotroski, アクルーアル等 |
+| EDINET | 1 | 大量保有報告の保有比率 |
+| モメンタム拡張 | 3 | 504日リターン, 60日トレンド傾き/R² |
+| クロスセクショナル | 7 | 上記の日次グループ内相対ランク |
 
-モデル予測フィルター（`recommend_from_scores`）:
-
-| 条件 | S買い |
-|---|---|
-| ネットスコア (上昇確率−下落確率) | 17% ≤ net ≤ 24% |
-| 下落確率 | < 4% |
-| 年率ボラティリティ | ≤ 25% |
-
-フェーズ5〜7 追加フィルター（`rank_stocks.py`）:
-- フェーズ5: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格
-- フェーズ5b: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格（優待クロス売り圧力を回避）
-- フェーズ6: S買い1日最大3件のキャップ（net降順）。4件目以降は方向感なしに降格
-- フェーズ7: 対応する米国セクターETF（XLK/XLF/XLI/XLB/XLV/XLY）の前日リターンがマイナスならS買い→方向感なしに降格。リードラグ効果（US→JP翌日）を活用。21,416サンプル(2023-2026)で全26ペア正相関・avg +0.64pp効果を確認。キャッシュは `data/sector_map.json`。
-
-**推奨ラベル**:
-- 💎 買い: QV条件+ファンダ品質+モデルスコア全条件クリア
-- 🔴 売り検討: drop_prob≥10% / net<-5 / drawdown60<-20% / 連続下落≥5日
-- —: それ以外
-
-## スクリーナー条件（screener.py / 前段フィルター）
-
-`screener.py → rank_stocks.py` の前段として動作する追加フィルター:
-
-| 条件 | 値 |
-|---|---|
-| 3ヶ月相対強度 ≥ | 0%（通常）/ +5%（下落相場：日経20日 < -5%）|
-| セクター集中除外 | 同一業種3銘柄以上でセクター全除外（バブル兆候回避）|
-
-バックテスト（33期間ウォークフォワード: 2021〜2025年）: 現行フィルター avg+6.7% / 日経アルファ+4.4%（有効16/33期間）
-net10〜13%帯（実運用相当）に絞ると avg+7.4% 勝率73%と更に良化。3〜5月エントリーが最も好成績（avg+8〜10%）。
-
-### Top10シミュレーション
-
-毎日のネットスコア上位10銘柄（`gen_rankings.rank ≤ 10`）を100株ずつ購入し、
-ネットスコアが **5%未満** に下がった日に売却するロジック。手数料・税金は含まない。
-
-### シミュレーション実績（2025/05〜11月エントリー組・2026-05-16時点）
-
-37銘柄を候補選出日の終値でエントリーし、現在まで保有した場合の実績。
-
-| 指標 | 値 |
-|---|---|
-| 平均リターン | **+18.0%** |
-| 中央値 | +17.4% |
-| 勝率（+0%以上） | **89.2%**（33/37銘柄）|
-| 大勝率（+15%以上） | **54.1%**（20/37銘柄）|
-| 最高 | ニッポンインシュア +75.3%（337日保有）|
-| 最低 | キッセイ薬品 −4.8%（276日保有）|
-
----
-
-## モデル詳細（core/rf_train_v3.py）
-
-### 学習データ
-- 対象：東証プライム・スタンダード全銘柄（約3,500〜4,000銘柄）
-- 期間：過去5年分（約1,800日）
-- サンプリング：20営業日ごと（自己相関低減）
-- 分割：cutoff日より前→学習 / 以降→テスト（ウォークフォワード）
-
-### 特徴量（61次元 = 54基本 + クロスセクション7次元）
-
-**テクニカル10**: ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52
-
-**トレンド反転5**: drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir
-
-**出来高3**: vr520, vr2060, vsurge
-
-**日経マクロ3**: 日経225の5/20/60日リターン
-
-**60日系列要約7**: autocorr_lag1, skew, max_ret, min_ret, pos_ratio, trend_slope, recent_vs_early
-
-**日経相対アルファ4**: rel5, rel20, rel60, alpha_momentum
-
-**ファンダメンタル11**: per, pbr, roe, days_to_earnings, days_since_div_ex, sin/cos_month, div_yield, eps_growth, dps_growth
-
-**マクロ拡張4**: vix, us5, us20 (SP500), jpy5 (USD/JPY)
-
-**新規IB特徴量8**: amihud_f (非流動性), fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals (Sloan正確版)
-
-**EDINET1**: edinet_hold_f（大量保有報告書の保有比率）
-
-**クロスセクショナルランク7**: cs_ret5, cs_ret20, cs_ret60, cs_rsi, cs_vol20, cs_pos52, cs_sector_ret60
-
-### 予測ラベル
-- 上昇モデル：63日後（約3ヶ月）に日経225を **+5%以上上回る**（アルファ ≥ +5%）
-- 下落モデル：63日後（約3ヶ月）に日経225を **5%以上下回る**（アルファ ≤ -5%）
-- 絶対リターンではなく日経比相対リターン（アルファ）でラベル付けし、相場全体に依存しない銘柄選定力を学習
-
-### ウォークフォワードモデル
-
-先読みバイアスなしのバックテストのため、期間開始日に応じて学習済みモデルを切り替える。
-
-| 期間開始日 | 使用モデル（cutoff） | テストAUC（上昇/下落）|
-|---|---|---|
-| ≥ 2025-07-01 | rf_model_2025-07-01.pkl | 0.655 / 0.818 |
-| ≥ 2025-05-01 | rf_model_2025-05-01.pkl | 0.646 / 0.803 |
-| ≥ 2025-03-01 | rf_model_2025-03-01.pkl | 0.645 / 0.806 |
-| < 2025-03-01 | rf_model.pkl（cutoff 2026-01-01）| 0.642 / 0.766 |
-
-キャリブレーション：IsotonicRegression で確率値を実績頻度に補正済み
-
----
-
-## ランキングロジック（core/rank_stocks.py）
+### ランキングロジック
 
 **ネットスコア = 上昇確率(%) − 下落確率(%)**
 
-> **上昇確率/下落確率の表示について**：モデルの確率はIsotonic較正の特性上、数十段の階段値（例: 3,566銘柄が約31個の値に収束）になり、小数第1位まで出すと多数の銘柄が同じ値（例「20.3%」）に見えてしまう。そのためWeb・メール・LINEの画面表示では小数%ではなく **高 / やや高 / 中 / やや低 / 低** の5段階で示す（しきい値: 30/22/14/7%）。並び順・スコア計算は引き続き数値のネットスコアを使用。
+ランキング生成は8フェーズ:
+1. スクリーナー通過銘柄に確率予測
+2. ハードフィルター（連続下落>3日 / ドローダウン60日<-15% を除外）
+3. 品質フィルター（株価≥300円, RSI<75, 出来高比≥1.0, ボラ≤22%等）
+4. モデル予測フィルター（17%≤net≤24%, 下落確率<4%でS買い）
+5. 株主優待権利落ち21日前の銘柄を降格
+6. S買い1日最大3件キャップ
+7. 米国セクターETF前日マイナスなら降格
+8. 相場リスク管制官（リスクオフ地合いでS買い全件見送り）
 
-### ハードフィルター（除外）
-- 連続下落日数 > 3日（down_streak > 0.15）
-- 直近60日高値から-15%超（drawdown60 < -0.15）
+**推奨ラベル**: 💎買い / 🔴売り検討 / — (それ以外)
 
 ---
 
-## データ永続化（Supabase / Postgres）
-
-全データを **Supabase（Postgres）** に一元管理する（旧 `stock_alert.db` SQLite から全面移行済み）。
-`lib/db.py` が Supabase REST API（`lib/supabase_client.py`）経由で読み書きする。GitHub Actions の
-DBキャッシュは廃止。
+## データベース（Supabase / Postgres）
 
 | テーブル | 内容 |
 |---|---|
-| `gen_rankings` | 毎日のランキングスコア（コード・確率・ネット・推奨・rank）|
-| `jpx_stock_list` | 業種分類・優待月ほかメタ |
-| `gen_ai_analyses` | AI分析（会社説明・企業インサイト）|
-| `gen_simulation` | バックテスト結果 |
+| `gen_rankings` | 毎日のランキングスコア |
+| `jpx_stock_list` | 銘柄メタ（業種分類・優待月） |
+| `gen_ai_analyses` | AI分析（会社説明・企業インサイト） |
 | `gen_risk_regime` | リスクオン/オフ判定 |
-| `jquants_fin_summary` | 四半期財務サマリ（J-Quants）|
-| `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
+| `jquants_fin_summary` | 四半期財務サマリ（J-Quants） |
+| `yahoo_price_cache` | 株価履歴キャッシュ |
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
-| `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
-| `ext_tdnet_disclosures` | TDnet適時開示（やのしん・⚠️個人運営ソースのため `ext_` で隔離）|
-| `jpx_short_selling` | JPX空売り残高報告（0.5%以上）|
-| `jpx_margin_balance` | JPX個別銘柄信用取引週末残高 |
-| `app_bookmarks` | ウォッチリスト（ブックマーク）|
-| `app_push_subscriptions` | プッシュ通知サブスクリプション |
-| `line_chat_history` | LINE Bot会話履歴（直近3往復、文脈保持用） |
-
-全銘柄スクリーン（カタリスト候補）は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計する
-（REST per-code を避け高速化）。
-
-ランキングCSV（`data/rankings/`）と スクリーナーCSV（`data/screeners/`）も日付付きで保存されるがgitignore対象。
+| `edinet_large_holdings` | EDINET大量保有/変更報告書 |
+| `ext_tdnet_disclosures` | TDnet適時開示 |
+| `jpx_short_selling` | JPX空売り残高報告 |
+| `jpx_margin_balance` | JPX信用取引週末残高 |
+| `dp_watchlist` | LINE Botウォッチリスト |
+| `line_chat_history` | LINE Bot会話履歴 |
 
 ---
 
-## 外部API・データソース一覧
+## 外部API
 
-### 利用API
-
-| API | 取得データ | 用途 | 利用ファイル |
-|---|---|---|---|
-| **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
-| **J-Quants API v2** (Freeプラン) | 財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想） | ファンダ特徴量・IB特徴量・カタリストスクリーン | `tools/fetch_jquants_fin.py` |
-| **kabutan.jp** (スクレイピング) | PER/PBR/ROE、株主優待月、業績テキスト | ファンダ特徴量・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
-| **EDINET API v2** | 大量保有報告書(350)/変更報告書(360)、有報/四半期報の決算XBRL(BS/PL/CF) | 先回りシグナル・J-Quants期限切れ後の財務データ補完 | `lib/edinet.py`, `lib/edinet_financials.py`, `tools/scan_large_holdings.py`, `tools/fetch_edinet_financials.py` |
-| **TDnet適時開示** (やのしんWEB-API・⚠️個人運営) | 適時開示（業績修正/増配/自社株買い/M&A等のカタリスト） | 企業イベント情報（LINE通知用）。停止リスク隔離のため `ext_` テーブルに保存 | `lib/tdnet.py`, `tools/fetch_tdnet.py` |
-| **JPX 空売り残高/信用取引残高** (公式Excel/CSV) | 空売り残高報告(0.5%以上)、個別銘柄信用週末残高 | 需給シグナル（逆張り/買い残） | `lib/jpx_market_data.py`, `tools/fetch_jpx_market.py` |
-| **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
-| **yfinance** | セクターマッピング（米国ETF対応用） | 米国ETFリードラグフィルター（フェーズ7） | `core/rank_stocks.py` |
-| **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
-| **Claude API** (Anthropic) | テキスト生成 | 会社説明(Phase2)・企業インサイト | `web/generate_descriptions.py` |
-
-### 特徴量が使うデータと出所
-
-| カテゴリ | 特徴量 | データ出所 |
-|---|---|---|
-| **テクニカル (10)** | ret5/20/60/90, ma5_25, ma25_75, rsi, vol20/60, pos52 | Yahoo Finance 株価 |
-| **トレンド反転 (5)** | drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir | Yahoo Finance 株価 |
-| **出来高 (3)** | vr520, vr2060, vsurge | Yahoo Finance 出来高 |
-| **日経マクロ (3)** | nk5, nk20, nk60 | Yahoo Finance 日経225 |
-| **60日系列要約 (7)** | autocorr, skew, max/min_ret, pos_ratio, slope, recent_vs_early | Yahoo Finance 株価 |
-| **相対アルファ (4)** | rel5/20/60, alpha_momentum | Yahoo Finance 株価＋日経 |
-| **ファンダメンタル (11)** | per, pbr, roe, earn_feat, div_ex_feat, sin/cos_month, div_yield, eps/dps_growth, dividend_relevant | jquants_fin_summary (EPS/BPS/ROE/決算日), kabutan (優待月) |
-| **マクロ拡張 (4)** | vix, us5, us20, jpy5 | Yahoo Finance (^VIX, ^GSPC, JPY=X) |
-| **IB特徴量 (8)** | amihud, fx_beta, jpy5, eps_surprise, bps_growth, piotroski, payout, accruals | Yahoo Finance (株価/出来高/為替), jquants_fin_summary (CFO/NP/TA/equity) |
-| **EDINET (1)** | edinet_hold_f | edinet_large_holdings（大量保有報告書の保有比率） |
-| **クロスセクショナル (7)** | cs_ret5/20/60, cs_rsi, cs_vol20, cs_pos52, cs_sector_ret60 | 上記テクニカル特徴量の日次グループ内正規化 |
-
-### フィルターが使うデータ
-
-| フィルター | 条件 | データ出所 |
-|---|---|---|
-| **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
-| **💎買い条件** (`recommend_from_scores`) | QV条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + 品質(CFOマージン>0, レバレッジ<5x) + drop_prob<8%, net≥10, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
-| **🔴売り検討** (`recommend_from_scores`) | drop_prob≥10% / net<-5 / drawdown60<-20% / 連続下落≥5日（いずれか該当で警告） | モデル予測＋株価データ |
-| **優待フィルター** (フェーズ5) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
-| **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
-| **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
-| **カタリストスクリーン** (RPC) | PBR<1.0, ROE<8%, 自己資本比率>50%, 売買代金≥指定値 | jquants_fin_summary |
-| **利益の質フィルター** (A/B) | 営業赤字/化粧決算/本業減益を除外 | jquants_fin_summary (営業益/売上/純利益) |
-| **EDINET突合** | 大量保有報告×カタリスト候補マッチ（自己申告・売り除外） | EDINET API |
+| API | 用途 |
+|---|---|
+| Yahoo Finance (非公式) | 株価・日経225・VIX・S&P500・USD/JPY |
+| J-Quants v2 (Free) | 財務サマリ（EPS/BPS/ROE/CFO等） |
+| kabutan.jp (スクレイピング) | PER/PBR/ROE・優待月・業績テキスト |
+| EDINET API v2 | 大量保有報告書・決算XBRL |
+| TDnet (やのしんAPI) | 適時開示（業績修正/増配等） |
+| JPX (公式Excel/CSV) | 空売り残高・信用残高 |
+| Supabase REST API | データ永続化 |
+| Claude API (Anthropic) | LINE Bot AI相談・会社説明生成 |
+| LINE Messaging API | LINE Bot通知・webhook |
 
 ---
 
 ## セットアップ
 
-### 必要なSecrets（GitHub Settings → Secrets）
+### GitHub Secrets
 
-| Secret名 | 内容 |
+| Secret | 内容 |
 |---|---|
 | `GMAIL_ADDRESS` | 送信元Gmailアドレス |
 | `GMAIL_APP_PASSWORD` | Gmailアプリパスワード |
-| `SUPABASE_URL` | Supabase プロジェクトURL（全データ永続化の宛先）|
-| `SUPABASE_SERVICE_KEY` | Supabase service_role キー（バックエンド書込用）|
-| `EDINET_API_KEY` | EDINET API v2 サブスクリプションキー（日次の大量保有スキャン用。未登録ならスキャンはスキップ）|
+| `SUPABASE_URL` | Supabase プロジェクトURL |
+| `SUPABASE_SERVICE_KEY` | Supabase service_role キー |
+| `EDINET_API_KEY` | EDINET API v2 キー（任意） |
+
+### Supabase Edge Function Secrets
+
+| Secret | 内容 |
+|---|---|
+| `LINE_CHANNEL_SECRET` | LINE Messaging API チャネルシークレット |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging API アクセストークン |
+| `ANTHROPIC_API_KEY` | Claude API キー |
 
 ### 依存パッケージ
 ```
-requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl yfinance
+pip install requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl yfinance anthropic pytest
 ```
 
-### パス設定（ローカル実行）
-
-各スクリプトはデフォルトで「実行中のプロジェクトディレクトリ」を参照する。  
-別ディレクトリに `.env` / モデル / CSV を置く場合は `STOCK_ALERT_HOME` を設定する。
-
+### コマンド
 ```bash
-export STOCK_ALERT_HOME=/path/to/stock-alert
-```
+# 日次パイプライン
+python3 core/screener.py && python3 core/rank_stocks.py
 
-### 手動実行コマンド
-```bash
-python3 screener.py              # スクリーニング（全銘柄、約30分）
-python3 screener.py --test       # テストモード（5銘柄のみ）
-python3 rf_train_v3.py           # モデル学習（40〜70分）
-python3 rf_train_v3.py --cutoff 2025-07-01  # ウォークフォワード用モデル学習
-python3 rank_stocks.py           # ランキング生成
-python3 backtest.py              # バックテスト（通常期）→ simulations/backtests/ に保存
-python3 backtest.py bear         # 下落相場テスト（2024年8月クラッシュ期）
-python3 backtest.py --start 2025-01-01 --end 2025-04-01  # 任意期間指定
-python3 backtest.py --start 2025-03-01 --end 2025-06-01 --model-cutoff 2025-03-01  # ウォークフォワード指定
+# モデル学習（金曜のみ）
+python3 core/rf_train_v3.py
 
-python3 multi_backtest.py        # 33期間一括バックテスト＋フィルター比較（ウォークフォワード）
-python3 multi_backtest.py --skip-run  # 既存CSVのみ集計（バックテスト実行なし）
+# バックテスト
+python3 tools/backtest.py              # 通常期
+python3 tools/backtest.py bear         # 暴落耐性チェック（2024年8月）
+python3 tools/multi_backtest.py        # 33期間一括
 
-python3 tests/test_screener.py     # スクリーナーユニットテスト
+# テスト
+python -m pytest tests/ -v
 ```
 
 ---
 
-## 設計上の注意点
+## バックテスト実績
 
-- **モデルの限界**：AUC 0.642（上昇）/ 0.766（下落）はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
-- **2段階構造が必須**：モデル単体を全銘柄に適用しても効果なし。スクリーナー→モデル→ネット範囲フィルターの順で使うことでアルファが出る。
-- **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告。3ヶ月相対強度閾値も自動引き上げ。
-- **日経急騰時の限界**：大型株主導の急騰相場（例：2025年7月 日経+21%超）では中小型株主体の選定が相対的に不利。日経60日 ≥ +15% のときオレンジバナーで警告（新規の日経超え率: 7% vs 通常時59%）。
-- **季節性**：3〜5月エントリーが最も好成績（avg+8〜10%、勝率75〜82%）。8〜9月は低調（avg−2.6〜+2.7%）。
-- **主要特徴量**：上昇モデルはjpy5（USD/JPY 5日変動、寄与15%）・sin_month（季節性、12%）・div_ex_feat（配当権利日、8%）が上位。下落モデルはcs_vol20（ボラ相対ランク、8%）・sin_month（7%）・div_ex_feat（7%）が上位。
+33期間ウォークフォワード（2021〜2025年）: avg +6.7% / 日経アルファ +4.4%
+
+37銘柄シミュレーション（2025/05〜11月エントリー、2026-05-16時点）:
+
+| 指標 | 値 |
+|---|---|
+| 平均リターン | +18.0% |
+| 勝率 | 89.2%（33/37銘柄） |
+| 大勝率（+15%以上） | 54.1%（20/37銘柄） |
