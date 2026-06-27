@@ -59,7 +59,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
-| `lib/db.py` | Supabase永続化層（gen_rankings / gen_stock_meta / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
+| `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
 | `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/send_user_alerts）で使用（alert-only：違反でも更新は止めずメール通知）|
 | `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
@@ -222,7 +222,7 @@ DBキャッシュは廃止。
 | テーブル | 内容 |
 |---|---|
 | `gen_rankings` | 毎日のランキングスコア（コード・確率・ネット・推奨・rank）|
-| `gen_stock_meta` | 業種分類・優待月ほかメタ |
+| `jpx_stock_list` | 業種分類・優待月ほかメタ |
 | `gen_ai_analyses` | AI分析（会社説明・企業インサイト）|
 | `gen_simulation` | バックテスト結果 |
 | `gen_risk_regime` | リスクオン/オフ判定 |
