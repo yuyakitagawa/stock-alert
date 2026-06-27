@@ -40,30 +40,23 @@
 
 ---
 
-## 未対応（次セッションで対応候補）
+## 対応不要と判断
 
-### 1. gen_rankings.pos52 — 91.3% NULL
-- 未調査。52週高値からの位置を示すカラム。yahoo_price_cacheから計算可能か確認が必要。
+### 1. gen_rankings.pos52
+- 前セッションで対応済み（91.3%→5.8% NULL）。残りはyahoo_price_cacheにデータなしで改善不可。
 
-### 2. jquants_fin_summary の高NULL率カラム（正常の可能性大）
-| カラム | NULL率 | 理由 |
-|--------|--------|------|
-| payout_ratio | 62.4% | 配当なし企業・中間決算で未開示 |
-| fop/fsales/fnp | 54-55% | 予想未開示企業 |
-| div_ann | 51.8% | 配当なし企業 |
-| bps | 39.4% | 一部データソース欠損 |
-→ データソース由来のNULLで、無理に埋める必要はない可能性が高い。
+### 2. jquants_fin_summary の高NULL率カラム
+- payout_ratio 62.4%、fop/fsales/fnp 54%、div_ann 51.8%、bps 39.4% — すべてデータソース由来。対応不要。
 
 ### 3. gen_ai_analyses.verdict — 95.7% NULL
 - company-desc-v1 (会社説明) にはverdictがないため正常。対応不要。
 
 ### 4. ext_tdnet_disclosures
-- xbrl_url: 100% NULL（TDnetスクレイピング仕様上の限界。カラム削除候補）
-- category: 73.6% NULL（同上。fetch_tdnet.pyの取得ロジック依存）
+- xbrl_url: 前セッションで削除済み。
+- category: 73.6% NULL。TDnet取得仕様上の限界。コード上「（分類なし）」にフォールバック済みで機能的に問題なし。放置。
 
 ### 5. Supabase SQL 許可プロンプト
-- .claude/settings.json は作成済み。新セッションで自動反映されるか確認する。
-- まだ聞かれる場合は .claude/settings.local.json にも同じ設定を入れるか、ユーザーグローバル設定 (~/.claude/settings.json) に追加する。
+- .claude/settings.json をgit管理に追加（PR #70でマージ済み）。デスクトップアプリで反映確認待ち。
 
 ---
 
@@ -72,7 +65,7 @@
 ### 問題あり
 | テーブル | カラム | NULL率 | 対応 |
 |----------|--------|--------|------|
-| gen_rankings | pos52 | 91.3% | **要調査** |
+| gen_rankings | pos52 | 5.8% | 済（限界） |
 | gen_rankings | bps_growth | 69.0% | 済（限界） |
 | gen_rankings | actual_return_63d | 68.1% | 済（限界） |
 | gen_rankings | piotroski | 23.6% | 済（限界） |
