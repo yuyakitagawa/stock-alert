@@ -40,7 +40,8 @@ ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 
 MODEL       = "claude-haiku-4-5-20251001"   # description API と同じ
 MODEL_VER   = "company-desc-v1"
-CACHE_DATE  = "1970-01-01"
+from datetime import date as _date
+CACHE_DATE  = _date.today().isoformat()
 DEFAULT_LIMIT = 2000
 # 組織レート上限(50 req/分)に収めるため、1回の呼び出しで複数銘柄をまとめて生成する。
 BATCH_N     = 20    # 1リクエストあたりの銘柄数
