@@ -1,0 +1,51 @@
+name: EDINET Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: '開始日 (YYYY-MM-DD)'
+        required: false
+        default: ''
+      days:
+        description: '遡る日数（start_date未指定時のみ有効）'
+        required: false
+        default: '90'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Link repo to ~/stock-alert
+        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Run EDINET backfill
+        run: |
+          cd ~/stock-alert
+          if [ -n "${{ github.event.inputs.start_date }}" ]; then
+            python tools/fetch_edinet_financials.py --start "${{ github.event.inputs.start_date }}" --sleep 1.5
+          else
+            python tools/fetch_edinet_financials.py --days "${{ github.event.inputs.days }}" --sleep 1.5
+          fi

@@ -50,10 +50,16 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> None:
     rows = _sanitize(rows)
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = rows[i: i + _BATCH_SIZE]
-        resp = requests.post(url, headers=_headers(), json=batch, timeout=_TIMEOUT)
+        try:
+            resp = requests.post(url, headers=_headers(), json=batch, timeout=_TIMEOUT)
+        except Exception as e:
+            print(f"[supabase] {table} upsert exception ({len(batch)} rows): {e}")
+            continue
         if not resp.ok:
             print(f"[supabase] {table} upsert failed ({len(batch)} rows): "
-                  f"{resp.status_code} {resp.text[:300]}")
+                  f"{resp.status_code} {resp.text[:500]}")
+        else:
+            print(f"[supabase] {table} upsert OK ({len(batch)} rows)")
 
 
 def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
