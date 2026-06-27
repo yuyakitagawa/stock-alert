@@ -7,6 +7,10 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const SB_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SB_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 5;
+const rateLimitMap = new Map<string, number[]>();
+
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
     apikey: SB_KEY,
@@ -31,6 +35,16 @@ async function verifySignature(body: string, signature: string): Promise<boolean
   return hash === signature;
 }
 
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const timestamps = rateLimitMap.get(userId) ?? [];
+  const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) return false;
+  recent.push(now);
+  rateLimitMap.set(userId, recent);
+  return true;
+}
+
 async function replyToLine(replyToken: string, text: string): Promise<void> {
   const maxLen = 5000;
   const truncated = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
@@ -42,6 +56,22 @@ async function replyToLine(replyToken: string, text: string): Promise<void> {
     },
     body: JSON.stringify({
       replyToken,
+      messages: [{ type: "text", text: truncated }],
+    }),
+  });
+}
+
+async function pushToLine(userId: string, text: string): Promise<void> {
+  const maxLen = 5000;
+  const truncated = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      to: userId,
       messages: [{ type: "text", text: truncated }],
     }),
   });
@@ -132,6 +162,77 @@ type CommandResult = { handled: true; reply: string } | { handled: false };
 
 async function handleCommand(text: string, userId: string): Promise<CommandResult> {
   const trimmed = text.trim();
+
+  if (/^(ヘルプ|help|使い方|何ができる|機能)$/i.test(trimmed)) {
+    return {
+      handled: true,
+      reply:
+        "📖 stock-alert Bot の使い方\n\n" +
+        "【銘柄を調べる】\n" +
+        "  4桁コードを送信 → 株価・下落確率を表示\n" +
+        "  例: 8473\n\n" +
+        "【ウォッチリスト】\n" +
+        "  「ウォッチ 8473」→ 追加\n" +
+        "  「解除 8473」→ 削除\n" +
+        "  「リスト」→ 一覧表示\n\n" +
+        "【ランキング】\n" +
+        "  「ランキング」→ 本日のトップ10\n\n" +
+        "【AI相談】\n" +
+        "  上記以外のメッセージ → AIが株の相談に回答\n" +
+        "  例:「トヨタって今買い？」「高配当でおすすめは？」\n\n" +
+        "【自動通知】\n" +
+        "  毎日20時に日経シグナル＋ウォッチリスト状態をお届け",
+    };
+  }
+
+  if (/^(ランキング|トップ|top|順位)$/i.test(trimmed)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob&order=drop_prob.asc&limit=10`,
+      { headers: sbHeaders() },
+    );
+    if (!res.ok) return { handled: true, reply: "ランキングデータの取得に失敗しました。" };
+    const rows = await res.json();
+    if (rows.length === 0) {
+      return { handled: true, reply: `${today} のランキングデータはまだありません。20時以降に更新されます。` };
+    }
+    const lines = [`📊 本日のトップ10（${today}）\n`];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const dpStatus = r.drop_prob < 8 ? "🟢" : r.drop_prob >= 15 ? "🔴" : "🟡";
+      lines.push(`${i + 1}. ${r.code} ${r.name}\n   ${r.close.toLocaleString()}円 下落確率${r.drop_prob}% ${dpStatus}`);
+    }
+    return { handled: true, reply: lines.join("\n") };
+  }
+
+  if (/^(市場|相場|日経|マーケット)$/i.test(trimmed)) {
+    const [n225Res, rankRes] = await Promise.all([
+      fetch(
+        `${SB_URL}/rest/v1/yahoo_market_index?ticker=eq.N225&order=date.desc&limit=1&select=date,close`,
+        { headers: sbHeaders() },
+      ),
+      fetch(
+        `${SB_URL}/rest/v1/gen_rankings?date=eq.${new Date().toISOString().slice(0, 10)}&select=drop_prob&limit=100`,
+        { headers: sbHeaders() },
+      ),
+    ]);
+    const n225 = n225Res.ok ? await n225Res.json() : [];
+    const ranks = rankRes.ok ? await rankRes.json() : [];
+    const lines: string[] = ["📈 市場概況\n"];
+    if (n225.length > 0) {
+      lines.push(`日経225: ${Number(n225[0].close).toLocaleString()}円（${n225[0].date}）`);
+    }
+    if (ranks.length > 0) {
+      const dps = ranks.map((r: { drop_prob: number }) => r.drop_prob).filter((d: number) => d != null);
+      if (dps.length > 0) {
+        const avg = dps.reduce((a: number, b: number) => a + b, 0) / dps.length;
+        const signal = avg >= 15 ? "🔴 キャッシュ推奨" : "🟢 投資継続OK";
+        lines.push(`市場平均下落確率: ${avg.toFixed(1)}%`);
+        lines.push(`シグナル: ${signal}`);
+      }
+    }
+    return { handled: true, reply: lines.join("\n") };
+  }
 
   if (/^(ウォッチ|リスト|一覧)$/i.test(trimmed)) {
     const list = await getWatchlist(userId);
@@ -237,6 +338,10 @@ async function saveMessage(userId: string, role: "user" | "assistant", content: 
     headers: sbHeaders({ Prefer: "return=minimal" }),
     body: JSON.stringify({ line_user_id: userId, role, content: content.slice(0, 2000) }),
   });
+}
+
+async function trimHistory(userId: string): Promise<void> {
+  if (!SB_URL || !SB_KEY) return;
   const res = await fetch(
     `${SB_URL}/rest/v1/line_chat_history?line_user_id=eq.${userId}&order=created_at.desc&select=id&offset=6&limit=100`,
     { headers: sbHeaders() },
@@ -669,12 +774,12 @@ ${context || "（本日のデータはまだありません）"}
     messages.push({ role: "user", content: userMessage });
   }
 
-  const MAX_TURNS = 5;
+  const MAX_TURNS = 3;
   let lastText = "";
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
@@ -709,7 +814,7 @@ ${context || "（本日のデータはまだありません）"}
   if (lastText) return lastText;
 
   const finalResponse = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
     system: systemPrompt,
     messages: [
@@ -755,6 +860,11 @@ Deno.serve(async (req) => {
 
     if (!userId) continue;
 
+    if (!checkRateLimit(userId)) {
+      await replyToLine(replyToken, "⚠️ メッセージが多すぎます。1分ほどお待ちください。");
+      continue;
+    }
+
     try {
       await saveMessage(userId, "user", userMessage);
 
@@ -762,16 +872,26 @@ Deno.serve(async (req) => {
       if (cmd.handled) {
         await saveMessage(userId, "assistant", cmd.reply);
         await replyToLine(replyToken, cmd.reply);
+        trimHistory(userId).catch(() => {});
         continue;
       }
+
+      // AI相談はreply tokenが失効するリスクがあるため、
+      // まずreplyで「考え中」を返し、結果はpush messageで送る
+      await replyToLine(replyToken, "🤔 分析中です。少々お待ちください...");
 
       const context = await fetchMarketContext(userId, userMessage);
       const reply = await askClaude(userMessage, context, userId);
       await saveMessage(userId, "assistant", reply);
-      await replyToLine(replyToken, reply);
+      await pushToLine(userId, reply);
+      trimHistory(userId).catch(() => {});
     } catch (e) {
       console.error("[LINE webhook] Error:", e);
-      await replyToLine(replyToken, "エラーが発生しました。しばらくしてからお試しください。");
+      try {
+        await pushToLine(userId, "エラーが発生しました。しばらくしてからお試しください。");
+      } catch {
+        // push も失敗した場合は諦める
+      }
     }
   }
 
