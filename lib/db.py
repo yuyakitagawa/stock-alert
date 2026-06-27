@@ -196,6 +196,20 @@ def get_price_raw(code, min_rows=0):
     return [(r["date"], r["close"], r["volume"]) for r in rows]
 
 
+_local_prices_cache = None
+
+def _load_local_prices():
+    global _local_prices_cache
+    if _local_prices_cache is not None:
+        return _local_prices_cache
+    import os, pickle
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_local_prices.pkl")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            _local_prices_cache = pickle.load(f)
+        return _local_prices_cache
+    return {}
+
 def get_price_df(code, days=None):
     """yahoo_price_cacheからDataFrame(Close, Volume)を返す。"""
     import pandas as pd
@@ -206,6 +220,15 @@ def get_price_df(code, days=None):
         query = f"code=eq.{code}&date=gte.{cutoff}&order=date.asc&select=date,close,volume"
     rows = sb.select("yahoo_price_cache", query)
     if not rows:
+        lp = _load_local_prices()
+        if code in lp:
+            data = lp[code]
+            idx = [_date.fromisoformat(r[0]) for r in data]
+            df = pd.DataFrame({"Close": [r[1] for r in data], "Volume": [r[2] for r in data]}, index=idx)
+            if days:
+                cutoff_d = date.today() - timedelta(days=days)
+                df = df[df.index >= cutoff_d.date() if hasattr(cutoff_d, 'date') else cutoff_d]
+            return df if len(df) > 0 else None
         return None
     idx = [_date.fromisoformat(r["date"]) for r in rows]
     return pd.DataFrame(
