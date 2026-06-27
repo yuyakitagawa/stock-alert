@@ -2,7 +2,7 @@ name: Keepalive
 
 on:
   schedule:
-    - cron: '0 6 * * 1-5'  # 平日毎朝 06:00 UTC（daily_alertの2時間前）
+    - cron: '0 6 * * 1'  # 週1回（月曜 06:00 UTC）で十分
   workflow_dispatch:
 
 permissions:
@@ -11,8 +11,6 @@ permissions:
 jobs:
   keepalive:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
 
