@@ -111,14 +111,28 @@ async function lookupStock(
   return rows.length > 0 ? rows[0] : null;
 }
 
+function toFullWidth(s: string): string {
+  return s.replace(/[A-Za-z0-9]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) + 0xfee0)
+  );
+}
+
 async function searchStockByName(
   keyword: string
 ): Promise<{ code: string; name: string }[]> {
-  const res = await fetch(
-    `${SB_URL}/rest/v1/gen_stock_meta?name=ilike.*${encodeURIComponent(keyword)}*&select=code,name&limit=5`,
-    { headers: sbHeaders() }
-  );
-  return res.ok ? await res.json() : [];
+  const queries = [keyword];
+  const fw = toFullWidth(keyword);
+  if (fw !== keyword) queries.push(fw);
+
+  for (const q of queries) {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/gen_stock_meta?name=ilike.*${encodeURIComponent(q)}*&select=code,name&limit=5`,
+      { headers: sbHeaders() }
+    );
+    const rows = res.ok ? await res.json() : [];
+    if (rows.length > 0) return rows;
+  }
+  return [];
 }
 
 // ── コマンド処理 ─────────────────────────────────────────
@@ -144,7 +158,7 @@ async function handleCommand(
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
       const stock = await lookupStock(item.code);
-      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
+      const dpStr = stock ? `下落確率${stock.drop_prob}%` : "";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
       let status = "";
       if (stock) {
@@ -152,11 +166,10 @@ async function handleCommand(
         else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
       }
       lines.push(
-        `  ${item.code} ${item.name}\n  買<${item.dp_threshold} 売≥${item.dp_sell_threshold ?? 20} ${dpStr} ${priceStr} ${status}`
+        `  ${item.code} ${item.name} ${priceStr} ${dpStr} ${status}`
       );
     }
-    lines.push("\n「ウォッチ 銘柄コード」で追加");
-    lines.push("「解除 銘柄コード」で削除");
+    lines.push(`\n※ 下落確率が買い閾値未満で買い通知、売り閾値以上で売り通知`);
     return { handled: true, reply: lines.join("\n") };
   }
 
@@ -182,10 +195,9 @@ async function handleCommand(
         handled: true,
         reply:
           `✅ ${stock.name}(${stock.code}) をウォッチリストに追加\n` +
-          `買い閾値: dp < ${threshold}\n` +
-          `売り閾値: dp ≥ ${sellThreshold}\n` +
-          `現在のdp: ${stock.drop_prob}%\n` +
-          `株価: ${stock.close.toLocaleString()}円`,
+          `株価: ${stock.close.toLocaleString()}円\n` +
+          `下落確率: ${stock.drop_prob}%\n` +
+          `\n※ 下落確率 < ${threshold}%で買い通知 / ≥ ${sellThreshold}%で売り通知`,
       };
     }
 
@@ -204,11 +216,10 @@ async function handleCommand(
         handled: true,
         reply:
           `✅ ${name}(${matches[0].code}) をウォッチリストに追加\n` +
-          `買い閾値: dp < ${threshold}\n` +
-          `売り閾値: dp ≥ ${sellThreshold}\n` +
           (stock
-            ? `現在のdp: ${stock.drop_prob}%\n株価: ${stock.close.toLocaleString()}円`
-            : ""),
+            ? `株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%\n`
+            : "") +
+          `\n※ 下落確率 < ${threshold}%で買い通知 / ≥ ${sellThreshold}%で売り通知`,
       };
     }
     const options = matches.map((m) => `  ${m.code} ${m.name}`).join("\n");
@@ -246,7 +257,7 @@ async function handleCommand(
       reply:
         `📊 ${stock.name}(${stock.code})\n` +
         `株価: ${stock.close.toLocaleString()}円\n` +
-        `dp: ${stock.drop_prob}% ${dpStatus}\n\n` +
+        `下落確率: ${stock.drop_prob}% ${dpStatus}\n\n` +
         `「ウォッチ ${stock.code}」でウォッチに追加`,
     };
   }
@@ -488,15 +499,16 @@ async function executeToolCall(
     const lines = ["📋 ウォッチリスト:"];
     for (const item of list) {
       const stock = await lookupStock(item.code);
-      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
+      const dpStr = stock ? `下落確率${stock.drop_prob}%` : "";
       const priceStr = stock ? `${stock.close.toLocaleString()}円` : "";
       let status = "";
       if (stock) {
         if (stock.drop_prob < item.dp_threshold) status = "🔔買い時！";
         else if (stock.drop_prob >= (item.dp_sell_threshold ?? 20)) status = "⚠️売り検討";
       }
-      lines.push(`  ${item.code} ${item.name}\n  買<${item.dp_threshold} 売≥${item.dp_sell_threshold ?? 20} ${dpStr} ${priceStr} ${status}`);
+      lines.push(`  ${item.code} ${item.name} ${priceStr} ${dpStr} ${status}`);
     }
+    lines.push(`\n※ 下落確率が買い閾値未満で買い通知、売り閾値以上で売り通知`);
     return lines.join("\n");
   }
 
@@ -510,8 +522,9 @@ async function executeToolCall(
     const sellTh = input.sell_threshold ?? 20.0;
     await addToWatchlist(userId, resolved.code, resolved.name, buyTh, sellTh);
     const stock = await lookupStock(resolved.code);
-    return `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加\n買い閾値: dp < ${buyTh} / 売り閾値: dp ≥ ${sellTh}` +
-      (stock ? `\n現在のdp: ${stock.drop_prob}% / 株価: ${stock.close.toLocaleString()}円` : "");
+    return `✅ ${resolved.name}(${resolved.code}) をウォッチリストに追加` +
+      (stock ? `\n株価: ${stock.close.toLocaleString()}円\n下落確率: ${stock.drop_prob}%` : "") +
+      `\n\n※ 下落確率 < ${buyTh}%で買い通知 / ≥ ${sellTh}%で売り通知`;
   }
 
   if (toolName === "remove_watchlist") {
@@ -567,6 +580,13 @@ ${context || "（本日のデータはまだありません）"}
 - 営業CF黒字: キャッシュ創出力あり
 - 通期予想進捗率: 1Q>25%, 2Q>50%, 3Q>75%で順調
 
+銘柄の表記揺れ対応:
+- DBの銘柄名は全角英数字（例: ＳＢＩホールディングス、ＫＤＤＩ）
+- ユーザーは半角・略称・通称で入力する（SBI, SBIホールディングス, KDDI, トヨタ, 三菱UFJ等）
+- toolのqueryには銘柄コード4桁を使うのが最も確実。わかる銘柄はコードで指定せよ
+- 主要銘柄コード: トヨタ=7203, ソニー=6758, 任天堂=7974, キーエンス=6861, 三菱UFJ=8306, 三井住友FG=8316, みずほ=8411, SBI HD=8473, ソフトバンクG=9984, NTT=9432, KDDI=9433, ファーストリテイリング=9983, 東京エレクトロン=8035, 信越化学=4063
+- 上記にない銘柄は名前の一部（漢字部分やカタカナ部分）をqueryに渡す
+
 株の相談の答え方:
 - ユーザーの質問意図に合わせて関連する指標を選んで回答する
   - 「買いか？」→ 下落確率 + PER/PBR + ROE + 配当利回り + 市場環境
@@ -577,6 +597,12 @@ ${context || "（本日のデータはまだありません）"}
 - 全指標を列挙せず、質問に最も関連する3-5指標を選んで分析する
 - ユーザーが銘柄の監視や通知を求めたら、toolを使ってウォッチリストを操作する
 - 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
+
+このBotの機能（ユーザーに「何ができるの？」「機能は？」と聞かれたら、以下を正確に全部案内すること。省略しない）:
+1. 📊 毎日の日経225シグナル通知: 毎日20時に全銘柄の平均下落確率からN225を持ち続けてよいか（投資継続OK/キャッシュ推奨）を自動でLINE push通知する
+2. 📋 ウォッチリスト銘柄の定期通知: 同じ日次通知で、ウォッチリストに登録した全銘柄の株価・下落確率・買い時/売り時も一緒に届く
+3. 💬 株の相談: LINEで話しかければ、実際のデータに基づいた銘柄分析・相場相談ができる
+4. 📝 ウォッチリスト管理: 「SBIをウォッチして」「三菱UFJを外して」「リスト」など自然な日本語でウォッチリストを操作できる
 
 ルール:
 - 投資は自己責任である旨を必要に応じて添える
