@@ -41,6 +41,27 @@ jobs:
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
 
+      - name: Verify secrets are set
+        run: |
+          cd ~/stock-alert
+          python3 -c "
+          import os
+          for k in ['SUPABASE_URL','SUPABASE_SERVICE_KEY','EDINET_API_KEY']:
+              v = os.environ.get(k,'')
+              if not v:
+                  from dotenv import load_dotenv; load_dotenv()
+                  v = os.environ.get(k,'')
+              print(f'{k}: {\"SET (len={len(v)})\" if v else \"MISSING\"}')"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+
+      - name: Verify EDINET API connectivity
+        run: |
+          cd ~/stock-alert
+          python tools/fetch_edinet_financials.py --verify
+
       - name: Run EDINET backfill
         run: |
           cd ~/stock-alert

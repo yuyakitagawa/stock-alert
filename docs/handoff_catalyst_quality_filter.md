@@ -2,7 +2,7 @@
 
 対象セッション: **モデル開発セッション（DB有・ローカル/GitHub Actions環境）**
 起票: 2026-06-17（株相談セッションより引き継ぎ）
-関連: `tools/screen_catalyst_candidates.py` / `docs/session_handoff_garp.md` §6,§10
+関連: `tools/screen_catalyst_candidates.py` / `docs/progress_garp_qualitative.md`
 
 ---
 
@@ -48,7 +48,7 @@
 
 ## 4. （別フェーズ・本命）トリガー検知
 安い箱を出すだけでは不十分。`lib/alt_data.py` の TOB/増配/自社株買い/大量保有イベントと突合し、
-「**構造的候補 × 実際に動きが出ている**」だけに絞るのが本来のエッジ（`session_handoff_garp.md` §6）。
+「**構造的候補 × 実際に動きが出ている**」だけに絞るのが本来のエッジ。
 EDINET大量保有スキャン実装はそのフェーズ。今回のA/Bはその前段の品質向上。
 
 ## 5. 規律・検証（CLAUDE.md準拠）
