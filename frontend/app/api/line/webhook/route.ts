@@ -265,12 +265,103 @@ async function handleCommand(
   return { handled: false };
 }
 
+// ── 会話履歴（直近メッセージ保持） ─────────────────────────
+
+async function saveMessage(userId: string, role: "user" | "assistant", content: string): Promise<void> {
+  if (!SB_URL || !SB_KEY) return;
+  await fetch(`${SB_URL}/rest/v1/line_chat_history`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify({ line_user_id: userId, role, content: content.slice(0, 2000) }),
+  });
+  // 古い履歴を削除（6件 = 3往復より古いもの）
+  const res = await fetch(
+    `${SB_URL}/rest/v1/line_chat_history?line_user_id=eq.${userId}&order=created_at.desc&select=id&offset=6&limit=100`,
+    { headers: sbHeaders() }
+  );
+  if (res.ok) {
+    const old = await res.json();
+    if (old.length > 0) {
+      const ids = old.map((r: any) => r.id);
+      await fetch(
+        `${SB_URL}/rest/v1/line_chat_history?id=in.(${ids.join(",")})`,
+        { method: "DELETE", headers: sbHeaders() }
+      );
+    }
+  }
+}
+
+async function getRecentMessages(userId: string): Promise<{ role: string; content: string }[]> {
+  if (!SB_URL || !SB_KEY) return [];
+  const res = await fetch(
+    `${SB_URL}/rest/v1/line_chat_history?line_user_id=eq.${userId}&order=created_at.desc&limit=6&select=role,content`,
+    { headers: sbHeaders() }
+  );
+  if (!res.ok) return [];
+  const rows = await res.json();
+  return rows.reverse();
+}
+
+// ── 企業情報データ取得（TDnet/JPX） ────────────────────────
+
+async function fetchTdnetDisclosures(code: string): Promise<string> {
+  if (!SB_URL || !SB_KEY) return "";
+  const res = await fetch(
+    `${SB_URL}/rest/v1/ext_tdnet_disclosures?code=eq.${code}&order=disclosed_at.desc&select=disclosed_at,title,category&limit=5`,
+    { headers: sbHeaders() }
+  );
+  if (!res.ok) return "";
+  const rows = await res.json();
+  if (rows.length === 0) return "";
+  const lines = ["【適時開示（TDnet）】"];
+  for (const r of rows) {
+    const d = r.disclosed_at?.slice(0, 10) ?? "";
+    const cat = r.category ? `[${r.category}]` : "";
+    lines.push(`  ${d} ${cat} ${r.title}`);
+  }
+  return lines.join("\n");
+}
+
+async function fetchJpxShortSelling(code: string): Promise<string> {
+  if (!SB_URL || !SB_KEY) return "";
+  const res = await fetch(
+    `${SB_URL}/rest/v1/jpx_short_selling?code=eq.${code}&order=calc_date.desc&select=calc_date,short_seller,short_ratio&limit=5`,
+    { headers: sbHeaders() }
+  );
+  if (!res.ok) return "";
+  const rows = await res.json();
+  if (rows.length === 0) return "";
+  const lines = ["【空売り残高（JPX）】"];
+  for (const r of rows) {
+    lines.push(`  ${r.calc_date} ${r.short_seller}: ${r.short_ratio}%`);
+  }
+  return lines.join("\n");
+}
+
+async function fetchJpxMarginBalance(code: string): Promise<string> {
+  if (!SB_URL || !SB_KEY) return "";
+  const res = await fetch(
+    `${SB_URL}/rest/v1/jpx_margin_balance?code=eq.${code}&order=record_date.desc&select=record_date,margin_buy,margin_sell,margin_buy_chg,margin_sell_chg&limit=3`,
+    { headers: sbHeaders() }
+  );
+  if (!res.ok) return "";
+  const rows = await res.json();
+  if (rows.length === 0) return "";
+  const lines = ["【信用残高（JPX）】"];
+  for (const r of rows) {
+    const buyChg = r.margin_buy_chg != null ? `(${r.margin_buy_chg >= 0 ? "+" : ""}${r.margin_buy_chg.toLocaleString()})` : "";
+    const sellChg = r.margin_sell_chg != null ? `(${r.margin_sell_chg >= 0 ? "+" : ""}${r.margin_sell_chg.toLocaleString()})` : "";
+    lines.push(`  ${r.record_date} 買残: ${Number(r.margin_buy).toLocaleString()}${buyChg} / 売残: ${Number(r.margin_sell).toLocaleString()}${sellChg}`);
+  }
+  return lines.join("\n");
+}
+
 // ── 市場データ取得 ───────────────────────────────────────
 
 async function fetchStockDetail(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
 
-  const [rankRes, finRes] = await Promise.all([
+  const [rankRes, finRes, tdnetStr, shortStr, marginStr] = await Promise.all([
     fetch(
       `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,net,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
       { headers: sbHeaders() }
@@ -279,6 +370,9 @@ async function fetchStockDetail(code: string): Promise<string> {
       `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,doc_type,eps,bps,div_ann,payout_ratio,np,cfo,ta,equity,op,sales,fnp,fop,fsales&order=disc_date.desc&limit=4`,
       { headers: sbHeaders() }
     ),
+    fetchTdnetDisclosures(code),
+    fetchJpxShortSelling(code),
+    fetchJpxMarginBalance(code),
   ]);
 
   const ranks = rankRes.ok ? await rankRes.json() : [];
@@ -331,6 +425,10 @@ async function fetchStockDetail(code: string): Promise<string> {
       }
     }
   }
+
+  if (tdnetStr) lines.push("\n" + tdnetStr);
+  if (shortStr) lines.push("\n" + shortStr);
+  if (marginStr) lines.push("\n" + marginStr);
 
   return lines.join("\n");
 }
@@ -587,6 +685,12 @@ ${context || "（本日のデータはまだありません）"}
 - 主要銘柄コード: トヨタ=7203, ソニー=6758, 任天堂=7974, キーエンス=6861, 三菱UFJ=8306, 三井住友FG=8316, みずほ=8411, SBI HD=8473, ソフトバンクG=9984, NTT=9432, KDDI=9433, ファーストリテイリング=9983, 東京エレクトロン=8035, 信越化学=4063
 - 上記にない銘柄は名前の一部（漢字部分やカタカナ部分）をqueryに渡す
 
+追加情報ソース:
+- 適時開示（TDnet）: 業績修正・増配・自社株買い・M&A等のカタリスト情報
+- 空売り残高（JPX）: 0.5%以上の大口空売りポジション
+- 信用残高（JPX）: 信用買残・売残の推移と増減
+これらはlookup_stockツールで銘柄を調べた際に自動取得される。
+
 株の相談の答え方:
 - ユーザーの質問意図に合わせて関連する指標を選んで回答する
   - 「買いか？」→ 下落確率 + PER/PBR + ROE + 配当利回り + 市場環境
@@ -594,6 +698,8 @@ ${context || "（本日のデータはまだありません）"}
   - 「安全？」→ 下落確率 + 自己資本比率 + Piotroski + 営業CF
   - 「割安？」→ PER + PBR + ROE + BPS成長 + EPSサプライズ
   - 「成長性は？」→ 売上/純利益成長率 + 営業利益率 + 通期進捗率
+  - 「ニュースは？」→ 適時開示（TDnet）のカタリスト情報
+  - 「需給は？」→ 空売り残高 + 信用残高 + 出来高
 - 全指標を列挙せず、質問に最も関連する3-5指標を選んで分析する
 - ユーザーが銘柄の監視や通知を求めたら、toolを使ってウォッチリストを操作する
 - 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
@@ -601,8 +707,9 @@ ${context || "（本日のデータはまだありません）"}
 このBotの機能（ユーザーに「何ができるの？」「機能は？」と聞かれたら、以下を正確に全部案内すること。省略しない）:
 1. 📊 毎日の日経225シグナル通知: 毎日20時に全銘柄の平均下落確率からN225を持ち続けてよいか（投資継続OK/キャッシュ推奨）を自動でLINE push通知する
 2. 📋 ウォッチリスト銘柄の定期通知: 同じ日次通知で、ウォッチリストに登録した全銘柄の株価・下落確率・買い時/売り時も一緒に届く
-3. 💬 株の相談: LINEで話しかければ、実際のデータに基づいた銘柄分析・相場相談ができる
+3. 💬 株の相談: LINEで話しかければ、実際のデータに基づいた銘柄分析・相場相談ができる（直近の会話を記憶しているので、文脈に沿った会話が可能）
 4. 📝 ウォッチリスト管理: 「SBIをウォッチして」「三菱UFJを外して」「リスト」など自然な日本語でウォッチリストを操作できる
+5. 📰 適時開示・需給情報: 銘柄を調べると、TDnet適時開示（業績修正/増配/自社株買い等）、JPX空売り残高、信用残高も表示
 
 ルール:
 - 投資は自己責任である旨を必要に応じて添える
@@ -610,9 +717,23 @@ ${context || "（本日のデータはまだありません）"}
 - 「下落確率」と表記する（dpとは言わない）
 - データがない質問には正直に「わからない」と答える`;
 
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: userMessage },
-  ];
+  // 直近の会話履歴を取得してコンテキストに含める
+  const history = await getRecentMessages(userId);
+  const messages: Anthropic.MessageParam[] = [];
+
+  // 履歴を messages に復元（role が交互になるよう整形）
+  let lastRole = "";
+  for (const h of history) {
+    if (h.role === lastRole) continue; // 同じroleが連続する場合スキップ
+    messages.push({ role: h.role as "user" | "assistant", content: h.content });
+    lastRole = h.role;
+  }
+  // 最後のメッセージが今回のuserメッセージと同じなら重複を避ける
+  if (messages.length > 0 && messages[messages.length - 1].role === "user") {
+    messages[messages.length - 1] = { role: "user", content: userMessage };
+  } else {
+    messages.push({ role: "user", content: userMessage });
+  }
 
   // tool呼び出しが無くなるまでループ（複数ツールを連鎖して使うケースに対応）
   const MAX_TURNS = 5;
@@ -710,14 +831,19 @@ export async function POST(req: NextRequest) {
     if (!userId) continue;
 
     try {
+      // ユーザーメッセージを履歴に保存
+      await saveMessage(userId, "user", userMessage);
+
       const cmd = await handleCommand(userMessage, userId);
       if (cmd.handled) {
+        await saveMessage(userId, "assistant", cmd.reply);
         await replyToLine(replyToken, cmd.reply);
         continue;
       }
 
       const context = await fetchMarketContext(userId, userMessage);
       const reply = await askClaude(userMessage, context, userId);
+      await saveMessage(userId, "assistant", reply);
       await replyToLine(replyToken, reply);
     } catch (e: any) {
       console.error("[LINE webhook] Error:", e);
