@@ -64,7 +64,7 @@ export async function fetchStockRanking(code: string): Promise<Ranking | null> {
 }
 
 export async function fetchStockMeta(code: string): Promise<StockMeta | null> {
-  const res = await sbFetch(`gen_stock_meta?code=eq.${code}&limit=1`,
+  const res = await sbFetch(`jpx_stock_list?code=eq.${code}&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -92,7 +92,7 @@ export async function fetchSectorMap(): Promise<Record<string, string>> {
   const pageSize = 1000;
   let offset = 0;
   for (;;) {
-    const res = await sbFetch(`gen_stock_meta?select=code,sector&limit=${pageSize}&offset=${offset}`,
+    const res = await sbFetch(`jpx_stock_list?select=code,sector&limit=${pageSize}&offset=${offset}`,
       { headers: anonHeaders(), next: { revalidate: 86400 } });
     if (!res || !res.ok) break;
     const rows: { code: string; sector: string | null }[] = await res.json();

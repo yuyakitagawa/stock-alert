@@ -58,12 +58,10 @@ def _normalize_code(raw) -> str | None:
     s = str(raw).strip()
     s = re.sub(r"\.0$", "", s)  # pandas が 7203 → '7203.0' にするケース
     if len(s) == 5 and s.endswith("0"):
-        return s[:4]
-    if len(s) == 4 and s.isalnum():
-        return s
-    if len(s) >= 4:
-        return s[:4]
-    return None
+        s = s[:4]
+    if not re.match(r"^\d{4}", s):
+        return None
+    return s[:4]
 
 
 def _list_links(index_url: str, pattern: str) -> list[str]:

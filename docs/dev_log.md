@@ -7,7 +7,7 @@
 
 **実装:**
 - Supabase に16テーブルを作成（yahoo_price_cache/held_scores/jquants_fin_summary/edinet_large_holdings 等）。
-  daily_ranking→`gen_rankings`、earnings_cache→`kabutan_earnings`、sector_cache→`gen_stock_meta` に統合
+  daily_ranking→`gen_rankings`、earnings_cache→`kabutan_earnings`、sector_cache→`jpx_stock_list` に統合
   （既存Web表示テーブルに `fetched_date`/`actual_return_63d` を追加）。索引・RLS(anon read)付与。
 - `lib/supabase_client.py`: REST APIラッパ（upsert/insert_ignore/select/select_one/rpc、ページング込み）。
 - `lib/db.py`: SQLite実装を全てSupabase REST版に置換（関数シグネチャ維持で呼び出し側は無改修）。

@@ -8,7 +8,7 @@ generate_descriptions.py
   Phase 2: スクレイプ失敗分は Claude Haiku でバッチ生成（フォールバック）
            J-Quants eq_master（S33業種・規模区分・市場区分）を付加した高精度プロンプト。
 
-- gen_stock_meta(code/name/sector) を母集団とする。
+- jpx_stock_list(code/name/sector) を母集団とする。
 - 差分生成（--refresh なしは未生成のみ）。
 - 手動説明（スプシ由来）は既存のため自然に保護される。
 
@@ -95,7 +95,7 @@ def _existing_codes() -> set[str]:
 
 
 def _targets(limit: int | None, refresh: bool = False) -> list[dict]:
-    meta = _sb_get("gen_stock_meta", "select=code,name,sector")
+    meta = _sb_get("jpx_stock_list", "select=code,name,sector")
     valid = [m for m in meta if str(m.get("name") or "").strip()]
     if not refresh:
         have = _existing_codes()
