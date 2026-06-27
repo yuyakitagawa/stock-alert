@@ -125,37 +125,6 @@ def save_all_sectors(sector_map):
     sb.upsert("gen_stock_meta", sb_rows, on_conflict="code")
 
 
-# ── simulation_results ────────────────────────────────────────────────────
-
-def save_simulation_results(run_date, rows):
-    sb_rows = [{
-        "run_date": run_date,
-        "entry_date": r["entry_date"],
-        "code": r["code"],
-        "name": r.get("name"),
-        "label": r.get("label"),
-        "entry_price": r.get("entry_price"),
-        "current_price": r.get("current_price"),
-        "return_pct": r.get("return_pct"),
-        "holding_days": r.get("holding_days"),
-        "net_at_entry": r.get("net_at_entry"),
-        "drop_prob_at_entry": r.get("drop_prob_at_entry"),
-    } for r in rows]
-    sb.upsert("simulation_results", sb_rows, on_conflict="run_date,entry_date,code")
-
-
-def load_simulation_results(run_date=None):
-    if run_date:
-        return sb.select(
-            "simulation_results",
-            f"run_date=eq.{run_date}&order=entry_date.asc,return_pct.desc"
-        )
-    return sb.select(
-        "simulation_results",
-        "order=run_date.asc,entry_date.asc,return_pct.desc"
-    )
-
-
 # ── yahoo_price_cache ───────────────────────────────────────────────────────────
 
 def get_price_cache_coverage(code):
