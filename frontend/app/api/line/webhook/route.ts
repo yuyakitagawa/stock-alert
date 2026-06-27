@@ -126,7 +126,7 @@ async function searchStockByName(
 
   for (const q of queries) {
     const res = await fetch(
-      `${SB_URL}/rest/v1/gen_stock_meta?name=ilike.*${encodeURIComponent(q)}*&select=code,name&limit=5`,
+      `${SB_URL}/rest/v1/jpx_stock_list?name=ilike.*${encodeURIComponent(q)}*&select=code,name&limit=5`,
       { headers: sbHeaders() }
     );
     const rows = res.ok ? await res.json() : [];

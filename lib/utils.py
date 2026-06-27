@@ -186,7 +186,7 @@ _SECTOR_CACHE = None  # プロセス内キャッシュ {code: sector}
 
 def _load_jpx_sector_map():
     """JPX Excelから {code: 33業種区分} を一括取得してDBキャッシュに保存。
-    銘柄名も同時に gen_stock_meta へ書き込む。"""
+    銘柄名も同時に jpx_stock_list へ書き込む。"""
     from lib.db import get_all_sectors, save_stock_meta_bulk, count_null_names
     import io
     cache = get_all_sectors()
