@@ -115,7 +115,7 @@ def qa_site_check(today: str, ranking_rows: list[dict], expected_ai: int) -> Non
         # ライブ状態を読み戻して検証（upsert失敗・欠損も捕捉）
         live_rankings = _sb_get("gen_rankings",
                                 f"date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend")
-        meta = _sb_get("gen_stock_meta", "select=code,sector&limit=5000")
+        meta = _sb_get("jpx_stock_list", "select=code,sector&limit=5000")
         ai = _sb_get("gen_ai_analyses", f"date=eq.{today}&select=code,summary,verdict,date")
         earnings = []
         # 会社説明（詳細ページ「この会社について」）のカバレッジ検査用
@@ -213,7 +213,7 @@ def export_stock_meta(ranking_rows: list[dict]) -> None:
             "name":    r["name"],
             "sector":  sector_map.get(str(code)),
         })
-    _upsert("gen_stock_meta", meta_rows)
+    _upsert("jpx_stock_list", meta_rows)
 
 
 def export_earnings(codes: list[str]) -> None:
