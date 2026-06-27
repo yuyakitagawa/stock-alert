@@ -93,7 +93,6 @@ def fetch_disclosures(cond: str, limit: int = 100) -> list[dict]:
             "title": title,
             "category": _classify(title),
             "doc_url": td.get("document_url") or None,
-            "xbrl_url": td.get("document_url_xbrl") or None,
             "source": "yanoshin",
         })
     return out
