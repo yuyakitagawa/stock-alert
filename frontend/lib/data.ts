@@ -80,7 +80,7 @@ export async function fetchEarnings(code: string): Promise<Earnings | null> {
 }
 
 export async function fetchAiAnalysis(code: string): Promise<AiAnalysis | null> {
-  const res = await sbFetch(`gen_ai_analyses?code=eq.${code}&order=date.desc&limit=1`,
+  const res = await sbFetch(`gen_ai_analyses?code=eq.${code}&model_version=neq.company-desc-v1&order=date.desc&limit=1`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return null;
   const rows = await res.json();
@@ -106,7 +106,7 @@ export async function fetchSectorMap(): Promise<Record<string, string>> {
 }
 
 export async function fetchCompanyProfile(code: string): Promise<CompanyProfile> {
-  const res = await sbFetch(`gen_ai_analyses?code=eq.${code}&order=date.desc&limit=1&select=summary`,
+  const res = await sbFetch(`gen_ai_analyses?code=eq.${code}&model_version=eq.company-desc-v1&order=date.desc&limit=1&select=summary`,
     { headers: anonHeaders(), ...CACHE });
   if (!res || !res.ok) return { description: null, website: null, employees: null };
   const rows = await res.json();
