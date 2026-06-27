@@ -237,7 +237,6 @@ DBキャッシュは廃止。
 | `ext_tdnet_disclosures` | TDnet適時開示（やのしん・⚠️個人運営ソースのため `ext_` で隔離）|
 | `jpx_short_selling` | JPX空売り残高報告（0.5%以上）|
 | `jpx_margin_balance` | JPX個別銘柄信用取引週末残高 |
-| `simulation_results` | 月次シミュレーション結果 |
 | `app_bookmarks` | ウォッチリスト（ブックマーク）|
 | `app_push_subscriptions` | プッシュ通知サブスクリプション |
 | `line_chat_history` | LINE Bot会話履歴（直近3往復、文脈保持用） |
