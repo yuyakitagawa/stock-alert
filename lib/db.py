@@ -125,6 +125,27 @@ def save_all_sectors(sector_map):
     sb.upsert("gen_stock_meta", sb_rows, on_conflict="code")
 
 
+def count_null_names() -> int:
+    """gen_stock_meta で name が NULL の行数を返す。"""
+    rows = sb.select("gen_stock_meta", "name=is.null&select=code")
+    return len(rows)
+
+
+def save_stock_meta_bulk(rows: list[dict]):
+    """gen_stock_meta に code/name/sector をまとめて upsert。"""
+    today_str = date.today().isoformat()
+    sb_rows = []
+    for r in rows:
+        entry = {"code": r["code"], "fetched_date": today_str}
+        if r.get("sector"):
+            entry["sector"] = r["sector"]
+        if r.get("name"):
+            entry["name"] = r["name"]
+        sb_rows.append(entry)
+    if sb_rows:
+        sb.upsert("gen_stock_meta", sb_rows, on_conflict="code")
+
+
 # ── yahoo_price_cache ───────────────────────────────────────────────────────────
 
 def get_price_cache_coverage(code):
