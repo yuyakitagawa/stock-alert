@@ -195,28 +195,38 @@ def fetch_short_selling(max_files: int = 3, persist: bool = True) -> list[dict]:
 
 # ── 個別銘柄信用取引週末残高 ────────────────────────────────────
 
-def _parse_margin_csv(content: bytes) -> list[dict]:
-    """信用取引残高のCSV(zip内 or 生CSV)をパース。"""
-    # zip なら中の最初のCSVを取り出す
-    raw = content
-    if content[:2] == b"PK":
-        try:
-            zf = zipfile.ZipFile(io.BytesIO(content))
-            csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-            if not csv_names:
-                return []
-            raw = zf.read(csv_names[0])
-        except Exception as e:
-            print(f"[jpx] margin zip展開失敗: {e}")
-            return []
+def _parse_margin_file(content: bytes, url: str = "") -> list[dict]:
+    """信用取引残高ファイルをパース。XLS/XLSX/CSV/ZIP対応。"""
+    ext = url.rsplit(".", 1)[-1].lower() if url else ""
 
-    df = None
-    for enc in ("cp932", "utf-8", "shift_jis"):
+    # Excel
+    if ext in ("xls", "xlsx") or content[:8].startswith(b"\xd0\xcf\x11\xe0"):
         try:
-            df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding=enc, header=None)
-            break
-        except Exception:
-            continue
+            df = pd.read_excel(io.BytesIO(content), dtype=str, header=None)
+        except Exception as e:
+            print(f"[jpx] margin Excel読込失敗: {e}")
+            return []
+    else:
+        # ZIP → CSV展開
+        raw = content
+        if content[:2] == b"PK":
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(content))
+                csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+                if not csv_names:
+                    return []
+                raw = zf.read(csv_names[0])
+            except Exception as e:
+                print(f"[jpx] margin zip展開失敗: {e}")
+                return []
+        df = None
+        for enc in ("cp932", "utf-8", "shift_jis"):
+            try:
+                df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding=enc, header=None)
+                break
+            except Exception:
+                continue
+
     if df is None or df.empty:
         return []
 
@@ -256,11 +266,13 @@ def _parse_margin_csv(content: bytes) -> list[dict]:
 
 def fetch_margin_balance(max_files: int = 2, persist: bool = True) -> list[dict]:
     """直近の信用取引週末残高ファイルを取得して jpx_margin_balance に保存。"""
-    links = _list_links(_MARGIN_INDEX, r"margin.*\.(zip|csv)$|shinyo.*\.(zip|csv)$")
-    if not links:
-        links = _list_links(_MARGIN_INDEX, r"\.(zip|csv)$")
+    links = _list_links(_MARGIN_INDEX, r"\.(xls|xlsx|zip|csv)$")
     if not links:
         print("[jpx] 信用残ファイルが見つからない")
+        print(f"[jpx] 対象ページ: {_MARGIN_INDEX}")
+        all_links = _list_links(_MARGIN_INDEX, r"\.[a-z]{2,4}$")
+        if all_links:
+            print(f"[jpx] ページ内リンク（先頭5件）: {all_links[:5]}")
         return []
 
     all_recs = []
@@ -268,8 +280,9 @@ def fetch_margin_balance(max_files: int = 2, persist: bool = True) -> list[dict]
         try:
             resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
             if resp.status_code != 200:
+                print(f"[jpx] 信用残ファイル HTTP {resp.status_code}: {url}")
                 continue
-            recs = _parse_margin_csv(resp.content)
+            recs = _parse_margin_file(resp.content, url)
             all_recs.extend(recs)
             print(f"[jpx] 信用残 {url.split('/')[-1]}: {len(recs)}件")
         except Exception as e:
