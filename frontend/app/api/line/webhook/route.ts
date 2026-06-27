@@ -341,7 +341,7 @@ async function fetchJpxShortSelling(code: string): Promise<string> {
 async function fetchJpxMarginBalance(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
   const res = await fetch(
-    `${SB_URL}/rest/v1/jpx_margin_balance?code=eq.${code}&order=record_date.desc&select=record_date,margin_buy,margin_sell,margin_buy_chg,margin_sell_chg&limit=3`,
+    `${SB_URL}/rest/v1/jpx_margin_balance?code=eq.${code}&order=record_date.desc&select=record_date,margin_buy,margin_sell&limit=3`,
     { headers: sbHeaders() }
   );
   if (!res.ok) return "";
@@ -349,9 +349,7 @@ async function fetchJpxMarginBalance(code: string): Promise<string> {
   if (rows.length === 0) return "";
   const lines = ["【信用残高（JPX）】"];
   for (const r of rows) {
-    const buyChg = r.margin_buy_chg != null ? `(${r.margin_buy_chg >= 0 ? "+" : ""}${r.margin_buy_chg.toLocaleString()})` : "";
-    const sellChg = r.margin_sell_chg != null ? `(${r.margin_sell_chg >= 0 ? "+" : ""}${r.margin_sell_chg.toLocaleString()})` : "";
-    lines.push(`  ${r.record_date} 買残: ${Number(r.margin_buy).toLocaleString()}${buyChg} / 売残: ${Number(r.margin_sell).toLocaleString()}${sellChg}`);
+    lines.push(`  ${r.record_date} 買残: ${Number(r.margin_buy).toLocaleString()} / 売残: ${Number(r.margin_sell).toLocaleString()}`);
   }
   return lines.join("\n");
 }

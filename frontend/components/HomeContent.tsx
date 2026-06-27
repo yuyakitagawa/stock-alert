@@ -1,9 +1,7 @@
 "use client";
 import type { Ranking } from "@/lib/types";
-import type { SimPosition, SimSummary } from "@/lib/simulation";
 import type { RiskRegime } from "@/lib/types";
 import StockCard from "./StockCard";
-import SimulationPanel from "./SimulationPanel";
 import SectorPerformancePanel from "./SectorPerformancePanel";
 import RiskRegimeBanner from "./RiskRegimeBanner";
 
@@ -21,14 +19,13 @@ interface Props {
   featured: Ranking[];
   sparklineMap: Record<string, number[] | undefined>;
   sectorStats: SectorStat[];
-  sim: { positions: SimPosition[]; summary: SimSummary };
   risk: RiskRegime | null;
   nikkei20: number;
 }
 
 export default function HomeContent({
   date, dateLabel, rows, buyRows, featured, sparklineMap,
-  sectorStats, sim, risk, nikkei20,
+  sectorStats, risk, nikkei20,
 }: Props) {
   const nikkeiBullish = nikkei20 > 0;
   const noGems = buyRows.length === 0;
@@ -83,7 +80,6 @@ export default function HomeContent({
           )}
 
           <SectorPerformancePanel stats={sectorStats} date={dateLabel} />
-          <SimulationPanel positions={sim.positions} summary={sim.summary} />
         </>
       )}
     </>
