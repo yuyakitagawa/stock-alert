@@ -71,27 +71,39 @@ def _load_local_index():
 
 def get_nikkei_df(days=2200):
     try:
-        return get_market_index_df_cached("N225", "%5EN225", days)
+        r = get_market_index_df_cached("N225", "%5EN225", days)
+        if r is not None:
+            return r
     except Exception:
-        return _load_local_index().get("N225")
+        pass
+    return _load_local_index().get("N225")
 
 def get_vix_df(days=2200):
     try:
-        return get_market_index_df_cached("VIX", "%5EVIX", days)
+        r = get_market_index_df_cached("VIX", "%5EVIX", days)
+        if r is not None:
+            return r
     except Exception:
-        return _load_local_index().get("VIX")
+        pass
+    return _load_local_index().get("VIX")
 
 def get_sp500_df(days=2200):
     try:
-        return get_market_index_df_cached("SP500", "%5EGSPC", days)
+        r = get_market_index_df_cached("SP500", "%5EGSPC", days)
+        if r is not None:
+            return r
     except Exception:
-        return _load_local_index().get("SP500")
+        pass
+    return _load_local_index().get("SP500")
 
 def get_usdjpy_df(days=2200):
     try:
-        return get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
+        r = get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
+        if r is not None:
+            return r
     except Exception:
-        return _load_local_index().get("USDJPY")
+        pass
+    return _load_local_index().get("USDJPY")
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
