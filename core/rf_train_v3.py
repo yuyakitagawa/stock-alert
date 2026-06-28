@@ -579,6 +579,7 @@ def main():
                   "eps_surprise_f","bps_growth_f","piotroski_f","payout_f","accruals_f",
                   "edinet_hold_f",
                   "ret504","trend_slope60","trend_r2_60",
+                  "cfo_margin_f","leverage_f","op_margin_f","equity_ratio_f","sales_growth_f","frev_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
                   "cs_sector_ret60"]
     drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落", feat_names=feat_names)
