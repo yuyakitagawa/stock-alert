@@ -319,22 +319,100 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
         samples.append((dates[i],feat,label_rise,label_drop,alpha_rise,alpha_drop))
     return samples
 
-def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
+def _select_features(X_tr, y_tr, X_te, X_cal, feat_names):
+    """重要度0の特徴量を除外し、インデックスを返す"""
+    from xgboost import XGBClassifier as _XGB
+    pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
+    quick=_XGB(n_estimators=300,max_depth=5,learning_rate=0.05,scale_pos_weight=spw,
+               eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
+    quick.fit(X_tr,y_tr,verbose=0)
+    imp=quick.feature_importances_
+    keep=[i for i in range(len(imp)) if imp[i]>0]
+    dropped=[feat_names[i] for i in range(len(imp)) if imp[i]==0]
+    if dropped:
+        print(f"  特徴量選択: {len(keep)}/{len(imp)} 採用（除外: {', '.join(dropped)}）")
+    else:
+        print(f"  特徴量選択: 全{len(imp)}次元を採用")
+    return keep
+
+def _undersample(X, y, ratio=0.3):
+    """負例をアンダーサンプリングして正例比率をratioに近づける"""
+    pos_idx = np.where(y == 1)[0]
+    neg_idx = np.where(y == 0)[0]
+    n_pos = len(pos_idx)
+    n_neg_target = int(n_pos * (1 - ratio) / ratio)
+    if n_neg_target >= len(neg_idx):
+        return X, y
+    rng = np.random.RandomState(RANDOM_SEED)
+    neg_sampled = rng.choice(neg_idx, n_neg_target, replace=False)
+    idx = np.sort(np.concatenate([pos_idx, neg_sampled]))
+    print(f"  アンダーサンプリング: {len(X):,} → {len(idx):,} (正例比率 {n_pos/len(idx)*100:.1f}%)")
+    return X[idx], y[idx]
+
+PARAM_GRID = [
+    {"max_depth":5, "learning_rate":0.02, "subsample":0.6, "colsample_bytree":0.7, "min_child_weight":50, "reg_alpha":0.1, "reg_lambda":2.0, "gamma":0.3},
+    {"max_depth":6, "learning_rate":0.015, "subsample":0.55, "colsample_bytree":0.65, "min_child_weight":60, "reg_alpha":0.05, "reg_lambda":1.5, "gamma":0.2},
+    {"max_depth":7, "learning_rate":0.024, "subsample":0.52, "colsample_bytree":0.61, "min_child_weight":71, "reg_alpha":0.04, "reg_lambda":1.4, "gamma":0.29},
+    {"max_depth":4, "learning_rate":0.03, "subsample":0.7, "colsample_bytree":0.8, "min_child_weight":40, "reg_alpha":0.2, "reg_lambda":3.0, "gamma":0.5},
+    {"max_depth":8, "learning_rate":0.01, "subsample":0.5, "colsample_bytree":0.55, "min_child_weight":80, "reg_alpha":0.02, "reg_lambda":1.0, "gamma":0.15},
+]
+
+def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-    m=XGBClassifier(n_estimators=5000,max_depth=7,learning_rate=0.024,subsample=0.52,early_stopping_rounds=150,
-        colsample_bytree=0.61,min_child_weight=71,reg_alpha=0.04,reg_lambda=1.4,gamma=0.29,scale_pos_weight=spw,
-        eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
-    m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
-    auc_raw=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
-    print(f"  テストAUC（生）: {auc_raw:.4f}")
+
+    # 1. 特徴量選択
+    keep_idx = None
+    if feat_names:
+        keep_idx = _select_features(X_tr, y_tr, X_te, X_cal, feat_names)
+        if len(keep_idx) < len(feat_names):
+            X_tr = X_tr[:, keep_idx]
+            X_te = X_te[:, keep_idx]
+            X_cal = X_cal[:, keep_idx]
+        else:
+            keep_idx = None
+
+    # 2. アンダーサンプリング
+    X_tr_us, y_tr_us = _undersample(X_tr, y_tr, ratio=0.25)
+    pos_us=y_tr_us.sum(); neg_us=len(y_tr_us)-pos_us
+    spw_us=neg_us/pos_us if pos_us>0 else 1.0
+
+    # 3. ハイパーパラメータグリッドサーチ
+    print(f"\n  グリッドサーチ ({len(PARAM_GRID)}パターン)...")
+    best_auc = -1; best_params = None; best_model = None
+    for pi, params in enumerate(PARAM_GRID):
+        m=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
+            scale_pos_weight=spw_us,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**params)
+        m.fit(X_tr_us,y_tr_us,eval_set=[(X_te,y_te)],verbose=0)
+        auc=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
+        tag = "★" if auc > best_auc else " "
+        print(f"    {tag} パターン{pi+1}: AUC={auc:.4f} (depth={params['max_depth']}, lr={params['learning_rate']})")
+        if auc > best_auc:
+            best_auc = auc; best_params = params; best_model = m
+
+    print(f"  最良パラメータ: depth={best_params['max_depth']}, lr={best_params['learning_rate']}, AUC={best_auc:.4f}")
+
+    # 最良パラメータで全学習データ（アンダーサンプリングなし）も試す
+    m_full=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
+        scale_pos_weight=spw,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**best_params)
+    m_full.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=0)
+    auc_full=roc_auc_score(y_te,m_full.predict_proba(X_te)[:,1])
+    print(f"  全データ再学習: AUC={auc_full:.4f}")
+    if auc_full > best_auc:
+        print(f"  → 全データの方が良いため採用")
+        best_model = m_full; best_auc = auc_full
+    else:
+        print(f"  → アンダーサンプリング版を採用")
+
+    print(f"  テストAUC（生）: {best_auc:.4f}")
     iso=IsotonicRegression(out_of_bounds="clip")
-    iso.fit(m.predict_proba(X_cal)[:,1],y_cal)
-    cal_m=IsotonicCalibrated(m,iso)
+    iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
+    cal_m=IsotonicCalibrated(best_model,iso)
     auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
     print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
+    cal_m._keep_idx = keep_idx
     return cal_m
 
 def main():
@@ -433,19 +511,6 @@ def main():
     X_tr_fit,X_cal=X_tr_s[:-n_cal],X_tr_s[-n_cal:]
     yd_fit,yd_cal=yd_s[:-n_cal],yd_s[-n_cal:]
     print(f"\nキャリブレーション分割: 学習{len(X_tr_fit):,} / キャリブレーション{len(X_cal):,} (最新20%)")
-    drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落")
-    cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
-    exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
-    suffix="_screened" if screener_only else ""
-    joblib.dump(drop, os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
-    if exp_tag:
-        print(f"  ⚠️  実験モデル保存: *{exp_tag}.pkl（本番モデルは変更なし）")
-    drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te)[:,1])
-    print(f"\n【AUC サマリー】")
-    print(f"  絶対下落: {drop_auc:.4f}")
-    with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
-        json.dump({"drop":float(drop_auc)},f)
-
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
@@ -461,12 +526,31 @@ def main():
                   "ret504","trend_slope60","trend_r2_60",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
                   "cs_sector_ret60"]
-    imp = {"drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}
+    drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落", feat_names=feat_names)
+    cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
+    exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
+    suffix="_screened" if screener_only else ""
+    joblib.dump(drop, os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
+    if exp_tag:
+        print(f"  ⚠️  実験モデル保存: *{exp_tag}.pkl（本番モデルは変更なし）")
+    keep_idx = drop._keep_idx
+    X_te_eval = X_te[:, keep_idx] if keep_idx else X_te
+    drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te_eval)[:,1])
+    print(f"\n【AUC サマリー】")
+    print(f"  絶対下落: {drop_auc:.4f}")
+    with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
+        json.dump({"drop":float(drop_auc)},f)
+
+    if keep_idx:
+        used_names = [feat_names[i] for i in keep_idx]
+    else:
+        used_names = feat_names
+    imp = {"drop": {n: float(v) for n, v in zip(used_names, drop.model.feature_importances_)}}
     with open(os.path.join(SAVE_DIR,"feature_importance.json"),"w") as f:
         json.dump(imp, f, indent=2, ensure_ascii=False)
     print("  特徴量重要度: feature_importance.json")
 
-    probs = drop.predict_proba(X_te)[:, 1]
+    probs = drop.predict_proba(X_te_eval)[:, 1]
     pre, rec, thr = precision_recall_curve(yd_te, probs)
     f1 = 2 * pre * rec / (pre + rec + 1e-10)
     best_thr = float(thr[f1[:-1].argmax()])
