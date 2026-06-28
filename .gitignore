@@ -27,3 +27,6 @@ simulations/
 tools/_fund_cache.json
 _local_*.json
 _train_local.py
+_prices_*.csv
+_market_index.csv
+_sectors.pkl
