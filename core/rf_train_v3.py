@@ -350,12 +350,20 @@ def _undersample(X, y, ratio=0.3):
     return X[idx], y[idx]
 
 PARAM_GRID = [
-    {"max_depth":5, "learning_rate":0.02, "subsample":0.6, "colsample_bytree":0.7, "min_child_weight":50, "reg_alpha":0.1, "reg_lambda":2.0, "gamma":0.3},
-    {"max_depth":6, "learning_rate":0.015, "subsample":0.55, "colsample_bytree":0.65, "min_child_weight":60, "reg_alpha":0.05, "reg_lambda":1.5, "gamma":0.2},
-    {"max_depth":7, "learning_rate":0.024, "subsample":0.52, "colsample_bytree":0.61, "min_child_weight":71, "reg_alpha":0.04, "reg_lambda":1.4, "gamma":0.29},
     {"max_depth":4, "learning_rate":0.03, "subsample":0.7, "colsample_bytree":0.8, "min_child_weight":40, "reg_alpha":0.2, "reg_lambda":3.0, "gamma":0.5},
-    {"max_depth":8, "learning_rate":0.01, "subsample":0.5, "colsample_bytree":0.55, "min_child_weight":80, "reg_alpha":0.02, "reg_lambda":1.0, "gamma":0.15},
+    {"max_depth":4, "learning_rate":0.02, "subsample":0.65, "colsample_bytree":0.75, "min_child_weight":30, "reg_alpha":0.15, "reg_lambda":2.5, "gamma":0.4},
+    {"max_depth":5, "learning_rate":0.02, "subsample":0.6, "colsample_bytree":0.7, "min_child_weight":50, "reg_alpha":0.1, "reg_lambda":2.0, "gamma":0.3},
+    {"max_depth":3, "learning_rate":0.04, "subsample":0.75, "colsample_bytree":0.85, "min_child_weight":20, "reg_alpha":0.3, "reg_lambda":4.0, "gamma":0.6},
+    {"max_depth":6, "learning_rate":0.015, "subsample":0.55, "colsample_bytree":0.65, "min_child_weight":60, "reg_alpha":0.05, "reg_lambda":1.5, "gamma":0.2},
 ]
+
+def _focal_sample_weights(y, probs, gamma=2.0):
+    """Focal Loss風のサンプル重み: 簡単なサンプルの重みを下げる"""
+    pt = np.where(y == 1, probs, 1 - probs)
+    weights = (1 - pt) ** gamma
+    weights[y == 1] *= len(y) / (2 * y.sum())
+    weights[y == 0] *= len(y) / (2 * (len(y) - y.sum()))
+    return weights
 
 def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     print(f"\n[学習] {label}モデル...")
@@ -373,18 +381,13 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
         else:
             keep_idx = None
 
-    # 2. アンダーサンプリング
-    X_tr_us, y_tr_us = _undersample(X_tr, y_tr, ratio=0.25)
-    pos_us=y_tr_us.sum(); neg_us=len(y_tr_us)-pos_us
-    spw_us=neg_us/pos_us if pos_us>0 else 1.0
-
-    # 3. ハイパーパラメータグリッドサーチ
+    # 2. ハイパーパラメータグリッドサーチ（AUC最適化）
     print(f"\n  グリッドサーチ ({len(PARAM_GRID)}パターン)...")
     best_auc = -1; best_params = None; best_model = None
     for pi, params in enumerate(PARAM_GRID):
         m=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
-            scale_pos_weight=spw_us,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**params)
-        m.fit(X_tr_us,y_tr_us,eval_set=[(X_te,y_te)],verbose=0)
+            scale_pos_weight=spw,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**params)
+        m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=0)
         auc=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
         tag = "★" if auc > best_auc else " "
         print(f"    {tag} パターン{pi+1}: AUC={auc:.4f} (depth={params['max_depth']}, lr={params['learning_rate']})")
@@ -393,12 +396,64 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
 
     print(f"  最良パラメータ: depth={best_params['max_depth']}, lr={best_params['learning_rate']}, AUC={best_auc:.4f}")
 
-    # 最良パラメータで全学習データ（アンダーサンプリングなし）も試す
-    m_full=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
-        scale_pos_weight=spw,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**best_params)
-    m_full.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=0)
-    auc_full=roc_auc_score(y_te,m_full.predict_proba(X_te)[:,1])
-    print(f"  全データ再学習: AUC={auc_full:.4f}")
+    # 3. Focal Loss再学習: 最良パラメータで初期学習→確率→重み付け再学習
+    print(f"\n  Focal Loss再学習...")
+    init_probs = best_model.predict_proba(X_tr)[:, 1]
+    focal_w = _focal_sample_weights(y_tr, init_probs, gamma=2.0)
+    m_focal = XGBClassifier(n_estimators=5000, early_stopping_rounds=150,
+        scale_pos_weight=1.0, eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1, **best_params)
+    m_focal.fit(X_tr, y_tr, sample_weight=focal_w, eval_set=[(X_te, y_te)], verbose=0)
+    auc_focal = roc_auc_score(y_te, m_focal.predict_proba(X_te)[:, 1])
+    # Focal LossのF1も計算
+    probs_focal = m_focal.predict_proba(X_te)[:, 1]
+    pre_f, rec_f, thr_f = precision_recall_curve(y_te, probs_focal)
+    f1_focal = 2 * pre_f * rec_f / (pre_f + rec_f + 1e-10)
+    best_f1_focal = f1_focal[:-1].max()
+    # ベースラインF1
+    probs_base = best_model.predict_proba(X_te)[:, 1]
+    pre_b, rec_b, thr_b = precision_recall_curve(y_te, probs_base)
+    f1_base = 2 * pre_b * rec_b / (pre_b + rec_b + 1e-10)
+    best_f1_base = f1_base[:-1].max()
+    print(f"    ベースライン: AUC={best_auc:.4f}, F1={best_f1_base:.3f}")
+    print(f"    Focal Loss:   AUC={auc_focal:.4f}, F1={best_f1_focal:.3f}")
+
+    if best_f1_focal > best_f1_base:
+        print(f"    → Focal Lossの方がF1が高いため採用")
+        best_model = m_focal; best_auc = auc_focal
+    else:
+        print(f"    → ベースラインの方がF1が高いため維持")
+
+    # 4. アンダーサンプリング版も試す
+    X_tr_us, y_tr_us = _undersample(X_tr, y_tr, ratio=0.25)
+    pos_us=y_tr_us.sum(); neg_us=len(y_tr_us)-pos_us
+    spw_us=neg_us/pos_us if pos_us>0 else 1.0
+    m_us=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
+        scale_pos_weight=spw_us,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**best_params)
+    m_us.fit(X_tr_us,y_tr_us,eval_set=[(X_te,y_te)],verbose=0)
+    probs_us = m_us.predict_proba(X_te)[:, 1]
+    pre_u, rec_u, thr_u = precision_recall_curve(y_te, probs_us)
+    f1_us = 2 * pre_u * rec_u / (pre_u + rec_u + 1e-10)
+    best_f1_us = f1_us[:-1].max()
+    auc_us = roc_auc_score(y_te, probs_us)
+    print(f"    US版:         AUC={auc_us:.4f}, F1={best_f1_us:.3f}")
+    # 現在のベストのF1と比較
+    probs_cur = best_model.predict_proba(X_te)[:, 1]
+    pre_c, rec_c, thr_c = precision_recall_curve(y_te, probs_cur)
+    f1_cur = 2 * pre_c * rec_c / (pre_c + rec_c + 1e-10)
+    best_f1_cur = f1_cur[:-1].max()
+    if best_f1_us > best_f1_cur:
+        print(f"    → アンダーサンプリング版がF1最良のため採用")
+        best_model = m_us; best_auc = auc_us
+
+    print(f"\n  最終テストAUC（生）: {best_auc:.4f}")
+    iso=IsotonicRegression(out_of_bounds="clip")
+    iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
+    cal_m=IsotonicCalibrated(best_model,iso)
+    auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
+    print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
+    print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
+    cal_m._keep_idx = keep_idx
+    return cal_m
     if auc_full > best_auc:
         print(f"  → 全データの方が良いため採用")
         best_model = m_full; best_auc = auc_full
