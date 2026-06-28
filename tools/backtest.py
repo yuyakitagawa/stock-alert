@@ -26,8 +26,8 @@ from lib.utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs
 # ── パラメータ ──────────────────────────────
 BACKTEST_DATE  = date(2026, 2, 3)    # 予測基準日（約3ヶ月前=63営業日前）
 TODAY          = date.today()         # 現在日（動的）
-BEAR_START     = date(2024, 7,  1)    # 下落相場テスト（2024年8月円キャリー崩壊期）
-BEAR_END       = date(2024, 10, 1)    # 下落相場テスト終了
+BEAR_START     = date(2026, 2,  1)    # 下落相場テスト（2026年3月下落期）
+BEAR_END       = date(2026, 5,  1)    # 下落相場テスト終了
 Q2_2025_START  = date(2025, 5, 14)   # 1年前の3ヶ月テスト
 Q2_2025_END    = date(2025, 8, 14)   # 1年前の3ヶ月テスト終了
 
@@ -49,7 +49,7 @@ _args, _ = _parser.parse_known_args()
 if _args.mode == 'bear':
     BACKTEST_DATE = BEAR_START
     TODAY         = BEAR_END
-    print('【下落相場テストモード: 2024年8月クラッシュ期】')
+    print('【下落相場テストモード: 2026年3月下落期】')
 elif _args.mode == '1year':
     BACKTEST_DATE = date(2025, 5, 5)
     print('【1年バックテストモード: 2025-05-05 → 今日】')
@@ -257,8 +257,15 @@ def fetch_tse_codes():
     from lib.db import get_price_cache_codes
     codes = get_price_cache_codes()
     if codes:
-        print(f"  ローカルキャッシュから{len(codes)}銘柄取得（フォールバック）")
+        print(f"  DBキャッシュから{len(codes)}銘柄取得（フォールバック）")
         return [(c, "") for c in codes]
+    import pickle as _pkl
+    _pp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_local_prices.pkl")
+    if os.path.exists(_pp):
+        with open(_pp, "rb") as _f:
+            _lp = _pkl.load(_f)
+        print(f"  ローカルpickleから{len(_lp)}銘柄取得（フォールバック）")
+        return [(c, "") for c in sorted(_lp.keys())]
     return []
 
 
