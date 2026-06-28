@@ -17,9 +17,9 @@ DROP_ALPHA_THRESHOLD=8.0 # 相対ラベル: stock - nikkei <= -8% → alpha_drop
 #   net = (rise_abs - drop_abs) + (rise_rel - drop_rel)
 #   絶対モデルが「どれが上がるか」を担当（AUC高い）
 #   相対モデルが「日経超過を狙う」を担当（アルファ最適化）
-SAMPLE_INTERVAL=63; HISTORY_DAYS=1800  # 63日ごとにサンプル（FORECASTに合わせる）
+SAMPLE_INTERVAL=63; HISTORY_DAYS=600  # 63日ごとにサンプル（FORECASTに合わせる）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
-MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
+MIN_HISTORY=120+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_DIR = os.path.dirname(PROJECT_DIR)  # repo root (stock-alert/)
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
@@ -56,17 +56,42 @@ def _fetch_index_df(ticker_encoded, days=2200):
     """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す (legacy stub)"""
     return None
 
+_LOCAL_INDEX_CACHE = None
+def _load_local_index():
+    global _LOCAL_INDEX_CACHE
+    if _LOCAL_INDEX_CACHE is not None:
+        return _LOCAL_INDEX_CACHE
+    import pickle
+    p = os.path.join(SAVE_DIR, "_market_index.pkl")
+    if os.path.exists(p):
+        with open(p, "rb") as f:
+            _LOCAL_INDEX_CACHE = pickle.load(f)
+        return _LOCAL_INDEX_CACHE
+    return {}
+
 def get_nikkei_df(days=2200):
-    return get_market_index_df_cached("N225", "%5EN225", days)
+    try:
+        return get_market_index_df_cached("N225", "%5EN225", days)
+    except Exception:
+        return _load_local_index().get("N225")
 
 def get_vix_df(days=2200):
-    return get_market_index_df_cached("VIX",    "%5EVIX",    days)
+    try:
+        return get_market_index_df_cached("VIX", "%5EVIX", days)
+    except Exception:
+        return _load_local_index().get("VIX")
 
 def get_sp500_df(days=2200):
-    return get_market_index_df_cached("SP500",  "%5EGSPC",   days)
+    try:
+        return get_market_index_df_cached("SP500", "%5EGSPC", days)
+    except Exception:
+        return _load_local_index().get("SP500")
 
 def get_usdjpy_df(days=2200):
-    return get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
+    try:
+        return get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
+    except Exception:
+        return _load_local_index().get("USDJPY")
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -86,6 +111,16 @@ def get_tse_stock_list():
         return _fallback_stock_list()
 
 def _fallback_stock_list():
+    try:
+        from lib.db import get_price_cache_codes
+        codes = get_price_cache_codes()
+        codes = [c for c in codes if len(c)==4 and c[0].isdigit()]
+        if codes:
+            df=pd.DataFrame({"code":codes,"name":""})
+            print(f"  DBから{len(codes)}銘柄取得（フォールバック）")
+            return df.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
+    except Exception as e:
+        print(f"  DB銘柄リスト取得失敗: {e}")
     cache_path=os.path.join(SAVE_DIR,"_local_prices.pkl")
     if os.path.exists(cache_path):
         import pickle
@@ -136,7 +171,7 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
     import bisect
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
-    samples=[]; start_i=max(252+SEQ_DAYS,90)
+    samples=[]; start_i=max(120+SEQ_DAYS,90)
     nk_dates=list(nk_df.index) if nk_df is not None else []
     nk_closes=nk_df["Close"].values if nk_df is not None else np.array([])
     for i in range(start_i,n-FORECAST,SAMPLE_INTERVAL):
