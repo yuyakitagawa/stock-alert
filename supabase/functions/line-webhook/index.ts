@@ -28,16 +28,7 @@ async function getOrCreateUser(userId: string): Promise<UserRecord> {
   );
   const rows = res.ok ? await res.json() : [];
   if (rows.length > 0) {
-    const user = rows[0] as UserRecord;
-    if (user.plan === "premium" && user.expires_at && new Date(user.expires_at) < new Date()) {
-      await fetch(`${SB_URL}/rest/v1/line_users?line_user_id=eq.${userId}`, {
-        method: "PATCH",
-        headers: sbHeaders(),
-        body: JSON.stringify({ plan: "free", auth_code: null, expires_at: null, updated_at: new Date().toISOString() }),
-      });
-      return { ...user, plan: "free", expires_at: null };
-    }
-    return user;
+    return rows[0] as UserRecord;
   }
   await fetch(`${SB_URL}/rest/v1/line_users`, {
     method: "POST",
@@ -237,28 +228,24 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     if (code !== NOTE_AUTH_CODE) {
       return { handled: true, reply: "❌ 認証コードが正しくありません。noteサブスクの限定記事をご確認ください。" };
     }
-    const endOfNextMonth = new Date();
-    endOfNextMonth.setMonth(endOfNextMonth.getMonth() + 2, 0);
-    endOfNextMonth.setHours(23, 59, 59, 999);
     await fetch(`${SB_URL}/rest/v1/line_users?line_user_id=eq.${userId}`, {
       method: "PATCH",
       headers: sbHeaders(),
       body: JSON.stringify({
         plan: "premium",
         auth_code: code,
-        expires_at: endOfNextMonth.toISOString(),
         updated_at: new Date().toISOString(),
       }),
     });
     return {
       handled: true,
-      reply: `🎉 プレミアムプランが有効になりました！\n有効期限: ${endOfNextMonth.toISOString().slice(0, 10)}\n\nAI相談無制限・ウォッチリスト無制限・ランキング詳細が利用可能です。`,
+      reply: `🎉 プレミアムプランが有効になりました！\n\nAI相談無制限・ウォッチリスト無制限・ランキング詳細が利用可能です。`,
     };
   }
 
   if (/^(プラン|plan|状態|ステータス)$/i.test(trimmed)) {
     if (user && isPremium(user)) {
-      return { handled: true, reply: `⭐ プレミアムプラン\n有効期限: ${user.expires_at?.slice(0, 10) ?? "無期限"}\n\nAI相談無制限 / ウォッチリスト無制限 / ランキング詳細` };
+      return { handled: true, reply: `⭐ プレミアムプラン\n\nAI相談無制限 / ウォッチリスト無制限 / ランキング詳細` };
     }
     const aiStatus = checkAiLimit(userId);
     return { handled: true, reply: `📋 無料プラン\n\nAI相談: 残り${aiStatus.remaining}回/日\nウォッチリスト: 上限${FREE_WATCHLIST_LIMIT}銘柄\nランキング: 上位${FREE_RANKING_LIMIT}銘柄\n\nnoteサブスクで「認証 コード」を送信するとプレミアムにアップグレードできます。` };
@@ -829,6 +816,8 @@ ${context || "（本日のデータはまだありません）"}
 - 800文字以内に収める。冗長な解説は不要だが数値は削らない
 - 「下落確率」と呼ぶ（dpとは言わない）
 - 投資判断の最終責任はユーザーにあることを、初回や強い推奨時のみ添える（毎回は不要）
+- わからないことは「わかりません」と正直に言う。「サポートに問い合わせ」「提供者に確認」等の案内は絶対にしない（サポート窓口は存在しない）
+- このBotが対応できるのは株・投資関連の相談のみ。対応外の質問には「株や投資に関することなら何でも聞いてください！」と返す
 
 ## 指標の目安
 PER<15=割安 / PBR<1=純資産割れ / ROE>10%=良好 / 配当利回り>3%=高配当 / Piotroski≥7=財務健全(9点満点) / 自己資本比率>40%=安定 / 営業利益率>10%=高収益 / 進捗率: 1Q>25%,2Q>50%,3Q>75%で順調
