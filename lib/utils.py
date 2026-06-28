@@ -192,6 +192,11 @@ def _load_jpx_sector_map():
     cache = get_all_sectors()
     if cache and count_null_names() == 0:
         return cache
+    pkl = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sectors.pkl")
+    if not cache and os.path.exists(pkl):
+        import pickle
+        with open(pkl, "rb") as f:
+            return pickle.load(f)
     try:
         resp = requests.get(_JPX_URL, headers=HEADERS, timeout=30)
         df = pd.read_excel(io.BytesIO(resp.content), dtype=str)
