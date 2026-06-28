@@ -217,7 +217,7 @@ def get_price_df(code, days=None):
             df = pd.DataFrame({"Close": [r[1] for r in data], "Volume": [r[2] for r in data]}, index=idx)
             if days:
                 cutoff_d = date.today() - timedelta(days=days)
-                df = df[df.index >= cutoff_d.date() if hasattr(cutoff_d, 'date') else cutoff_d]
+                df = df.loc[df.index >= cutoff_d]
             return df if len(df) > 0 else None
         return None
     idx = [_date.fromisoformat(r["date"]) for r in rows]

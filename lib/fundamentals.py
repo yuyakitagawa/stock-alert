@@ -9,9 +9,37 @@ point-in-time（先読みバイアスなし）のファンダメンタルを再�
   days_since_div_ex     : 前回配当権利落ち日からの経過日数（戻り買いゾーン）
   days_since_yutai_ex   : 前回優待権利落ち日からの経過日数（同上）
 """
+import os
 import calendar
 from datetime import datetime, timedelta, date as _date_type
 from lib.utils import _days_to_nearest_event
+
+_JQUANTS_LOCAL = None
+
+def _load_jquants_local():
+    global _JQUANTS_LOCAL
+    if _JQUANTS_LOCAL is not None:
+        return _JQUANTS_LOCAL
+    import pickle
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_jquants_fin.pkl")
+    if os.path.exists(p):
+        with open(p, "rb") as f:
+            _JQUANTS_LOCAL = pickle.load(f)
+        return _JQUANTS_LOCAL
+    _JQUANTS_LOCAL = {}
+    return _JQUANTS_LOCAL
+
+def _local_jq_history(code, as_of_date_str, n=4):
+    data = _load_jquants_local()
+    rows = data.get(str(code), [])
+    return sorted([r for r in rows if r.get("disc_date", "") <= as_of_date_str],
+                  key=lambda x: x.get("disc_date", ""), reverse=True)[:n]
+
+def _local_jq_history_fy(code, as_of_date_str, n=3):
+    data = _load_jquants_local()
+    rows = data.get(str(code), [])
+    return sorted([r for r in rows if r.get("disc_date", "") <= as_of_date_str and r.get("doc_type", "").startswith("FY")],
+                  key=lambda x: x.get("disc_date", ""), reverse=True)[:n]
 
 _YUTAI_MONTH = None   # {code: record_month or None}
 
@@ -61,8 +89,10 @@ def _jq_split_safe_bps(code, target_date):
     try:
         from lib.db import get_jquants_fin_history
         rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
+        if not rows:
+            rows = _local_jq_history(str(code), target_date.isoformat(), n=6)
     except Exception:
-        return None
+        rows = _local_jq_history(str(code), target_date.isoformat(), n=6)
     for r in rows:
         b = r.get("bps")
         if b is not None and b > 0:
@@ -114,6 +144,8 @@ def get_pit_fundamentals(code, target_date):
         td_iso = target_date.isoformat()
 
         rows = get_jquants_fin_history(code, td_iso, n=4)
+        if not rows:
+            rows = _local_jq_history(code, td_iso, n=4)
         if rows:
             has_jq = True
             latest = rows[0]
@@ -135,6 +167,8 @@ def get_pit_fundamentals(code, target_date):
                 eps_surprise = (np_v - fnp) / abs(fnp)
 
         jq_fy = get_jquants_fin_history_fy(code, td_iso, n=3)
+        if not jq_fy:
+            jq_fy = _local_jq_history_fy(code, td_iso, n=3)
         if len(jq_fy) >= 2:
             has_jq = True
             curr, prev = jq_fy[0], jq_fy[1]
