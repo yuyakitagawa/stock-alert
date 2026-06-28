@@ -254,6 +254,11 @@ def fetch_tse_codes():
             return list(zip(codes, names))
     except Exception as e:
         print(f"[WARN] 銘柄リスト取得失敗: {e}")
+    from lib.db import get_price_cache_codes
+    codes = get_price_cache_codes()
+    if codes:
+        print(f"  ローカルキャッシュから{len(codes)}銘柄取得（フォールバック）")
+        return [(c, "") for c in codes]
     return []
 
 
