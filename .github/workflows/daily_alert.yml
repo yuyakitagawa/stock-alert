@@ -52,9 +52,9 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v35-weekly-${{ github.run_number }}
+          key: ml-models-v36-weekly-${{ github.run_number }}
           restore-keys: |
-            ml-models-v35-weekly-
+            ml-models-v36-weekly-
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
@@ -127,7 +127,7 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v35-weekly-${{ github.run_number }}
+          key: ml-models-v36-weekly-${{ github.run_number }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4
