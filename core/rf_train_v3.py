@@ -279,6 +279,12 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     "payout":              pit.get("payout"),
                     "accruals":            pit.get("accruals"),
                     "edinet_holding":      edinet_hold_val,
+                    "cfo_margin":          pit.get("cfo_margin"),
+                    "leverage":            pit.get("leverage"),
+                    "op_margin_improve":   pit.get("op_margin_improve"),
+                    "equity_ratio":        pit.get("equity_ratio"),
+                    "sales_growth":        pit.get("sales_growth"),
+                    "forecast_revision":   pit.get("forecast_revision"),
                 }
             else:
                 fund = {
