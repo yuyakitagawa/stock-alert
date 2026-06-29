@@ -450,6 +450,12 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _pyout = fd.get('payout')
     _accr  = fd.get('accruals')
     _ehold = fd.get('edinet_holding')
+    _cfom  = fd.get('cfo_margin')
+    _lev   = fd.get('leverage')
+    _opm   = fd.get('op_margin_improve')
+    _eqr   = fd.get('equity_ratio')
+    _salg  = fd.get('sales_growth')
+    _frev  = fd.get('forecast_revision')
 
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
@@ -495,6 +501,13 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     accruals_f    = float(np.clip(_accr,          -0.3, 0.5)) if _accr  is not None else 0.0
     # EDINET大量保有報告: 直近90日以内の保有割合（0=なし, 0-1正規化）
     edinet_hold_f = float(np.clip(_ehold / 50.0,   0.0, 1.0)) if _ehold is not None else 0.0
+    # 新規ファンダ6特徴量
+    cfo_margin_f  = float(np.clip(_cfom,           -0.3, 0.5)) if _cfom  is not None else 0.0
+    leverage_f    = float(np.clip(_lev / 5.0,       0.0, 1.0)) if _lev   is not None else 0.5
+    op_margin_f   = float(np.clip(_opm * 10.0,     -1.0, 1.0)) if _opm   is not None else 0.0
+    equity_ratio_f = float(np.clip(_eqr,            0.0, 1.0)) if _eqr   is not None else 0.4
+    sales_growth_f = float(np.clip(_salg,          -1.0, 3.0)) if _salg  is not None else 0.0
+    frev_f        = float(np.clip(_frev,           -1.0, 2.0)) if _frev  is not None else 0.0
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
@@ -505,7 +518,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             amihud_f, fx_beta_f, jpy5_f,
             eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f,
             edinet_hold_f,
-            ret504, trend_slope60, trend_r2_60]
+            ret504, trend_slope60, trend_r2_60,
+            cfo_margin_f, leverage_f, op_margin_f, equity_ratio_f, sales_growth_f, frev_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
