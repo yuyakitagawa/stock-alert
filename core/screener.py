@@ -49,10 +49,10 @@ def get_tse_stock_list():
         if market_col:
             market_filter = df[market_col[0]].str.contains("内国株式", na=False)
             result = result[market_filter]
-            result = result[result["code"].str.match(r"^\d{4}$")]
+            result = result[result["code"].str.match(r"^\d{3}[0-9A-Z]$")]
             print(f"   市場区分フィルター適用")
         else:
-            result = result[result["code"].str.match(r"^\d{4}$")]
+            result = result[result["code"].str.match(r"^\d{3}[0-9A-Z]$")]
             result = result[~result["name"].str.contains(
                 "ETF|REIT|投信|上場投資|ファンド", na=False
             )]

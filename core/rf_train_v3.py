@@ -116,7 +116,7 @@ def get_tse_stock_list():
         result=df[[code_col,name_col]].copy()
         result.columns=["code","name"]
         result["code"]=result["code"].str.strip()
-        result=result[result["code"].str.match(r"^[1-9]\d{3}$")]
+        result=result[result["code"].str.match(r"^[1-9]\d{2}[0-9A-Z]$")]
         return result.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
     except Exception as e:
         print(f"銘柄リスト取得失敗(JPX): {e}")
@@ -126,7 +126,7 @@ def _fallback_stock_list():
     try:
         from lib.db import get_price_cache_codes
         codes = get_price_cache_codes()
-        codes = [c for c in codes if len(c)==4 and c[0].isdigit()]
+        codes = [c for c in codes if len(c)==4 and c[0].isdigit() and c[-1].isalnum()]
         if codes:
             df=pd.DataFrame({"code":codes,"name":""})
             print(f"  DBから{len(codes)}銘柄取得（フォールバック）")
