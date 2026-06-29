@@ -19,11 +19,12 @@ interface UserRecord {
   line_user_id: string;
   plan: "free" | "premium";
   expires_at: string | null;
+  total_ai_queries: number;
 }
 
 async function getOrCreateUser(userId: string): Promise<UserRecord> {
   const res = await fetch(
-    `${SB_URL}/rest/v1/line_users?line_user_id=eq.${userId}&select=line_user_id,plan,expires_at`,
+    `${SB_URL}/rest/v1/line_users?line_user_id=eq.${userId}&select=line_user_id,plan,expires_at,total_ai_queries`,
     { headers: sbHeaders() },
   );
   const rows = res.ok ? await res.json() : [];
@@ -35,7 +36,7 @@ async function getOrCreateUser(userId: string): Promise<UserRecord> {
     headers: sbHeaders({ Prefer: "return=minimal" }),
     body: JSON.stringify({ line_user_id: userId }),
   });
-  return { line_user_id: userId, plan: "free", expires_at: null };
+  return { line_user_id: userId, plan: "free", expires_at: null, total_ai_queries: 0 };
 }
 
 function isPremium(user: UserRecord): boolean {
@@ -55,6 +56,25 @@ function checkAiLimit(userId: string): { allowed: boolean; remaining: number } {
     return { allowed: true, remaining: FREE_AI_LIMIT };
   }
   return { allowed: usage.count < FREE_AI_LIMIT, remaining: FREE_AI_LIMIT - usage.count };
+}
+
+const UPGRADE_NUDGE_INTERVAL = 10;
+const UPGRADE_NUDGE = "\n\n💡 プレミアムプランならAI相談が無制限！noteサブスクで「認証 コード」を送信するとアップグレードできます。";
+
+async function incrementTotalAiQueries(userId: string): Promise<number> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/rpc/increment_total_ai_queries`,
+    {
+      method: "POST",
+      headers: sbHeaders(),
+      body: JSON.stringify({ p_user_id: userId }),
+    },
+  );
+  if (res.ok) {
+    const val = await res.json();
+    return typeof val === "number" ? val : 0;
+  }
+  return 0;
 }
 
 function recordAiUsage(userId: string): void {
@@ -1131,10 +1151,16 @@ Deno.serve(async (req) => {
       await replyToLine(replyToken, "🤔 分析中です。少々お待ちください...");
 
       const context = await fetchMarketContext(userId, userMessage);
-      const reply = await askClaude(userMessage, context, userId);
+      let reply = await askClaude(userMessage, context, userId);
+      if (!isPremium(user)) {
+        recordAiUsage(userId);
+        const totalQueries = await incrementTotalAiQueries(userId);
+        if (totalQueries > 0 && totalQueries % UPGRADE_NUDGE_INTERVAL === 0) {
+          reply += UPGRADE_NUDGE;
+        }
+      }
       await saveMessage(userId, "assistant", reply);
       await pushToLine(userId, reply);
-      if (!isPremium(user)) recordAiUsage(userId);
       trimHistory(userId).catch(() => {});
     } catch (e) {
       console.error("[LINE webhook] Error:", e);
