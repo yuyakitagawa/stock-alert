@@ -170,12 +170,13 @@ def export_rankings(today: str) -> list[dict]:
         "gen_rankings",
         f"date=eq.{today}&order=net.desc"
         "&select=date,code,name,close,rise_prob,drop_prob,net,vol,"
-        "recommend,rel20,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
+        "recommend,rel20,per,pbr,piotroski,bps_growth,eps_surprise,pos52,"
+        "is_etf,etf_benchmark,etf_strategy,etf_expense_ratio,etf_return_1y,etf_return_3y"
     )
 
     records = []
     for i, r in enumerate(rows, 1):
-        records.append({
+        rec = {
             "date":       r["date"],
             "code":       r["code"],
             "rank":       i,
@@ -193,7 +194,14 @@ def export_rankings(today: str) -> list[dict]:
             "bps_growth":   r["bps_growth"],
             "eps_surprise": r["eps_surprise"],
             "pos52":        r["pos52"],
-        })
+            "is_etf":            r.get("is_etf", False),
+            "etf_benchmark":     r.get("etf_benchmark"),
+            "etf_strategy":      r.get("etf_strategy"),
+            "etf_expense_ratio": r.get("etf_expense_ratio"),
+            "etf_return_1y":     r.get("etf_return_1y"),
+            "etf_return_3y":     r.get("etf_return_3y"),
+        }
+        records.append(rec)
     return records
 
 
