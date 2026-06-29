@@ -372,16 +372,8 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
 
-    # 1. 特徴量選択
+    # 特徴量選択は無効化（XGBoost自体が不要な特徴量を無視する）
     keep_idx = None
-    if feat_names:
-        keep_idx = _select_features(X_tr, y_tr, X_te, X_cal, feat_names)
-        if len(keep_idx) < len(feat_names):
-            X_tr = X_tr[:, keep_idx]
-            X_te = X_te[:, keep_idx]
-            X_cal = X_cal[:, keep_idx]
-        else:
-            keep_idx = None
 
     # 2. ハイパーパラメータグリッドサーチ（AUC最適化）
     print(f"\n  グリッドサーチ ({len(PARAM_GRID)}パターン)...")
