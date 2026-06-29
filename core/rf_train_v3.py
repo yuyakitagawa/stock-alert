@@ -320,19 +320,21 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
     return samples
 
 def _select_features(X_tr, y_tr, X_te, X_cal, feat_names):
-    """重要度0の特徴量を除外し、インデックスを返す"""
+    """複数モデルの重要度を合算し、全モデルで重要度0の特徴量のみ除外"""
     from xgboost import XGBClassifier as _XGB
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
-    quick=_XGB(n_estimators=300,max_depth=5,learning_rate=0.05,scale_pos_weight=spw,
-               eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
-    quick.fit(X_tr,y_tr,verbose=0)
-    imp=quick.feature_importances_
-    keep=[i for i in range(len(imp)) if imp[i]>0]
-    dropped=[feat_names[i] for i in range(len(imp)) if imp[i]==0]
+    imp_sum = np.zeros(X_tr.shape[1])
+    for depth, lr in [(4, 0.03), (6, 0.02), (8, 0.01)]:
+        quick=_XGB(n_estimators=500,max_depth=depth,learning_rate=lr,scale_pos_weight=spw,
+                   eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,subsample=0.7,colsample_bytree=0.6)
+        quick.fit(X_tr,y_tr,verbose=0)
+        imp_sum += quick.feature_importances_
+    keep=[i for i in range(len(imp_sum)) if imp_sum[i]>0]
+    dropped=[feat_names[i] for i in range(len(imp_sum)) if imp_sum[i]==0]
     if dropped:
-        print(f"  特徴量選択: {len(keep)}/{len(imp)} 採用（除外: {', '.join(dropped)}）")
+        print(f"  特徴量選択: {len(keep)}/{len(imp_sum)} 採用（除外: {', '.join(dropped)}）")
     else:
-        print(f"  特徴量選択: 全{len(imp)}次元を採用")
+        print(f"  特徴量選択: 全{len(imp_sum)}次元を採用")
     return keep
 
 def _undersample(X, y, ratio=0.3):
