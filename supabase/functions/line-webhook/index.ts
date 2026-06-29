@@ -544,12 +544,118 @@ async function fetchJpxMarginBalance(code: string): Promise<string> {
   return lines.join("\n");
 }
 
+// ── 需給シグナル要約 ────────────────────────
+
+function summarizeSupplyDemand(
+  shortRows: { calc_date: string; short_seller: string; short_ratio: number }[],
+  marginRows: { record_date: string; margin_buy: number; margin_sell: number }[],
+): string {
+  const signals: string[] = [];
+
+  if (shortRows.length >= 2) {
+    const totalLatest = shortRows.filter((r) => r.calc_date === shortRows[0].calc_date)
+      .reduce((s, r) => s + Number(r.short_ratio), 0);
+    const nextDate = shortRows.find((r) => r.calc_date !== shortRows[0].calc_date)?.calc_date;
+    if (nextDate) {
+      const totalPrev = shortRows.filter((r) => r.calc_date === nextDate)
+        .reduce((s, r) => s + Number(r.short_ratio), 0);
+      if (totalLatest > totalPrev * 1.2) {
+        signals.push("🔺 空売り急増 → 下落圧力・ただし踏み上げ警戒");
+      } else if (totalLatest < totalPrev * 0.8) {
+        signals.push("🔻 空売り減少 → ショートカバー（買戻し圧力）");
+      }
+    }
+    if (totalLatest > 5) {
+      signals.push(`⚠️ 空売り比率 ${totalLatest.toFixed(1)}% → 高水準（踏み上げ or 続落に注意）`);
+    }
+  }
+
+  if (marginRows.length >= 2) {
+    const latest = marginRows[0];
+    const prev = marginRows[1];
+    const buyChange = (Number(latest.margin_buy) - Number(prev.margin_buy)) / Math.max(Number(prev.margin_buy), 1);
+    const sellChange = (Number(latest.margin_sell) - Number(prev.margin_sell)) / Math.max(Number(prev.margin_sell), 1);
+    const ratio = Number(latest.margin_sell) > 0 ? Number(latest.margin_buy) / Number(latest.margin_sell) : null;
+
+    if (buyChange > 0.1) signals.push("📈 信用買い増加 → 個人の強気姿勢");
+    if (buyChange < -0.1) signals.push("📉 信用買い減少 → 個人の手仕舞い");
+    if (sellChange > 0.1) signals.push("📈 信用売り増加 → 弱気ヘッジ増");
+    if (sellChange < -0.1) signals.push("📉 信用売り減少 → 買戻し圧力");
+    if (ratio != null) {
+      if (ratio > 5) signals.push(`⚠️ 貸借倍率 ${ratio.toFixed(1)}倍 → 買い偏り（将来の売り圧力）`);
+      else if (ratio < 1) signals.push(`💡 貸借倍率 ${ratio.toFixed(1)}倍 → 売り優勢（逆張り妙味）`);
+    }
+  }
+
+  if (signals.length === 0) return "";
+  return "【需給シグナル】\n" + signals.map((s) => `  ${s}`).join("\n");
+}
+
+// ── セクター横断比較 ────────────────────────
+
+async function fetchSectorComparison(code: string): Promise<string> {
+  if (!SB_URL || !SB_KEY) return "";
+
+  const sectorRes = await fetch(
+    `${SB_URL}/rest/v1/jpx_stock_list?code=eq.${code}&select=sector`,
+    { headers: sbHeaders() },
+  );
+  if (!sectorRes.ok) return "";
+  const sectorRows = await sectorRes.json();
+  if (sectorRows.length === 0 || !sectorRows[0].sector) return "";
+  const sector = sectorRows[0].sector;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const peerRes = await fetch(
+    `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,per,pbr&order=drop_prob.asc`,
+    { headers: sbHeaders() },
+  );
+  if (!peerRes.ok) return "";
+  const allRanks = await peerRes.json();
+
+  const codeListRes = await fetch(
+    `${SB_URL}/rest/v1/jpx_stock_list?sector=eq.${encodeURIComponent(sector)}&select=code`,
+    { headers: sbHeaders() },
+  );
+  if (!codeListRes.ok) return "";
+  const sectorCodes = new Set((await codeListRes.json()).map((r: { code: string }) => r.code));
+
+  const peers = allRanks.filter((r: { code: string }) => sectorCodes.has(r.code));
+  if (peers.length < 2) return "";
+
+  const target = peers.find((r: { code: string }) => r.code === code);
+  const rank = target ? peers.indexOf(target) + 1 : null;
+  const avgDp = peers.reduce((s: number, r: { drop_prob: number }) => s + r.drop_prob, 0) / peers.length;
+  const avgPer = peers.filter((r: { per: number | null }) => r.per != null && r.per > 0);
+  const avgPerVal = avgPer.length > 0 ? avgPer.reduce((s: number, r: { per: number }) => s + r.per, 0) / avgPer.length : null;
+
+  const lines = [`【セクター比較: ${sector}（${peers.length}社）】`];
+  if (rank != null) {
+    lines.push(`  安全性順位: ${rank}位/${peers.length}社`);
+  }
+  lines.push(`  セクター平均下落確率: ${avgDp.toFixed(1)}%`);
+  if (avgPerVal != null && target?.per) {
+    const vs = target.per < avgPerVal ? "割安" : "割高";
+    lines.push(`  セクター平均PER: ${avgPerVal.toFixed(1)} → 当銘柄${target.per}は${vs}`);
+  }
+
+  const top3 = peers.slice(0, 3);
+  if (top3.length > 0) {
+    lines.push(`  同セクター安全Top3:`);
+    for (const p of top3) {
+      lines.push(`    ${p.code} ${p.name}: 下落確率${p.drop_prob}% PER=${p.per ?? "N/A"}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 // ── 市場データ取得 ───────────────────────────
 
 async function fetchStockDetail(code: string): Promise<string> {
   if (!SB_URL || !SB_KEY) return "";
 
-  const [rankRes, finRes, tdnetStr, shortStr, marginStr] = await Promise.all([
+  const [rankRes, finRes, tdnetStr, shortRes, marginRes, sectorStr] = await Promise.all([
     fetch(
       `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
       { headers: sbHeaders() },
@@ -559,12 +665,21 @@ async function fetchStockDetail(code: string): Promise<string> {
       { headers: sbHeaders() },
     ),
     fetchTdnetDisclosures(code),
-    fetchJpxShortSelling(code),
-    fetchJpxMarginBalance(code),
+    fetch(
+      `${SB_URL}/rest/v1/jpx_short_selling?code=eq.${code}&order=calc_date.desc&select=calc_date,short_seller,short_ratio&limit=10`,
+      { headers: sbHeaders() },
+    ),
+    fetch(
+      `${SB_URL}/rest/v1/jpx_margin_balance?code=eq.${code}&order=record_date.desc&select=record_date,margin_buy,margin_sell&limit=3`,
+      { headers: sbHeaders() },
+    ),
+    fetchSectorComparison(code),
   ]);
 
   const ranks = rankRes.ok ? await rankRes.json() : [];
   const fins = finRes.ok ? await finRes.json() : [];
+  const shortRows = shortRes.ok ? await shortRes.json() : [];
+  const marginRows = marginRes.ok ? await marginRes.json() : [];
   const lines: string[] = [];
 
   if (ranks.length > 0) {
@@ -619,8 +734,29 @@ async function fetchStockDetail(code: string): Promise<string> {
   }
 
   if (tdnetStr) lines.push("\n" + tdnetStr);
-  if (shortStr) lines.push("\n" + shortStr);
-  if (marginStr) lines.push("\n" + marginStr);
+
+  // 需給生データ表示
+  if (shortRows.length > 0) {
+    const shortLines = ["【空売り残高（JPX）】"];
+    for (const r of shortRows.slice(0, 5)) {
+      shortLines.push(`  ${r.calc_date} ${r.short_seller}: ${r.short_ratio}%`);
+    }
+    lines.push("\n" + shortLines.join("\n"));
+  }
+  if (marginRows.length > 0) {
+    const marginLines = ["【信用残高（JPX）】"];
+    for (const r of marginRows) {
+      marginLines.push(`  ${r.record_date} 買残: ${Number(r.margin_buy).toLocaleString()} / 売残: ${Number(r.margin_sell).toLocaleString()}`);
+    }
+    lines.push("\n" + marginLines.join("\n"));
+  }
+
+  // 需給シグナル要約
+  const supplyDemandSignal = summarizeSupplyDemand(shortRows, marginRows);
+  if (supplyDemandSignal) lines.push("\n" + supplyDemandSignal);
+
+  // セクター横断比較
+  if (sectorStr) lines.push("\n" + sectorStr);
 
   return lines.join("\n");
 }
@@ -844,7 +980,19 @@ ${context || "（本日のデータはまだありません）"}
 PER<15=割安 / PBR<1=純資産割れ / ROE>10%=良好 / 配当利回り>3%=高配当 / Piotroski≥7=財務健全(9点満点) / 自己資本比率>40%=安定 / 営業利益率>10%=高収益 / 進捗率: 1Q>25%,2Q>50%,3Q>75%で順調
 
 ## 質問→使う指標
-買い? → 下落確率+PER/PBR+ROE+配当 / 配当? → 利回り+配当性向+営業CF / 安全? → 下落確率+自己資本比率+Piotroski / 割安? → PER+PBR+BPS成長 / 成長? → 売上・利益成長率+進捗率 / ニュース? → TDnet適時開示 / 需給? → 空売り+信用残+出来高
+買い? → 下落確率+PER/PBR+ROE+配当 / 配当? → 利回り+配当性向+営業CF / 安全? → 下落確率+自己資本比率+Piotroski / 割安? → PER+PBR+BPS成長 / 成長? → 売上・利益成長率+進捗率 / ニュース? → TDnet適時開示 / 需給? → 空売り+信用残+出来高+需給シグナル / 比較? → セクター内順位+セクター平均PER
+
+## 需給シグナル（自動生成）
+lookup_stockの結果に【需給シグナル】セクションが含まれる。空売り急増→踏み上げ警戒、信用買い増→個人強気、貸借倍率高→将来の売り圧力等を自動判定。需給に触れる質問ではこのシグナルを活用して具体的に解説する
+
+## セクター横断比較（自動生成）
+lookup_stockの結果に【セクター比較】セクションが含まれる。同セクター内の安全性順位・PER比較・Top3銘柄を表示。「同業他社と比べてどう？」「セクターの中で割安？」等の質問で積極活用する。比較されていない場合も、セクター情報があれば言及する
+
+## テーマ・業界・ビジネスモデルの質問
+- 「ロボタクシー関連は？」「半導体関連銘柄」「○○のビジネスモデルは？」等のテーマ質問には、あなたの学習知識を活用して積極的に答える
+- 企業の事業内容・業界ポジション・技術的強み・テーマとの関連性は、あなたが知っている範囲で具体的に説明する。「情報範囲外」「IR資料を確認して」等と逃げない
+- テーマに関連する銘柄を挙げるときは、lookup_stockで数値データも取得して合わせて提示する
+- 知識が古い・不確かな場合はその旨を添えつつ、知っている範囲で答える
 
 ## テーマ・業界・ビジネスモデルの質問
 - 「ロボタクシー関連は？」「半導体関連銘柄」「○○のビジネスモデルは？」等のテーマ質問には、あなたの学習知識を活用して積極的に答える
