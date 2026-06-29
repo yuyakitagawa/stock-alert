@@ -136,7 +136,7 @@ def get_pit_fundamentals(code, target_date):
 
     eps = bps = roe = dps = None
     eps_growth = bps_growth = eps_surprise = piotroski_score = payout = accruals = dps_growth = None
-    cfo_margin = leverage = op_margin_improve = None
+    cfo_margin = leverage = op_margin_improve = equity_ratio = sales_growth = forecast_revision = None
     has_jq = False
 
     try:
@@ -226,6 +226,19 @@ def get_pit_fundamentals(code, target_date):
             if _ta is not None and _eq and _eq > 0:
                 leverage = (_ta - _eq) / _eq
 
+        # 自己資本比率 (equity/ta)
+        if jq_fy:
+            lq = jq_fy[0]
+            _ta = lq.get("ta"); _eq = lq.get("equity")
+            if _ta and _ta > 0 and _eq is not None:
+                equity_ratio = _eq / _ta
+
+        # 売上成長率
+        if len(jq_fy) >= 2:
+            c_sal, p_sal = curr.get("sales"), prev.get("sales")
+            if c_sal is not None and p_sal and p_sal > 0:
+                sales_growth = (c_sal - p_sal) / abs(p_sal)
+
         # 営業利益率改善 (op/sales YoY差分)
         if len(jq_fy) >= 2:
             c_op, c_sal = curr.get("op"), curr.get("sales")
@@ -233,6 +246,13 @@ def get_pit_fundamentals(code, target_date):
             if (c_op is not None and c_sal and c_sal > 0 and
                 p_op is not None and p_sal and p_sal > 0):
                 op_margin_improve = (c_op / c_sal) - (p_op / p_sal)
+
+        # 会社予想修正率: 最新予想NP vs 前回予想NP
+        if len(rows) >= 2:
+            r0_fnp = rows[0].get("fnp")
+            r1_fnp = rows[1].get("fnp")
+            if r0_fnp is not None and r1_fnp is not None and r1_fnp != 0:
+                forecast_revision = (r0_fnp - r1_fnp) / abs(r1_fnp)
 
         # Sloan accruals
         if jq_fy:
@@ -261,6 +281,9 @@ def get_pit_fundamentals(code, target_date):
         "cfo_margin":          cfo_margin,
         "leverage":            leverage,
         "op_margin_improve":   op_margin_improve,
+        "equity_ratio":        equity_ratio,
+        "sales_growth":        sales_growth,
+        "forecast_revision":   forecast_revision,
     }
 
 
@@ -292,6 +315,12 @@ def pit_fundamental_features(code, target_date, price):
         result["piotroski"]       = fd.get("piotroski")
         result["payout"]          = fd.get("payout")
         result["accruals"]        = fd.get("accruals")
+        result["cfo_margin"]      = fd.get("cfo_margin")
+        result["leverage"]        = fd.get("leverage")
+        result["op_margin_improve"] = fd.get("op_margin_improve")
+        result["equity_ratio"]    = fd.get("equity_ratio")
+        result["sales_growth"]    = fd.get("sales_growth")
+        result["forecast_revision"] = fd.get("forecast_revision")
     return result
 
 
