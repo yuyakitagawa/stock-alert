@@ -7,6 +7,66 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const SB_URL = (Deno.env.get("SUPABASE_URL") ?? "").trim();
 const SB_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 5;
+const rateLimitMap = new Map<string, number[]>();
+
+const NOTE_AUTH_CODE = Deno.env.get("NOTE_AUTH_CODE") ?? "";
+
+// ── ユーザー管理 ─────────────────────────────
+
+interface UserRecord {
+  line_user_id: string;
+  plan: "free" | "premium";
+  expires_at: string | null;
+}
+
+async function getOrCreateUser(userId: string): Promise<UserRecord> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/line_users?line_user_id=eq.${userId}&select=line_user_id,plan,expires_at`,
+    { headers: sbHeaders() },
+  );
+  const rows = res.ok ? await res.json() : [];
+  if (rows.length > 0) {
+    return rows[0] as UserRecord;
+  }
+  await fetch(`${SB_URL}/rest/v1/line_users`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify({ line_user_id: userId }),
+  });
+  return { line_user_id: userId, plan: "free", expires_at: null };
+}
+
+function isPremium(user: UserRecord): boolean {
+  return user.plan === "premium";
+}
+
+const FREE_AI_LIMIT = 3;
+const FREE_WATCHLIST_LIMIT = 3;
+const FREE_RANKING_LIMIT = 5;
+const dailyAiUsage = new Map<string, { date: string; count: number }>();
+
+function checkAiLimit(userId: string): { allowed: boolean; remaining: number } {
+  const today = new Date().toISOString().slice(0, 10);
+  const usage = dailyAiUsage.get(userId);
+  if (!usage || usage.date !== today) {
+    dailyAiUsage.set(userId, { date: today, count: 0 });
+    return { allowed: true, remaining: FREE_AI_LIMIT };
+  }
+  return { allowed: usage.count < FREE_AI_LIMIT, remaining: FREE_AI_LIMIT - usage.count };
+}
+
+function recordAiUsage(userId: string): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const usage = dailyAiUsage.get(userId);
+  if (!usage || usage.date !== today) {
+    dailyAiUsage.set(userId, { date: today, count: 1 });
+  } else {
+    usage.count++;
+  }
+}
+
 function sbHeaders(extra: Record<string, string> = {}) {
   return {
     apikey: SB_KEY,
@@ -31,6 +91,16 @@ async function verifySignature(body: string, signature: string): Promise<boolean
   return hash === signature;
 }
 
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const timestamps = rateLimitMap.get(userId) ?? [];
+  const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) return false;
+  recent.push(now);
+  rateLimitMap.set(userId, recent);
+  return true;
+}
+
 async function replyToLine(replyToken: string, text: string): Promise<void> {
   const maxLen = 5000;
   const truncated = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
@@ -42,6 +112,22 @@ async function replyToLine(replyToken: string, text: string): Promise<void> {
     },
     body: JSON.stringify({
       replyToken,
+      messages: [{ type: "text", text: truncated }],
+    }),
+  });
+}
+
+async function pushToLine(userId: string, text: string): Promise<void> {
+  const maxLen = 5000;
+  const truncated = text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      to: userId,
       messages: [{ type: "text", text: truncated }],
     }),
   });
@@ -130,8 +216,119 @@ async function searchStockByName(keyword: string): Promise<{ code: string; name:
 
 type CommandResult = { handled: true; reply: string } | { handled: false };
 
-async function handleCommand(text: string, userId: string): Promise<CommandResult> {
+async function handleCommand(text: string, userId: string, user?: UserRecord): Promise<CommandResult> {
   const trimmed = text.trim();
+
+  const authMatch = trimmed.match(/^(認証|auth)\s+(.+)$/i);
+  if (authMatch) {
+    const code = authMatch[2].trim();
+    if (!NOTE_AUTH_CODE) {
+      return { handled: true, reply: "認証機能は現在準備中です。" };
+    }
+    if (code !== NOTE_AUTH_CODE) {
+      return { handled: true, reply: "❌ 認証コードが正しくありません。noteサブスクの限定記事をご確認ください。" };
+    }
+    await fetch(`${SB_URL}/rest/v1/line_users?line_user_id=eq.${userId}`, {
+      method: "PATCH",
+      headers: sbHeaders(),
+      body: JSON.stringify({
+        plan: "premium",
+        auth_code: code,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    return {
+      handled: true,
+      reply: `🎉 プレミアムプランが有効になりました！\n\nAI相談無制限・ウォッチリスト無制限・ランキング詳細が利用可能です。`,
+    };
+  }
+
+  if (/^(プラン|plan|状態|ステータス)$/i.test(trimmed)) {
+    if (user && isPremium(user)) {
+      return { handled: true, reply: `⭐ プレミアムプラン\n\nAI相談無制限 / ウォッチリスト無制限 / ランキング詳細` };
+    }
+    const aiStatus = checkAiLimit(userId);
+    return { handled: true, reply: `📋 無料プラン\n\nAI相談: 残り${aiStatus.remaining}回/日\nウォッチリスト: 上限${FREE_WATCHLIST_LIMIT}銘柄\nランキング: 上位${FREE_RANKING_LIMIT}銘柄\n\nnoteサブスクで「認証 コード」を送信するとプレミアムにアップグレードできます。` };
+  }
+
+  if (/^(ヘルプ|help|使い方|何ができる|機能)$/i.test(trimmed)) {
+    return {
+      handled: true,
+      reply:
+        "📖 stock-alert Bot の使い方\n\n" +
+        "【銘柄を調べる】\n" +
+        "  4桁コードを送信 → 株価・下落確率を表示\n" +
+        "  例: 8473\n\n" +
+        "【ウォッチリスト】\n" +
+        "  「ウォッチ 8473」→ 追加\n" +
+        "  「解除 8473」→ 削除\n" +
+        "  「リスト」→ 一覧表示\n\n" +
+        "【ランキング】\n" +
+        "  「ランキング」→ 本日のランキング\n\n" +
+        "【AI相談】\n" +
+        "  上記以外のメッセージ → AIが株の相談に回答\n" +
+        "  例:「トヨタって今買い？」「高配当でおすすめは？」\n\n" +
+        "【プラン管理】\n" +
+        "  「プラン」→ 現在のプラン確認\n" +
+        "  「認証 コード」→ プレミアム認証\n\n" +
+        "【自動通知】\n" +
+        "  毎日20時に日経シグナル＋ウォッチリスト状態をお届け",
+    };
+  }
+
+  if (/^(ランキング|トップ|top|順位)$/i.test(trimmed)) {
+    const premium = user ? isPremium(user) : false;
+    const limit = premium ? 10 : FREE_RANKING_LIMIT;
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(
+      `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob&order=drop_prob.asc&limit=${limit}`,
+      { headers: sbHeaders() },
+    );
+    if (!res.ok) return { handled: true, reply: "ランキングデータの取得に失敗しました。" };
+    const rows = await res.json();
+    if (rows.length === 0) {
+      return { handled: true, reply: `${today} のランキングデータはまだありません。20時以降に更新されます。` };
+    }
+    const lines = [`📊 本日のトップ${limit}（${today}）\n`];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const dpStatus = r.drop_prob < 8 ? "🟢" : r.drop_prob >= 15 ? "🔴" : "🟡";
+      lines.push(`${i + 1}. ${r.code} ${r.name}\n   ${r.close.toLocaleString()}円 下落確率${r.drop_prob}% ${dpStatus}`);
+    }
+    if (!premium) {
+      lines.push(`\n※ プレミアムプランでトップ10表示。「プラン」で詳細確認`);
+    }
+    return { handled: true, reply: lines.join("\n") };
+  }
+
+  if (/^(市場|相場|日経|マーケット)$/i.test(trimmed)) {
+    const [n225Res, rankRes] = await Promise.all([
+      fetch(
+        `${SB_URL}/rest/v1/yahoo_market_index?ticker=eq.N225&order=date.desc&limit=1&select=date,close`,
+        { headers: sbHeaders() },
+      ),
+      fetch(
+        `${SB_URL}/rest/v1/gen_rankings?date=eq.${new Date().toISOString().slice(0, 10)}&select=drop_prob&limit=100`,
+        { headers: sbHeaders() },
+      ),
+    ]);
+    const n225 = n225Res.ok ? await n225Res.json() : [];
+    const ranks = rankRes.ok ? await rankRes.json() : [];
+    const lines: string[] = ["📈 市場概況\n"];
+    if (n225.length > 0) {
+      lines.push(`日経225: ${Number(n225[0].close).toLocaleString()}円（${n225[0].date}）`);
+    }
+    if (ranks.length > 0) {
+      const dps = ranks.map((r: { drop_prob: number }) => r.drop_prob).filter((d: number) => d != null);
+      if (dps.length > 0) {
+        const avg = dps.reduce((a: number, b: number) => a + b, 0) / dps.length;
+        const signal = avg >= 15 ? "🔴 キャッシュ推奨" : "🟢 投資継続OK";
+        lines.push(`市場平均下落確率: ${avg.toFixed(1)}%`);
+        lines.push(`シグナル: ${signal}`);
+      }
+    }
+    return { handled: true, reply: lines.join("\n") };
+  }
 
   if (/^(ウォッチ|リスト|一覧)$/i.test(trimmed)) {
     const list = await getWatchlist(userId);
@@ -158,6 +355,13 @@ async function handleCommand(text: string, userId: string): Promise<CommandResul
     /^ウォッチ\s+(.+?)(?:\s+(\d+(?:\.\d+)?))?(?:\s+(\d+(?:\.\d+)?))?$/i,
   );
   if (addMatch) {
+    const premium = user ? isPremium(user) : false;
+    if (!premium) {
+      const currentList = await getWatchlist(userId);
+      if (currentList.length >= FREE_WATCHLIST_LIMIT) {
+        return { handled: true, reply: `⚠️ 無料プランのウォッチリスト上限（${FREE_WATCHLIST_LIMIT}銘柄）に達しています。\n「解除 コード」で空きを作るか、プレミアムプランで無制限にできます。` };
+      }
+    }
     const target = addMatch[1].trim();
     const threshold = addMatch[2] ? parseFloat(addMatch[2]) : 8.0;
     const sellThreshold = addMatch[3] ? parseFloat(addMatch[3]) : 20.0;
@@ -237,6 +441,10 @@ async function saveMessage(userId: string, role: "user" | "assistant", content: 
     headers: sbHeaders({ Prefer: "return=minimal" }),
     body: JSON.stringify({ line_user_id: userId, role, content: content.slice(0, 2000) }),
   });
+}
+
+async function trimHistory(userId: string): Promise<void> {
+  if (!SB_URL || !SB_KEY) return;
   const res = await fetch(
     `${SB_URL}/rest/v1/line_chat_history?line_user_id=eq.${userId}&order=created_at.desc&select=id&offset=6&limit=100`,
     { headers: sbHeaders() },
@@ -591,68 +799,52 @@ async function executeToolCall(
 async function askClaude(userMessage: string, context: string, userId: string): Promise<string> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
-  const systemPrompt = `あなたは日本株投資の専門アシスタントBot「stock-alert」です。
-ユーザーの株に関する相談に、実際のデータに基づいて日本語で答えてください。
+  const systemPrompt = `あなたは株アラートBot。友人に話すように、カジュアルだけど的確に答える。敬語は「です・ます」止め。
 
-以下はリアルタイムの市場データです:
+## データ
 ${context || "（本日のデータはまだありません）"}
 
-あなたの分析フレームワーク:
-- XGBoostで63日先の±15%変動を予測。下落モデル(AUC 0.771)の精度が高い
-- 下落確率(dp): dp<8は安全圏、dp≥15は危険水準
-- 上昇モデルは精度が低いため、netスコアは回答に一切含めないこと。「net」「上昇期待」「上昇バイアス」等の表現も禁止。下落確率のみで判断する
-- 数値の推移を示すときは必ず何の数値かを明記すること。「直近5日推移: 2.5→3.2」ではなく「下落確率の直近5日推移: 2.5%→3.2%」のように指標名と単位を必ず付ける
-- 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
+## 判断基準
+- 下落確率: <8%=🟢安全圏、8-15%=🟡普通、≥15%=🔴危険
+- 下落モデルAUC 0.771で精度は高め。上昇モデルは精度が低いのでnetスコアは絶対に使わない
+- 全銘柄の平均下落確率≥15% → 市場全体が危険、キャッシュ退避推奨
 
-ファンダメンタル指標の見方:
-- PER<15: 割安圏、PBR<1: 純資産割れ（割安候補）
-- ROE>10%: 資本効率良好、ROE>15%: 優秀
-- 配当利回り>3%: 高配当、>5%: 超高配当（持続性要確認）
-- 配当性向>80%: 配当維持リスクあり
-- Piotroski≥7: 財務健全（9点満点）
-- 自己資本比率>40%: 安定、<20%: 財務リスク
-- 営業利益率>10%: 高収益体質
-- 営業CF黒字: キャッシュ創出力あり
-- 通期予想進捗率: 1Q>25%, 2Q>50%, 3Q>75%で順調
+## 回答スタイル
+- 結論を最初に言う。「買い」「様子見」「危険」等をはっきり
+- 銘柄照会では最初に現在の株価を表示し、直近の株価傾向（20日相対強度や出来高変化）にも触れる
+- 基礎数値（株価・下落確率・PER・PBR・配当利回り・ROE等）を省略せず表示する
+- 数値には必ず指標名と単位をつける（✕「5日推移: 2.5→3.2」→ ○「下落確率の5日推移: 2.5%→3.2%」）
+- 800文字以内に収める。冗長な解説は不要だが数値は削らない
+- 「下落確率」と呼ぶ（dpとは言わない）
+- 銘柄分析や売買判断に触れる回答の末尾には必ず「※本情報は参考情報であり、投資判断は自己責任でお願いします」と添える
+- わからないことは「わかりません」と正直に言う。「サポートに問い合わせ」「提供者に確認」等の案内は絶対にしない（サポート窓口は存在しない）
+- このBotが対応できるのは株・投資関連の相談のみ。対応外の質問には「株や投資に関することなら何でも聞いてください！」と返す
 
-銘柄の表記揺れ対応:
-- DBの銘柄名は全角英数字（例: ＳＢＩホールディングス、ＫＤＤＩ）
-- ユーザーは半角・略称・通称で入力する（SBI, SBIホールディングス, KDDI, トヨタ, 三菱UFJ等）
-- toolのqueryには銘柄コード4桁を使うのが最も確実。わかる銘柄はコードで指定せよ
-- 主要銘柄コード: トヨタ=7203, ソニー=6758, 任天堂=7974, キーエンス=6861, 三菱UFJ=8306, 三井住友FG=8316, みずほ=8411, SBI HD=8473, ソフトバンクG=9984, NTT=9432, KDDI=9433, ファーストリテイリング=9983, 東京エレクトロン=8035, 信越化学=4063
-- 上記にない銘柄は名前の一部（漢字部分やカタカナ部分）をqueryに渡す
+## 指標の目安
+PER<15=割安 / PBR<1=純資産割れ / ROE>10%=良好 / 配当利回り>3%=高配当 / Piotroski≥7=財務健全(9点満点) / 自己資本比率>40%=安定 / 営業利益率>10%=高収益 / 進捗率: 1Q>25%,2Q>50%,3Q>75%で順調
 
-追加情報ソース:
-- 適時開示（TDnet）: 業績修正・増配・自社株買い・M&A等のカタリスト情報
-- 空売り残高（JPX）: 0.5%以上の大口空売りポジション
-- 信用残高（JPX）: 信用買残・売残の推移と増減
-これらはlookup_stockツールで銘柄を調べた際に自動取得される。
+## 質問→使う指標
+買い? → 下落確率+PER/PBR+ROE+配当 / 配当? → 利回り+配当性向+営業CF / 安全? → 下落確率+自己資本比率+Piotroski / 割安? → PER+PBR+BPS成長 / 成長? → 売上・利益成長率+進捗率 / ニュース? → TDnet適時開示 / 需給? → 空売り+信用残+出来高
 
-株の相談の答え方:
-- ユーザーの質問意図に合わせて関連する指標を選んで回答する
-  - 「買いか？」→ 下落確率 + PER/PBR + ROE + 配当利回り + 市場環境
-  - 「配当は？」→ 配当利回り + 配当性向 + 純利益成長率 + 営業CF
-  - 「安全？」→ 下落確率 + 自己資本比率 + Piotroski + 営業CF
-  - 「割安？」→ PER + PBR + ROE + BPS成長 + EPSサプライズ
-  - 「成長性は？」→ 売上/純利益成長率 + 営業利益率 + 通期進捗率
-  - 「ニュースは？」→ 適時開示（TDnet）のカタリスト情報
-  - 「需給は？」→ 空売り残高 + 信用残高 + 出来高
-- 全指標を列挙せず、質問に最も関連する3-5指標を選んで分析する
-- ユーザーが銘柄の監視や通知を求めたら、toolを使ってウォッチリストを操作する
-- 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
+## テーマ・業界・ビジネスモデルの質問
+- 「ロボタクシー関連は？」「半導体関連銘柄」「○○のビジネスモデルは？」等のテーマ質問には、あなたの学習知識を活用して積極的に答える
+- 企業の事業内容・業界ポジション・技術的強み・テーマとの関連性は、あなたが知っている範囲で具体的に説明する。「情報範囲外」「IR資料を確認して」等と逃げない
+- テーマに関連する銘柄を挙げるときは、lookup_stockで数値データも取得して合わせて提示する
+- 知識が古い・不確かな場合はその旨を添えつつ、知っている範囲で答える
 
-このBotの機能（ユーザーに「何ができるの？」「機能は？」と聞かれたら、以下を正確に全部案内すること。省略しない）:
-1. 📊 毎日の日経225シグナル通知: 毎日20時に全銘柄の平均下落確率からN225を持ち続けてよいか（投資継続OK/キャッシュ推奨）を自動でLINE push通知する
-2. 📋 ウォッチリスト銘柄の定期通知: 同じ日次通知で、ウォッチリストに登録した全銘柄の株価・下落確率・買い時/売り時も一緒に届く
-3. 💬 株の相談: LINEで話しかければ、実際のデータに基づいた銘柄分析・相場相談ができる（直近の会話を記憶しているので、文脈に沿った会話が可能）
-4. 📝 ウォッチリスト管理: 「SBIをウォッチして」「三菱UFJを外して」「リスト」など自然な日本語でウォッチリストを操作できる
-5. 📰 適時開示・需給情報: 銘柄を調べると、TDnet適時開示（業績修正/増配/自社株買い等）、JPX空売り残高、信用残高も表示
+## ツール
+銘柄を聞かれたら必ずlookup_stockで最新データを取得してから答える。ウォッチ操作は該当ツールを使う。
 
-ルール:
-- 投資は自己責任である旨を必要に応じて添える
-- 800文字以内で回答する
-- 「下落確率」と表記する（dpとは言わない）
-- データがない質問には正直に「わからない」と答える`;
+## 銘柄コード（ツール用）
+トヨタ=7203, ソニー=6758, 任天堂=7974, キーエンス=6861, 三菱UFJ=8306, 三井住友FG=8316, みずほ=8411, SBI=8473, ソフトバンクG=9984, NTT=9432, KDDI=9433, ファストリ=9983, 東京エレクトロン=8035, 信越化学=4063
+※上記以外は名前の一部をqueryに渡す。DBの銘柄名は全角英数字なので注意。
+
+## 機能案内（「何ができる？」と聞かれたら全部伝える）
+1. 📊 毎日20時に日経225シグナル通知（投資継続OK/キャッシュ推奨）
+2. 📋 ウォッチ銘柄の株価・下落確率・買い時/売り時を日次通知
+3. 💬 銘柄分析・相場相談（会話の文脈を覚えている）
+4. 📝 ウォッチリスト管理（「SBIをウォッチして」「リスト」等）
+5. 📰 適時開示・空売り・信用残高も自動表示`;
 
   const history = await getRecentMessages(userId);
   const messages: Anthropic.MessageParam[] = [];
@@ -669,12 +861,12 @@ ${context || "（本日のデータはまだありません）"}
     messages.push({ role: "user", content: userMessage });
   }
 
-  const MAX_TURNS = 5;
+  const MAX_TURNS = 3;
   let lastText = "";
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
@@ -709,8 +901,8 @@ ${context || "（本日のデータはまだありません）"}
   if (lastText) return lastText;
 
   const finalResponse = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 600,
     system: systemPrompt,
     messages: [
       ...messages,
@@ -739,7 +931,7 @@ Deno.serve(async (req) => {
   const rawBody = await req.text();
   const signature = req.headers.get("x-line-signature") ?? "";
 
-  if (LINE_CHANNEL_SECRET && !(await verifySignature(rawBody, signature))) {
+  if (!(await verifySignature(rawBody, signature))) {
     return Response.json({ error: "Invalid signature" }, { status: 403 });
   }
 
@@ -747,31 +939,62 @@ Deno.serve(async (req) => {
   const events = body.events ?? [];
 
   for (const event of events) {
+    const userId = event.source?.userId as string;
+    if (!userId) continue;
+
+    if (event.type === "follow") {
+      await getOrCreateUser(userId);
+      await replyToLine(event.replyToken, "📈 stock-alert Bot へようこそ！\n\n「ヘルプ」と送ると使い方を確認できます。\n「ランキング」で本日の注目銘柄を表示します。");
+      continue;
+    }
+
     if (event.type !== "message" || event.message?.type !== "text") continue;
 
     const userMessage = event.message.text as string;
     const replyToken = event.replyToken as string;
-    const userId = event.source?.userId as string;
 
-    if (!userId) continue;
+    if (!checkRateLimit(userId)) {
+      await replyToLine(replyToken, "⚠️ メッセージが多すぎます。1分ほどお待ちください。");
+      continue;
+    }
 
     try {
+      const user = await getOrCreateUser(userId);
       await saveMessage(userId, "user", userMessage);
 
-      const cmd = await handleCommand(userMessage, userId);
+      const cmd = await handleCommand(userMessage, userId, user);
       if (cmd.handled) {
         await saveMessage(userId, "assistant", cmd.reply);
         await replyToLine(replyToken, cmd.reply);
+        trimHistory(userId).catch(() => {});
         continue;
       }
+
+      if (!isPremium(user)) {
+        const aiLimit = checkAiLimit(userId);
+        if (!aiLimit.allowed) {
+          const reply = `⚠️ 本日のAI相談回数（${FREE_AI_LIMIT}回）を使い切りました。\n明日またご利用いただくか、プレミアムプランで無制限にできます。\n「プラン」で詳細確認`;
+          await saveMessage(userId, "assistant", reply);
+          await replyToLine(replyToken, reply);
+          continue;
+        }
+      }
+
+      await replyToLine(replyToken, "🤔 分析中です。少々お待ちください...");
 
       const context = await fetchMarketContext(userId, userMessage);
       const reply = await askClaude(userMessage, context, userId);
       await saveMessage(userId, "assistant", reply);
-      await replyToLine(replyToken, reply);
+      await pushToLine(userId, reply);
+      if (!isPremium(user)) recordAiUsage(userId);
+      trimHistory(userId).catch(() => {});
     } catch (e) {
       console.error("[LINE webhook] Error:", e);
-      await replyToLine(replyToken, "エラーが発生しました。しばらくしてからお試しください。");
+      try {
+        await pushToLine(userId, "エラーが発生しました。しばらくしてからお試しください。");
+      } catch {
+        // push も失敗した場合は諦める
+      }
     }
   }
 
