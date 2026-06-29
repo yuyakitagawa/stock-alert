@@ -59,6 +59,12 @@ def get_all_yutai():
     return sb.select("jpx_stock_list", "select=code,has_yutai,yutai_month&has_yutai=eq.true")
 
 
+def get_etf_profiles():
+    """etf_profiles から全ETFプロフィールを返す。{code: {name, benchmark, strategy, expense_ratio}}"""
+    rows = sb.select("etf_profiles", "select=code,name,benchmark,strategy,expense_ratio")
+    return {r["code"]: r for r in rows} if rows else {}
+
+
 # ── daily_ranking (→ gen_rankings) ────────────────────────────────────────
 
 def save_daily_ranking(date_str, rows):
