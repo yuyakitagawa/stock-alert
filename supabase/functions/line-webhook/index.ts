@@ -327,33 +327,65 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     return { handled: true, reply: lines.join("\n") };
   }
 
-  if (/^(市場|相場|日経|マーケット)$/i.test(trimmed)) {
-    const [n225Res, rankRes] = await Promise.all([
+  if (/^(市場|相場|日経|マーケット)$/i.test(trimmed) || /今日の?状況|本日の?状況|今日どう|相場どう/.test(trimmed)) {
+    const [n225Res, latestDateRes] = await Promise.all([
       fetch(
         `${SB_URL}/rest/v1/yahoo_market_index?ticker=eq.N225&order=date.desc&limit=1&select=date,close`,
         { headers: sbHeaders() },
       ),
       fetch(
-        `${SB_URL}/rest/v1/gen_rankings?date=eq.${new Date().toISOString().slice(0, 10)}&select=drop_prob&limit=100`,
+        `${SB_URL}/rest/v1/gen_rankings?select=date&order=date.desc&limit=1`,
         { headers: sbHeaders() },
       ),
     ]);
     const n225 = n225Res.ok ? await n225Res.json() : [];
-    const ranks = rankRes.ok ? await rankRes.json() : [];
-    const lines: string[] = ["📈 市場概況\n"];
+    const latestRows = latestDateRes.ok ? await latestDateRes.json() : [];
+    const latestDate = latestRows.length > 0 ? latestRows[0].date : null;
+
+    const rankRes = latestDate
+      ? await fetch(
+          `${SB_URL}/rest/v1/gen_rankings?date=eq.${latestDate}&select=drop_prob&limit=500`,
+          { headers: sbHeaders() },
+        )
+      : null;
+    const ranks = rankRes?.ok ? await rankRes.json() : [];
+
+    // ウォッチリスト取得
+    const watchlist = await getWatchlist(userId);
+
+    const parts: string[] = [];
+
+    // N225シグナル
+    const n225Lines: string[] = [];
     if (n225.length > 0) {
-      lines.push(`日経225: ${Number(n225[0].close).toLocaleString()}円（${n225[0].date}）`);
+      n225Lines.push(`日経225: ${Number(n225[0].close).toLocaleString()}円（${n225[0].date}）`);
     }
     if (ranks.length > 0) {
       const dps = ranks.map((r: { drop_prob: number }) => r.drop_prob).filter((d: number) => d != null);
       if (dps.length > 0) {
         const avg = dps.reduce((a: number, b: number) => a + b, 0) / dps.length;
         const signal = avg >= 15 ? "🔴 キャッシュ推奨" : "🟢 投資継続OK";
-        lines.push(`市場平均下落確率: ${avg.toFixed(1)}%`);
-        lines.push(`シグナル: ${signal}`);
+        n225Lines.push(`市場平均下落確率: ${avg.toFixed(1)}% → ${signal}`);
       }
     }
-    return { handled: true, reply: lines.join("\n") };
+    if (n225Lines.length > 0) parts.push(`📊 N225シグナル（${latestDate ?? "最新"}）\n` + n225Lines.join("\n"));
+
+    // ウォッチリスト状況
+    if (watchlist.length > 0) {
+      const wLines: string[] = ["📋 ウォッチリスト状況:"];
+      for (const w of watchlist) {
+        const stock = await lookupStock(w.code);
+        if (!stock) { wLines.push(`  ${w.name}(${w.code}): データなし`); continue; }
+        const dp = stock.drop_prob;
+        const buyTh = w.dp_threshold ?? 8.0;
+        const sellTh = w.dp_sell_threshold ?? 20.0;
+        const mark = dp < buyTh ? " 🔔買い時！" : dp >= sellTh ? " ⚠️売り検討" : "";
+        wLines.push(`  ${stock.name}(${w.code}) ${Number(stock.close).toLocaleString()}円 下落確率${dp}%${mark}`);
+      }
+      parts.push(wLines.join("\n"));
+    }
+
+    return { handled: true, reply: parts.length > 0 ? parts.join("\n\n") : "データを取得できませんでした。" };
   }
 
   if (/^(ウォッチ|リスト|一覧)$/i.test(trimmed)) {
