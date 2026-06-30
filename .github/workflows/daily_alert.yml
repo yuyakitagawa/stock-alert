@@ -7,7 +7,7 @@ on:
 
 jobs:
   run-pipeline:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 180
 
     steps:
@@ -27,7 +27,9 @@ jobs:
             gspread google-auth yfinance anthropic
 
       - name: Link repo to ~/stock-alert
-        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
 
       - name: Create .env from secrets
         run: |
