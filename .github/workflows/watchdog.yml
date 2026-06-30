@@ -7,7 +7,7 @@ on:
 
 jobs:
   check-and-trigger:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Check if daily alert ran today
         id: check
