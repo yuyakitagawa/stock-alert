@@ -120,6 +120,10 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
+      - name: Step 5c - ウォッチ銘柄カタリスト・決算速報アラート
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/send_catalyst_alerts.py
+
       - name: Save model cache
         if: always()
         uses: actions/cache@v4
