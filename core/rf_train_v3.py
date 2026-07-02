@@ -488,6 +488,23 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
     print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
+
+    # SHAP値を計算して特徴量重要度を補強
+    if feat_names is not None:
+        try:
+            import shap as _shap
+            _sample = X_te[:500] if len(X_te) > 500 else X_te
+            _explainer = _shap.TreeExplainer(best_model)
+            _shap_vals = _explainer.shap_values(_sample)
+            _shap_imp = np.abs(_shap_vals).mean(axis=0)
+            cal_m._shap_importance = {feat_names[i]: float(_shap_imp[i]) for i in range(len(feat_names))}
+            _zero = [n for n, v in cal_m._shap_importance.items() if v < 1e-6]
+            if _zero:
+                print(f"  SHAP重要度ゼロ特徴量({len(_zero)}): {', '.join(_zero)}")
+        except Exception as _e:
+            print(f"  SHAP計算スキップ: {_e}")
+            cal_m._shap_importance = None
+
     cal_m._keep_idx = keep_idx
     return cal_m
 
@@ -601,8 +618,9 @@ def main():
                   "edinet_hold_f",
                   "ret504","trend_slope60","trend_r2_60",
                   "cfo_margin_f","leverage_f","op_margin_f","equity_ratio_f","sales_growth_f","frev_f","asset_to_f",
+                  "ncskew_f","duvol_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
-                  "cs_sector_ret60"]
+                  "cs_sector_ret60","cs_corr_centrality"]
     drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落", feat_names=feat_names)
     cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
     exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
@@ -623,6 +641,11 @@ def main():
     else:
         used_names = feat_names
     imp = {"drop": {n: float(v) for n, v in zip(used_names, drop.model.feature_importances_)}}
+    if hasattr(drop, '_shap_importance') and drop._shap_importance:
+        imp["drop_shap"] = drop._shap_importance
+        # SHAPトップ10を表示
+        top10 = sorted(drop._shap_importance.items(), key=lambda x: -x[1])[:10]
+        print("  SHAP Top10:", ", ".join(f"{n}({v:.4f})" for n, v in top10))
     with open(os.path.join(SAVE_DIR,"feature_importance.json"),"w") as f:
         json.dump(imp, f, indent=2, ensure_ascii=False)
     print("  特徴量重要度: feature_importance.json")
