@@ -137,6 +137,7 @@ def get_pit_fundamentals(code, target_date):
     eps = bps = roe = dps = None
     eps_growth = bps_growth = eps_surprise = piotroski_score = payout = accruals = dps_growth = None
     cfo_margin = leverage = op_margin_improve = equity_ratio = sales_growth = forecast_revision = None
+    asset_turnover = None
     has_jq = False
 
     try:
@@ -260,6 +261,13 @@ def get_pit_fundamentals(code, target_date):
             np_v, cfo_v, ta_v = lq.get("np"), lq.get("cfo"), lq.get("ta")
             if np_v is not None and cfo_v is not None and ta_v and abs(ta_v) > 0:
                 accruals = ((np_v - cfo_v) / ta_v) * 5.0
+
+        # 総資産回転率 (sales/ta): 資産効率（会計品質代理変数）
+        if jq_fy:
+            lq = jq_fy[0]
+            _s = lq.get("sales"); _t = lq.get("ta")
+            if _s is not None and _t and _t > 0:
+                asset_turnover = _s / _t
     except Exception:
         pass
 
@@ -284,6 +292,7 @@ def get_pit_fundamentals(code, target_date):
         "equity_ratio":        equity_ratio,
         "sales_growth":        sales_growth,
         "forecast_revision":   forecast_revision,
+        "asset_turnover":      asset_turnover,
     }
 
 
