@@ -297,7 +297,45 @@ def add_cs_rank_features(X, dates=None, sectors=None):
                 order = np.argsort(np.argsort(vals))
                 sector_rank[sec_idx] = order / (cnt - 1)
 
-    return np.hstack([X, rank_matrix, sector_rank.reshape(-1, 1)])
+    # 相関グラフ中心性: 各日付グループ内で複数テクニカル特徴量の銘柄間コサイン類似度を計算
+    # 平均類似度が高い = 市場と高連動 → 下落時の連れ安リスク大
+    CORR_FEAT_IDX = [0, 1, 2, 3, 7, 8]  # ret5,ret20,ret60,ret90,vol20,vol60
+    corr_centrality = np.full(n, 0.5, dtype=float)
+    if dates is not None:
+        dates_arr3 = np.array(dates)
+        _, inv3 = np.unique(dates_arr3, return_inverse=True)
+        for d_idx in range(inv3.max() + 1):
+            grp = np.where(inv3 == d_idx)[0]
+            cnt = len(grp)
+            if cnt < 5:
+                continue
+            F = X[grp][:, CORR_FEAT_IDX].astype(float)
+            # 行ノルム正規化（コサイン類似度のための前処理）
+            norms = np.linalg.norm(F, axis=1, keepdims=True)
+            norms = np.where(norms < 1e-10, 1.0, norms)
+            F_norm = F / norms
+            # 平均コサイン類似度（自身を除く）= (全合計 - 自身の1) / (cnt-1)
+            sim_sum = F_norm @ F_norm.T  # (cnt, cnt)
+            avg_sim = (sim_sum.sum(axis=1) - 1.0) / max(cnt - 1, 1)
+            # 0-1正規化
+            mn, mx = avg_sim.min(), avg_sim.max()
+            if mx > mn:
+                corr_centrality[grp] = (avg_sim - mn) / (mx - mn)
+            else:
+                corr_centrality[grp] = 0.5
+    else:
+        if n >= 5:
+            F = X[:, CORR_FEAT_IDX].astype(float)
+            norms = np.linalg.norm(F, axis=1, keepdims=True)
+            norms = np.where(norms < 1e-10, 1.0, norms)
+            F_norm = F / norms
+            sim_sum = F_norm @ F_norm.T
+            avg_sim = (sim_sum.sum(axis=1) - 1.0) / max(n - 1, 1)
+            mn, mx = avg_sim.min(), avg_sim.max()
+            if mx > mn:
+                corr_centrality = (avg_sim - mn) / (mx - mn)
+
+    return np.hstack([X, rank_matrix, sector_rank.reshape(-1, 1), corr_centrality.reshape(-1, 1)])
 
 
 def compute_seq_features(seq):
@@ -512,6 +550,26 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     # 総資産回転率: 0.3(低効率)～1.5(高効率)を0-1に正規化
     asset_to_f    = float(np.clip(_ato / 1.5,      0.0, 1.0)) if _ato   is not None else 0.3
 
+    # ── NCSKEW / DUVOL（中国論文 MDPI Systems 2022）────────────────────────────
+    # 過去252日の日次リターンから算出。下落偏りの大きい銘柄を識別。
+    ncskew_f = 0.0; duvol_f = 0.0
+    _win = min(252, len(p) - 1)
+    if _win >= 20:
+        _r = np.diff(p[-(_win + 1):]) / p[-(_win + 1):-1]
+        _r = _r[np.isfinite(_r)]
+        n = len(_r)
+        if n >= 20:
+            _mu = _r.mean(); _r2 = (_r - _mu) ** 2; _r3 = (_r - _mu) ** 3
+            _s2 = _r2.sum(); _s3 = _r3.sum()
+            if _s2 > 0:
+                _ncskew = -(n * (n - 1) ** 1.5 * _s3) / ((n - 1) * (n - 2) * _s2 ** 1.5)
+                ncskew_f = float(np.clip(_ncskew, -3.0, 3.0))
+            _down = _r[_r < _mu]; _up = _r[_r >= _mu]
+            if len(_down) >= 5 and len(_up) >= 5:
+                _duvol = np.log(((len(_up) - 1) * (_down ** 2).sum()) /
+                                ((len(_down) - 1) * (_up ** 2).sum() + 1e-10))
+                duvol_f = float(np.clip(_duvol, -2.0, 2.0))
+
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
             vr520, vr2060, vsurge, nk5, nk20, nk60] + seq_feat + [rel5, rel20, rel60, alpha_momentum,
@@ -523,7 +581,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             edinet_hold_f,
             ret504, trend_slope60, trend_r2_60,
             cfo_margin_f, leverage_f, op_margin_f, equity_ratio_f, sales_growth_f, frev_f,
-            asset_to_f]
+            asset_to_f,
+            ncskew_f, duvol_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
