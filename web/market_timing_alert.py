@@ -16,29 +16,17 @@ import os
 import sys
 from datetime import date
 
-import requests
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from web._helpers import push_line, sb_get
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 MARKET_DP_CASH_THRESHOLD = 15.0
-
-
-def sb_get(path: str) -> list[dict]:
-    url = f"{SUPABASE_URL}/rest/v1/{path}"
-    headers = {
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-    }
-    resp = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
@@ -122,32 +110,6 @@ def build_watchlist_section(
     return "\n".join(lines), alerts
 
 
-def send_line_push(user_id: str, message: str) -> bool:
-    if not LINE_CHANNEL_ACCESS_TOKEN:
-        print("[market_timing] LINE_CHANNEL_ACCESS_TOKEN 未設定。送信スキップ。")
-        return False
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
-    }
-    payload = {
-        "to": user_id,
-        "messages": [{"type": "text", "text": message}],
-    }
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=15)
-        if resp.ok:
-            print(f"[market_timing] LINE送信完了 → {user_id[:8]}...")
-            return True
-        else:
-            print(f"[market_timing] LINE送信失敗 ({user_id[:8]}...): {resp.status_code} {resp.text[:200]}")
-            return False
-    except Exception as e:
-        print(f"[market_timing] LINE送信エラー ({user_id[:8]}...): {e}")
-        return False
-
-
 def main() -> None:
     today_str = date.today().isoformat()
     print(f"[market_timing] {today_str} マーケットタイミング判定開始")
@@ -174,7 +136,7 @@ def main() -> None:
         fallback_uid = os.getenv("LINE_USER_ID", "")
         if fallback_uid and market_msg:
             print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
-            send_line_push(fallback_uid, market_msg)
+            push_line(fallback_uid, market_msg)
     else:
         for user_id, watchlist in user_watchlists.items():
             watch_msg, alerts = build_watchlist_section(watchlist, ranking_map)
@@ -192,7 +154,7 @@ def main() -> None:
             if parts:
                 message = "\n\n".join(parts)
                 print(f"\n--- {user_id[:8]}... ---\n{message}\n")
-                send_line_push(user_id, message)
+                push_line(user_id, message)
             else:
                 print(f"[market_timing] {user_id[:8]}...: 通知すべき内容なし。")
 
