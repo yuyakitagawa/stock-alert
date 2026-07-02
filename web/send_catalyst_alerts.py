@@ -6,10 +6,10 @@
 2. 当日の ext_tdnet_disclosures から開示を検索
 3. カタリスト（上方修正・増配・自社株買い等）があればClaudeで要約してLINEプッシュ
 4. カタリスト以外の決算も要約してプッシュ（決算リリースのみ）
+5. edinet_large_holdings から大量保有報告があればClaudeで要約してLINEプッシュ
 
 必要な環境変数: LINE_CHANNEL_ACCESS_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY
 """
-import json
 import os
 import sys
 from datetime import date, timedelta
@@ -78,6 +78,16 @@ def get_disclosures(codes: list[str], since: str) -> list[dict]:
     )
 
 
+def get_large_holdings(codes: list[str], since: str) -> list[dict]:
+    codes_param = ",".join(codes)
+    return sb_get(
+        f"edinet_large_holdings?issuer_code=in.({codes_param})"
+        f"&disc_date=gte.{since}"
+        f"&select=issuer_code,issuer_name,filer_name,holding_ratio,doc_description,disc_date"
+        f"&order=disc_date.desc&limit=30"
+    )
+
+
 def get_stock_data(codes: list[str], today: str) -> dict[str, dict]:
     codes_param = ",".join(codes)
     rows = sb_get(
@@ -124,6 +134,43 @@ def summarize_with_claude(disclosures: list[dict], stock_info: dict) -> str:
     return resp.content[0].text.strip()
 
 
+def summarize_large_holdings_with_claude(holdings: list[dict], stock_info: dict) -> str:
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    items = []
+    for h in holdings:
+        code = h["issuer_code"]
+        info = stock_info.get(code, {})
+        name = info.get("name") or h.get("issuer_name") or code
+        close = info.get("close")
+        dp = info.get("drop_prob")
+        price_str = f"{close:,.0f}円 下落確率{dp}%" if close and dp is not None else ""
+        ratio = h.get("holding_ratio")
+        ratio_str = f"{ratio:.2f}%" if ratio is not None else "不明"
+        doc_type = h.get("doc_description", "")
+        filer = h.get("filer_name", "不明")
+        items.append(
+            f"🏦 {name}({code}) {price_str}\n"
+            f"  [{h['disc_date'][:10]}] {doc_type}\n"
+            f"  申告者: {filer} 保有比率: {ratio_str}"
+        )
+
+    prompt = (
+        "以下はウォッチリスト銘柄のEDINET大量保有報告書です。投資家向けに重要ポイントを簡潔にまとめてください。\n"
+        "- 新規取得・増加は買い圧力、減少・処分は売り圧力のシグナルとなりうる\n"
+        "- 機関投資家や大株主の動向として、買い増し・売却・様子見の観点でコメントする\n"
+        "- 全体を300文字以内にまとめる\n\n"
+        + "\n\n".join(items)
+    )
+
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text.strip()
+
+
 def main() -> None:
     if not all([LINE_CHANNEL_ACCESS_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY]):
         print("必要な環境変数が不足しています。スキップします。")
@@ -139,62 +186,68 @@ def main() -> None:
 
     print(f"対象ユーザー数: {len(watchlists)}")
 
-    # 全ユニークコードを一括取得
-    all_codes = list({code for items in watchlists.values() for item in items for code in [item["code"]]})
+    all_codes = list({item["code"] for items in watchlists.values() for item in items})
     disclosures = get_disclosures(all_codes, since)
     print(f"開示件数 (直近1日): {len(disclosures)}")
 
-    if not disclosures:
-        print("開示なし。終了します。")
-        return
+    large_holdings = get_large_holdings(all_codes, since)
+    print(f"大量保有報告件数 (直近1日): {len(large_holdings)}")
 
     stock_data = get_stock_data(all_codes, today)
-
-    # コード → 開示リスト
-    by_code: dict[str, list[dict]] = {}
-    for d in disclosures:
-        by_code.setdefault(d["code"], []).append(d)
 
     # ユーザーごとに通知
     for user_id, watch_items in watchlists.items():
         user_codes = {item["code"] for item in watch_items}
+
+        # TDnet適時開示チェック
         user_disclosures = [d for d in disclosures if d["code"] in user_codes]
-
-        if not user_disclosures:
-            continue
-
-        # カタリストのみ or 決算短信を含む場合に通知
         catalyst_disclosures = [d for d in user_disclosures if any(kw in d["title"] for kw in CATALYST_KEYWORDS)]
         earnings_disclosures = [d for d in user_disclosures if any(kw in d["title"] for kw in EARNINGS_KEYWORDS)]
-
         notify_disclosures = catalyst_disclosures or earnings_disclosures
-        if not notify_disclosures:
-            # カタリスト・決算でない開示のみ → スキップ
-            continue
 
-        print(f"  → {user_id}: {len(notify_disclosures)}件の開示")
+        if notify_disclosures:
+            print(f"  → {user_id}: {len(notify_disclosures)}件のTDnet開示")
+            try:
+                summary = summarize_with_claude(notify_disclosures, stock_data)
+            except Exception as e:
+                print(f"Claude要約エラー: {e}")
+                lines = ["📰 ウォッチ銘柄の開示情報\n"]
+                for d in notify_disclosures:
+                    code = d["code"]
+                    info = stock_data.get(code, {})
+                    name = info.get("name", code)
+                    is_catalyst = any(kw in d["title"] for kw in CATALYST_KEYWORDS)
+                    mark = "🔥" if is_catalyst else "📄"
+                    lines.append(f"{mark} {name}({code})\n  {d['disclosed_at'][:10]} {d['title']}")
+                summary = "\n".join(lines)
 
-        # AI要約
-        try:
-            summary = summarize_with_claude(notify_disclosures, stock_data)
-        except Exception as e:
-            print(f"Claude要約エラー: {e}")
-            # フォールバック: テキスト形式
-            lines = ["📰 ウォッチ銘柄の開示情報\n"]
-            for d in notify_disclosures:
-                code = d["code"]
-                info = stock_data.get(code, {})
-                name = info.get("name", code)
-                is_catalyst = any(kw in d["title"] for kw in CATALYST_KEYWORDS)
-                mark = "🔥" if is_catalyst else "📄"
-                lines.append(f"{mark} {name}({code})\n  {d['disclosed_at'][:10]} {d['title']}")
-            summary = "\n".join(lines)
+            catalyst_count = len(catalyst_disclosures)
+            header = "🔥 ウォッチ銘柄にカタリスト発生！" if catalyst_count > 0 else "📰 ウォッチ銘柄の決算情報"
+            message = f"{header}\n\n{summary}\n\n※本情報は参考情報であり、投資判断は自己責任でお願いします"
+            push_line(user_id, message)
+            print(f"  → TDnet送信完了: {user_id}")
 
-        catalyst_count = len(catalyst_disclosures)
-        header = "🔥 ウォッチ銘柄にカタリスト発生！" if catalyst_count > 0 else "📰 ウォッチ銘柄の決算情報"
-        message = f"{header}\n\n{summary}\n\n※本情報は参考情報であり、投資判断は自己責任でお願いします"
-        push_line(user_id, message)
-        print(f"  → 送信完了: {user_id}")
+        # EDINET大量保有チェック
+        user_holdings = [h for h in large_holdings if h["issuer_code"] in user_codes]
+        if user_holdings:
+            print(f"  → {user_id}: {len(user_holdings)}件の大量保有報告")
+            try:
+                holding_summary = summarize_large_holdings_with_claude(user_holdings, stock_data)
+            except Exception as e:
+                print(f"Claude大量保有要約エラー: {e}")
+                lines = ["🏦 ウォッチ銘柄の大量保有報告\n"]
+                for h in user_holdings:
+                    code = h["issuer_code"]
+                    info = stock_data.get(code, {})
+                    name = info.get("name") or h.get("issuer_name") or code
+                    ratio = h.get("holding_ratio")
+                    ratio_str = f"{ratio:.2f}%" if ratio is not None else "不明"
+                    lines.append(f"🏦 {name}({code})\n  {h['disc_date'][:10]} {h.get('filer_name','不明')} 保有比率{ratio_str}")
+                holding_summary = "\n".join(lines)
+
+            holding_message = f"🏦 ウォッチ銘柄に大量保有報告\n\n{holding_summary}\n\n※本情報は参考情報であり、投資判断は自己責任でお願いします"
+            push_line(user_id, holding_message)
+            print(f"  → 大量保有送信完了: {user_id}")
 
 
 if __name__ == "__main__":
