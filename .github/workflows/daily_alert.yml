@@ -27,7 +27,9 @@ jobs:
             gspread google-auth yfinance anthropic
 
       - name: Link repo to ~/stock-alert
-        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
 
       - name: Create .env from secrets
         run: |
@@ -52,9 +54,9 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v35-weekly-${{ github.run_number }}
+          key: ml-models-v36-weekly-${{ github.run_number }}
           restore-keys: |
-            ml-models-v35-weekly-
+            ml-models-v36-weekly-
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
@@ -120,6 +122,10 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
+      - name: Step 5c - ウォッチ銘柄カタリスト・決算速報アラート
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/send_catalyst_alerts.py
+
       - name: Save model cache
         if: always()
         uses: actions/cache@v4
@@ -127,7 +133,7 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v35-weekly-${{ github.run_number }}
+          key: ml-models-v36-weekly-${{ github.run_number }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4

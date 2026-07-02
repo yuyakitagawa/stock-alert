@@ -17,6 +17,7 @@ from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
                    MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
+from lib.db import get_etf_profiles
 
 TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
@@ -309,7 +310,9 @@ def main():
         return
     codes = stock_list["code"].tolist()
     names = dict(zip(stock_list["code"], stock_list["name"]))
-    print(f"全銘柄スキャン: {len(codes)} 銘柄")
+    etf_profiles = get_etf_profiles()
+    etf_codes = set(etf_profiles.keys())
+    print(f"全銘柄スキャン: {len(codes)} 銘柄（うちETF: {len(etf_codes & set(codes))}）")
     print(f"\n確率スコア計算中（並列処理）...")
 
     # フェーズ1: 全銘柄の特徴量を収集（並列）
@@ -519,9 +522,14 @@ def main():
 
         cs_vol20_rank = round(float(feat_aug[32]) * 100, 0)  # ボラティリティのCS相対ランク(0-100%)
 
+        _etf = etf_profiles.get(code)
         row = {
             "銘柄コード": code,
             "銘柄名": names.get(code, ""),
+            "ETF": _etf is not None,
+            "ベンチマーク": _etf["benchmark"] if _etf else None,
+            "運用方針": _etf["strategy"] if _etf else None,
+            "信託報酬(%)": _etf["expense_ratio"] if _etf else None,
             "直近株価(円)": round(close, 1),
             "上昇確率(%)": rise_pct,
             "下落確率(%)": drop_pct if drop_pct is not None else "-",
@@ -543,6 +551,10 @@ def main():
             "eps_surprise": (fund_map.get(code) or {}).get("eps_surprise"),
             "pos52":        round(float(feat[9]), 3),
         }
+        if _etf:
+            _pa = prices["Close"].values
+            row["ETFリターン1年(%)"] = round((_pa[-1] - _pa[-253]) / _pa[-253] * 100, 1) if len(_pa) >= 253 else None
+            row["ETFリターン3年(%)"] = round(((_pa[-1] / _pa[-757]) ** (1/3) - 1) * 100, 1) if len(_pa) >= 757 else None
         results.append(row)
 
     # ランキング（ネットスコア順）
@@ -587,6 +599,34 @@ def main():
             f"{gtr_str:>5}  "
             f"{row['推奨']}"
         )
+
+    # ETFランキング（ネットスコア上位）
+    etf_df = result_df[result_df["ETF"] == True]
+    if len(etf_df) > 0:
+        etf_top = min(10, len(etf_df))
+        print(f"\n{'='*90}")
+        print(f"ETFランキング 上位{etf_top}（ネットスコア順）")
+        print(f"{'='*90}")
+        print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<20}  {'株価':>8}  {'ネット':>7}  "
+              f"{'ベンチマーク':<24}  {'方針':<16}  {'手数料':>6}  {'1年':>7}  {'3年年率':>7}")
+        print("-" * 150)
+        for rank_i, (_, row) in enumerate(etf_df.head(etf_top).iterrows(), 1):
+            bm = row.get("ベンチマーク") or ""
+            st = row.get("運用方針") or ""
+            er = row.get("信託報酬(%)")
+            er_str = f"{er:.3f}%" if er is not None else "  N/A"
+            r1y = row.get("ETFリターン1年(%)")
+            r3y = row.get("ETFリターン3年(%)")
+            r1y_str = f"{r1y:+.1f}%" if r1y is not None else "  N/A"
+            r3y_str = f"{r3y:+.1f}%" if r3y is not None else "  N/A"
+            print(
+                f"{rank_i:>4}  {row['銘柄コード']:>6}  "
+                f"{str(row['銘柄名']):<20}  "
+                f"{row['直近株価(円)']:>8,.0f}円  "
+                f"{row['ネット(%)']:>+6.1f}%  "
+                f"{bm:<24}  {st:<16}  "
+                f"{er_str:>6}  {r1y_str:>7}  {r3y_str:>7}"
+            )
 
     # フェーズ4b: オルタナティブデータ取得（上位20銘柄）
     ALT_TOP = min(20, len(result_df))
@@ -748,6 +788,12 @@ def main():
             "bps_growth":   row.get("bps_growth"),
             "eps_surprise": row.get("eps_surprise"),
             "pos52":        row.get("pos52"),
+            "is_etf":       row.get("ETF", False),
+            "etf_benchmark":    row.get("ベンチマーク"),
+            "etf_strategy":     row.get("運用方針"),
+            "etf_expense_ratio": row.get("信託報酬(%)"),
+            "etf_return_1y":    row.get("ETFリターン1年(%)"),
+            "etf_return_3y":    row.get("ETFリターン3年(%)"),
         }
         for _, row in result_df.iterrows()
     ]
