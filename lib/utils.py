@@ -456,6 +456,7 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _eqr   = fd.get('equity_ratio')
     _salg  = fd.get('sales_growth')
     _frev  = fd.get('forecast_revision')
+    _ato   = fd.get('asset_turnover')
 
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
@@ -508,6 +509,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     equity_ratio_f = float(np.clip(_eqr,            0.0, 1.0)) if _eqr   is not None else 0.4
     sales_growth_f = float(np.clip(_salg,          -1.0, 3.0)) if _salg  is not None else 0.0
     frev_f        = float(np.clip(_frev,           -1.0, 2.0)) if _frev  is not None else 0.0
+    # 総資産回転率: 0.3(低効率)～1.5(高効率)を0-1に正規化
+    asset_to_f    = float(np.clip(_ato / 1.5,      0.0, 1.0)) if _ato   is not None else 0.3
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
@@ -519,7 +522,8 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f,
             edinet_hold_f,
             ret504, trend_slope60, trend_r2_60,
-            cfo_margin_f, leverage_f, op_margin_f, equity_ratio_f, sales_growth_f, frev_f]
+            cfo_margin_f, leverage_f, op_margin_f, equity_ratio_f, sales_growth_f, frev_f,
+            asset_to_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None

@@ -116,7 +116,7 @@ def get_tse_stock_list():
         result=df[[code_col,name_col]].copy()
         result.columns=["code","name"]
         result["code"]=result["code"].str.strip()
-        result=result[result["code"].str.match(r"^[1-9]\d{2}[0-9A-Z]$")]
+        result=result[result["code"].str.match(r"^[1-9]\d{3}$")]
         return result.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
     except Exception as e:
         print(f"銘柄リスト取得失敗(JPX): {e}")
@@ -126,7 +126,7 @@ def _fallback_stock_list():
     try:
         from lib.db import get_price_cache_codes
         codes = get_price_cache_codes()
-        codes = [c for c in codes if len(c)==4 and c[0].isdigit() and c[-1].isalnum()]
+        codes = [c for c in codes if len(c)==4 and c[0].isdigit()]
         if codes:
             df=pd.DataFrame({"code":codes,"name":""})
             print(f"  DBから{len(codes)}銘柄取得（フォールバック）")
@@ -285,6 +285,7 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     "equity_ratio":        pit.get("equity_ratio"),
                     "sales_growth":        pit.get("sales_growth"),
                     "forecast_revision":   pit.get("forecast_revision"),
+                    "asset_turnover":      pit.get("asset_turnover"),
                 }
             else:
                 fund = {
@@ -343,7 +344,22 @@ def _select_features(X_tr, y_tr, X_te, X_cal, feat_names):
         print(f"  特徴量選択: 全{len(imp_sum)}次元を採用")
     return keep
 
-def _undersample(X, y, ratio=0.3):
+def _smoteenn_resample(X, y):
+    """SMOTE+ENN: 過少サンプルをSMOTEで合成し、境界付近ノイズをENNで除去"""
+    try:
+        from imblearn.combine import SMOTEENN
+        from imblearn.over_sampling import SMOTE
+        smote_enn = SMOTEENN(smote=SMOTE(k_neighbors=5, random_state=RANDOM_SEED),
+                             random_state=RANDOM_SEED)
+        X_r, y_r = smote_enn.fit_resample(X, y)
+        n_pos = y_r.sum()
+        print(f"  SMOTE+ENN: {len(X):,} → {len(X_r):,} (正例比率 {n_pos/len(X_r)*100:.1f}%)")
+        return X_r, y_r
+    except Exception as e:
+        print(f"  SMOTE+ENN失敗({e}), スキップ")
+        return X, y
+
+def _undersample(X, y, ratio=0.25):
     """負例をアンダーサンプリングして正例比率をratioに近づける"""
     pos_idx = np.where(y == 1)[0]
     neg_idx = np.where(y == 0)[0]
@@ -365,23 +381,41 @@ PARAM_GRID = [
     {"max_depth":6, "learning_rate":0.015, "subsample":0.55, "colsample_bytree":0.65, "min_child_weight":60, "reg_alpha":0.05, "reg_lambda":1.5, "gamma":0.2},
 ]
 
-def _focal_sample_weights(y, probs, gamma=2.0):
-    """Focal Loss風のサンプル重み: 簡単なサンプルの重みを下げる"""
-    pt = np.where(y == 1, probs, 1 - probs)
-    weights = (1 - pt) ** gamma
-    weights[y == 1] *= len(y) / (2 * y.sum())
-    weights[y == 0] *= len(y) / (2 * (len(y) - y.sum()))
-    return weights
+def _class_balanced_focal_weights(y, gamma=2.0):
+    """Class-balanced Focal Loss sample weights (arXiv:2407.14381).
+    各クラスの頻度逆数で正規化後、予測困難サンプルを重視(focal)。
+    scale_pos_weightと組み合わせて使う。
+    """
+    n = len(y)
+    pos = y.sum(); neg = n - pos
+    # class-balanced base weights
+    w = np.where(y == 1, n / (2 * pos), n / (2 * neg))
+    # focal modulation: (1 - 0.5)^gamma as uniform init (before first fit)
+    w *= (0.5 ** gamma)
+    return w
+
+def _fbeta_score(pre, rec, beta=2.0):
+    """F-beta score array from precision/recall arrays"""
+    b2 = beta ** 2
+    return (1 + b2) * pre * rec / (b2 * pre + rec + 1e-10)
 
 def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-
-    # 特徴量選択は無効化（XGBoost自体が不要な特徴量を無視する）
     keep_idx = None
 
-    # 2. ハイパーパラメータグリッドサーチ（AUC最適化）
+    def _best_f1(probs, y=y_te):
+        pre, rec, thr = precision_recall_curve(y, probs)
+        f1 = 2 * pre * rec / (pre + rec + 1e-10)
+        return f1[:-1].max()
+
+    def _best_fbeta(probs, beta=2.0, y=y_te):
+        pre, rec, thr = precision_recall_curve(y, probs)
+        fb = _fbeta_score(pre[:-1], rec[:-1], beta)
+        return fb.max(), float(thr[fb.argmax()])
+
+    # ① グリッドサーチ（AUC最適化）
     print(f"\n  グリッドサーチ ({len(PARAM_GRID)}パターン)...")
     best_auc = -1; best_params = None; best_model = None
     for pi, params in enumerate(PARAM_GRID):
@@ -393,74 +427,61 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
         print(f"    {tag} パターン{pi+1}: AUC={auc:.4f} (depth={params['max_depth']}, lr={params['learning_rate']})")
         if auc > best_auc:
             best_auc = auc; best_params = params; best_model = m
-
     print(f"  最良パラメータ: depth={best_params['max_depth']}, lr={best_params['learning_rate']}, AUC={best_auc:.4f}")
 
-    # 3. Focal Loss再学習: 最良パラメータで初期学習→確率→重み付け再学習
-    print(f"\n  Focal Loss再学習...")
-    init_probs = best_model.predict_proba(X_tr)[:, 1]
-    focal_w = _focal_sample_weights(y_tr, init_probs, gamma=2.0)
+    # ② Class-balanced Focal Loss（scale_pos_weight維持）
+    print(f"\n  Class-balanced Focal Loss...")
+    focal_w = _class_balanced_focal_weights(y_tr, gamma=2.0)
     m_focal = XGBClassifier(n_estimators=5000, early_stopping_rounds=150,
-        scale_pos_weight=1.0, eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1, **best_params)
+        scale_pos_weight=spw, eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1, **best_params)
     m_focal.fit(X_tr, y_tr, sample_weight=focal_w, eval_set=[(X_te, y_te)], verbose=0)
     auc_focal = roc_auc_score(y_te, m_focal.predict_proba(X_te)[:, 1])
-    # Focal LossのF1も計算
-    probs_focal = m_focal.predict_proba(X_te)[:, 1]
-    pre_f, rec_f, thr_f = precision_recall_curve(y_te, probs_focal)
-    f1_focal = 2 * pre_f * rec_f / (pre_f + rec_f + 1e-10)
-    best_f1_focal = f1_focal[:-1].max()
-    # ベースラインF1
-    probs_base = best_model.predict_proba(X_te)[:, 1]
-    pre_b, rec_b, thr_b = precision_recall_curve(y_te, probs_base)
-    f1_base = 2 * pre_b * rec_b / (pre_b + rec_b + 1e-10)
-    best_f1_base = f1_base[:-1].max()
-    print(f"    ベースライン: AUC={best_auc:.4f}, F1={best_f1_base:.3f}")
-    print(f"    Focal Loss:   AUC={auc_focal:.4f}, F1={best_f1_focal:.3f}")
-
-    if best_f1_focal > best_f1_base:
-        print(f"    → Focal Lossの方がF1が高いため採用")
+    f1_base  = _best_f1(best_model.predict_proba(X_te)[:, 1])
+    f1_focal = _best_f1(m_focal.predict_proba(X_te)[:, 1])
+    print(f"    ベースライン:  AUC={best_auc:.4f}, F1={f1_base:.3f}")
+    print(f"    CB Focal Loss: AUC={auc_focal:.4f}, F1={f1_focal:.3f}")
+    if f1_focal > f1_base:
+        print(f"    → CB Focal Lossを採用")
         best_model = m_focal; best_auc = auc_focal
     else:
-        print(f"    → ベースラインの方がF1が高いため維持")
+        print(f"    → ベースライン維持")
 
-    # 4. アンダーサンプリング版も試す
+    # ③ SMOTE+ENN + scale_pos_weight
+    print(f"\n  SMOTE+ENN リサンプリング...")
+    X_senn, y_senn = _smoteenn_resample(X_tr, y_tr)
+    pos_s = y_senn.sum(); neg_s = len(y_senn) - pos_s
+    spw_s = neg_s / pos_s if pos_s > 0 else 1.0
+    m_senn = XGBClassifier(n_estimators=5000, early_stopping_rounds=150,
+        scale_pos_weight=spw_s, eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1, **best_params)
+    m_senn.fit(X_senn, y_senn, eval_set=[(X_te, y_te)], verbose=0)
+    auc_senn = roc_auc_score(y_te, m_senn.predict_proba(X_te)[:, 1])
+    f1_senn  = _best_f1(m_senn.predict_proba(X_te)[:, 1])
+    f1_cur   = _best_f1(best_model.predict_proba(X_te)[:, 1])
+    print(f"    SMOTE+ENN版:   AUC={auc_senn:.4f}, F1={f1_senn:.3f}")
+    if f1_senn > f1_cur:
+        print(f"    → SMOTE+ENN版を採用")
+        best_model = m_senn; best_auc = auc_senn
+    else:
+        print(f"    → 現状維持")
+
+    # ④ アンダーサンプリング版も試す
     X_tr_us, y_tr_us = _undersample(X_tr, y_tr, ratio=0.25)
     pos_us=y_tr_us.sum(); neg_us=len(y_tr_us)-pos_us
     spw_us=neg_us/pos_us if pos_us>0 else 1.0
     m_us=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
         scale_pos_weight=spw_us,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**best_params)
     m_us.fit(X_tr_us,y_tr_us,eval_set=[(X_te,y_te)],verbose=0)
-    probs_us = m_us.predict_proba(X_te)[:, 1]
-    pre_u, rec_u, thr_u = precision_recall_curve(y_te, probs_us)
-    f1_us = 2 * pre_u * rec_u / (pre_u + rec_u + 1e-10)
-    best_f1_us = f1_us[:-1].max()
-    auc_us = roc_auc_score(y_te, probs_us)
-    print(f"    US版:         AUC={auc_us:.4f}, F1={best_f1_us:.3f}")
-    # 現在のベストのF1と比較
-    probs_cur = best_model.predict_proba(X_te)[:, 1]
-    pre_c, rec_c, thr_c = precision_recall_curve(y_te, probs_cur)
-    f1_cur = 2 * pre_c * rec_c / (pre_c + rec_c + 1e-10)
-    best_f1_cur = f1_cur[:-1].max()
-    if best_f1_us > best_f1_cur:
-        print(f"    → アンダーサンプリング版がF1最良のため採用")
+    auc_us = roc_auc_score(y_te, m_us.predict_proba(X_te)[:, 1])
+    f1_us  = _best_f1(m_us.predict_proba(X_te)[:, 1])
+    f1_cur = _best_f1(best_model.predict_proba(X_te)[:, 1])
+    print(f"    アンダーサンプリング版: AUC={auc_us:.4f}, F1={f1_us:.3f}")
+    if f1_us > f1_cur:
+        print(f"    → アンダーサンプリング版を採用")
         best_model = m_us; best_auc = auc_us
+    else:
+        print(f"    → 現状維持")
 
     print(f"\n  最終テストAUC（生）: {best_auc:.4f}")
-    iso=IsotonicRegression(out_of_bounds="clip")
-    iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
-    cal_m=IsotonicCalibrated(best_model,iso)
-    auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
-    print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
-    print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
-    cal_m._keep_idx = keep_idx
-    return cal_m
-    if auc_full > best_auc:
-        print(f"  → 全データの方が良いため採用")
-        best_model = m_full; best_auc = auc_full
-    else:
-        print(f"  → アンダーサンプリング版を採用")
-
-    print(f"  テストAUC（生）: {best_auc:.4f}")
     iso=IsotonicRegression(out_of_bounds="clip")
     iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
     cal_m=IsotonicCalibrated(best_model,iso)
@@ -579,7 +600,7 @@ def main():
                   "eps_surprise_f","bps_growth_f","piotroski_f","payout_f","accruals_f",
                   "edinet_hold_f",
                   "ret504","trend_slope60","trend_r2_60",
-                  "cfo_margin_f","leverage_f","op_margin_f","equity_ratio_f","sales_growth_f","frev_f",
+                  "cfo_margin_f","leverage_f","op_margin_f","equity_ratio_f","sales_growth_f","frev_f","asset_to_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
                   "cs_sector_ret60"]
     drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落", feat_names=feat_names)
@@ -607,10 +628,13 @@ def main():
     print("  特徴量重要度: feature_importance.json")
 
     probs = drop.predict_proba(X_te_eval)[:, 1]
+    # F-beta(β=2): 再現率重視（下落の見逃しコストが高い）
     pre, rec, thr = precision_recall_curve(yd_te, probs)
+    beta = 2.0
+    fb = (1 + beta**2) * pre[:-1] * rec[:-1] / (beta**2 * pre[:-1] + rec[:-1] + 1e-10)
+    best_thr = float(thr[fb.argmax()])
     f1 = 2 * pre * rec / (pre + rec + 1e-10)
-    best_thr = float(thr[f1[:-1].argmax()])
-    print(f"  dropモデル最適閾値: {best_thr:.3f} (F1={f1[:-1].max():.3f})")
+    print(f"  dropモデル最適閾値: {best_thr:.3f} (F2={fb.max():.3f}, F1={f1[:-1].max():.3f})")
     with open(os.path.join(SAVE_DIR,"optimal_thresholds.json"),"w") as f:
         json.dump({"drop": best_thr}, f, indent=2)
 
