@@ -281,11 +281,11 @@ def main():
     model_cutoff_tag = f"_{_args.model_cutoff}" if getattr(_args, "model_cutoff", None) else ""
     rise_path = os.path.join(BASE_DIR, f"rf_model{model_suffix}{model_cutoff_tag}.pkl")
     drop_path = os.path.join(BASE_DIR, f"rf_drop_model{model_suffix}{model_cutoff_tag}.pkl")
-    if not os.path.exists(rise_path):
-        print(f"ERROR: {rise_path} が見つかりません")
+    if not os.path.exists(drop_path):
+        print(f"ERROR: {drop_path} が見つかりません")
         return
-    rise_model = joblib.load(rise_path)
-    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    rise_model = joblib.load(rise_path) if os.path.exists(rise_path) else None
+    drop_model = joblib.load(drop_path)
     print(f"モデル読み込み完了{f' (cutoff:{_args.model_cutoff})' if model_cutoff_tag else ''}{'（スクリーナー特化）' if model_suffix else ''}")
 
     print("TSE全銘柄リストを取得中（バイアスなし）...")
@@ -376,8 +376,8 @@ def main():
     for idx, (code, name, price_then, price_now) in enumerate(raw_meta):
         feat_aug = feats_aug[idx]
         actual_return = (price_now - price_then) / price_then * 100
-        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
-        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else 0
+        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100 if rise_model else 0.0
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100
         net = rise_prob - drop_prob
         sc = sc_map.get(code, {})
         results.append({
