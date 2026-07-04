@@ -58,6 +58,10 @@ jobs:
           restore-keys: |
             ml-models-v36-weekly-
 
+      - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
+        continue-on-error: true
+        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/update_price_cache.py --days 30
+
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
 
