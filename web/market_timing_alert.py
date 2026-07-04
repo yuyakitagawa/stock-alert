@@ -33,6 +33,7 @@ def get_today_rankings(today_str: str) -> list[dict]:
     return sb_get(
         f"gen_rankings?date=eq.{today_str}"
         f"&select=code,name,close,drop_prob"
+        f"&order=code.asc"
     )
 
 
