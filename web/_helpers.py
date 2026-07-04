@@ -17,14 +17,26 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
 
 def sb_get(path: str) -> list[dict]:
-    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    """Supabase REST API からページネーションで全件取得する。"""
+    sep = "&" if "?" in path else "?"
+    base_url = f"{SUPABASE_URL}/rest/v1/{path}"
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
     }
-    resp = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    page_size = 1000
+    out: list[dict] = []
+    offset = 0
+    while True:
+        url = f"{base_url}{sep}limit={page_size}&offset={offset}"
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        rows = resp.json()
+        out.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return out
 
 
 def push_line(user_id: str, text: str) -> bool:
