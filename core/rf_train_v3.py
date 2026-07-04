@@ -375,9 +375,7 @@ def _undersample(X, y, ratio=0.25):
 
 PARAM_GRID = [
     {"max_depth":4, "learning_rate":0.03, "subsample":0.7, "colsample_bytree":0.8, "min_child_weight":40, "reg_alpha":0.2, "reg_lambda":3.0, "gamma":0.5},
-    {"max_depth":4, "learning_rate":0.02, "subsample":0.65, "colsample_bytree":0.75, "min_child_weight":30, "reg_alpha":0.15, "reg_lambda":2.5, "gamma":0.4},
     {"max_depth":5, "learning_rate":0.02, "subsample":0.6, "colsample_bytree":0.7, "min_child_weight":50, "reg_alpha":0.1, "reg_lambda":2.0, "gamma":0.3},
-    {"max_depth":3, "learning_rate":0.04, "subsample":0.75, "colsample_bytree":0.85, "min_child_weight":20, "reg_alpha":0.3, "reg_lambda":4.0, "gamma":0.6},
     {"max_depth":6, "learning_rate":0.015, "subsample":0.55, "colsample_bytree":0.65, "min_child_weight":60, "reg_alpha":0.05, "reg_lambda":1.5, "gamma":0.2},
 ]
 
@@ -565,7 +563,7 @@ def main():
         sector=get_sector_cached(code)   # JPX 33業種（プロセス内キャッシュ）
         df=get_prices(code)
         if df is None or len(df)<MIN_HISTORY:
-            time.sleep(0.2); continue
+            time.sleep(0.08); continue
         for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only,
                                                         sample_code=code,
                                                         vix_map=vix_map,
@@ -583,7 +581,7 @@ def main():
         success+=1
         if success%100==0:
             print(f"  [{success}銘柄] 学習:{len(train_X):,} テスト:{len(test_X):,}")
-        time.sleep(0.25)
+        time.sleep(0.1)
     print(f"\n完了: {success}銘柄 / 学習:{len(train_X):,} テスト:{len(test_X):,}")
     if len(train_X)<500: print("ERROR: サンプル不足"); return
     X_tr=np.array(train_X); X_te=np.array(test_X)
@@ -624,8 +622,7 @@ def main():
     drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落", feat_names=feat_names)
     cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
     exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
-    suffix="_screened" if screener_only else ""
-    joblib.dump(drop, os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
+    joblib.dump(drop, os.path.join(SAVE_DIR,f"rf_drop_model{cutoff_tag}{exp_tag}.pkl"))
     if exp_tag:
         print(f"  ⚠️  実験モデル保存: *{exp_tag}.pkl（本番モデルは変更なし）")
     keep_idx = drop._keep_idx
