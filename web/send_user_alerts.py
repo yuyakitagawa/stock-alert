@@ -37,7 +37,7 @@ def _qa_check(today: str) -> None:
         }
         resp = requests.get(
             f"{SUPABASE_URL}/rest/v1/gen_rankings"
-            f"?date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend",
+            f"?date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend&limit=10000",
             headers=headers, timeout=30,
         )
         rankings = resp.json() if resp.ok else []
