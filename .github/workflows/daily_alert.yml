@@ -64,10 +64,10 @@ jobs:
       - name: Step 2 - モデル学習（金曜 or 初回のみ）
         run: |
           DAY=$(date +%u)
-          MODEL_PATH=~/stock-alert/rf_model.pkl
+          MODEL_PATH=~/stock-alert/rf_drop_model.pkl
           if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
             echo "▶ モデル学習を実行します"
-            cd ~/stock-alert && python core/rf_train_v3.py
+            cd ~/stock-alert && python core/rf_train_v3.py --screener-only
           else
             echo "⏭ モデルが存在するためスキップします"
           fi
