@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
+import lightgbm as lgb
 from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
@@ -397,6 +398,43 @@ def _fbeta_score(pre, rec, beta=2.0):
     b2 = beta ** 2
     return (1 + b2) * pre * rec / (b2 * pre + rec + 1e-10)
 
+
+class EnsembleCalibratedLGB:
+    """XGBoost + LightGBM アンサンブル + Isotonic キャリブレーション"""
+    def __init__(self, xgb_model, lgb_model, iso, xgb_w=0.5, lgb_w=0.5):
+        self.xgb_model = xgb_model
+        self.lgb_model = lgb_model
+        self.iso       = iso
+        self.xgb_w     = xgb_w
+        self.lgb_w     = lgb_w
+        self._keep_idx = None
+        self._shap_importance = None
+        # 互換性: .model は XGBが主 (feature_importances_ 参照用)
+        self.model = xgb_model
+
+    def predict_proba(self, X):
+        p_xgb = self.xgb_model.predict_proba(X)[:, 1]
+        p_lgb = self.lgb_model.predict_proba(X)[:, 1]
+        raw   = self.xgb_w * p_xgb + self.lgb_w * p_lgb
+        cal   = self.iso.predict(raw)
+        return np.column_stack([1 - cal, cal])
+
+
+def _xgb_params_to_lgb(params):
+    """XGBoostのハイパーパラメータをLightGBM等価パラメータに変換"""
+    return {
+        "max_depth":        params.get("max_depth", 4),
+        "learning_rate":    params.get("learning_rate", 0.03),
+        "subsample":        params.get("subsample", 0.7),
+        "colsample_bytree": params.get("colsample_bytree", 0.8),
+        "min_child_samples": max(20, params.get("min_child_weight", 30)),
+        "reg_alpha":        params.get("reg_alpha", 0.1),
+        "reg_lambda":       params.get("reg_lambda", 2.0),
+        "min_split_gain":   params.get("gamma", 0.3),
+        "num_leaves":       min(64, 2 ** params.get("max_depth", 4)),
+    }
+
+
 def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
@@ -479,15 +517,59 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     else:
         print(f"    → 現状維持")
 
+    # ⑤ LightGBM アンサンブル
+    print(f"\n  LightGBM アンサンブル...")
+    lgb_params = _xgb_params_to_lgb(best_params)
+    try:
+        m_lgb = lgb.LGBMClassifier(
+            n_estimators=5000,
+            scale_pos_weight=spw,
+            objective="binary",
+            metric="auc",
+            random_state=RANDOM_SEED,
+            n_jobs=-1,
+            verbose=-1,
+            **lgb_params,
+        )
+        m_lgb.fit(X_tr, y_tr,
+                  eval_set=[(X_te, y_te)],
+                  callbacks=[lgb.early_stopping(150, verbose=False), lgb.log_evaluation(-1)])
+        p_xgb  = best_model.predict_proba(X_te)[:, 1]
+        p_lgb  = m_lgb.predict_proba(X_te)[:, 1]
+        p_ens  = 0.5 * p_xgb + 0.5 * p_lgb
+        auc_lgb = roc_auc_score(y_te, p_lgb)
+        auc_ens = roc_auc_score(y_te, p_ens)
+        f1_lgb = _best_f1(p_lgb)
+        f1_ens = _best_f1(p_ens)
+        f1_cur = _best_f1(best_model.predict_proba(X_te)[:, 1])
+        print(f"    LightGBM単体:   AUC={auc_lgb:.4f}, F1={f1_lgb:.3f}")
+        print(f"    XGB+LGB平均:    AUC={auc_ens:.4f}, F1={f1_ens:.3f}")
+        if f1_ens > f1_cur:
+            print(f"    → アンサンブル採用")
+            use_ensemble = True
+        else:
+            print(f"    → 現状維持 (XGBのみ)")
+            use_ensemble = False
+    except Exception as _lgb_e:
+        print(f"    LightGBM失敗({_lgb_e}), XGBのみ使用")
+        use_ensemble = False
+
     print(f"\n  最終テストAUC（生）: {best_auc:.4f}")
     iso=IsotonicRegression(out_of_bounds="clip")
-    iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
-    cal_m=IsotonicCalibrated(best_model,iso)
+    if use_ensemble:
+        p_cal_xgb = best_model.predict_proba(X_cal)[:, 1]
+        p_cal_lgb = m_lgb.predict_proba(X_cal)[:, 1]
+        p_cal_ens = 0.5 * p_cal_xgb + 0.5 * p_cal_lgb
+        iso.fit(p_cal_ens, y_cal)
+        cal_m = EnsembleCalibratedLGB(best_model, m_lgb, iso)
+    else:
+        iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
+        cal_m=IsotonicCalibrated(best_model,iso)
     auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
     print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
 
-    # SHAP値を計算して特徴量重要度を補強
+    # SHAP値を計算して特徴量重要度を補強（XGBモデルで計算）
     if feat_names is not None:
         try:
             import shap as _shap
