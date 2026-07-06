@@ -849,11 +849,33 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
   }
 
   if (watchlist.length > 0) {
+    // ウォッチリスト銘柄の直近5日間 drop_prob 推移を取得
+    const watchCodes = watchlist.map((w) => w.code);
+    const trendRes = await fetch(
+      `${SB_URL}/rest/v1/gen_rankings?code=in.(${watchCodes.join(",")})&select=code,date,close,drop_prob&order=code.asc,date.desc`,
+      { headers: sbHeaders() },
+    );
+    const trendRows: { code: string; date: string; close: number; drop_prob: number }[] = trendRes.ok ? await trendRes.json() : [];
+
+    // 銘柄ごとに最新5日分をまとめる
+    const trendByCode = new Map<string, { date: string; drop_prob: number; close: number }[]>();
+    for (const r of trendRows) {
+      if (!trendByCode.has(r.code)) trendByCode.set(r.code, []);
+      const arr = trendByCode.get(r.code)!;
+      if (arr.length < 5) arr.push({ date: r.date, drop_prob: r.drop_prob, close: r.close });
+    }
+
     lines.push(`\nこのユーザーのウォッチリスト:`);
     for (const w of watchlist) {
-      const stock = rankings.find((r: { code: string }) => r.code === w.code);
-      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
-      lines.push(`  ${w.code} ${w.name}: ${dpStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`);
+      const trend = trendByCode.get(w.code) ?? [];
+      const latest = trend[0];
+      const dpStr = latest ? `下落確率=${latest.drop_prob}%` : "下落確率=--";
+      const closeStr = latest ? ` 株価=${latest.close}円` : "";
+      // 直近5日の推移（古い→新しい順）
+      const trendStr = trend.length >= 2
+        ? ` 推移(古→新)=${[...trend].reverse().map((t) => `${t.drop_prob}%`).join("→")}`
+        : "";
+      lines.push(`  ${w.code} ${w.name}:${closeStr} ${dpStr}${trendStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`);
     }
   }
 
