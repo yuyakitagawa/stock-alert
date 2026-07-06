@@ -54,9 +54,9 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v36-weekly-${{ github.run_number }}
+          key: ml-models-v37-weekly-${{ github.run_number }}
           restore-keys: |
-            ml-models-v36-weekly-
+            ml-models-v37-weekly-
 
       - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
         continue-on-error: true
@@ -137,7 +137,7 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v36-weekly-${{ github.run_number }}
+          key: ml-models-v37-weekly-${{ github.run_number }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4

@@ -553,8 +553,8 @@ def main():
     if edinet_map:
         print(f"  EDINET大量保有: {len(edinet_map)}銘柄分")
     print(f"\n株価取得中（30〜60分かかります）...")
-    train_X,train_yd=[],[]
-    test_X,test_yd=[],[]
+    train_X,train_yd,train_yr=[],[],[]
+    test_X,test_yd,test_yr=[],[],[]
     train_dates,test_dates=[],[]
     train_sectors,test_sectors=[],[]
     success=0
@@ -573,10 +573,10 @@ def main():
                                                         usdjpy_closes_arr=usdjpy_closes_arr,
                                                         edinet_map=edinet_map):
             if sd<TRAIN_CUTOFF:
-                train_X.append(feat); train_yd.append(ld)
+                train_X.append(feat); train_yd.append(ld); train_yr.append(lr)
                 train_dates.append(sd); train_sectors.append(sector)
             else:
-                test_X.append(feat); test_yd.append(ld)
+                test_X.append(feat); test_yd.append(ld); test_yr.append(lr)
                 test_dates.append(sd); test_sectors.append(sector)
         success+=1
         if success%100==0:
@@ -586,6 +586,7 @@ def main():
     if len(train_X)<500: print("ERROR: サンプル不足"); return
     X_tr=np.array(train_X); X_te=np.array(test_X)
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
+    yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
     # Cross-sectional rank features
     print("\nクロスセクショナルランク特徴量を計算中...")
     all_X=np.vstack([X_tr,X_te]); all_dates=np.array(train_dates+test_dates)
@@ -595,6 +596,7 @@ def main():
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
     print(f"絶対下落ラベル(≤-{DROP_THRESHOLD}%):  学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
+    print(f"絶対上昇ラベル(≥+{RISE_THRESHOLD}%):  学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     # キャリブレーション用: 学習データを日付順に並べ、最新20%をキャリブレーション用に分離
     sort_idx=np.argsort(np.array(train_dates))
     X_tr_s=X_tr[sort_idx]; yd_s=yd_tr[sort_idx]
@@ -628,10 +630,21 @@ def main():
     keep_idx = drop._keep_idx
     X_te_eval = X_te[:, keep_idx] if keep_idx else X_te
     drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te_eval)[:,1])
+
+    # 上昇モデルも同じ特徴量・同じ分割で学習してrf_model.pklに保存
+    yr_s=yr_tr[sort_idx]
+    yr_fit,yr_cal=yr_s[:-n_cal],yr_s[-n_cal:]
+    rise=train_model(X_tr_fit,yr_fit, X_te,yr_te, X_cal,yr_cal, "絶対上昇", feat_names=feat_names)
+    joblib.dump(rise, os.path.join(SAVE_DIR,f"rf_model{cutoff_tag}{exp_tag}.pkl"))
+    rise_keep_idx = rise._keep_idx
+    X_te_rise_eval = X_te[:, rise_keep_idx] if rise_keep_idx else X_te
+    rise_auc=roc_auc_score(yr_te,rise.predict_proba(X_te_rise_eval)[:,1])
+
     print(f"\n【AUC サマリー】")
     print(f"  絶対下落: {drop_auc:.4f}")
+    print(f"  絶対上昇: {rise_auc:.4f}")
     with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
-        json.dump({"drop":float(drop_auc)},f)
+        json.dump({"drop":float(drop_auc),"rise":float(rise_auc)},f)
 
     if keep_idx:
         used_names = [feat_names[i] for i in keep_idx]
