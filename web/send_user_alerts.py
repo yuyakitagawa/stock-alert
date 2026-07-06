@@ -31,16 +31,10 @@ def _qa_check(today: str) -> None:
     """QA: Push送信前に gen_rankings の鮮度・整合性を検査（alert-only）。"""
     try:
         from lib.data_sanity import run_site_gate
-        headers = {
-            "apikey": SUPABASE_SERVICE_KEY,
-            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        }
-        resp = requests.get(
-            f"{SUPABASE_URL}/rest/v1/gen_rankings"
-            f"?date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend",
-            headers=headers, timeout=30,
+        from web._helpers import sb_get
+        rankings = sb_get(
+            f"gen_rankings?date=eq.{today}&select=date,code,rise_prob,drop_prob,net,recommend"
         )
-        rankings = resp.json() if resp.ok else []
         run_site_gate({"date": today, "rankings": rankings},
                       source="send_user_alerts", alert=True)
     except Exception as e:

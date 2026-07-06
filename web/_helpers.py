@@ -18,6 +18,11 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
 def sb_get(path: str) -> list[dict]:
     """Supabase REST API からページネーションで全件取得する。"""
+    import re
+    # 既存の limit/offset パラメータを除去して重複を防ぐ
+    path = re.sub(r'[?&]limit=\d+', '', path)
+    path = re.sub(r'[?&]offset=\d+', '', path)
+    path = path.rstrip('?&')
     sep = "&" if "?" in path else "?"
     base_url = f"{SUPABASE_URL}/rest/v1/{path}"
     headers = {
