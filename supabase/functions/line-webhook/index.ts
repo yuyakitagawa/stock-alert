@@ -212,6 +212,27 @@ async function lookupStock(
   return rows.length > 0 ? rows[0] : null;
 }
 
+async function fetchDropProbHistory(code: string, days = 30): Promise<string> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=date,name,close,drop_prob,net&order=date.desc&limit=${days}`,
+    { headers: sbHeaders() },
+  );
+  if (!res.ok) return "";
+  const rows: { date: string; name: string; close: number; drop_prob: number; net: number }[] =
+    await res.json();
+  if (rows.length === 0) return "データが見つかりません。";
+
+  const name = rows[0].name;
+  const sorted = [...rows].reverse(); // 古い順
+  const lines = [`【${name}(${code}) 下落確率の推移】`];
+  for (const r of sorted) {
+    const d = r.date ? r.date.slice(5) : ""; // MM-DD
+    const mark = r.drop_prob >= 20 ? "🔴" : r.drop_prob >= 12 ? "🟡" : "🟢";
+    lines.push(`${d} ${mark}${r.drop_prob}% 株価:${r.close}円`);
+  }
+  return lines.join("\n");
+}
+
 function toFullWidth(s: string): string {
   return s.replace(/[A-Za-z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0));
 }
@@ -470,6 +491,13 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     return { handled: true, reply: `🗑 ${code} をウォッチリストから削除しました。` };
   }
 
+  // 「7203 推移」「7203の下落確率履歴」など — 時系列専用
+  const historyMatch = trimmed.match(/^(\d{4})\s*(推移|履歴|時系列|history)/);
+  if (historyMatch) {
+    const hist = await fetchDropProbHistory(historyMatch[1], 30);
+    return { handled: true, reply: hist };
+  }
+
   if (/^\d{4}$/.test(trimmed)) {
     const stock = await lookupStock(trimmed);
     if (!stock) {
@@ -483,6 +511,7 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
         `📊 ${stock.name}(${stock.code})\n` +
         `株価: ${stock.close.toLocaleString()}円\n` +
         `下落確率: ${stock.drop_prob}% ${dpStatus}\n\n` +
+        `「${stock.code} 推移」で過去30日の下落確率推移を表示\n` +
         `「ウォッチ ${stock.code}」でウォッチに追加`,
     };
   }
@@ -695,7 +724,7 @@ async function fetchStockDetail(code: string): Promise<string> {
 
   const [rankRes, finRes, tdnetStr, shortRes, marginRes, sectorStr] = await Promise.all([
     fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=code,name,close,drop_prob,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=5`,
+      `${SB_URL}/rest/v1/gen_rankings?code=eq.${code}&select=date,code,name,close,drop_prob,per,pbr,piotroski,bps_growth,eps_surprise,vol,rel20&order=date.desc&limit=30`,
       { headers: sbHeaders() },
     ),
     fetch(
@@ -728,7 +757,13 @@ async function fetchStockDetail(code: string): Promise<string> {
     lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
     lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
     if (ranks.length > 1) {
-      lines.push(`下落確率の直近5日推移: ${ranks.map((x: { drop_prob: number }) => x.drop_prob + "%").join(" → ")}`);
+      // 古い順に並べ直して時系列表示（最大10件）
+      const history = [...ranks].reverse().slice(-10);
+      const trend = history.map((x: { date: string; drop_prob: number }) => {
+        const d = x.date ? x.date.slice(5) : ""; // MM-DD
+        return `${d}:${x.drop_prob}%`;
+      }).join(" → ");
+      lines.push(`\n【下落確率の推移(直近${history.length}日)】\n${trend}`);
     }
   }
   if (fins.length > 0) {
