@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests pandas numpy scikit-learn joblib \
-            python-dotenv openpyxl xlrd xgboost \
+            python-dotenv openpyxl xlrd xgboost lightgbm \
             gspread google-auth yfinance anthropic
 
       - name: Link repo to ~/stock-alert
@@ -57,10 +57,6 @@ jobs:
           key: ml-models-v37-weekly-${{ github.run_number }}
           restore-keys: |
             ml-models-v37-weekly-
-
-      - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
-        continue-on-error: true
-        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/update_price_cache.py --days 30
 
       - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
         continue-on-error: true
