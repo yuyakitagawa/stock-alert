@@ -728,7 +728,7 @@ async function fetchStockDetail(code: string): Promise<string> {
       { headers: sbHeaders() },
     ),
     fetch(
-      `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,doc_type,eps,bps,div_ann,payout_ratio,np,cfo,ta,equity,op,sales,fnp,fop,fsales&order=disc_date.desc&limit=4`,
+      `${SB_URL}/rest/v1/jquants_fin_summary?code=eq.${code}&select=code,disc_date,doc_type,eps,bps,div_ann,payout_ratio,np,cfo,ta,equity,op,sales,fnp,fop,fsales&order=disc_date.desc&limit=8`,
       { headers: sbHeaders() },
     ),
     fetchTdnetDisclosures(code),
@@ -768,8 +768,10 @@ async function fetchStockDetail(code: string): Promise<string> {
   }
   if (fins.length > 0) {
     const f = fins[0];
+    // 配当は通期(FY)決算にのみ記録される。中間期はnullなので最新FYを優先して使う
+    const fyFin = fins.find((x: { doc_type: string; div_ann: number | null }) => x.doc_type === "FY" && x.div_ann != null) ?? fins.find((x: { div_ann: number | null }) => x.div_ann != null) ?? f;
     const close = ranks.length > 0 ? Number(ranks[0].close) : 0;
-    const divYield = close > 0 && f.div_ann ? ((f.div_ann / close) * 100).toFixed(2) : null;
+    const divYield = close > 0 && fyFin.div_ann ? ((fyFin.div_ann / close) * 100).toFixed(2) : null;
     const roe = f.equity && f.equity > 0 && f.np ? ((f.np / f.equity) * 100).toFixed(1) : null;
     const equityRatio = f.ta && f.ta > 0 && f.equity ? ((f.equity / f.ta) * 100).toFixed(1) : null;
     const opMargin = f.sales && f.sales > 0 && f.op ? ((f.op / f.sales) * 100).toFixed(1) : null;
@@ -778,7 +780,7 @@ async function fetchStockDetail(code: string): Promise<string> {
     lines.push(`EPS: ${f.eps}, BPS: ${f.bps}`);
     if (divYield)
       lines.push(
-        `配当利回り: ${divYield}%, 年間配当: ${f.div_ann}円, 配当性向: ${f.payout_ratio ? (f.payout_ratio * 100).toFixed(1) + "%" : "N/A"}`,
+        `配当利回り: ${divYield}%, 年間配当: ${fyFin.div_ann}円, 配当性向: ${fyFin.payout_ratio ? (fyFin.payout_ratio * 100).toFixed(1) + "%" : "N/A"}`,
       );
     if (roe) lines.push(`ROE: ${roe}%`);
     if (equityRatio) lines.push(`自己資本比率: ${equityRatio}%`);
@@ -882,11 +884,33 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
   }
 
   if (watchlist.length > 0) {
+    // ウォッチリスト銘柄の直近5日間 drop_prob 推移を取得
+    const watchCodes = watchlist.map((w) => w.code);
+    const trendRes = await fetch(
+      `${SB_URL}/rest/v1/gen_rankings?code=in.(${watchCodes.join(",")})&select=code,date,close,drop_prob&order=code.asc,date.desc`,
+      { headers: sbHeaders() },
+    );
+    const trendRows: { code: string; date: string; close: number; drop_prob: number }[] = trendRes.ok ? await trendRes.json() : [];
+
+    // 銘柄ごとに最新5日分をまとめる
+    const trendByCode = new Map<string, { date: string; drop_prob: number; close: number }[]>();
+    for (const r of trendRows) {
+      if (!trendByCode.has(r.code)) trendByCode.set(r.code, []);
+      const arr = trendByCode.get(r.code)!;
+      if (arr.length < 5) arr.push({ date: r.date, drop_prob: r.drop_prob, close: r.close });
+    }
+
     lines.push(`\nこのユーザーのウォッチリスト:`);
     for (const w of watchlist) {
-      const stock = rankings.find((r: { code: string }) => r.code === w.code);
-      const dpStr = stock ? `下落確率=${stock.drop_prob}%` : "下落確率=--";
-      lines.push(`  ${w.code} ${w.name}: ${dpStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`);
+      const trend = trendByCode.get(w.code) ?? [];
+      const latest = trend[0];
+      const dpStr = latest ? `下落確率=${latest.drop_prob}%` : "下落確率=--";
+      const closeStr = latest ? ` 株価=${latest.close}円` : "";
+      // 直近5日の推移（古い→新しい順）
+      const trendStr = trend.length >= 2
+        ? ` 推移(古→新)=${[...trend].reverse().map((t) => `${t.drop_prob}%`).join("→")}`
+        : "";
+      lines.push(`  ${w.code} ${w.name}:${closeStr} ${dpStr}${trendStr} (買<${w.dp_threshold} 売≥${w.dp_sell_threshold ?? 20})`);
     }
   }
 
@@ -1108,18 +1132,26 @@ async function executeScreenStocks(input: Record<string, unknown>, _userId: stri
     const codes = rows.map((r) => r.code as string);
     if (codes.length > 0) {
       const finRes = await fetch(
-        `${SB_URL}/rest/v1/jquants_fin_summary?code=in.(${codes.join(",")})&select=code,div_ann,np,equity&order=disc_date.desc`,
+        `${SB_URL}/rest/v1/jquants_fin_summary?code=in.(${codes.join(",")})&select=code,doc_type,div_ann,np,equity&order=disc_date.desc`,
         { headers: sbHeaders() },
       );
       if (finRes.ok) {
         const fins: Record<string, unknown>[] = await finRes.json();
-        const finMap = new Map<string, { div_yield: number | null; roe: number | null }>();
+        // 銘柄ごとに最新FY（配当あり）を優先、なければ最新レコードを使う
+        const byCode = new Map<string, Record<string, unknown>[]>();
         for (const f of fins) {
           const c = f.code as string;
-          if (finMap.has(c)) continue;
+          if (!byCode.has(c)) byCode.set(c, []);
+          byCode.get(c)!.push(f);
+        }
+        const finMap = new Map<string, { div_yield: number | null; roe: number | null }>();
+        for (const [c, recs] of byCode.entries()) {
+          const best = recs.find((x) => x.doc_type === "FY" && x.div_ann != null)
+            ?? recs.find((x) => x.div_ann != null)
+            ?? recs[0];
           const close = (rows.find((r) => r.code === c)?.close as number) || 0;
-          const dy = close > 0 && f.div_ann ? ((f.div_ann as number) / close) * 100 : null;
-          const roe = f.equity && (f.equity as number) > 0 && f.np ? ((f.np as number) / (f.equity as number)) * 100 : null;
+          const dy = close > 0 && best.div_ann ? ((best.div_ann as number) / close) * 100 : null;
+          const roe = best.equity && (best.equity as number) > 0 && best.np ? ((best.np as number) / (best.equity as number)) * 100 : null;
           finMap.set(c, { div_yield: dy, roe });
         }
         for (const r of rows) {
