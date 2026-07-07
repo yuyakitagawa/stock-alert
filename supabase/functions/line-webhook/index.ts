@@ -655,7 +655,9 @@ function summarizeSupplyDemand(
   }
 
   if (signals.length === 0) return "";
-  return "【需給シグナル】\n" + signals.map((s) => `  ${s}`).join("\n");
+  const latestDate = shortRows.length > 0 ? shortRows[0].calc_date : "";
+  const dateStr = latestDate ? `（${latestDate}時点）` : "";
+  return `【需給シグナル${dateStr}】\n` + signals.map((s) => `  ${s}`).join("\n");
 }
 
 // ── セクター横断比較 ────────────────────────
@@ -753,7 +755,7 @@ async function fetchStockDetail(code: string): Promise<string> {
     const r = ranks[0];
     lines.push(`【${r.name}(${r.code})の詳細データ】`);
     lines.push(`株価: ${r.close}円, 下落確率: ${r.drop_prob}%`);
-    lines.push(`PER: ${r.per}, PBR: ${r.pbr}, Piotroski: ${r.piotroski}`);
+    lines.push(`PER（株価収益率＝株価÷EPS。低いほど割安）: ${r.per}（目安<15）, PBR（株価純資産倍率＝株価÷BPS。純資産の何倍で買われているか）: ${r.pbr}（目安<1）, Piotroski: ${r.piotroski}`);
     lines.push(`BPS成長: ${r.bps_growth}, EPSサプライズ: ${r.eps_surprise}`);
     lines.push(`出来高: ${r.vol}, 20日相対強度: ${r.rel20}`);
     if (ranks.length > 1) {
@@ -780,9 +782,9 @@ async function fetchStockDetail(code: string): Promise<string> {
     lines.push(`EPS: ${f.eps}, BPS: ${f.bps}`);
     if (divYield)
       lines.push(
-        `配当利回り: ${divYield}%, 年間配当: ${fyFin.div_ann}円, 配当性向: ${fyFin.payout_ratio ? (fyFin.payout_ratio * 100).toFixed(1) + "%" : "N/A"}`,
+        `配当利回り（年間配当÷株価。高いほど配当収入が多い）: ${divYield}%（目安>3%）, 年間配当: ${fyFin.div_ann}円, 配当性向（配当÷純利益。高すぎると継続困難）: ${fyFin.payout_ratio ? (fyFin.payout_ratio * 100).toFixed(1) + "%" : "N/A"}（目安<70%）`,
       );
-    if (roe) lines.push(`ROE: ${roe}%`);
+    if (roe) lines.push(`ROE（自己資本利益率＝純利益÷自己資本。株主資本の稼ぎ効率）: ${roe}%（目安>10%）`);
     if (equityRatio) lines.push(`自己資本比率: ${equityRatio}%`);
     if (opMargin) lines.push(`営業利益率: ${opMargin}%`);
     if (f.cfo != null) lines.push(`営業CF: ${(f.cfo / 1e6).toFixed(0)}百万円`);
@@ -1271,7 +1273,7 @@ ${context || "（本日のデータはまだありません）"}
 - 結論を最初に言う。「買い」「様子見」「危険」等をはっきり
 - ウォッチリスト全体への質問（「買い時は？」「安全なのは？」）→ 条件を満たす銘柄を箇条書きで先に列挙し、その後に補足。条件を満たさない銘柄はまとめて「残りは様子見」で簡潔に
 - 銘柄照会では最初に現在の株価を表示し、直近の株価傾向（20日相対強度や出来高変化）にも触れる
-- 基礎数値（株価・下落確率・PER・PBR・配当利回り・ROE等）を省略せず表示する
+- 基礎数値（株価・下落確率・PER・PBR・配当利回り・ROE等）を省略せず表示する。PER・PBR・ROE・配当利回りは必ず意味と目安を付けて表示する（例: 「PER（株価収益率＝株価÷EPS。低いほど割安）: 15.2（目安<15）」「PBR（株価純資産倍率＝株価÷BPS）: 1.3（目安<1）」「ROE（自己資本利益率＝純利益÷自己資本）: 12.5%（目安>10%）」「配当利回り（年間配当÷株価）: 3.2%（目安>3%）」）
 - 数値には必ず指標名と単位をつける（✕「5日推移: 2.5→3.2」→ ○「下落確率の5日推移: 2.5%→3.2%」）
 - 800文字以内に収める。冗長な解説は不要だが数値は削らない
 - 「下落確率」と呼ぶ（dpとは言わない）
@@ -1280,7 +1282,7 @@ ${context || "（本日のデータはまだありません）"}
 - このBotが対応できるのは株・投資関連の相談のみ。対応外の質問には「株や投資に関することなら何でも聞いてください！」と返す
 
 ## 指標の目安
-PER<15=割安 / PBR<1=純資産割れ / ROE>10%=良好 / 配当利回り>3%=高配当 / Piotroski≥7=財務健全(9点満点) / 自己資本比率>40%=安定 / 営業利益率>10%=高収益 / 進捗率: 1Q>25%,2Q>50%,3Q>75%で順調
+PER（株価収益率＝株価÷EPS。何年分の利益で元が取れるか。低いほど割安）<15=割安 / PBR（株価純資産倍率＝株価÷BPS。純資産の何倍で買われているか）<1=純資産割れ / ROE（自己資本利益率＝純利益÷自己資本。株主資本をどれだけ効率よく稼いでいるか）>10%=良好 / 配当利回り（年間配当÷株価）>3%=高配当 / Piotroski≥7=財務健全(9点満点) / 自己資本比率>40%=安定 / 営業利益率>10%=高収益 / 進捗率: 1Q>25%,2Q>50%,3Q>75%で順調
 
 ## 質問→使う指標
 買い? → 下落確率+PER/PBR+ROE+配当 / 配当? → 利回り+配当性向+営業CF / 安全? → 下落確率+自己資本比率+Piotroski / 割安? → PER+PBR+BPS成長 / 成長? → 売上・利益成長率+進捗率 / ニュース? → TDnet適時開示 / 需給? → 空売り+信用残+出来高+需給シグナル / 比較? → セクター内順位+セクター平均PER
