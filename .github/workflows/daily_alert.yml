@@ -71,7 +71,7 @@ jobs:
           MODEL_PATH=~/stock-alert/rf_drop_model.pkl
           if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
             echo "▶ モデル学習を実行します"
-            cd ~/stock-alert && python core/rf_train_v3.py --screener-only
+            cd ~/stock-alert && python core/rf_train_v3.py
           else
             echo "⏭ モデルが存在するためスキップします"
           fi
