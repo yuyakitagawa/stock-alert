@@ -8,7 +8,7 @@ from sklearn.metrics import roc_auc_score, classification_report, precision_reca
 from sklearn.isotonic import IsotonicRegression
 from xgboost import XGBClassifier
 import lightgbm as lgb
-from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
+from lib.utils import IsotonicCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
@@ -397,27 +397,6 @@ def _fbeta_score(pre, rec, beta=2.0):
     """F-beta score array from precision/recall arrays"""
     b2 = beta ** 2
     return (1 + b2) * pre * rec / (b2 * pre + rec + 1e-10)
-
-
-class EnsembleCalibratedLGB:
-    """XGBoost + LightGBM アンサンブル + Isotonic キャリブレーション"""
-    def __init__(self, xgb_model, lgb_model, iso, xgb_w=0.5, lgb_w=0.5):
-        self.xgb_model = xgb_model
-        self.lgb_model = lgb_model
-        self.iso       = iso
-        self.xgb_w     = xgb_w
-        self.lgb_w     = lgb_w
-        self._keep_idx = None
-        self._shap_importance = None
-        # 互換性: .model は XGBが主 (feature_importances_ 参照用)
-        self.model = xgb_model
-
-    def predict_proba(self, X):
-        p_xgb = self.xgb_model.predict_proba(X)[:, 1]
-        p_lgb = self.lgb_model.predict_proba(X)[:, 1]
-        raw   = self.xgb_w * p_xgb + self.lgb_w * p_lgb
-        cal   = self.iso.predict(raw)
-        return np.column_stack([1 - cal, cal])
 
 
 def _xgb_params_to_lgb(params):
