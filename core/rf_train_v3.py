@@ -5,10 +5,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests, pandas as pd, numpy as np, time, io, joblib, json
 from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
-from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 import lightgbm as lgb
-from lib.utils import IsotonicCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
+from lib.utils import IsotonicCalibrated, PlattCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
@@ -534,16 +534,17 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
         use_ensemble = False
 
     print(f"\n  最終テストAUC（生）: {best_auc:.4f}")
-    iso=IsotonicRegression(out_of_bounds="clip")
+    lr = LogisticRegression(max_iter=1000)
     if use_ensemble:
         p_cal_xgb = best_model.predict_proba(X_cal)[:, 1]
         p_cal_lgb = m_lgb.predict_proba(X_cal)[:, 1]
         p_cal_ens = 0.5 * p_cal_xgb + 0.5 * p_cal_lgb
-        iso.fit(p_cal_ens, y_cal)
-        cal_m = EnsembleCalibratedLGB(best_model, m_lgb, iso)
+        lr.fit(p_cal_ens.reshape(-1, 1), y_cal)
+        cal_m = EnsembleCalibratedLGB(best_model, m_lgb, lr)
     else:
-        iso.fit(best_model.predict_proba(X_cal)[:,1],y_cal)
-        cal_m=IsotonicCalibrated(best_model,iso)
+        lr.fit(best_model.predict_proba(X_cal)[:, 1].reshape(-1, 1), y_cal)
+        keep_idx = getattr(best_model, '_keep_idx', None)
+        cal_m = PlattCalibrated(best_model, lr, keep_idx=keep_idx)
     auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
     print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
