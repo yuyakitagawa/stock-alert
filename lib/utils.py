@@ -602,11 +602,11 @@ class IsotonicCalibrated:
 
 
 class EnsembleCalibratedLGB:
-    """XGBoost + LightGBM アンサンブル + Isotonic キャリブレーション"""
-    def __init__(self, xgb_model, lgb_model, iso, xgb_w=0.5, lgb_w=0.5):
+    """XGBoost + LightGBM アンサンブル + Platt scaling キャリブレーション"""
+    def __init__(self, xgb_model, lgb_model, lr, xgb_w=0.5, lgb_w=0.5):
         self.xgb_model = xgb_model
         self.lgb_model = lgb_model
-        self.iso       = iso
+        self.lr        = lr
         self.xgb_w     = xgb_w
         self.lgb_w     = lgb_w
         self._keep_idx = None
@@ -617,7 +617,22 @@ class EnsembleCalibratedLGB:
         p_xgb = self.xgb_model.predict_proba(X)[:, 1]
         p_lgb = self.lgb_model.predict_proba(X)[:, 1]
         raw   = self.xgb_w * p_xgb + self.lgb_w * p_lgb
-        cal   = self.iso.predict(raw)
+        cal   = self.lr.predict_proba(raw.reshape(-1, 1))[:, 1]
+        return np.column_stack([1 - cal, cal])
+
+
+class PlattCalibrated:
+    """XGBoost + Platt scaling（ロジスティック回帰）キャリブレーション。
+    IsotonicRegressionと異なり滑らかな連続確率を出力する。"""
+    def __init__(self, model, lr, keep_idx=None):
+        self.model     = model
+        self.lr        = lr
+        self._keep_idx = keep_idx
+
+    def predict_proba(self, X):
+        Xf = X[:, self._keep_idx] if self._keep_idx is not None else X
+        raw = self.model.predict_proba(Xf)[:, 1]
+        cal = self.lr.predict_proba(raw.reshape(-1, 1))[:, 1]
         return np.column_stack([1 - cal, cal])
 
 
