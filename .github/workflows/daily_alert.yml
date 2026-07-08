@@ -24,7 +24,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost lightgbm \
-            gspread google-auth yfinance anthropic
+            gspread google-auth yfinance anthropic jquants-api-client
 
       - name: Link repo to ~/stock-alert
         run: |
@@ -60,7 +60,7 @@ jobs:
 
       - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
         continue-on-error: true
-        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/update_price_cache.py --days 30
+        run: cd ~/stock-alert && python tools/update_price_cache.py --days 30
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
@@ -86,7 +86,7 @@ jobs:
 
       - name: Step 2d - J-Quants財務サマリー差分更新
         continue-on-error: true
-        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/fetch_jquants_fin.py --resume
+        run: cd ~/stock-alert && python tools/fetch_jquants_fin.py --resume
 
       - name: Step 2e - EDINET決算XBRL取得（J-Quants補完）
         continue-on-error: true
