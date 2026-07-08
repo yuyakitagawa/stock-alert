@@ -1,23 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__Supabase__execute_sql",
-      "mcp__Supabase__list_projects",
-      "mcp__Supabase__list_tables",
-      "mcp__Supabase__apply_migration",
-      "mcp__Supabase__get_project_url",
-      "mcp__Supabase__get_publishable_keys",
-      "mcp__Supabase__get_logs",
-      "mcp__Supabase__list_migrations",
-      "mcp__Supabase__list_extensions",
-      "mcp__github__pull_request_read",
-      "mcp__github__actions_list",
-      "mcp__github__actions_get",
-      "mcp__github__search_code",
-      "mcp__github__get_job_logs",
-      "mcp__github__list_pull_requests",
-      "mcp__github__get_check_run",
-      "mcp__github__get_file_contents"
+      "mcp__Supabase__*",
+      "mcp__github__*"
     ]
   }
 }
