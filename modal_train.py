@@ -24,11 +24,12 @@ MODEL_FILES = ["rf_model.pkl", "rf_drop_model.pkl", "baseline_auc.json",
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .apt_install("git")
     .pip_install(
         "requests", "pandas", "numpy", "scikit-learn", "joblib",
         "python-dotenv", "openpyxl", "xlrd", "xgboost", "lightgbm",
         "gspread", "google-auth", "yfinance", "anthropic",
-        "jquants-api-client", "gitpython",
+        "jquants-api-client",
     )
 )
 
