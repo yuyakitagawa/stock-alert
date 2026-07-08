@@ -601,6 +601,26 @@ class IsotonicCalibrated:
         return np.column_stack([1 - cal, cal])
 
 
+class EnsembleCalibratedLGB:
+    """XGBoost + LightGBM アンサンブル + Isotonic キャリブレーション"""
+    def __init__(self, xgb_model, lgb_model, iso, xgb_w=0.5, lgb_w=0.5):
+        self.xgb_model = xgb_model
+        self.lgb_model = lgb_model
+        self.iso       = iso
+        self.xgb_w     = xgb_w
+        self.lgb_w     = lgb_w
+        self._keep_idx = None
+        self._shap_importance = None
+        self.model = xgb_model
+
+    def predict_proba(self, X):
+        p_xgb = self.xgb_model.predict_proba(X)[:, 1]
+        p_lgb = self.lgb_model.predict_proba(X)[:, 1]
+        raw   = self.xgb_w * p_xgb + self.lgb_w * p_lgb
+        cal   = self.iso.predict(raw)
+        return np.column_stack([1 - cal, cal])
+
+
 _KABUTAN_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept-Language": "ja,en;q=0.9",

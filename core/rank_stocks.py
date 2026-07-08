@@ -13,7 +13,7 @@ import requests as _requests
 from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_scores, classify_market_regime, get_market_index_df_cached
+from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, EnsembleCalibratedLGB, HEADERS, SEQ_DAYS, recommend_from_scores, classify_market_regime, get_market_index_df_cached
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
                    MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
