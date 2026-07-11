@@ -193,6 +193,7 @@ def get_price_raw(code, min_rows=0):
 
 
 _local_prices_cache = None
+_bulk_prices_cache: dict = {}  # preload_prices() で設定されるインメモリキャッシュ
 
 def _load_local_prices():
     global _local_prices_cache
@@ -206,10 +207,49 @@ def _load_local_prices():
         return _local_prices_cache
     return {}
 
-def get_price_df(code, days=None):
-    """yahoo_price_cacheからDataFrame(Close, Volume)を返す。"""
+
+def preload_prices(days: int = 180) -> None:
+    """全銘柄の株価を一括フェッチしてメモリに保持する。
+    screener.py の先頭で呼ぶことで個別クエリ（4,000回）を不要にする。"""
+    global _bulk_prices_cache
     import pandas as pd
     from datetime import date as _date
+    from collections import defaultdict
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    print(f"  株価一括プリロード中（直近{days}日分）...")
+    rows = sb.select(
+        "yahoo_price_cache",
+        f"date=gte.{cutoff}&order=code.asc,date.asc&select=code,date,close,volume",
+        limit=0,
+    )
+    groups: dict = defaultdict(list)
+    for r in rows:
+        groups[str(r["code"])].append(r)
+    cache = {}
+    for code, data in groups.items():
+        idx = [_date.fromisoformat(r["date"]) for r in data]
+        cache[code] = pd.DataFrame(
+            {"Close": [r["close"] for r in data], "Volume": [r["volume"] for r in data]},
+            index=idx,
+        )
+    _bulk_prices_cache = cache
+    print(f"  → {len(cache)}銘柄 プリロード完了（{len(rows):,}行）")
+
+
+def get_price_df(code, days=None):
+    """yahoo_price_cacheからDataFrame(Close, Volume)を返す。
+    preload_prices()済みならインメモリキャッシュを使用（個別クエリ不要）。"""
+    import pandas as pd
+    from datetime import date as _date
+    code_str = str(code)
+    if _bulk_prices_cache:
+        df = _bulk_prices_cache.get(code_str)
+        if df is None:
+            return None
+        if days:
+            cutoff_d = date.today() - timedelta(days=days)
+            df = df.loc[df.index >= cutoff_d]
+        return df if len(df) > 0 else None
     query = f"code=eq.{code}&order=date.asc&select=date,close,volume"
     if days:
         cutoff = (date.today() - timedelta(days=days)).isoformat()
@@ -217,8 +257,8 @@ def get_price_df(code, days=None):
     rows = sb.select("yahoo_price_cache", query)
     if not rows:
         lp = _load_local_prices()
-        if code in lp:
-            data = lp[code]
+        if code_str in lp:
+            data = lp[code_str]
             idx = [_date.fromisoformat(r[0]) for r in data]
             df = pd.DataFrame({"Close": [r[1] for r in data], "Volume": [r[2] for r in data]}, index=idx)
             if days:
