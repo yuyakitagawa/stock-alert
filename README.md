@@ -6,6 +6,14 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
+│  Modal.com（金曜 19:00 JST）                             │
+│                                                         │
+│  modal_train.py → rf_train_v3.py                        │
+│       ↓                                                 │
+│  XGBoostモデル学習 → Supabase Storage（models/）に保存  │
+└─────────────────────────────────────────────────────────┘
+         ↓ モデルをダウンロード
+┌─────────────────────────────────────────────────────────┐
 │  GitHub Actions（平日 20:00 JST）                        │
 │                                                         │
 │  screener.py → rank_stocks.py → export_to_web.py        │
@@ -25,8 +33,9 @@
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│  Supabase (Postgres)                                    │
+│  Supabase (Postgres + Storage)                          │
 │  全データの一元管理（ランキング・株価・財務・開示等）       │
+│  Storage: models/ バケットにモデルファイルを保存          │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -58,7 +67,7 @@ stock-alert/
 ├── core/                     # コアロジック
 │   ├── screener.py           # 全銘柄スクリーニング
 │   ├── rank_stocks.py        # ランキング生成（8フェーズ）
-│   └── rf_train_v3.py        # XGBoostモデル学習（金曜のみ）
+│   └── rf_train_v3.py        # XGBoostモデル学習（Modalから呼ばれる）
 │
 ├── lib/                      # 共通ライブラリ
 │   ├── utils.py              # 特徴量抽出（64次元）・共通関数
@@ -98,6 +107,7 @@ stock-alert/
 │   ├── fetch_edinet_financials.py # EDINET決算XBRL取得
 │   ├── fetch_history.py      # 株価履歴取得
 │   ├── backfill_history.py   # 株価履歴バックフィル
+│   ├── download_models.py    # Supabase StorageからモデルDL（daily_alertで使用）
 │   ├── optimize_net_weights.py # ネットスコア最適化
 │   └── export_report_to_sheets.py # レポートスプシ出力
 │
@@ -111,11 +121,11 @@ stock-alert/
 │
 ├── .github/workflows/
 │   ├── daily_alert.yml       # 日次パイプライン（平日20:00 JST）
-│   ├── ci.yml                # テスト（main push時）
+│   ├── ci.yml                # テスト（.py/.yml変更時のみ）
 │   ├── data_backfill.yml     # データバックフィル（手動実行）
-│   ├── keepalive.yml         # Supabase keepalive（月曜のみ）
-│   └── watchdog.yml          # パイプライン監視
+│   └── keepalive.yml         # Supabase keepalive（月曜のみ）
 │
+├── modal_train.py            # Modal.com モデル学習（金曜19:00 JST自動実行）
 ├── config.py                 # 戦略パラメータ一元管理
 ├── requirements.txt          # Python依存パッケージ
 └── data/                     # ランキングCSV等（gitignore対象）
@@ -128,7 +138,7 @@ stock-alert/
 ### 概要
 - **目的**: 63日後（約3ヶ月）に日経225を±5%以上上回る/下回る銘柄を予測
 - **AUC**: 上昇 0.642 / 下落 0.766（下落予測の精度が高い）
-- **学習**: 東証全銘柄×5年、20営業日ごとサンプリング、金曜に再学習
+- **学習**: 東証全銘柄×5年、20営業日ごとサンプリング、金曜にModal.comで自動再学習
 
 ### 特徴量（64次元）
 
@@ -224,13 +234,31 @@ stock-alert/
 pip install requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl yfinance anthropic pytest
 ```
 
+### Modal.com セットアップ（モデル学習）
+
+モデル学習はGitHub Actionsではなく[Modal.com](https://modal.com)で実行する（無料枠内）。
+
+```bash
+pip install modal
+modal setup  # ブラウザでログイン
+
+# シークレット登録
+modal secret create stock-alert-secrets \
+  SUPABASE_URL="..." SUPABASE_SERVICE_KEY="..." \
+  JQUANTS_API_KEY="..." EDINET_API_KEY="..." \
+  ANTHROPIC_API_KEY="..." GH_TOKEN="..."
+
+# Supabase Storage に「models」バケットを非公開で作成してからデプロイ
+modal deploy modal_train.py
+
+# 初回は手動実行（以降は金曜19:00 JSTに自動実行）
+modal run modal_train.py::train
+```
+
 ### コマンド
 ```bash
 # 日次パイプライン
 python3 core/screener.py && python3 core/rank_stocks.py
-
-# モデル学習（金曜のみ）
-python3 core/rf_train_v3.py
 
 # バックテスト
 python3 tools/backtest.py              # 通常期
