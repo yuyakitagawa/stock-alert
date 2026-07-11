@@ -47,18 +47,17 @@ errors = 0
 for date_str in target_dates:
     date_yyyymmdd = date_str.replace("-", "")
     try:
-        df = cli.get_prices_daily_quotes(date_yyyymmdd=date_yyyymmdd)
+        df = cli.get_eq_bars_daily(date=date_str)
         if df is None or len(df) == 0:
             print(f"  {date_str}: データなし（休場日？）")
             continue
 
-        # コード別にグループ化してキャッシュ保存
-        # 列名の正規化
+        # 列名の正規化（新API: Code, AdjClose or Close, Volume）
         df = df.rename(columns={
-            "Code": "code", "AdjustmentClose": "close", "Volume": "volume",
+            "Code": "code", "AdjClose": "close", "Volume": "volume",
             "Close": "close_raw",
         })
-        # AdjustmentClose が使えればそちらを優先（split-adjusted）
+        # AdjClose が使えればそちらを優先（split-adjusted）
         if "close" not in df.columns and "close_raw" in df.columns:
             df = df.rename(columns={"close_raw": "close"})
 
