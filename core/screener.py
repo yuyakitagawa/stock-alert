@@ -12,6 +12,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from lib.utils import calc_rsi, get_sector_cached, get_prices, get_nikkei_returns, HEADERS
+from lib.db import preload_prices
 
 MIN_MOMENTUM     = 8.0    # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
 MIN_VOLATILITY   = 22.0   # 年率ボラ下限（20.0→22.0: 微改善）
@@ -196,6 +197,9 @@ def main():
     if stock_list is None:
         print("ERROR: 銘柄リスト取得失敗")
         return
+
+    if not args.test:
+        preload_prices(days=180)
 
     if args.test:
         stock_list = stock_list.head(5)
