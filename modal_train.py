@@ -61,7 +61,7 @@ def _upload_to_supabase_storage(local_path: str, filename: str, supabase_url: st
 
 @app.function(
     secrets=secrets,
-    timeout=3600,
+    timeout=21600,  # 6時間（学習に4〜5時間かかるため）
     # 金曜 10:00 UTC = 金曜 19:00 JST
     schedule=modal.Cron("0 10 * * 5"),
 )
