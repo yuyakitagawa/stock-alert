@@ -227,6 +227,16 @@ def main():
     drop_model = joblib.load(drop_path)
     alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
     alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
+
+    # sklearn>=1.4でLogisticRegressionからmulti_classが削除されたため互換パッチ
+    def _patch_lr(obj):
+        if obj is None:
+            return
+        lr = getattr(obj, "lr", None)
+        if lr is not None and not hasattr(lr, "multi_class"):
+            lr.multi_class = "auto"
+    for _m in [rise_model, drop_model, alpha_rise_model, alpha_drop_model]:
+        _patch_lr(_m)
     print(f"\n下落モデル読み込み: {drop_path}")
     if rise_model:        print(f"上昇モデル読み込み: {rise_path}")
     if alpha_rise_model:  print(f"α上昇モデル読み込み: {alpha_rise_path}")
