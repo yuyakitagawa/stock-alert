@@ -82,8 +82,8 @@ for date_str in target_dates:
 
     except Exception as e:
         msg = str(e)
-        if "subscription covers" in msg or "400" in msg and "subscription" in msg:
-            print(f"  {date_str}: サブスクリプション対象外（スキップ）")
+        if "subscription covers" in msg or "429" in msg:
+            print(f"  {date_str}: サブスクリプション対象外またはレート制限（スキップ）")
             continue
         print(f"  {date_str}: ERROR {e}")
         errors += 1
