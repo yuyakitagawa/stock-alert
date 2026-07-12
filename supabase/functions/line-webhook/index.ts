@@ -992,7 +992,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_catalyst",
-    description: "直近の決算サプライズ・適時開示カタリストを確認する。「最近の決算サプライズは？」「ウォッチ銘柄のニュースは？」「上方修正した銘柄は？」「増配銘柄」等と言ったとき使う。ウォッチリスト銘柄のカタリストも自動チェックする。",
+    description: "直近の決算サプライズ・適時開示カタリスト・EDINET大量保有報告を確認する。「最近の決算サプライズは？」「ウォッチ銘柄のニュースは？」「上方修正した銘柄は？」「増配銘柄」「大量保有」「機関投資家の動き」「5%保有報告」等と言ったとき使う。ウォッチリスト銘柄のカタリストも自動チェックする。",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1251,6 +1251,26 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
   ).length;
   if (catalystCount > 0) {
     lines.push(`\n🔥 = カタリスト候補（上方修正・増配・自社株買い等）: ${catalystCount}件`);
+  }
+
+  // EDINET大量保有報告を追加取得
+  let holdingFilter = "";
+  if (scope === "watchlist" && watchCodes.length > 0) {
+    holdingFilter = `&issuer_code=in.(${watchCodes.join(",")})`;
+  }
+  const holdRes = await fetch(
+    `${SB_URL}/rest/v1/edinet_large_holdings?disc_date=gte.${sinceStr}${holdingFilter}&select=issuer_code,issuer_name,filer_name,holding_ratio,disc_date&order=disc_date.desc&limit=20`,
+    { headers: sbHeaders() },
+  );
+  if (holdRes.ok) {
+    const holdings: Record<string, unknown>[] = await holdRes.json();
+    if (holdings.length > 0) {
+      lines.push(`\n🏦 大量保有報告（直近${days}日）\n`);
+      for (const h of holdings) {
+        const ratio = h.holding_ratio != null ? `${(h.holding_ratio as number).toFixed(2)}%` : "不明";
+        lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} (${h.disc_date})`);
+      }
+    }
   }
 
   return lines.join("\n");
