@@ -397,7 +397,7 @@ def main():
             "roe":                 fd_raw.get("ROE"),
             "days_to_earnings":    None,
             "days_since_div_ex":   pit.get("days_since_div_ex"),
-            "month":               today.month,
+            "month":               target_date.month,
             "div_yield":           div_yield_live,
             "eps_growth":          pit.get("eps_growth"),
             "dps_growth":          pit.get("dps_growth"),
