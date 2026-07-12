@@ -5,13 +5,10 @@ on:
     - cron: '0 11 * * 1-5'  # 平日11:00 UTC = 平日20:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -21,21 +18,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           pip install requests pandas numpy scikit-learn joblib \
-            python-dotenv openpyxl xlrd xgboost \
+            python-dotenv openpyxl xlrd xgboost lightgbm \
             gspread google-auth yfinance anthropic
 
       - name: Link repo to ~/stock-alert
-        run: ln -s $GITHUB_WORKSPACE ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
 
       - name: Create .env from secrets
         run: |
-          echo "GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}" > ~/stock-alert/.env
-          echo "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" >> ~/stock-alert/.env
-          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> ~/stock-alert/.env
+          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" > ~/stock-alert/.env
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
@@ -56,9 +54,13 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v35-weekly-${{ github.run_number }}
+          key: ml-models-v37-weekly-${{ github.run_number }}
           restore-keys: |
-            ml-models-v35-weekly-
+            ml-models-v37-weekly-
+
+      - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
+        continue-on-error: true
+        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/update_price_cache.py --days 30
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
@@ -66,7 +68,7 @@ jobs:
       - name: Step 2 - モデル学習（金曜 or 初回のみ）
         run: |
           DAY=$(date +%u)
-          MODEL_PATH=~/stock-alert/rf_model.pkl
+          MODEL_PATH=~/stock-alert/rf_drop_model.pkl
           if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
             echo "▶ モデル学習を実行します"
             cd ~/stock-alert && python core/rf_train_v3.py
@@ -84,7 +86,7 @@ jobs:
 
       - name: Step 2d - J-Quants財務サマリー差分更新
         continue-on-error: true
-        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/fetch_jquants_fin.py --resume --all-days
+        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/fetch_jquants_fin.py --resume
 
       - name: Step 2e - EDINET決算XBRL取得（J-Quants補完）
         continue-on-error: true
@@ -108,9 +110,6 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/generate_descriptions.py --limit 400
 
-      - name: Step 4b - 会社説明をスプシから同期（手動説明で上書き優先）
-        continue-on-error: true
-        run: cd ~/stock-alert && python web/sync_descriptions.py
 
       - name: Step 4c - 全Webページのスモーク検査（QA）
         continue-on-error: true
@@ -124,6 +123,10 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
+      - name: Step 5c - ウォッチ銘柄カタリスト・決算速報アラート
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/send_catalyst_alerts.py
+
       - name: Save model cache
         if: always()
         uses: actions/cache@v4
@@ -131,7 +134,7 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v35-weekly-${{ github.run_number }}
+          key: ml-models-v37-weekly-${{ github.run_number }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4
