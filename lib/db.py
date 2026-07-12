@@ -207,7 +207,6 @@ def _load_local_prices():
         return _local_prices_cache
     return {}
 
-
 def preload_prices(days: int = 180) -> None:
     """全銘柄の株価を一括フェッチしてメモリに保持する。
     screener.py の先頭で呼ぶことで個別クエリ（4,000回）を不要にする。"""
@@ -236,24 +235,30 @@ def preload_prices(days: int = 180) -> None:
     print(f"  → {len(cache)}銘柄 プリロード完了（{len(rows):,}行）")
 
 
-def get_price_df(code, days=None):
+def get_price_df(code, days=None, end_date=None):
     """yahoo_price_cacheからDataFrame(Close, Volume)を返す。
-    preload_prices()済みならインメモリキャッシュを使用（個別クエリ不要）。"""
+    preload_prices()済みならインメモリキャッシュを使用（個別クエリ不要）。
+    end_date: date型。指定するとその日以前のデータのみ返す（バックフィル用）。
+    """
     import pandas as pd
     from datetime import date as _date
+    base_date = end_date if end_date else date.today()
     code_str = str(code)
-    if _bulk_prices_cache:
+    if _bulk_prices_cache and not end_date:
         df = _bulk_prices_cache.get(code_str)
         if df is None:
             return None
         if days:
-            cutoff_d = date.today() - timedelta(days=days)
+            cutoff_d = base_date - timedelta(days=days)
             df = df.loc[df.index >= cutoff_d]
         return df if len(df) > 0 else None
-    query = f"code=eq.{code}&order=date.asc&select=date,close,volume"
+    filters = [f"code=eq.{code}", "order=date.asc", "select=date,close,volume"]
     if days:
-        cutoff = (date.today() - timedelta(days=days)).isoformat()
-        query = f"code=eq.{code}&date=gte.{cutoff}&order=date.asc&select=date,close,volume"
+        cutoff = (base_date - timedelta(days=days)).isoformat()
+        filters.append(f"date=gte.{cutoff}")
+    if end_date:
+        filters.append(f"date=lte.{end_date.isoformat()}")
+    query = "&".join(filters)
     rows = sb.select("yahoo_price_cache", query)
     if not rows:
         lp = _load_local_prices()
@@ -262,8 +267,10 @@ def get_price_df(code, days=None):
             idx = [_date.fromisoformat(r[0]) for r in data]
             df = pd.DataFrame({"Close": [r[1] for r in data], "Volume": [r[2] for r in data]}, index=idx)
             if days:
-                cutoff_d = date.today() - timedelta(days=days)
+                cutoff_d = base_date - timedelta(days=days)
                 df = df.loc[df.index >= cutoff_d]
+            if end_date:
+                df = df.loc[df.index <= end_date]
             return df if len(df) > 0 else None
         return None
     idx = [_date.fromisoformat(r["date"]) for r in rows]
