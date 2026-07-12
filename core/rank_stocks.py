@@ -452,8 +452,14 @@ def main():
         feat_aug = feats_aug[idx]
         rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) if rise_model else 0.0
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1])
-        alpha_rise_prob = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) if alpha_rise_model else None
-        alpha_drop_prob = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) if alpha_drop_model else None
+        try:
+            alpha_rise_prob = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) if alpha_rise_model else None
+        except ValueError:
+            alpha_rise_prob = None
+        try:
+            alpha_drop_prob = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) if alpha_drop_model else None
+        except ValueError:
+            alpha_drop_prob = None
         close = float(prices["Close"].iloc[-1])
         rise_pct = round(rise_prob * 100, 1)
         drop_pct = round(drop_prob * 100, 1)
