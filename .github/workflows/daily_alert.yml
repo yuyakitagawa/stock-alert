@@ -48,9 +48,9 @@ jobs:
         run: |
           echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
 
-      - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
+      - name: Step 0 - 株価キャッシュ更新（J-Quants 直近90日）
         continue-on-error: true
-        run: cd ~/stock-alert && python tools/update_price_cache.py --days 30
+        run: cd ~/stock-alert && python tools/update_price_cache.py --days 90
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
