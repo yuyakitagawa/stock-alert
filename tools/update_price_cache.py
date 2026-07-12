@@ -47,7 +47,7 @@ errors = 0
 for date_str in target_dates:
     date_yyyymmdd = date_str.replace("-", "")
     try:
-        df = cli.get_eq_bars_daily(date=date_str)
+        df = cli.get_eq_bars_daily(date_yyyymmdd=date_yyyymmdd)
         if df is None or len(df) == 0:
             print(f"  {date_str}: データなし（休場日？）")
             continue
