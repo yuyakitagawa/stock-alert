@@ -89,6 +89,20 @@ export interface WatchMetrics {
   spark:       number[];       // 直近1ヶ月の終値（ミニチャート用）
 }
 
+export interface MarketCompare {
+  date:    string;
+  verdict: "jp_favored" | "us_favored" | "neutral";
+  score:   number;
+  label:   string;
+  reasons: string[];
+  nk5:  number | null;
+  nk20: number | null;
+  nk60: number | null;
+  us5:  number | null;
+  us20: number | null;
+  us60: number | null;
+}
+
 export interface RiskRegime {
   date:         string;
   regime:       "risk_on" | "caution" | "risk_off";

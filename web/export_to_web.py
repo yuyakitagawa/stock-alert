@@ -359,6 +359,32 @@ def export_risk_regime(today: str) -> None:
     _upsert("gen_risk_regime?on_conflict=date", [row])
 
 
+def export_market_compare(today: str) -> None:
+    """日経 vs S&P500 相対強弱アドバイザーの当日判定（data/market_compare.json）をSupabaseへupsert。"""
+    import json as _json
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "data", "market_compare.json")
+    if not os.path.exists(path):
+        print("[export_to_web] market_compare.json なし。市場比較エクスポートをスキップ。")
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = _json.load(f)
+    except Exception as e:
+        print(f"[export_to_web] market_compare.json 読み込み失敗: {e}")
+        return
+    row = {
+        "date":    today,
+        "verdict": v.get("verdict"),
+        "score":   v.get("score"),
+        "label":   v.get("label"),
+        "reasons": v.get("reasons", []),
+        "nk5": v.get("nk5"), "nk20": v.get("nk20"), "nk60": v.get("nk60"),
+        "us5": v.get("us5"), "us20": v.get("us20"), "us60": v.get("us60"),
+    }
+    _upsert("gen_market_compare?on_conflict=date", [row])
+
+
 def main() -> None:
     import argparse
     parser = argparse.ArgumentParser()
@@ -396,6 +422,9 @@ def main() -> None:
 
     # 5. 相場リスク管制官の当日判定をエクスポート
     export_risk_regime(today)
+
+    # 5b. 日経 vs S&P500 相対強弱アドバイザーの当日判定をエクスポート
+    export_market_compare(today)
 
     # 6. QA: サイト全体の整合性チェック（全upsert後にライブ状態を読み戻して検証）
     qa_site_check(today, ranking_rows, expected_ai=len(top_rows))
