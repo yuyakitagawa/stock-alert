@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchRankings, fetchSparkline, fetchSectorMap, fetchNikkeiReturn, fetchRiskRegime } from "@/lib/data";
+import { fetchRankings, fetchSparkline, fetchSectorMap, fetchNikkeiReturn, fetchRiskRegime, fetchMarketCompare } from "@/lib/data";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HomeContent from "@/components/HomeContent";
@@ -18,11 +18,12 @@ function formatDate(date: string) {
 }
 
 export default async function HomePage() {
-  const [{ date, rows }, sectorMap, nikkei20, risk] = await Promise.all([
+  const [{ date, rows }, sectorMap, nikkei20, risk, marketCompare] = await Promise.all([
     fetchRankings(),
     fetchSectorMap(),
     fetchNikkeiReturn(20),
     fetchRiskRegime(),
+    fetchMarketCompare(),
   ]);
 
   const sectorBuckets = new Map<string, number[]>();
@@ -61,6 +62,7 @@ export default async function HomePage() {
           sparklineMap={sparklineMap}
           sectorStats={sectorStats}
           risk={risk}
+          marketCompare={marketCompare}
           nikkei20={nikkei20}
         />
       </main>

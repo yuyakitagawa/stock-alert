@@ -1,5 +1,24 @@
 # Dev Log
 
+## 2026-07-13 日経 vs S&P500 相対強弱アドバイザー追加（ユーザーフィードバック対応）
+
+```
+背景: 「日経の調子が悪くなってきた、S&P500の方がいいのでは？」という問いに
+      システムが答えられない、というフィードバック。マクロ特徴量(us5/us20)は
+      既にモデル内部で使われていたが、ユーザー向けの比較表示が無かった。
+
+対応: lib/market_compare.py を新規追加（日経225とS&P500の20日/60日リターン差から
+      jp_favored/us_favored/neutral を判定・参考情報のみ、売買シグナルには影響なし）。
+      core/rank_stocks.py フェーズ8bで判定・data/market_compare.jsonに保存。
+      web/export_to_web.py → gen_market_compare テーブルへexport。
+      frontend: MarketCompareBanner をトップページに表示（RiskRegimeBannerと同型）。
+
+判定: モデル・買いフィルターへの変更なし（情報表示機能のため backtest 対象外）。
+      unit test 4件追加（tests/test_market_compare.py）。frontend build確認済み。
+```
+
+---
+
 ## 2026-06-17 カタリスト候補CSVのPBRバグ修正（全65銘柄を実測照合）
 
 ```
