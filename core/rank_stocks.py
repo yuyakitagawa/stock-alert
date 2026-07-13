@@ -257,18 +257,19 @@ def main():
 
     # ── VIX恐怖指数・S&P500・USD/JPY（クロスアセット）取得 ─────────────────────
     print("\nマクロデータ取得中（VIX・S&P500・USD/JPY）...")
-    _live_macro = {"vix": None, "us5": None, "us20": None}
+    _live_macro = {"vix": None, "us5": None, "us20": None, "us60": None}
     _live_jpy   = {"jpy5": None, "usdjpy_closes": None}
     try:
         _vix_df = get_market_index_df_cached("VIX",    "%5EVIX",    days=60)
         if _vix_df is not None and len(_vix_df) > 0:
             _live_macro["vix"] = float(_vix_df["Close"].iloc[-1])
             print(f"  VIX: {_live_macro['vix']:.1f}")
-        _sp5_df = get_market_index_df_cached("SP500",  "%5EGSPC",   days=60)
+        _sp5_df = get_market_index_df_cached("SP500",  "%5EGSPC",   days=100)
         if _sp5_df is not None and len(_sp5_df) >= 21:
             _p = _sp5_df["Close"].values
             _live_macro["us5"]  = round((_p[-1] - _p[-6])  / _p[-6]  * 100, 2) if len(_p) >= 6  else 0.0
             _live_macro["us20"] = round((_p[-1] - _p[-21]) / _p[-21] * 100, 2) if len(_p) >= 21 else 0.0
+            _live_macro["us60"] = round((_p[-1] - _p[-61]) / _p[-61] * 100, 2) if len(_p) >= 61 else None
             print(f"  S&P500: 5日{_live_macro['us5']:+.2f}% / 20日{_live_macro['us20']:+.2f}%")
         _jpy_df = get_market_index_df_cached("USDJPY", "USDJPY%3DX", days=120)
         if _jpy_df is not None and len(_jpy_df) >= 6:
@@ -731,6 +732,21 @@ def main():
             _json.dump(_risk_out, _f, ensure_ascii=False)
     except Exception as _e:
         print(f"  リスク判定の保存失敗（無視）: {_e}")
+
+    # フェーズ8b: 日経 vs S&P500 相対強弱アドバイザー（情報表示のみ・シグナルには影響しない）
+    from lib.market_compare import compare as _compare_markets, summary_line as _compare_summary
+    market_verdict = _compare_markets(
+        nk5=nk5, nk20=nk20, nk60=nk60,
+        us5=_live_macro.get("us5"), us20=_live_macro.get("us20"), us60=_live_macro.get("us60"),
+    )
+    print(f"🌐 日経 vs S&P500: {_compare_summary(market_verdict)}")
+    try:
+        import json as _json
+        _market_out = {"date": target_date.strftime("%Y-%m-%d"), **market_verdict}
+        with open(os.path.join(BASE_DIR, "data", "market_compare.json"), "w", encoding="utf-8") as _f:
+            _json.dump(_market_out, _f, ensure_ascii=False)
+    except Exception as _e:
+        print(f"  市場比較の保存失敗（無視）: {_e}")
 
     # CSV保存
     date_str = datetime.now().strftime("%Y%m%d")
