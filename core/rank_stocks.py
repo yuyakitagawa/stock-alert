@@ -214,8 +214,14 @@ def _calc_nk225_beta(stock_prices, nk_closes, window=60):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date", default=None, help="バックフィル対象日 YYYY-MM-DD (省略時=今日)")
+    args = parser.parse_args()
+    target_date = _date.fromisoformat(args.date) if args.date else _date.today()
+
     print("=" * 55)
-    print("スクリーナー × RF ランキング  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
+    print("スクリーナー × RF ランキング  " + target_date.strftime("%Y-%m-%d"))
     print(f"スクリーナー通過銘柄に上昇確率スコアをつけてランキング")
     print("=" * 55)
 
@@ -333,8 +339,7 @@ def main():
 
     def fetch_one(code, _macro=_live_macro, _jpy=_live_jpy):
         from lib.utils import _days_to_nearest_event
-        from datetime import date as _date
-        prices = get_prices(code, days=400)
+        prices = get_prices(code, days=400, end_date=target_date)
         with lock:
             done_count[0] += 1
             if done_count[0] % 500 == 0:
@@ -346,13 +351,12 @@ def main():
         # ファンダメンタル取得（PER/PBR/ROE/決算まで日数/権利落ち後経過日数）
         from lib.fundamentals import get_pit_fundamentals as _get_pit
         fd_raw    = get_fundamentals(code)
-        today     = _date.today()
-        pit       = _get_pit(code, today) or {}
+        pit       = _get_pit(code, target_date) or {}
         per_live = fd_raw.get("PER"); pbr_live = fd_raw.get("PBR")
         # PER/PBR は J-Quants の eps/bps から算出。
         # ライブ取得(yfinance)は日本株でNoneが多いのでフォールバックに留める。
         from lib.fundamentals import get_pit_valuation as _get_val
-        _val = _get_val(code, today)
+        _val = _get_val(code, target_date)
         _close_px = float(prices["Close"].iloc[-1]) if len(prices) > 0 else None
         _eps = _val.get("eps"); _bps = _val.get("bps")
         per_calc = (round(_close_px / _eps, 1) if _eps and _eps > 0 and _close_px else per_live)
@@ -391,7 +395,7 @@ def main():
             "roe":                 fd_raw.get("ROE"),
             "days_to_earnings":    None,
             "days_since_div_ex":   pit.get("days_since_div_ex"),
-            "month":               today.month,
+            "month":               target_date.month,
             "div_yield":           div_yield_live,
             "eps_growth":          pit.get("eps_growth"),
             "dps_growth":          pit.get("dps_growth"),
@@ -665,9 +669,8 @@ def main():
     buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
     if buy_codes:
         print(f"\n株主優待権利落ちチェック中（S買い {len(buy_codes)}銘柄）...")
-        today = datetime.now().date()
         for code in buy_codes:
-            days = _days_to_yutai_record(code, today)
+            days = _days_to_yutai_record(code, target_date)
             if days is not None and 0 <= days <= YUTAI_SKIP_DAYS:
                 idx = result_df[result_df["銘柄コード"].astype(str) == code].index
                 result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
@@ -726,14 +729,14 @@ def main():
     try:
         import json as _json
         from datetime import datetime as _dt
-        _risk_out = {"date": _dt.now().strftime("%Y-%m-%d"), **risk_verdict}
+        _risk_out = {"date": target_date.strftime("%Y-%m-%d"), **risk_verdict}
         with open(os.path.join(BASE_DIR, "data", "risk_regime.json"), "w", encoding="utf-8") as _f:
             _json.dump(_risk_out, _f, ensure_ascii=False)
     except Exception as _e:
         print(f"  リスク判定の保存失敗（無視）: {_e}")
 
     # CSV保存
-    date_str = datetime.now().strftime("%Y%m%d")
+    date_str = target_date.strftime("%Y%m%d")
     os.makedirs(os.path.join(BASE_DIR, "data", "rankings"), exist_ok=True)
     out_path = os.path.join(BASE_DIR, "data", "rankings", f"ranking_{date_str}.csv")
     result_df.to_csv(out_path, index=False, encoding="utf-8-sig")
@@ -741,7 +744,7 @@ def main():
 
     # DB保存
     from lib.db import save_daily_ranking
-    db_date_str = datetime.now().strftime("%Y-%m-%d")
+    db_date_str = target_date.strftime("%Y-%m-%d")
     db_rows = [
         {
             "code": str(row["銘柄コード"]),

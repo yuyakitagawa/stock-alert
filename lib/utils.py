@@ -21,9 +21,9 @@ if not os.path.isdir(BASE_DIR):
     BASE_DIR = os.path.expanduser("~/stock-alert")
 
 
-def get_prices(code, days=400):
+def get_prices(code, days=400, end_date=None):
     from lib.db import get_price_df
-    return get_price_df(code, days=days)
+    return get_price_df(code, days=days, end_date=end_date)
 
 
 def get_price_at_date(code, target_date):

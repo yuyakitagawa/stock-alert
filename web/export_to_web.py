@@ -360,7 +360,11 @@ def export_risk_regime(today: str) -> None:
 
 
 def main() -> None:
-    today = date.today().isoformat()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date", default=None, help="バックフィル対象日 YYYY-MM-DD (省略時=今日)")
+    args = parser.parse_args()
+    today = args.date if args.date else date.today().isoformat()
     print(f"[export_to_web] {today} のデータをエクスポート開始")
 
     # 1. ランキング
