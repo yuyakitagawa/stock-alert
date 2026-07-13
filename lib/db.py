@@ -200,14 +200,18 @@ def _load_local_prices():
         return _local_prices_cache
     return {}
 
-def get_price_df(code, days=None):
+def get_price_df(code, days=None, end_date=None):
     """yahoo_price_cacheからDataFrame(Close, Volume)を返す。"""
     import pandas as pd
     from datetime import date as _date
-    query = f"code=eq.{code}&order=date.asc&select=date,close,volume"
+    base_date = end_date if end_date else date.today()
+    filters = [f"code=eq.{code}", "order=date.asc", "select=date,close,volume"]
     if days:
-        cutoff = (date.today() - timedelta(days=days)).isoformat()
-        query = f"code=eq.{code}&date=gte.{cutoff}&order=date.asc&select=date,close,volume"
+        cutoff = (base_date - timedelta(days=days)).isoformat()
+        filters.append(f"date=gte.{cutoff}")
+    if end_date:
+        filters.append(f"date=lte.{end_date.isoformat()}")
+    query = "&".join(filters)
     rows = sb.select("yahoo_price_cache", query)
     if not rows:
         lp = _load_local_prices()
@@ -216,8 +220,10 @@ def get_price_df(code, days=None):
             idx = [_date.fromisoformat(r[0]) for r in data]
             df = pd.DataFrame({"Close": [r[1] for r in data], "Volume": [r[2] for r in data]}, index=idx)
             if days:
-                cutoff_d = date.today() - timedelta(days=days)
-                df = df[df.index >= cutoff_d.date() if hasattr(cutoff_d, 'date') else cutoff_d]
+                cutoff_d = base_date - timedelta(days=days)
+                df = df[df.index >= cutoff_d]
+            if end_date:
+                df = df[df.index <= end_date]
             return df if len(df) > 0 else None
         return None
     idx = [_date.fromisoformat(r["date"]) for r in rows]
