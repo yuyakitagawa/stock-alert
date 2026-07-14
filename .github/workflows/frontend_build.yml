@@ -119,7 +119,7 @@ jobs:
           from email.mime.text import MIMEText
           addr = os.environ["GMAIL_ADDRESS"]
           pw   = os.environ["GMAIL_APP_PASSWORD"]
-          to   = ""
+          to   = os.environ.get("GMAIL_ADDRESS", "")
           body = """フロントエンド（webアプリ）のビルドが失敗しました。
           このままだと Vercel へのデプロイも失敗し、ページが更新されません。
 
