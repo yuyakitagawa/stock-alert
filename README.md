@@ -57,6 +57,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `web/generate_descriptions.py` | 全銘柄の会社説明を2段階で生成（Phase1: Yahoo特色スクレイプ／Phase2: Haiku Haikuフォールバック）→ `gen_ai_analyses`(company-desc-v1)。`--refresh` で全銘柄再スクレイプ。Step 5a2 |
 | `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期（AI生成を上書き）。Step 5b |
 | `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
+| `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・ユーザー別ウォッチリストのdp閾値アラートを配信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
@@ -65,7 +66,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
 | `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
-| `lib/market_compare.py` | **日経 vs S&P500 相対強弱アドバイザー**。日経225とS&P500の20日・60日リターン差から「日本株優位／米国株優位／拮抗」を判定（売買シグナルには影響しない参考情報）。rank_stocksのフェーズ8bで判定し `data/market_compare.json` に保存、Web（`gen_market_compare`・トップページの🌐バナー）に表示 |
+| `lib/market_compare.py` | **日経 vs S&P500 相対強弱アドバイザー**。日経225とS&P500の20日・60日リターン差から「日本株優位／米国株優位／拮抗」を判定(売買シグナルには影響しない参考情報)。rank_stocksのフェーズ8bで判定し `data/market_compare.json` に保存、Web(`gen_market_compare`・トップページの🌐バナー)とLINE(`market_timing_alert.py`)の両方に表示 |
 | `tools/backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存。`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
 | `tools/multi_backtest.py` | 33期間一括バックテスト＋フィルター比較分析（ウォークフォワード対応） |
 | `tools/simulate_monthly.py` | 月次シミュレーション（保有シナリオ分析）|
