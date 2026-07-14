@@ -74,6 +74,22 @@ def build_market_section(today_str: str, avg_dp: float | None) -> str:
     return f"📊 N225シグナル ({today_str})\n平均下落確率: {avg_dp:.1f}% → {signal}"
 
 
+def get_market_compare() -> dict | None:
+    rows = sb_get("gen_market_compare?order=date.desc&limit=1")
+    return rows[0] if rows else None
+
+
+def build_market_compare_section(compare: dict | None) -> str:
+    if compare is None:
+        return ""
+    label = compare.get("label", "")
+    reasons = compare.get("reasons") or []
+    lines = [f"🌐 日経 vs S&P500: {label}"]
+    if reasons:
+        lines.append("・".join(reasons))
+    return "\n".join(lines)
+
+
 def build_watchlist_section(
     watchlist: list[dict],
     ranking_map: dict[str, dict],
@@ -163,6 +179,7 @@ def main() -> None:
         print(f"[market_timing] 市場平均dp: {avg_dp:.1f}% → {status}")
 
     market_msg = build_market_section(today_str, avg_dp)
+    compare_msg = build_market_compare_section(get_market_compare())
     ranking_map = {r["code"]: r for r in rankings}
 
     # ユーザー別ウォッチリストを取得して個別通知
@@ -172,22 +189,16 @@ def main() -> None:
     if not user_watchlists:
         # ウォッチリスト登録ユーザーがいなくても、LINE_USER_IDがあれば市場シグナルだけ送信
         fallback_uid = os.getenv("LINE_USER_ID", "")
-        if fallback_uid and market_msg:
+        fallback_parts = [p for p in (market_msg, compare_msg) if p]
+        if fallback_uid and fallback_parts:
             print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
-            send_line_push(fallback_uid, market_msg)
+            send_line_push(fallback_uid, "\n\n".join(fallback_parts))
     else:
         for user_id, watchlist in user_watchlists.items():
             watch_msg, alerts = build_watchlist_section(watchlist, ranking_map)
             all_alerts.extend(alerts)
 
-            parts = []
-            if market_msg:
-                parts.append(market_msg)
-            if watch_msg:
-                parts.append(watch_msg)
-
-            if not parts and market_msg:
-                parts.append(market_msg)
+            parts = [p for p in (market_msg, compare_msg, watch_msg) if p]
 
             if parts:
                 message = "\n\n".join(parts)
