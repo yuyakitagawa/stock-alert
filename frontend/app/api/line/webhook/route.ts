@@ -436,7 +436,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const [rankRes, n225Res, watchRes] = await Promise.all([
+  const [rankRes, n225Res, watchRes, compareRes] = await Promise.all([
     fetch(
       `${SB_URL}/rest/v1/gen_rankings?date=eq.${today}&select=code,name,close,drop_prob,net,per,pbr&order=net.desc&limit=20`,
       { headers: sbHeaders() }
@@ -449,16 +449,30 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
       `${SB_URL}/rest/v1/dp_watchlist?line_user_id=eq.${userId}&select=code,name,dp_threshold,dp_sell_threshold`,
       { headers: sbHeaders() }
     ),
+    fetch(
+      `${SB_URL}/rest/v1/gen_market_compare?order=date.desc&limit=1`,
+      { headers: sbHeaders() }
+    ),
   ]);
 
   const rankings = rankRes.ok ? await rankRes.json() : [];
   const n225 = n225Res.ok ? await n225Res.json() : [];
   const watchlist: WatchItem[] = watchRes.ok ? await watchRes.json() : [];
+  const compare = compareRes.ok ? await compareRes.json() : [];
 
   const lines: string[] = [];
 
   if (n225.length > 0) {
     lines.push(`N225: ${n225[0].close}円 (${n225[0].date})`);
+  }
+
+  if (compare.length > 0) {
+    const c = compare[0];
+    lines.push(
+      `日経 vs S&P500 相対強弱: ${c.label} ` +
+        `(日経 5日${c.nk5 ?? "?"}% / 20日${c.nk20 ?? "?"}% / 60日${c.nk60 ?? "?"}%、` +
+        `S&P500 5日${c.us5 ?? "?"}% / 20日${c.us20 ?? "?"}% / 60日${c.us60 ?? "?"}%)`
+    );
   }
 
   if (rankings.length > 0) {
@@ -664,6 +678,7 @@ ${context || "（本日のデータはまだありません）"}
 - 下落確率(dp): dp<8は安全圏、dp≥15は危険水準
 - net = rise_prob - drop_prob。高いほど上昇期待
 - 全銘柄の平均dp≥15なら日経ETFをキャッシュに退避すべき（マーケットタイミング）
+- 「日経 vs S&P500 相対強弱」は日経225とS&P500の5/20/60日リターン差から優劣を判定した参考情報（売買シグナルではない）。「日経が弱いから米国株の方がいいか」等の質問にはこのデータを根拠に答える。ただし本Botは日本株専用で米国個別銘柄のシグナルは提供していないことも明記する
 
 ファンダメンタル指標の見方:
 - PER<15: 割安圏、PBR<1: 純資産割れ（割安候補）
@@ -698,6 +713,7 @@ ${context || "（本日のデータはまだありません）"}
   - 「成長性は？」→ 売上/純利益成長率 + 営業利益率 + 通期進捗率
   - 「ニュースは？」→ 適時開示（TDnet）のカタリスト情報
   - 「需給は？」→ 空売り残高 + 信用残高 + 出来高
+  - 「米国株(S&P500)の方がいい？」「日経が弱いけどどうする？」→ 日経 vs S&P500 相対強弱データ + 市場平均下落確率
 - 全指標を列挙せず、質問に最も関連する3-5指標を選んで分析する
 - ユーザーが銘柄の監視や通知を求めたら、toolを使ってウォッチリストを操作する
 - 銘柄の詳細を聞かれたら lookup_stock ツールで最新データを取得してから回答する
@@ -708,6 +724,7 @@ ${context || "（本日のデータはまだありません）"}
 3. 💬 株の相談: LINEで話しかければ、実際のデータに基づいた銘柄分析・相場相談ができる（直近の会話を記憶しているので、文脈に沿った会話が可能）
 4. 📝 ウォッチリスト管理: 「SBIをウォッチして」「三菱UFJを外して」「リスト」など自然な日本語でウォッチリストを操作できる
 5. 📰 適時開示・需給情報: 銘柄を調べると、TDnet適時開示（業績修正/増配/自社株買い等）、JPX空売り残高、信用残高も表示
+6. 🌐 日経 vs S&P500 相対強弱: 「米国株の方がいい？」等と聞けば、日経225とS&P500の直近リターン差から優劣を回答（毎日の通知にも表示）
 
 ルール:
 - 投資は自己責任である旨を必要に応じて添える

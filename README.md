@@ -58,6 +58,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期（AI生成を上書き）。Step 5b |
 | `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
 | `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・ユーザー別ウォッチリストのdp閾値アラートを配信 |
+| `frontend/app/api/line/webhook/route.ts` | LINE Botの対話エンドポイント。「ウォッチ 8473」等の定型コマンドを直接処理し、それ以外は `gen_rankings`/`gen_market_compare`/決算/TDnet/空売り等のリアルタイムデータをコンテキストに注入してClaude(tool use)で自然言語回答。ユーザーが「米国株の方がいい？」等と聞けば日経 vs S&P500相対強弱データを根拠に即答する |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
