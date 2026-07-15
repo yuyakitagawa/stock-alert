@@ -13,7 +13,8 @@ core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
 web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
 
 その他ワークフロー: ci.yml（テスト）、frontend_build.yml（ビルド検証）、
-keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）
+keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）、
+data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（株価キャッシュ更新+ランキング遡及・手動実行）
 ```
 
 **ウォッチリスト**（/watchlist）は、ユーザーが自分で銘柄をブックマークして監視する**マイ・ウォッチリスト**。
@@ -51,6 +52,8 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | ファイル | 役割 |
 |---|---|
 | `core/screener.py` | JPX全銘柄から条件通過銘柄を抽出して `data/screeners/` に保存 |
+| `tools/update_price_cache.py` | J-Quants (v2) で直近N日分の全銘柄株価四本値を一括取得し `yahoo_price_cache` を差分更新（daily_alert.yml Step 0で毎日実行。`rank_stocks.py`の「直近株価」の鮮度に直結） |
+| `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可）|
 | `core/rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存。フェーズ5(決算チェック)→フェーズ6(3件cap)→フェーズ7(米国ETFリードラグフィルター) |
 | `web/export_to_web.py` | Supabaseへランキング・AI解析をエクスポート（Step 5）|

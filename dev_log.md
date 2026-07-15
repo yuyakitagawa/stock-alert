@@ -1,5 +1,36 @@
 # Dev Log
 
+## 2026-07-15 yahoo_price_cache 長期停止バグの発見・修正 + 遡及バックフィル基盤追加
+
+```
+発見の経緯: daily_alert.yml が2026-07-08以降4営業日連続失敗（別issue: pipキャッシュ設定
+            エラー、#147で修正済み）していたのを調査中、その修正確認のため手動実行した
+            07-14分のgen_rankingsで銘柄コード7203(トヨタ)のcloseが2844.0円だったが、
+            これはyahoo_price_cacheの2026-06-02時点の値と完全一致 → 「直近株価」が
+            実際には数週間〜数ヶ月前の価格のまま更新されていなかったことが判明。
+
+根本原因: daily_alert.yml Step 0 が呼ぶ tools/update_price_cache.py が
+          リポジトリに一度も存在しておらず（continue-on-error: true で握りつぶされ
+          気づかれずにいた）、yahoo_price_cache が全く更新されていなかった。
+          実データ確認: 全3747銘柄が2026-06-20より前で停止、最悪ケースは2026-05-01。
+          → rank_stocks.py の「直近株価」・全テクニカル特徴量が、この期間の
+            全ランキング（Web/メール/LINE配信分含む）で古い価格を基に計算されていた。
+
+対応:
+  - tools/update_price_cache.py を新規作成（J-Quants v2 get_eq_bars_daily_range で
+    直近N日分を全銘柄一括取得しyahoo_price_cacheへ差分保存。daily_alert.yml Step 0が
+    毎日呼ぶことで今後は再発しない）
+  - .github/workflows/backfill_rankings.yml を新規作成（手動実行・workflow_dispatch。
+    価格キャッシュ更新→tools/backfill_history.py で指定期間のgen_rankingsを再生成。
+    アラート再送信はしない設計）
+
+判定: モデル・買いフィルターへの変更なし。データ基盤の欠陥修正のため backtest 対象外。
+      本番影響: 2026-06-20頃〜07-14の日次配信は全て古い価格ベースだった可能性が高い。
+      07-08/09/10/13は欠損（別issue）、07-14は誤った価格で計算済み → 全て要再生成。
+```
+
+---
+
 ## 2026-07-13 日経 vs S&P500 相対強弱アドバイザー追加（ユーザーフィードバック対応）
 
 ```
