@@ -192,6 +192,11 @@ def _load_jpx_sector_map():
     cache = get_all_sectors()
     if cache and count_null_names() == 0:
         return cache
+    pkl = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sectors.pkl")
+    if not cache and os.path.exists(pkl):
+        import pickle
+        with open(pkl, "rb") as f:
+            return pickle.load(f)
     try:
         resp = requests.get(_JPX_URL, headers=HEADERS, timeout=30)
         df = pd.read_excel(io.BytesIO(resp.content), dtype=str)
@@ -292,7 +297,45 @@ def add_cs_rank_features(X, dates=None, sectors=None):
                 order = np.argsort(np.argsort(vals))
                 sector_rank[sec_idx] = order / (cnt - 1)
 
-    return np.hstack([X, rank_matrix, sector_rank.reshape(-1, 1)])
+    # 相関グラフ中心性: 各日付グループ内で複数テクニカル特徴量の銘柄間コサイン類似度を計算
+    # 平均類似度が高い = 市場と高連動 → 下落時の連れ安リスク大
+    CORR_FEAT_IDX = [0, 1, 2, 3, 7, 8]  # ret5,ret20,ret60,ret90,vol20,vol60
+    corr_centrality = np.full(n, 0.5, dtype=float)
+    if dates is not None:
+        dates_arr3 = np.array(dates)
+        _, inv3 = np.unique(dates_arr3, return_inverse=True)
+        for d_idx in range(inv3.max() + 1):
+            grp = np.where(inv3 == d_idx)[0]
+            cnt = len(grp)
+            if cnt < 5:
+                continue
+            F = X[grp][:, CORR_FEAT_IDX].astype(float)
+            # 行ノルム正規化（コサイン類似度のための前処理）
+            norms = np.linalg.norm(F, axis=1, keepdims=True)
+            norms = np.where(norms < 1e-10, 1.0, norms)
+            F_norm = F / norms
+            # 平均コサイン類似度（自身を除く）= (全合計 - 自身の1) / (cnt-1)
+            sim_sum = F_norm @ F_norm.T  # (cnt, cnt)
+            avg_sim = (sim_sum.sum(axis=1) - 1.0) / max(cnt - 1, 1)
+            # 0-1正規化
+            mn, mx = avg_sim.min(), avg_sim.max()
+            if mx > mn:
+                corr_centrality[grp] = (avg_sim - mn) / (mx - mn)
+            else:
+                corr_centrality[grp] = 0.5
+    else:
+        if n >= 5:
+            F = X[:, CORR_FEAT_IDX].astype(float)
+            norms = np.linalg.norm(F, axis=1, keepdims=True)
+            norms = np.where(norms < 1e-10, 1.0, norms)
+            F_norm = F / norms
+            sim_sum = F_norm @ F_norm.T
+            avg_sim = (sim_sum.sum(axis=1) - 1.0) / max(n - 1, 1)
+            mn, mx = avg_sim.min(), avg_sim.max()
+            if mx > mn:
+                corr_centrality = (avg_sim - mn) / (mx - mn)
+
+    return np.hstack([X, rank_matrix, sector_rank.reshape(-1, 1), corr_centrality.reshape(-1, 1)])
 
 
 def compute_seq_features(seq):
@@ -445,6 +488,13 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     _pyout = fd.get('payout')
     _accr  = fd.get('accruals')
     _ehold = fd.get('edinet_holding')
+    _cfom  = fd.get('cfo_margin')
+    _lev   = fd.get('leverage')
+    _opm   = fd.get('op_margin_improve')
+    _eqr   = fd.get('equity_ratio')
+    _salg  = fd.get('sales_growth')
+    _frev  = fd.get('forecast_revision')
+    _ato   = fd.get('asset_turnover')
 
     per_feat      = float(np.clip(_per  / 20.0 - 1.0, -1.0, 3.0)) if _per  is not None else 0.0
     pbr_feat      = float(np.clip(_pbr  /  1.5 - 1.0, -1.0, 4.0)) if _pbr  is not None else 0.0
@@ -490,6 +540,35 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     accruals_f    = float(np.clip(_accr,          -0.3, 0.5)) if _accr  is not None else 0.0
     # EDINET大量保有報告: 直近90日以内の保有割合（0=なし, 0-1正規化）
     edinet_hold_f = float(np.clip(_ehold / 50.0,   0.0, 1.0)) if _ehold is not None else 0.0
+    # 新規ファンダ6特徴量
+    cfo_margin_f  = float(np.clip(_cfom,           -0.3, 0.5)) if _cfom  is not None else 0.0
+    leverage_f    = float(np.clip(_lev / 5.0,       0.0, 1.0)) if _lev   is not None else 0.5
+    op_margin_f   = float(np.clip(_opm * 10.0,     -1.0, 1.0)) if _opm   is not None else 0.0
+    equity_ratio_f = float(np.clip(_eqr,            0.0, 1.0)) if _eqr   is not None else 0.4
+    sales_growth_f = float(np.clip(_salg,          -1.0, 3.0)) if _salg  is not None else 0.0
+    frev_f        = float(np.clip(_frev,           -1.0, 2.0)) if _frev  is not None else 0.0
+    # 総資産回転率: 0.3(低効率)～1.5(高効率)を0-1に正規化
+    asset_to_f    = float(np.clip(_ato / 1.5,      0.0, 1.0)) if _ato   is not None else 0.3
+
+    # ── NCSKEW / DUVOL（中国論文 MDPI Systems 2022）────────────────────────────
+    # 過去252日の日次リターンから算出。下落偏りの大きい銘柄を識別。
+    ncskew_f = 0.0; duvol_f = 0.0
+    _win = min(252, len(p) - 1)
+    if _win >= 20:
+        _r = np.diff(p[-(_win + 1):]) / p[-(_win + 1):-1]
+        _r = _r[np.isfinite(_r)]
+        n = len(_r)
+        if n >= 20:
+            _mu = _r.mean(); _r2 = (_r - _mu) ** 2; _r3 = (_r - _mu) ** 3
+            _s2 = _r2.sum(); _s3 = _r3.sum()
+            if _s2 > 0:
+                _ncskew = -(n * (n - 1) ** 1.5 * _s3) / ((n - 1) * (n - 2) * _s2 ** 1.5)
+                ncskew_f = float(np.clip(_ncskew, -3.0, 3.0))
+            _down = _r[_r < _mu]; _up = _r[_r >= _mu]
+            if len(_down) >= 5 and len(_up) >= 5:
+                _duvol = np.log(((len(_up) - 1) * (_down ** 2).sum()) /
+                                ((len(_down) - 1) * (_up ** 2).sum() + 1e-10))
+                duvol_f = float(np.clip(_duvol, -2.0, 2.0))
 
     feat = [ret5, ret20, ret60, ret90, ma5_25, ma25_75, rsi, vol20, vol60, pos52,
             drawdown60, from_hi52, down_streak, momentum_accel, ma_cross_dir,
@@ -500,7 +579,10 @@ def extract_features(p, v=None, nk_rets=None, fundamentals=None):
             amihud_f, fx_beta_f, jpy5_f,
             eps_surprise_f, bps_growth_f, piotroski_f, payout_f, accruals_f,
             edinet_hold_f,
-            ret504, trend_slope60, trend_r2_60]
+            ret504, trend_slope60, trend_r2_60,
+            cfo_margin_f, leverage_f, op_margin_f, equity_ratio_f, sales_growth_f, frev_f,
+            asset_to_f,
+            ncskew_f, duvol_f]
 
     if any(np.isnan(feat[:10])) or any(np.isinf(feat[:10])):
         return None
@@ -516,6 +598,41 @@ class IsotonicCalibrated:
     def predict_proba(self, X):
         raw = self.model.predict_proba(X)[:, 1]
         cal = self.iso.predict(raw)
+        return np.column_stack([1 - cal, cal])
+
+
+class EnsembleCalibratedLGB:
+    """XGBoost + LightGBM アンサンブル + Platt scaling キャリブレーション"""
+    def __init__(self, xgb_model, lgb_model, lr, xgb_w=0.5, lgb_w=0.5):
+        self.xgb_model = xgb_model
+        self.lgb_model = lgb_model
+        self.lr        = lr
+        self.xgb_w     = xgb_w
+        self.lgb_w     = lgb_w
+        self._keep_idx = None
+        self._shap_importance = None
+        self.model = xgb_model
+
+    def predict_proba(self, X):
+        p_xgb = self.xgb_model.predict_proba(X)[:, 1]
+        p_lgb = self.lgb_model.predict_proba(X)[:, 1]
+        raw   = self.xgb_w * p_xgb + self.lgb_w * p_lgb
+        cal   = self.lr.predict_proba(raw.reshape(-1, 1))[:, 1]
+        return np.column_stack([1 - cal, cal])
+
+
+class PlattCalibrated:
+    """XGBoost + Platt scaling（ロジスティック回帰）キャリブレーション。
+    IsotonicRegressionと異なり滑らかな連続確率を出力する。"""
+    def __init__(self, model, lr, keep_idx=None):
+        self.model     = model
+        self.lr        = lr
+        self._keep_idx = keep_idx
+
+    def predict_proba(self, X):
+        Xf = X[:, self._keep_idx] if self._keep_idx is not None else X
+        raw = self.model.predict_proba(Xf)[:, 1]
+        cal = self.lr.predict_proba(raw.reshape(-1, 1))[:, 1]
         return np.column_stack([1 - cal, cal])
 
 

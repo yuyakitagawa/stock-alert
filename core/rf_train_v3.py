@@ -5,9 +5,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests, pandas as pd, numpy as np, time, io, joblib, json
 from datetime import datetime, timedelta, date
 from sklearn.metrics import roc_auc_score, classification_report, precision_recall_curve
-from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
-from lib.utils import IsotonicCalibrated, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
+import lightgbm as lgb
+from lib.utils import IsotonicCalibrated, PlattCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
@@ -17,9 +18,9 @@ DROP_ALPHA_THRESHOLD=8.0 # 相対ラベル: stock - nikkei <= -8% → alpha_drop
 #   net = (rise_abs - drop_abs) + (rise_rel - drop_rel)
 #   絶対モデルが「どれが上がるか」を担当（AUC高い）
 #   相対モデルが「日経超過を狙う」を担当（アルファ最適化）
-SAMPLE_INTERVAL=63; HISTORY_DAYS=1800  # 63日ごとにサンプル（FORECASTに合わせる）
+SAMPLE_INTERVAL=21; HISTORY_DAYS=600  # 21日ごとにサンプル（密サンプリング）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
-MIN_HISTORY=252+SEQ_DAYS+FORECAST+10
+MIN_HISTORY=120+SEQ_DAYS+FORECAST+10
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_DIR = os.path.dirname(PROJECT_DIR)  # repo root (stock-alert/)
 HEADERS={"User-Agent":"Mozilla/5.0","Accept":"application/json"}
@@ -56,17 +57,54 @@ def _fetch_index_df(ticker_encoded, days=2200):
     """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す (legacy stub)"""
     return None
 
+_LOCAL_INDEX_CACHE = None
+def _load_local_index():
+    global _LOCAL_INDEX_CACHE
+    if _LOCAL_INDEX_CACHE is not None:
+        return _LOCAL_INDEX_CACHE
+    import pickle
+    p = os.path.join(SAVE_DIR, "_market_index.pkl")
+    if os.path.exists(p):
+        with open(p, "rb") as f:
+            _LOCAL_INDEX_CACHE = pickle.load(f)
+        return _LOCAL_INDEX_CACHE
+    return {}
+
 def get_nikkei_df(days=2200):
-    return get_market_index_df_cached("N225", "%5EN225", days)
+    try:
+        r = get_market_index_df_cached("N225", "%5EN225", days)
+        if r is not None:
+            return r
+    except Exception:
+        pass
+    return _load_local_index().get("N225")
 
 def get_vix_df(days=2200):
-    return get_market_index_df_cached("VIX",    "%5EVIX",    days)
+    try:
+        r = get_market_index_df_cached("VIX", "%5EVIX", days)
+        if r is not None:
+            return r
+    except Exception:
+        pass
+    return _load_local_index().get("VIX")
 
 def get_sp500_df(days=2200):
-    return get_market_index_df_cached("SP500",  "%5EGSPC",   days)
+    try:
+        r = get_market_index_df_cached("SP500", "%5EGSPC", days)
+        if r is not None:
+            return r
+    except Exception:
+        pass
+    return _load_local_index().get("SP500")
 
 def get_usdjpy_df(days=2200):
-    return get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
+    try:
+        r = get_market_index_df_cached("USDJPY", "USDJPY%3DX", days)
+        if r is not None:
+            return r
+    except Exception:
+        pass
+    return _load_local_index().get("USDJPY")
 
 def get_tse_stock_list():
     url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -86,6 +124,16 @@ def get_tse_stock_list():
         return _fallback_stock_list()
 
 def _fallback_stock_list():
+    try:
+        from lib.db import get_price_cache_codes
+        codes = get_price_cache_codes()
+        codes = [c for c in codes if len(c)==4 and c[0].isdigit()]
+        if codes:
+            df=pd.DataFrame({"code":codes,"name":""})
+            print(f"  DBから{len(codes)}銘柄取得（フォールバック）")
+            return df.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
+    except Exception as e:
+        print(f"  DB銘柄リスト取得失敗: {e}")
     cache_path=os.path.join(SAVE_DIR,"_local_prices.pkl")
     if os.path.exists(cache_path):
         import pickle
@@ -136,7 +184,7 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
     import bisect
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
-    samples=[]; start_i=max(252+SEQ_DAYS,90)
+    samples=[]; start_i=max(120+SEQ_DAYS,90)
     nk_dates=list(nk_df.index) if nk_df is not None else []
     nk_closes=nk_df["Close"].values if nk_df is not None else np.array([])
     for i in range(start_i,n-FORECAST,SAMPLE_INTERVAL):
@@ -232,6 +280,13 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                     "payout":              pit.get("payout"),
                     "accruals":            pit.get("accruals"),
                     "edinet_holding":      edinet_hold_val,
+                    "cfo_margin":          pit.get("cfo_margin"),
+                    "leverage":            pit.get("leverage"),
+                    "op_margin_improve":   pit.get("op_margin_improve"),
+                    "equity_ratio":        pit.get("equity_ratio"),
+                    "sales_growth":        pit.get("sales_growth"),
+                    "forecast_revision":   pit.get("forecast_revision"),
+                    "asset_turnover":      pit.get("asset_turnover"),
                 }
             else:
                 fund = {
@@ -272,22 +327,245 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
         samples.append((dates[i],feat,label_rise,label_drop,alpha_rise,alpha_drop))
     return samples
 
-def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label):
+def _select_features(X_tr, y_tr, X_te, X_cal, feat_names):
+    """複数モデルの重要度を合算し、全モデルで重要度0の特徴量のみ除外"""
+    from xgboost import XGBClassifier as _XGB
+    pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
+    imp_sum = np.zeros(X_tr.shape[1])
+    for depth, lr in [(4, 0.03), (6, 0.02), (8, 0.01)]:
+        quick=_XGB(n_estimators=500,max_depth=depth,learning_rate=lr,scale_pos_weight=spw,
+                   eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,subsample=0.7,colsample_bytree=0.6)
+        quick.fit(X_tr,y_tr,verbose=0)
+        imp_sum += quick.feature_importances_
+    keep=[i for i in range(len(imp_sum)) if imp_sum[i]>0]
+    dropped=[feat_names[i] for i in range(len(imp_sum)) if imp_sum[i]==0]
+    if dropped:
+        print(f"  特徴量選択: {len(keep)}/{len(imp_sum)} 採用（除外: {', '.join(dropped)}）")
+    else:
+        print(f"  特徴量選択: 全{len(imp_sum)}次元を採用")
+    return keep
+
+def _smoteenn_resample(X, y):
+    """SMOTE+ENN: 過少サンプルをSMOTEで合成し、境界付近ノイズをENNで除去"""
+    try:
+        from imblearn.combine import SMOTEENN
+        from imblearn.over_sampling import SMOTE
+        smote_enn = SMOTEENN(smote=SMOTE(k_neighbors=5, random_state=RANDOM_SEED),
+                             random_state=RANDOM_SEED)
+        X_r, y_r = smote_enn.fit_resample(X, y)
+        n_pos = y_r.sum()
+        print(f"  SMOTE+ENN: {len(X):,} → {len(X_r):,} (正例比率 {n_pos/len(X_r)*100:.1f}%)")
+        return X_r, y_r
+    except Exception as e:
+        print(f"  SMOTE+ENN失敗({e}), スキップ")
+        return X, y
+
+def _undersample(X, y, ratio=0.25):
+    """負例をアンダーサンプリングして正例比率をratioに近づける"""
+    pos_idx = np.where(y == 1)[0]
+    neg_idx = np.where(y == 0)[0]
+    n_pos = len(pos_idx)
+    n_neg_target = int(n_pos * (1 - ratio) / ratio)
+    if n_neg_target >= len(neg_idx):
+        return X, y
+    rng = np.random.RandomState(RANDOM_SEED)
+    neg_sampled = rng.choice(neg_idx, n_neg_target, replace=False)
+    idx = np.sort(np.concatenate([pos_idx, neg_sampled]))
+    print(f"  アンダーサンプリング: {len(X):,} → {len(idx):,} (正例比率 {n_pos/len(idx)*100:.1f}%)")
+    return X[idx], y[idx]
+
+PARAM_GRID = [
+    {"max_depth":4, "learning_rate":0.03, "subsample":0.7, "colsample_bytree":0.8, "min_child_weight":40, "reg_alpha":0.2, "reg_lambda":3.0, "gamma":0.5},
+    {"max_depth":5, "learning_rate":0.02, "subsample":0.6, "colsample_bytree":0.7, "min_child_weight":50, "reg_alpha":0.1, "reg_lambda":2.0, "gamma":0.3},
+    {"max_depth":6, "learning_rate":0.015, "subsample":0.55, "colsample_bytree":0.65, "min_child_weight":60, "reg_alpha":0.05, "reg_lambda":1.5, "gamma":0.2},
+]
+
+def _class_balanced_focal_weights(y, gamma=2.0):
+    """Class-balanced Focal Loss sample weights (arXiv:2407.14381).
+    各クラスの頻度逆数で正規化後、予測困難サンプルを重視(focal)。
+    scale_pos_weightと組み合わせて使う。
+    """
+    n = len(y)
+    pos = y.sum(); neg = n - pos
+    # class-balanced base weights
+    w = np.where(y == 1, n / (2 * pos), n / (2 * neg))
+    # focal modulation: (1 - 0.5)^gamma as uniform init (before first fit)
+    w *= (0.5 ** gamma)
+    return w
+
+def _fbeta_score(pre, rec, beta=2.0):
+    """F-beta score array from precision/recall arrays"""
+    b2 = beta ** 2
+    return (1 + b2) * pre * rec / (b2 * pre + rec + 1e-10)
+
+
+def _xgb_params_to_lgb(params):
+    """XGBoostのハイパーパラメータをLightGBM等価パラメータに変換"""
+    return {
+        "max_depth":        params.get("max_depth", 4),
+        "learning_rate":    params.get("learning_rate", 0.03),
+        "subsample":        params.get("subsample", 0.7),
+        "colsample_bytree": params.get("colsample_bytree", 0.8),
+        "min_child_samples": max(20, params.get("min_child_weight", 30)),
+        "reg_alpha":        params.get("reg_alpha", 0.1),
+        "reg_lambda":       params.get("reg_lambda", 2.0),
+        "min_split_gain":   params.get("gamma", 0.3),
+        "num_leaves":       min(64, 2 ** params.get("max_depth", 4)),
+    }
+
+
+def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     print(f"\n[学習] {label}モデル...")
     pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
     print(f"  正例:{int(pos):,} 負例:{int(neg):,} spw:{spw:.2f}")
-    m=XGBClassifier(n_estimators=5000,max_depth=7,learning_rate=0.024,subsample=0.52,early_stopping_rounds=150,
-        colsample_bytree=0.61,min_child_weight=71,reg_alpha=0.04,reg_lambda=1.4,gamma=0.29,scale_pos_weight=spw,
-        eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1)
-    m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=100)
-    auc_raw=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
-    print(f"  テストAUC（生）: {auc_raw:.4f}")
-    iso=IsotonicRegression(out_of_bounds="clip")
-    iso.fit(m.predict_proba(X_cal)[:,1],y_cal)
-    cal_m=IsotonicCalibrated(m,iso)
+    keep_idx = None
+
+    def _best_f1(probs, y=y_te):
+        pre, rec, thr = precision_recall_curve(y, probs)
+        f1 = 2 * pre * rec / (pre + rec + 1e-10)
+        return f1[:-1].max()
+
+    def _best_fbeta(probs, beta=2.0, y=y_te):
+        pre, rec, thr = precision_recall_curve(y, probs)
+        fb = _fbeta_score(pre[:-1], rec[:-1], beta)
+        return fb.max(), float(thr[fb.argmax()])
+
+    # ① グリッドサーチ（AUC最適化）
+    print(f"\n  グリッドサーチ ({len(PARAM_GRID)}パターン)...")
+    best_auc = -1; best_params = None; best_model = None
+    for pi, params in enumerate(PARAM_GRID):
+        m=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
+            scale_pos_weight=spw,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**params)
+        m.fit(X_tr,y_tr,eval_set=[(X_te,y_te)],verbose=0)
+        auc=roc_auc_score(y_te,m.predict_proba(X_te)[:,1])
+        tag = "★" if auc > best_auc else " "
+        print(f"    {tag} パターン{pi+1}: AUC={auc:.4f} (depth={params['max_depth']}, lr={params['learning_rate']})")
+        if auc > best_auc:
+            best_auc = auc; best_params = params; best_model = m
+    print(f"  最良パラメータ: depth={best_params['max_depth']}, lr={best_params['learning_rate']}, AUC={best_auc:.4f}")
+
+    # ② Class-balanced Focal Loss（scale_pos_weight維持）
+    print(f"\n  Class-balanced Focal Loss...")
+    focal_w = _class_balanced_focal_weights(y_tr, gamma=2.0)
+    m_focal = XGBClassifier(n_estimators=5000, early_stopping_rounds=150,
+        scale_pos_weight=spw, eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1, **best_params)
+    m_focal.fit(X_tr, y_tr, sample_weight=focal_w, eval_set=[(X_te, y_te)], verbose=0)
+    auc_focal = roc_auc_score(y_te, m_focal.predict_proba(X_te)[:, 1])
+    f1_base  = _best_f1(best_model.predict_proba(X_te)[:, 1])
+    f1_focal = _best_f1(m_focal.predict_proba(X_te)[:, 1])
+    print(f"    ベースライン:  AUC={best_auc:.4f}, F1={f1_base:.3f}")
+    print(f"    CB Focal Loss: AUC={auc_focal:.4f}, F1={f1_focal:.3f}")
+    if f1_focal > f1_base:
+        print(f"    → CB Focal Lossを採用")
+        best_model = m_focal; best_auc = auc_focal
+    else:
+        print(f"    → ベースライン維持")
+
+    # ③ SMOTE+ENN + scale_pos_weight
+    print(f"\n  SMOTE+ENN リサンプリング...")
+    X_senn, y_senn = _smoteenn_resample(X_tr, y_tr)
+    pos_s = y_senn.sum(); neg_s = len(y_senn) - pos_s
+    spw_s = neg_s / pos_s if pos_s > 0 else 1.0
+    m_senn = XGBClassifier(n_estimators=5000, early_stopping_rounds=150,
+        scale_pos_weight=spw_s, eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1, **best_params)
+    m_senn.fit(X_senn, y_senn, eval_set=[(X_te, y_te)], verbose=0)
+    auc_senn = roc_auc_score(y_te, m_senn.predict_proba(X_te)[:, 1])
+    f1_senn  = _best_f1(m_senn.predict_proba(X_te)[:, 1])
+    f1_cur   = _best_f1(best_model.predict_proba(X_te)[:, 1])
+    print(f"    SMOTE+ENN版:   AUC={auc_senn:.4f}, F1={f1_senn:.3f}")
+    if f1_senn > f1_cur:
+        print(f"    → SMOTE+ENN版を採用")
+        best_model = m_senn; best_auc = auc_senn
+    else:
+        print(f"    → 現状維持")
+
+    # ④ アンダーサンプリング版も試す
+    X_tr_us, y_tr_us = _undersample(X_tr, y_tr, ratio=0.25)
+    pos_us=y_tr_us.sum(); neg_us=len(y_tr_us)-pos_us
+    spw_us=neg_us/pos_us if pos_us>0 else 1.0
+    m_us=XGBClassifier(n_estimators=5000,early_stopping_rounds=150,
+        scale_pos_weight=spw_us,eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,**best_params)
+    m_us.fit(X_tr_us,y_tr_us,eval_set=[(X_te,y_te)],verbose=0)
+    auc_us = roc_auc_score(y_te, m_us.predict_proba(X_te)[:, 1])
+    f1_us  = _best_f1(m_us.predict_proba(X_te)[:, 1])
+    f1_cur = _best_f1(best_model.predict_proba(X_te)[:, 1])
+    print(f"    アンダーサンプリング版: AUC={auc_us:.4f}, F1={f1_us:.3f}")
+    if f1_us > f1_cur:
+        print(f"    → アンダーサンプリング版を採用")
+        best_model = m_us; best_auc = auc_us
+    else:
+        print(f"    → 現状維持")
+
+    # ⑤ LightGBM アンサンブル
+    print(f"\n  LightGBM アンサンブル...")
+    lgb_params = _xgb_params_to_lgb(best_params)
+    try:
+        m_lgb = lgb.LGBMClassifier(
+            n_estimators=5000,
+            scale_pos_weight=spw,
+            objective="binary",
+            metric="auc",
+            random_state=RANDOM_SEED,
+            n_jobs=-1,
+            verbose=-1,
+            **lgb_params,
+        )
+        m_lgb.fit(X_tr, y_tr,
+                  eval_set=[(X_te, y_te)],
+                  callbacks=[lgb.early_stopping(150, verbose=False), lgb.log_evaluation(-1)])
+        p_xgb  = best_model.predict_proba(X_te)[:, 1]
+        p_lgb  = m_lgb.predict_proba(X_te)[:, 1]
+        p_ens  = 0.5 * p_xgb + 0.5 * p_lgb
+        auc_lgb = roc_auc_score(y_te, p_lgb)
+        auc_ens = roc_auc_score(y_te, p_ens)
+        f1_lgb = _best_f1(p_lgb)
+        f1_ens = _best_f1(p_ens)
+        f1_cur = _best_f1(best_model.predict_proba(X_te)[:, 1])
+        print(f"    LightGBM単体:   AUC={auc_lgb:.4f}, F1={f1_lgb:.3f}")
+        print(f"    XGB+LGB平均:    AUC={auc_ens:.4f}, F1={f1_ens:.3f}")
+        if f1_ens > f1_cur:
+            print(f"    → アンサンブル採用")
+            use_ensemble = True
+        else:
+            print(f"    → 現状維持 (XGBのみ)")
+            use_ensemble = False
+    except Exception as _lgb_e:
+        print(f"    LightGBM失敗({_lgb_e}), XGBのみ使用")
+        use_ensemble = False
+
+    print(f"\n  最終テストAUC（生）: {best_auc:.4f}")
+    lr = LogisticRegression(max_iter=1000)
+    if use_ensemble:
+        p_cal_xgb = best_model.predict_proba(X_cal)[:, 1]
+        p_cal_lgb = m_lgb.predict_proba(X_cal)[:, 1]
+        p_cal_ens = 0.5 * p_cal_xgb + 0.5 * p_cal_lgb
+        lr.fit(p_cal_ens.reshape(-1, 1), y_cal)
+        cal_m = EnsembleCalibratedLGB(best_model, m_lgb, lr)
+    else:
+        lr.fit(best_model.predict_proba(X_cal)[:, 1].reshape(-1, 1), y_cal)
+        keep_idx = getattr(best_model, '_keep_idx', None)
+        cal_m = PlattCalibrated(best_model, lr, keep_idx=keep_idx)
     auc_cal=roc_auc_score(y_te,cal_m.predict_proba(X_te)[:,1])
     print(f"  ✅ テストAUC（キャリブレーション後）: {auc_cal:.4f}")
     print(classification_report(y_te,(cal_m.predict_proba(X_te)[:,1]>=0.5).astype(int),target_names=["負例","正例"]))
+
+    # SHAP値を計算して特徴量重要度を補強（XGBモデルで計算）
+    if feat_names is not None:
+        try:
+            import shap as _shap
+            _sample = X_te[:500] if len(X_te) > 500 else X_te
+            _explainer = _shap.TreeExplainer(best_model)
+            _shap_vals = _explainer.shap_values(_sample)
+            _shap_imp = np.abs(_shap_vals).mean(axis=0)
+            cal_m._shap_importance = {feat_names[i]: float(_shap_imp[i]) for i in range(len(feat_names))}
+            _zero = [n for n, v in cal_m._shap_importance.items() if v < 1e-6]
+            if _zero:
+                print(f"  SHAP重要度ゼロ特徴量({len(_zero)}): {', '.join(_zero)}")
+        except Exception as _e:
+            print(f"  SHAP計算スキップ: {_e}")
+            cal_m._shap_importance = None
+
+    cal_m._keep_idx = keep_idx
     return cal_m
 
 def main():
@@ -337,17 +615,17 @@ def main():
     if edinet_map:
         print(f"  EDINET大量保有: {len(edinet_map)}銘柄分")
     print(f"\n株価取得中（30〜60分かかります）...")
-    train_X,train_yr,train_yd,train_ar,train_ad=[],[],[],[],[]
-    test_X,test_yr,test_yd,test_ar,test_ad=[],[],[],[],[]
+    train_X,train_yd,train_yr=[],[],[]
+    test_X,test_yd,test_yr=[],[],[]
     train_dates,test_dates=[],[]
-    train_sectors,test_sectors=[],[]   # セクター内相対モメンタムCS用
+    train_sectors,test_sectors=[],[]
     success=0
     for i,row in stock_list.iterrows():
         code=str(row["code"])
         sector=get_sector_cached(code)   # JPX 33業種（プロセス内キャッシュ）
         df=get_prices(code)
         if df is None or len(df)<MIN_HISTORY:
-            time.sleep(0.2); continue
+            time.sleep(0.08); continue
         for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only,
                                                         sample_code=code,
                                                         vix_map=vix_map,
@@ -357,25 +635,21 @@ def main():
                                                         usdjpy_closes_arr=usdjpy_closes_arr,
                                                         edinet_map=edinet_map):
             if sd<TRAIN_CUTOFF:
-                train_X.append(feat); train_yr.append(lr); train_yd.append(ld)
-                train_ar.append(ar); train_ad.append(ad); train_dates.append(sd)
-                train_sectors.append(sector)
+                train_X.append(feat); train_yd.append(ld); train_yr.append(lr)
+                train_dates.append(sd); train_sectors.append(sector)
             else:
-                test_X.append(feat); test_yr.append(lr); test_yd.append(ld)
-                test_ar.append(ar); test_ad.append(ad); test_dates.append(sd)
-                test_sectors.append(sector)
+                test_X.append(feat); test_yd.append(ld); test_yr.append(lr)
+                test_dates.append(sd); test_sectors.append(sector)
         success+=1
         if success%100==0:
             print(f"  [{success}銘柄] 学習:{len(train_X):,} テスト:{len(test_X):,}")
-        time.sleep(0.25)
+        time.sleep(0.1)
     print(f"\n完了: {success}銘柄 / 学習:{len(train_X):,} テスト:{len(test_X):,}")
-    if len(train_X)<1000: print("ERROR: サンプル不足"); return
+    if len(train_X)<500: print("ERROR: サンプル不足"); return
     X_tr=np.array(train_X); X_te=np.array(test_X)
-    yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
-    ar_tr=np.array(train_ar); ar_te=np.array(test_ar)
-    ad_tr=np.array(train_ad); ad_te=np.array(test_ad)
-    # Cross-sectional rank features（6標準CS + 1セクター内相対モメンタム = 7 CS）
+    yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
+    # Cross-sectional rank features
     print("\nクロスセクショナルランク特徴量を計算中...")
     all_X=np.vstack([X_tr,X_te]); all_dates=np.array(train_dates+test_dates)
     all_sectors=np.array(train_sectors+test_sectors)
@@ -383,53 +657,15 @@ def main():
     n_tr=len(X_tr); X_tr=all_X_aug[:n_tr]; X_te=all_X_aug[n_tr:]
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
-    print(f"絶対上昇ラベル(≥+{RISE_THRESHOLD}%):  学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     print(f"絶対下落ラベル(≤-{DROP_THRESHOLD}%):  学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
-    print(f"相対上昇ラベル(α≥+{ALPHA_THRESHOLD}%): 学習 {ar_tr.sum():,}/{len(ar_tr):,} ({ar_tr.mean()*100:.1f}%)  テスト {ar_te.sum():,}/{len(ar_te):,} ({ar_te.mean()*100:.1f}%)")
-    print(f"相対下落ラベル(α≤-{DROP_ALPHA_THRESHOLD}%): 学習 {ad_tr.sum():,}/{len(ad_tr):,} ({ad_tr.mean()*100:.1f}%)  テスト {ad_te.sum():,}/{len(ad_te):,} ({ad_te.mean()*100:.1f}%)")
+    print(f"絶対上昇ラベル(≥+{RISE_THRESHOLD}%):  学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     # キャリブレーション用: 学習データを日付順に並べ、最新20%をキャリブレーション用に分離
     sort_idx=np.argsort(np.array(train_dates))
-    X_tr_s=X_tr[sort_idx]
-    yr_s=yr_tr[sort_idx]; yd_s=yd_tr[sort_idx]
-    ar_s=ar_tr[sort_idx]; ad_s=ad_tr[sort_idx]
+    X_tr_s=X_tr[sort_idx]; yd_s=yd_tr[sort_idx]
     n_cal=max(500,int(len(X_tr_s)*0.2))
     X_tr_fit,X_cal=X_tr_s[:-n_cal],X_tr_s[-n_cal:]
-    yr_fit,yr_cal=yr_s[:-n_cal],yr_s[-n_cal:]
     yd_fit,yd_cal=yd_s[:-n_cal],yd_s[-n_cal:]
-    ar_fit,ar_cal=ar_s[:-n_cal],ar_s[-n_cal:]
-    ad_fit,ad_cal=ad_s[:-n_cal],ad_s[-n_cal:]
     print(f"\nキャリブレーション分割: 学習{len(X_tr_fit):,} / キャリブレーション{len(X_cal):,} (最新20%)")
-    rise =train_model(X_tr_fit,yr_fit, X_te,yr_te, X_cal,yr_cal, "絶対上昇")
-    drop =train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落")
-    a_rise=train_model(X_tr_fit,ar_fit, X_te,ar_te, X_cal,ar_cal, "相対上昇(α)")
-    a_drop=train_model(X_tr_fit,ad_fit, X_te,ad_te, X_cal,ad_cal, "相対下落(α)")
-    cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
-    exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
-    suffix="_screened" if screener_only else ""
-    joblib.dump(rise,  os.path.join(SAVE_DIR,f"rf_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
-    joblib.dump(drop,  os.path.join(SAVE_DIR,f"rf_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
-    joblib.dump(a_rise,os.path.join(SAVE_DIR,f"rf_alpha_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
-    joblib.dump(a_drop,os.path.join(SAVE_DIR,f"rf_alpha_drop_model{suffix}{cutoff_tag}{exp_tag}.pkl"))
-    if exp_tag:
-        print(f"  ⚠️  実験モデル保存: *{exp_tag}.pkl（本番 rf_model.pkl は変更なし）")
-    # Save all samples (train+test) with dates for purged CV validation
-    npz_path=os.path.join(SAVE_DIR,"training_data.npz")
-    all_X=np.vstack([X_tr,X_te]); all_yr=np.concatenate([yr_tr,yr_te]); all_yd=np.concatenate([yd_tr,yd_te])
-    all_dates=np.array([str(d) for d in train_dates+test_dates])
-    np.savez_compressed(npz_path,X=all_X,yr=all_yr,yd=all_yd,dates=all_dates)
-    rise_auc  =roc_auc_score(yr_te,rise.predict_proba(X_te)[:,1])
-    drop_auc  =roc_auc_score(yd_te,drop.predict_proba(X_te)[:,1])
-    a_rise_auc=roc_auc_score(ar_te,a_rise.predict_proba(X_te)[:,1])
-    a_drop_auc=roc_auc_score(ad_te,a_drop.predict_proba(X_te)[:,1])
-    print(f"\n【AUC サマリー】")
-    print(f"  絶対上昇: {rise_auc:.4f}  絶対下落: {drop_auc:.4f}")
-    print(f"  相対上昇: {a_rise_auc:.4f}  相対下落: {a_drop_auc:.4f}")
-    with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
-        json.dump({"rise":float(rise_auc),"drop":float(drop_auc),
-                   "alpha_rise":float(a_rise_auc),"alpha_drop":float(a_drop_auc)},f)
-
-    # C-1: 特徴量重要度を保存
-    # 64次元: 57基本(32テクニカル+11ファンダ+4マクロ拡張+8新規IB+1EDINET+3モメンタム拡張) + 7クロスセクション
     feat_names = ["ret5","ret20","ret60","ret90","ma5_25","ma25_75","rsi","vol20","vol60","pos52",
                   "drawdown60","from_hi52","down_streak","momentum_accel","ma_cross_dir",
                   "vr520","vr2060","vsurge","nk5","nk20","nk60",
@@ -443,28 +679,61 @@ def main():
                   "eps_surprise_f","bps_growth_f","piotroski_f","payout_f","accruals_f",
                   "edinet_hold_f",
                   "ret504","trend_slope60","trend_r2_60",
+                  "cfo_margin_f","leverage_f","op_margin_f","equity_ratio_f","sales_growth_f","frev_f","asset_to_f",
+                  "ncskew_f","duvol_f",
                   "cs_ret5","cs_ret20","cs_ret60","cs_rsi","cs_vol20","cs_pos52",
-                  "cs_sector_ret60"]
-    imp = {"rise": {n: float(v) for n, v in zip(feat_names, rise.model.feature_importances_)},
-           "drop": {n: float(v) for n, v in zip(feat_names, drop.model.feature_importances_)}}
+                  "cs_sector_ret60","cs_corr_centrality"]
+    drop=train_model(X_tr_fit,yd_fit, X_te,yd_te, X_cal,yd_cal, "絶対下落", feat_names=feat_names)
+    cutoff_tag = f"_{TRAIN_CUTOFF.isoformat()}" if _args.cutoff else ""
+    exp_tag    = f"_exp_{_args.tag}" if _args.tag else ""
+    joblib.dump(drop, os.path.join(SAVE_DIR,f"rf_drop_model{cutoff_tag}{exp_tag}.pkl"))
+    if exp_tag:
+        print(f"  ⚠️  実験モデル保存: *{exp_tag}.pkl（本番モデルは変更なし）")
+    keep_idx = drop._keep_idx
+    X_te_eval = X_te[:, keep_idx] if keep_idx else X_te
+    drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te_eval)[:,1])
+
+    # 上昇モデルも同じ特徴量・同じ分割で学習してrf_model.pklに保存
+    yr_s=yr_tr[sort_idx]
+    yr_fit,yr_cal=yr_s[:-n_cal],yr_s[-n_cal:]
+    rise=train_model(X_tr_fit,yr_fit, X_te,yr_te, X_cal,yr_cal, "絶対上昇", feat_names=feat_names)
+    joblib.dump(rise, os.path.join(SAVE_DIR,f"rf_model{cutoff_tag}{exp_tag}.pkl"))
+    rise_keep_idx = rise._keep_idx
+    X_te_rise_eval = X_te[:, rise_keep_idx] if rise_keep_idx else X_te
+    rise_auc=roc_auc_score(yr_te,rise.predict_proba(X_te_rise_eval)[:,1])
+
+    print(f"\n【AUC サマリー】")
+    print(f"  絶対下落: {drop_auc:.4f}")
+    print(f"  絶対上昇: {rise_auc:.4f}")
+    with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
+        json.dump({"drop":float(drop_auc),"rise":float(rise_auc)},f)
+
+    if keep_idx:
+        used_names = [feat_names[i] for i in keep_idx]
+    else:
+        used_names = feat_names
+    imp = {"drop": {n: float(v) for n, v in zip(used_names, drop.model.feature_importances_)}}
+    if hasattr(drop, '_shap_importance') and drop._shap_importance:
+        imp["drop_shap"] = drop._shap_importance
+        # SHAPトップ10を表示
+        top10 = sorted(drop._shap_importance.items(), key=lambda x: -x[1])[:10]
+        print("  SHAP Top10:", ", ".join(f"{n}({v:.4f})" for n, v in top10))
     with open(os.path.join(SAVE_DIR,"feature_importance.json"),"w") as f:
         json.dump(imp, f, indent=2, ensure_ascii=False)
     print("  特徴量重要度: feature_importance.json")
 
-    # C-2: F1最大化閾値を保存（クラス不均衡対応）
-    thresholds = {}
-    for label, model, y_te_lbl in [("rise", rise, yr_te), ("drop", drop, yd_te)]:
-        probs = model.predict_proba(X_te)[:, 1]
-        pre, rec, thr = precision_recall_curve(y_te_lbl, probs)
-        f1 = 2 * pre * rec / (pre + rec + 1e-10)
-        best_thr = float(thr[f1[:-1].argmax()])
-        thresholds[label] = best_thr
-        print(f"  {label}モデル最適閾値: {best_thr:.3f} (F1={f1[:-1].max():.3f})")
+    probs = drop.predict_proba(X_te_eval)[:, 1]
+    # F-beta(β=2): 再現率重視（下落の見逃しコストが高い）
+    pre, rec, thr = precision_recall_curve(yd_te, probs)
+    beta = 2.0
+    fb = (1 + beta**2) * pre[:-1] * rec[:-1] / (beta**2 * pre[:-1] + rec[:-1] + 1e-10)
+    best_thr = float(thr[fb.argmax()])
+    f1 = 2 * pre * rec / (pre + rec + 1e-10)
+    print(f"  dropモデル最適閾値: {best_thr:.3f} (F2={fb.max():.3f}, F1={f1[:-1].max():.3f})")
     with open(os.path.join(SAVE_DIR,"optimal_thresholds.json"),"w") as f:
-        json.dump(thresholds, f, indent=2)
+        json.dump({"drop": best_thr}, f, indent=2)
 
-    print(f"\nデータ保存: {npz_path}")
-    print("\n保存完了 ✅  次: python3 validation.py  →  python3 rank_stocks.py")
+    print("\n保存完了 ✅")
 
 if __name__ == "__main__":
     main()

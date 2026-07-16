@@ -1,6 +1,17 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# sklearn バージョン互換パッチ（1.9.0で保存したモデルを1.5.x で読む際に multi_class が欠落する）
+from sklearn.linear_model import LogisticRegression as _LR
+if not hasattr(_LR, "_multi_class_patched"):
+    _orig_lr_pp = _LR.predict_proba
+    def _lr_pp(self, X):
+        if not hasattr(self, "multi_class"):
+            self.multi_class = "auto"
+        return _orig_lr_pp(self, X)
+    _LR.predict_proba = _lr_pp
+    _LR._multi_class_patched = True
+
 import json
 import re
 import threading
