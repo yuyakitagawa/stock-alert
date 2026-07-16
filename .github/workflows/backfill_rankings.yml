@@ -1,0 +1,70 @@
+name: Backfill Rankings (price cache + gen_rankings)
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: '遡及対象の開始日 (YYYY-MM-DD)'
+        required: true
+      end_date:
+        description: '遡及対象の終了日 (YYYY-MM-DD, 省略時は今日)'
+        required: false
+        default: ''
+      price_days:
+        description: '株価キャッシュを遡って更新する日数（銘柄によって最終更新日が2026-05-01までばらつくため90日を既定に）'
+        required: false
+        default: '90'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost lightgbm \
+            gspread google-auth yfinance jquants-api-client
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Restore model cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ github.workspace }}/rf_model.pkl
+            ${{ github.workspace }}/rf_drop_model.pkl
+          key: ml-models-v37-weekly-none
+          restore-keys: |
+            ml-models-v37-weekly-
+
+      - name: Step 1 - 株価キャッシュ更新（J-Quants）
+        run: cd ~/stock-alert && python tools/update_price_cache.py --days ${{ github.event.inputs.price_days }}
+
+      - name: Step 2 - ランキング遡及生成（gen_rankings backfill）
+        run: |
+          cd ~/stock-alert
+          END="${{ github.event.inputs.end_date }}"
+          if [ -z "$END" ]; then
+            python tools/backfill_history.py --start "${{ github.event.inputs.start_date }}"
+          else
+            python tools/backfill_history.py --start "${{ github.event.inputs.start_date }}" --end "$END"
+          fi

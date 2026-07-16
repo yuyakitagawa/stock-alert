@@ -1,9 +1,10 @@
 "use client";
 import type { Ranking } from "@/lib/types";
-import type { RiskRegime } from "@/lib/types";
+import type { RiskRegime, MarketCompare } from "@/lib/types";
 import StockCard from "./StockCard";
 import SectorPerformancePanel from "./SectorPerformancePanel";
 import RiskRegimeBanner from "./RiskRegimeBanner";
+import MarketCompareBanner from "./MarketCompareBanner";
 
 interface SectorStat {
   sector: string;
@@ -20,12 +21,13 @@ interface Props {
   sparklineMap: Record<string, number[] | undefined>;
   sectorStats: SectorStat[];
   risk: RiskRegime | null;
+  marketCompare: MarketCompare | null;
   nikkei20: number;
 }
 
 export default function HomeContent({
   date, dateLabel, rows, buyRows, featured, sparklineMap,
-  sectorStats, risk, nikkei20,
+  sectorStats, risk, marketCompare, nikkei20,
 }: Props) {
   const nikkeiBullish = nikkei20 > 0;
   const noGems = buyRows.length === 0;
@@ -40,6 +42,7 @@ export default function HomeContent({
       </header>
 
       <RiskRegimeBanner risk={risk} />
+      <MarketCompareBanner compare={marketCompare} />
       {rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-32 text-gray-600 space-y-3">
           <span className="text-5xl">📊</span>

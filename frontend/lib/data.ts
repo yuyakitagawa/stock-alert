@@ -1,4 +1,4 @@
-import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WatchMetrics, RiskRegime } from "./types";
+import type { Ranking, StockMeta, Earnings, AiAnalysis, CompanyProfile, QuarterlyEarning, WatchMetrics, RiskRegime, MarketCompare } from "./types";
 import { anonHeaders, sbUrl } from "./supabase";
 
 const CACHE: RequestInit = { next: { revalidate: 300 } };
@@ -218,6 +218,14 @@ export async function fetchRiskRegime(): Promise<RiskRegime | null> {
   if (!res || !res.ok) return null;
   const rows = await res.json();
   return (rows[0] as RiskRegime) ?? null;
+}
+
+export async function fetchMarketCompare(): Promise<MarketCompare | null> {
+  const res = await sbFetch("gen_market_compare?order=date.desc&limit=1",
+    { headers: anonHeaders(), next: { revalidate: 300 } });
+  if (!res || !res.ok) return null;
+  const rows = await res.json();
+  return (rows[0] as MarketCompare) ?? null;
 }
 
 export async function fetchWatchMetrics(code: string): Promise<WatchMetrics> {
