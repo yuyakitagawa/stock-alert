@@ -79,6 +79,12 @@ def main():
         try:
             df = cli.get_eq_bars_daily(date_yyyymmdd=d_str.replace("-", ""))
         except Exception as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 400 and "subscription" in str(e).lower():
+                print(f"[{i+1}/{len(target_dates)}] {d_str}: ERROR {e}")
+                print("契約プランがこの日付範囲を対象外としているため中断します。"
+                      "J-Quantsのプラン設定を確認してください。")
+                break
             print(f"[{i+1}/{len(target_dates)}] {d_str}: ERROR {e}")
             errors += 1
             time.sleep(RATE_SLEEP)
