@@ -216,7 +216,7 @@ def main():
         # その日以前の価格だけにスライス
         raw_data = []
         for code, prices in price_cache.items():
-            sliced = prices[prices.index.strftime("%Y-%m-%d") <= date_str]
+            sliced = prices[prices.index <= date.fromisoformat(date_str)]
             if len(sliced) < 91:
                 continue
             closes = sliced["Close"].values
