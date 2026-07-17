@@ -31,14 +31,32 @@ MARKET_DP_CASH_THRESHOLD = 15.0
 
 
 def sb_get(path: str) -> list[dict]:
+    """Supabaseからデータを取得する。呼び出し側が既に limit= を指定している場合は
+    そのまま1回だけ取得（例: 最新1件のみ欲しい場合）。指定が無い場合はPostgRESTの
+    デフォルト行数上限（1000件）を超えて全件取得できるよう offset でページングする。"""
     url = f"{SUPABASE_URL}/rest/v1/{path}"
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
     }
-    resp = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    if "limit=" in path:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    page_size = 1000
+    offset = 0
+    out: list[dict] = []
+    sep = "&" if "?" in path else "?"
+    while True:
+        resp = requests.get(f"{url}{sep}limit={page_size}&offset={offset}", headers=headers, timeout=30)
+        resp.raise_for_status()
+        rows = resp.json()
+        out.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return out
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
