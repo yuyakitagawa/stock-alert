@@ -680,6 +680,21 @@ def get_fundamentals(code):
 
 # ── 推奨ラベル（rank_stocks 共通） ───────────────────────────
 
+_RECOMMEND_EMOJI_MAP = {
+    "🥇 S買い":        "S買い",
+    "🥈 A買い":        "A買い",
+    "⏳ 方向感なし":   "方向感なし",
+    "🟡 高値警戒":     "方向感なし",
+    "高値警戒":        "方向感なし",
+    "—":               "—",
+}
+
+
+def clean_recommend_label(value: str) -> str:
+    """推奨ラベルから絵文字を除いた短縮形を返す（Web/バックフィル出力の表示統一用）。"""
+    return _RECOMMEND_EMOJI_MAP.get(value, value)
+
+
 def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
                           ret90=None, turnover_m=None, regime=None,

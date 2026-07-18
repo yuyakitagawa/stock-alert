@@ -13,7 +13,6 @@
 
 依存: rank_stocks.py → export_to_web.py 実行後
 """
-import json
 import os
 import sys
 from datetime import date
@@ -23,55 +22,24 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
+import lib.supabase_client as sb
+
 load_dotenv()
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 MARKET_DP_CASH_THRESHOLD = 15.0
 LARGE_HOLDINGS_DAYS = 3
 LARGE_HOLDINGS_LIMIT = 5
 
 
-def sb_get(path: str) -> list[dict]:
-    """Supabaseからデータを取得する。呼び出し側が既に limit= を指定している場合は
-    そのまま1回だけ取得（例: 最新1件のみ欲しい場合）。指定が無い場合はPostgRESTの
-    デフォルト行数上限（1000件）を超えて全件取得できるよう offset でページングする。"""
-    url = f"{SUPABASE_URL}/rest/v1/{path}"
-    headers = {
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-    }
-    if "limit=" in path:
-        resp = requests.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-
-    page_size = 1000
-    offset = 0
-    out: list[dict] = []
-    sep = "&" if "?" in path else "?"
-    while True:
-        resp = requests.get(f"{url}{sep}limit={page_size}&offset={offset}", headers=headers, timeout=30)
-        resp.raise_for_status()
-        rows = resp.json()
-        out.extend(rows)
-        if len(rows) < page_size:
-            break
-        offset += page_size
-    return out
-
-
 def get_today_rankings(today_str: str) -> list[dict]:
-    return sb_get(
-        f"gen_rankings?date=eq.{today_str}"
-        f"&select=code,name,close,drop_prob"
-    )
+    return sb.select("gen_rankings", f"date=eq.{today_str}&select=code,name,close,drop_prob")
 
 
 def get_all_watchlists() -> dict[str, list[dict]]:
-    rows = sb_get("dp_watchlist?select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at")
+    rows = sb.select("dp_watchlist",
+                      "select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at")
     by_user: dict[str, list[dict]] = {}
     for r in rows:
         uid = r["line_user_id"]
@@ -97,8 +65,7 @@ def build_market_section(today_str: str, avg_dp: float | None) -> str:
 
 
 def get_market_compare() -> dict | None:
-    rows = sb_get("gen_market_compare?order=date.desc&limit=1")
-    return rows[0] if rows else None
+    return sb.select_one("gen_market_compare", "order=date.desc")
 
 
 def build_market_compare_section(compare: dict | None) -> str:
@@ -174,8 +141,7 @@ def build_large_holdings_section(
 def build_watchlist_section(
     watchlist: list[dict],
     ranking_map: dict[str, dict],
-) -> tuple[str, list[dict]]:
-    alerts: list[dict] = []
+) -> str:
     lines = ["📋 ウォッチリスト状況:"]
 
     for w in watchlist:
@@ -193,18 +159,8 @@ def build_watchlist_section(
 
         if dp < buy_th:
             mark = "🔔買い時！"
-            alerts.append({
-                "code": w["code"], "name": w["name"],
-                "dp": dp, "threshold": buy_th, "close": close,
-                "signal": "buy",
-            })
         elif dp >= sell_th:
             mark = "⚠️売り検討"
-            alerts.append({
-                "code": w["code"], "name": w["name"],
-                "dp": dp, "threshold": sell_th, "close": close,
-                "signal": "sell",
-            })
         else:
             mark = ""
 
@@ -214,9 +170,9 @@ def build_watchlist_section(
         )
 
     if len(lines) <= 1:
-        return "", alerts
+        return ""
 
-    return "\n".join(lines), alerts
+    return "\n".join(lines)
 
 
 def send_line_push(user_id: str, message: str) -> bool:
@@ -270,7 +226,6 @@ def main() -> None:
 
     # ユーザー別ウォッチリストを取得して個別通知
     user_watchlists = get_all_watchlists()
-    all_alerts: list[dict] = []
 
     if not user_watchlists:
         # ウォッチリスト登録ユーザーがいなくても、LINE_USER_IDがあれば市場シグナルだけ送信
@@ -282,8 +237,7 @@ def main() -> None:
             send_line_push(fallback_uid, "\n\n".join(fallback_parts))
     else:
         for user_id, watchlist in user_watchlists.items():
-            watch_msg, alerts = build_watchlist_section(watchlist, ranking_map)
-            all_alerts.extend(alerts)
+            watch_msg = build_watchlist_section(watchlist, ranking_map)
 
             watch_codes = {str(w["code"]) for w in watchlist}
             holdings_msg = build_large_holdings_section(recent_holdings, watch_codes=watch_codes)
@@ -307,22 +261,6 @@ def main() -> None:
                         print(f"[market_timing] 🔔 {w['name']}({w['code']}): dp={dp:.1f} < {th} → アラート!")
                     else:
                         print(f"[market_timing] {w['name']}({w['code']}): dp={dp:.1f} (閾値{th}未到達)")
-
-    # 結果をJSONに保存（Webアプリ連携用）
-    output = {
-        "date": today_str,
-        "avg_dp": round(avg_dp, 1) if avg_dp is not None else None,
-        "n225_signal": "cash" if avg_dp and avg_dp >= MARKET_DP_CASH_THRESHOLD else "invest",
-        "watchlist_alerts": all_alerts,
-    }
-    out_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "data", "market_timing.json",
-    )
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"[market_timing] 結果保存: {out_path}")
 
 
 if __name__ == "__main__":

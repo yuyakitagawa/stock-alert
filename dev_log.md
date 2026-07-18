@@ -1,5 +1,36 @@
 # Dev Log
 
+## 2026-07-18 Supabase書き込み/取得ロジックの重複排除リファクタ
+
+```
+背景: ユーザーからのリファクタ依頼。挙動を変えずコード量を削減する対象を調査した結果、
+      lib/supabase_client.py に既にある upsert()/select()（ページング・バッチ分割・
+      ヘッダー生成）と全く同じロジックが web/export_to_web.py・tools/backfill_history.py・
+      web/market_timing_alert.py の3ファイルにそれぞれコピペで再実装されていた。
+      また推奨ラベルの絵文字正規化マップ（EMOJI_MAP/clean_recommend）も
+      export_to_web.py と backfill_history.py に別々に定義されていた。
+
+対応:
+  - lib/utils.py に clean_recommend_label() を追加し、両ファイルの重複マップを統合
+    （backfill_history.py 側にしか無かった「🥈 A買い」のマッピングが export_to_web.py にも
+    適用されるようになった＝表示の統一漏れが直った）
+  - web/export_to_web.py・tools/backfill_history.py の自前 _upsert()/upsert()（リクエスト
+    ヘッダー生成・500件バッチ分割）を lib.supabase_client.upsert() に置き換え。
+    副次効果として、この2ファイルには無かった NaN/inf サニタイズとバッチ内重複キー除去が
+    自動的に効くようになった
+  - web/market_timing_alert.py の自前 sb_get()（1000件ページング）を
+    lib.supabase_client.select()/select_one() に置き換え
+  - web/market_timing_alert.py: data/market_timing.json への書き出しが、Webアプリ撤去後
+    どこからも読まれていない完全な死んだコードだったため削除（book_watchlist_sectionの
+    alerts戻り値もこの出力専用だったため合わせて削除・関数を単純化）
+  - 4ファイル合計で 115行削減（+37 / -152）。ロジック変更なし・テスト37件全件パス
+
+判定: モデル・買いフィルター・LINE配信の出力内容への変更なし（純粋なコード整理）。
+      backtest対象外。
+```
+
+---
+
 ## 2026-07-18 Webアプリ（frontend/Vercel）を全面撤去
 
 ```
