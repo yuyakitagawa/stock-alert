@@ -38,7 +38,6 @@ jobs:
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
           echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
           echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
-          echo "JQUANTS_API_KEY=${{ secrets.JQUANTS_API_KEY }}" >> ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
           echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
@@ -57,9 +56,9 @@ jobs:
           restore-keys: |
             ml-models-v37-weekly-
 
-      - name: Step 0 - 株価キャッシュ更新（J-Quants 直近30日）
+      - name: Step 0 - 株価キャッシュ更新（Yahoo Finance 差分）
         continue-on-error: true
-        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/update_price_cache.py --days 30
+        run: cd ~/stock-alert && python tools/fetch_history.py --years 1 --sleep 0.5
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
@@ -83,11 +82,7 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 3
 
-      - name: Step 2d - J-Quants財務サマリー差分更新
-        continue-on-error: true
-        run: cd ~/stock-alert && pip install -q jquants-api-client && python tools/fetch_jquants_fin.py --resume
-
-      - name: Step 2e - EDINET決算XBRL取得（J-Quants補完）
+      - name: Step 2d - EDINET決算XBRL取得（財務サマリー差分更新）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 7
 

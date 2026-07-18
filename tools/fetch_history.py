@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-fetch_history.py — 全銘柄の株価履歴を10年分 Yahoo Finance から取得して yahoo_price_cache に保存
+fetch_history.py — 全銘柄の株価履歴を Yahoo Finance から取得して yahoo_price_cache に保存
+
+daily_alert.yml Step 0 が毎日呼び出し、yahoo_price_cache を最新日まで差分更新する
+（J-Quants Free プランは直近データを取得できないため、価格取得は Yahoo Finance のみを使う）。
+insert_ignore で保存するため、既存の(code,date)は上書きされず新規日付のみ追加される。
 
 使い方:
   python3 tools/fetch_history.py          # 全銘柄を10年分取得（初回: 数時間かかる）
   python3 tools/fetch_history.py --years 5  # 5年分だけ
-  python3 tools/fetch_history.py --resume   # 取得済みをスキップして続きから
+  python3 tools/fetch_history.py --years 1  # 日次更新用（daily_alert.yml Step 0）
+  python3 tools/fetch_history.py --resume   # 取得済みをスキップして続きから（初回backfill専用。
+                                             # 古い方の日付しか見ないため日次更新には使わないこと）
 
 注意: Yahoo Finance のレート制限を避けるため1リクエストごとに1秒待機します。
       中断しても --resume で続きから再開できます。
