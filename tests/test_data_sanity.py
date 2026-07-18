@@ -12,7 +12,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
 from lib.data_sanity import (
-    check_ranking, check_site, check_pages, has_critical, Violation, format_violations,
+    check_ranking, check_site, check_pages, check_price_freshness,
+    has_critical, Violation, format_violations,
 )
 
 
@@ -261,6 +262,35 @@ class TestCheckPages(unittest.TestCase):
         body = "x" * 5000 + "ページが見つかりません"  # 全ページに埋め込まれる文字列
         v = check_pages([{"route": "/", "status": 200, "body": body}])
         self.assertEqual(v, [], f"boundary文字列で誤検知: {format_violations(v)}")
+
+
+class TestPriceFreshness(unittest.TestCase):
+    def test_healthy_varies_passes(self):
+        history = {f"{1000+i}": [100 + i, 101 + i, 99 + i, 103 + i] for i in range(20)}
+        v = check_price_freshness(history)
+        self.assertEqual(v, [], f"日々変動する価格で誤検知: {format_violations(v)}")
+
+    def test_frozen_majority_critical(self):
+        """三菱商事8058で実際に起きた再現: 大半の銘柄でcloseが全期間同一値のまま固まる。"""
+        history = {f"{1000+i}": [4924.0, 4924.0, 4924.0] for i in range(10)}
+        history.update({f"{2000+i}": [100 + i, 105 + i] for i in range(3)})  # 健全な少数派
+        v = check_price_freshness(history)
+        self.assertTrue(any(x.check == "frozen_price" and x.severity == "critical" for x in v))
+
+    def test_frozen_minority_warning(self):
+        history = {f"{1000+i}": [100 + i, 105 + i] for i in range(9)}
+        history["9999"] = [4924.0, 4924.0]  # 1件だけ凍結
+        v = check_price_freshness(history)
+        self.assertTrue(any(x.check == "frozen_price" and x.severity == "warning" for x in v))
+
+    def test_single_point_history_ignored(self):
+        """1件しかない銘柄は凍結かどうか判定不能なので対象外。"""
+        history = {f"{1000+i}": [100.0] for i in range(10)}
+        v = check_price_freshness(history)
+        self.assertEqual(v, [], f"比較不能な1件データで誤検知: {format_violations(v)}")
+
+    def test_empty_history_ignored(self):
+        self.assertEqual(check_price_freshness({}), [])
 
 
 if __name__ == "__main__":

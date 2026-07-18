@@ -214,6 +214,7 @@ def main():
     print(f"価格データ取得完了: {len(price_cache)} 銘柄")
 
     # 各営業日のランキング生成
+    close_history: dict[str, list[float]] = {}
     for day_idx, date_str in enumerate(target_dates):
         print(f"\n[{day_idx+1}/{len(target_dates)}] {date_str} 処理中...")
         nk = nk_rets_at(nk_hist, nk_dates, date_str)
@@ -281,6 +282,7 @@ def main():
                 "per":       None,
                 "pbr":       None,
             })
+            close_history.setdefault(str(code), []).append(round(close, 1))
 
         # ネットスコア順にソートして rank 付け
         db_rows.sort(key=lambda r: r["net"], reverse=True)
@@ -311,6 +313,11 @@ def main():
         s_buy = sum(1 for r in db_rows if "S買い" in r["recommend"])
         a_buy = sum(1 for r in db_rows if "A買い" in r["recommend"])
         print(f"  DB保存: {len(db_rows)}件 (S買い:{s_buy} A買い:{a_buy})")
+
+    # 価格凍結チェック（今回生成した複数日にまたがりcloseが同一値のまま=更新漏れの疑い）
+    if len(target_dates) >= 2:
+        from lib.data_sanity import run_price_freshness_gate
+        run_price_freshness_gate(close_history, source="backfill_history")
 
     # Supabase エクスポート（全対象日）
     all_dates = sorted(get_existing_dates())
