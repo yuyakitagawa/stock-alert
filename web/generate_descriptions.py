@@ -6,7 +6,7 @@ generate_descriptions.py
   Phase 1: Yahoo Finance JP の「特色」テキストをスクレイプ（会社四季報データ・事実確実）
            ※シングルスレッド+5秒待機でレート制限を回避。1実行あたり最大50件。
   Phase 2: スクレイプ失敗分は Claude Haiku でバッチ生成（フォールバック）
-           J-Quants eq_master（S33業種・規模区分・市場区分）を付加した高精度プロンプト。
+           jpx_stock_list の sector を付加したプロンプト。
 
 - jpx_stock_list(code/name/sector) を母集団とする。
 - 差分生成（--refresh なしは未生成のみ）。
@@ -105,33 +105,6 @@ def _targets(limit: int | None, refresh: bool = False) -> list[dict]:
     return valid if limit is None else valid[:limit]
 
 
-# ─── J-Quants eq_master（プロンプト強化用）────────────────────────────────────
-
-def _get_jquants_master() -> dict[str, dict]:
-    """J-Quants eq_master から 銘柄コード→{S33Nm, ScaleCat, MktNm} を返す。"""
-    try:
-        import os as _os
-        from jquantsapi import ClientV2
-        api_key = _os.environ.get("JQUANTS_API_KEY", "")
-        if not api_key:
-            return {}
-        client = ClientV2(api_key=api_key)
-        df = client.get_eq_master()
-        result = {}
-        for _, row in df.iterrows():
-            code = str(row.get("Code", "")).rstrip("0")  # 5桁→4桁に変換
-            result[code] = {
-                "s33":   str(row.get("S33Nm",   "") or ""),
-                "scale": str(row.get("ScaleCat","") or ""),
-                "mkt":   str(row.get("MktNm",   "") or ""),
-            }
-        print(f"[gen] J-Quants eq_master: {len(result)}銘柄取得")
-        return result
-    except Exception as e:
-        print(f"[gen] J-Quants eq_master 取得失敗（プロンプト強化なし）: {e}")
-        return {}
-
-
 # ─── Phase 1: Yahoo Finance JP スクレイプ ────────────────────────────────────
 
 def _fetch_tokushoku(code: str) -> str | None:
@@ -221,22 +194,14 @@ def _parse_json(text: str) -> dict:
         return {}
 
 
-def _generate_batch(client, stocks: list[dict], master: dict) -> list[dict]:
+def _generate_batch(client, stocks: list[dict]) -> list[dict]:
     """
-    複数銘柄を1リクエストで生成。J-Quants情報でプロンプトを強化。
-    {コード:説明} のJSONを受け取り行リストを返す。
+    複数銘柄を1リクエストで生成。{コード:説明} のJSONを受け取り行リストを返す。
     """
     import anthropic
 
     def _ctx(s: dict) -> str:
-        code = str(s.get("code"))
-        info = master.get(code, {})
-        parts = [info.get("s33") or str(s.get("sector") or "不明")]
-        if info.get("scale"):
-            parts.append(info["scale"])
-        if info.get("mkt"):
-            parts.append(info["mkt"] + "市場")
-        return " / ".join(p for p in parts if p)
+        return str(s.get("sector") or "不明")
 
     lines = "\n".join(
         f"- {str(s.get('code'))} {str(s.get('name') or '').strip()} ({_ctx(s)})"
@@ -276,7 +241,7 @@ def _generate_batch(client, stocks: list[dict], master: dict) -> list[dict]:
     return []
 
 
-def _haiku_phase(stocks: list[dict], master: dict) -> list[dict]:
+def _haiku_phase(stocks: list[dict]) -> list[dict]:
     """
     スクレイプ失敗分を Haiku でバッチ生成。
     SAVE_INTERVAL 件ごとに中間 upsert → 途中終了でも進捗を保護。
@@ -305,7 +270,7 @@ def _haiku_phase(stocks: list[dict], master: dict) -> list[dict]:
             pending = []
 
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futs = {ex.submit(_generate_batch, client, ch, master): i
+        futs = {ex.submit(_generate_batch, client, ch): i
                 for i, ch in enumerate(chunks)}
         for fut in as_completed(futs):
             batch_rows = fut.result()
@@ -360,9 +325,6 @@ def main() -> None:
     if dry or not todo:
         print("[gen] dry-run または対象なしで終了。"); return
 
-    # J-Quants マスター取得（プロンプト強化用。失敗してもスキップ）
-    jq_master = _get_jquants_master()
-
     # Phase 1: Yahoo スクレイプ（上限 SCRAPE_LIMIT 件・シングルスレッド）
     scraped_rows, fallback_stocks = _scrape_phase(todo)
 
@@ -371,8 +333,8 @@ def main() -> None:
         print(f"[gen] スクレイプ結果を即時保存: {len(scraped_rows)}件")
         _upsert_bulk(scraped_rows)
 
-    # Phase 2: Haiku フォールバック（J-Quants強化プロンプト・中間保存あり）
-    _haiku_phase(fallback_stocks, jq_master)
+    # Phase 2: Haiku フォールバック（中間保存あり）
+    _haiku_phase(fallback_stocks)
 
     print(f"[gen] 完了: {len(todo)} 件の処理終了"
           f"（スクレイプ {len(scraped_rows)}件保存済み）")
