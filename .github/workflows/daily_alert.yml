@@ -58,7 +58,7 @@ jobs:
 
       - name: Step 0 - 株価キャッシュ更新（Yahoo Finance 差分）
         continue-on-error: true
-        run: cd ~/stock-alert && python tools/fetch_history.py --years 1 --sleep 0.5
+        run: cd ~/stock-alert && python tools/fetch_history.py --years 1
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
