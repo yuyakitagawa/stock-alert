@@ -1,5 +1,48 @@
 # Dev Log
 
+## 2026-07-18 Webアプリ（frontend/Vercel）を全面撤去
+
+```
+背景: DB整理（app_bookmarks等の使用状況調査）をきっかけに、ユーザーがWebアプリ
+      （frontend/・Vercelデプロイ）自体の削除を明示的に指示。運用は既にLINE Bot
+      （Supabase Edge Function line-webhook）に一本化されており、Webアプリは
+      並行して残っていただけの状態だった。
+
+対応:
+  - frontend/ ディレクトリを全削除、.github/workflows/frontend_build.yml を削除
+  - web/send_user_alerts.py（Web Push送信）・web/qa_pages.py（全ページQA）・
+    web/generate_descriptions.py（会社説明AI生成）・web/sync_descriptions.py
+    （会社説明の手動同期）を削除
+  - web/export_to_web.py から generate_ai_analyses/export_risk_regime/
+    export_simulation_results/qa_site_check とその呼び出しを削除。
+    LINE Botが参照する gen_rankings/jpx_stock_list/gen_market_compare の
+    エクスポートのみ残した
+  - lib/data_sanity.py から check_site/check_pages/run_site_gate/run_pages_gate
+    （Webページ・サイト全体QA、いずれもWeb専用）を削除。check_ranking/run_gate
+    （行レベルQA、LINE配信前にも使用）は維持
+  - tests/test_data_sanity.py から TestCheckSite/TestCheckPages を削除
+    （29件→11件）
+  - .github/workflows/daily_alert.yml から Step 4a（会社説明生成）・
+    Step 4c（全ページQA）・Step 5（Web Push送信）を削除。存在しない
+    web/send_catalyst_alerts.py を呼んでいた Step 5c（daily_alert.ymlに
+    以前から存在、実装ファイルなしでcontinue-on-errorに握りつぶされ続けていた
+    死んだステップ）も削除
+  - .claude/skills/web-republish/ を削除（Webアプリ再公開手順のスキルのため）
+  - Supabase側: app_bookmarks / app_push_subscriptions / gen_ai_analyses /
+    gen_risk_regime / gen_simulation / gen_activity_log / etf_profiles の
+    7テーブルをDROP（Web専用または無参照）
+  - README.md / CLAUDE.md をWebアプリ言及ゼロの状態に更新（Vercelデプロイ
+    確認ルールも削除）
+  - Vercelデプロイの停止はAI側にAPI/CLIアクセスが無いため未実施。
+    ユーザー側でVercelダッシュボードから手動で行う必要あり
+
+判定: モデル・買いフィルター・LINE配信ロジックへの変更なし。運用中の配信経路
+      （LINE Bot・daily_alert.yml）はそのまま維持し、並行して残っていた
+      未使用の配信経路を削除しただけのためbacktest対象外。
+```
+
+---
+
 ## 2026-07-15 yahoo_price_cache 長期停止バグの発見・修正 + 遡及バックフィル基盤追加
 
 ```

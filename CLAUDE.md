@@ -12,7 +12,7 @@
 - `lib/nlp_sentiment.py`: 決算テキスト感情分析（Claude Haiku × kabutan）。ランキング後処理に使用。
 - `core/rf_train_v3.py`: XGBoost学習(上昇/下落)。※金曜(再学習日)以外は触らない。
 - `core/screener.py` -> `core/rank_stocks.py`: 抽出 & ネットスコア計算。
-- `web/export_to_web.py` + `web/send_user_alerts.py`: Webアプリ向けエクスポート。
+- `web/export_to_web.py`: Supabaseへランキング・日経 vs S&P500判定をエクスポート（LINE Botが参照）。
 - `tools/backtest.py`: 検証。`bear`モード（2024/08下落相場）をテスト基準とする。
 
 ## 2. Model & Strategy (規律)
@@ -51,22 +51,8 @@
 - **不採用機能はコードからも消す**: A/Bテストで不採用になった条件はコード・定数・分岐ごと削除せよ。コメントアウトも禁止。
 - **テストは対象と一緒に消す**: 関数を削除したら、そのテストも同じコミットで削除せよ。
 - **READMEは同一コミットで更新**: 機能追加・変更・削除を実装したら、必ず同じコミットで README.md を更新せよ。フィルター値・コマンド・ファイル構成・テスト件数も合わせること。
-- **AIモデル説明ページを同一コミットで更新（絶対厳守）**: 予測モデルの素性・特徴量重要度・買いフィルター・レジーム調整のいずれかを変更したら、**必ず同じコミットで** `frontend/app/model/page.tsx` の該当数値・条件を実コードに合わせて更新せよ。対象の真実源（source of truth）は次の通り。乖離は放置禁止。
-  - 特徴量重要度・AUC・61次元の内訳 → `feature_importance.json` / `lib/utils.py`（`extract_features`）
-  - 品質フィルター（株価/DD/連続下落/RSI/流動性） → `core/rank_stocks.py` の `passes_buy_filter`
-  - 💎買い条件（QV4+レジーム） → `lib/utils.py` の `recommend_from_scores`
-  - レジーム別銘柄数・VIX/リスクオフ調整 → `core/rank_stocks.py`
-  - ユーザーから毎回指示がなくても、ロジック/フィルター変更を実装した時点で本ページ更新を自動的にセットで行うこと。`re-train`（金曜再学習）で重要度が変わった場合も同様。
 
-## 8. デプロイ反映確認（Web変更時・絶対厳守）
-- **「push した」で完了報告するな**: フロント（`frontend/`）や web 出力を変更して push したら、**本番（https://stock-alert-web.vercel.app）に実際に反映されたことを確認するまでが1タスク**。コミット成功＝反映完了ではない。
-- **反映の確認方法**: 変更したルートに HTTP 200 が返るか、表示が変わったかを実際に検証する。新規ページなら `curl -s -o /dev/null -w "%{http_code}" https://stock-alert-web.vercel.app/<route>` が 200 になること。Vercel のデプロイ状態は API で `readyState=READY` を確認する（`BLOCKED`/`ERROR` は未反映）。
-  - 状態確認: トークン `~/Library/Application Support/com.vercel.cli/auth.json`、project `prj_MCyYVEhxABeth2g4rWyV7FafZjbE`、team `team_We4BWT0fwTuIjRoc34bf75mF` で `GET https://api.vercel.com/v6/deployments`。
-- **反映されたら human に知らせる**: 本番反映を確認できた時点で、ユーザーに「反映完了」を明示報告する。確認できないまま黙って終わらない。
-- **反映されない場合**: 状態（BLOCKED/ERROR 等）と原因・ユーザーがやるべきこと（Vercel ダッシュボードでの解除等）を具体的に伝える。課金/アカウント設定は AI が触らない。
-- **監視ループは最大5回**: 反映待ちで再確認を回す場合は ScheduleWakeup を最大5回までに制限する。
-
-## 9. マージ規律（PR統合時・絶対厳守）
+## 8. マージ規律（PR統合時・絶対厳守）
 - **マージ前に必ず最新mainを取り込め**: ブランチのbaseが現在のmainのtipより古い場合、先に最新mainを取り込んで（rebase / update branch）コンフリクトが無いことを確認してからマージする。stale baseのままマージすると、mainの新しいコミットが消える（実例: 2026-07-16、古いブランチのマージで直近5PR分の変更が丸ごと消失）。
-- **マージ前にデグレ確認**: 既存テスト（`python3 tests/test_*.py`）を実行し、frontendを変更した場合は `npm run build` も実行して失敗が無いことを確認する。
+- **マージ前にデグレ確認**: 既存テスト（`python3 tests/test_*.py`）を実行して失敗が無いことを確認する。
 - **コンフリクト解消・デグレ無しを確認してから初めてマージを実行する**。確認を飛ばしたマージ・force pushでの上書きは禁止。

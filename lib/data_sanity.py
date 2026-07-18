@@ -7,14 +7,11 @@ data_sanity.py — Quality Assurance (QA) ロールの中核
 きっかけ: ensemble分岐で net=rise（下落確率を引かない）バグが、コードを読んでも
 気づけずリリースされた。コードレビューでは防げないので出力データを直接検査する。
 
-2系統のチェック:
-  - check_ranking(rows): ランキング単体の不変条件（net=rise-drop 等の行レベル検査）
-  - check_site(context): サイト全体の完全性（テーブル横断のカバレッジ・鮮度・欠損）
+check_ranking(rows): ランキング単体の不変条件（net=rise-drop 等の行レベル検査）
 
 使い方:
-    from lib.data_sanity import run_gate, run_site_gate
+    from lib.data_sanity import run_gate
     run_gate(ranking_rows, source="rank_stocks")          # リリース前ゲート
-    run_site_gate(site_context, source="export_to_web")   # サイト全体チェック
 
 各チェックは純粋関数。重大度 critical / warning を付与して Violation のリストを返す。
 alert-only: critical でも例外を投げず、呼び出し側の処理は継続させる（通知のみ）。
@@ -45,14 +42,6 @@ MAX_ROWS         = 4500    # 想定ユニバース上限
 DIVERSITY_WARN   = 20      # 上昇確率ユニーク値がこれ未満なら warning（バグ時=18）
 DIVERSITY_CRIT   = 8       # これ未満なら critical（ほぼ縮退）
 TOP1_SHARE_WARN  = 0.40    # 最頻値の占有率がこれ超なら warning（バグ時=0.41 / 健全=0.26）
-
-# ── ページ・スモーク検査用 ───────────────────────────────────────────────
-# 注: Next.jsは not-found / error boundary を全ページのRSCペイロードに埋め込むため
-# 「ページが見つかりません」等の文字列は健全ページにも現れる。よって 404/欠落の判定は
-# 文字列ではなく HTTPステータス＋期待文言(expect)の有無で行う。
-# エラー画面マーカーは error boundary が実際に描画された時のみ現れるので信頼できる。
-PAGE_ERROR_MARKERS = ["エラーが発生しました", "データの取得中に問題が発生しました"]
-PAGE_MIN_BODY      = 800   # HTML本文がこれ未満なら空ページ疑い
 
 
 @dataclass
@@ -239,92 +228,6 @@ def send_qa_alert(violations: list[Violation], source: str = "") -> bool:
         return False
 
 
-def check_site(context: dict) -> list[Violation]:
-    """サイト全体のデータ完全性・整合性を検査する。
-
-    context（提供された項目だけ検査。未提供のキーはスキップ）:
-      - date:         想定する最新日 "YYYY-MM-DD"
-      - rankings:     gen_rankings の行（date/code/rise_prob/drop_prob/net/recommend）
-      - stock_meta:   jpx_stock_list の行（code/name/sector）
-      - gen_ai_analyses:  gen_ai_analyses の行（code/summary/verdict）
-      - earnings:     (廃止済み・互換性のため残存)
-      - expected_ai:  AI解析が存在すべき件数（上位N）
-      - descriptions: gen_ai_analyses(company-desc-v1) の行（code/summary）＝会社説明
-      - desc_targets: 会社説明があるべき銘柄コード（ウォッチリスト＋保有株）
-    """
-    v: list[Violation] = []
-    expected_date = context.get("date")
-    rankings = context.get("rankings")
-
-    # ── ランキング本体（行レベル不変条件を再利用）+ 鮮度 ──────────────────
-    if "rankings" in context:
-        if not rankings:
-            v.append(Violation("critical", "rankings_empty",
-                               "gen_rankings が空（サイトに本日データが出ない）"))
-        else:
-            v.extend(check_ranking(rankings))
-            if expected_date:
-                dates = {r.get("date") for r in rankings if r.get("date")}
-                if dates and expected_date not in dates:
-                    v.append(Violation("critical", "stale_rankings",
-                        f"gen_rankings に本日({expected_date})のデータがない（最新={max(dates)}）"))
-
-    # ── stock_meta カバレッジ（銘柄名・セクターの欠損）───────────────────
-    meta = context.get("stock_meta")
-    if rankings and meta is not None:
-        meta_codes = {str(m.get("code")) for m in meta}
-        rank_codes = {str(r.get("code")) for r in rankings}
-        missing = rank_codes - meta_codes
-        if missing:
-            sev = "critical" if len(missing) > len(rank_codes) * 0.2 else "warning"
-            v.append(Violation(sev, "meta_coverage",
-                f"stock_meta未登録の銘柄 {len(missing)}/{len(rank_codes)}件 (例 {list(missing)[:3]})"))
-        # セクター欠損
-        no_sector = [str(m.get("code")) for m in meta if not (m.get("sector") or "").strip()]
-        if len(no_sector) > len(meta) * 0.3:
-            v.append(Violation("warning", "sector_missing",
-                f"セクター未設定が{len(no_sector)}/{len(meta)}件（業種別成績が崩れる）"))
-
-    # ── AI解析カバレッジ・空欠損 ─────────────────────────────────────────
-    ai = context.get("gen_ai_analyses")
-    expected_ai = context.get("expected_ai", 0)
-    if ai is not None:
-        if expected_ai and len(ai) < expected_ai:
-            v.append(Violation("warning", "ai_coverage",
-                f"AI解析が{len(ai)}件のみ（想定{expected_ai}件）"))
-        empty = [a.get("code") for a in ai if not str(a.get("summary") or "").strip()]
-        if empty:
-            v.append(Violation("warning", "ai_empty",
-                f"AI解析のsummaryが空: {len(empty)}件 (例 {empty[:3]})"))
-        if expected_date:
-            stale_ai = [a.get("code") for a in ai
-                        if a.get("date") and a.get("date") != expected_date]
-            if stale_ai and len(stale_ai) == len(ai):
-                v.append(Violation("warning", "ai_stale",
-                    f"AI解析が古い日付のみ（本日{expected_date}分なし）"))
-
-    # ── 会社説明カバレッジ（詳細ページ「この会社について」）─────────────────
-    # descriptions: gen_ai_analyses(model_version=company-desc-v1) の {code, summary}
-    # desc_targets: 説明があるべき銘柄コード（ウォッチリスト＋保有株など）
-    descriptions = context.get("descriptions")
-    desc_targets = context.get("desc_targets")
-    if descriptions is not None and desc_targets:
-        have = {str(d.get("code")) for d in descriptions
-                if str(d.get("summary") or "").strip()}
-        targets = [str(c) for c in desc_targets]
-        missing = [c for c in targets if c not in have]
-        if missing:
-            # 対象に説明が1件も無い＝説明パイプライン全体の故障 → critical。
-            # 一部欠損はコンテンツ不足 → warning（スプシに追記すれば解消）。
-            present = [c for c in targets if c in have]
-            sev = "critical" if not present else "warning"
-            v.append(Violation(sev, "description_coverage",
-                f"会社説明が未登録の銘柄 {len(missing)}/{len(targets)}件"
-                f"（詳細ページで『概要情報を取得できませんでした』表示）(例 {missing[:5]})"))
-
-    return v
-
-
 # 銘柄の価格が全期間で同一値のまま = 凍結（更新パイプラインが古いデータを掴んだまま
 # 上書きし続けているバグ）とみなす閾値。
 FROZEN_PRICE_RATIO_CRIT = 0.3
@@ -336,8 +239,8 @@ def check_price_freshness(history: dict) -> list[Violation]:
     きっかけ: backfill_history.pyが「既存日付はスキップ」するため、価格データ更新前に
     生成された古いgen_rankings行が、価格を修正した後の再実行でも再計算されず
     古い値のまま残り続けるバグがあった（例: 三菱商事8058のcloseが2026-06-02時点の
-    値のまま6/19〜7/17まで固まっていた）。単日のスナップショット検査（check_ranking/
-    check_site）では検出できないため、複数日にまたがる時系列を直接検査する。
+    値のまま6/19〜7/17まで固まっていた）。単日のスナップショット検査（check_ranking）
+    では検出できないため、複数日にまたがる時系列を直接検査する。
 
     Args:
         history: {code: [close1, close2, ...]}。各リストは時系列順、2件以上を想定。
@@ -359,59 +262,6 @@ def check_price_freshness(history: dict) -> list[Violation]:
     return v
 
 
-def check_pages(results: list[dict]) -> list[Violation]:
-    """Webページの巡回結果を検査する（純粋関数：取得は呼び出し側で行う）。
-
-    results: 各ページの取得結果リスト。各要素:
-      - route:  ページ識別子（"/", "/rankings", "/stocks/7203" など）
-      - status: HTTPステータス（int）
-      - body:   レスポンスHTML本文（str）
-      - error:  取得時の例外メッセージ（任意。あれば取得失敗扱い）
-      - expect: 本文に含まれるべき文言（任意。これが無ければ内容欠落＝404/描画失敗の疑い）
-    """
-    v: list[Violation] = []
-    for r in results:
-        route = str(r.get("route") or r.get("url") or "?")
-        if r.get("error"):
-            v.append(Violation("critical", "page_fetch",
-                f"{route}: 取得失敗（{r.get('error')}）"))
-            continue
-        status = r.get("status")
-        body   = str(r.get("body") or "")
-        if status != 200:
-            v.append(Violation("critical", "page_status",
-                f"{route}: HTTP {status}（ページが開けない）"))
-            continue
-        if any(m in body for m in PAGE_ERROR_MARKERS):
-            v.append(Violation("critical", "page_error",
-                f"{route}: エラー画面を表示中（描画失敗）"))
-            continue
-        if len(body) < PAGE_MIN_BODY:
-            v.append(Violation("critical", "page_empty",
-                f"{route}: 本文が極端に短い（{len(body)}字・空ページ/描画失敗の疑い）"))
-            continue
-        expect = r.get("expect")
-        if expect and expect not in body:
-            v.append(Violation("critical", "page_content",
-                f"{route}: 期待文言『{expect}』が無い（404/内容欠落の疑い）"))
-    return v
-
-
-def run_pages_gate(results: list[dict], source: str = "", alert: bool = True) -> list[Violation]:
-    """全ページ巡回チェック→ログ→（違反あれば）メール通知。alert-only。"""
-    violations = check_pages(results)
-    summary = format_violations(violations)
-    if violations:
-        logger.warning("[%s] %s", source or "pages_qa", summary)
-        print(summary)
-        if alert:
-            send_qa_alert(violations, source)
-    else:
-        logger.info("[%s] %s", source or "pages_qa", summary)
-        print(summary)
-    return violations
-
-
 def run_price_freshness_gate(history: dict, source: str = "", alert: bool = True) -> list[Violation]:
     """価格凍結チェック→ログ→（違反あれば）メール通知。alert-only。"""
     violations = check_price_freshness(history)
@@ -423,21 +273,6 @@ def run_price_freshness_gate(history: dict, source: str = "", alert: bool = True
             send_qa_alert(violations, source)
     else:
         logger.info("[%s] %s", source or "price_freshness", summary)
-        print(summary)
-    return violations
-
-
-def run_site_gate(context: dict, source: str = "", alert: bool = True) -> list[Violation]:
-    """サイト全体チェック→ログ→（違反あれば）メール通知。alert-only。"""
-    violations = check_site(context)
-    summary = format_violations(violations)
-    if violations:
-        logger.warning("[%s] %s", source or "site_qa", summary)
-        print(summary)
-        if alert:
-            send_qa_alert(violations, source)
-    else:
-        logger.info("[%s] %s", source or "site_qa", summary)
         print(summary)
     return violations
 
