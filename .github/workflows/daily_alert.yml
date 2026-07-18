@@ -36,8 +36,6 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
-          echo "SITE_URL=${{ secrets.SITE_URL }}" >> ~/stock-alert/.env
-          echo "INTERNAL_SEND_SECRET=${{ secrets.INTERNAL_SEND_SECRET }}" >> ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
           echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
@@ -100,26 +98,9 @@ jobs:
       - name: Step 4 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
-      - name: Step 4a - 会社説明をAI生成（未生成の銘柄を差分補完）
-        continue-on-error: true
-        run: cd ~/stock-alert && python web/generate_descriptions.py --limit 400
-
-
-      - name: Step 4c - 全Webページのスモーク検査（QA）
-        continue-on-error: true
-        run: cd ~/stock-alert && sleep 20 && python web/qa_pages.py
-
-      - name: Step 5 - ユーザーアラートメール送信
-        continue-on-error: true
-        run: cd ~/stock-alert && python web/send_user_alerts.py
-
       - name: Step 5b - マーケットタイミング＆dpウォッチアラート
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
-
-      - name: Step 5c - ウォッチ銘柄カタリスト・決算速報アラート
-        continue-on-error: true
-        run: cd ~/stock-alert && python web/send_catalyst_alerts.py
 
       - name: Save model cache
         if: always()

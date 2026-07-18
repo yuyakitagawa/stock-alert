@@ -10,40 +10,14 @@
 【20:00 JST】アラートパイプライン（daily_alert.yml）
 core/screener.py → core/rank_stocks.py
 core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
-web/export_to_web.py → web/send_user_alerts.py（Webアプリ向け）
+web/export_to_web.py（Supabase同期）→ web/market_timing_alert.py（LINE通知）
 
-その他ワークフロー: ci.yml（テスト）、frontend_build.yml（ビルド検証）、
+その他ワークフロー: ci.yml（テスト）、
 keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）、
 data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（株価キャッシュ更新+ランキング遡及・手動実行）
 ```
 
-**ウォッチリスト**（/watchlist）は、ユーザーが自分で銘柄をブックマークして監視する**マイ・ウォッチリスト**。
-ログイン不要で、ブックマークは `localStorage`（即時の正本・オフラインファースト）に保存しつつ、ブラウザ発行の匿名 `client_id`（キー `stocksignal:client-id`）を識別子に
-Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookmarks.ts` の `useBookmarks` フック、キー `stocksignal:bookmarks`、API ルート `app/api/bookmarks` の GET/POST/DELETE・service key）。
-認証が無いため `client_id` はブラウザ単位で、端末間同期は不可（サーバーに記録が残るのみ）。銘柄詳細ページのヘッダーとランキング各行の**しおりアイコン**（`frontend/components/BookmarkButton.tsx`）で追加/削除する。
-ウォッチリストには**「保有株を取り込む」ボタン**があり、オーナーの保有43銘柄（`frontend/lib/owner-holdings.ts`）を自分のブラウザで一括ブックマークできる。
-ウォッチリスト本体は当日の `gen_rankings`（全銘柄スコア）から該当コードを引き、銘柄名・**直近1ヶ月ミニチャート**（Sparkline・緑=上昇/赤=下落）・
-**お得度**（52週高値からの下落率: −30%↓=🔥大お得 / −20%↓=お得 / −10%↓=やや安 / それ以外=高値圏）・**PER/PBR**・**ネットスコア（上昇↑/下落↓確率）**・推奨ラベルを表示する
-（`frontend/components/WatchlistClient.tsx`、デスクトップはテーブル/モバイルはカード）。ミニチャート・お得度・PER/PBR の市場データは API ルート `app/api/watch-metrics`（`fetchWatchMetricsMap`・Yahoo・ISR 1h）から
-ブックマークしたコードぶんだけ取得する（ブックマークは client 管理のため）。当日スコアが無い銘柄（上場廃止・売買停止・対象外等）は「未取得」と表示。ブックマークが0件のときは空状態を表示する。
-初回訪問時は旧キュレーション（toC独占ブランド10銘柄＝`data/pricing_power_watchlist.csv` 由来）を**デフォルトとして一度だけ種まき**する（`DEFAULT_BOOKMARKS`、フラグ `stocksignal:bookmarks-seeded`）。以後ユーザーが削除したものは復活しない。
-
-**会社説明**（銘柄詳細ページ /stocks/[code] の「この会社について」）は**全銘柄が対象**。
-- `web/generate_descriptions.py`：**2段階生成**で事実精度を重視。
-  Phase1: Yahoo Finance JPの「特色」（会社四季報データ）をスクレイプ → 事実確実なテキストを直接保存。
-  Phase2: スクレイプ失敗分のみ Claude Haiku でバッチ生成（20件/リクエスト・429リトライ・フォールバック）。
-  → Supabase `gen_ai_analyses`(model_version=`company-desc-v1`) に保存。
-  日次パイプライン Step 5a2 で差分補完（`--limit` で1回の上限）。`--all` で全件。`--refresh` で全銘柄を再スクレイプ（事実精度向上）。
-- `web/sync_descriptions.py`：スプレッドシートのシート **「📝 会社説明」**（コード/銘柄名/説明）の手動説明を
-  同じテーブルへ upsert（手動が AI 生成を上書き＝最優先）。日次パイプライン Step 5b。
-- 既存の `/api/stock/[code]/description` がこのキャッシュを返す。QA `description_coverage` が全銘柄のカバレッジ欠損を指摘。
-
-**企業インサイト**（銘柄詳細ページ /stocks/[code] の「企業インサイト」・**AI生成/参考**）は、事業概要(拡張)・主要取引先・カタリスト評価・リスクの定性解説。
-- API `/api/stock/[code]/insight`（Claude Haiku、Supabase `gen_ai_analyses` の model_version=`company-insight-v1` にJSONキャッシュ）→ `components/StockInsightPanel.tsx` が「🤖 AI生成・参考」免責付きで表示。取引先は要確認（一次情報＝有価証券報告書）の注記あり。
-- 「利益の質（化粧／本業シュリンク／営業益トレンド）」の**実データ表示はフェーズ2**（営業利益等のSupabaseエクスポートが必要・`docs/handoff_web_quality_section.md`）。
-
-`frontend/` を変更して push すると `.github/workflows/frontend_build.yml` が自動でビルド検証し、
-失敗時（=Vercelデプロイも失敗する）は Gmail に通知する。フロント変更前のローカル `npm run build` 確認も推奨。
+ユーザー向けの通知・操作は LINE Messaging API 経由（Supabase Edge Function `supabase/functions/line-webhook`）で提供する。Web/Vercelアプリは廃止済み。
 
 ---
 
@@ -56,17 +30,13 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可。既存日付は既定でスキップするため、価格データ修正後に再生成したい場合は`--force`で上書き。生成後に`check_price_freshness`で複数日にまたがるclose凍結（更新漏れ）を検査）|
 | `core/rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存。フェーズ5(決算チェック)→フェーズ6(3件cap)→フェーズ7(米国ETFリードラグフィルター) |
-| `web/export_to_web.py` | Supabaseへランキング・AI解析をエクスポート（Step 5）|
-| `web/generate_descriptions.py` | 全銘柄の会社説明を2段階で生成（Phase1: Yahoo特色スクレイプ／Phase2: Haiku Haikuフォールバック）→ `gen_ai_analyses`(company-desc-v1)。`--refresh` で全銘柄再スクレイプ。Step 5a2 |
-| `web/sync_descriptions.py` | スプシ「📝 会社説明」の手動説明を `gen_ai_analyses`(company-desc-v1) へ同期（AI生成を上書き）。Step 5b |
-| `web/send_user_alerts.py` | Webアプリユーザーへのプッシュ通知送信（Step 6）|
+| `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
 | `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・ユーザー別ウォッチリストのdp閾値アラートを配信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
-| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル）＋`check_site`（テーブル横断のカバレッジ・鮮度・欠損＋会社説明カバレッジ `description_coverage`：全銘柄（当日ランキング）に会社説明が無いと指摘）＋`check_pages`（全Webページのスモーク検査：HTTPステータス・エラー画面・空ページ・期待文言の欠落を検知）。全リリース地点（rank_stocks/export_to_web/send_user_alerts）で使用（alert-only：違反でも更新は止めずメール通知）|
-| `web/qa_pages.py` | QA: 本番サイトの全ページ（/ /rankings /watchlist ＋サンプル銘柄ページ）を巡回し `check_pages` で検査。日次パイプライン Step 5c で実行 |
+| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル、rank_stocks/export_to_webで使用）＋`check_price_freshness`（複数日にまたがるclose凍結=更新漏れ検知、backfill_historyで使用）（alert-only：違反でも更新は止めずメール通知）|
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
 | `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
 | `lib/market_compare.py` | **日経 vs S&P500 相対強弱アドバイザー**。日経225とS&P500の20日・60日リターン差から「日本株優位／米国株優位／拮抗」を判定(売買シグナルには影響しない参考情報)。rank_stocksのフェーズ8bで判定し `data/market_compare.json` に保存、Web(`gen_market_compare`・トップページの🌐バナー)とLINE(`market_timing_alert.py`)の両方に表示 |
@@ -79,7 +49,7 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 | `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）と譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`EDINET_API_KEY` 必須 |
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
-| `tests/test_data_sanity.py` | QA（データ整合性・サイト全体・会社説明カバレッジ・全ページスモーク・価格凍結検知）のユニットテスト（34件）|
+| `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（16件）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 
 ---
@@ -131,27 +101,6 @@ Supabase `app_bookmarks` へ非同期同期する（実装: `frontend/lib/bookma
 
 バックテスト（33期間ウォークフォワード: 2021〜2025年）: 現行フィルター avg+6.7% / 日経アルファ+4.4%（有効16/33期間）
 net10〜13%帯（実運用相当）に絞ると avg+7.4% 勝率73%と更に良化。3〜5月エントリーが最も好成績（avg+8〜10%）。
-
-### Top10シミュレーション（Webアプリ・メールに表示）
-
-毎日のネットスコア上位10銘柄（`gen_rankings.rank ≤ 10`）を100株ずつ購入し、
-ネットスコアが **5%未満** に下がった日に売却するロジック。手数料・税金は含まない。
-
-- Web版（`frontend/lib/simulation.ts`）: `gen_rankings` の履歴から遡って集計（即時表示）
-- 売却基準は `SELL_NET_THRESH = 5`（信号消滅）。銘柄ごとに最初のtop10入り日を購入日とする。
-
-### シミュレーション実績（2025/05〜11月エントリー組・2026-05-16時点）
-
-37銘柄を候補選出日の終値でエントリーし、現在まで保有した場合の実績。
-
-| 指標 | 値 |
-|---|---|
-| 平均リターン | **+18.0%** |
-| 中央値 | +17.4% |
-| 勝率（+0%以上） | **89.2%**（33/37銘柄）|
-| 大勝率（+15%以上） | **54.1%**（20/37銘柄）|
-| 最高 | ニッポンインシュア +75.3%（337日保有）|
-| 最低 | キッセイ薬品 −4.8%（276日保有）|
 
 ---
 
@@ -229,9 +178,6 @@ DBキャッシュは廃止。
 |---|---|
 | `gen_rankings` | 毎日のランキングスコア（コード・確率・ネット・推奨・rank）|
 | `jpx_stock_list` | 業種分類・優待月ほかメタ |
-| `gen_ai_analyses` | AI分析（会社説明・企業インサイト）|
-| `gen_simulation` | バックテスト結果 |
-| `gen_risk_regime` | リスクオン/オフ判定 |
 | `gen_market_compare` | 日経 vs S&P500 相対強弱判定 |
 | `jquants_fin_summary` | 四半期財務サマリ（EDINET決算XBRLから抽出。テーブル名は旧J-Quants由来）|
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
@@ -240,9 +186,9 @@ DBキャッシュは廃止。
 | `ext_tdnet_disclosures` | TDnet適時開示（やのしん・⚠️個人運営ソースのため `ext_` で隔離）|
 | `jpx_short_selling` | JPX空売り残高報告（0.5%以上）|
 | `jpx_margin_balance` | JPX個別銘柄信用取引週末残高 |
-| `app_bookmarks` | ウォッチリスト（ブックマーク）|
-| `app_push_subscriptions` | プッシュ通知サブスクリプション |
 | `line_chat_history` | LINE Bot会話履歴（直近3往復、文脈保持用） |
+| `line_users` | LINE Bot登録ユーザー |
+| `dp_watchlist` | ユーザー別ウォッチ銘柄・dp閾値（LINE Bot）|
 
 全銘柄スクリーン（カタリスト候補）は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計する
 （REST per-code を避け高速化）。
@@ -265,7 +211,7 @@ DBキャッシュは廃止。
 | **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
 | **yfinance** | セクターマッピング（米国ETF対応用） | 米国ETFリードラグフィルター（フェーズ7） | `core/rank_stocks.py` |
 | **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
-| **Claude API** (Anthropic) | テキスト生成 | 会社説明(Phase2)・企業インサイト | `web/generate_descriptions.py` |
+| **Claude API** (Anthropic) | テキスト生成 | 決算テキスト感情分析（Haiku × kabutan） | `lib/nlp_sentiment.py` |
 
 ### 特徴量が使うデータと出所
 
