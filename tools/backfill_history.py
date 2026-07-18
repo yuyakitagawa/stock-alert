@@ -34,6 +34,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 _parser = argparse.ArgumentParser()
 _parser.add_argument("--start", default="2026-01-01")
 _parser.add_argument("--end",   default=date.today().isoformat())
+_parser.add_argument("--force", action="store_true",
+                      help="既存日付もスキップせず再生成・上書き（価格データ修正後の再生成用）")
 args, _ = _parser.parse_known_args()
 
 START_DATE = date.fromisoformat(args.start)
@@ -175,14 +177,17 @@ def main():
     target_dates = [d for d in nk_dates if START_DATE.isoformat() <= d <= END_DATE.isoformat()]
     print(f"  対象営業日: {len(target_dates)} 日 ({target_dates[0]} 〜 {target_dates[-1]})")
 
-    # 既存日付をスキップ
+    # 既存日付をスキップ（--force指定時は上書き再生成のためスキップしない）
     existing = get_existing_dates()
-    target_dates = [d for d in target_dates if d not in existing]
-    if not target_dates:
-        print("全日付は既に DB に存在します。Supabase エクスポートのみ実行...")
-        export_all_to_supabase(existing, names)
-        return
-    print(f"  新規処理対象: {len(target_dates)} 日（既存 {len(existing)} 日スキップ）")
+    if args.force:
+        print(f"  --force指定: 既存 {len(existing)} 日も含め再生成・上書きします")
+    else:
+        target_dates = [d for d in target_dates if d not in existing]
+        if not target_dates:
+            print("全日付は既に DB に存在します。Supabase エクスポートのみ実行...")
+            export_all_to_supabase(existing, names)
+            return
+        print(f"  新規処理対象: {len(target_dates)} 日（既存 {len(existing)} 日スキップ）")
 
     # 全銘柄の価格データを1回取得（並列）
     print(f"\n全銘柄の価格データ取得中（並列 20workers）...")

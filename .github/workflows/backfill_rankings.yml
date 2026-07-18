@@ -14,6 +14,11 @@ on:
         description: '株価キャッシュを遡って更新する年数（Yahoo Finance から取得）'
         required: false
         default: '1'
+      force:
+        description: '既存日付も再生成・上書きする（価格データ修正後の再生成用）'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   backfill:
@@ -62,8 +67,12 @@ jobs:
         run: |
           cd ~/stock-alert
           END="${{ github.event.inputs.end_date }}"
+          FORCE=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE="--force"
+          fi
           if [ -z "$END" ]; then
-            python tools/backfill_history.py --start "${{ github.event.inputs.start_date }}"
+            python tools/backfill_history.py --start "${{ github.event.inputs.start_date }}" $FORCE
           else
-            python tools/backfill_history.py --start "${{ github.event.inputs.start_date }}" --end "$END"
+            python tools/backfill_history.py --start "${{ github.event.inputs.start_date }}" --end "$END" $FORCE
           fi
