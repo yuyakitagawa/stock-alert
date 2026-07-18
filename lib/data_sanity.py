@@ -325,6 +325,40 @@ def check_site(context: dict) -> list[Violation]:
     return v
 
 
+# 銘柄の価格が全期間で同一値のまま = 凍結（更新パイプラインが古いデータを掴んだまま
+# 上書きし続けているバグ）とみなす閾値。
+FROZEN_PRICE_RATIO_CRIT = 0.3
+
+
+def check_price_freshness(history: dict) -> list[Violation]:
+    """銘柄ごとの直近close値の時系列が凍結（同一値が続く）していないか検査する（純粋関数）。
+
+    きっかけ: backfill_history.pyが「既存日付はスキップ」するため、価格データ更新前に
+    生成された古いgen_rankings行が、価格を修正した後の再実行でも再計算されず
+    古い値のまま残り続けるバグがあった（例: 三菱商事8058のcloseが2026-06-02時点の
+    値のまま6/19〜7/17まで固まっていた）。単日のスナップショット検査（check_ranking/
+    check_site）では検出できないため、複数日にまたがる時系列を直接検査する。
+
+    Args:
+        history: {code: [close1, close2, ...]}。各リストは時系列順、2件以上を想定。
+                 1件以下の銘柄は判定対象外（比較不能なため）。
+    """
+    v: list[Violation] = []
+    if not history:
+        return v
+    checkable = {code: closes for code, closes in history.items() if len(closes) >= 2}
+    if not checkable:
+        return v
+    frozen = [code for code, closes in checkable.items() if len(set(closes)) == 1]
+    if frozen:
+        ratio = len(frozen) / len(checkable)
+        sev = "critical" if ratio > FROZEN_PRICE_RATIO_CRIT else "warning"
+        v.append(Violation(sev, "frozen_price",
+            f"価格が全期間で同一値のまま凍結: {len(frozen)}/{len(checkable)}件 "
+            f"(例 {frozen[:5]})"))
+    return v
+
+
 def check_pages(results: list[dict]) -> list[Violation]:
     """Webページの巡回結果を検査する（純粋関数：取得は呼び出し側で行う）。
 
@@ -374,6 +408,21 @@ def run_pages_gate(results: list[dict], source: str = "", alert: bool = True) ->
             send_qa_alert(violations, source)
     else:
         logger.info("[%s] %s", source or "pages_qa", summary)
+        print(summary)
+    return violations
+
+
+def run_price_freshness_gate(history: dict, source: str = "", alert: bool = True) -> list[Violation]:
+    """価格凍結チェック→ログ→（違反あれば）メール通知。alert-only。"""
+    violations = check_price_freshness(history)
+    summary = format_violations(violations)
+    if violations:
+        logger.warning("[%s] %s", source or "price_freshness", summary)
+        print(summary)
+        if alert:
+            send_qa_alert(violations, source)
+    else:
+        logger.info("[%s] %s", source or "price_freshness", summary)
         print(summary)
     return violations
 
