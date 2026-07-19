@@ -4,7 +4,8 @@
 毎日のパイプライン終了後に実行:
 1. 全銘柄の平均 drop_prob → N225 投資/キャッシュ判定
 2. ユーザー別ウォッチ銘柄の dp 閾値アラート
-3. 直近のEDINET大量保有・変更報告書（自己申告・譲渡/売却を除くノイズ除外済み）
+3. 直近のEDINET大量保有・変更報告書（自己申告のみ除外。買い/売りは方向性を表示して両方通知。
+   ウォッチ銘柄→法人/ファンド→保有比率の大きさの順に優先し、個人名の提出者は後回し）
 
 通知先: LINE Messaging API (Push Message) × ユーザーごと
 データ源: Supabase (gen_rankings, dp_watchlist, edinet_large_holdings)
@@ -112,7 +113,8 @@ def build_market_compare_section(compare: dict | None) -> str:
 
 
 def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
-    """直近days日のEDINET大量保有・変更報告書を取得し、ノイズ（自己申告・譲渡/売却）を除外して返す。"""
+    """直近days日のEDINET大量保有・変更報告書を取得し、自己申告（提出者≒対象企業）だけ除外して返す。
+    譲渡/売却（sell）は「大口の動向」として買いと同様に見たいので除外しない。"""
     from lib.db import get_edinet_large_holdings_recent
     from tools.scan_large_holdings import is_noise_match, load_name_map
 
@@ -123,27 +125,49 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
         code = r.get("issuer_code")
         name = name_map.get(code, "")
         reason = is_noise_match(r.get("filer_name", ""), name, r.get("doc_description") or "")
-        if reason:
+        if reason == "self_filing":
             continue
         out.append({**r, "name": name})
     return out
 
 
-def build_large_holdings_section(holdings: list[dict], limit: int = LARGE_HOLDINGS_LIMIT) -> str:
+def build_large_holdings_section(
+    holdings: list[dict],
+    watch_codes: set[str] | None = None,
+    limit: int = LARGE_HOLDINGS_LIMIT,
+) -> str:
+    """大口保有動向セクションを整形する。全件出すと多すぎるため、
+    ウォッチ銘柄を最優先・次に個人名より法人/ファンドを優先・その中で保有比率が
+    大きい（動きが大きい）順に並べてlimit件に絞る。
+    残りはLINEチャットで「大量保有」等と聞けば個別に答えられる（check_catalystツール）。"""
+    from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
+
     if not holdings:
         return ""
-    lines = ["🏦 大口保有動向（直近）:"]
-    for h in holdings[:limit]:
-        code = h.get("issuer_code", "")
+    watch_codes = watch_codes or set()
+
+    def sort_key(h):
+        is_watch = str(h.get("issuer_code")) in watch_codes
+        is_individual = is_individual_filer(h.get("filer_name", ""))
+        ratio = h.get("holding_ratio") or 0
+        return (not is_watch, is_individual, -abs(ratio))
+
+    ordered = sorted(holdings, key=sort_key)
+
+    lines = ["🏦 大口保有動向（直近・ウォッチ銘柄/大きい動き優先）:"]
+    for h in ordered[:limit]:
+        code = str(h.get("issuer_code", ""))
         label = f"{h['name']}({code})" if h.get("name") else code
+        mark = "⭐" if code in watch_codes else ""
         doc_type = "大量保有" if h.get("doc_type_code") == "350" else "変更"
         ratio = h.get("holding_ratio")
         ratio_str = f"{ratio:.1f}%" if ratio is not None else "-"
         filer = h.get("filer_name", "")
         disc = h.get("disc_date", "")
-        lines.append(f"  {label}: {filer}が{ratio_str}保有 [{doc_type}] ({disc})")
-    if len(holdings) > limit:
-        lines.append(f"  ...他{len(holdings) - limit}件")
+        direction = "📉売り" if is_sell_disclosure(h.get("doc_description") or "") else "📈買い"
+        lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有 {direction} [{doc_type}] ({disc})")
+    if len(ordered) > limit:
+        lines.append(f"  ...他{len(ordered) - limit}件（LINEで「大量保有」と聞けば確認できます）")
     return "\n".join(lines)
 
 
@@ -238,10 +262,10 @@ def main() -> None:
     market_msg = build_market_section(today_str, avg_dp)
     compare_msg = build_market_compare_section(get_market_compare())
     try:
-        holdings_msg = build_large_holdings_section(get_recent_large_holdings())
+        recent_holdings = get_recent_large_holdings()
     except Exception as e:
         print(f"[market_timing] 大口保有動向の取得に失敗（スキップ）: {e}")
-        holdings_msg = ""
+        recent_holdings = []
     ranking_map = {r["code"]: r for r in rankings}
 
     # ユーザー別ウォッチリストを取得して個別通知
@@ -251,6 +275,7 @@ def main() -> None:
     if not user_watchlists:
         # ウォッチリスト登録ユーザーがいなくても、LINE_USER_IDがあれば市場シグナルだけ送信
         fallback_uid = os.getenv("LINE_USER_ID", "")
+        holdings_msg = build_large_holdings_section(recent_holdings)
         fallback_parts = [p for p in (market_msg, compare_msg, holdings_msg) if p]
         if fallback_uid and fallback_parts:
             print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
@@ -259,6 +284,9 @@ def main() -> None:
         for user_id, watchlist in user_watchlists.items():
             watch_msg, alerts = build_watchlist_section(watchlist, ranking_map)
             all_alerts.extend(alerts)
+
+            watch_codes = {str(w["code"]) for w in watchlist}
+            holdings_msg = build_large_holdings_section(recent_holdings, watch_codes=watch_codes)
 
             parts = [p for p in (market_msg, compare_msg, holdings_msg, watch_msg) if p]
 

@@ -17,7 +17,7 @@ Usage:
   python3 tools/scan_large_holdings.py --days 30       # 遡る日数
   python3 tools/scan_large_holdings.py --candidates data/catalyst_candidates.csv
 """
-import sys, os, csv, json, argparse
+import sys, os, csv, json, argparse, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.edinet import scan_large_holdings, verify_api, _api_key
@@ -56,6 +56,34 @@ def _normalize_name(s: str) -> str:
 # 「買い集め」ではない＝先回りシグナルとして不要な開示の語
 _SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"]
 
+# 法人・ファンドらしさの判定キーワード（提出者が個人か機関投資家かの簡易判定用）
+_INSTITUTION_KEYWORDS = [
+    "株式会社", "有限会社", "合同会社", "合資会社", "合名会社",
+    "ホールディングス", "Holdings", "HD",
+    "ファンド", "Fund", "キャピタル", "Capital",
+    "パートナーズ", "Partners", "Investment", "投資顧問", "投資法人", "投資事業組合",
+    "アセットマネジメント", "Asset Management", "証券", "信託銀行", "銀行",
+    "生命保険", "損害保険", "Inc", "LLC", "LLP", "Ltd", "Corporation", "Corp",
+]
+
+
+def is_individual_filer(filer_name: str) -> bool:
+    """提出者が個人名らしいかを簡易判定する。
+    法人・ファンドの代表的なキーワードを含まず、かつ姓名間の区切りスペースが
+    あれば個人とみなす（全角英数・全角スペースはNFKC正規化してから判定）。
+    """
+    normalized = unicodedata.normalize("NFKC", filer_name or "").strip()
+    if not normalized:
+        return False
+    if any(kw.lower() in normalized.lower() for kw in _INSTITUTION_KEYWORDS):
+        return False
+    return " " in normalized
+
+
+def is_sell_disclosure(doc_description: str) -> bool:
+    """概要が譲渡/売却/売出/処分（買い集めではなく売り）かどうか。"""
+    return any(k in (doc_description or "") for k in _SELL_KEYWORDS)
+
 
 def is_noise_match(filer_name: str, issuer_name: str, doc_description: str) -> "str | None":
     """突合ヒットがノイズなら理由を返す（先回りシグナルでないもの）。問題なければ None。
@@ -63,7 +91,7 @@ def is_noise_match(filer_name: str, issuer_name: str, doc_description: str) -> "
     - self_filing: 提出者≒対象企業（自己申告。第三者の買い集めではない）
     - sell:        概要が譲渡/売却/処分（買いではない）
     """
-    if any(k in (doc_description or "") for k in _SELL_KEYWORDS):
+    if is_sell_disclosure(doc_description):
         return "sell"
     f = _normalize_name(filer_name)
     i = _normalize_name(issuer_name)
