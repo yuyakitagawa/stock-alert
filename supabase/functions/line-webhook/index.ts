@@ -248,7 +248,38 @@ function toFullWidth(s: string): string {
   return s.replace(/[A-Za-z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0));
 }
 
-// ── EDINET大量保有: 売却/自己申告/個人名の判定（tools/scan_large_holdings.pyと同じロジック） ──
+// ── 株価の前日比・前週比 ──────────────────────────────────────────────
+
+// 前週比のlookback日数（配列は直近何件保持していても、最大でここまで遡る）
+const WEEK_LOOKBACK_DAYS = 5;
+
+function pctChange(from: number, to: number): string | null {
+  if (!from) return null; // 0/undefinedによるInfinity・NaN表示を防ぐ
+  const pct = ((to - from) / from) * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
+// rowsはdate.desc（[0]=最新）。前日比・前週比の文字列断片（例: "前日比+1.2%"）を返す。
+// 保有履歴が浅く前週比が前日比と同じ行を指してしまう場合（rows.length<=2）は前週比を省略する。
+function computePriceChanges(rows: { close: number }[]): string[] {
+  if (rows.length < 2) return [];
+  const parts: string[] = [];
+  const day = pctChange(rows[1].close, rows[0].close);
+  if (day) parts.push(`前日比${day}`);
+  const weekIdx = Math.min(WEEK_LOOKBACK_DAYS, rows.length - 1);
+  if (weekIdx > 1) {
+    const week = pctChange(rows[weekIdx].close, rows[0].close);
+    if (week) parts.push(`前週比${week}`);
+  }
+  return parts;
+}
+
+// ── EDINET大量保有: 売却/自己申告/個人名の判定 ──
+// is_sell_disclosure/is_individual_filerはtools/scan_large_holdings.pyと同じキーワード判定。
+// ただし「自己申告のみ除外し、売却は除外せず方向性(📉/📈)を表示する」方針は
+// web/market_timing_alert.py の get_recent_large_holdings/build_large_holdings_section
+// （PR #159）を踏襲している。scan_large_holdings.py の is_noise_match は
+// self_filing/sell の両方をノイズとして除外する点が異なるので注意。
 
 const SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"];
 const INSTITUTION_KEYWORDS = [
@@ -803,17 +834,8 @@ async function fetchStockDetail(code: string): Promise<string> {
   if (ranks.length > 0) {
     const r = ranks[0];
     lines.push(`【${r.name}(${r.code})の詳細データ】`);
-    // ranksはdate.desc（[0]=最新）。前週比は直近5営業日≒1週間前との比較
-    const pctChange = (from: number, to: number): string => {
-      const pct = ((to - from) / from) * 100;
-      return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
-    };
-    const changes: string[] = [];
-    if (ranks.length >= 2) changes.push(`前日比${pctChange(ranks[1].close, r.close)}`);
-    if (ranks.length >= 2) {
-      const weekIdx = Math.min(5, ranks.length - 1);
-      changes.push(`前週比${pctChange(ranks[weekIdx].close, r.close)}`);
-    }
+    // ranksはdate.desc（[0]=最新）
+    const changes = computePriceChanges(ranks);
     const changeStr = changes.length > 0 ? `（${changes.join(", ")}）` : "";
     lines.push(`株価: ${r.close}円${changeStr}, 下落確率: ${r.drop_prob}%`);
     lines.push(`PER（株価収益率＝株価÷EPS。低いほど割安）: ${r.per}（目安<15）, PBR（株価純資産倍率＝株価÷BPS。純資産の何倍で買われているか）: ${r.pbr}（目安<1）, Piotroski: ${r.piotroski}`);
@@ -963,11 +985,6 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
       if (arr.length < TREND_DAYS) arr.push({ date: r.date, drop_prob: r.drop_prob, close: r.close });
     }
 
-    const pctChange = (from: number, to: number): string => {
-      const pct = ((to - from) / from) * 100;
-      return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
-    };
-
     lines.push(`\nこのユーザーのウォッチリスト:`);
     for (const w of watchlist) {
       const trend = trendByCode.get(w.code) ?? []; // 新しい順（[0]=最新）
@@ -975,11 +992,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
       const dpStr = latest ? `下落確率=${latest.drop_prob}%` : "下落確率=--";
       let closeStr = "";
       if (latest) {
-        const dayChange = trend.length >= 2 ? `前日比${pctChange(trend[1].close, latest.close)}` : "";
-        const weekChange = trend.length >= 2
-          ? `前週比${pctChange(trend[trend.length - 1].close, latest.close)}`
-          : "";
-        const changes = [dayChange, weekChange].filter(Boolean).join(", ");
+        const changes = computePriceChanges(trend).join(", ");
         closeStr = ` 株価=${latest.close}円${changes ? `(${changes})` : ""}`;
       }
       // 直近日数分の推移（古い→新しい順）
