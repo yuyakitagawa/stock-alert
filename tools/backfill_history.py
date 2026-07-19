@@ -15,21 +15,20 @@ import argparse
 import time
 import numpy as np
 import joblib
-import requests
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from lib.utils import get_prices, extract_features, add_cs_rank_features, HEADERS, recommend_from_scores
+from lib.utils import get_prices, extract_features, add_cs_rank_features, HEADERS, recommend_from_scores, clean_recommend_label
 from lib.db import save_daily_ranking, DB_PATH, init_db
+import lib.supabase_client as sb
 from config import BASE_DIR
 from core.screener import get_tse_stock_list
 from core.rank_stocks import passes_buy_filter, MIN_LIQUIDITY_M, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument("--start", default="2026-01-01")
@@ -40,38 +39,6 @@ args, _ = _parser.parse_known_args()
 
 START_DATE = date.fromisoformat(args.start)
 END_DATE   = date.fromisoformat(args.end)
-
-EMOJI_MAP = {
-    "🥇 S買い":        "S買い",
-    "🥈 A買い":        "A買い",
-    "⏳ 方向感なし":   "方向感なし",
-    "🟡 高値警戒":     "方向感なし",
-    "高値警戒":        "方向感なし",
-    "—":               "—",
-}
-
-def clean_recommend(v):
-    return EMOJI_MAP.get(v, v)
-
-
-def sb_headers():
-    return {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates",
-    }
-
-
-def upsert(table, rows):
-    if not rows or not SUPABASE_URL:
-        return
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    for i in range(0, len(rows), 500):
-        batch = rows[i:i+500]
-        resp = requests.post(url, headers=sb_headers(), json=batch, timeout=30)
-        if not resp.ok:
-            print(f"  [upsert] {table} failed: {resp.status_code} {resp.text[:100]}")
 
 
 def fetch_nikkei_history():
@@ -351,13 +318,13 @@ def export_all_to_supabase(dates, names):
                 "drop_prob": r["drop_prob"],
                 "net":       r["net"],
                 "vol":       r["vol"],
-                "recommend": clean_recommend(r["recommend"]),
+                "recommend": clean_recommend_label(r["recommend"]),
                 "rel20":     r["rel20"],
                 "per":       r["per"],
                 "pbr":       r["pbr"],
             })
 
-        upsert("gen_rankings", web_rows)
+        sb.upsert("gen_rankings", web_rows)
         s_buy = sum(1 for r in web_rows if r["recommend"] == "S買い")
         print(f"  {date_str}: {len(web_rows)}件 upsert (S買い:{s_buy})")
 

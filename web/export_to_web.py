@@ -2,15 +2,17 @@
 Supabase へ当日のランキング・メタ・決算データをエクスポートする。
 rank_stocks.py の後、alert_email.py の後に実行する（Step 5）。
 
-依存: requests, python-dotenv
+依存: python-dotenv（Supabase通信は lib.supabase_client 経由）
 """
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date
 
-import requests
 from dotenv import load_dotenv
+
+import lib.supabase_client as sb
+from lib.utils import clean_recommend_label
 
 load_dotenv()
 
@@ -22,44 +24,7 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     sys.exit(0)
 
 
-def _sb_headers() -> dict:
-    return {
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates",
-    }
-
-
-def _upsert(table: str, rows: list[dict]) -> None:
-    if not rows:
-        return
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    batch_size = 500
-    for i in range(0, len(rows), batch_size):
-        batch = rows[i : i + batch_size]
-        resp = requests.post(url, headers=_sb_headers(), json=batch, timeout=30)
-        if not resp.ok:
-            print(f"[export_to_web] {table} upsert failed: {resp.status_code} {resp.text[:200]}")
-        else:
-            print(f"[export_to_web] {table}: {len(batch)} 行 upsert 完了")
-
-
-_EMOJI_MAP = {
-    "🥇 S買い":        "S買い",
-    "⏳ 方向感なし":   "方向感なし",
-    "🟡 高値警戒":     "方向感なし",
-    "高値警戒":        "方向感なし",
-    "—":               "—",
-}
-
-
-def _clean_recommend(value: str) -> str:
-    return _EMOJI_MAP.get(value, value)
-
-
 def export_rankings(today: str) -> list[dict]:
-    import lib.supabase_client as sb
     rows = sb.select(
         "gen_rankings",
         f"date=eq.{today}&order=net.desc"
@@ -79,7 +44,7 @@ def export_rankings(today: str) -> list[dict]:
             "drop_prob":  r["drop_prob"],
             "net":        r["net"],
             "vol":        r["vol"],
-            "recommend":  _clean_recommend(r["recommend"]),
+            "recommend":  clean_recommend_label(r["recommend"]),
             "rel20":      r["rel20"],
             "per":          r["per"],
             "pbr":          r["pbr"],
@@ -107,7 +72,7 @@ def export_stock_meta(ranking_rows: list[dict]) -> None:
             "name":    r["name"],
             "sector":  sector_map.get(str(code)),
         })
-    _upsert("jpx_stock_list", meta_rows)
+    sb.upsert("jpx_stock_list", meta_rows)
 
 
 def export_earnings(codes: list[str]) -> None:
@@ -137,7 +102,7 @@ def export_market_compare(today: str) -> None:
         "nk5": v.get("nk5"), "nk20": v.get("nk20"), "nk60": v.get("nk60"),
         "us5": v.get("us5"), "us20": v.get("us20"), "us60": v.get("us60"),
     }
-    _upsert("gen_market_compare?on_conflict=date", [row])
+    sb.upsert("gen_market_compare", [row], on_conflict="date")
 
 
 def main() -> None:
@@ -158,7 +123,7 @@ def main() -> None:
     except Exception as _e:
         print(f"[export_to_web] QAチェックでエラー（無視して継続）: {_e}")
 
-    _upsert("gen_rankings", ranking_rows)
+    sb.upsert("gen_rankings", ranking_rows)
 
     # 2. 企業メタ
     export_stock_meta(ranking_rows)
