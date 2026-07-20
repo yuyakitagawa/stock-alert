@@ -56,6 +56,10 @@ def _normalize_name(s: str) -> str:
 # 「買い集め」ではない＝先回りシグナルとして不要な開示の語
 _SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"]
 
+# これ以上は株式併合等によるスクイーズアウト（完全子会社化）の対象になりうる水準で、
+# 上値が買取価格に収斂し伸びしろが無いとみなして除外する
+MAJORITY_HOLDING_THRESHOLD = 51
+
 # 法人・ファンドらしさの判定キーワード（提出者が個人か機関投資家かの簡易判定用）
 _INSTITUTION_KEYWORDS = [
     "株式会社", "有限会社", "合同会社", "合資会社", "合名会社",
@@ -85,12 +89,20 @@ def is_sell_disclosure(doc_description: str) -> bool:
     return any(k in (doc_description or "") for k in _SELL_KEYWORDS)
 
 
-def is_noise_match(filer_name: str, issuer_name: str, doc_description: str) -> "str | None":
+def is_noise_match(
+    filer_name: str,
+    issuer_name: str,
+    doc_description: str,
+    holding_ratio: "float | None" = None,
+) -> "str | None":
     """突合ヒットがノイズなら理由を返す（先回りシグナルでないもの）。問題なければ None。
 
+    - majority:    保有比率51%以上（スクイーズアウト対象になりうる水準で上値が見込めない）
     - self_filing: 提出者≒対象企業（自己申告。第三者の買い集めではない）
     - sell:        概要が譲渡/売却/処分（買いではない）
     """
+    if holding_ratio is not None and abs(holding_ratio) >= MAJORITY_HOLDING_THRESHOLD:
+        return "majority"
     if is_sell_disclosure(doc_description):
         return "sell"
     f = _normalize_name(filer_name)
@@ -157,7 +169,7 @@ def main():
         print("\n候補CSVが無いため全大量保有イベントを表示します（突合なし）:")
 
     matches = []
-    excluded = {"self_filing": 0, "sell": 0}
+    excluded = {"self_filing": 0, "sell": 0, "majority": 0}
     for h in holdings:
         issuer = h.get("issuer_code")
         if cands and issuer not in cands:
@@ -166,12 +178,12 @@ def main():
         issuer_name = name_map.get(issuer, cand.get("name", ""))
         filer = h.get("filer_name", "")
         desc = (h.get("doc_description") or "").strip()
+        ratio = h.get("holding_ratio")
         if not args.no_exclude:
-            reason = is_noise_match(filer, issuer_name, desc)
+            reason = is_noise_match(filer, issuer_name, desc, ratio)
             if reason:
                 excluded[reason] += 1
                 continue
-        ratio = h.get("holding_ratio")
         matches.append({
             "issuer_code": issuer,
             "code": issuer,
@@ -187,8 +199,11 @@ def main():
         })
 
     title = "構造的候補 × 実際の買い集め（本物の先回り候補）" if cands else "大量保有イベント（直近）"
-    if not args.no_exclude and (excluded["self_filing"] or excluded["sell"]):
-        print(f"\n（ノイズ除外: 自己申告{excluded['self_filing']}件 / 譲渡・売却{excluded['sell']}件）")
+    if not args.no_exclude and (excluded["self_filing"] or excluded["sell"] or excluded["majority"]):
+        print(
+            f"\n（ノイズ除外: 自己申告{excluded['self_filing']}件 / 譲渡・売却{excluded['sell']}件"
+            f" / 過半数超{excluded['majority']}件）"
+        )
     print(f"\n🎯 {title}: {len(matches)}件\n")
     print(f"{'対象':<6}{'銘柄名':<20}{'種別':<8}{'開示日':<12}{'保有%':>6}  {'提出者':<24}  概要")
     print("-" * 110)

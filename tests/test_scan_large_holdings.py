@@ -43,6 +43,14 @@ def test_noise_match_still_detects_sell_and_self_filing():
     assert is_noise_match("○○ファンド", "三菱商事", "大量保有報告書") is None
 
 
+def test_noise_match_detects_majority_holding():
+    """51%以上はスクイーズアウト対象になりうる水準で上値が見込めないため除外する。"""
+    assert is_noise_match("メディパルホールディングス株式会社", "ＰＡＬＴＡＣ", "変更報告書", 97.79) == "majority"
+    assert is_noise_match("ワールドホールディングス株式会社", "ｎｍｓホールディングス", "変更報告書", 83.96) == "majority"
+    assert is_noise_match("○○ファンド", "三菱商事", "大量保有報告書", 42.12) is None
+    assert is_noise_match("○○ファンド", "三菱商事", "大量保有報告書", 50.9) is None
+
+
 if __name__ == "__main__":
     test_sell_keywords_detected()
     test_individual_filer_with_fullwidth_space()
@@ -50,4 +58,5 @@ if __name__ == "__main__":
     test_fullwidth_latin_institution_name_normalized()
     test_empty_filer_not_individual()
     test_noise_match_still_detects_sell_and_self_filing()
-    print("OK: test_scan_large_holdings (6 tests)")
+    test_noise_match_detects_majority_holding()
+    print("OK: test_scan_large_holdings (7 tests)")

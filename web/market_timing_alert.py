@@ -80,7 +80,8 @@ def build_market_compare_section(compare: dict | None) -> str:
 
 
 def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
-    """直近days日のEDINET大量保有・変更報告書を取得し、自己申告（提出者≒対象企業）だけ除外して返す。
+    """直近days日のEDINET大量保有・変更報告書を取得し、自己申告（提出者≒対象企業）と
+    過半数超（51%以上、スクイーズアウト対象で上値が見込めない）を除外して返す。
     譲渡/売却（sell）は「大口の動向」として買いと同様に見たいので除外しない。"""
     from lib.db import get_edinet_large_holdings_recent
     from tools.scan_large_holdings import is_noise_match, load_name_map
@@ -91,11 +92,32 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
     for r in rows:
         code = r.get("issuer_code")
         name = name_map.get(code, "")
-        reason = is_noise_match(r.get("filer_name", ""), name, r.get("doc_description") or "")
-        if reason == "self_filing":
+        reason = is_noise_match(
+            r.get("filer_name", ""), name, r.get("doc_description") or "", r.get("holding_ratio")
+        )
+        if reason in ("self_filing", "majority"):
             continue
         out.append({**r, "name": name})
     return out
+
+
+def _build_ratio_history(holdings: list[dict]) -> dict[tuple[str, str], tuple[float, float]]:
+    """銘柄+提出者ごとに、渡されたholdings内で最も古い/新しい保有比率を集計する。
+    (issuer_code, filer_name) → (最古の比率, 最新の比率)。同一提出者の複数開示が
+    期間内にあれば「5.2%→10.1%」のように変化を見せるために使う。"""
+    grouped: dict[tuple[str, str], list[tuple[str, float]]] = {}
+    for h in holdings:
+        ratio = h.get("holding_ratio")
+        if ratio is None:
+            continue
+        key = (str(h.get("issuer_code", "")), h.get("filer_name", ""))
+        grouped.setdefault(key, []).append((h.get("disc_date", ""), ratio))
+
+    history = {}
+    for key, points in grouped.items():
+        points.sort(key=lambda p: p[0])
+        history[key] = (points[0][1], points[-1][1])
+    return history
 
 
 def build_large_holdings_section(
@@ -105,13 +127,15 @@ def build_large_holdings_section(
 ) -> str:
     """大口保有動向セクションを整形する。全件出すと多すぎるため、
     ウォッチ銘柄を最優先・次に個人名より法人/ファンドを優先・その中で保有比率が
-    大きい（動きが大きい）順に並べてlimit件に絞る。
+    大きい（動きが大きい）順に並べてlimit件に絞る。同一提出者の開示が期間内に複数あれば
+    保有比率の変化を「5.2%→10.1%」のように表示する。
     残りはLINEチャットで「大量保有」等と聞けば個別に答えられる（check_catalystツール）。"""
     from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
 
     if not holdings:
         return ""
     watch_codes = watch_codes or set()
+    ratio_history = _build_ratio_history(holdings)
 
     def sort_key(h):
         is_watch = str(h.get("issuer_code")) in watch_codes
@@ -128,7 +152,14 @@ def build_large_holdings_section(
         mark = "⭐" if code in watch_codes else ""
         doc_type = "大量保有" if h.get("doc_type_code") == "350" else "変更"
         ratio = h.get("holding_ratio")
-        ratio_str = f"{ratio:.1f}%" if ratio is not None else "-"
+        key = (code, h.get("filer_name", ""))
+        first_ratio, last_ratio = ratio_history.get(key, (ratio, ratio))
+        if ratio is None:
+            ratio_str = "-"
+        elif first_ratio != last_ratio:
+            ratio_str = f"{first_ratio:.1f}%→{last_ratio:.1f}%"
+        else:
+            ratio_str = f"{ratio:.1f}%"
         filer = h.get("filer_name", "")
         disc = h.get("disc_date", "")
         direction = "📉売り" if is_sell_disclosure(h.get("doc_description") or "") else "📈買い"

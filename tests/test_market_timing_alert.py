@@ -112,6 +112,35 @@ def test_individual_filer_deprioritized_below_institution():
     assert "個人大量保有" not in msg
 
 
+def test_ratio_change_shown_when_same_filer_has_multiple_disclosures():
+    """同一提出者の開示が期間内に複数あれば「最古%→最新%」で変化を見せる。"""
+    holdings = [
+        {"issuer_code": "4813", "name": "ＡＣＣＥＳＳ", "filer_name": "清原　達郎",
+         "doc_type_code": "350", "holding_ratio": 27.45, "disc_date": "2026-07-01",
+         "doc_description": "変更報告書"},
+        {"issuer_code": "4813", "name": "ＡＣＣＥＳＳ", "filer_name": "清原　達郎",
+         "doc_type_code": "350", "holding_ratio": 13.30, "disc_date": "2026-07-17",
+         "doc_description": "変更報告書（短期大量譲渡）"},
+    ]
+    msg = build_large_holdings_section(holdings, limit=1)
+    assert "27.4%→13.3%" in msg
+
+
+def test_ratio_unchanged_shows_single_value_not_range():
+    """提出者は複数回開示されていても比率が同じなら範囲表示にしない。"""
+    holdings = [
+        {"issuer_code": "8058", "name": "三菱商事", "filer_name": "○○ファンド",
+         "doc_type_code": "350", "holding_ratio": 5.2, "disc_date": "2026-07-10",
+         "doc_description": "大量保有報告書"},
+        {"issuer_code": "8058", "name": "三菱商事", "filer_name": "○○ファンド",
+         "doc_type_code": "360", "holding_ratio": 5.2, "disc_date": "2026-07-17",
+         "doc_description": "訂正報告書"},
+    ]
+    msg = build_large_holdings_section(holdings, limit=1)
+    assert "5.2%" in msg
+    assert "→" not in msg
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
@@ -122,4 +151,6 @@ if __name__ == "__main__":
     test_watchlist_code_prioritized_over_higher_ratio()
     test_non_watchlist_sorted_by_ratio_magnitude()
     test_individual_filer_deprioritized_below_institution()
-    print("OK: test_market_timing_alert (9 tests)")
+    test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
+    test_ratio_unchanged_shows_single_value_not_range()
+    print("OK: test_market_timing_alert (11 tests)")
