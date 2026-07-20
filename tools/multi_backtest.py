@@ -56,10 +56,10 @@ PERIODS = [
 ]
 
 CONFIGS = {
-    "現行(10/8) ": dict(net_min=10.0, drop_max=8.0,  conflict_net=10.0, conflict_drop=5.0),
-    "旧(8/12)  ": dict(net_min=8.0,  drop_max=12.0, conflict_net=None,  conflict_drop=None),
-    "緩(8/8)   ": dict(net_min=8.0,  drop_max=8.0,  conflict_net=None,  conflict_drop=None),
-    "厳(12/6)  ": dict(net_min=12.0, drop_max=6.0,  conflict_net=None,  conflict_drop=None),
+    "drop≤6  ": dict(drop_max=6.0),
+    "drop≤8  ": dict(drop_max=8.0),
+    "drop≤10 ": dict(drop_max=10.0),
+    "drop≤12 ": dict(drop_max=12.0),
 }
 
 # ウォークフォワード: 期間開始日が以下以上のときcutoffモデルを使用
@@ -82,8 +82,8 @@ def ensure_model(cutoff):
     """cutoff指定モデルが存在しなければ学習して作成。成功でTrue。"""
     if cutoff is None:
         return True
-    rise_path = os.path.join(BASE_DIR, f"rf_model_{cutoff}.pkl")
-    if os.path.exists(rise_path):
+    drop_path = os.path.join(BASE_DIR, f"rf_drop_model_{cutoff}.pkl")
+    if os.path.exists(drop_path):
         print(f"  [モデル] cutoff={cutoff} 既存")
         return True
     print(f"\n{'='*60}")
@@ -96,15 +96,11 @@ def ensure_model(cutoff):
     if proc.returncode != 0:
         print(f"  ERROR: モデル学習失敗 (cutoff={cutoff})")
         return False
-    return os.path.exists(rise_path)
+    return os.path.exists(drop_path)
 
 
 def apply_filter(df, cfg):
-    mask = (df["ネット(%)"] >= cfg["net_min"]) & (df["下落確率(%)"] < cfg["drop_max"])
-    if cfg["conflict_net"] is not None:
-        conflict = (df["ネット(%)"] >= cfg["conflict_net"]) & (df["下落確率(%)"] >= cfg["conflict_drop"])
-        mask = mask & ~conflict
-    return df[mask]
+    return df[df["下落確率(%)"] <= cfg["drop_max"]]
 
 
 def run_period(start, end, cutoff=None, skip_run=False):
@@ -238,15 +234,15 @@ def main():
         best = max(summary, key=lambda k: summary[k])
         print(f"\n推奨フィルタ: {best.strip()}  (avg {summary[best]:+.1f}%)")
 
-    # ── 6. パラメータ感度（net_min と drop_max の単独効果） ──
+    # ── 6. パラメータ感度（drop_maxの単独効果） ──
     print("\n" + "=" * 70)
     print("パラメータ感度サマリー")
     print("=" * 70)
-    base = summary.get('現行(10/8) ', float('nan'))
-    print(f"  現行(net10/drop8) ベース:  {base:+.1f}%")
-    print(f"  旧(net8/drop12)との差:     {summary.get('旧(8/12)  ', float('nan')) - base:+.1f}%")
-    print(f"  緩(net8/drop8)との差:      {summary.get('緩(8/8)   ', float('nan')) - base:+.1f}%")
-    print(f"  厳(net12/drop6)との差:     {summary.get('厳(12/6)  ', float('nan')) - base:+.1f}%")
+    base = summary.get('drop≤8  ', float('nan'))
+    print(f"  drop≤8 ベース:       {base:+.1f}%")
+    print(f"  drop≤6 との差:       {summary.get('drop≤6  ', float('nan')) - base:+.1f}%")
+    print(f"  drop≤10 との差:      {summary.get('drop≤10 ', float('nan')) - base:+.1f}%")
+    print(f"  drop≤12 との差:      {summary.get('drop≤12 ', float('nan')) - base:+.1f}%")
 
 
 if __name__ == "__main__":
