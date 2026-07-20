@@ -7,7 +7,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer, is_noise_match
+from tools.scan_large_holdings import (
+    is_sell_disclosure, is_individual_filer, is_noise_match, is_correction_report,
+)
 
 
 def test_sell_keywords_detected():
@@ -51,6 +53,17 @@ def test_noise_match_detects_majority_holding():
     assert is_noise_match("○○ファンド", "三菱商事", "大量保有報告書", 50.9) is None
 
 
+def test_correction_report_detected():
+    """訂正報告書は既存開示の事後修正であり、実際の持分変動ではないため除外対象。"""
+    assert is_correction_report("訂正報告書（大量保有報告書・変更報告書）")
+    assert not is_correction_report("変更報告書")
+    assert not is_correction_report("大量保有報告書")
+
+
+def test_noise_match_detects_correction_report():
+    assert is_noise_match("○○ファンド", "三菱商事", "訂正報告書（大量保有報告書・変更報告書）") == "correction"
+
+
 if __name__ == "__main__":
     test_sell_keywords_detected()
     test_individual_filer_with_fullwidth_space()
@@ -59,4 +72,6 @@ if __name__ == "__main__":
     test_empty_filer_not_individual()
     test_noise_match_still_detects_sell_and_self_filing()
     test_noise_match_detects_majority_holding()
-    print("OK: test_scan_large_holdings (7 tests)")
+    test_correction_report_detected()
+    test_noise_match_detects_correction_report()
+    print("OK: test_scan_large_holdings (9 tests)")

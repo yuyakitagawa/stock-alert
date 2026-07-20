@@ -306,6 +306,12 @@ function isSellDisclosure(docDescription: string): boolean {
   return SELL_KEYWORDS.some((k) => (docDescription || "").includes(k));
 }
 
+// 訂正報告書は既存開示の事後修正であり実際の持分変動ではないため、
+// 現在の保有比率・増減方向の判定からは除外する
+function isCorrectionReport(docDescription: string): boolean {
+  return (docDescription || "").includes("訂正");
+}
+
 function isSelfFiling(filerName: string, issuerName: string): boolean {
   const f = normalizeCompanyName(filerName);
   const i = normalizeCompanyName(issuerName);
@@ -528,7 +534,7 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     const threshold = addMatch[2] ? parseFloat(addMatch[2]) : 8.0;
     const sellThreshold = addMatch[3] ? parseFloat(addMatch[3]) : 20.0;
 
-    if (/^\d{4}$/.test(target)) {
+    if (/^[0-9]{3}[0-9A-Za-z]$/.test(target)) {
       const stock = await lookupStock(target);
       if (!stock) {
         return { handled: true, reply: `${target} はランキングに見つかりません。銘柄コード4桁で指定してください。` };
@@ -567,7 +573,7 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     };
   }
 
-  const removeMatch = trimmed.match(/^(解除|削除|外す)\s+(\d{4})$/i);
+  const removeMatch = trimmed.match(/^(解除|削除|外す)\s+([0-9]{3}[0-9A-Za-z])$/i);
   if (removeMatch) {
     const code = removeMatch[2];
     await removeFromWatchlist(userId, code);
@@ -575,13 +581,23 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
   }
 
   // 「7203 推移」「7203の下落確率履歴」など — 時系列専用
-  const historyMatch = trimmed.match(/^(\d{4})\s*(推移|履歴|時系列|history)/);
+  const historyMatch = trimmed.match(/^([0-9]{3}[0-9A-Za-z])\s*(推移|履歴|時系列|history)/);
   if (historyMatch) {
     const hist = await fetchDropProbHistory(historyMatch[1], 30);
     return { handled: true, reply: hist };
   }
 
-  if (/^\d{4}$/.test(trimmed)) {
+  // 「大口で動いたものは？」「大量保有報告」等 — AIの要約に任せず常に全件をそのまま返す。
+  // AI(Haiku)にツール呼び出し・全件列挙を委ねると会話履歴から要約して省略することが再三あったため、
+  // ここでcheck_catalystを直接呼び出し、フィルタなしの生データをそのまま返す。
+  if (/大量保有|大口|機関投資家の動き|保有報告|5%.{0,3}保有/.test(trimmed) && !/[0-9]{3}[0-9A-Za-z]/.test(trimmed)) {
+    const scope = /ウォッチ|保有株/.test(trimmed) ? "watchlist" : "all";
+    const result = await executeCheckCatalyst({ scope }, userId);
+    const idx = result.indexOf("🏦");
+    return { handled: true, reply: idx >= 0 ? result.slice(idx) : result };
+  }
+
+  if (/^[0-9]{3}[0-9A-Za-z]$/.test(trimmed)) {
     const stock = await lookupStock(trimmed);
     if (!stock) {
       return { handled: true, reply: `${trimmed} のデータが見つかりません。` };
@@ -1006,7 +1022,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
     }
   }
 
-  const codeMatch = userMessage.match(/(\d{4})/);
+  const codeMatch = userMessage.match(/([0-9]{3}[0-9A-Za-z])/);
   if (codeMatch) {
     const detail = await fetchStockDetail(codeMatch[1]);
     if (detail) lines.push("\n" + detail);
@@ -1097,7 +1113,7 @@ const TOOLS: Anthropic.Tool[] = [
 async function resolveCode(
   query: string,
 ): Promise<{ code: string; name: string } | { candidates: { code: string; name: string }[] } | null> {
-  if (/^\d{4}$/.test(query)) {
+  if (/^[0-9]{3}[0-9A-Za-z]$/.test(query)) {
     const stock = await lookupStock(query);
     return stock ? { code: stock.code, name: stock.name } : null;
   }
@@ -1364,6 +1380,9 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
     holdings = holdings.filter(
       (h) => h.holding_ratio == null || Math.abs(h.holding_ratio as number) < MAJORITY_HOLDING_THRESHOLD,
     );
+    // 訂正報告書は既存開示の事後修正であり実際の持分変動を表さないため、
+    // 現在の保有比率・増減方向の判定対象から除外する
+    holdings = holdings.filter((h) => !isCorrectionReport(h.doc_description as string));
 
     // 銘柄+提出者ごとに、期間内で最も古い/新しい保有比率を集計。
     // 同一提出者の開示が複数あれば「5.2%→10.1%」のように変化を見せる
@@ -1402,15 +1421,21 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
       lines.push(`\n🏦 大量保有報告（直近${days}日・銘柄ごとに最新1件・全${deduped.length}銘柄）\n`);
       for (const h of deduped) {
         let ratio: string;
+        let direction: string;
+        const hist = h.holding_ratio == null ? undefined : ratioHistory.get(`${h.issuer_code}::${h.filer_name}`);
         if (h.holding_ratio == null) {
           ratio = "不明";
+          direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
+        } else if (hist && hist.oldest !== hist.newest) {
+          // 期間内に複数開示があり比率が変化していれば、実際の増減で判定する
+          // （概要のキーワードより信頼できる。買い集め中でも「変更報告書」としか
+          // 書かれず売り関連キーワードが付かないケースが多いため）
+          ratio = `${hist.oldest.toFixed(2)}%→${hist.newest.toFixed(2)}%`;
+          direction = hist.newest > hist.oldest ? "📈買い" : "📉売り";
         } else {
-          const hist = ratioHistory.get(`${h.issuer_code}::${h.filer_name}`);
-          ratio = hist && hist.oldest !== hist.newest
-            ? `${hist.oldest.toFixed(2)}%→${hist.newest.toFixed(2)}%`
-            : `${(h.holding_ratio as number).toFixed(2)}%`;
+          ratio = `${(h.holding_ratio as number).toFixed(2)}%`;
+          direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
         }
-        const direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
         lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} ${direction} (${h.disc_date})`);
       }
     } else {

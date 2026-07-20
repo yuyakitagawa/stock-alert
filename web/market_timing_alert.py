@@ -95,7 +95,7 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
         reason = is_noise_match(
             r.get("filer_name", ""), name, r.get("doc_description") or "", r.get("holding_ratio")
         )
-        if reason in ("self_filing", "majority"):
+        if reason in ("self_filing", "majority", "correction"):
             continue
         out.append({**r, "name": name})
     return out
@@ -162,7 +162,13 @@ def build_large_holdings_section(
             ratio_str = f"{ratio:.1f}%"
         filer = h.get("filer_name", "")
         disc = h.get("disc_date", "")
-        direction = "📉売り" if is_sell_disclosure(h.get("doc_description") or "") else "📈買い"
+        if ratio is not None and first_ratio != last_ratio:
+            # 期間内に複数開示があり比率が変化していれば、実際の増減で判定する
+            # （概要のキーワードより信頼できる。買い集め中でも「変更報告書」としか
+            # 書かれず売り関連キーワードが付かないケースが多いため）
+            direction = "📈買い" if last_ratio > first_ratio else "📉売り"
+        else:
+            direction = "📉売り" if is_sell_disclosure(h.get("doc_description") or "") else "📈買い"
         lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有 {direction} [{doc_type}] ({disc})")
     if len(ordered) > limit:
         lines.append(f"  ...他{len(ordered) - limit}件（LINEで「大量保有」と聞けば確認できます）")

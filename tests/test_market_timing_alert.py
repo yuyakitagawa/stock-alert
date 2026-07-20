@@ -126,6 +126,22 @@ def test_ratio_change_shown_when_same_filer_has_multiple_disclosures():
     assert "27.4%→13.3%" in msg
 
 
+def test_ratio_decrease_without_sell_keyword_labelled_as_sell():
+    """概要に譲渡/売却等のキーワードが無い普通の「変更報告書」でも、期間内の比率が
+    減少していれば📉売りと判定する（キーワードより実際の増減トレンドを優先）。"""
+    holdings = [
+        {"issuer_code": "4078", "name": "堺化学工業", "filer_name": "SH Investment",
+         "doc_type_code": "360", "holding_ratio": 13.66, "disc_date": "2026-07-07",
+         "doc_description": "変更報告書"},
+        {"issuer_code": "4078", "name": "堺化学工業", "filer_name": "SH Investment",
+         "doc_type_code": "360", "holding_ratio": 11.09, "disc_date": "2026-07-17",
+         "doc_description": "変更報告書"},
+    ]
+    msg = build_large_holdings_section(holdings, limit=1)
+    assert "📉売り" in msg
+    assert "📈買い" not in msg
+
+
 def test_ratio_unchanged_shows_single_value_not_range():
     """提出者は複数回開示されていても比率が同じなら範囲表示にしない。"""
     holdings = [
@@ -152,5 +168,6 @@ if __name__ == "__main__":
     test_non_watchlist_sorted_by_ratio_magnitude()
     test_individual_filer_deprioritized_below_institution()
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
+    test_ratio_decrease_without_sell_keyword_labelled_as_sell()
     test_ratio_unchanged_shows_single_value_not_range()
-    print("OK: test_market_timing_alert (11 tests)")
+    print("OK: test_market_timing_alert (12 tests)")
