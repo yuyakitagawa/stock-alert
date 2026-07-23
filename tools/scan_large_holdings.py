@@ -89,6 +89,12 @@ def is_sell_disclosure(doc_description: str) -> bool:
     return any(k in (doc_description or "") for k in _SELL_KEYWORDS)
 
 
+def is_correction_report(doc_description: str) -> bool:
+    """概要が訂正報告書（既存開示の事後修正）かどうか。実際の持分変動を表さないため、
+    現在の保有比率・増減方向の判定対象からは除外する。"""
+    return "訂正" in (doc_description or "")
+
+
 def is_noise_match(
     filer_name: str,
     issuer_name: str,
@@ -98,11 +104,14 @@ def is_noise_match(
     """突合ヒットがノイズなら理由を返す（先回りシグナルでないもの）。問題なければ None。
 
     - majority:    保有比率51%以上（スクイーズアウト対象になりうる水準で上値が見込めない）
+    - correction:  訂正報告書（既存開示の事後修正で、実際の持分変動ではない）
     - self_filing: 提出者≒対象企業（自己申告。第三者の買い集めではない）
     - sell:        概要が譲渡/売却/処分（買いではない）
     """
     if holding_ratio is not None and abs(holding_ratio) >= MAJORITY_HOLDING_THRESHOLD:
         return "majority"
+    if is_correction_report(doc_description):
+        return "correction"
     if is_sell_disclosure(doc_description):
         return "sell"
     f = _normalize_name(filer_name)
