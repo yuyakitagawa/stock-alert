@@ -126,9 +126,11 @@ def build_large_holdings_section(
     limit: int = LARGE_HOLDINGS_LIMIT,
 ) -> str:
     """大口保有動向セクションを整形する。全件出すと多すぎるため、
-    ウォッチ銘柄を最優先・次に個人名より法人/ファンドを優先・その中で保有比率が
-    大きい（動きが大きい）順に並べてlimit件に絞る。同一提出者の開示が期間内に複数あれば
-    保有比率の変化を「5.2%→10.1%」のように表示する。
+    開示日が新しい順を最優先し、同日内ではウォッチ銘柄→個人名より法人/ファンドを優先→
+    保有比率が大きい（動きが大きい）順に並べてlimit件に絞る。同一提出者の開示が期間内に
+    複数あれば保有比率の変化を「5.2%→10.1%」のように表示する。
+    開示日を優先しないと、古い日付のウォッチ銘柄ヒットが新しい開示を押しのけて
+    何日も居座り、「毎日同じ古い日付が出る」状態になるため。
     残りはLINEチャットで「大量保有」等と聞けば個別に答えられる（check_catalystツール）。"""
     from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
 
@@ -137,11 +139,17 @@ def build_large_holdings_section(
     watch_codes = watch_codes or set()
     ratio_history = _build_ratio_history(holdings)
 
+    def _disc_date_ordinal(disc_date: str) -> int:
+        try:
+            return date.fromisoformat(disc_date).toordinal()
+        except (ValueError, TypeError):
+            return 0
+
     def sort_key(h):
         is_watch = str(h.get("issuer_code")) in watch_codes
         is_individual = is_individual_filer(h.get("filer_name", ""))
         ratio = h.get("holding_ratio") or 0
-        return (not is_watch, is_individual, -abs(ratio))
+        return (-_disc_date_ordinal(h.get("disc_date", "")), not is_watch, is_individual, -abs(ratio))
 
     ordered = sorted(holdings, key=sort_key)
 
