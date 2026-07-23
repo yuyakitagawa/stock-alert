@@ -142,6 +142,35 @@ def test_ratio_decrease_without_sell_keyword_labelled_as_sell():
     assert "📈買い" not in msg
 
 
+def test_prior_ratio_shows_change_even_with_single_window_disclosure():
+    """directウィンドウ内では1件しか開示が無くても、prior_ratio（ウィンドウより前の
+    直近の実際の比率）が付与されていれば「以前%→今回%」で変化を表示する。"""
+    holdings = [
+        {"issuer_code": "9425", "name": "ReYuu Japan", "filer_name": "Long Corridor AM",
+         "doc_type_code": "360", "holding_ratio": 41.95, "disc_date": "2026-07-16",
+         "doc_description": "変更報告書", "prior_ratio": 36.95},
+    ]
+    msg = build_large_holdings_section(holdings, limit=1)
+    assert "37.0%→42.0%" in msg
+    assert "📈買い" in msg
+
+
+def test_prior_ratio_ignored_when_window_already_shows_change():
+    """ウィンドウ内で既に複数開示があり変化が見えている場合はprior_ratioを使わない
+    （ウィンドウ内の実際の推移をそのまま優先する）。"""
+    holdings = [
+        {"issuer_code": "4078", "name": "堺化学工業", "filer_name": "SH Investment",
+         "doc_type_code": "360", "holding_ratio": 13.66, "disc_date": "2026-07-07",
+         "doc_description": "変更報告書", "prior_ratio": 99.9},
+        {"issuer_code": "4078", "name": "堺化学工業", "filer_name": "SH Investment",
+         "doc_type_code": "360", "holding_ratio": 11.09, "disc_date": "2026-07-17",
+         "doc_description": "変更報告書", "prior_ratio": 99.9},
+    ]
+    msg = build_large_holdings_section(holdings, limit=1)
+    assert "99.9" not in msg
+    assert "📉売り" in msg
+
+
 def test_ratio_unchanged_shows_single_value_not_range():
     """提出者は複数回開示されていても比率が同じなら範囲表示にしない。"""
     holdings = [
@@ -169,5 +198,7 @@ if __name__ == "__main__":
     test_individual_filer_deprioritized_below_institution()
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
     test_ratio_decrease_without_sell_keyword_labelled_as_sell()
+    test_prior_ratio_shows_change_even_with_single_window_disclosure()
+    test_prior_ratio_ignored_when_window_already_shows_change()
     test_ratio_unchanged_shows_single_value_not_range()
-    print("OK: test_market_timing_alert (12 tests)")
+    print("OK: test_market_timing_alert (14 tests)")

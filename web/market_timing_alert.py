@@ -120,6 +120,31 @@ def _build_ratio_history(holdings: list[dict]) -> dict[tuple[str, str], tuple[fl
     return history
 
 
+def fetch_prior_ratios(codes: list[str]) -> dict[tuple[str, str], float]:
+    """指定銘柄について、直近の大量保有報告よりも前の実際の保有比率
+    （訂正報告書を除く）を (issuer_code, filer_name) → 比率 で返す。
+    直近days日のウィンドウ内に1件しか開示が無い提出者でも、それ以前の開示と
+    比較して増減を「○%→○%」で示せるよう、日数を絞らず全履歴を見る。"""
+    from lib.db import get_edinet_large_holdings_recent
+    from tools.scan_large_holdings import is_correction_report
+
+    if not codes:
+        return {}
+    rows = get_edinet_large_holdings_recent(days=3650, codes=codes)
+    seen: dict[tuple[str, str], float] = {}
+    prior: dict[tuple[str, str], float] = {}
+    for r in rows:
+        ratio = r.get("holding_ratio")
+        if ratio is None or is_correction_report(r.get("doc_description") or ""):
+            continue
+        key = (str(r.get("issuer_code", "")), r.get("filer_name", ""))
+        if key not in seen:
+            seen[key] = ratio
+        elif key not in prior:
+            prior[key] = ratio
+    return prior
+
+
 def build_large_holdings_section(
     holdings: list[dict],
     watch_codes: set[str] | None = None,
@@ -128,7 +153,9 @@ def build_large_holdings_section(
     """大口保有動向セクションを整形する。全件出すと多すぎるため、
     ウォッチ銘柄を最優先・次に個人名より法人/ファンドを優先・その中で保有比率が
     大きい（動きが大きい）順に並べてlimit件に絞る。同一提出者の開示が期間内に複数あれば
-    保有比率の変化を「5.2%→10.1%」のように表示する。
+    保有比率の変化を「5.2%→10.1%」のように表示する。各holdingに`prior_ratio`
+    （fetch_prior_ratiosで取得した直近windowより前の比率）が付いていれば、
+    windowが1件でもそれと比較して変化を表示する。
     残りはLINEチャットで「大量保有」等と聞けば個別に答えられる（check_catalystツール）。"""
     from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
 
@@ -154,6 +181,9 @@ def build_large_holdings_section(
         ratio = h.get("holding_ratio")
         key = (code, h.get("filer_name", ""))
         first_ratio, last_ratio = ratio_history.get(key, (ratio, ratio))
+        prior_ratio = h.get("prior_ratio")
+        if ratio is not None and first_ratio == last_ratio and prior_ratio is not None and prior_ratio != ratio:
+            first_ratio, last_ratio = prior_ratio, ratio
         if ratio is None:
             ratio_str = "-"
         elif first_ratio != last_ratio:
@@ -256,6 +286,11 @@ def main() -> None:
     compare_msg = build_market_compare_section(get_market_compare())
     try:
         recent_holdings = get_recent_large_holdings()
+        prior_ratios = fetch_prior_ratios(list({str(h.get("issuer_code", "")) for h in recent_holdings}))
+        for h in recent_holdings:
+            key = (str(h.get("issuer_code", "")), h.get("filer_name", ""))
+            if key in prior_ratios:
+                h["prior_ratio"] = prior_ratios[key]
     except Exception as e:
         print(f"[market_timing] 大口保有動向の取得に失敗（スキップ）: {e}")
         recent_holdings = []

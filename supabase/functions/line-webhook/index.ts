@@ -1418,6 +1418,30 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
     });
 
     if (deduped.length > 0) {
+      // ウィンドウ内に1件しか開示が無い提出者でも増減を示せるよう、対象銘柄の
+      // 全履歴（訂正報告書除く）から直近2件を見て前回比率を補完する
+      const priorRatioMap = new Map<string, number>();
+      const dedupedCodes = deduped.map((h) => h.issuer_code as string);
+      const histRes = await fetch(
+        `${SB_URL}/rest/v1/edinet_large_holdings?issuer_code=in.(${dedupedCodes.join(",")})` +
+          `&select=issuer_code,filer_name,holding_ratio,disc_date,submit_date,doc_description` +
+          `&order=disc_date.desc,submit_date.desc&limit=2000`,
+        { headers: sbHeaders() },
+      );
+      if (histRes.ok) {
+        const histRows: Record<string, unknown>[] = await histRes.json();
+        const seenKeys = new Set<string>();
+        for (const r of histRows) {
+          if (r.holding_ratio == null || isCorrectionReport(r.doc_description as string)) continue;
+          const key = `${r.issuer_code}::${r.filer_name}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+          } else if (!priorRatioMap.has(key)) {
+            priorRatioMap.set(key, r.holding_ratio as number);
+          }
+        }
+      }
+
       lines.push(`\n🏦 大量保有報告（直近${days}日・銘柄ごとに最新1件・全${deduped.length}銘柄）\n`);
       for (const h of deduped) {
         let ratio: string;
@@ -1433,8 +1457,15 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
           ratio = `${hist.oldest.toFixed(2)}%→${hist.newest.toFixed(2)}%`;
           direction = hist.newest > hist.oldest ? "📈買い" : "📉売り";
         } else {
-          ratio = `${(h.holding_ratio as number).toFixed(2)}%`;
-          direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
+          const current = h.holding_ratio as number;
+          const prior = priorRatioMap.get(`${h.issuer_code}::${h.filer_name}`);
+          if (prior != null && prior !== current) {
+            ratio = `${prior.toFixed(2)}%→${current.toFixed(2)}%`;
+            direction = current > prior ? "📈買い" : "📉売り";
+          } else {
+            ratio = `${current.toFixed(2)}%`;
+            direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
+          }
         }
         lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} ${direction} (${h.disc_date})`);
       }
