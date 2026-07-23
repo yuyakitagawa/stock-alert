@@ -34,8 +34,8 @@ Q2_2025_END    = date(2025, 8, 14)   # 1年前の3ヶ月テスト終了
 # 実行モード: python3 backtest.py [bear|1year|q2_2025] [--start DATE] [--end DATE] [--top-n N] ...
 _parser = _argparse.ArgumentParser(add_help=False)
 _parser.add_argument("mode", nargs="?", choices=["bear", "1year", "q2_2025"], default=None)
-_parser.add_argument("--top-n",   type=int,   default=5,    help="上位N銘柄を選択（デフォルト: 5）")
-_parser.add_argument("--net-min", type=float, default=None, help="ネットスコア最低閾値（例: 15）")
+_parser.add_argument("--top-n",   type=int,   default=5,    help="下落確率が低い上位N銘柄を選択（デフォルト: 5）")
+_parser.add_argument("--drop-max", type=float, default=None, help="下落確率の上限閾値（例: 8）")
 _parser.add_argument("--compare",  action="store_true", help="保有数×閾値を一括比較")
 _parser.add_argument("--screened",    action="store_true", help="スクリーナー特化モデルを使用")
 _parser.add_argument("--no-screener", action="store_true", help="スクリーナーをスキップして全銘柄をモデルで評価")
@@ -68,9 +68,8 @@ if _args.start or _args.end:
 FORECAST_DAYS  = _args.forecast_days if hasattr(_args, 'forecast_days') else 21
 RISE_THRESHOLD = 5.0 if FORECAST_DAYS <= 30 else 15.0   # 21日モデル=5%, 63日モデル=15%
 BIG_WIN_THRESHOLD = 8.0 if FORECAST_DAYS <= 30 else 15.0  # 21日で+8%=大勝
-NET_THRESHOLD  = 5.0
 TOP_N          = _args.top_n
-NET_MIN        = _args.net_min
+DROP_MAX       = _args.drop_max
 COMPARE_MODE   = _args.compare
 NO_SCREENER    = _args.no_screener
 NIKKEI_CODE    = "^N225"
@@ -264,16 +263,14 @@ def main():
     print(f"  予測上位{TOP_N}銘柄を「買い」として検証")
     print("=" * 60)
 
-    # モデル読み込み（--screened フラグでスクリーナー特化モデルを使用）
+    # モデル読み込み（下落モデルのみ。--screened フラグでスクリーナー特化モデルを使用）
     model_suffix = "_screened" if getattr(_args, "screened", False) else ""
     model_cutoff_tag = f"_{_args.model_cutoff}" if getattr(_args, "model_cutoff", None) else ""
-    rise_path = os.path.join(BASE_DIR, f"rf_model{model_suffix}{model_cutoff_tag}.pkl")
     drop_path = os.path.join(BASE_DIR, f"rf_drop_model{model_suffix}{model_cutoff_tag}.pkl")
-    if not os.path.exists(rise_path):
-        print(f"ERROR: {rise_path} が見つかりません")
+    if not os.path.exists(drop_path):
+        print(f"ERROR: {drop_path} が見つかりません")
         return
-    rise_model = joblib.load(rise_path)
-    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    drop_model = joblib.load(drop_path)
     print(f"モデル読み込み完了{f' (cutoff:{_args.model_cutoff})' if model_cutoff_tag else ''}{'（スクリーナー特化）' if model_suffix else ''}")
 
     print("TSE全銘柄リストを取得中（バイアスなし）...")
@@ -364,9 +361,7 @@ def main():
     for idx, (code, name, price_then, price_now) in enumerate(raw_meta):
         feat_aug = feats_aug[idx]
         actual_return = (price_now - price_then) / price_then * 100
-        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1]) * 100
-        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100 if drop_model else 0
-        net = rise_prob - drop_prob
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) * 100
         sc = sc_map.get(code, {})
         results.append({
             "コード": code,
@@ -374,15 +369,13 @@ def main():
             f"{BACKTEST_DATE}株価": round(price_then, 1),
             f"{TODAY}株価": round(price_now, 1),
             "実績リターン(%)": round(actual_return, 2),
-            "上昇確率(%)": round(rise_prob, 1),
             "下落確率(%)": round(drop_prob, 1),
-            "ネット(%)": round(net, 1),
             "モメンタム3M(%)": round(sc["return_3m"] * 100, 1) if sc.get("return_3m") is not None else None,
             "モメンタム20d(%)": round(sc["momentum_20d"], 1) if sc.get("momentum_20d") is not None else None,
             "ボラ(%)": round(sc["vol"], 1) if sc.get("vol") is not None else None,
             "RSI": round(sc["rsi"], 1) if sc.get("rsi") is not None else None,
             "相対強度3M(%)": round(sc["rel_strength_3m"] * 100, 1) if sc.get("rel_strength_3m") is not None else None,
-            "予測正解": int(actual_return >= RISE_THRESHOLD),
+            "上昇達成": int(actual_return >= RISE_THRESHOLD),
         })
 
     if not results:
@@ -432,31 +425,31 @@ def main():
 
     def _print_detail(group_df, label):
         print(f"\n【{label}詳細】")
-        print(f"{'コード':>6}  {'銘柄名':<20}  {'予測ネット':>10}  {'実績':>8}  結果")
+        print(f"{'コード':>6}  {'銘柄名':<20}  {'予測下落確率':>10}  {'実績':>8}  結果")
         print("-" * 60)
         for _, row in group_df.sort_values("実績リターン(%)", ascending=False).iterrows():
             mark = "✅" if row["実績リターン(%)"] >= BIG_WIN_THRESHOLD else ("🔵" if row["実績リターン(%)"] > 0 else "❌")
             print(
                 f"{row['コード']:>6}  {str(row['銘柄名']):<20}  "
-                f"ネット{row['ネット(%)']:>+6.1f}%  "
+                f"下落確率{row['下落確率(%)']:>6.1f}%  "
                 f"実績{row['実績リターン(%)']:>+7.2f}%  {mark}"
             )
 
     if COMPARE_MODE:
-        # ── 比較モード: 保有数×閾値を一括比較 ──
+        # ── 比較モード: 保有数×下落確率閾値を一括比較 ──
         print(f"\n{'='*60}")
-        print("【比較モード: 保有数 × ネットスコア閾値】")
+        print("【比較モード: 保有数 × 下落確率上限】")
         nk = nikkei_return if nikkei_return is not None else 0
         header = f"{'設定':<22} {'銘柄数':>5} {'平均':>8} {'アルファ':>9} {'日経勝率':>8} {'勝率':>7} {'大勝率':>7}"
         print(header)
         print("-" * 70)
-        for net_min in [None, 10.0, 15.0, 20.0]:
+        for drop_max in [None, 15.0, 10.0, 8.0]:
             for top_n in [5, 10, 15, 30]:
-                if net_min is not None:
-                    cand = df[df["ネット(%)"] >= net_min].nlargest(top_n, "ネット(%)")
-                    tag  = f"net≥{net_min:.0f} top{top_n}"
+                if drop_max is not None:
+                    cand = df[df["下落確率(%)"] <= drop_max].nsmallest(top_n, "下落確率(%)")
+                    tag  = f"drop≤{drop_max:.0f} top{top_n}"
                 else:
-                    cand = df.nlargest(top_n, "ネット(%)")
+                    cand = df.nsmallest(top_n, "下落確率(%)")
                     tag  = f"top{top_n}"
                 n = len(cand)
                 if n == 0:
@@ -473,15 +466,15 @@ def main():
                     f"  {wins_0/n*100:.0f}%  {wins_big/n*100:.0f}%"
                 )
         # 詳細は通常モードのTOP_N設定で表示
-        top_df = df.nlargest(TOP_N, "ネット(%)")
+        top_df = df.nsmallest(TOP_N, "下落確率(%)")
     else:
         # ── 通常モード ──
-        if NET_MIN is not None:
-            top_df = df[df["ネット(%)"] >= NET_MIN].nlargest(TOP_N, "ネット(%)")
-            label  = f"ネットスコア≥{NET_MIN} 上位{len(top_df)}"
+        if DROP_MAX is not None:
+            top_df = df[df["下落確率(%)"] <= DROP_MAX].nsmallest(TOP_N, "下落確率(%)")
+            label  = f"下落確率≤{DROP_MAX} 下位{len(top_df)}"
         else:
-            top_df = df.nlargest(TOP_N, "ネット(%)")
-            label  = f"ネットスコア上位{TOP_N}"
+            top_df = df.nsmallest(TOP_N, "下落確率(%)")
+            label  = f"下落確率が低い上位{TOP_N}"
         _print_group(top_df, label, nikkei_return)
 
     # ── 詳細表示 ──
@@ -505,18 +498,11 @@ def run_rolling_main():
     print(f"  上位{TOP_N}銘柄 × 各ラウンド")
     print("=" * 60)
 
-    rise_path       = os.path.join(BASE_DIR, "rf_model.pkl")
-    drop_path       = os.path.join(BASE_DIR, "rf_drop_model.pkl")
-    alpha_rise_path = os.path.join(BASE_DIR, "rf_alpha_model.pkl")
-    alpha_drop_path = os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl")
-    if not os.path.exists(rise_path):
-        print(f"ERROR: {rise_path} が見つかりません"); return
-    rise_model       = joblib.load(rise_path)
-    drop_model       = joblib.load(drop_path)       if os.path.exists(drop_path)       else None
-    alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
-    alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
-    ensemble = alpha_rise_model is not None and alpha_drop_model is not None
-    print(f"モデル読み込み完了（{'4モデルアンサンブル' if ensemble else '2モデル'}）")
+    drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
+    if not os.path.exists(drop_path):
+        print(f"ERROR: {drop_path} が見つかりません"); return
+    drop_model = joblib.load(drop_path)
+    print(f"モデル読み込み完了")
 
     print("TSE全銘柄リストを取得中...")
     all_stocks = fetch_tse_codes()
@@ -594,42 +580,28 @@ def run_rolling_main():
         fa = add_cs_rank_features(np.array(raw_feats, dtype=float))
         scores = []
         for idx, (code, name, pe, px) in enumerate(raw_meta):
-            rp  = float(rise_model.predict_proba([fa[idx]])[0][1]) * 100
-            dp  = float(drop_model.predict_proba([fa[idx]])[0][1]) * 100 if drop_model else 0
-            arp = adp = 0.0
-            if ensemble:
-                arp = float(alpha_rise_model.predict_proba([fa[idx]])[0][1]) * 100
-                adp = float(alpha_drop_model.predict_proba([fa[idx]])[0][1]) * 100
-                # メタ学習結果: rise_abs が唯一の有効予測因子（相関 +0.241）
-                # drop_abs(-0.024) / rise_rel(+0.036) / drop_rel(0.000) はノイズ
-                net = rp
-            else:
-                net = rp - dp
+            dp = float(drop_model.predict_proba([fa[idx]])[0][1]) * 100
             ret = (px - pe) / pe * 100
-            scores.append((code, name, net, ret, rp, dp, arp, adp))
+            scores.append((code, name, dp, ret))
 
-        scores.sort(key=lambda x: -x[2])
+        scores.sort(key=lambda x: x[2])  # 下落確率が低い順
         top = scores[:TOP_N]
         rets = [r[3] for r in top]
         avg_r = float(np.mean(rets))
         per_round_avgs.append(avg_r)
         # 上位TOP_N銘柄の成績（バックテスト用）
-        for code, name, net, ret, rp, dp, arp, adp in top:
+        for code, name, dp, ret in top:
             all_trades.append({"ラウンド": ri+1, "entry": str(entry_date),
                                 "exit": str(exit_date), "code": code,
-                                "銘柄名": name, "net": round(net,1), "return": round(ret,2),
-                                "rise_abs": round(rp,1), "drop_abs": round(dp,1),
-                                "rise_rel": round(arp,1), "drop_rel": round(adp,1),
+                                "銘柄名": name, "drop_prob": round(dp,1), "return": round(ret,2),
                                 "selected": 1})
         # メタ学習用: スクリーナー通過全銘柄のスコアも記録（TOP_N以外はselected=0）
         top_codes = {s[0] for s in top}
-        for code, name, net, ret, rp, dp, arp, adp in scores:
+        for code, name, dp, ret in scores:
             if code not in top_codes:
                 all_trades.append({"ラウンド": ri+1, "entry": str(entry_date),
                                     "exit": str(exit_date), "code": code,
-                                    "銘柄名": name, "net": round(net,1), "return": round(ret,2),
-                                    "rise_abs": round(rp,1), "drop_abs": round(dp,1),
-                                    "rise_rel": round(arp,1), "drop_rel": round(adp,1),
+                                    "銘柄名": name, "drop_prob": round(dp,1), "return": round(ret,2),
                                     "selected": 0})
 
         # 日経同期間リターン

@@ -343,7 +343,7 @@ def build_stock_fundamentals(kabutan_top_n=None):
         if ranking_date:
             rows_db = get_ranking_by_date(
                 ranking_date,
-                select="code,name,close,net,rise_prob,drop_prob,vol,recommend,rel20,per,pbr")
+                select="code,name,close,drop_prob,vol,recommend,rel20,per,pbr")
             for r in get_all_yutai():
                 yutai_map[str(r["code"])] = r.get("yutai_month") or r.get("record_month")
     except Exception as e:
@@ -488,7 +488,7 @@ def build_stock_fundamentals(kabutan_top_n=None):
         pass
 
     header = [
-        "コード", "銘柄名", "市場区分", "株価", "Netスコア", "上昇確率(%)", "下落確率(%)",
+        "コード", "銘柄名", "市場区分", "株価", "下落確率(%)",
         "ボラ(%)", "推奨", "日経相対20日",
         "PER", "PBR", "ROE(%)",
         "配当利回り(%)", "1株配当(円)",
@@ -519,8 +519,6 @@ def build_stock_fundamentals(kabutan_top_n=None):
             r["name"],
             market_map.get(code, "—"),
             r["close"]     if r["close"]     is not None else "—",
-            round(r["net"], 2) if r["net"] is not None else "—",
-            round(r["rise_prob"], 1) if r["rise_prob"] is not None else "—",
             round(r["drop_prob"], 1) if r["drop_prob"] is not None else "—",
             round(r["vol"], 1)       if r["vol"]       is not None else "—",
             r["recommend"] or "—",
@@ -548,12 +546,10 @@ def build_stock_fundamentals(kabutan_top_n=None):
 def build_model_spec():
     rows = [
         ["項目", "値", "備考"],
-        ["モデルタイプ", "XGBoost (2モデルアンサンブル)", "上昇モデル + 下落モデル"],
-        ["予測ターゲット", "21日後の株価変動", "21営業日 ≒ 1ヶ月"],
-        ["上昇ラベル基準", "21日リターン ≥ +5%", "絶対リターン"],
-        ["下落ラベル基準", "21日リターン ≤ -5%", "絶対リターン"],
-        ["選択銘柄数", "上位5銘柄", "Net Score上位"],
-        ["スコア計算式", "Net Score = 上昇確率 - 下落確率", ""],
+        ["モデルタイプ", "XGBoost (下落モデルのみ)", "上昇モデルは廃止済み"],
+        ["予測ターゲット", "63日後の株価変動", "63営業日 ≒ 3ヶ月"],
+        ["下落ラベル基準", "63日リターン ≤ -15%", "絶対リターン"],
+        ["選択銘柄数", "上位5銘柄", "下落確率が低い順"],
         ["特徴量次元数", "44次元", "38基本 + 6クロスセクション"],
         ["", "", ""],
         ["── XGBoostパラメータ ──", "", ""],

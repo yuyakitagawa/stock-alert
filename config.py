@@ -18,10 +18,6 @@ MARKET_TIMING_ENABLED    = True   # True: 下落相場でシグナル停止
 MARKET_TIMING_SMA_DAYS   = 63     # 何日SMAと比較するか
 MARKET_TIMING_20D_THRESH = -3.0   # 日経20日リターンがこれ以下でも停止（急落キャッチ用）
 
-# ── モデル出力 ─────────────────────────────────────────────────────────────
-FORECAST        = 63            # 予測ホライズン（営業日）
-RISE_THRESHOLD  = 15.0          # 上昇判定の閾値（%）
-MAX_BUY_VOL20   = 22.0          # 直近20日ボラ上限（BT: vol<22%で勝率77%+9.4%維持、高vol除外）
 # ── スクリーナー条件（screener.py / backtest.py / rf_train_v3.py と同値に保つ） ──
 SCREENER_MOM_3M_MIN   =  8.0   # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
 SCREENER_MOM_3M_MAX   = 30.0
@@ -30,12 +26,3 @@ SCREENER_VOL_MIN      = 22.0   # 年率ボラ下限（20.0→22.0）
 SCREENER_VOL_MAX      = 50.0
 SCREENER_RSI_MIN      = 45.0   # RSI下限（40→45: 勝率+4pp）
 SCREENER_RSI_MAX      = 70.0
-
-# ── 新規候補フィルター ─────────────────────────────────────────────────────
-NEW_CANDIDATE_NET_MIN        = 10.0  # ネットスコア下限（8.0→10.0: 弱い帯を除外）
-NEW_CANDIDATE_NET_MAX        = 13.0  # ネットスコア上限（過熱回避）
-CANDIDATE_DROP_PROB_MAX      =  8.0  # 下落確率上限（12.0→8.0: 高リスク帯を除外）
-CANDIDATE_EARNINGS_SKIP_DAYS = 7     # 決算N日以内の新規候補を除外
-# conflict除外: net高くてdrop_probも無視できない「矛盾シグナル」を除外
-CANDIDATE_CONFLICT_NET_MIN   = 10.0  # net がこれ以上かつ
-CANDIDATE_CONFLICT_DROP_MIN  =  5.0  # drop_prob がこれ以上なら候補から除外

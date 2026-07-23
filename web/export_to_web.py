@@ -27,8 +27,8 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
 def export_rankings(today: str) -> list[dict]:
     rows = sb.select(
         "gen_rankings",
-        f"date=eq.{today}&order=net.desc"
-        "&select=date,code,name,close,rise_prob,drop_prob,net,vol,"
+        f"date=eq.{today}&order=drop_prob.asc"
+        "&select=date,code,name,close,drop_prob,vol,"
         "recommend,rel20,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
     )
 
@@ -40,9 +40,7 @@ def export_rankings(today: str) -> list[dict]:
             "rank":       i,
             "name":       r["name"],
             "close":      r["close"],
-            "rise_prob":  r["rise_prob"],
             "drop_prob":  r["drop_prob"],
-            "net":        r["net"],
             "vol":        r["vol"],
             "recommend":  clean_recommend_label(r["recommend"]),
             "rel20":      r["rel20"],

@@ -1,5 +1,70 @@
 # Dev Log
 
+## 2026-07-20 下落モデル一本化（上昇モデル・Netスコア・💎買いシステムの廃止）
+
+```
+背景: ユーザーから「webを削除して、下落モデルしか使ってないから、たくさん削除できる
+      ものがあると思ってる」との指摘。調査の結果、以下が判明：
+      - core/rf_train_v3.py は rf_model.pkl（上昇）と rf_drop_model.pkl（下落）の
+        2モデルを学習・保存していたが、rank_stocks.py/backtest.py 側で条件分岐して
+        いた「4モデルアンサンブル」（alpha_rise/alpha_drop込み）は alpha モデルが
+        一度も生成されていないため実質デッドコードだった
+      - LINE Bot（supabase/functions/line-webhook/index.ts）はウォッチリストの
+        買い時/売り時判定・ランキングソート・AIチャットの根拠のいずれにおいても
+        drop_prob のみを参照し、recommend（💎買いラベル）や net はどこからも
+        参照していなかった。AIチャット自体のシステムプロンプトにも「上昇モデルは
+        精度が低いのでnetスコアは絶対に使わない」と明記されていた
+      - つまり上昇モデル・Netスコア・QVフィルターに基づく「💎買いシステム」は
+        gen_rankingsに毎日書き込まれるだけで、本番のどのユーザー接点にも一切
+        到達していない完全な計算コスト・保守コストのみのオーバーヘッドだった
+
+対応（ユーザー承認: 上昇モデル/Net/💎買いシステム全廃止 + backtest系ツールの
+      大幅書き換えも許可、との3点確認に「あってます」で合意）:
+  - lib/utils.py: recommend_from_scores() から net 引数を削除。net起因の
+    売買判定（net<-5売り、net≥10買いゲート）を撤廃し、drop_prob<8%を唯一の
+    確率ベース買いゲートとした
+  - core/rank_stocks.py: rise_model/alpha_rise_model/alpha_drop_model の
+    読み込み・net計算を削除。ソート順をdrop_prob昇順に変更。判定ラベルを
+    drop_prob閾値ベース（🟢安全圏<8%/🟡通常<15%/🔴危険）に変更。
+    既存の4防御フィルター（優待権利落ち・米国ETFリードラグ・NLP感情・
+    相場リスク管制官）は元々 recommend文字列（"💎 買い"）で判定していたため
+    ロジック変更不要だった
+  - core/rf_train_v3.py: 上昇モデル(rf_model.pkl)の学習・保存を停止。
+    generate_samples() から label_rise/alpha_rise/alpha_drop の計算を削除
+  - lib/data_sanity.py: net整合性チェック（net=rise-drop、このQAモジュール
+    創設のきっかけとなった過去バグの検知ロジック）を廃止。下落確率のみの
+    検査に一本化（予測多様性/縮退検知の対象もdrop_probに変更）
+  - tools/backtest.py・multi_backtest.py: --net-min→--drop-max、
+    nlargest(net)→nsmallest(drop_prob) に全面書き換え
+  - tools/optimize_net_weights.py・tools/simulate_monthly.py: 目的が消滅した
+    ため削除（simulate_monthly.pyは調査中に buy_labels 未定義のクラッシュ
+    バグも発見済み）
+  - tools/export_report_to_sheets.py: net/rise_prob列を削除、モデル説明を
+    「XGBoost（下落モデルのみ）」に修正（ついでに従来の誤記だった
+    「21日後±5%」を実際の「63日後±15%」に修正）
+  - web/export_to_web.py・lib/db.py: select/order を drop_prob 基準に変更
+  - config.py: 未使用だった FORECAST/RISE_THRESHOLD/MAX_BUY_VOL20 と、
+    simulate_monthly.py専用だった新規候補フィルター定数群を削除
+  - tests/test_data_sanity.py: drop_prob単一のフィクスチャに全面書き換え
+    （TestNetIntegrity削除、他は移植）。README.md/CLAUDE.mdのモデル説明・
+    S買い条件・ファイルマップ・AUC表記も同時更新
+  - 影響なし（変更不要と確認済み）: tools/catalyst_backtest.py（元々net/rise
+    非依存）、export_all_to_supabase()（過去日付のrise_prob/net値を読み戻す
+    処理は正しい挙動のため維持）
+
+制約・注意: このサンドボックス環境には xgboost/scikit-learn/学習済みモデル
+      (.pkl)/DB接続が無いため、CLAUDE.mdの「改善マージ規律」が要求する
+      tools/backtest.py bear での効果検証はここでは実行不可能だった。
+      コード変更後、GitHub Actions等の別環境でbacktest.py bear（および
+      通常期間）を実行し、平均リターン・勝率・大勝率が既存と同等以上で
+      あることを確認してからのマージが必須（未検証のままdeploy厳禁）。
+
+判定: 保留 — 上記の理由によりbacktest未検証。マージ判断は検証結果を見て
+      別途行うこと。
+```
+
+---
+
 ## 2026-07-18 Supabase書き込み/取得ロジックの重複排除リファクタ
 
 ```

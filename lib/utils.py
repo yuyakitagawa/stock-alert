@@ -695,16 +695,15 @@ def clean_recommend_label(value: str) -> str:
     return _RECOMMEND_EMOJI_MAP.get(value, value)
 
 
-def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
+def recommend_from_scores(drop_prob, allow_buy=True, vol=None,
                           piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
                           ret90=None, turnover_m=None, regime=None,
                           drawdown60=None, down_streak_raw=None,
                           cfo_margin=None, leverage=None, op_margin_improve=None):
-    """💎 買い: QV条件(業績強×株価低迷) + ファンダ品質 + モデルスコア + レジーム防御。
-    🔴 売り検討: drop_probやnetが危険域に入った銘柄を警告。"""
+    """💎 買い: 下落確率が低く、QV条件(業績強×株価低迷) + ファンダ品質を満たす銘柄。
+    🔴 売り検討: 下落確率が危険域に入った銘柄を警告。
+    LINE Botのウォッチリスト等と同じく下落モデルのみに基づく（上昇モデルは廃止済み）。"""
     if drop_prob is not None and drop_prob >= 10.0:
-        return "🔴 売り検討"
-    if net < -5.0:
         return "🔴 売り検討"
     if drawdown60 is not None and drawdown60 < -0.20:
         return "🔴 売り検討"
@@ -725,7 +724,6 @@ def recommend_from_scores(net, drop_prob=None, allow_buy=True, vol=None,
     )
     if (qv_ok and quality_ok
             and drop_prob is not None and drop_prob < 8.0
-            and net >= 10.0
             and (vol is None or vol <= 20.0)
             and (ret90 is None or ret90 > -0.25)
             and (turnover_m is None or turnover_m >= 50.0)):
