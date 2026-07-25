@@ -152,16 +152,28 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
         return None
 
 
+class MicroCMSPermissionError(Exception):
+    """APIキーの権限不足など、リトライしても直らない投稿エラー。"""
+
+
 def publish_article(payload: dict) -> "str | None":
-    """microCMSへPOSTし、成功時はcontent idを返す（失敗時はNone）。"""
+    """microCMSへPOSTし、成功時はcontent idを返す（失敗時はNone）。
+    権限不足（キーにPOST権限が無い等）は MicroCMSPermissionError を送出し、
+    呼び出し側で以降の候補すべてをスキップさせる（無駄なClaude呼び出しを防ぐ）。"""
     try:
         resp = requests.post(
             _microcms_base_url(), headers=_microcms_headers(), json=payload, timeout=20
         )
+        if resp.status_code in (401, 403) or (
+            resp.status_code == 400 and "forbidden" in resp.text.lower()
+        ):
+            raise MicroCMSPermissionError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         if resp.status_code not in (200, 201):
             print(f"    ⚠ 投稿失敗 HTTP {resp.status_code}: {resp.text[:200]}")
             return None
         return resp.json().get("id")
+    except MicroCMSPermissionError:
+        raise
     except Exception as e:
         print(f"    ⚠ 投稿例外: {e}")
         return None
@@ -231,7 +243,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             published.append({**payload, "id": None})
             continue
 
-        content_id = publish_article(payload)
+        try:
+            content_id = publish_article(payload)
+        except MicroCMSPermissionError as e:
+            print(f"  ✖ 権限エラーのため以降の候補もスキップして終了します: {e}")
+            break
         if content_id:
             print(f"  ✅ 投稿: {name}({code}) {disc_date} 推定{deal_amount}億円 → id={content_id}")
             published.append({**payload, "id": content_id})

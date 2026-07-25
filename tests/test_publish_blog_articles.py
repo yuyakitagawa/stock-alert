@@ -115,6 +115,38 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
+def test_build_and_publish_stops_early_on_permission_error():
+    """1件目でAPIキーの権限エラーが出たら、2件目以降はClaude呼び出しごと打ち切る
+    （無駄なトークン消費を防ぐ）。"""
+    holdings = [
+        {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+         "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+         "doc_description": "大量保有報告書"},
+        {"issuer_code": "9999", "name": "テスト商事", "filer_name": "アセットマネジメント株式会社",
+         "holding_ratio": 6.0, "disc_date": "2026-07-20", "doc_type_code": "360",
+         "doc_description": "変更報告書"},
+    ]
+    generate_calls = []
+
+    def _track_generate(fact_sheet):
+        generate_calls.append(fact_sheet)
+        return {"title": "テストタイトル", "body": "<p>本文</p>"}
+
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d: ratio), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "generate_article_body", side_effect=_track_generate), \
+         mock.patch.object(m, "publish_article",
+                            side_effect=m.MicroCMSPermissionError("HTTP 400: forbidden")):
+        results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
+
+    assert results == []
+    assert len(generate_calls) == 1  # 2件目はClaudeを呼ばずに打ち切られる
+
+
 def _fact_sheet():
     return {"stock_name": "テスト", "stock_code": "7203", "filer_name": "X",
             "doc_type_label": "大量保有報告書", "holding_ratio": 8.5,
@@ -154,4 +186,5 @@ if __name__ == "__main__":
     test_build_and_publish_excludes_sell_and_maps_fields()
     test_build_and_publish_skips_when_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
-    print("全テスト成功 (9件)")
+    test_build_and_publish_stops_early_on_permission_error()
+    print("全テスト成功 (10件)")
