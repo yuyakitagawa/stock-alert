@@ -972,10 +972,16 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
   }
 
   if (watchlist.length > 0) {
-    // ウォッチリスト銘柄の直近6営業日分を取得（前日比=直近2日、前週比=直近6営業日≒1週間で算出）
+    // ウォッチリスト銘柄の直近6営業日分を取得（前日比=直近2日、前週比=直近6営業日≒1週間で算出）。
+    // date絞り込み無しだと銘柄数×蓄積履歴で行数がPostgRESTの既定上限(1000件)を超え、
+    // code.asc順で後方の銘柄が丸ごと切り捨てられる（実例: 17銘柄×137行=2329行で
+    // アルファベット後半9銘柄が「データ未取得」になっていた）。直近を日数指定で絞る。
     const watchCodes = watchlist.map((w) => w.code);
+    const trendSince = new Date();
+    trendSince.setDate(trendSince.getDate() - 14); // 6営業日分を余裕をもってカバー
+    const trendSinceStr = trendSince.toISOString().slice(0, 10);
     const trendRes = await fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=in.(${watchCodes.join(",")})&select=code,date,close,drop_prob&order=code.asc,date.desc`,
+      `${SB_URL}/rest/v1/gen_rankings?code=in.(${watchCodes.join(",")})&date=gte.${trendSinceStr}&select=code,date,close,drop_prob&order=code.asc,date.desc`,
       { headers: sbHeaders() },
     );
     const trendRows: { code: string; date: string; close: number; drop_prob: number }[] = trendRes.ok ? await trendRes.json() : [];
