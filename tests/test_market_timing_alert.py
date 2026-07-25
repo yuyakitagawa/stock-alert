@@ -40,6 +40,21 @@ def test_sell_disclosure_labelled_as_sell():
     assert "📈買い" not in msg
 
 
+def test_ratio_decrease_labelled_as_sell_even_without_keyword():
+    """概要が「変更報告書」とだけ書かれ売買方向のキーワードが無くても、
+    holding_ratio_prior(直前保有割合)との比較で保有比率が減っていれば📉売りと表示する
+    （実例: 東芝がキオクシアHD株を一部売却し16.10%→15.10%になった開示が
+    概要のキーワードのみに頼る旧ロジックでは📈買いに誤表示されていたバグ）。"""
+    holdings = [{
+        "issuer_code": "285A", "name": "キオクシアホールディングス", "filer_name": "株式会社東芝",
+        "doc_type_code": "360", "holding_ratio": 15.10, "holding_ratio_prior": 16.10,
+        "disc_date": "2026-07-23", "doc_description": "変更報告書",
+    }]
+    msg = build_large_holdings_section(holdings)
+    assert "📉売り" in msg
+    assert "📈買い" not in msg
+
+
 def test_change_report_labelled_correctly():
     holdings = [{
         "issuer_code": "7203", "name": "トヨタ自動車", "filer_name": "△△投信",
@@ -145,6 +160,7 @@ if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
     test_sell_disclosure_labelled_as_sell()
+    test_ratio_decrease_labelled_as_sell_even_without_keyword()
     test_change_report_labelled_correctly()
     test_missing_name_falls_back_to_code()
     test_truncates_over_limit_with_count()
@@ -153,4 +169,4 @@ if __name__ == "__main__":
     test_individual_filer_deprioritized_below_institution()
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
     test_ratio_unchanged_shows_single_value_not_range()
-    print("OK: test_market_timing_alert (11 tests)")
+    print("OK: test_market_timing_alert (12 tests)")
