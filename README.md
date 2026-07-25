@@ -47,12 +47,14 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `tools/catalyst_backtest.py` | カタリスト候補スクリーンのヒストリカルBT（point-in-time・disc_date≤基準日）。A/Bあり/なしで平均・勝率・大勝率を比較。データは J-Quants財務＋yahoo_price_cache |
 | `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
 | `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）と譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`is_sell_disclosure`/`is_individual_filer` は `market_timing_alert.py` のLINE通知セクションでも再利用（売却を除外せず方向性表示、個人名提出者を優先度で後回し）。`EDINET_API_KEY` 必須 |
+| `web/publish_blog_articles.py` | **ブログ記事自動生成・投稿**（Step 5c、microCMS検証用サイト`microcms-blog-demo`向け）。`market_timing_alert.get_recent_large_holdings`（自己申告・過半数超・売却を除外し買い方向のみ）からネタを取得し、yfinanceの発行済株式数×株価×保有比率変化で取得金額(億円)を概算（推定不能な銘柄はスキップ）、Claude（`ANTHROPIC_API_KEY`）に事実のみを渡して解説記事を生成しmicroCMSへ即時公開（人間は事後にmicroCMS管理画面で修正する運用）。同一銘柄・同一開示日の重複投稿は事前チェックでスキップ。`--dry-run`で投稿せず内容確認のみ可。`MICROCMS_SERVICE_DOMAIN`/`MICROCMS_API_KEY`（書き込み権限）必須、未設定ならスキップ |
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
 | `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（16件）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション整形のユニットテスト（11件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・個人名判定・過半数超除外・ノイズ除外）のユニットテスト（7件）|
+| `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・売却除外・重複防止）のユニットテスト（9件、ネットワークは全てモック）|
 
 ---
 
@@ -258,6 +260,8 @@ DBキャッシュは廃止。
 | `SUPABASE_URL` | Supabase プロジェクトURL（全データ永続化の宛先）|
 | `SUPABASE_SERVICE_KEY` | Supabase service_role キー（バックエンド書込用）|
 | `EDINET_API_KEY` | EDINET API v2 サブスクリプションキー（日次の大量保有スキャン用。未登録ならスキャンはスキップ）|
+| `MICROCMS_SERVICE_DOMAIN` | `microcms-blog-demo` 用microCMSサービスドメイン（Step 5c: ブログ記事自動投稿。未登録ならスキップ）|
+| `MICROCMS_API_KEY` | 同上・書き込み権限付きAPIキー |
 
 ### 依存パッケージ
 ```

@@ -59,6 +59,11 @@ npm run dev
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - 画像は `next/image` を使用し、`next.config.ts` の `images.remotePatterns` で `images.microcms-assets.io` を許可。
+- デザインは東京ガス公式サイトを参考に、ブランドブルー(`#0068b7`)＋ネイビー＋ゴールドのアクセント、アウトライン型ピルバッジ、画像上にタグをオーバーレイするカードレイアウトを採用（`src/app/globals.css` のCSS変数で調整可）。
+
+## コンテンツの自動生成（任意）
+
+リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（買い方向のみ）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。投稿後の内容確認・修正はmicroCMS管理画面で人間が行う想定。詳細はスクリプト冒頭のdocstringを参照。
 
 ## 検証観点
 
