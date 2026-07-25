@@ -28,11 +28,14 @@ export default function RootLayout({
       lang="ja"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col bg-section-tint">
         <Header />
         <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
           {children}
         </main>
+        <footer className="border-t border-gray-200 bg-brand-navy py-6 text-center text-xs text-white/70">
+          microCMS検証用ダミーサイト・本番運用は想定していません
+        </footer>
       </body>
     </html>
   );

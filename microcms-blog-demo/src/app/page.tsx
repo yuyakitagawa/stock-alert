@@ -16,11 +16,11 @@ export default async function HomePage({
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">新着記事</h1>
+      <h1 className="mb-6 text-2xl font-bold text-brand-navy">新着記事</h1>
       {contents.length === 0 ? (
         <p className="text-gray-500">記事がまだありません。</p>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {contents.map((article) => (
             <ArticleCard key={article.id} article={article} />
           ))}

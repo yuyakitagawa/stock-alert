@@ -1,17 +1,17 @@
 import type { DealType } from "@/types/article";
 
 const COLOR_MAP: Record<DealType, string> = {
-  機関投資家買い: "bg-blue-100 text-blue-800",
-  インサイダー買い: "bg-purple-100 text-purple-800",
-  自社株買い: "bg-green-100 text-green-800",
-  ETFフロー: "bg-amber-100 text-amber-800",
-  その他: "bg-gray-100 text-gray-800",
+  機関投資家買い: "border-brand-blue text-brand-blue",
+  インサイダー買い: "border-brand-gold text-amber-700",
+  自社株買い: "border-emerald-600 text-emerald-700",
+  ETFフロー: "border-slate-500 text-slate-600",
+  その他: "border-gray-400 text-gray-600",
 };
 
 export default function DealTypeBadge({ dealType }: { dealType: DealType }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${COLOR_MAP[dealType]}`}
+      className={`inline-flex items-center rounded-full border bg-white px-2.5 py-0.5 text-xs font-semibold ${COLOR_MAP[dealType]}`}
     >
       {dealType}
     </span>
