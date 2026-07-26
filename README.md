@@ -34,7 +34,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。ウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大5件、個人名の提出者は後回し。残りはLINEで「大量保有」と聞けば`check_catalyst`ツールで個別回答）・ユーザー別ウォッチリストのdp閾値アラートを配信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
-| `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由 |
+| `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗は指数バックオフで自動リトライ）|
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
 | `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル、rank_stocks/export_to_webで使用）＋`check_price_freshness`（複数日にまたがるclose凍結=更新漏れ検知、backfill_historyで使用）（alert-only：違反でも更新は止めずメール通知）|
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
@@ -55,6 +55,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション整形のユニットテスト（12件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・ノイズ除外）のユニットテスト（9件）|
 | `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・dealType分類・category導出・売却除外・重複防止・権限エラー時の早期打ち切り・複数フィールドのセレクト配列形式への自動リトライ）のユニットテスト（15件、ネットワークは全てモック）|
+| `tests/test_supabase_client.py` | Supabase REST APIクライアントのリトライ挙動（一時的なネットワーク失敗時のバックオフ再試行・最終失敗時に呼び出し元を落とさないこと）のユニットテスト（3件）|
 
 ---
 
