@@ -1,5 +1,38 @@
 # Dev Log
 
+## 2026-07-25 Supabaseクライアントのネットワークタイムアウト耐性追加
+
+```
+発見の経緯: ユーザーがPR #163（下落モデル一本化）のbacktest.py bear検証を
+      ローカル環境で実行中、Supabaseへのyahoo_price_cache書き込み
+      (insert_ignore)が読み取りタイムアウト(30秒)で失敗し、リトライ処理が
+      無かったため例外がそのまま伝播してバックテスト全体が停止した。
+
+原因: lib/supabase_client.py の insert_ignore/select/select_one/delete/rpc は
+      requests.post/get/delete を直接呼ぶだけで例外処理が無く、単発の
+      ネットワーク瞬断でも即座に呼び出し元まで例外が伝播していた
+      （upsertだけは既にtry/exceptで例外を握りつぶしバッチ単位でスキップする
+      作りだったが、他の関数には無かった）。
+
+対応:
+  - lib/supabase_client.py に共通ラッパー _request() を追加。
+    requests.exceptions.RequestException（タイムアウト・接続エラー等）を
+    最大3回、指数バックオフ(2s/4s/8s)でリトライしてから諦める
+  - upsert/insert_ignore/select/select_one/delete/rpc の生requests呼び出しを
+    全て _request() 経由に統一
+  - insert_ignore は upsert と同様、リトライを尽くしても失敗した場合は
+    そのバッチをログに記録してスキップし、呼び出し元（バックテスト等の
+    長時間パイプライン）を丸ごと落とさないようにした
+  - tests/test_supabase_client.py を新規追加（リトライ後の成功・リトライ尽きた
+    後の例外送出・insert_ignoreが最終失敗時も呼び出し元を落とさないことを
+    requests.requestをモックして検証、3件）
+
+判定: インフラの堅牢性修正（モデル・買いフィルターへの変更なし、backtest対象外）。
+      既存テスト全件+新規3件パス。
+```
+
+---
+
 ## 2026-07-23 EDINET大量保有の買い/売り誤判定バグ修正
 
 ```
