@@ -115,6 +115,44 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
+class _FakeResponse:
+    def __init__(self, status_code, text, json_data=None):
+        self.status_code = status_code
+        self.text = text
+        self._json_data = json_data
+
+    def json(self):
+        return self._json_data
+
+
+def test_publish_article_retries_as_array_on_type_mismatch():
+    """セレクトフィールドが複数選択(配列)設定の場合、'has unexpected data type' を
+    検知してその項目だけ配列に包んで一度だけ再送信する。"""
+    responses = [
+        _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
+        _FakeResponse(201, "", {"id": "retried-id"}),
+    ]
+    payload = {"title": "t", "dealType": "機関投資家買い", "category": "その他"}
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
+        content_id = m.publish_article(payload)
+    assert content_id == "retried-id"
+    assert post_mock.call_count == 2
+    retried_payload = post_mock.call_args_list[1].args[0]
+    assert retried_payload["dealType"] == ["機関投資家買い"]
+    assert retried_payload["category"] == "その他"  # 型が合っていた方はそのまま
+
+
+def test_publish_article_gives_up_after_one_retry():
+    responses = [
+        _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
+        _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
+    ]
+    payload = {"title": "t", "dealType": "機関投資家買い"}
+    with mock.patch.object(m, "_post_once", side_effect=responses):
+        content_id = m.publish_article(payload)
+    assert content_id is None
+
+
 def test_build_and_publish_stops_early_on_permission_error():
     """1件目でAPIキーの権限エラーが出たら、2件目以降はClaude呼び出しごと打ち切る
     （無駄なトークン消費を防ぐ）。"""
@@ -187,4 +225,6 @@ if __name__ == "__main__":
     test_build_and_publish_skips_when_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
-    print("全テスト成功 (10件)")
+    test_publish_article_retries_as_array_on_type_mismatch()
+    test_publish_article_gives_up_after_one_retry()
+    print("全テスト成功 (12件)")

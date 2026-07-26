@@ -18,6 +18,7 @@ EDINET大量保有報告書（買い方向のみ）を基に、microCMSブログ
 必要な環境変数: MICROCMS_SERVICE_DOMAIN, MICROCMS_API_KEY（書き込み権限）, ANTHROPIC_API_KEY
 """
 import os
+import re
 import sys
 import json
 import argparse
@@ -156,18 +157,33 @@ class MicroCMSPermissionError(Exception):
     """APIキーの権限不足など、リトライしても直らない投稿エラー。"""
 
 
+_UNEXPECTED_TYPE_RE = re.compile(r"'(\w+)' has unexpected data type")
+
+
+def _post_once(payload: dict) -> requests.Response:
+    return requests.post(_microcms_base_url(), headers=_microcms_headers(), json=payload, timeout=20)
+
+
 def publish_article(payload: dict) -> "str | None":
     """microCMSへPOSTし、成功時はcontent idを返す（失敗時はNone）。
     権限不足（キーにPOST権限が無い等）は MicroCMSPermissionError を送出し、
-    呼び出し側で以降の候補すべてをスキップさせる（無駄なClaude呼び出しを防ぐ）。"""
+    呼び出し側で以降の候補すべてをスキップさせる（無駄なClaude呼び出しを防ぐ）。
+    セレクトフィールドが複数選択（配列）設定の場合、'has unexpected data type' を
+    検知して該当フィールドだけ配列に包んで一度だけ再送信する。"""
     try:
-        resp = requests.post(
-            _microcms_base_url(), headers=_microcms_headers(), json=payload, timeout=20
-        )
+        resp = _post_once(payload)
         if resp.status_code in (401, 403) or (
             resp.status_code == 400 and "forbidden" in resp.text.lower()
         ):
             raise MicroCMSPermissionError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+
+        if resp.status_code == 400:
+            m = _UNEXPECTED_TYPE_RE.search(resp.text)
+            if m and m.group(1) in payload and isinstance(payload[m.group(1)], str):
+                retry_payload = {**payload, m.group(1): [payload[m.group(1)]]}
+                print(f"    ↻ '{m.group(1)}' を配列形式に変えて再送信します")
+                resp = _post_once(retry_payload)
+
         if resp.status_code not in (200, 201):
             print(f"    ⚠ 投稿失敗 HTTP {resp.status_code}: {resp.text[:200]}")
             return None

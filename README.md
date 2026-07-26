@@ -54,7 +54,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション整形のユニットテスト（11件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・個人名判定・過半数超除外・ノイズ除外）のユニットテスト（7件）|
-| `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・売却除外・重複防止・権限エラー時の早期打ち切り）のユニットテスト（10件、ネットワークは全てモック）|
+| `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・売却除外・重複防止・権限エラー時の早期打ち切り・セレクトフィールド配列形式への自動リトライ）のユニットテスト（12件、ネットワークは全てモック）|
 
 ---
 
