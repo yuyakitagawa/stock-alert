@@ -58,9 +58,10 @@ FILER_DEAL_TYPES = (
     "その他",
 )
 
-# dealType → category（サイト上のカテゴリ絞り込みは大まかな分類のみ）
-CATEGORY_BY_DEAL_TYPE = {"インサイダー買い": "インサイダー"}
-DEFAULT_CATEGORY = "その他"
+def category_from_deal_type(deal_type: str) -> str:
+    """category はdealTypeから「買い」を除いた値（例: 日系ファンド買い→日系ファンド）。
+    サイト上部のカテゴリフィルターがdealTypeと同じ粒度で絞り込めるようにするため。"""
+    return deal_type[:-2] if deal_type.endswith("買い") else deal_type
 
 
 def _microcms_base_url() -> str:
@@ -300,7 +301,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             "dealType": deal_type,
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
-            "category": CATEGORY_BY_DEAL_TYPE.get(deal_type, DEFAULT_CATEGORY),
+            "category": category_from_deal_type(deal_type),
             "tags": "EDINET,自動生成",
         }
 
