@@ -31,29 +31,39 @@ def test_estimate_deal_amount_oku_none_when_shares_missing():
 
 def test_generate_article_body_parses_plain_json():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "日系ファンド買い"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"title": "タイトル", "body": "<p>本文</p>"}
+    assert result == {"title": "タイトル", "body": "<p>本文</p>", "dealType": "日系ファンド買い"}
 
 
 def test_generate_article_body_strips_code_fence():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "インサイダー買い"})
     fenced = f"```json\n{raw}\n```"
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(fenced)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"title": "タイトル", "body": "<p>本文</p>"}
+    assert result == {"title": "タイトル", "body": "<p>本文</p>", "dealType": "インサイダー買い"}
 
 
 def test_generate_article_body_none_on_empty_title():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "", "body": "<p>本文</p>"})
+    raw = json.dumps({"title": "", "body": "<p>本文</p>", "dealType": "その他"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         assert m.generate_article_body(fact_sheet) is None
+
+
+def test_generate_article_body_falls_back_to_sonota_on_invalid_deal_type():
+    """Claudeが決められた選択肢以外を返したら「その他」に丸める。"""
+    fact_sheet = _fact_sheet()
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "謎の分類"})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.generate_article_body(fact_sheet)
+    assert result["dealType"] == "その他"
 
 
 def test_build_and_publish_excludes_sell_and_maps_fields():
@@ -75,7 +85,10 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
          mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "generate_article_body",
-                            return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
+                            side_effect=[
+                                {"title": "テストタイトル1", "body": "<p>本文</p>", "dealType": "インサイダー買い"},
+                                {"title": "テストタイトル2", "body": "<p>本文</p>", "dealType": "日系ファンド買い"},
+                            ]), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
@@ -83,7 +96,7 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
     assert [r["stockCode"] for r in results] == ["7203", "9999"]  # |比率|降順
     assert results[0]["dealType"] == "インサイダー買い"
     assert results[0]["category"] == "インサイダー"
-    assert results[1]["dealType"] == "機関投資家買い"
+    assert results[1]["dealType"] == "日系ファンド買い"
     assert results[1]["category"] == "その他"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
@@ -186,7 +199,7 @@ def test_build_and_publish_stops_early_on_permission_error():
 
     def _track_generate(fact_sheet):
         generate_calls.append(fact_sheet)
-        return {"title": "テストタイトル", "body": "<p>本文</p>"}
+        return {"title": "テストタイトル", "body": "<p>本文</p>", "dealType": "その他"}
 
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
@@ -239,6 +252,7 @@ if __name__ == "__main__":
     test_generate_article_body_parses_plain_json()
     test_generate_article_body_strips_code_fence()
     test_generate_article_body_none_on_empty_title()
+    test_generate_article_body_falls_back_to_sonota_on_invalid_deal_type()
     test_build_and_publish_excludes_sell_and_maps_fields()
     test_build_and_publish_skips_when_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
@@ -246,4 +260,4 @@ if __name__ == "__main__":
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_fixes_multiple_fields_in_sequence()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    print("全テスト成功 (13件)")
+    print("全テスト成功 (14件)")

@@ -1,8 +1,14 @@
 import type { MicroCMSImage, MicroCMSListContent } from "microcms-js-sdk";
 
 export type DealType =
-  | "機関投資家買い"
+  | "機関投資家買い" // レガシー値（新規投稿では下記に細分化）
   | "インサイダー買い"
+  | "日系ファンド買い"
+  | "外資系ファンド買い"
+  | "ベンチャーキャピタル買い"
+  | "財団買い"
+  | "日系企業買い"
+  | "外資系企業買い"
   | "自社株買い"
   | "ETFフロー"
   | "その他";
