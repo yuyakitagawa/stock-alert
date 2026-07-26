@@ -13,6 +13,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import web.publish_blog_articles as m
 
 
+def test_category_from_deal_type_strips_kai_suffix():
+    assert m.category_from_deal_type("日系ファンド買い") == "日系ファンド"
+    assert m.category_from_deal_type("外資系ファンド買い") == "外資系ファンド"
+    assert m.category_from_deal_type("インサイダー買い") == "インサイダー"
+    assert m.category_from_deal_type("その他") == "その他"  # 「買い」で終わらない値はそのまま
+
+
 def test_estimate_deal_amount_oku_calculation():
     with mock.patch.object(m, "shares_outstanding", return_value=1_000_000_000), \
          mock.patch.object(m, "get_price_at_date", return_value=2000.0):
@@ -97,7 +104,7 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
     assert results[0]["dealType"] == "インサイダー買い"
     assert results[0]["category"] == "インサイダー"
     assert results[1]["dealType"] == "日系ファンド買い"
-    assert results[1]["category"] == "その他"
+    assert results[1]["category"] == "日系ファンド"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
 
@@ -246,6 +253,7 @@ def _fake_client(text):
 
 
 if __name__ == "__main__":
+    test_category_from_deal_type_strips_kai_suffix()
     test_estimate_deal_amount_oku_calculation()
     test_estimate_deal_amount_oku_none_when_no_change()
     test_estimate_deal_amount_oku_none_when_shares_missing()
@@ -260,4 +268,4 @@ if __name__ == "__main__":
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_fixes_multiple_fields_in_sequence()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    print("全テスト成功 (14件)")
+    print("全テスト成功 (15件)")
