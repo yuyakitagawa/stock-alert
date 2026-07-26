@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 
 from lib.db import get_edinet_large_holdings_recent
 from lib.utils import get_price_at_date
-from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
+from tools.scan_large_holdings import is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
 load_dotenv()
@@ -44,6 +44,23 @@ MAX_ARTICLES_PER_RUN = 3
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 DOC_TYPE_LABELS = {"350": "大量保有報告書", "360": "変更報告書（保有比率の変更）"}
+
+# EDINET大量保有報告書の提出者からこのパイプラインが選びうるdealType。
+# 自社株買い/ETFフローはこのデータ源では判定不能なため含めない（手動投稿用に別途存在）。
+FILER_DEAL_TYPES = (
+    "インサイダー買い",
+    "日系ファンド買い",
+    "外資系ファンド買い",
+    "ベンチャーキャピタル買い",
+    "財団買い",
+    "日系企業買い",
+    "外資系企業買い",
+    "その他",
+)
+
+# dealType → category（サイト上のカテゴリ絞り込みは大まかな分類のみ）
+CATEGORY_BY_DEAL_TYPE = {"インサイダー買い": "インサイダー"}
+DEFAULT_CATEGORY = "その他"
 
 
 def _microcms_base_url() -> str:
@@ -112,13 +129,17 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
 
 
 def generate_article_body(fact_sheet: dict) -> "dict | None":
-    """Claudeに与えた事実のみからtitle/bodyを生成させる。JSONで {"title", "body"} を返す。
-    パース失敗時はNone（記事は投稿しない）。"""
+    """Claudeに与えた事実のみからtitle/body/dealTypeを生成させる。
+    JSONで {"title", "body", "dealType"} を返す。パース失敗時はNone（記事は投稿しない）。
+    dealTypeは提出者名から実体（個人/日系ファンド/外資系ファンド/VC/財団/日系企業/外資系企業）を
+    Claudeの一般知識で判断させる。キーワード一致だけでは日系/外資の区別や
+    スペース無し個人名（例:「金親晋午」）を正しく判定できないため。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
         return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    deal_type_options = "\n".join(f"- {t}" for t in FILER_DEAL_TYPES)
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
 金額は発行済株式数と株価からの概算であり、実際の取得価格ではないことを本文中で明記してください。
@@ -131,8 +152,21 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 開示日: {fact_sheet['disc_date']}
 - 推定取得金額: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
 
+さらに、提出者名（{fact_sheet['filer_name']}）が何者かを一般知識から判断し、
+以下のうち最も当てはまるものを1つだけ選んでください（不明な場合は「その他」）:
+{deal_type_options}
+
+判断基準の例:
+- 個人名（役員・大株主等）→ インサイダー買い
+- 日本国内に拠点を持つ投資ファンド・アセットマネジメント会社 → 日系ファンド買い
+- 海外に拠点を持つ投資ファンド・アセットマネジメント会社 → 外資系ファンド買い
+- ベンチャーキャピタル（VC、Ventures等）→ ベンチャーキャピタル買い
+- 財団・育英会など非営利法人 → 財団買い
+- ファンドではない日本の事業会社（自己勘定投資等）→ 日系企業買い
+- ファンドではない海外の事業会社 → 外資系企業買い
+
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
-{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（250〜400字程度、2〜3段落）"}}
+{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（250〜400字程度、2〜3段落）", "dealType": "上記リストから1つ"}}
 """
     try:
         resp = client.messages.create(
@@ -147,6 +181,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
         data = json.loads(text)
         if not data.get("title") or not data.get("body"):
             return None
+        if data.get("dealType") not in FILER_DEAL_TYPES:
+            data["dealType"] = "その他"
         return data
     except Exception as e:
         print(f"    ⚠ 記事生成失敗: {e}")
@@ -241,7 +277,6 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             print(f"  ⏭ {name}({code}): 金額を概算できないためスキップ")
             continue
 
-        individual = is_individual_filer(filer_name)
         fact_sheet = {
             "stock_name": name,
             "stock_code": code,
@@ -256,15 +291,16 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
             continue
 
+        deal_type = article["dealType"]
         payload = {
             "title": article["title"],
             "body": article["body"],
             "stockName": name,
             "stockCode": code,
-            "dealType": "インサイダー買い" if individual else "機関投資家買い",
+            "dealType": deal_type,
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
-            "category": "インサイダー" if individual else "その他",
+            "category": CATEGORY_BY_DEAL_TYPE.get(deal_type, DEFAULT_CATEGORY),
             "tags": "EDINET,自動生成",
         }
 
