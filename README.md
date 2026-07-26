@@ -261,7 +261,7 @@ DBキャッシュは廃止。
 
 ### 依存パッケージ
 ```
-requests pandas numpy scikit-learn joblib xgboost python-dotenv openpyxl yfinance
+requests pandas numpy scikit-learn joblib xgboost lightgbm python-dotenv openpyxl xlrd yfinance
 ```
 
 ### パス設定（ローカル実行）
