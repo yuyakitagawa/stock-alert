@@ -142,7 +142,25 @@ def test_publish_article_retries_as_array_on_type_mismatch():
     assert retried_payload["category"] == "その他"  # 型が合っていた方はそのまま
 
 
-def test_publish_article_gives_up_after_one_retry():
+def test_publish_article_fixes_multiple_fields_in_sequence():
+    """microCMSは1回のエラーで1フィールドしか教えてくれないので、
+    dealTypeを直した後にcategoryでも同じエラーが出たら、続けて直す。"""
+    responses = [
+        _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
+        _FakeResponse(400, '{"message":"\'category\' has unexpected data type."}'),
+        _FakeResponse(201, "", {"id": "retried-id"}),
+    ]
+    payload = {"title": "t", "dealType": "機関投資家買い", "category": "その他"}
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
+        content_id = m.publish_article(payload)
+    assert content_id == "retried-id"
+    assert post_mock.call_count == 3
+    final_payload = post_mock.call_args_list[2].args[0]
+    assert final_payload["dealType"] == ["機関投資家買い"]
+    assert final_payload["category"] == ["その他"]
+
+
+def test_publish_article_gives_up_when_same_field_fails_twice():
     responses = [
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
@@ -226,5 +244,6 @@ if __name__ == "__main__":
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
-    test_publish_article_gives_up_after_one_retry()
-    print("全テスト成功 (12件)")
+    test_publish_article_fixes_multiple_fields_in_sequence()
+    test_publish_article_gives_up_when_same_field_fails_twice()
+    print("全テスト成功 (13件)")
