@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
@@ -29,18 +28,6 @@ export default async function ArticleDetailPage({
 
   return (
     <article className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-gray-200">
-      {article.eyecatch && (
-        <div className="relative aspect-[16/9] w-full bg-gray-100">
-          <Image
-            src={article.eyecatch.url}
-            alt={article.title}
-            fill
-            sizes="(min-width: 768px) 768px, 100vw"
-            className="object-cover"
-            priority
-          />
-        </div>
-      )}
       <div className="p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <DealTypeBadge dealType={article.dealType} />
