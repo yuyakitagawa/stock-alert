@@ -25,8 +25,7 @@ from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
 from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_scores, classify_market_regime, get_market_index_df_cached
-from config import BASE_DIR, BEAR_MARKET_THRESHOLD, FORECAST, RISE_THRESHOLD, MAX_BUY_VOL20, \
-                   MARKET_TIMING_ENABLED, MARKET_TIMING_20D_THRESH
+from config import BASE_DIR, BEAR_MARKET_THRESHOLD, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
 
 TOP_SHOW = 10
@@ -216,25 +215,16 @@ def _calc_nk225_beta(stock_prices, nk_closes, window=60):
 def main():
     print("=" * 55)
     print("スクリーナー × RF ランキング  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
-    print(f"スクリーナー通過銘柄に上昇確率スコアをつけてランキング")
+    print(f"スクリーナー通過銘柄に下落確率スコアをつけてランキング")
     print("=" * 55)
 
-    # モデル読み込み（上昇・下落 × 絶対・相対 = 4モデル）
-    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
+    # モデル読み込み（下落モデルのみ。上昇モデルはLINE Bot等で未使用のため廃止）
     drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
-    alpha_rise_path = os.path.join(BASE_DIR, "rf_alpha_model.pkl")
-    alpha_drop_path = os.path.join(BASE_DIR, "rf_alpha_drop_model.pkl")
-    if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pkl が見つかりません。先に rf_train_v3.py を実行してください")
+    if not os.path.exists(drop_path):
+        print("ERROR: rf_drop_model.pkl が見つかりません。先に rf_train_v3.py を実行してください")
         return
-    rise_model = joblib.load(rise_path)
-    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
-    alpha_rise_model = joblib.load(alpha_rise_path) if os.path.exists(alpha_rise_path) else None
-    alpha_drop_model = joblib.load(alpha_drop_path) if os.path.exists(alpha_drop_path) else None
-    print(f"\n上昇モデル読み込み: {rise_path}")
-    if drop_model:        print(f"下落モデル読み込み: {drop_path}")
-    if alpha_rise_model:  print(f"α上昇モデル読み込み: {alpha_rise_path}")
-    if alpha_drop_model:  print(f"α下落モデル読み込み: {alpha_drop_path}")
+    drop_model = joblib.load(drop_path)
+    print(f"\n下落モデル読み込み: {drop_path}")
 
     # 日経225リターン取得 + 相場レジーム判定
     print("\n日経225リターン取得中...")
@@ -445,19 +435,9 @@ def main():
     results = []
     for idx, (code, prices, feat) in enumerate(raw_data):
         feat_aug = feats_aug[idx]
-        rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
-        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
-        alpha_rise_prob = float(alpha_rise_model.predict_proba([feat_aug])[0][1]) if alpha_rise_model else None
-        alpha_drop_prob = float(alpha_drop_model.predict_proba([feat_aug])[0][1]) if alpha_drop_model else None
+        drop_prob = float(drop_model.predict_proba([feat_aug])[0][1])
         close = float(prices["Close"].iloc[-1])
-        rise_pct = round(rise_prob * 100, 1)
-        drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
-        # 4モデルアンサンブル: net = (rise-drop) + (alpha_rise-alpha_drop)
-        abs_net = (rise_pct - drop_pct) if drop_pct is not None else rise_pct
-        alpha_net = 0.0
-        if alpha_rise_prob is not None and alpha_drop_prob is not None:
-            alpha_net = (alpha_rise_prob - alpha_drop_prob) * 100
-        net = round(abs_net + alpha_net, 1)
+        drop_pct = round(drop_prob * 100, 1)
 
         # ボラティリティ（feat[7] = vol20, 年率換算%）
         vol = round(feat[7], 1)
@@ -470,15 +450,13 @@ def main():
         else:
             vol_label = "🔴超高"
 
-        # ネットスコア判定
-        if net >= 15:
-            judgment = "🟢強気買い"
-        elif net >= 5:
-            judgment = "🔵やや強気"
-        elif net >= -5:
-            judgment = "🟡中立    "
+        # 下落確率判定（LINE Botの表示区分と統一: <8%安全圏 / 8-15%通常 / >=15%危険）
+        if drop_pct < 8:
+            judgment = "🟢安全圏  "
+        elif drop_pct < 15:
+            judgment = "🟡通常    "
         else:
-            judgment = "🟠弱気    "
+            judgment = "🔴危険    "
 
         volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
         p_arr = prices["Close"].values
@@ -496,7 +474,7 @@ def main():
         _turnover_m = float(np.mean(valid_vols) * close / 1e6) if len(valid_vols) >= 10 else None
         _down_streak_raw = round(feat[12] * 20)
         recommend = recommend_from_scores(
-            net, drop_pct, allow_buy=buy_ok, vol=vol,
+            drop_pct, allow_buy=buy_ok, vol=vol,
             piotroski=_fm.get("piotroski"),
             pos52=float(feat[9]),
             bps_growth=_fm.get("bps_growth"),
@@ -535,9 +513,7 @@ def main():
             "銘柄コード": code,
             "銘柄名": names.get(code, ""),
             "直近株価(円)": round(close, 1),
-            "上昇確率(%)": rise_pct,
-            "下落確率(%)": drop_pct if drop_pct is not None else "-",
-            "ネット(%)": net,
+            "下落確率(%)": drop_pct,
             "判定": judgment,
             "ボラ(%)": vol,
             "ボラ水準": vol_label,
@@ -557,8 +533,8 @@ def main():
         }
         results.append(row)
 
-    # ランキング（ネットスコア順）
-    result_df = pd.DataFrame(results).sort_values("ネット(%)", ascending=False).reset_index(drop=True)
+    # ランキング（下落確率が低い順）
+    result_df = pd.DataFrame(results).sort_values("下落確率(%)", ascending=True).reset_index(drop=True)
     result_df.index += 1
     result_df.insert(0, "順位", result_df.index)
 
@@ -567,11 +543,11 @@ def main():
     # 表示（動的銘柄数: レジームに応じて 3/5/10）
     print(f"\n{'='*90}")
     regime_label_disp = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
-    print(f"上位{dynamic_top_n}銘柄ランキング [{regime_label_disp}レジーム]（ネットスコア順）")
+    print(f"上位{dynamic_top_n}銘柄ランキング [{regime_label_disp}レジーム]（下落確率が低い順）")
     if is_bear:
         print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
     print(f"{'='*90}")
-    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<16}  {'株価':>8}  {'ネット':>7}  {'判定':<12}  "
+    print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<16}  {'株価':>8}  {'下落確率':>7}  {'判定':<12}  "
           f"{'PER':>6}  {'PBR':>5}  {'感情':>5}  {'Gトレ':>5}  推奨")
     print("-" * 140)
     for _, row in result_df.head(dynamic_top_n).iterrows():
@@ -592,7 +568,7 @@ def main():
             f"{int(row['順位']):>4}  {row['銘柄コード']:>6}  "
             f"{str(row['銘柄名']):<16}  "
             f"{row['直近株価(円)']:>8,.0f}円  "
-            f"{row['ネット(%)']:>+6.1f}%  "
+            f"{row['下落確率(%)']:>+6.1f}%  "
             f"{row['判定']:<12}  "
             f"{per_str}  {pbr_str}  "
             f"{sent_str:>5}  "
@@ -763,9 +739,7 @@ def main():
             "code": str(row["銘柄コード"]),
             "name": row["銘柄名"],
             "close": row["直近株価(円)"],
-            "rise_prob": row["上昇確率(%)"],
-            "drop_prob": row["下落確率(%)"] if row["下落確率(%)"] != "-" else None,
-            "net": row["ネット(%)"],
+            "drop_prob": row["下落確率(%)"],
             "vol": row["ボラ(%)"],
             "recommend": row["推奨"],
             "rel20": row["日経比20日(%)"] if row["日経比20日(%)"] != "-" else None,

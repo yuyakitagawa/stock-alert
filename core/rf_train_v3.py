@@ -11,13 +11,7 @@ import lightgbm as lgb
 from lib.utils import IsotonicCalibrated, PlattCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
-FORECAST=63; RISE_THRESHOLD=15.0; DROP_THRESHOLD=15.0  # 63日(3ヶ月)±15%ラベル（設計通り）
-ALPHA_THRESHOLD=8.0      # 相対ラベル: stock - nikkei >= +8% → alpha_rise=1
-DROP_ALPHA_THRESHOLD=8.0 # 相対ラベル: stock - nikkei <= -8% → alpha_drop=1
-# 4モデルアンサンブル:
-#   net = (rise_abs - drop_abs) + (rise_rel - drop_rel)
-#   絶対モデルが「どれが上がるか」を担当（AUC高い）
-#   相対モデルが「日経超過を狙う」を担当（アルファ最適化）
+FORECAST=63; DROP_THRESHOLD=15.0  # 63日(3ヶ月)-15%ラベル（設計通り）
 SAMPLE_INTERVAL=21; HISTORY_DAYS=600  # 21日ごとにサンプル（密サンプリング）
 TRAIN_CUTOFF=date(2026,1,1); RANDOM_SEED=42; SEQ_DAYS=60
 MIN_HISTORY=120+SEQ_DAYS+FORECAST+10
@@ -309,22 +303,9 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
         feat=extract_features(closes[:i+1], v_slice, nk_rets, fundamentals=fund)
         if feat is None or closes[i]==0: continue
         chg=(closes[i+FORECAST]-closes[i])/closes[i]*100
+        label_drop=int(chg<=-DROP_THRESHOLD)  # -15%以下
 
-        # 絶対ラベル（識別力重視）
-        label_rise=int(chg>=RISE_THRESHOLD)   # +5%以上
-        label_drop=int(chg<=-DROP_THRESHOLD)  # -5%以下
-
-        # 相対ラベル（アルファ最適化）
-        nk_ret_forecast=0.0
-        if nk_df is not None and i0 is not None:
-            i_fwd=next((j for j,d in enumerate(nk_dates) if d>=dates[i+FORECAST]),None)
-            if i_fwd is not None and nk_closes[i0]!=0:
-                nk_ret_forecast=(nk_closes[i_fwd]-nk_closes[i0])/nk_closes[i0]*100
-        rel_chg=chg-nk_ret_forecast
-        alpha_rise=int(rel_chg>=ALPHA_THRESHOLD)      # 日経+3%超
-        alpha_drop=int(rel_chg<=-DROP_ALPHA_THRESHOLD) # 日経-3%以下
-
-        samples.append((dates[i],feat,label_rise,label_drop,alpha_rise,alpha_drop))
+        samples.append((dates[i],feat,label_drop))
     return samples
 
 def _select_features(X_tr, y_tr, X_te, X_cal, feat_names):
@@ -615,8 +596,8 @@ def main():
     if edinet_map:
         print(f"  EDINET大量保有: {len(edinet_map)}銘柄分")
     print(f"\n株価取得中（30〜60分かかります）...")
-    train_X,train_yd,train_yr=[],[],[]
-    test_X,test_yd,test_yr=[],[],[]
+    train_X,train_yd=[],[]
+    test_X,test_yd=[],[]
     train_dates,test_dates=[],[]
     train_sectors,test_sectors=[],[]
     success=0
@@ -626,7 +607,7 @@ def main():
         df=get_prices(code)
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.08); continue
-        for (sd,feat,lr,ld,ar,ad) in generate_samples(df, nk_df, screener_only=screener_only,
+        for (sd,feat,ld) in generate_samples(df, nk_df, screener_only=screener_only,
                                                         sample_code=code,
                                                         vix_map=vix_map,
                                                         sp500_dates=sp500_dates,
@@ -635,10 +616,10 @@ def main():
                                                         usdjpy_closes_arr=usdjpy_closes_arr,
                                                         edinet_map=edinet_map):
             if sd<TRAIN_CUTOFF:
-                train_X.append(feat); train_yd.append(ld); train_yr.append(lr)
+                train_X.append(feat); train_yd.append(ld)
                 train_dates.append(sd); train_sectors.append(sector)
             else:
-                test_X.append(feat); test_yd.append(ld); test_yr.append(lr)
+                test_X.append(feat); test_yd.append(ld)
                 test_dates.append(sd); test_sectors.append(sector)
         success+=1
         if success%100==0:
@@ -648,7 +629,6 @@ def main():
     if len(train_X)<500: print("ERROR: サンプル不足"); return
     X_tr=np.array(train_X); X_te=np.array(test_X)
     yd_tr=np.array(train_yd); yd_te=np.array(test_yd)
-    yr_tr=np.array(train_yr); yr_te=np.array(test_yr)
     # Cross-sectional rank features
     print("\nクロスセクショナルランク特徴量を計算中...")
     all_X=np.vstack([X_tr,X_te]); all_dates=np.array(train_dates+test_dates)
@@ -658,7 +638,6 @@ def main():
     print(f"  特徴量次元: {all_X.shape[1]} → {all_X_aug.shape[1]}")
     print(f"\n--- サンプル統計 ---")
     print(f"絶対下落ラベル(≤-{DROP_THRESHOLD}%):  学習 {yd_tr.sum():,}/{len(yd_tr):,} ({yd_tr.mean()*100:.1f}%)  テスト {yd_te.sum():,}/{len(yd_te):,} ({yd_te.mean()*100:.1f}%)")
-    print(f"絶対上昇ラベル(≥+{RISE_THRESHOLD}%):  学習 {yr_tr.sum():,}/{len(yr_tr):,} ({yr_tr.mean()*100:.1f}%)  テスト {yr_te.sum():,}/{len(yr_te):,} ({yr_te.mean()*100:.1f}%)")
     # キャリブレーション用: 学習データを日付順に並べ、最新20%をキャリブレーション用に分離
     sort_idx=np.argsort(np.array(train_dates))
     X_tr_s=X_tr[sort_idx]; yd_s=yd_tr[sort_idx]
@@ -693,20 +672,10 @@ def main():
     X_te_eval = X_te[:, keep_idx] if keep_idx else X_te
     drop_auc=roc_auc_score(yd_te,drop.predict_proba(X_te_eval)[:,1])
 
-    # 上昇モデルも同じ特徴量・同じ分割で学習してrf_model.pklに保存
-    yr_s=yr_tr[sort_idx]
-    yr_fit,yr_cal=yr_s[:-n_cal],yr_s[-n_cal:]
-    rise=train_model(X_tr_fit,yr_fit, X_te,yr_te, X_cal,yr_cal, "絶対上昇", feat_names=feat_names)
-    joblib.dump(rise, os.path.join(SAVE_DIR,f"rf_model{cutoff_tag}{exp_tag}.pkl"))
-    rise_keep_idx = rise._keep_idx
-    X_te_rise_eval = X_te[:, rise_keep_idx] if rise_keep_idx else X_te
-    rise_auc=roc_auc_score(yr_te,rise.predict_proba(X_te_rise_eval)[:,1])
-
     print(f"\n【AUC サマリー】")
     print(f"  絶対下落: {drop_auc:.4f}")
-    print(f"  絶対上昇: {rise_auc:.4f}")
     with open(os.path.join(SAVE_DIR,"baseline_auc.json"),"w") as f:
-        json.dump({"drop":float(drop_auc),"rise":float(rise_auc)},f)
+        json.dump({"drop":float(drop_auc)},f)
 
     if keep_idx:
         used_names = [feat_names[i] for i in keep_idx]

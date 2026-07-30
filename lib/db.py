@@ -24,7 +24,7 @@ def get_latest_ranking_date():
     return row["date"] if row else None
 
 
-def get_ranking_by_date(date_str, select="*", order="net.desc"):
+def get_ranking_by_date(date_str, select="*", order="drop_prob.asc"):
     """指定日のランキング全行を返す。"""
     return sb.select("gen_rankings", f"date=eq.{date_str}&order={order}&select={select}")
 

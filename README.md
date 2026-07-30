@@ -28,21 +28,20 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `core/screener.py` | JPX全銘柄から条件通過銘柄を抽出して `data/screeners/` に保存 |
 | `tools/fetch_history.py` | Yahoo Finance で全銘柄株価四本値を取得し `yahoo_price_cache` を差分更新（daily_alert.yml Step 0で毎日 `--years 1` 実行。`rank_stocks.py`の「直近株価」の鮮度に直結。既存(code,date)は insert_ignore で保護されるため初回10年分バックフィルにも日次更新にも使える） |
 | `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可。既存日付は既定でスキップするため、価格データ修正後に再生成したい場合は`--force`で上書き。生成後に`check_price_freshness`で複数日にまたがるclose凍結（更新漏れ）を検査）|
-| `core/rf_train_v3.py` | XGBoostモデルを東証全銘柄×5年データで学習（金曜のみ）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
-| `core/rank_stocks.py` | スクリーナー通過銘柄に上昇/下落確率をつけてランキング生成・DB保存。フェーズ5(決算チェック)→フェーズ6(3件cap)→フェーズ7(米国ETFリードラグフィルター) |
+| `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
+| `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
 | `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
 | `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。ウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大5件、個人名の提出者は後回し。残りはLINEで「大量保有」と聞けば`check_catalyst`ツールで個別回答）・ユーザー別ウォッチリストのdp閾値アラートを配信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗は指数バックオフで自動リトライ）|
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
-| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（net=rise−drop整合・確率レンジ・予測多様性等の行レベル、rank_stocks/export_to_webで使用）＋`check_price_freshness`（複数日にまたがるclose凍結=更新漏れ検知、backfill_historyで使用）（alert-only：違反でも更新は止めずメール通知）|
+| `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（下落確率レンジ・予測多様性等の行レベル、rank_stocks/export_to_webで使用）＋`check_price_freshness`（複数日にまたがるclose凍結=更新漏れ検知、backfill_historyで使用）（alert-only：違反でも更新は止めずメール通知）|
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
 | `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
 | `lib/market_compare.py` | **日経 vs S&P500 相対強弱アドバイザー**。日経225とS&P500の20日・60日リターン差から「日本株優位／米国株優位／拮抗」を判定(売買シグナルには影響しない参考情報)。rank_stocksのフェーズ8bで判定し `data/market_compare.json` に保存、`gen_market_compare`経由でLINE(`market_timing_alert.py`)に表示 |
-| `tools/backtest.py` | バックテスト（先読みバイアスなし）。結果は `simulations/backtests/` に保存。`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
-| `tools/multi_backtest.py` | 33期間一括バックテスト＋フィルター比較分析（ウォークフォワード対応） |
-| `tools/simulate_monthly.py` | 月次シミュレーション（保有シナリオ分析）|
+| `tools/backtest.py` | バックテスト（先読みバイアスなし）。下落確率が低い順に選定。結果は `simulations/backtests/` に保存。`--drop-max`で下落確率上限、`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
+| `tools/multi_backtest.py` | 33期間一括バックテスト＋下落確率閾値比較分析（ウォークフォワード対応） |
 | `tools/screen_catalyst_candidates.py` | カタリスト候補スクリーン（GARP補助）。PBR<1.0・ROE<8%・自己資本比率>50%・流動性の「安い箱」抽出は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計（J-Quants財務データ使用）。通過候補に **利益の質フィルター(A/B)** で化粧決算（営業赤字・純利益>営業益×1.5）と斜陽事業（本業減益）を除外し、売上CAGR・営業利益率・会社予想方向で加減点。`data/catalyst_candidates.csv`（残）＋ `data/catalyst_excluded.csv`（除外理由付き・レビュー用）。`--no-quality` で品質フィルター無効 |
 | `tools/catalyst_backtest.py` | カタリスト候補スクリーンのヒストリカルBT（point-in-time・disc_date≤基準日）。A/Bあり/なしで平均・勝率・大勝率を比較。データは J-Quants財務＋yahoo_price_cache |
 | `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
@@ -50,7 +49,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `web/publish_blog_articles.py` | **ブログ記事自動生成・投稿**（Step 5c、microCMS検証用サイト`microcms-blog-demo`向け）。`market_timing_alert.get_recent_large_holdings`（自己申告・過半数超・売却を除外し買い方向のみ）からネタを取得し、yfinanceの発行済株式数×株価×保有比率変化で取得金額(億円)を概算（推定不能な銘柄はスキップ）、Claude（`ANTHROPIC_API_KEY`）に事実のみを渡して解説記事とdealType（インサイダー買い/日系ファンド買い/外資系ファンド買い/ベンチャーキャピタル買い/財団買い/日系企業買い/外資系企業買い/その他。提出者名からの一般知識判定、キーワード一致だけでは日系/外資やスペース無し個人名を判定できないため）を生成しmicroCMSへ即時公開（人間は事後にmicroCMS管理画面で修正する運用）。`category`はdealTypeから「買い」を除いた値を自動セット（サイト上部のカテゴリフィルターと粒度を合わせるため）。同一銘柄・同一開示日の重複投稿は事前チェックでスキップ。`--dry-run`で投稿せず内容確認のみ可。`MICROCMS_SERVICE_DOMAIN`/`MICROCMS_API_KEY`（書き込み権限）必須、未設定ならスキップ |
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
-| `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（16件）|
+| `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（14件）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション整形のユニットテスト（12件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・ノイズ除外）のユニットテスト（9件）|
@@ -59,7 +58,9 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 
 ---
 
-## S買い 発令条件（passes_buy_filter + rank_stocks.py フェーズ5〜7）
+## S買い 発令条件（passes_buy_filter + rank_stocks.py フェーズ5・7・8）
+
+下落モデルのみに一本化済み（上昇モデル・netスコアは廃止。詳細は `dev_log.md` 参照）。
 
 品質フィルター（`passes_buy_filter`）:
 
@@ -80,19 +81,17 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 
 | 条件 | S買い |
 |---|---|
-| ネットスコア (上昇確率−下落確率) | 17% ≤ net ≤ 24% |
-| 下落確率 | < 4% |
-| 年率ボラティリティ | ≤ 25% |
+| 下落確率 | < 8% |
+| 年率ボラティリティ | ≤ 20% |
 
-フェーズ5〜7 追加フィルター（`rank_stocks.py`）:
+フェーズ5・7・8 追加フィルター（`rank_stocks.py`）:
 - フェーズ5: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格
-- フェーズ5b: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格（優待クロス売り圧力を回避）
-- フェーズ6: S買い1日最大3件のキャップ（net降順）。4件目以降は方向感なしに降格
 - フェーズ7: 対応する米国セクターETF（XLK/XLF/XLI/XLB/XLV/XLY）の前日リターンがマイナスならS買い→方向感なしに降格。リードラグ効果（US→JP翌日）を活用。21,416サンプル(2023-2026)で全26ペア正相関・avg +0.64pp効果を確認。キャッシュは `data/sector_map.json`。
+- フェーズ8: 相場リスク管制官がリスクオフ地合いと判定した日は、S買いを全件見送り（自動防御）
 
 **推奨ラベル**:
 - 💎 買い: QV条件+ファンダ品質+モデルスコア全条件クリア
-- 🔴 売り検討: drop_prob≥10% / net<-5 / drawdown60<-20% / 連続下落≥5日
+- 🔴 売り検討: drop_prob≥10% / drawdown60<-20% / 連続下落≥5日
 - —: それ以外
 
 ## スクリーナー条件（screener.py / 前段フィルター）
@@ -104,8 +103,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | 3ヶ月相対強度 ≥ | 0%（通常）/ +5%（下落相場：日経20日 < -5%）|
 | セクター集中除外 | 同一業種3銘柄以上でセクター全除外（バブル兆候回避）|
 
-バックテスト（33期間ウォークフォワード: 2021〜2025年）: 現行フィルター avg+6.7% / 日経アルファ+4.4%（有効16/33期間）
-net10〜13%帯（実運用相当）に絞ると avg+7.4% 勝率73%と更に良化。3〜5月エントリーが最も好成績（avg+8〜10%）。
+> 下落モデル一本化後のバックテスト再検証は未実施（別環境でのbacktest.py実行が必要。詳細は `dev_log.md`）。
 
 ---
 
@@ -142,20 +140,19 @@ net10〜13%帯（実運用相当）に絞ると avg+7.4% 勝率73%と更に良�
 **クロスセクショナルランク7**: cs_ret5, cs_ret20, cs_ret60, cs_rsi, cs_vol20, cs_pos52, cs_sector_ret60
 
 ### 予測ラベル
-- 上昇モデル：63日後（約3ヶ月）に日経225を **+5%以上上回る**（アルファ ≥ +5%）
-- 下落モデル：63日後（約3ヶ月）に日経225を **5%以上下回る**（アルファ ≤ -5%）
-- 絶対リターンではなく日経比相対リターン（アルファ）でラベル付けし、相場全体に依存しない銘柄選定力を学習
+- 下落モデル：63日後（約3ヶ月）に **15%以上下落**（絶対リターン、DROP_THRESHOLD=15.0）
+- 上昇モデル（rf_model.pkl）は廃止済み。下落モデルのみ学習・保存する
 
 ### ウォークフォワードモデル
 
 先読みバイアスなしのバックテストのため、期間開始日に応じて学習済みモデルを切り替える。
 
-| 期間開始日 | 使用モデル（cutoff） | テストAUC（上昇/下落）|
+| 期間開始日 | 使用モデル（cutoff） | テストAUC（下落）|
 |---|---|---|
-| ≥ 2025-07-01 | rf_model_2025-07-01.pkl | 0.655 / 0.818 |
-| ≥ 2025-05-01 | rf_model_2025-05-01.pkl | 0.646 / 0.803 |
-| ≥ 2025-03-01 | rf_model_2025-03-01.pkl | 0.645 / 0.806 |
-| < 2025-03-01 | rf_model.pkl（cutoff 2026-01-01）| 0.642 / 0.766 |
+| ≥ 2025-07-01 | rf_drop_model_2025-07-01.pkl | 0.818 |
+| ≥ 2025-05-01 | rf_drop_model_2025-05-01.pkl | 0.803 |
+| ≥ 2025-03-01 | rf_drop_model_2025-03-01.pkl | 0.806 |
+| < 2025-03-01 | rf_drop_model.pkl（cutoff 2026-01-01）| 0.766 |
 
 キャリブレーション：IsotonicRegression で確率値を実績頻度に補正済み
 
@@ -163,9 +160,9 @@ net10〜13%帯（実運用相当）に絞ると avg+7.4% 勝率73%と更に良�
 
 ## ランキングロジック（core/rank_stocks.py）
 
-**ネットスコア = 上昇確率(%) − 下落確率(%)**
+下落確率(%)の昇順（低い順）でランキングし、`drop_prob < 8%` を買い候補の主条件とする（詳細は上の「S買い 発令条件」）。
 
-> **上昇確率/下落確率の表示について**：モデルの確率はIsotonic較正の特性上、数十段の階段値（例: 3,566銘柄が約31個の値に収束）になり、小数第1位まで出すと多数の銘柄が同じ値（例「20.3%」）に見えてしまう。そのためWeb・メール・LINEの画面表示では小数%ではなく **高 / やや高 / 中 / やや低 / 低** の5段階で示す（しきい値: 30/22/14/7%）。並び順・スコア計算は引き続き数値のネットスコアを使用。
+> **下落確率の表示について**：モデルの確率はIsotonic較正の特性上、数十段の階段値（例: 3,566銘柄が約31個の値に収束）になり、小数第1位まで出すと多数の銘柄が同じ値（例「20.3%」）に見えてしまう。そのためWeb・メール・LINEの画面表示では小数%ではなく **高 / やや高 / 中 / やや低 / 低** の5段階で示す（しきい値: 30/22/14/7%）。並び順・スコア計算は引き続き数値の下落確率を使用。
 
 ### ハードフィルター（除外）
 - 連続下落日数 > 3日（down_streak > 0.15）
@@ -181,7 +178,7 @@ DBキャッシュは廃止。
 
 | テーブル | 内容 |
 |---|---|
-| `gen_rankings` | 毎日のランキングスコア（コード・確率・ネット・推奨・rank）|
+| `gen_rankings` | 毎日のランキングスコア（コード・下落確率・推奨・rank）|
 | `jpx_stock_list` | 業種分類・優待月ほかメタ |
 | `gen_market_compare` | 日経 vs S&P500 相対強弱判定 |
 | `jquants_fin_summary` | 四半期財務サマリ（EDINET決算XBRLから抽出。テーブル名は旧J-Quants由来）|
@@ -239,8 +236,8 @@ DBキャッシュは廃止。
 | フィルター | 条件 | データ出所 |
 |---|---|---|
 | **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
-| **💎買い条件** (`recommend_from_scores`) | QV条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + 品質(CFOマージン>0, レバレッジ<5x) + drop_prob<8%, net≥10, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
-| **🔴売り検討** (`recommend_from_scores`) | drop_prob≥10% / net<-5 / drawdown60<-20% / 連続下落≥5日（いずれか該当で警告） | モデル予測＋株価データ |
+| **💎買い条件** (`recommend_from_scores`) | QV条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + 品質(CFOマージン>0, レバレッジ<5x) + drop_prob<8%, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
+| **🔴売り検討** (`recommend_from_scores`) | drop_prob≥10% / drawdown60<-20% / 連続下落≥5日（いずれか該当で警告） | モデル予測＋株価データ |
 | **優待フィルター** (フェーズ5) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
 | **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
 | **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
@@ -300,12 +297,12 @@ python3 tests/test_screener.py     # スクリーナーユニットテスト
 
 ## 設計上の注意点
 
-- **モデルの限界**：AUC 0.642（上昇）/ 0.766（下落）はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
-- **2段階構造が必須**：モデル単体を全銘柄に適用しても効果なし。スクリーナー→モデル→ネット範囲フィルターの順で使うことでアルファが出る。
+- **モデルの限界**：AUC 0.766（下落）はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
+- **2段階構造が必須**：モデル単体を全銘柄に適用しても効果なし。スクリーナー→モデル→下落確率フィルターの順で使うことでアルファが出る。
 - **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告。3ヶ月相対強度閾値も自動引き上げ。
 - **日経急騰時の限界**：大型株主導の急騰相場（例：2025年7月 日経+21%超）では中小型株主体の選定が相対的に不利。日経60日 ≥ +15% のときオレンジバナーで警告（新規の日経超え率: 7% vs 通常時59%）。
 - **季節性**：3〜5月エントリーが最も好成績（avg+8〜10%、勝率75〜82%）。8〜9月は低調（avg−2.6〜+2.7%）。
-- **主要特徴量**：上昇モデルはjpy5（USD/JPY 5日変動、寄与15%）・sin_month（季節性、12%）・div_ex_feat（配当権利日、8%）が上位。下落モデルはcs_vol20（ボラ相対ランク、8%）・sin_month（7%）・div_ex_feat（7%）が上位。
+- **主要特徴量**：下落モデルはcs_vol20（ボラ相対ランク、8%）・sin_month（7%）・div_ex_feat（7%）が上位。
 
 ---
 

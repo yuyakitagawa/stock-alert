@@ -50,7 +50,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
           key: ml-models-v37-weekly-${{ github.run_number }}
           restore-keys: |
@@ -113,7 +112,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
           key: ml-models-v37-weekly-${{ github.run_number }}
 
