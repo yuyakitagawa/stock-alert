@@ -41,8 +41,11 @@ export async function getArticleList(params: {
       offset,
       limit,
       orders: "-publishedAt",
-      // category も配列格納の可能性があるため equals ではなく contains で絞り込む
-      ...(category ? { filters: `category[contains]${category}` } : {}),
+      // category は記事によって単一文字列/配列のいずれで格納されているか揺れがあるため、
+      // 単一値一致(equals)と配列内包含(contains)の両方をORで見て取りこぼしを防ぐ
+      ...(category
+        ? { filters: `category[equals]${category}[or]category[contains]${category}` }
+        : {}),
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
