@@ -282,6 +282,7 @@ function computePriceChanges(rows: { close: number }[]): string[] {
 // self_filing/sell の両方をノイズとして除外する点が異なるので注意。
 
 const SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"];
+const BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/";
 // これ以上は株式併合等によるスクイーズアウト（完全子会社化）の対象になりうる水準で、
 // 上値が買取価格に収斂し伸びしろが無いとみなして除外する
 const MAJORITY_HOLDING_THRESHOLD = 51;
@@ -1430,6 +1431,7 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
         ) ? "📉売り" : "📈買い";
         lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} ${direction} (${h.disc_date})`);
       }
+      lines.push(`\n📰 詳細解説記事: ${BLOG_SITE_URL}`);
     } else {
       lines.push(`\n🏦 大量保有報告（直近${days}日）: なし`);
     }

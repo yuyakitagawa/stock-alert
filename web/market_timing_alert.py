@@ -31,6 +31,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 MARKET_DP_CASH_THRESHOLD = 15.0
 LARGE_HOLDINGS_DAYS = 3
 LARGE_HOLDINGS_LIMIT = 5
+BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/"
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
@@ -172,6 +173,7 @@ def build_large_holdings_section(
         lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有 {direction} [{doc_type}] ({disc})")
     if len(ordered) > limit:
         lines.append(f"  ...他{len(ordered) - limit}件（LINEで「大量保有」と聞けば確認できます）")
+    lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}")
     return "\n".join(lines)
 
 
