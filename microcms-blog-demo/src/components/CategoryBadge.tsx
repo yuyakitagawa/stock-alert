@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Category } from "@/types/article";
 
 export default function CategoryBadge({ category }: { category: Category }) {
+  if (!category) return null;
   return (
     <Link
       href={`/category/${encodeURIComponent(category)}`}
