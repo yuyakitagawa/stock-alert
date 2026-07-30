@@ -1,5 +1,79 @@
 # Dev Log
 
+## 2026-07-25 Supabaseクライアントのネットワークタイムアウト耐性追加
+
+```
+発見の経緯: ユーザーがPR #163（下落モデル一本化）のbacktest.py bear検証を
+      ローカル環境で実行中、Supabaseへのyahoo_price_cache書き込み
+      (insert_ignore)が読み取りタイムアウト(30秒)で失敗し、リトライ処理が
+      無かったため例外がそのまま伝播してバックテスト全体が停止した。
+
+原因: lib/supabase_client.py の insert_ignore/select/select_one/delete/rpc は
+      requests.post/get/delete を直接呼ぶだけで例外処理が無く、単発の
+      ネットワーク瞬断でも即座に呼び出し元まで例外が伝播していた
+      （upsertだけは既にtry/exceptで例外を握りつぶしバッチ単位でスキップする
+      作りだったが、他の関数には無かった）。
+
+対応:
+  - lib/supabase_client.py に共通ラッパー _request() を追加。
+    requests.exceptions.RequestException（タイムアウト・接続エラー等）を
+    最大3回、指数バックオフ(2s/4s/8s)でリトライしてから諦める
+  - upsert/insert_ignore/select/select_one/delete/rpc の生requests呼び出しを
+    全て _request() 経由に統一
+  - insert_ignore は upsert と同様、リトライを尽くしても失敗した場合は
+    そのバッチをログに記録してスキップし、呼び出し元（バックテスト等の
+    長時間パイプライン）を丸ごと落とさないようにした
+  - tests/test_supabase_client.py を新規追加（リトライ後の成功・リトライ尽きた
+    後の例外送出・insert_ignoreが最終失敗時も呼び出し元を落とさないことを
+    requests.requestをモックして検証、3件）
+
+判定: インフラの堅牢性修正（モデル・買いフィルターへの変更なし、backtest対象外）。
+      既存テスト全件+新規3件パス。
+```
+
+---
+
+## 2026-07-23 EDINET大量保有の買い/売り誤判定バグ修正
+
+```
+発見の経緯: ユーザーがLINE通知で見た「🏦大量保有報告」で以下の誤表示を発見。
+  - 株式会社東芝がキオクシアHD(285A)株を一部売却し保有比率16.10%→15.10%に
+    低下（関東財務局への変更報告書で開示）したのに📈買いと表示
+  - Ａｔａｒｉ　Ｃａｐｉｔａｌ（9399 ビート・ホールディングス）も保有比率
+    16.93%→14.44%に低下したのに📈買いと表示
+
+原因: 買い/売りの方向判定(`is_sell_disclosure`)が、EDINETの概要欄
+      (doc_description)に「譲渡」「売却」「売出」「処分」のいずれかの
+      キーワードが含まれるかどうかだけで判定していた。しかし変更報告書の
+      概要欄は多くの場合「変更報告書」とだけ書かれ売買方向を示さないため、
+      実際には売却でもキーワードにヒットせず📈買いにフォールバックしていた
+      （lib/edinet.py, tools/scan_large_holdings.py, web/market_timing_alert.py,
+      supabase/functions/line-webhook/index.ts の4箇所で同一パターン）。
+
+対応:
+  - lib/edinet.py: XBRLから直前報告時点の保有割合
+    (HoldingRatioOfShareCertificatesEtcPerLastReportタグ、これまで
+    パースの都合で明示的に除外していた)も取得し holding_ratio_prior として返す
+  - Supabase: edinet_large_holdings に holding_ratio_prior 列を追加(migration適用済み)
+  - tools/scan_large_holdings.py: is_sell_disclosure/is_noise_match に
+    holding_ratio・holding_ratio_prior を渡せるようにし、両方取得できる場合は
+    比率の増減で判定（現在<直前なら売り）。片方でも欠ける場合のみ従来の
+    キーワード判定にフォールバック
+  - web/market_timing_alert.py: 上記と同様の優先順位（holding_ratio_prior→
+    同一提出者の複数開示から見た最古比率→キーワード）で方向判定
+  - supabase/functions/line-webhook/index.ts (check_catalyst): isSellDisclosureを
+    同じ優先順位に変更、select句にholding_ratio_priorを追加
+  - tests/test_scan_large_holdings.py: 比率減少での売り判定テスト追加(7→9件)
+  - tests/test_market_timing_alert.py: 東芝/キオクシアの実例を再現したテスト追加(11→12件)
+
+判定: 表示バグの修正（モデル・買いフィルターへの変更なし、backtest対象外）。
+      既存テスト全件パス。過去に蓄積済みの edinet_large_holdings 行は
+      holding_ratio_prior が null のままキーワード判定にフォールバックする
+      （新規スキャン分から順次埋まる。過去分の一括バックフィルは未実施）。
+```
+
+---
+
 ## 2026-07-20 下落モデル一本化（上昇モデル・Netスコア・💎買いシステムの廃止）
 
 ```
@@ -59,8 +133,11 @@
       通常期間）を実行し、平均リターン・勝率・大勝率が既存と同等以上で
       あることを確認してからのマージが必須（未検証のままdeploy厳禁）。
 
-判定: 保留 — 上記の理由によりbacktest未検証。マージ判断は検証結果を見て
-      別途行うこと。
+判定: 検証なしでマージ承認 — 本来はCLAUDE.mdの改善マージ規律によりbacktest.py bear
+      での効果確認が必須だが、ユーザーローカル環境での検証が環境要因
+      （lightgbm未インストール→Supabaseタイムアウト、いずれも別PRで対応済み）で
+      難航したため、ユーザーが2026-07-27に「検証なしでも今回はマージしていい」と
+      明示的に許可し例外的にマージした。次回以降の変更は通常通り検証必須。
 ```
 
 ---

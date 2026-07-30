@@ -1,6 +1,7 @@
 """Supabase REST API client for stock-alert pipeline."""
 import math
 import os
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -11,6 +12,24 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 _BATCH_SIZE = 500
 _TIMEOUT = 30
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_SEC = 2
+
+
+def _request(method: str, url: str, **kwargs) -> requests.Response:
+    """requests呼び出しの共通ラッパー。タイムアウト等の一時的なネットワーク失敗は
+    指数バックオフ(2s/4s/8s)で最大_MAX_RETRIES回リトライする。単発のタイムアウトで
+    数時間かかるバックテスト/日次パイプライン全体が落ちるのを防ぐため。"""
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return requests.request(method, url, **kwargs)
+        except requests.exceptions.RequestException as e:
+            if attempt == _MAX_RETRIES:
+                raise
+            wait = _RETRY_BACKOFF_SEC * (2 ** attempt)
+            print(f"[supabase] {method} {url[:80]} failed ({e}), "
+                  f"retry {attempt + 1}/{_MAX_RETRIES} in {wait}s")
+            time.sleep(wait)
 
 
 def _sanitize(rows: list[dict]) -> list[dict]:
@@ -63,7 +82,7 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> None:
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = _dedup_batch(rows[i: i + _BATCH_SIZE], on_conflict)
         try:
-            resp = requests.post(url, headers=_headers(), json=batch, timeout=_TIMEOUT)
+            resp = _request("POST", url, headers=_headers(), json=batch, timeout=_TIMEOUT)
         except Exception as e:
             print(f"[supabase] {table} upsert exception ({len(batch)} rows): {e}")
             continue
@@ -84,7 +103,11 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
     rows = _sanitize(rows)
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = rows[i: i + _BATCH_SIZE]
-        resp = requests.post(url, headers=headers, json=batch, timeout=_TIMEOUT)
+        try:
+            resp = _request("POST", url, headers=headers, json=batch, timeout=_TIMEOUT)
+        except Exception as e:
+            print(f"[supabase] {table} insert_ignore exception ({len(batch)} rows): {e}")
+            continue
         if not resp.ok:
             print(f"[supabase] {table} insert_ignore failed ({len(batch)} rows): "
                   f"{resp.status_code} {resp.text[:300]}")
@@ -101,7 +124,7 @@ def select(table: str, query: str = "", limit: int = 0) -> list[dict]:
         parts = [query] if query else []
         parts.append(f"limit={page_size}&offset={offset}")
         url = f"{base}?{'&'.join(parts)}"
-        resp = requests.get(url, headers=_headers(), timeout=_TIMEOUT)
+        resp = _request("GET", url, headers=_headers(), timeout=_TIMEOUT)
         if not resp.ok:
             print(f"[supabase] {table} select failed: {resp.status_code} {resp.text[:200]}")
             break
@@ -122,7 +145,7 @@ def select_one(table: str, query: str = "") -> dict | None:
     url = f"{SUPABASE_URL}/rest/v1/{table}?{query}&limit=1"
     headers = _headers()
     headers["Accept"] = "application/json"
-    resp = requests.get(url, headers=headers, timeout=_TIMEOUT)
+    resp = _request("GET", url, headers=headers, timeout=_TIMEOUT)
     if not resp.ok:
         return None
     rows = resp.json()
@@ -133,14 +156,14 @@ def delete(table: str, query: str) -> None:
     if not is_configured():
         return
     url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
-    requests.delete(url, headers=_headers(), timeout=_TIMEOUT)
+    _request("DELETE", url, headers=_headers(), timeout=_TIMEOUT)
 
 
 def rpc(fn_name: str, params: dict) -> list | dict | None:
     if not is_configured():
         return None
     url = f"{SUPABASE_URL}/rest/v1/rpc/{fn_name}"
-    resp = requests.post(url, headers=_headers(), json=params, timeout=_TIMEOUT)
+    resp = _request("POST", url, headers=_headers(), json=params, timeout=_TIMEOUT)
     if not resp.ok:
         print(f"[supabase] rpc/{fn_name} failed: {resp.status_code} {resp.text[:200]}")
         return None

@@ -282,6 +282,9 @@ function computePriceChanges(rows: { close: number }[]): string[] {
 // self_filing/sell の両方をノイズとして除外する点が異なるので注意。
 
 const SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"];
+// これ以上は株式併合等によるスクイーズアウト（完全子会社化）の対象になりうる水準で、
+// 上値が買取価格に収斂し伸びしろが無いとみなして除外する
+const MAJORITY_HOLDING_THRESHOLD = 51;
 const INSTITUTION_KEYWORDS = [
   "株式会社", "有限会社", "合同会社", "合資会社", "合名会社",
   "ホールディングス", "Holdings", "HD",
@@ -299,7 +302,18 @@ function normalizeCompanyName(s: string): string {
   return out.trim();
 }
 
-function isSellDisclosure(docDescription: string): boolean {
+function isSellDisclosure(
+  docDescription: string,
+  holdingRatio?: number | null,
+  holdingRatioPrior?: number | null,
+): boolean {
+  // 直前保有割合(holdingRatioPrior)が取得できる場合は保有比率の増減で判定する。
+  // EDINETの概要欄は「変更報告書」とだけ書かれ売買方向を示さないことが多く、
+  // テキストのみに依存すると売り抜けを買いと誤判定するため（例: 東芝のキオクシア
+  // 株一部売却16.10%→15.10%が概要「変更報告書」のみで📈買いと誤表示されたバグ）。
+  if (holdingRatio != null && holdingRatioPrior != null) {
+    return holdingRatio < holdingRatioPrior;
+  }
   return SELL_KEYWORDS.some((k) => (docDescription || "").includes(k));
 }
 
@@ -1347,7 +1361,7 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
   }
   const holdRes = await fetch(
     `${SB_URL}/rest/v1/edinet_large_holdings?disc_date=gte.${sinceStr}${holdingFilter}` +
-      `&select=issuer_code,issuer_name,filer_name,holding_ratio,disc_date,doc_description` +
+      `&select=issuer_code,issuer_name,filer_name,holding_ratio,holding_ratio_prior,disc_date,doc_description` +
       `&order=disc_date.desc,submit_date.desc&limit=50`,
     { headers: sbHeaders() },
   );
@@ -1357,6 +1371,27 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
     holdings = holdings.filter(
       (h) => !isSelfFiling(h.filer_name as string, h.issuer_name as string),
     );
+    // 過半数超（51%以上）はスクイーズアウト対象で上値が見込めないため除外
+    holdings = holdings.filter(
+      (h) => h.holding_ratio == null || Math.abs(h.holding_ratio as number) < MAJORITY_HOLDING_THRESHOLD,
+    );
+
+    // 銘柄+提出者ごとに、期間内で最も古い/新しい保有比率を集計。
+    // 同一提出者の開示が複数あれば「5.2%→10.1%」のように変化を見せる
+    const ratioHistory = new Map<string, { oldest: number; newest: number }>();
+    for (const h of holdings) {
+      if (h.holding_ratio == null) continue;
+      const key = `${h.issuer_code}::${h.filer_name}`;
+      const ratio = h.holding_ratio as number;
+      const existing = ratioHistory.get(key);
+      if (!existing) {
+        ratioHistory.set(key, { oldest: ratio, newest: ratio });
+      } else {
+        // holdingsはdisc_date.desc順なので、後から見つかるものほど古い
+        existing.oldest = ratio;
+      }
+    }
+
     // 同一銘柄の訂正報告等の重複を除き、銘柄ごとに最新1件だけ残す
     const seenCodes = new Set<string>();
     const deduped: Record<string, unknown>[] = [];
@@ -1377,8 +1412,22 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
     if (deduped.length > 0) {
       lines.push(`\n🏦 大量保有報告（直近${days}日・銘柄ごとに最新1件・全${deduped.length}銘柄）\n`);
       for (const h of deduped) {
-        const ratio = h.holding_ratio != null ? `${(h.holding_ratio as number).toFixed(2)}%` : "不明";
-        const direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
+        const hist = ratioHistory.get(`${h.issuer_code}::${h.filer_name}`);
+        let ratio: string;
+        if (h.holding_ratio == null) {
+          ratio = "不明";
+        } else {
+          ratio = hist && hist.oldest !== hist.newest
+            ? `${hist.oldest.toFixed(2)}%→${hist.newest.toFixed(2)}%`
+            : `${(h.holding_ratio as number).toFixed(2)}%`;
+        }
+        const priorRatio = (h.holding_ratio_prior as number | null) ??
+          (hist && hist.oldest !== hist.newest ? hist.oldest : null);
+        const direction = isSellDisclosure(
+          h.doc_description as string,
+          h.holding_ratio as number | null,
+          priorRatio,
+        ) ? "📉売り" : "📈買い";
         lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} ${direction} (${h.disc_date})`);
       }
     } else {
@@ -1408,7 +1457,7 @@ ${context || "（本日のデータはまだありません）"}
 - 銘柄照会では最初に現在の株価・前日比・前週比を表示し、直近の株価傾向（20日相対強度や出来高変化）にも触れる
 - 基礎数値（株価・下落確率・PER・PBR・配当利回り・ROE等）を省略せず表示する。PER・PBR・ROE・配当利回りは必ず意味と目安を付けて表示する（例: 「PER（株価収益率＝株価÷EPS。低いほど割安）: 15.2（目安<15）」「PBR（株価純資産倍率＝株価÷BPS）: 1.3（目安<1）」「ROE（自己資本利益率＝純利益÷自己資本）: 12.5%（目安>10%）」「配当利回り（年間配当÷株価）: 3.2%（目安>3%）」）
 - 数値には必ず指標名と単位をつける（✕「5日推移: 2.5→3.2」→ ○「下落確率の5日推移: 2.5%→3.2%」）
-- 800文字以内に収める。冗長な解説は不要だが数値は削らない
+- 800文字以内に収める。冗長な解説は不要だが数値は削らない（🏦大量保有報告の全件列挙は例外。件数が多く800字を超えても、要約せず銘柄を省略しない）
 - 「下落確率」と呼ぶ（dpとは言わない）
 - 銘柄分析や売買判断に触れる回答の末尾には必ず「※本情報は参考情報であり、投資判断は自己責任でお願いします」と添える
 - わからないことは「わかりません」と正直に言う。「サポートに問い合わせ」「提供者に確認」等の案内は絶対にしない（サポート窓口は存在しない）
@@ -1443,7 +1492,7 @@ lookup_stockの結果に【セクター比較】セクションが含まれる�
 
 ## カタリスト速報（check_catalyst）
 「最近の決算サプライズは？」「上方修正した銘柄」「ウォッチ銘柄のニュースは？」「大量保有報告」「機関投資家の動き」等にはcheck_catalystを使う。「ウォッチ銘柄の」「保有株の」と明示された場合のみscope='watchlist'、それ以外は必ずscope='all'（市場全体）。「ほかにも」「他の銘柄は」等の追加質問はscope='all'で呼び直す。keyword='上方修正'等で絞込可能。🔥マーク付きはカタリスト候補（上方修正・増配・自社株買い等）。🏦マーク付きはEDINET大量保有報告（銘柄ごとに最新1件・保有比率順に整理済み。📈買い/📉売りの方向性つき）。
-🏦セクションが返ってきたら、1件だけ選んで語らず、返ってきた銘柄を全件そのまま箇条書きで列挙する（銘柄コード・会社名・提出者・保有比率・方向性・開示日を省略しない）。0件の場合のみ「大口の動きはありません」等と答える
+🏦セクションが返ってきたら、800文字ルールより列挙を優先する。件数が多くても「ほぼ全銘柄が買い」「VCが積極的」等の傾向だけ述べて終わらせるのは禁止。1件だけ選んで語らず、返ってきた銘柄を全件そのまま箇条書きで列挙する（銘柄コード・会社名・提出者・保有比率・方向性・開示日を省略しない）。0件の場合のみ「大口の動きはありません」等と答える
 
 ## ツール使い分け
 - **特定の1銘柄を聞かれた場合**（「トヨタはどう？」「三菱商事を分析して」）→ lookup_stock で最新データ取得

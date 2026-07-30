@@ -146,11 +146,17 @@ def _fetch_xbrl_text(doc_id: str) -> "str | None":
 
 
 def fetch_xbrl_details(doc_id: str) -> dict:
-    """XBRL本文から対象銘柄コード(issuer_code)、保有割合(holding_ratio)、発行者名(issuer_name)を抽出する。
+    """XBRL本文から対象銘柄コード(issuer_code)、保有割合(holding_ratio)、
+    直前報告時の保有割合(holding_ratio_prior)、発行者名(issuer_name)を抽出する。
 
-    Returns: {"issuer_code": str|None, "holding_ratio": float|None, "issuer_name": str|None}
+    holding_ratio_prior は変更報告書(360)にのみ存在し、holding_ratio との差分から
+    増加（買い）/減少（売り）を判定するのに使う（doc_descriptionの文言に依存しない）。
+
+    Returns: {"issuer_code": str|None, "holding_ratio": float|None,
+              "holding_ratio_prior": float|None, "issuer_name": str|None}
     """
-    result = {"issuer_code": None, "holding_ratio": None, "issuer_name": None}
+    result = {"issuer_code": None, "holding_ratio": None,
+              "holding_ratio_prior": None, "issuer_name": None}
     xbrl_text = _fetch_xbrl_text(doc_id)
     if not xbrl_text:
         print(f"    ⚠ XBRL取得失敗: {doc_id}")
@@ -197,6 +203,19 @@ def fetch_xbrl_details(doc_id: str) -> dict:
             result["holding_ratio"] = round(val, 2)
             break
 
+    # 直前報告時の保有割合（PerLastReportタグ。変更報告書のみ存在）
+    prior_patterns = [
+        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?PerLastReport[^>]*>\s*([0-9]*\.?[0-9]+)\s*<',
+    ]
+    for pat in prior_patterns:
+        m = re.search(pat, xbrl_text)
+        if m:
+            val = float(m.group(1))
+            if val < 1.0:
+                val *= 100
+            result["holding_ratio_prior"] = round(val, 2)
+            break
+
     return result
 
 
@@ -222,8 +241,9 @@ def extract_large_holdings(results: list, disc_date: str) -> list:
             "doc_description": r.get("docDescription"),
             "submit_date": r.get("submitDateTime"),
             "disc_date": disc_date,
-            "holding_ratio": None,   # XBRL取得後に埋める
-            "issuer_code": None,     # XBRL取得後に埋める
+            "holding_ratio": None,        # XBRL取得後に埋める
+            "holding_ratio_prior": None,  # XBRL取得後に埋める
+            "issuer_code": None,          # XBRL取得後に埋める
         })
     return [x for x in records if x["doc_id"]]
 
@@ -266,6 +286,7 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
             for rec in recs:
                 details = fetch_xbrl_details(rec["doc_id"])
                 rec["holding_ratio"] = details["holding_ratio"]
+                rec["holding_ratio_prior"] = details["holding_ratio_prior"]
                 rec["issuer_code"] = details["issuer_code"]
                 rec["issuer_name"] = details.get("issuer_name")
                 if not rec["issuer_code"]:
