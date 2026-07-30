@@ -1,5 +1,30 @@
 # Dev Log
 
+## 2026-07-30 LINE大口保有通知にmicroCMSブログへのリンクを追加
+
+```
+背景: ユーザー指示。EDINET大口保有報告（🏦セクション）はLINEの日次プッシュ通知
+      （web/market_timing_alert.py）とAIチャットのcheck_catalystツール
+      （supabase/functions/line-webhook/index.ts）の2箇所に表示されるが、
+      web/publish_blog_articles.py（Step 5c）が生成する詳細解説記事
+      （microcms-blog-demo, https://stock-alert-lyart.vercel.app/）への
+      導線がLINE側に無かった。
+
+対応:
+  - web/market_timing_alert.py: BLOG_SITE_URL定数を追加し、
+    build_large_holdings_section()の末尾に詳細解説記事へのリンクを追加
+    （大口保有の話がある場合のみ）
+  - supabase/functions/line-webhook/index.ts: 同名の定数を追加し、
+    executeCheckCatalystの🏦セクション末尾にも同じリンクを追加
+  - tests/test_market_timing_alert.py: リンクが含まれることを検証するテストを
+    追加（12→13件）
+
+判定: 表示追加のみ（モデル・買いフィルターへの変更なし、backtest対象外）。
+      既存テスト全件+新規1件パス。
+```
+
+---
+
 ## 2026-07-25 Supabaseクライアントのネットワークタイムアウト耐性追加
 
 ```

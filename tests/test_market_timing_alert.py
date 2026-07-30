@@ -7,11 +7,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.market_timing_alert import build_large_holdings_section
+from web.market_timing_alert import build_large_holdings_section, BLOG_SITE_URL
 
 
 def test_empty_holdings_returns_empty_string():
     assert build_large_holdings_section([]) == ""
+
+
+def test_includes_blog_link_when_holdings_present():
+    """大口保有の話がある場合はmicroCMSブログへのリンクも案内する。"""
+    holdings = [{
+        "issuer_code": "8058", "name": "三菱商事", "filer_name": "○○ファンド",
+        "doc_type_code": "350", "holding_ratio": 5.2, "disc_date": "2026-07-17",
+        "doc_description": "大量保有報告書",
+    }]
+    msg = build_large_holdings_section(holdings)
+    assert BLOG_SITE_URL in msg
 
 
 def test_formats_entries_with_name_and_ratio():
@@ -159,6 +170,7 @@ def test_ratio_unchanged_shows_single_value_not_range():
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
+    test_includes_blog_link_when_holdings_present()
     test_sell_disclosure_labelled_as_sell()
     test_ratio_decrease_labelled_as_sell_even_without_keyword()
     test_change_report_labelled_correctly()
@@ -169,4 +181,4 @@ if __name__ == "__main__":
     test_individual_filer_deprioritized_below_institution()
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
     test_ratio_unchanged_shows_single_value_not_range()
-    print("OK: test_market_timing_alert (12 tests)")
+    print("OK: test_market_timing_alert (13 tests)")
