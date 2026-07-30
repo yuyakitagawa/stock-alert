@@ -15,9 +15,12 @@ const COLOR_MAP: Record<DealType, string> = {
 };
 
 export default function DealTypeBadge({ dealType }: { dealType: DealType }) {
+  if (!dealType) return null;
   return (
     <span
-      className={`inline-flex items-center rounded-full border bg-white px-2.5 py-0.5 text-xs font-semibold ${COLOR_MAP[dealType]}`}
+      className={`inline-flex items-center rounded-full border bg-white px-2.5 py-0.5 text-xs font-semibold ${
+        COLOR_MAP[dealType] ?? "border-gray-400 text-gray-600"
+      }`}
     >
       {dealType}
     </span>
