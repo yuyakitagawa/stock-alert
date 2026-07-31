@@ -35,6 +35,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗は指数バックオフで自動リトライ）|
+| `lib/fundamentals.py` | point-in-time（先読みバイアスなし）ファンダメンタル再構成。`rank_stocks.py`/`rf_train_v3.py`/`backtest.py`で共用。`get_pit_fundamentals()`等は`rows`（銘柄のjquants_fin_summary全履歴）を渡すとDB問い合わせせずメモリ上でas_ofフィルタする（`rf_train_v3.py`が銘柄あたり約60サンプル日で呼ぶため、都度クエリだと数時間かかっていたのを銘柄ごと1クエリに削減）|
 | `lib/sheets_helper.py` | Googleスプレッドシート連携 |
 | `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（下落確率レンジ・予測多様性等の行レベル、rank_stocks/export_to_webで使用）＋`check_price_freshness`（複数日にまたがるclose凍結=更新漏れ検知、backfill_historyで使用）（alert-only：違反でも更新は止めずメール通知）|
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
@@ -47,6 +48,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
 | `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）・過半数超(51%以上)・譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`is_sell_disclosure`/`is_individual_filer` は `market_timing_alert.py` のLINE通知セクションでも再利用（売却を除外せず方向性表示、個人名提出者を優先度で後回し）。買い/売りの方向判定はXBRLの直前保有割合(`holding_ratio_prior`)と現在の保有割合を比較して行い（概要欄の「譲渡/売却」等の文言が無い開示でも保有比率の減少を正しく売りと判定）、取得できない場合のみ概要欄のキーワードにフォールバックする。`EDINET_API_KEY` 必須 |
 | `web/publish_blog_articles.py` | **ブログ記事自動生成・投稿**（Step 5c、microCMS検証用サイト`microcms-blog-demo`向け）。`market_timing_alert.get_recent_large_holdings`（自己申告・過半数超・売却を除外し買い方向のみ）からネタを取得し、yfinanceの発行済株式数×株価×保有比率変化で取得金額(億円)を概算（推定不能な銘柄はスキップ）、Claude（`ANTHROPIC_API_KEY`）に事実のみを渡して解説記事とdealType（インサイダー買い/日系ファンド買い/外資系ファンド買い/ベンチャーキャピタル買い/財団買い/日系企業買い/外資系企業買い/その他。提出者名からの一般知識判定、キーワード一致だけでは日系/外資やスペース無し個人名を判定できないため）を生成しmicroCMSへ即時公開（人間は事後にmicroCMS管理画面で修正する運用）。`category`はdealTypeから「買い」を除いた値を自動セット（サイト上部のカテゴリフィルターと粒度を合わせるため）。同一銘柄・同一開示日の重複投稿は事前チェックでスキップ。`--dry-run`で投稿せず内容確認のみ可。`MICROCMS_SERVICE_DOMAIN`/`MICROCMS_API_KEY`（書き込み権限）必須、未設定ならスキップ |
+| `tests/test_fundamentals.py` | point-in-timeファンダ（`lib/fundamentals.py`）のユニットテスト。先読みバイアス防止（as_of日より後の開示を含めない）を確認（6件）|
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
 | `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（14件）|

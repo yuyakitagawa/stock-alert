@@ -171,10 +171,13 @@ def passes_screener_at(p, v_slice, nk_ret_3m):
 def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
                      vix_map=None, sp500_dates=None, sp500_closes_arr=None,
                      usdjpy_dates=None, usdjpy_closes_arr=None,
-                     edinet_map=None):
+                     edinet_map=None, fin_rows=None):
     """vix_map: {date: float}, sp500_dates/usdjpy_dates: sorted list of date,
     sp500_closes_arr/usdjpy_closes_arr: np.array
-    edinet_map: {code: [(submit_date_str, holding_ratio), ...]}"""
+    edinet_map: {code: [(submit_date_str, holding_ratio), ...]}
+    fin_rows: sample_codeのjquants_fin_summary全履歴（disc_date降順）。
+    渡すとget_pit_fundamentals()が銘柄ごとに都度DBへ問い合わせず、
+    メモリ上でpoint-in-timeフィルタする（多数のサンプル日を扱う学習の高速化用）。"""
     import bisect
     closes=df["Close"].values; dates=list(df.index); n=len(closes)
     volumes=df["Volume"].tolist() if "Volume" in df.columns else None
@@ -248,7 +251,7 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
         # point-in-timeファンダ（優待月・J-Quants財務）
         fund = None
         if sample_code is not None:
-            pit = get_pit_fundamentals(sample_code, dates[i])
+            pit = get_pit_fundamentals(sample_code, dates[i], rows=fin_rows)
             if pit is not None:
                 price_now = closes[i]
                 eps, bps, dps = pit.get("eps"), pit.get("bps"), pit.get("dps")
@@ -601,12 +604,18 @@ def main():
     train_dates,test_dates=[],[]
     train_sectors,test_sectors=[],[]
     success=0
+    from lib.db import get_jquants_fin_history_all
     for i,row in stock_list.iterrows():
         code=str(row["code"])
         sector=get_sector_cached(code)   # JPX 33業種（プロセス内キャッシュ）
         df=get_prices(code)
         if df is None or len(df)<MIN_HISTORY:
             time.sleep(0.08); continue
+        # 銘柄の財務開示履歴を1回だけ取得（サンプル日ごとにDB問い合わせしない）
+        try:
+            fin_rows = get_jquants_fin_history_all(code)
+        except Exception:
+            fin_rows = []
         for (sd,feat,ld) in generate_samples(df, nk_df, screener_only=screener_only,
                                                         sample_code=code,
                                                         vix_map=vix_map,
@@ -614,7 +623,8 @@ def main():
                                                         sp500_closes_arr=sp500_closes_arr,
                                                         usdjpy_dates=usdjpy_dates,
                                                         usdjpy_closes_arr=usdjpy_closes_arr,
-                                                        edinet_map=edinet_map):
+                                                        edinet_map=edinet_map,
+                                                        fin_rows=fin_rows):
             if sd<TRAIN_CUTOFF:
                 train_X.append(feat); train_yd.append(ld)
                 train_dates.append(sd); train_sectors.append(sector)
