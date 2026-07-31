@@ -354,6 +354,17 @@ def get_jquants_fin_history_fy(code: str, as_of_date: str, n: int = 3) -> list:
     )
 
 
+def get_jquants_fin_history_all(code: str) -> list:
+    """指定銘柄の全開示履歴を1回で取得（disc_date降順）。
+    学習(rf_train_v3)のように同一銘柄を多数のas_of_dateで参照する場合、
+    as_of_dateごとに都度クエリを投げる代わりに1回だけ取得してメモリ上で
+    point-in-timeフィルタするために使う。"""
+    return sb.select(
+        "jquants_fin_summary",
+        f"code=eq.{code}&order=disc_date.desc"
+    )
+
+
 def jquants_earnings_rows(code: str) -> list:
     """利益の質フィルター用の年次行を jquants_fin_summary から組み立てる（kabutan非依存）。
     各FY行を {fy_end, is_forecast, revenue, op_profit, net_income} に整形（fy_end昇順）。

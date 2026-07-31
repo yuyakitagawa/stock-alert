@@ -1,5 +1,48 @@
 # Dev Log
 
+## 2026-07-31 rf_train_v3.py の学習が数時間かかる原因（jquants_fin_summaryへの過剰クエリ）を修正
+
+```
+発見の経緯: モデルキャッシュ修正後の初回フル学習を監視中、Supabase APIログを
+      確認したところ、同一銘柄に対してdisc_date違い（サンプル日ごと）で
+      jquants_fin_summaryへの問い合わせが繰り返し発生していた。
+
+原因: lib/fundamentals.py の get_pit_fundamentals()/get_pit_valuation() が、
+      呼ばれるたびに lib/db.py の get_jquants_fin_history()/
+      get_jquants_fin_history_fy() 経由でSupabaseへ生のネットワーク
+      リクエストを送っていた（キャッシュなし）。rf_train_v3.py の
+      generate_samples() は1銘柄あたり約60サンプル日をループするため、
+      1銘柄で約240リクエスト（get_pit_fundamentals内3クエリ×60 + 
+      get_pit_valuation重複含む）、東証全銘柄(3500超)で80万回以上の
+      個別リクエストになっていた。これが「モデル学習が5時間以上かかる」
+      直接の原因だった（README記載の想定所要時間「40〜70分」から大幅に乖離）。
+
+対応:
+  - lib/db.py: get_jquants_fin_history_all(code) を追加（銘柄の全開示履歴を
+    1回のクエリで取得。disc_date降順）
+  - lib/fundamentals.py: _filter_asof() を追加し、_jq_split_safe_bps/
+    get_pit_valuation/get_pit_fundamentals/pit_fundamental_features に
+    任意の rows 引数を追加。rows（銘柄の全履歴）が渡された場合はDBに
+    問い合わせず、point-in-timeフィルタ（as_of日以前・件数制限・
+    doc_type=FY絞り込み）をメモリ上で再現する。rows省略時は従来通り
+    DB問い合わせ（rank_stocks.py/backtest.pyは1銘柄1回の呼び出しのため
+    変更不要、後方互換）
+  - core/rf_train_v3.py: generate_samples()にfin_rows引数を追加し
+    get_pit_fundamentals()へ橋渡し。main()の銘柄ループで
+    get_jquants_fin_history_all(code)を1回だけ呼び出しfin_rowsとして渡す
+    ことで、銘柄あたりのjquants_fin_summaryクエリを約60回→1回に削減
+  - tests/test_fundamentals.py を新規追加（_filter_asofの先読み防止・
+    limit・doc_type絞り込み、get_pit_fundamentals(rows=...)の
+    point-in-time正しさを検証、6件）
+
+判定: パフォーマンス修正（特徴量の値・計算式は不変、モデル出力に影響なし
+      のためbacktest対象外）。既存テスト全件+新規6件パス。次回の
+      Friday retrain（またはモデルキャッシュ空の状態での実行）で
+      所要時間が大幅短縮されることを実運用で確認する必要がある。
+```
+
+---
+
 ## 2026-07-31 daily_alert.yml モデルキャッシュの設計不具合を修正（LINE定期配信停止の根本原因）
 
 ```

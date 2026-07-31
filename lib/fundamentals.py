@@ -16,6 +16,23 @@ from lib.utils import _days_to_nearest_event
 _YUTAI_MONTH = None   # {code: record_month or None}
 
 
+def _filter_asof(rows, as_of_iso, n, fy_only=False):
+    """rows（disc_date降順の全履歴）から、指定日時点で既知の直近n件を返す。
+    get_jquants_fin_history()/get_jquants_fin_history_fy()のSQLクエリと
+    同じ結果になるよう、point-in-timeフィルタをメモリ上で再現する。"""
+    out = []
+    for r in rows:
+        d = r.get("disc_date")
+        if d is None or d > as_of_iso:
+            continue
+        if fy_only and not str(r.get("doc_type") or "").startswith("FY"):
+            continue
+        out.append(r)
+        if len(out) >= n:
+            break
+    return out
+
+
 def load_fundamentals_cache():
     """DBから優待月を一括ロード（プロセス内キャッシュ）。"""
     global _YUTAI_MONTH
@@ -54,34 +71,44 @@ def _days_since_last_ex(target_date, record_months):
     return best
 
 
-def _jq_split_safe_bps(code, target_date):
+def _jq_split_safe_bps(code, target_date, rows=None):
     """J-Quants(jquants_fin_summary)の直近開示BPS(>0)を返す。
     開示ごとに分割後株数で再表示されるため、分割調整済み株価と整合する。
-    表示PER/PBR専用。"""
+    表示PER/PBR専用。
+
+    rows（銘柄の全履歴、disc_date降順）が渡された場合はDBに問い合わせず
+    メモリ上でフィルタする（多数のas_of_dateを扱う学習ループ用）。"""
     try:
-        from lib.db import get_jquants_fin_history
-        rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
+        if rows is not None:
+            asof_rows = _filter_asof(rows, target_date.isoformat(), n=6)
+        else:
+            from lib.db import get_jquants_fin_history
+            asof_rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
     except Exception:
         return None
-    for r in rows:
+    for r in asof_rows:
         b = r.get("bps")
         if b is not None and b > 0:
             return b
     return None
 
 
-def get_pit_valuation(code, target_date):
+def get_pit_valuation(code, target_date, rows=None):
     """表示用バリュエーション: target_date時点で既知の eps/bps を返す。
     J-Quants(jquants_fin_summary)から取得。PER/PBR表示専用、特徴量には不使用。
+    rows: _jq_split_safe_bps/get_pit_fundamentals と同じ（省略時はDB問い合わせ）。
     返り値: {"eps": float|None, "bps": float|None}
     """
     code = str(code)
-    bps = _jq_split_safe_bps(code, target_date)
+    bps = _jq_split_safe_bps(code, target_date, rows=rows)
     eps = None
     try:
-        from lib.db import get_jquants_fin_history
-        rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
-        for r in rows:
+        if rows is not None:
+            asof_rows = _filter_asof(rows, target_date.isoformat(), n=6)
+        else:
+            from lib.db import get_jquants_fin_history
+            asof_rows = get_jquants_fin_history(str(code), target_date.isoformat(), n=6)
+        for r in asof_rows:
             e = r.get("eps")
             if e is not None:
                 eps = e
@@ -91,8 +118,11 @@ def get_pit_valuation(code, target_date):
     return {"eps": eps, "bps": bps}
 
 
-def get_pit_fundamentals(code, target_date):
+def get_pit_fundamentals(code, target_date, rows=None):
     """target_date 時点で既知のファンダ生値を返す。データ皆無なら None。
+    rows: 銘柄の全履歴（disc_date降順）を渡すとDBに問い合わせずメモリ上で
+    point-in-timeフィルタする（rf_train_v3.pyのように同一銘柄を多数の
+    target_dateで呼ぶ場合の高速化用）。省略時は従来通りDB問い合わせ。
     返り値: {eps, bps, roe, days_to_earnings, days_to_dividend, days_to_yutai, ...}
     """
     load_fundamentals_cache()
@@ -110,15 +140,18 @@ def get_pit_fundamentals(code, target_date):
     has_jq = False
 
     try:
-        from lib.db import get_jquants_fin_history, get_jquants_fin_history_fy
         td_iso = target_date.isoformat()
 
-        rows = get_jquants_fin_history(code, td_iso, n=4)
-        if rows:
+        if rows is not None:
+            n4_rows = _filter_asof(rows, td_iso, n=4)
+        else:
+            from lib.db import get_jquants_fin_history
+            n4_rows = get_jquants_fin_history(code, td_iso, n=4)
+        if n4_rows:
             has_jq = True
-            latest = rows[0]
+            latest = n4_rows[0]
             eps = latest.get("eps")
-            bps = _jq_split_safe_bps(code, target_date)
+            bps = _jq_split_safe_bps(code, target_date, rows=rows)
             dps = latest.get("div_ann")
             pr = latest.get("payout_ratio")
             if pr is not None:
@@ -134,7 +167,11 @@ def get_pit_fundamentals(code, target_date):
             if np_v is not None and fnp is not None and fnp != 0:
                 eps_surprise = (np_v - fnp) / abs(fnp)
 
-        jq_fy = get_jquants_fin_history_fy(code, td_iso, n=3)
+        if rows is not None:
+            jq_fy = _filter_asof(rows, td_iso, n=3, fy_only=True)
+        else:
+            from lib.db import get_jquants_fin_history_fy
+            jq_fy = get_jquants_fin_history_fy(code, td_iso, n=3)
         if len(jq_fy) >= 2:
             has_jq = True
             curr, prev = jq_fy[0], jq_fy[1]
@@ -230,15 +267,16 @@ def get_pit_fundamentals(code, target_date):
     }
 
 
-def pit_fundamental_features(code, target_date, price):
+def pit_fundamental_features(code, target_date, price, rows=None):
     """point-in-timeファンダをファンダメンタル部の正規化済み辞書として返す。
     extract_features()に渡すfundamentals dictを生成するためのヘルパー。
     backtest.py が extract_features() を直接呼び出す際に使用。
+    rows: get_pit_fundamentals()と同じ（省略時はDB問い合わせ）。
 
     返り値: fundamentals dict（extract_features()のfd引数と互換）
     """
     import math
-    fd = get_pit_fundamentals(code, target_date)
+    fd = get_pit_fundamentals(code, target_date, rows=rows)
     m = target_date.month
     result = {"month": m}
     if fd is not None:
