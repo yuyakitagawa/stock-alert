@@ -1,5 +1,45 @@
 # Dev Log
 
+## 2026-07-31 コンサルエージェントによる利用者価値レビュー→バグ修正3件
+
+```
+経緯: 「モデルバッチ・LINEメッセージ・web記事について、利用者にとってもっと
+      役立つツールになるようアドバイスし、修正させる」という依頼を受け、
+      general-purposeエージェントに3領域（core/rf_train_v3.py・screener.py・
+      rank_stocks.py／web/market_timing_alert.py／web/publish_blog_articles.py）の
+      実コード・テスト・README・dev_log.mdを読ませて利用者視点でレビューさせた。
+
+指摘のうち、確認済みバグ・モデル無関係・バックテスト不要な3件を即修正:
+
+1. core/rank_stocks.py:721 未定義変数 target_date による NameError（無音でexcept握りつぶし）
+   → 2026-07-14の日経vsS&P500機能追加以来、毎日必ず失敗し data/market_compare.json が
+     更新されないままLINE配信されていた疑い。datetime.now()に修正（1行）。
+
+2. web/publish_blog_articles.py:289 is_sell_disclosure() の呼び出しが概要欄キーワードのみで
+   holding_ratio/holding_ratio_prior を渡していなかった。2026-07-23に他3箇所
+   （market_timing_alert.py等）で修正済みの「保有比率増減による売り判定」が
+   このファイルだけ未反映で、東芝型（概要「変更報告書」のみ・実際は比率減少=売り）を
+   「買い」記事として自動投稿しうる状態だった。引数を追加して修正、
+   tests/test_publish_blog_articles.py に東芝型ケースを追加（17件→変更なし、既存テスト強化）。
+
+3. web/market_timing_alert.py: ウォッチリストの「🔔買い時！」判定がdrop_prob閾値のみで、
+   ランキング本体（品質フィルター込み）の推奨ラベルを見ておらず、同一銘柄で
+   「ウォッチ通知は買い時／ランキングは🔴売り検討」という矛盾表示になりえた。
+   get_today_rankings の select に recommend を追加し、build_watchlist_section で
+   recommend=="🔴 売り検討" の場合は dp閾値未達でも買い時表示を抑制するガードを追加。
+   tests/test_market_timing_alert.py にテスト3件追加（13→16件）。
+
+検証: 既存テスト全件（tests/test_*.py 全9ファイル）実行し regression なしを確認。
+      いずれもモデル・ハードフィルター・特徴量定義には無変更のためバックテスト対象外。
+
+判定: マージ可（バグ修正・可観測性改善のみ）。
+      レビューで指摘された残りの改善案（LINEの通知疲れ対策、web記事のso what不足、
+      screener.pyの実質デッドパス化、💎買い0件時のファンダ欠損可観測性など）は
+      次タスク候補として保留。
+```
+
+---
+
 ## 2026-07-31 CI (ci.yml) にanthropicが不足していて4件のテストが実CIで失敗していたのを修正
 
 ```
