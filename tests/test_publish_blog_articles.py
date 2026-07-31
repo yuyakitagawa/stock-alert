@@ -3,23 +3,14 @@
 
 実行: python3 tests/test_publish_blog_articles.py
 """
-import io
 import os
 import sys
 import json
-import contextlib
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import web.publish_blog_articles as m
-
-
-def test_category_from_deal_type_strips_kai_suffix():
-    assert m.category_from_deal_type("日系ファンド買い") == "日系ファンド"
-    assert m.category_from_deal_type("外資系ファンド買い") == "外資系ファンド"
-    assert m.category_from_deal_type("インサイダー買い") == "インサイダー"
-    assert m.category_from_deal_type("その他") == "その他"  # 「買い」で終わらない値はそのまま
 
 
 def test_estimate_deal_amount_oku_calculation():
@@ -104,9 +95,7 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
     assert len(results) == 2  # 売却は除外される
     assert [r["stockCode"] for r in results] == ["7203", "9999"]  # |比率|降順
     assert results[0]["dealType"] == "インサイダー買い"
-    assert results[0]["category"] == "インサイダー"
     assert results[1]["dealType"] == "日系ファンド買い"
-    assert results[1]["category"] == "日系ファンド"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
 
@@ -154,34 +143,13 @@ def test_publish_article_retries_as_array_on_type_mismatch():
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
         _FakeResponse(201, "", {"id": "retried-id"}),
     ]
-    payload = {"title": "t", "dealType": "機関投資家買い", "category": "その他"}
-    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock, \
-         mock.patch.object(m, "_verify_category"):
+    payload = {"title": "t", "dealType": "機関投資家買い"}
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
         content_id = m.publish_article(payload)
     assert content_id == "retried-id"
     assert post_mock.call_count == 2
     retried_payload = post_mock.call_args_list[1].args[0]
     assert retried_payload["dealType"] == ["機関投資家買い"]
-    assert retried_payload["category"] == "その他"  # 型が合っていた方はそのまま
-
-
-def test_publish_article_fixes_multiple_fields_in_sequence():
-    """microCMSは1回のエラーで1フィールドしか教えてくれないので、
-    dealTypeを直した後にcategoryでも同じエラーが出たら、続けて直す。"""
-    responses = [
-        _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
-        _FakeResponse(400, '{"message":"\'category\' has unexpected data type."}'),
-        _FakeResponse(201, "", {"id": "retried-id"}),
-    ]
-    payload = {"title": "t", "dealType": "機関投資家買い", "category": "その他"}
-    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock, \
-         mock.patch.object(m, "_verify_category"):
-        content_id = m.publish_article(payload)
-    assert content_id == "retried-id"
-    assert post_mock.call_count == 3
-    final_payload = post_mock.call_args_list[2].args[0]
-    assert final_payload["dealType"] == ["機関投資家買い"]
-    assert final_payload["category"] == ["その他"]
 
 
 def test_publish_article_gives_up_when_same_field_fails_twice():
@@ -193,27 +161,6 @@ def test_publish_article_gives_up_when_same_field_fails_twice():
     with mock.patch.object(m, "_post_once", side_effect=responses):
         content_id = m.publish_article(payload)
     assert content_id is None
-
-
-def test_verify_category_warns_when_microcms_silently_drops_the_value():
-    """microCMSのセレクトフィールドに選択肢として登録されていない値を送ると、
-    エラーにならず空配列で保存されることがある。保存後の値が期待値と違えば警告する。"""
-    resp = _FakeResponse(200, "", {"category": []})
-    out = io.StringIO()
-    with mock.patch.object(m.requests, "get", return_value=resp), \
-         contextlib.redirect_stdout(out):
-        m._verify_category("id1", "日系ファンド")
-    assert "日系ファンド" in out.getvalue()
-
-
-def test_verify_category_silent_when_saved_value_matches():
-    resp = _FakeResponse(200, "", {"category": ["インサイダー"]})
-    out = io.StringIO()
-    with mock.patch.object(m.requests, "get", return_value=resp) as get_mock, \
-         contextlib.redirect_stdout(out):
-        m._verify_category("id1", "インサイダー")
-    get_mock.assert_called_once()
-    assert out.getvalue() == ""
 
 
 def test_build_and_publish_stops_early_on_permission_error():
@@ -278,7 +225,6 @@ def _fake_client(text):
 
 
 if __name__ == "__main__":
-    test_category_from_deal_type_strips_kai_suffix()
     test_estimate_deal_amount_oku_calculation()
     test_estimate_deal_amount_oku_none_when_no_change()
     test_estimate_deal_amount_oku_none_when_shares_missing()
@@ -291,8 +237,5 @@ if __name__ == "__main__":
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
-    test_publish_article_fixes_multiple_fields_in_sequence()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    test_verify_category_warns_when_microcms_silently_drops_the_value()
-    test_verify_category_silent_when_saved_value_matches()
-    print("全テスト成功 (17件)")
+    print("全テスト成功 (13件)")
