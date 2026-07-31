@@ -238,12 +238,42 @@ def publish_article(payload: dict) -> "str | None":
             if resp.status_code not in (200, 201):
                 print(f"    ⚠ 投稿失敗 HTTP {resp.status_code}: {resp.text[:200]}")
                 return None
-            return resp.json().get("id")
+            content_id = resp.json().get("id")
+            _verify_category(content_id, payload.get("category"))
+            return content_id
     except MicroCMSPermissionError:
         raise
     except Exception as e:
         print(f"    ⚠ 投稿例外: {e}")
         return None
+
+
+def _verify_category(content_id: "str | None", expected_category: "str | None") -> None:
+    """投稿直後にcategoryフィールドが実際に保存されたか検証する。
+    microCMSのセレクトフィールドは選択肢に無い値を送ると、エラーにならず黙って
+    空配列で保存することがある（新しいdealTypeタクソノミー導入時に実際に発生）。
+    記事自体は投稿済みのまま、ズレていれば警告だけ出す。"""
+    if not content_id or not expected_category:
+        return
+    try:
+        resp = requests.get(
+            f"{_microcms_base_url()}/{content_id}",
+            headers=_microcms_headers(),
+            params={"fields": "category"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return
+        saved = resp.json().get("category")
+        saved_value = saved[0] if isinstance(saved, list) and saved else saved
+        if saved_value != expected_category:
+            print(
+                f"    ⚠ categoryが反映されていません（期待値: {expected_category!r} / 実際: {saved!r}）。"
+                f"microCMS管理画面でcategoryフィールドの選択肢に「{expected_category}」が"
+                f"登録されているか確認してください。"
+            )
+    except Exception:
+        pass
 
 
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_ARTICLES_PER_RUN,
