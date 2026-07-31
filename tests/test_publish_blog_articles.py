@@ -3,9 +3,11 @@
 
 実行: python3 tests/test_publish_blog_articles.py
 """
+import io
 import os
 import sys
 import json
+import contextlib
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -153,7 +155,8 @@ def test_publish_article_retries_as_array_on_type_mismatch():
         _FakeResponse(201, "", {"id": "retried-id"}),
     ]
     payload = {"title": "t", "dealType": "機関投資家買い", "category": "その他"}
-    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock, \
+         mock.patch.object(m, "_verify_category"):
         content_id = m.publish_article(payload)
     assert content_id == "retried-id"
     assert post_mock.call_count == 2
@@ -171,7 +174,8 @@ def test_publish_article_fixes_multiple_fields_in_sequence():
         _FakeResponse(201, "", {"id": "retried-id"}),
     ]
     payload = {"title": "t", "dealType": "機関投資家買い", "category": "その他"}
-    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock, \
+         mock.patch.object(m, "_verify_category"):
         content_id = m.publish_article(payload)
     assert content_id == "retried-id"
     assert post_mock.call_count == 3
@@ -189,6 +193,27 @@ def test_publish_article_gives_up_when_same_field_fails_twice():
     with mock.patch.object(m, "_post_once", side_effect=responses):
         content_id = m.publish_article(payload)
     assert content_id is None
+
+
+def test_verify_category_warns_when_microcms_silently_drops_the_value():
+    """microCMSのセレクトフィールドに選択肢として登録されていない値を送ると、
+    エラーにならず空配列で保存されることがある。保存後の値が期待値と違えば警告する。"""
+    resp = _FakeResponse(200, "", {"category": []})
+    out = io.StringIO()
+    with mock.patch.object(m.requests, "get", return_value=resp), \
+         contextlib.redirect_stdout(out):
+        m._verify_category("id1", "日系ファンド")
+    assert "日系ファンド" in out.getvalue()
+
+
+def test_verify_category_silent_when_saved_value_matches():
+    resp = _FakeResponse(200, "", {"category": ["インサイダー"]})
+    out = io.StringIO()
+    with mock.patch.object(m.requests, "get", return_value=resp) as get_mock, \
+         contextlib.redirect_stdout(out):
+        m._verify_category("id1", "インサイダー")
+    get_mock.assert_called_once()
+    assert out.getvalue() == ""
 
 
 def test_build_and_publish_stops_early_on_permission_error():
@@ -268,4 +293,6 @@ if __name__ == "__main__":
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_fixes_multiple_fields_in_sequence()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    print("全テスト成功 (15件)")
+    test_verify_category_warns_when_microcms_silently_drops_the_value()
+    test_verify_category_silent_when_saved_value_matches()
+    print("全テスト成功 (17件)")
