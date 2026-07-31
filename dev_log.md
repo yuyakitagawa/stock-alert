@@ -1,5 +1,44 @@
 # Dev Log
 
+## 2026-07-31 daily_alert.yml モデルキャッシュの設計不具合を修正（LINE定期配信停止の根本原因）
+
+```
+発見の経緯: ユーザーから「LINEから定期メッセージが来ない」と報告。GitHub Actions
+      の daily_alert.yml 実行履歴を調査したところ、直近2回（7/24, 7/30）とも
+      Step 2「モデル学習」が数時間経っても終わらず job timeout(360分)で
+      cancelled になり、以降の全ステップ（ランキング生成・Supabaseエクスポート・
+      LINE配信含む）がスキップされていた。ログには
+      "Cache not found for input keys: ml-models-v37-weekly-113, ml-models-v37-weekly-"
+      と出ており、木曜（非retrain日）にもかかわらずキャッシュ皆無で強制フル
+      再学習に入っていた。
+
+原因: モデルキャッシュのキーが `ml-models-v37-weekly-${{ github.run_number }}`
+      （実行のたびに変わる値）になっていた。actions/cache は同一キーの上書きが
+      できないため、成功する実行のたびに新しいキャッシュエントリが際限なく
+      積み上がる一方、復元は前方一致(restore-keys)の運任せになっていた。
+      リポジトリ全体のキャッシュ容量上限(10GB)や他ワークフローの使用量と
+      合わさって、肝心の「学習済みモデル」キャッシュが予測不能なタイミングで
+      失われ、非retrain日でも強制フル再学習（実測5時間超）が走る状態になって
+      いた。
+
+対応:
+  - .github/workflows/daily_alert.yml:
+    - モデルキャッシュのキーを固定値 `rf-drop-model-v1` に変更
+    - actions/cache@v4（復元+保存の複合アクション）を
+      actions/cache/restore@v4 + actions/cache/save@v4 に分離
+    - 保存前に、復元時にヒットしていた場合のみ `gh cache delete rf-drop-model-v1`
+      で既存分を削除してから保存し直す（固定キーで常に最新の1件だけを保持）
+    - 上記の`gh cache delete`実行のため `permissions: actions: write` を追加
+  - .github/workflows/backfill_rankings.yml: 復元専用のキーも同じ
+    `rf-drop-model-v1` に統一
+
+判定: インフラの信頼性修正（モデル・買いフィルターへの変更なし、backtest対象外）。
+      次回のFriday retrain（または手動実行）でキャッシュが正しく保存・復元
+      されることを実運用で確認する必要がある。
+```
+
+---
+
 ## 2026-07-30 LINE大口保有通知にmicroCMSブログへのリンクを追加
 
 ```

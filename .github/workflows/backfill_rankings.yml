@@ -55,9 +55,7 @@ jobs:
         with:
           path: |
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-none
-          restore-keys: |
-            ml-models-v37-weekly-
+          key: rf-drop-model-v1
 
       - name: Step 1 - 株価キャッシュ更新（Yahoo Finance）
         run: cd ~/stock-alert && python tools/fetch_history.py --years ${{ github.event.inputs.price_years }}

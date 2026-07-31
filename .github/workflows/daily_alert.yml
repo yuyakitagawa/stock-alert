@@ -5,6 +5,10 @@ on:
     - cron: '0 11 * * 1-5'  # 平日11:00 UTC = 平日20:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -47,13 +51,12 @@ jobs:
           echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
 
       - name: Restore model cache
-        uses: actions/cache@v4
+        id: restore_model_cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-${{ github.run_number }}
-          restore-keys: |
-            ml-models-v37-weekly-
+          key: rf-drop-model-v1
 
       - name: Step 0 - 株価キャッシュ更新（Yahoo Finance 差分）
         continue-on-error: true
@@ -107,13 +110,22 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
 
+      - name: Delete stale model cache
+        # GitHub Actions のキャッシュは同一キーを上書きできないため、
+        # 保存し直す前に既存分を消す（固定キーで常に最新の1件だけを保持する）
+        if: always() && steps.restore_model_cache.outputs.cache-hit == 'true'
+        continue-on-error: true
+        run: gh cache delete rf-drop-model-v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Save model cache
         if: always()
-        uses: actions/cache@v4
+        uses: actions/cache/save@v4
         with:
           path: |
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-${{ github.run_number }}
+          key: rf-drop-model-v1
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4
