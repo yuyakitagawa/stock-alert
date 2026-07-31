@@ -1,7 +1,6 @@
 import Link from "next/link";
-import type { Category } from "@/types/article";
 
-export default function CategoryBadge({ category }: { category: Category }) {
+export default function CategoryBadge({ category }: { category: string | undefined }) {
   if (!category) return null;
   return (
     <Link
