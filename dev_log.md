@@ -1,5 +1,26 @@
 # Dev Log
 
+## 2026-07-31 CI (ci.yml) にanthropicが不足していて4件のテストが実CIで失敗していたのを修正
+
+```
+発見の経緯: ユーザーが実際のGitHub Actions CI (ci.yml) の失敗ログを貼り付け。
+      tests/test_publish_blog_articles.py の4件が
+      `ModuleNotFoundError: No module named 'anthropic'` で失敗（77 passed, 4 failed）。
+
+原因: web/publish_blog_articles.py が anthropic を import しており、
+      それをテストする tests/test_publish_blog_articles.py も間接的に
+      anthropic に依存する。しかし .github/workflows/ci.yml の
+      pip install 一覧に anthropic が含まれていなかった（追加時に
+      CI依存関係の更新が漏れていた）。
+
+修正: ci.yml の pip install に anthropic を追加。
+      lightgbm は core/rf_train_v3.py のみが使用し、tests/ 配下から
+      直接importされていないため対象外（grep で確認済み）。
+
+検証: ローカルで anthropic をインストールし
+      `python3 -m pytest tests/ -v --tb=short` を実行 → 83 passed。
+```
+
 ## 2026-07-31 rf_train_v3.py の学習が数時間かかる原因（jquants_fin_summaryへの過剰クエリ）を修正
 
 ```
