@@ -65,17 +65,6 @@ jobs:
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
 
-      - name: Step 2 - モデル学習（金曜 or 初回のみ）
-        run: |
-          DAY=$(date +%u)
-          MODEL_PATH=~/stock-alert/rf_drop_model.pkl
-          if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
-            echo "▶ モデル学習を実行します"
-            cd ~/stock-alert && python core/rf_train_v3.py
-          else
-            echo "⏭ モデルが存在するためスキップします"
-          fi
-
       - name: Step 2b - カタリスト候補スクリーン（EDINET突合用）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500
@@ -109,6 +98,21 @@ jobs:
       - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説・microCMS検証用）
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
+
+      - name: Step 6 - モデル学習（金曜 or 初回のみ）
+        # 配信系(Step1〜5c)より後段に配置。学習が長引いてもアラート配信は既に完了しているため、
+        # ここが失敗/タイムアウトしても当日の配信には影響しない。
+        continue-on-error: true
+        timeout-minutes: 180
+        run: |
+          DAY=$(date +%u)
+          MODEL_PATH=~/stock-alert/rf_drop_model.pkl
+          if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
+            echo "▶ モデル学習を実行します"
+            cd ~/stock-alert && python core/rf_train_v3.py
+          else
+            echo "⏭ モデルが存在するためスキップします"
+          fi
 
       - name: Delete stale model cache
         # GitHub Actions のキャッシュは同一キーを上書きできないため、
