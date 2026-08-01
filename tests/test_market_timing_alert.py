@@ -152,6 +152,20 @@ def test_ratio_change_shown_when_same_filer_has_multiple_disclosures():
     assert "27.4%→13.3%" in msg
 
 
+def test_fresh_disclosure_outranks_stale_watchlist_hit():
+    """開示日が新しいものが最優先。古い日付のウォッチ銘柄ヒットが新しい開示を
+    何日も押しのけ続ける「毎日同じ古い日付が出る」バグの再発防止。"""
+    holdings = [
+        {"issuer_code": "8058", "name": "三菱商事", "filer_name": "F",
+         "doc_type_code": "350", "holding_ratio": 20.0, "disc_date": "2026-07-21"},
+        {"issuer_code": "9999", "name": "非ウォッチ新着", "filer_name": "F",
+         "doc_type_code": "350", "holding_ratio": 5.0, "disc_date": "2026-07-23"},
+    ]
+    msg = build_large_holdings_section(holdings, watch_codes={"8058"}, limit=1)
+    assert "非ウォッチ新着" in msg
+    assert "三菱商事" not in msg
+
+
 def test_ratio_unchanged_shows_single_value_not_range():
     """提出者は複数回開示されていても比率が同じなら範囲表示にしない。"""
     holdings = [
@@ -204,8 +218,9 @@ if __name__ == "__main__":
     test_non_watchlist_sorted_by_ratio_magnitude()
     test_individual_filer_deprioritized_below_institution()
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
+    test_fresh_disclosure_outranks_stale_watchlist_hit()
     test_ratio_unchanged_shows_single_value_not_range()
     test_watchlist_shows_buy_mark_below_threshold()
     test_watchlist_suppresses_buy_mark_when_ranking_says_sell()
     test_watchlist_shows_sell_mark_above_sell_threshold()
-    print("OK: test_market_timing_alert (16 tests)")
+    print("OK: test_market_timing_alert (17 tests)")

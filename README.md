@@ -33,7 +33,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
 | `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
-| `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。ウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大5件、個人名の提出者は後回し。残りはLINEで「大量保有」と聞けば`check_catalyst`ツールで個別回答。大口保有の話がある場合はmicroCMSブログ（`microcms-blog-demo`の詳細解説記事）へのリンクも案内）・ユーザー別ウォッチリストのdp閾値アラート（ランキング本体の推奨が「🔴 売り検討」の銘柄は、dp閾値だけでは「🔔買い時！」と表示せず矛盾を防ぐ）を配信 |
+| `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。開示日が新しい順を最優先し、同日内はウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大5件、個人名の提出者は後回し。残りはLINEで「大量保有」と聞けば`check_catalyst`ツールで個別回答。大口保有の話がある場合はmicroCMSブログ（`microcms-blog-demo`の詳細解説記事）へのリンクも案内）・ユーザー別ウォッチリストのdp閾値アラート（ランキング本体の推奨が「🔴 売り検討」の銘柄は、dp閾値だけでは「🔔買い時！」と表示せず矛盾を防ぐ）を配信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗は指数バックオフで自動リトライ）|
@@ -55,7 +55,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
 | `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（14件）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
-| `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止込み）のユニットテスト（16件）|
+| `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション（開示日優先ソート込み）・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止込み）のユニットテスト（17件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・ノイズ除外）のユニットテスト（9件）|
 | `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・dealType分類・売却除外・重複防止・権限エラー時の早期打ち切り・セレクト配列形式への自動リトライ）のユニットテスト（13件、ネットワークは全てモック）|
 | `tests/test_supabase_client.py` | Supabase REST APIクライアントのリトライ挙動（一時的なネットワーク失敗時のバックオフ再試行・最終失敗時に呼び出し元を落とさないこと）のユニットテスト（3件）|
