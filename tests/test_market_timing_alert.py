@@ -216,6 +216,48 @@ def test_watchlist_shows_sell_mark_above_sell_threshold():
     assert "⚠️売り検討" in msg
 
 
+def test_watchlist_warns_on_system_sell_even_within_default_sell_threshold_gap():
+    """dp_sell_thresholdの既定値20%は、ランキング本体の売り検討基準（drop_prob>=10%等）より緩い。
+    dpが8〜20%の間（買い時でも既定の売り閾値到達でもない）でも、ランキングが既に
+    「🔴 売り検討」と判定していれば、既定値のままの利用者にも必ず警告する。"""
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 12.0, "close": 3000.0, "recommend": "🔴 売り検討"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "⚠️売り検討" in msg
+    assert "他" not in msg  # 要約行に押し込められていないこと(個別表示されていること)
+
+
+def test_watchlist_summarizes_unchanged_stocks_instead_of_listing_each():
+    """閾値未達で変化のない銘柄を毎日個別表示すると同文の繰り返しで読み飛ばされる
+    （通知疲れ）ため、件数だけの要約行にまとめる。"""
+    watchlist = [
+        {"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0},
+        {"code": "9984", "name": "ソフトバンクG", "dp_threshold": 8.0, "dp_sell_threshold": 20.0},
+    ]
+    ranking_map = {
+        "7203": {"drop_prob": 12.0, "close": 3000.0, "recommend": "⏳ 方向感なし"},
+        "9984": {"drop_prob": 13.0, "close": 8000.0, "recommend": "⏳ 方向感なし"},
+    }
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "他2銘柄は閾値未到達で変化なし" in msg
+    assert "トヨタ" in msg  # 要約行の中に銘柄名は含める
+    assert "下落確率12.0%" not in msg  # 個別行としては出さない
+
+
+def test_watchlist_shows_previous_day_change_for_actionable_stocks():
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map={"7203": 6.5})
+    assert "前日比-1.5pt" in msg
+
+
+def test_watchlist_omits_change_when_no_previous_data():
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map={})
+    assert "前日比" not in msg
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
@@ -235,4 +277,8 @@ if __name__ == "__main__":
     test_watchlist_shows_buy_mark_below_threshold()
     test_watchlist_suppresses_buy_mark_when_ranking_says_sell()
     test_watchlist_shows_sell_mark_above_sell_threshold()
-    print("OK: test_market_timing_alert (17 tests)")
+    test_watchlist_warns_on_system_sell_even_within_default_sell_threshold_gap()
+    test_watchlist_summarizes_unchanged_stocks_instead_of_listing_each()
+    test_watchlist_shows_previous_day_change_for_actionable_stocks()
+    test_watchlist_omits_change_when_no_previous_data()
+    print("OK: test_market_timing_alert (22 tests)")

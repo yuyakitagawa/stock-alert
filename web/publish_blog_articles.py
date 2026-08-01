@@ -29,6 +29,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
+import lib.supabase_client as sb
 from lib.db import get_edinet_large_holdings_recent
 from lib.utils import get_price_at_date
 from tools.scan_large_holdings import is_sell_disclosure
@@ -123,6 +124,32 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
     return round(amount_yen / 1e8, 1)
 
 
+def dp_level_label(drop_prob: float) -> str:
+    """README記載の5段階表示（高30/やや高22/中14/やや低7）と同じ閾値でdrop_probを
+    ラベル化する。Isotonic較正の特性上、小数%そのままだと多数の銘柄が同値に見えるため、
+    Web/メール/LINEと同じ粒度で記事にも文脈を渡す。"""
+    if drop_prob >= 30:
+        return "高"
+    if drop_prob >= 22:
+        return "やや高"
+    if drop_prob >= 14:
+        return "中"
+    if drop_prob >= 7:
+        return "やや低"
+    return "低"
+
+
+def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
+    """開示日(as_of)時点で直近のclose・drop_probをgen_rankingsから取得する。
+    記事公開時点（post-hoc、開示後に株価が既に動いた後）のスナップショットを
+    「開示当時の文脈」として出すと先読みバイアスになるため、as_of以前の最新行のみを見る
+    （CLAUDE.md PIT規律）。"""
+    return sb.select_one(
+        "gen_rankings",
+        f"code=eq.{code}&date=lte.{as_of}&order=date.desc&select=close,drop_prob",
+    )
+
+
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからtitle/body/dealTypeを生成させる。
     JSONで {"title", "body", "dealType"} を返す。パース失敗時はNone（記事は投稿しない）。
@@ -135,6 +162,19 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
         return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     deal_type_options = "\n".join(f"- {t}" for t in FILER_DEAL_TYPES)
+    context_close = fact_sheet.get("context_close")
+    context_dp_level = fact_sheet.get("context_dp_level")
+    if context_close is not None and context_dp_level is not None:
+        context_line = f"- 開示日時点の株価: {context_close:,.0f}円 / 弊社モデルの下落リスク水準: {context_dp_level}\n"
+        so_what_instruction = (
+            "さらに、上記の開示日時点の株価・下落リスク水準を踏まえて、この買い集めが投資家に"
+            "とってどんな意味を持ちうるか（例: 下落リスクが低い局面での買い増しか、リスクが高い局面での"
+            "打診買いか）を1文加えてください。数値や意図の創作はせず、上記の事実のみから読み取れる範囲に"
+            "留めてください。"
+        )
+    else:
+        context_line = ""
+        so_what_instruction = ""
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
 金額は発行済株式数と株価からの概算であり、実際の取得価格ではないことを本文中で明記してください。
@@ -146,6 +186,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
 - 推定取得金額: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
+{context_line}
+{so_what_instruction}
 
 さらに、提出者名（{fact_sheet['filer_name']}）が何者かを一般知識から判断し、
 以下のうち最も当てはまるものを1つだけ選んでください（不明な場合は「その他」）:
@@ -274,6 +316,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             print(f"  ⏭ {name}({code}): 金額を概算できないためスキップ")
             continue
 
+        snapshot = get_pit_ranking_snapshot(code, disc_date)
+        context_close = snapshot.get("close") if snapshot else None
+        context_dp = snapshot.get("drop_prob") if snapshot else None
+
         fact_sheet = {
             "stock_name": name,
             "stock_code": code,
@@ -282,6 +328,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             "holding_ratio": h["holding_ratio"],
             "disc_date": disc_date,
             "deal_amount_oku": deal_amount,
+            "context_close": context_close,
+            "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
         }
         article = generate_article_body(fact_sheet)
         if article is None:

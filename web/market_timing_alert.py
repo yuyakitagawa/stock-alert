@@ -38,6 +38,24 @@ def get_today_rankings(today_str: str) -> list[dict]:
     return sb.select("gen_rankings", f"date=eq.{today_str}&select=code,name,close,drop_prob,recommend")
 
 
+def get_previous_rankings(codes: list[str], today_str: str) -> dict[str, float]:
+    """ウォッチ銘柄について、直近配信日（today_strより前で最新の日付）のdrop_probを
+    まとめて取得する（前日比表示用）。日付を先に1件だけ調べてから対象銘柄をin句で
+    まとめて取る2クエリ構成（銘柄ごとの個別クエリを避ける）。"""
+    if not codes:
+        return {}
+    latest = sb.select_one("gen_rankings", f"date=lt.{today_str}&order=date.desc&select=date")
+    if not latest:
+        return {}
+    prev_date = latest["date"]
+    codes_str = ",".join(str(c) for c in codes)
+    rows = sb.select(
+        "gen_rankings",
+        f"code=in.({codes_str})&date=eq.{prev_date}&select=code,drop_prob",
+    )
+    return {r["code"]: r["drop_prob"] for r in rows if r.get("drop_prob") is not None}
+
+
 def get_all_watchlists() -> dict[str, list[dict]]:
     rows = sb.select("dp_watchlist",
                       "select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at")
@@ -196,8 +214,15 @@ def build_large_holdings_section(
 def build_watchlist_section(
     watchlist: list[dict],
     ranking_map: dict[str, dict],
+    prev_dp_map: "dict[str, float] | None" = None,
 ) -> str:
+    """ウォッチリスト状況を整形する。閾値未達で変化なしの銘柄まで毎日個別表示すると
+    通知が同文の繰り返しになり読み飛ばされやすい（通知疲れ）ため、アクションのある
+    銘柄（買い時/売り検討）だけ個別表示し、変化なし銘柄は末尾に件数だけ要約する。
+    prev_dp_mapを渡すと、個別表示する銘柄に前日比（pt）を添える。"""
+    prev_dp_map = prev_dp_map or {}
     lines = ["📋 ウォッチリスト状況:"]
+    quiet_names: list[str] = []
 
     for w in watchlist:
         r = ranking_map.get(w["code"])
@@ -209,12 +234,15 @@ def build_watchlist_section(
             lines.append(f"  {w['name']}({w['code']}): データなし")
             continue
         buy_th = w.get("dp_threshold", 8.0)
+        # dp_sell_thresholdの既定値20%はランキング本体の売り検討基準（drop_prob>=10%等、
+        # recommend_from_scores）より緩い。既定のままだと10〜20%の間で「システムは売り検討と
+        # 判定済みなのにウォッチ通知は沈黙する」期間が生じるため、recommendが既に
+        # 「🔴 売り検討」の銘柄は個人の閾値設定に関わらず必ず警告する（下のelif dp>=sell_thは
+        # ユーザーが独自により厳しい閾値を設定した場合のための補助的な分岐として残す）。
         sell_th = w.get("dp_sell_threshold", 20.0)
         close = r.get("close", 0)
 
-        if dp < buy_th and r.get("recommend") == "🔴 売り検討":
-            # ランキング本体の品質フィルターが売り検討と判定済みの銘柄は、
-            # dp閾値だけで「買い時」と表示すると同一銘柄で矛盾した案内になるため抑制する。
+        if r.get("recommend") == "🔴 売り検討":
             mark = "⚠️売り検討"
         elif dp < buy_th:
             mark = "🔔買い時！"
@@ -223,10 +251,20 @@ def build_watchlist_section(
         else:
             mark = ""
 
+        if not mark:
+            quiet_names.append(w["name"])
+            continue
+
+        prev_dp = prev_dp_map.get(w["code"])
+        change = f"（前日比{dp - prev_dp:+.1f}pt）" if prev_dp is not None else ""
+
         lines.append(
             f"  {w['name']}({w['code']}) {close:,.0f}円"
-            f" 下落確率{dp:.1f}% {mark}"
+            f" 下落確率{dp:.1f}%{change} {mark}"
         )
+
+    if quiet_names:
+        lines.append(f"  他{len(quiet_names)}銘柄は閾値未到達で変化なし（{'、'.join(quiet_names)}）")
 
     if len(lines) <= 1:
         return ""
@@ -295,8 +333,15 @@ def main() -> None:
             print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
             send_line_push(fallback_uid, "\n\n".join(fallback_parts))
     else:
+        all_watch_codes = {str(w["code"]) for wl in user_watchlists.values() for w in wl}
+        try:
+            prev_dp_map = get_previous_rankings(sorted(all_watch_codes), today_str)
+        except Exception as e:
+            print(f"[market_timing] 前日比データの取得に失敗（スキップ）: {e}")
+            prev_dp_map = {}
+
         for user_id, watchlist in user_watchlists.items():
-            watch_msg = build_watchlist_section(watchlist, ranking_map)
+            watch_msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map)
 
             watch_codes = {str(w["code"]) for w in watchlist}
             holdings_msg = build_large_holdings_section(recent_holdings, watch_codes=watch_codes)
