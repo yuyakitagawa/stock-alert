@@ -718,7 +718,7 @@ def main():
     print(f"🌐 日経 vs S&P500: {_compare_summary(market_verdict)}")
     try:
         import json as _json
-        _market_out = {"date": target_date.strftime("%Y-%m-%d"), **market_verdict}
+        _market_out = {"date": datetime.now().strftime("%Y-%m-%d"), **market_verdict}
         with open(os.path.join(BASE_DIR, "data", "market_compare.json"), "w", encoding="utf-8") as _f:
             _json.dump(_market_out, _f, ensure_ascii=False)
     except Exception as _e:

@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.market_timing_alert import build_large_holdings_section, BLOG_SITE_URL
+from web.market_timing_alert import build_large_holdings_section, build_watchlist_section, BLOG_SITE_URL
 
 
 def test_empty_holdings_returns_empty_string():
@@ -167,6 +167,30 @@ def test_ratio_unchanged_shows_single_value_not_range():
     assert "→" not in msg
 
 
+def test_watchlist_shows_buy_mark_below_threshold():
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "🔔買い時！" in msg
+
+
+def test_watchlist_suppresses_buy_mark_when_ranking_says_sell():
+    """dp閾値だけ見れば買い時でも、ランキング本体（品質フィルター込み）が
+    売り検討と判定済みなら、同一銘柄で矛盾した案内をしない。"""
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "🔴 売り検討"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "🔔買い時！" not in msg
+    assert "⚠️売り検討" in msg
+
+
+def test_watchlist_shows_sell_mark_above_sell_threshold():
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 25.0, "close": 3000.0, "recommend": "⏳ 方向感なし"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "⚠️売り検討" in msg
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
@@ -181,4 +205,7 @@ if __name__ == "__main__":
     test_individual_filer_deprioritized_below_institution()
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
     test_ratio_unchanged_shows_single_value_not_range()
-    print("OK: test_market_timing_alert (13 tests)")
+    test_watchlist_shows_buy_mark_below_threshold()
+    test_watchlist_suppresses_buy_mark_when_ranking_says_sell()
+    test_watchlist_shows_sell_mark_above_sell_threshold()
+    print("OK: test_market_timing_alert (16 tests)")

@@ -250,7 +250,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
     candidates = [
         h for h in holdings
         if h.get("issuer_code") and h.get("holding_ratio") is not None
-        and not is_sell_disclosure(h.get("doc_description") or "")
+        and not is_sell_disclosure(
+            h.get("doc_description") or "", h.get("holding_ratio"), h.get("holding_ratio_prior")
+        )
     ]
     candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
 
