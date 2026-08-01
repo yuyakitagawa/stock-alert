@@ -6,6 +6,7 @@
 2. ユーザー別ウォッチ銘柄の dp 閾値アラート
 3. 直近のEDINET大量保有・変更報告書（自己申告のみ除外。買い/売りは方向性を表示して両方通知。
    ウォッチ銘柄→法人/ファンド→保有比率の大きさの順に優先し、個人名の提出者は後回し）
+4. ユーザー別の投資家（提出者）ウォッチ: 登録した投資家がどの銘柄を動かしても通知
 
 通知先: LINE Messaging API (Push Message) × ユーザーごと
 データ源: Supabase (gen_rankings, dp_watchlist, edinet_large_holdings)
@@ -15,6 +16,7 @@
 """
 import os
 import sys
+import unicodedata
 from datetime import date
 
 import requests
@@ -31,6 +33,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 MARKET_DP_CASH_THRESHOLD = 15.0
 LARGE_HOLDINGS_DAYS = 3
 LARGE_HOLDINGS_LIMIT = 5
+FILER_WATCH_DAYS = 3
 BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/"
 
 
@@ -63,6 +66,16 @@ def get_all_watchlists() -> dict[str, list[dict]]:
     for r in rows:
         uid = r["line_user_id"]
         by_user.setdefault(uid, []).append(r)
+    return by_user
+
+
+def get_all_filer_watchlists() -> dict[str, list[str]]:
+    """ユーザー別の投資家（EDINET提出者）ウォッチリストを返す。
+    銘柄ではなく提出者名で登録し、その提出者がどの銘柄を動かしても拾う。"""
+    rows = sb.select("filer_watchlist", "select=line_user_id,filer_name&order=line_user_id,created_at")
+    by_user: dict[str, list[str]] = {}
+    for r in rows:
+        by_user.setdefault(r["line_user_id"], []).append(r["filer_name"])
     return by_user
 
 
@@ -211,6 +224,83 @@ def build_large_holdings_section(
     return "\n".join(lines)
 
 
+def _normalize_filer_name(s: str) -> str:
+    """投資家名の部分一致照合用に正規化（NFKC・法人格・記号・空白を除去）。"""
+    s = unicodedata.normalize("NFKC", s or "")
+    for tok in ["株式会社", "(株)", "（株）", "ホールディングス", "HD", " ", "　", "・"]:
+        s = s.replace(tok, "")
+    return s.strip()
+
+
+def _filer_name_matches(registered: str, actual: str) -> bool:
+    r = _normalize_filer_name(registered)
+    a = _normalize_filer_name(actual)
+    return bool(r) and bool(a) and (r in a or a in r)
+
+
+def get_filer_watch_hits(filer_names: list[str], days: int = FILER_WATCH_DAYS) -> list[dict]:
+    """登録済み投資家名（提出者名の部分一致）に該当する直近days日の開示を返す。
+    銘柄ウォッチと違い、この投資家がどの銘柄をどれだけ動かしたか自体が関心事なので、
+    訂正報告書（実際の持分変動ではない）のみ除外し、過半数超・自己申告は除外しない。"""
+    from lib.db import get_edinet_large_holdings_recent
+    from tools.scan_large_holdings import is_correction_report, load_name_map
+
+    if not filer_names:
+        return []
+    name_map = load_name_map()
+    rows = get_edinet_large_holdings_recent(days=days)
+    out = []
+    for r in rows:
+        if is_correction_report(r.get("doc_description") or ""):
+            continue
+        actual_filer = r.get("filer_name", "")
+        if not any(_filer_name_matches(f, actual_filer) for f in filer_names):
+            continue
+        code = r.get("issuer_code")
+        out.append({**r, "name": name_map.get(code, "")})
+    return out
+
+
+def build_filer_watch_section(hits: list[dict]) -> str:
+    """ウォッチ中の投資家（提出者）による直近の開示をまとめる。
+    件数は少数想定のため上限は設けず全件表示する。"""
+    from tools.scan_large_holdings import is_sell_disclosure
+
+    if not hits:
+        return ""
+    ratio_history = _build_ratio_history(hits)
+    ordered = sorted(hits, key=lambda h: h.get("disc_date", ""), reverse=True)
+
+    lines = ["🔍 ウォッチ中の投資家の動き:"]
+    for h in ordered:
+        code = str(h.get("issuer_code", ""))
+        label = f"{h['name']}({code})" if h.get("name") else code
+        ratio = h.get("holding_ratio")
+        key = (code, h.get("filer_name", ""))
+        first_ratio, last_ratio = ratio_history.get(key, (ratio, ratio))
+        if ratio is None:
+            ratio_str = "-"
+        elif first_ratio != last_ratio:
+            ratio_str = f"{first_ratio:.1f}%→{last_ratio:.1f}%"
+        else:
+            ratio_str = f"{ratio:.1f}%"
+        filer = h.get("filer_name", "")
+        disc = h.get("disc_date", "")
+        prior_ratio = h.get("holding_ratio_prior")
+        if prior_ratio is None and first_ratio != last_ratio:
+            prior_ratio = first_ratio
+        doc_desc = h.get("doc_description") or ""
+        if ratio is not None and prior_ratio is not None:
+            direction = "📉売り" if ratio < prior_ratio else "📈買い"
+        elif is_sell_disclosure(doc_desc):
+            direction = "📉売り"
+        else:
+            direction = ""
+        direction_str = f" {direction}" if direction else ""
+        lines.append(f"  {filer}: {label}を{ratio_str}保有{direction_str} ({disc})")
+    return "\n".join(lines)
+
+
 def build_watchlist_section(
     watchlist: list[dict],
     ranking_map: dict[str, dict],
@@ -321,10 +411,12 @@ def main() -> None:
         recent_holdings = []
     ranking_map = {r["code"]: r for r in rankings}
 
-    # ユーザー別ウォッチリストを取得して個別通知
+    # ユーザー別ウォッチリスト（銘柄・投資家）を取得して個別通知
     user_watchlists = get_all_watchlists()
+    user_filer_watchlists = get_all_filer_watchlists()
+    all_user_ids = set(user_watchlists) | set(user_filer_watchlists)
 
-    if not user_watchlists:
+    if not all_user_ids:
         # ウォッチリスト登録ユーザーがいなくても、LINE_USER_IDがあれば市場シグナルだけ送信
         fallback_uid = os.getenv("LINE_USER_ID", "")
         holdings_msg = build_large_holdings_section(recent_holdings)
@@ -340,13 +432,21 @@ def main() -> None:
             print(f"[market_timing] 前日比データの取得に失敗（スキップ）: {e}")
             prev_dp_map = {}
 
-        for user_id, watchlist in user_watchlists.items():
-            watch_msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map)
+        for user_id in all_user_ids:
+            watchlist = user_watchlists.get(user_id, [])
+            watch_msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map) if watchlist else ""
 
             watch_codes = {str(w["code"]) for w in watchlist}
             holdings_msg = build_large_holdings_section(recent_holdings, watch_codes=watch_codes)
 
-            parts = [p for p in (market_msg, compare_msg, holdings_msg, watch_msg) if p]
+            try:
+                filer_hits = get_filer_watch_hits(user_filer_watchlists.get(user_id, []))
+            except Exception as e:
+                print(f"[market_timing] 投資家ウォッチの取得に失敗（スキップ）: {e}")
+                filer_hits = []
+            filer_msg = build_filer_watch_section(filer_hits)
+
+            parts = [p for p in (market_msg, compare_msg, holdings_msg, watch_msg, filer_msg) if p]
 
             if parts:
                 message = "\n\n".join(parts)

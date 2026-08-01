@@ -211,6 +211,36 @@ async function removeFromWatchlist(userId: string, code: string): Promise<boolea
   return res.ok;
 }
 
+// ── 投資家（EDINET提出者）ウォッチリスト管理 ──
+// 銘柄ではなく提出者名で登録し、その提出者がどの銘柄を動かしても拾う（web/market_timing_alert.pyの
+// get_all_filer_watchlists/get_filer_watch_hits/build_filer_watch_sectionが日次通知で参照する）。
+
+async function getFilerWatchlist(userId: string): Promise<string[]> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/filer_watchlist?line_user_id=eq.${userId}&select=filer_name&order=created_at`,
+    { headers: sbHeaders() },
+  );
+  const rows: { filer_name: string }[] = res.ok ? await res.json() : [];
+  return rows.map((r) => r.filer_name);
+}
+
+async function addToFilerWatchlist(userId: string, filerName: string): Promise<boolean> {
+  const res = await fetch(`${SB_URL}/rest/v1/filer_watchlist`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "resolution=merge-duplicates" }),
+    body: JSON.stringify({ line_user_id: userId, filer_name: filerName }),
+  });
+  return res.ok;
+}
+
+async function removeFromFilerWatchlist(userId: string, filerName: string): Promise<boolean> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/filer_watchlist?line_user_id=eq.${userId}&filer_name=eq.${encodeURIComponent(filerName)}`,
+    { method: "DELETE", headers: sbHeaders() },
+  );
+  return res.ok;
+}
+
 async function lookupStock(
   code: string,
 ): Promise<{ code: string; name: string; close: number; drop_prob: number } | null> {
@@ -404,6 +434,11 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
         "  「ウォッチ 8473」→ 追加\n" +
         "  「解除 8473」→ 削除\n" +
         "  「リスト」→ 一覧表示\n\n" +
+        "【投資家ウォッチ】\n" +
+        "  「投資家ウォッチ シンプレクス・アセット・マネジメント」→ 追加\n" +
+        "  「投資家解除 シンプレクス・アセット・マネジメント」→ 削除\n" +
+        "  「投資家リスト」→ 一覧表示\n" +
+        "  ※ 登録した投資家が保有割合を増減させたら銘柄を問わず通知\n\n" +
         "【ランキング】\n" +
         "  「ランキング」→ 本日のランキング\n\n" +
         "【AI相談】\n" +
@@ -589,6 +624,37 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     const code = removeMatch[2];
     await removeFromWatchlist(userId, code);
     return { handled: true, reply: `🗑 ${code} をウォッチリストから削除しました。` };
+  }
+
+  if (/^(投資家リスト|投資家一覧|投資家)$/i.test(trimmed)) {
+    const list = await getFilerWatchlist(userId);
+    if (list.length === 0) {
+      return { handled: true, reply: "投資家ウォッチリストは空です。\n「投資家ウォッチ シンプレクス・アセット・マネジメント」で追加できます。" };
+    }
+    const lines = ["🔍 投資家ウォッチリスト:"];
+    for (const name of list) lines.push(`  ${name}`);
+    lines.push(`\n※ この投資家が保有割合を増減させたら通知します（銘柄は問いません）`);
+    return { handled: true, reply: lines.join("\n") };
+  }
+
+  const filerAddMatch = trimmed.match(/^投資家ウォッチ\s+(.+)$/i);
+  if (filerAddMatch) {
+    const filerName = filerAddMatch[1].trim();
+    if (!filerName) {
+      return { handled: true, reply: "投資家名を指定してください。\n例: 投資家ウォッチ シンプレクス・アセット・マネジメント" };
+    }
+    await addToFilerWatchlist(userId, filerName);
+    return {
+      handled: true,
+      reply: `✅ 「${filerName}」を投資家ウォッチリストに追加\n\n※ この投資家が保有割合を増減させたら通知します（銘柄は問いません）`,
+    };
+  }
+
+  const filerRemoveMatch = trimmed.match(/^(投資家解除|投資家削除)\s+(.+)$/i);
+  if (filerRemoveMatch) {
+    const filerName = filerRemoveMatch[2].trim();
+    await removeFromFilerWatchlist(userId, filerName);
+    return { handled: true, reply: `🗑 「${filerName}」を投資家ウォッチリストから削除しました。` };
   }
 
   // 「7203 推移」「7203の下落確率履歴」など — 時系列専用
