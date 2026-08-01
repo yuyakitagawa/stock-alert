@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import Pagination from "@/components/Pagination";
 import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
-import { CATEGORIES, type Category } from "@/types/article";
+import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
 
 export function generateStaticParams() {
   return CATEGORIES.map((category) => ({ category }));
@@ -17,8 +17,9 @@ export default async function CategoryPage({
 }) {
   const { category } = await params;
   const decodedCategory = decodeURIComponent(category);
+  const dealType = DEAL_TYPE_BY_CATEGORY[decodedCategory];
 
-  if (!CATEGORIES.includes(decodedCategory as Category)) {
+  if (!dealType) {
     notFound();
   }
 
@@ -28,7 +29,7 @@ export default async function CategoryPage({
 
   const { contents, totalCount } = await getArticleList({
     offset,
-    category: decodedCategory,
+    dealType,
   });
   const totalPages = Math.max(1, Math.ceil(totalCount / ARTICLES_PER_PAGE));
 

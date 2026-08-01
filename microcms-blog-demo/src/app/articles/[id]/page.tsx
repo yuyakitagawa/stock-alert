@@ -3,6 +3,7 @@ import CategoryBadge from "@/components/CategoryBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { formatDate, formatDealAmount } from "@/lib/format";
 import { getArticleDetail } from "@/lib/microcms";
+import { categoryLabel } from "@/types/article";
 
 // Route segment config requires a literal value (cannot import from lib/microcms).
 export const revalidate = 60;
@@ -31,7 +32,7 @@ export default async function ArticleDetailPage({
       <div className="p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <DealTypeBadge dealType={article.dealType} />
-          <CategoryBadge category={article.category} />
+          <CategoryBadge category={article.dealType ? categoryLabel(article.dealType) : undefined} />
         </div>
         <h1 className="mb-4 text-3xl font-bold text-brand-navy">{article.title}</h1>
         <dl className="mb-6 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-section-tint p-4 text-sm sm:grid-cols-4">
