@@ -9,8 +9,10 @@
 ```
 【20:00 JST】アラートパイプライン（daily_alert.yml）
 core/screener.py → core/rank_stocks.py
-core/rf_train_v3.py は金曜 or モデル未存在時のみ実行
-web/export_to_web.py（Supabase同期）→ web/market_timing_alert.py（LINE通知）
+→ web/export_to_web.py（Supabase同期）→ web/market_timing_alert.py（LINE通知）
+core/rf_train_v3.py（金曜 or モデル未存在時のみ）は配信より後段で実行。
+配信のクリティカルパスから切り離すことで、学習が長時間化/タイムアウト
+（continue-on-error, timeout-minutes: 180）しても当日のアラート配信は止めない。
 
 その他ワークフロー: ci.yml（テスト）、
 keepalive.yml（Supabase keepalive）、watchdog.yml（パイプライン監視）、
