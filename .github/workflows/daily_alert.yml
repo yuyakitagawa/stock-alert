@@ -5,6 +5,10 @@ on:
     - cron: '0 11 * * 1-5'  # 平日11:00 UTC = 平日20:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -39,20 +43,20 @@ jobs:
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
           echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
+          echo "MICROCMS_SERVICE_DOMAIN=${{ secrets.MICROCMS_SERVICE_DOMAIN }}" >> ~/stock-alert/.env
+          echo "MICROCMS_API_KEY=${{ secrets.MICROCMS_API_KEY }}" >> ~/stock-alert/.env
 
       - name: Create gcp_key.json from secret
         run: |
           echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
 
       - name: Restore model cache
-        uses: actions/cache@v4
+        id: restore_model_cache
+        uses: actions/cache/restore@v4
         with:
           path: |
-            ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-${{ github.run_number }}
-          restore-keys: |
-            ml-models-v37-weekly-
+          key: rf-drop-model-v1
 
       - name: Step 0 - 株価キャッシュ更新（Yahoo Finance 差分）
         continue-on-error: true
@@ -60,17 +64,6 @@ jobs:
 
       - name: Step 1 - スクリーニング
         run: cd ~/stock-alert && python core/screener.py
-
-      - name: Step 2 - モデル学習（金曜 or 初回のみ）
-        run: |
-          DAY=$(date +%u)
-          MODEL_PATH=~/stock-alert/rf_drop_model.pkl
-          if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
-            echo "▶ モデル学習を実行します"
-            cd ~/stock-alert && python core/rf_train_v3.py
-          else
-            echo "⏭ モデルが存在するためスキップします"
-          fi
 
       - name: Step 2b - カタリスト候補スクリーン（EDINET突合用）
         continue-on-error: true
@@ -102,14 +95,41 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
+      - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説・microCMS検証用）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/publish_blog_articles.py
+
+      - name: Step 6 - モデル学習（金曜 or 初回のみ）
+        # 配信系(Step1〜5c)より後段に配置。学習が長引いてもアラート配信は既に完了しているため、
+        # ここが失敗/タイムアウトしても当日の配信には影響しない。
+        continue-on-error: true
+        timeout-minutes: 180
+        run: |
+          DAY=$(date +%u)
+          MODEL_PATH=~/stock-alert/rf_drop_model.pkl
+          if [ "$DAY" = "5" ] || [ ! -f "$MODEL_PATH" ]; then
+            echo "▶ モデル学習を実行します"
+            cd ~/stock-alert && python core/rf_train_v3.py
+          else
+            echo "⏭ モデルが存在するためスキップします"
+          fi
+
+      - name: Delete stale model cache
+        # GitHub Actions のキャッシュは同一キーを上書きできないため、
+        # 保存し直す前に既存分を消す（固定キーで常に最新の1件だけを保持する）
+        if: always() && steps.restore_model_cache.outputs.cache-hit == 'true'
+        continue-on-error: true
+        run: gh cache delete rf-drop-model-v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Save model cache
         if: always()
-        uses: actions/cache@v4
+        uses: actions/cache/save@v4
         with:
           path: |
-            ${{ github.workspace }}/rf_model.pkl
             ${{ github.workspace }}/rf_drop_model.pkl
-          key: ml-models-v37-weekly-${{ github.run_number }}
+          key: rf-drop-model-v1
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4

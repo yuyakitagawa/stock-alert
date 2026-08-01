@@ -31,10 +31,11 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 MARKET_DP_CASH_THRESHOLD = 15.0
 LARGE_HOLDINGS_DAYS = 3
 LARGE_HOLDINGS_LIMIT = 5
+BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/"
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
-    return sb.select("gen_rankings", f"date=eq.{today_str}&select=code,name,close,drop_prob")
+    return sb.select("gen_rankings", f"date=eq.{today_str}&select=code,name,close,drop_prob,recommend")
 
 
 def get_all_watchlists() -> dict[str, list[dict]]:
@@ -93,7 +94,8 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
         code = r.get("issuer_code")
         name = name_map.get(code, "")
         reason = is_noise_match(
-            r.get("filer_name", ""), name, r.get("doc_description") or "", r.get("holding_ratio")
+            r.get("filer_name", ""), name, r.get("doc_description") or "",
+            r.get("holding_ratio"), r.get("holding_ratio_prior"),
         )
         if reason in ("self_filing", "majority"):
             continue
@@ -170,10 +172,16 @@ def build_large_holdings_section(
             ratio_str = f"{ratio:.1f}%"
         filer = h.get("filer_name", "")
         disc = h.get("disc_date", "")
-        direction = "📉売り" if is_sell_disclosure(h.get("doc_description") or "") else "📈買い"
+        prior_ratio = h.get("holding_ratio_prior")
+        if prior_ratio is None and first_ratio != last_ratio:
+            prior_ratio = first_ratio
+        direction = "📉売り" if is_sell_disclosure(
+            h.get("doc_description") or "", ratio, prior_ratio
+        ) else "📈買い"
         lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有 {direction} [{doc_type}] ({disc})")
     if len(ordered) > limit:
         lines.append(f"  ...他{len(ordered) - limit}件（LINEで「大量保有」と聞けば確認できます）")
+    lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}")
     return "\n".join(lines)
 
 
@@ -196,7 +204,11 @@ def build_watchlist_section(
         sell_th = w.get("dp_sell_threshold", 20.0)
         close = r.get("close", 0)
 
-        if dp < buy_th:
+        if dp < buy_th and r.get("recommend") == "🔴 売り検討":
+            # ランキング本体の品質フィルターが売り検討と判定済みの銘柄は、
+            # dp閾値だけで「買い時」と表示すると同一銘柄で矛盾した案内になるため抑制する。
+            mark = "⚠️売り検討"
+        elif dp < buy_th:
             mark = "🔔買い時！"
         elif dp >= sell_th:
             mark = "⚠️売り検討"

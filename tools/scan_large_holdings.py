@@ -84,8 +84,21 @@ def is_individual_filer(filer_name: str) -> bool:
     return " " in normalized
 
 
-def is_sell_disclosure(doc_description: str) -> bool:
-    """概要が譲渡/売却/売出/処分（買い集めではなく売り）かどうか。"""
+def is_sell_disclosure(
+    doc_description: str,
+    holding_ratio: "float | None" = None,
+    holding_ratio_prior: "float | None" = None,
+) -> bool:
+    """概要が譲渡/売却/売出/処分（買い集めではなく売り）かどうか。
+
+    直前保有割合(holding_ratio_prior)が取得できる場合は保有比率の増減で判定する。
+    EDINETの概要欄は「変更報告書」とだけ書かれ売買方向を示さないことが多く、
+    テキストのみに依存すると売り抜けを買いと誤判定するため（例: 東芝のキオクシア
+    株一部売却16.10%→15.10%が概要「変更報告書」のみで📈買いと誤表示されたバグ）。
+    取得できない場合のみ従来通りテキストのキーワードにフォールバックする。
+    """
+    if holding_ratio is not None and holding_ratio_prior is not None:
+        return holding_ratio < holding_ratio_prior
     return any(k in (doc_description or "") for k in _SELL_KEYWORDS)
 
 
@@ -94,16 +107,17 @@ def is_noise_match(
     issuer_name: str,
     doc_description: str,
     holding_ratio: "float | None" = None,
+    holding_ratio_prior: "float | None" = None,
 ) -> "str | None":
     """突合ヒットがノイズなら理由を返す（先回りシグナルでないもの）。問題なければ None。
 
     - majority:    保有比率51%以上（スクイーズアウト対象になりうる水準で上値が見込めない）
     - self_filing: 提出者≒対象企業（自己申告。第三者の買い集めではない）
-    - sell:        概要が譲渡/売却/処分（買いではない）
+    - sell:        保有比率減少 or 概要が譲渡/売却/処分（買いではない）
     """
     if holding_ratio is not None and abs(holding_ratio) >= MAJORITY_HOLDING_THRESHOLD:
         return "majority"
-    if is_sell_disclosure(doc_description):
+    if is_sell_disclosure(doc_description, holding_ratio, holding_ratio_prior):
         return "sell"
     f = _normalize_name(filer_name)
     i = _normalize_name(issuer_name)
@@ -179,8 +193,9 @@ def main():
         filer = h.get("filer_name", "")
         desc = (h.get("doc_description") or "").strip()
         ratio = h.get("holding_ratio")
+        ratio_prior = h.get("holding_ratio_prior")
         if not args.no_exclude:
-            reason = is_noise_match(filer, issuer_name, desc, ratio)
+            reason = is_noise_match(filer, issuer_name, desc, ratio, ratio_prior)
             if reason:
                 excluded[reason] += 1
                 continue

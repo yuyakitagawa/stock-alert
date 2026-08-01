@@ -7,11 +7,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.market_timing_alert import build_large_holdings_section
+from web.market_timing_alert import build_large_holdings_section, build_watchlist_section, BLOG_SITE_URL
 
 
 def test_empty_holdings_returns_empty_string():
     assert build_large_holdings_section([]) == ""
+
+
+def test_includes_blog_link_when_holdings_present():
+    """大口保有の話がある場合はmicroCMSブログへのリンクも案内する。"""
+    holdings = [{
+        "issuer_code": "8058", "name": "三菱商事", "filer_name": "○○ファンド",
+        "doc_type_code": "350", "holding_ratio": 5.2, "disc_date": "2026-07-17",
+        "doc_description": "大量保有報告書",
+    }]
+    msg = build_large_holdings_section(holdings)
+    assert BLOG_SITE_URL in msg
 
 
 def test_formats_entries_with_name_and_ratio():
@@ -34,6 +45,21 @@ def test_sell_disclosure_labelled_as_sell():
         "issuer_code": "4813", "name": "ＡＣＣＥＳＳ", "filer_name": "清原達郎",
         "doc_type_code": "350", "holding_ratio": 13.3, "disc_date": "2026-07-17",
         "doc_description": "変更報告書（短期大量譲渡）",
+    }]
+    msg = build_large_holdings_section(holdings)
+    assert "📉売り" in msg
+    assert "📈買い" not in msg
+
+
+def test_ratio_decrease_labelled_as_sell_even_without_keyword():
+    """概要が「変更報告書」とだけ書かれ売買方向のキーワードが無くても、
+    holding_ratio_prior(直前保有割合)との比較で保有比率が減っていれば📉売りと表示する
+    （実例: 東芝がキオクシアHD株を一部売却し16.10%→15.10%になった開示が
+    概要のキーワードのみに頼る旧ロジックでは📈買いに誤表示されていたバグ）。"""
+    holdings = [{
+        "issuer_code": "285A", "name": "キオクシアホールディングス", "filer_name": "株式会社東芝",
+        "doc_type_code": "360", "holding_ratio": 15.10, "holding_ratio_prior": 16.10,
+        "disc_date": "2026-07-23", "doc_description": "変更報告書",
     }]
     msg = build_large_holdings_section(holdings)
     assert "📉売り" in msg
@@ -155,10 +181,36 @@ def test_ratio_unchanged_shows_single_value_not_range():
     assert "→" not in msg
 
 
+def test_watchlist_shows_buy_mark_below_threshold():
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "🔔買い時！" in msg
+
+
+def test_watchlist_suppresses_buy_mark_when_ranking_says_sell():
+    """dp閾値だけ見れば買い時でも、ランキング本体（品質フィルター込み）が
+    売り検討と判定済みなら、同一銘柄で矛盾した案内をしない。"""
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "🔴 売り検討"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "🔔買い時！" not in msg
+    assert "⚠️売り検討" in msg
+
+
+def test_watchlist_shows_sell_mark_above_sell_threshold():
+    watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
+    ranking_map = {"7203": {"drop_prob": 25.0, "close": 3000.0, "recommend": "⏳ 方向感なし"}}
+    msg = build_watchlist_section(watchlist, ranking_map)
+    assert "⚠️売り検討" in msg
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
+    test_includes_blog_link_when_holdings_present()
     test_sell_disclosure_labelled_as_sell()
+    test_ratio_decrease_labelled_as_sell_even_without_keyword()
     test_change_report_labelled_correctly()
     test_missing_name_falls_back_to_code()
     test_truncates_over_limit_with_count()
@@ -168,4 +220,7 @@ if __name__ == "__main__":
     test_ratio_change_shown_when_same_filer_has_multiple_disclosures()
     test_fresh_disclosure_outranks_stale_watchlist_hit()
     test_ratio_unchanged_shows_single_value_not_range()
-    print("OK: test_market_timing_alert (12 tests)")
+    test_watchlist_shows_buy_mark_below_threshold()
+    test_watchlist_suppresses_buy_mark_when_ranking_says_sell()
+    test_watchlist_shows_sell_mark_above_sell_threshold()
+    print("OK: test_market_timing_alert (17 tests)")

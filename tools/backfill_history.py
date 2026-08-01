@@ -111,13 +111,11 @@ def main():
     print(f"バックフィル: {START_DATE} 〜 {END_DATE}")
     print("=" * 60)
 
-    # モデル読み込み
-    rise_path = os.path.join(BASE_DIR, "rf_model.pkl")
+    # モデル読み込み（下落モデルのみ）
     drop_path = os.path.join(BASE_DIR, "rf_drop_model.pkl")
-    if not os.path.exists(rise_path):
-        print("ERROR: rf_model.pkl なし"); return
-    rise_model = joblib.load(rise_path)
-    drop_model = joblib.load(drop_path) if os.path.exists(drop_path) else None
+    if not os.path.exists(drop_path):
+        print("ERROR: rf_drop_model.pkl なし"); return
+    drop_model = joblib.load(drop_path)
     print(f"モデル読み込み完了")
 
     # 銘柄リスト
@@ -211,12 +209,9 @@ def main():
         db_rows = []
         for idx, (code, closes, volumes, feat) in enumerate(raw_data):
             feat_aug = feats_aug[idx]
-            rise_prob = float(rise_model.predict_proba([feat_aug])[0][1])
-            drop_prob = float(drop_model.predict_proba([feat_aug])[0][1]) if drop_model else None
+            drop_prob = float(drop_model.predict_proba([feat_aug])[0][1])
             close = float(closes[-1])
-            rise_pct = round(rise_prob * 100, 1)
-            drop_pct = round(drop_prob * 100, 1) if drop_prob is not None else None
-            net = round(rise_pct - drop_pct, 1) if drop_pct is not None else rise_pct
+            drop_pct = round(drop_prob * 100, 1)
             vol = round(feat[7], 1)
 
             nk20_pct = round(nk[1] * 100, 2) if nk else None
@@ -230,7 +225,7 @@ def main():
             _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
             r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
             buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct, ret_504=ret_504, r2_504=r2_504)
-            recommend = recommend_from_scores(net, drop_pct, allow_buy=buy_ok, vol=vol)
+            recommend = recommend_from_scores(drop_pct, allow_buy=buy_ok, vol=vol)
 
             p = closes
             s20 = (p[-1]-p[-21])/p[-21]*100 if len(p)>=21 else 0
@@ -240,9 +235,7 @@ def main():
                 "code":      str(code),
                 "name":      names.get(code, ""),
                 "close":     round(close, 1),
-                "rise_prob": rise_pct,
                 "drop_prob": drop_pct,
-                "net":       net,
                 "vol":       vol,
                 "recommend": recommend,
                 "rel20":     rel20,
@@ -251,35 +244,24 @@ def main():
             })
             close_history.setdefault(str(code), []).append(round(close, 1))
 
-        # ネットスコア順にソートして rank 付け
-        db_rows.sort(key=lambda r: r["net"], reverse=True)
+        # 下落確率が低い順にソートして rank 付け
+        db_rows.sort(key=lambda r: r["drop_prob"])
 
-        # S買い上位3件→S買い、4件目以降→A買い
-        sbuy_rows = sorted([r for r in db_rows if "S買い" in r["recommend"]], key=lambda r: r["net"], reverse=True)
-        if len(sbuy_rows) > 3:
-            for r in sbuy_rows[3:]:
-                r["recommend"] = "🥈 A買い"
-
-        # 米国セクターETFリードラグフィルター（強相関セクターでの前日マイナスを降格）
-        # S買い→A買い、A買い→方向感なし
-        buy_now = [r for r in db_rows if "S買い" in r["recommend"] or "A買い" in r["recommend"]]
+        # 米国セクターETFリードラグフィルター（強相関セクターでの前日マイナスは💎買いを降格）
+        buy_now = [r for r in db_rows if r["recommend"] == "💎 買い"]
         for r in buy_now:
             etf = get_sector_etf(str(r["code"]))
             if etf not in STRONG_EFFECT_ETFS:
                 continue
             ret = etf_prev_ret(etf_hist, etf, date_str)
             if ret is not None and ret < 0:
-                if "S買い" in r["recommend"]:
-                    r["recommend"] = "🥈 A買い"
-                else:
-                    r["recommend"] = "⏳ 方向感なし"
+                r["recommend"] = "⏳ 方向感なし"
         _save_sector_cache()
 
         # DB 保存
         save_daily_ranking(date_str, db_rows)
-        s_buy = sum(1 for r in db_rows if "S買い" in r["recommend"])
-        a_buy = sum(1 for r in db_rows if "A買い" in r["recommend"])
-        print(f"  DB保存: {len(db_rows)}件 (S買い:{s_buy} A買い:{a_buy})")
+        buy_count = sum(1 for r in db_rows if r["recommend"] == "💎 買い")
+        print(f"  DB保存: {len(db_rows)}件 (💎買い:{buy_count})")
 
     # 価格凍結チェック（今回生成した複数日にまたがりcloseが同一値のまま=更新漏れの疑い）
     if len(target_dates) >= 2:

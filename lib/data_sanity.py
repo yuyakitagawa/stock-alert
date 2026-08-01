@@ -1,13 +1,10 @@
 """
 data_sanity.py — Quality Assurance (QA) ロールの中核
 
-役割: リリースのたびに、出力データの「定義上必ず成り立つはず」の不変条件と、
-サイト全体（Supabase各テーブル）のデータ欠損・整合性をランタイムで検証する。
+役割: リリースのたびに、出力データの「定義上必ず成り立つはず」の不変条件をランタイムで検証する。
 
-きっかけ: ensemble分岐で net=rise（下落確率を引かない）バグが、コードを読んでも
-気づけずリリースされた。コードレビューでは防げないので出力データを直接検査する。
-
-check_ranking(rows): ランキング単体の不変条件（net=rise-drop 等の行レベル検査）
+check_ranking(rows): ランキング単体の不変条件（下落確率レンジ・多様性・欠損等の行レベル検査）。
+下落モデルのみに一本化済み（上昇モデル・netスコアは廃止）のため、下落確率を中心に検査する。
 
 使い方:
     from lib.data_sanity import run_gate
@@ -36,10 +33,9 @@ KNOWN_RECOMMEND = {
 }
 
 # しきい値
-NET_TOL          = 0.2     # |net - (rise-drop)| 許容誤差
 MIN_ROWS         = 3000    # 想定ユニバース下限
 MAX_ROWS         = 4500    # 想定ユニバース上限
-DIVERSITY_WARN   = 20      # 上昇確率ユニーク値がこれ未満なら warning（バグ時=18）
+DIVERSITY_WARN   = 20      # 下落確率ユニーク値がこれ未満なら warning（バグ時=18）
 DIVERSITY_CRIT   = 8       # これ未満なら critical（ほぼ縮退）
 TOP1_SHARE_WARN  = 0.40    # 最頻値の占有率がこれ超なら warning（バグ時=0.41 / 健全=0.26）
 
@@ -62,9 +58,7 @@ def _to_rows(data) -> list[dict]:
     for r in recs:
         out.append({
             "code":      r.get("code", r.get("銘柄コード")),
-            "rise":      _num(r.get("rise_prob", r.get("上昇確率(%)"))),
             "drop":      _num(r.get("drop_prob", r.get("下落確率(%)"))),
-            "net":       _num(r.get("net", r.get("ネット(%)"))),
             "recommend": r.get("recommend", r.get("推奨")),
         })
     return out
@@ -91,38 +85,10 @@ def check_ranking(data) -> list[Violation]:
 
     n = len(rows)
 
-    # ── ① net整合: net == rise - drop（このバグの決定的シグネチャ）──────────
-    mismatch = 0
-    examples = []
-    for r in rows:
-        if r["rise"] is None or r["drop"] is None or r["net"] is None:
-            continue
-        expected = round(r["rise"] - r["drop"], 1)
-        if abs(r["net"] - expected) > NET_TOL:
-            mismatch += 1
-            if len(examples) < 3:
-                examples.append(
-                    f"{r['code']}: net={r['net']} だが rise-drop={expected} "
-                    f"(rise={r['rise']}, drop={r['drop']})"
-                )
-    if mismatch:
-        # net==rise になっていないか（ドロップ未減算バグの典型）も診断
-        net_eq_rise = sum(
-            1 for r in rows
-            if r["rise"] is not None and r["net"] is not None and r["drop"]
-            and abs(r["net"] - r["rise"]) < 0.01
-        )
-        hint = "（net==上昇確率＝下落確率の未減算バグの疑い）" if net_eq_rise > n * 0.5 else ""
-        v.append(Violation(
-            "critical", "net_integrity",
-            f"net≠rise-drop が {mismatch}/{n}件{hint}。例: " + " / ".join(examples)
-        ))
-
-    # ── ② 確率レンジ: 0<=rise,drop<=100 ─────────────────────────────────
+    # ── ① 確率レンジ: 0<=drop<=100 ─────────────────────────────────────
     bad_range = [
         r["code"] for r in rows
-        if (r["rise"] is not None and not (0 <= r["rise"] <= 100))
-        or (r["drop"] is not None and not (0 <= r["drop"] <= 100))
+        if r["drop"] is not None and not (0 <= r["drop"] <= 100)
     ]
     if bad_range:
         v.append(Violation(
@@ -130,40 +96,39 @@ def check_ranking(data) -> list[Violation]:
             f"確率が0〜100%の範囲外: {len(bad_range)}件 (例 {bad_range[:3]})"
         ))
 
-    # ── ③ 主要列の欠損 ─────────────────────────────────────────────────
+    # ── ② 主要列の欠損 ─────────────────────────────────────────────────
     miss_code = sum(1 for r in rows if r["code"] in (None, ""))
-    miss_rise = sum(1 for r in rows if r["rise"] is None)
-    miss_net  = sum(1 for r in rows if r["net"] is None)
-    if miss_code or miss_rise or miss_net:
+    miss_drop = sum(1 for r in rows if r["drop"] is None)
+    if miss_code or miss_drop:
         v.append(Violation(
             "critical", "missing_fields",
-            f"主要列に欠損: code={miss_code}, rise={miss_rise}, net={miss_net}"
+            f"主要列に欠損: code={miss_code}, drop={miss_drop}"
         ))
 
-    # ── ④ 予測多様性（縮退検知）──────────────────────────────────────────
-    rise_vals = [round(r["rise"], 1) for r in rows if r["rise"] is not None]
-    if rise_vals:
-        uniq = len(set(rise_vals))
-        top1_share = Counter(rise_vals).most_common(1)[0][1] / len(rise_vals)
+    # ── ③ 予測多様性（縮退検知）──────────────────────────────────────────
+    drop_vals = [round(r["drop"], 1) for r in rows if r["drop"] is not None]
+    if drop_vals:
+        uniq = len(set(drop_vals))
+        top1_share = Counter(drop_vals).most_common(1)[0][1] / len(drop_vals)
         if uniq < DIVERSITY_CRIT:
             v.append(Violation(
                 "critical", "prediction_collapse",
-                f"上昇確率のユニーク値が{uniq}種のみ（モデル出力がほぼ縮退）"
+                f"下落確率のユニーク値が{uniq}種のみ（モデル出力がほぼ縮退）"
             ))
         elif uniq < DIVERSITY_WARN or top1_share > TOP1_SHARE_WARN:
             v.append(Violation(
                 "warning", "low_diversity",
-                f"上昇確率の多様性が低い: ユニーク{uniq}種 / 最頻値が{top1_share*100:.0f}%占有"
+                f"下落確率の多様性が低い: ユニーク{uniq}種 / 最頻値が{top1_share*100:.0f}%占有"
             ))
 
-    # ── ⑤ 件数 ────────────────────────────────────────────────────────
+    # ── ④ 件数 ────────────────────────────────────────────────────────
     if not (MIN_ROWS <= n <= MAX_ROWS):
         v.append(Violation(
             "warning", "row_count",
             f"件数が想定範囲外: {n}件 (想定 {MIN_ROWS}〜{MAX_ROWS})"
         ))
 
-    # ── ⑥ recommend語彙 ───────────────────────────────────────────────
+    # ── ⑤ recommend語彙 ───────────────────────────────────────────────
     unknown = {r["recommend"] for r in rows
                if r["recommend"] and r["recommend"] not in KNOWN_RECOMMEND}
     if unknown:

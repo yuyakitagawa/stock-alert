@@ -24,7 +24,7 @@ def get_latest_ranking_date():
     return row["date"] if row else None
 
 
-def get_ranking_by_date(date_str, select="*", order="net.desc"):
+def get_ranking_by_date(date_str, select="*", order="drop_prob.asc"):
     """指定日のランキング全行を返す。"""
     return sb.select("gen_rankings", f"date=eq.{date_str}&order={order}&select={select}")
 
@@ -265,6 +265,7 @@ def upsert_edinet_large_holdings(records: list):
             "submit_date": r.get("submit_date"),
             "disc_date": r.get("disc_date"),
             "holding_ratio": r.get("holding_ratio"),
+            "holding_ratio_prior": r.get("holding_ratio_prior"),
             "issuer_code": r.get("issuer_code"),
             "fetched_date": today_str,
         }
@@ -277,7 +278,7 @@ def upsert_edinet_large_holdings(records: list):
 def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
-    q += "&select=doc_id,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio,issuer_code"
+    q += "&select=doc_id,filer_name,doc_type_code,doc_description,submit_date,disc_date,holding_ratio,holding_ratio_prior,issuer_code"
     if codes:
         code_list = ",".join(str(c) for c in codes)
         q += f"&issuer_code=in.({code_list})"
@@ -350,6 +351,17 @@ def get_jquants_fin_history_fy(code: str, as_of_date: str, n: int = 3) -> list:
         "jquants_fin_summary",
         f"code=eq.{code}&disc_date=lte.{as_of_date}&doc_type=like.FY*"
         f"&order=disc_date.desc&limit={n}"
+    )
+
+
+def get_jquants_fin_history_all(code: str) -> list:
+    """指定銘柄の全開示履歴を1回で取得（disc_date降順）。
+    学習(rf_train_v3)のように同一銘柄を多数のas_of_dateで参照する場合、
+    as_of_dateごとに都度クエリを投げる代わりに1回だけ取得してメモリ上で
+    point-in-timeフィルタするために使う。"""
+    return sb.select(
+        "jquants_fin_summary",
+        f"code=eq.{code}&order=disc_date.desc"
     )
 
 

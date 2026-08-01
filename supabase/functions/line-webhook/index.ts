@@ -282,6 +282,7 @@ function computePriceChanges(rows: { close: number }[]): string[] {
 // self_filing/sell の両方をノイズとして除外する点が異なるので注意。
 
 const SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"];
+const BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/";
 // これ以上は株式併合等によるスクイーズアウト（完全子会社化）の対象になりうる水準で、
 // 上値が買取価格に収斂し伸びしろが無いとみなして除外する
 const MAJORITY_HOLDING_THRESHOLD = 51;
@@ -302,7 +303,18 @@ function normalizeCompanyName(s: string): string {
   return out.trim();
 }
 
-function isSellDisclosure(docDescription: string): boolean {
+function isSellDisclosure(
+  docDescription: string,
+  holdingRatio?: number | null,
+  holdingRatioPrior?: number | null,
+): boolean {
+  // 直前保有割合(holdingRatioPrior)が取得できる場合は保有比率の増減で判定する。
+  // EDINETの概要欄は「変更報告書」とだけ書かれ売買方向を示さないことが多く、
+  // テキストのみに依存すると売り抜けを買いと誤判定するため（例: 東芝のキオクシア
+  // 株一部売却16.10%→15.10%が概要「変更報告書」のみで📈買いと誤表示されたバグ）。
+  if (holdingRatio != null && holdingRatioPrior != null) {
+    return holdingRatio < holdingRatioPrior;
+  }
   return SELL_KEYWORDS.some((k) => (docDescription || "").includes(k));
 }
 
@@ -1356,7 +1368,7 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
   }
   const holdRes = await fetch(
     `${SB_URL}/rest/v1/edinet_large_holdings?disc_date=gte.${sinceStr}${holdingFilter}` +
-      `&select=issuer_code,issuer_name,filer_name,holding_ratio,disc_date,doc_description` +
+      `&select=issuer_code,issuer_name,filer_name,holding_ratio,holding_ratio_prior,disc_date,doc_description` +
       `&order=disc_date.desc,submit_date.desc&limit=50`,
     { headers: sbHeaders() },
   );
@@ -1407,18 +1419,25 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
     if (deduped.length > 0) {
       lines.push(`\n🏦 大量保有報告（直近${days}日・銘柄ごとに最新1件・全${deduped.length}銘柄）\n`);
       for (const h of deduped) {
+        const hist = ratioHistory.get(`${h.issuer_code}::${h.filer_name}`);
         let ratio: string;
         if (h.holding_ratio == null) {
           ratio = "不明";
         } else {
-          const hist = ratioHistory.get(`${h.issuer_code}::${h.filer_name}`);
           ratio = hist && hist.oldest !== hist.newest
             ? `${hist.oldest.toFixed(2)}%→${hist.newest.toFixed(2)}%`
             : `${(h.holding_ratio as number).toFixed(2)}%`;
         }
-        const direction = isSellDisclosure(h.doc_description as string) ? "📉売り" : "📈買い";
+        const priorRatio = (h.holding_ratio_prior as number | null) ??
+          (hist && hist.oldest !== hist.newest ? hist.oldest : null);
+        const direction = isSellDisclosure(
+          h.doc_description as string,
+          h.holding_ratio as number | null,
+          priorRatio,
+        ) ? "📉売り" : "📈買い";
         lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} ${direction} (${h.disc_date})`);
       }
+      lines.push(`\n📰 詳細解説記事: ${BLOG_SITE_URL}`);
     } else {
       lines.push(`\n🏦 大量保有報告（直近${days}日）: なし`);
     }
