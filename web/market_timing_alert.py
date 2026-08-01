@@ -99,8 +99,9 @@ def build_market_compare_section(compare: dict | None) -> str:
 
 
 def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
-    """直近days日のEDINET大量保有・変更報告書を取得し、自己申告（提出者≒対象企業）と
-    過半数超（51%以上、スクイーズアウト対象で上値が見込めない）を除外して返す。
+    """直近days日のEDINET大量保有・変更報告書を取得し、自己申告（提出者≒対象企業）・
+    過半数超（51%以上、スクイーズアウト対象で上値が見込めない）・訂正報告書（既存開示の
+    事後修正で実際の持分変動ではない）を除外して返す。
     譲渡/売却（sell）は「大口の動向」として買いと同様に見たいので除外しない。"""
     from lib.db import get_edinet_large_holdings_recent
     from tools.scan_large_holdings import is_noise_match, load_name_map
@@ -115,7 +116,7 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
             r.get("filer_name", ""), name, r.get("doc_description") or "",
             r.get("holding_ratio"), r.get("holding_ratio_prior"),
         )
-        if reason in ("self_filing", "majority"):
+        if reason in ("self_filing", "majority", "correction"):
             continue
         out.append({**r, "name": name})
     return out
@@ -150,7 +151,8 @@ def build_large_holdings_section(
     保有比率が大きい（動きが大きい）順に並べてlimit件に絞る。同一提出者の開示が期間内に
     複数あれば保有比率の変化を「5.2%→10.1%」のように表示する。
     開示日を優先しないと、古い日付のウォッチ銘柄ヒットが新しい開示を押しのけて
-    何日も居座り、「毎日同じ古い日付が出る」状態になるため。
+    何日も居座り、「毎日同じ古い日付が出る」状態になるため。増減トレンドも売却キーワードも
+    取れない場合は買い/売りを推測せず方向性を表示しない。
     残りはLINEチャットで「大量保有」等と聞けば個別に答えられる（check_catalystツール）。"""
     from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
 
@@ -193,10 +195,16 @@ def build_large_holdings_section(
         prior_ratio = h.get("holding_ratio_prior")
         if prior_ratio is None and first_ratio != last_ratio:
             prior_ratio = first_ratio
-        direction = "📉売り" if is_sell_disclosure(
-            h.get("doc_description") or "", ratio, prior_ratio
-        ) else "📈買い"
-        lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有 {direction} [{doc_type}] ({disc})")
+        doc_desc = h.get("doc_description") or ""
+        if ratio is not None and prior_ratio is not None:
+            direction = "📉売り" if ratio < prior_ratio else "📈買い"
+        elif is_sell_disclosure(doc_desc):
+            direction = "📉売り"
+        else:
+            # 増減トレンドも売却キーワードも取れない場合は買い/売りを推測しない
+            direction = ""
+        direction_str = f" {direction}" if direction else ""
+        lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有{direction_str} [{doc_type}] ({disc})")
     if len(ordered) > limit:
         lines.append(f"  ...他{len(ordered) - limit}件（LINEで「大量保有」と聞けば確認できます）")
     lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}")
