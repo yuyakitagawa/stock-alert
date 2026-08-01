@@ -56,6 +56,11 @@ def _normalize_name(s: str) -> str:
 # 「買い集め」ではない＝先回りシグナルとして不要な開示の語
 _SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"]
 
+# 訂正報告書は既存開示の事後修正であり実際の持分変動ではないため除外する
+def is_correction_report(doc_description: str) -> bool:
+    return "訂正" in (doc_description or "")
+
+
 # これ以上は株式併合等によるスクイーズアウト（完全子会社化）の対象になりうる水準で、
 # 上値が買取価格に収斂し伸びしろが無いとみなして除外する
 MAJORITY_HOLDING_THRESHOLD = 51
@@ -112,11 +117,14 @@ def is_noise_match(
     """突合ヒットがノイズなら理由を返す（先回りシグナルでないもの）。問題なければ None。
 
     - majority:    保有比率51%以上（スクイーズアウト対象になりうる水準で上値が見込めない）
+    - correction:  訂正報告書（既存開示の事後修正で、実際の持分変動ではない）
     - self_filing: 提出者≒対象企業（自己申告。第三者の買い集めではない）
     - sell:        保有比率減少 or 概要が譲渡/売却/処分（買いではない）
     """
     if holding_ratio is not None and abs(holding_ratio) >= MAJORITY_HOLDING_THRESHOLD:
         return "majority"
+    if is_correction_report(doc_description):
+        return "correction"
     if is_sell_disclosure(doc_description, holding_ratio, holding_ratio_prior):
         return "sell"
     f = _normalize_name(filer_name)

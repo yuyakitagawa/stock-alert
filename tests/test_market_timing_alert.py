@@ -36,7 +36,18 @@ def test_formats_entries_with_name_and_ratio():
     assert "○○ファンド" in msg
     assert "5.2%" in msg
     assert "大量保有" in msg
-    assert "📈買い" in msg
+
+
+def test_no_signal_shows_no_direction_guess():
+    """増減トレンドも売却キーワードも無い単発開示は、買い/売りを推測せず方向性を出さない。"""
+    holdings = [{
+        "issuer_code": "285A", "name": "キオクシアホールディングス", "filer_name": "株式会社　東芝",
+        "doc_type_code": "360", "holding_ratio": 15.1, "disc_date": "2026-07-23",
+        "doc_description": "変更報告書",
+    }]
+    msg = build_large_holdings_section(holdings)
+    assert "📈買い" not in msg
+    assert "📉売り" not in msg
 
 
 def test_sell_disclosure_labelled_as_sell():
@@ -208,6 +219,7 @@ def test_watchlist_shows_sell_mark_above_sell_threshold():
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
+    test_no_signal_shows_no_direction_guess()
     test_includes_blog_link_when_holdings_present()
     test_sell_disclosure_labelled_as_sell()
     test_ratio_decrease_labelled_as_sell_even_without_keyword()
