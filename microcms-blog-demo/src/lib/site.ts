@@ -1,9 +1,7 @@
-// 独自ドメイン(kujira-watch.com)はVercel側のDNS/ドメイン追加が完了するまでは未接続のため、
-// NEXT_PUBLIC_SITE_URLが未設定の間は現行のVercelドメインにフォールバックする。
-// Vercelでドメイン接続とNEXT_PUBLIC_SITE_URL="https://kujira-watch.com"の設定が完了したら、
-// このデフォルト値もkujira-watch.comに切り替える。
+// 独自ドメイン(kujira-watch.com)がVercelに接続済みのため、デフォルト値をそちらにしている。
+// NEXT_PUBLIC_SITE_URLをVercelの環境変数で設定していればそちらが優先される。
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL || "https://stock-alert-lyart.vercel.app"
+  process.env.NEXT_PUBLIC_SITE_URL || "https://kujira-watch.com"
 ).replace(/\/$/, "");
 
 export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "クジラウォッチ";

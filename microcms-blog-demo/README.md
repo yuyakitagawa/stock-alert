@@ -4,7 +4,7 @@ EDINET大量保有報告書などの公開情報をもとに、機関投資家�
 「クジラ」（相場を動かすほどの資金力を持つ大口投資家の俗称）の動きを監視・解説するブログ。
 SEO/AIO（AI Overview・LLM引用）対策済み。
 
-デプロイ先: https://stock-alert-lyart.vercel.app/ （独自ドメイン `kujira-watch.com` へ移行予定。
+デプロイ先: https://kujira-watch.com/ （旧URL: https://stock-alert-lyart.vercel.app/ 。
 進捗はリポジトリルートの `docs/progress_blog_seo_aio.md` を参照）
 
 ## スタック
@@ -12,7 +12,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
 - microCMS（`microcms-js-sdk`）
-- Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測）
+- Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）
 
 ## セットアップ
 
