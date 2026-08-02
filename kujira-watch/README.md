@@ -61,15 +61,16 @@ npm run dev
 
 | パス | 内容 |
 |---|---|
-| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順10件ページネーション、`?page=`） |
+| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順。下端までスクロールすると自動で次の10件を読み込むオートスクロール方式） |
 | `/articles/[id]` | 記事詳細 |
-| `/category/[category]` | カテゴリ別一覧（`?page=` 対応） |
+| `/category/[category]` | カテゴリ別一覧（同じくオートスクロール） |
 | `/stocks/[code]` | 銘柄別の大量保有・自社株買い履歴まとめ（同一`stockCode`の記事を`-dealDate`順に一覧表示）。記事詳細の「銘柄」欄から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。フッター・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/api/counter` | フッターの累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
+| `/api/articles` | 記事一覧のオートスクロール用（GET、`offset`/`dealType`クエリでmicroCMSの次のページを返す） |
 
 ## 計測・ログ
 
@@ -88,7 +89,8 @@ npm run dev
 
 ## 実装メモ
 
-- 一覧・カテゴリ別一覧はページネーションに `searchParams`（`?page=`）を使うため、その2ルートは実行時に動的レンダリングされる。ただしmicroCMSへの `fetch` 自体は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
+- 一覧・カテゴリ別一覧は初回表示分（10件）のみサーバー側で取得し、以降は`src/components/InfiniteArticleList.tsx`（クライアントコンポーネント）が画面下端の要素を`IntersectionObserver`で検知して`/api/articles`から次の10件を都度取得・追記するオートスクロール方式。ページネーションのUIやURLの`?page=`は廃止した。
+- `/api/articles`が返す一覧・初回表示分ともmicroCMSへの `fetch` は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。

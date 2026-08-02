@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import ArticleCard from "@/components/ArticleCard";
-import DealDateHeading from "@/components/DealDateHeading";
-import Pagination from "@/components/Pagination";
-import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
+import InfiniteArticleList from "@/components/InfiniteArticleList";
+import { getArticleList } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
 
@@ -34,10 +31,8 @@ export async function generateMetadata({
 
 export default async function CategoryPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ category: string }>;
-  searchParams: Promise<{ page?: string }>;
 }) {
   const { category } = await params;
   const decodedCategory = decodeURIComponent(category);
@@ -47,16 +42,7 @@ export default async function CategoryPage({
     notFound();
   }
 
-  const { page } = await searchParams;
-  const currentPage = Math.max(1, Number(page) || 1);
-  const offset = (currentPage - 1) * ARTICLES_PER_PAGE;
-
-  const { contents, totalCount } = await getArticleList({
-    offset,
-    dealType,
-  });
-  const totalPages = Math.max(1, Math.ceil(totalCount / ARTICLES_PER_PAGE));
-  const groups = groupArticlesByDealDate(contents);
+  const { contents, totalCount } = await getArticleList({ dealType });
 
   return (
     <div>
@@ -71,22 +57,12 @@ export default async function CategoryPage({
       {contents.length === 0 ? (
         <p className="text-gray-500">このカテゴリの記事がまだありません。</p>
       ) : (
-        groups.map((group) => (
-          <div key={group.date} className="mb-8">
-            <DealDateHeading label={group.label} />
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              {group.articles.map((article) => (
-                <ArticleCard key={article.id} article={article} />
-              ))}
-            </div>
-          </div>
-        ))
+        <InfiniteArticleList
+          initialArticles={contents}
+          totalCount={totalCount}
+          dealType={dealType}
+        />
       )}
-      <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
-        basePath={`/category/${category}`}
-      />
     </div>
   );
 }
