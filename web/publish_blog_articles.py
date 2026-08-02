@@ -14,7 +14,14 @@ https://kujira-watch.com/ ）へ解説記事を自動生成・即時公開する
   概算できない銘柄（株価・株式数が取得できない）はスキップする（架空の金額を出さない）。
 
 記事生成: Claude（ANTHROPIC_API_KEY）に与えた事実のみから title/body を生成させる
-          （事実にない金額・意図の創作を禁止するプロンプト）。
+          （事実にない金額・意図の創作を禁止するプロンプト）。対象企業の事業内容
+          （get_company_description、一般知識ベースでjpx_stock_list.descriptionにキャッシュ）が
+          わかれば冒頭紹介と保有比率の規模感に織り込む。本文末尾には「※推測:」ラベル付きの
+          推測文を必ず1文加えさせる（事実と明確に区別し、存在しない具体的計画等は創作させない）。
+
+株価チャート: build_price_chart_for_article が直近3ヶ月の終値（yahoo_price_cache）から
+          簡易な折れ線チャートPNGをPillowのみで描画し、microCMSへアップロードして
+          本文HTML末尾に<img>タグとして埋め込む（失敗時はチャート無しで記事のみ投稿）。
 
 必要な環境変数: MICROCMS_SERVICE_DOMAIN, MICROCMS_API_KEY（書き込み権限）, ANTHROPIC_API_KEY
 """
@@ -262,24 +269,99 @@ def generate_eyecatch_image(title: str, category: str) -> "bytes | None":
         return None
 
 
-def upload_eyecatch(image_bytes: bytes) -> "str | None":
+def _upload_media(image_bytes: bytes, filename: str) -> "str | None":
     """microCMSのメディアアップロードAPI(management API)へPNGを送りURLを返す。
     APIキーに「メディアアップロード」権限が無い場合は失敗するので、その場合はNoneを返し
-    呼び出し側は画像なしで記事を投稿する。"""
+    呼び出し側は画像なしで記事を投稿する。アイキャッチ・株価チャートの両方が使う共通処理。"""
     try:
         resp = requests.post(
             f"https://{MICROCMS_DOMAIN}.microcms-management.io/api/v1/media",
             headers={"X-MICROCMS-API-KEY": MICROCMS_KEY},
-            files={"file": ("eyecatch.png", image_bytes, "image/png")},
+            files={"file": (filename, image_bytes, "image/png")},
             timeout=30,
         )
         if resp.status_code not in (200, 201):
-            print(f"    ⚠ アイキャッチアップロード失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            print(f"    ⚠ 画像アップロード失敗 HTTP {resp.status_code}: {resp.text[:200]}")
             return None
         return resp.json().get("url")
     except Exception as e:
-        print(f"    ⚠ アイキャッチアップロード例外: {e}")
+        print(f"    ⚠ 画像アップロード例外: {e}")
         return None
+
+
+def upload_eyecatch(image_bytes: bytes) -> "str | None":
+    return _upload_media(image_bytes, "eyecatch.png")
+
+
+def upload_price_chart(image_bytes: bytes) -> "str | None":
+    return _upload_media(image_bytes, "chart.png")
+
+
+CHART_DAYS = 63  # 3ヶ月（営業日）相当
+CHART_FONT_PATH = EYECATCH_FONT_PATH
+
+
+def generate_price_chart_image(code: str, name: str) -> "bytes | None":
+    """直近3ヶ月の終値推移をシンプルな折れ線チャートPNGにする（PIL直描画のみ、
+    matplotlib等の新規依存を避けるため既存依存のPillowだけで完結させる）。
+    株価取得失敗・データ不足時はNone（呼び出し側はチャートなしで本文を使う）。"""
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    from lib.utils import get_prices
+
+    try:
+        prices = get_prices(code, days=100)
+        if prices is None or len(prices) < 20:
+            return None
+        closes = [float(c) for c in prices["Close"].values[-CHART_DAYS:]]
+    except Exception as e:
+        print(f"    ⚠ チャート用株価取得失敗: {e}")
+        return None
+
+    try:
+        w, h = 1000, 500
+        pad_l, pad_r, pad_t, pad_b = 90, 40, 60, 60
+        img = Image.new("RGB", (w, h), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype(CHART_FONT_PATH, 24, index=0)
+        small_font = ImageFont.truetype(CHART_FONT_PATH, 18, index=0)
+
+        draw.text((pad_l, 15), f"{name}（{code}） 株価推移（直近3ヶ月）", font=font, fill=(20, 20, 20))
+
+        lo, hi = min(closes), max(closes)
+        if hi == lo:
+            hi = lo + 1
+        plot_w, plot_h = w - pad_l - pad_r, h - pad_t - pad_b
+        n = len(closes)
+        points = []
+        for i, c in enumerate(closes):
+            x = pad_l + (i / (n - 1)) * plot_w if n > 1 else pad_l
+            y = pad_t + plot_h - (c - lo) / (hi - lo) * plot_h
+            points.append((x, y))
+        draw.line(points, fill=(30, 90, 200), width=3)
+
+        draw.text((10, pad_t - 12), f"{hi:,.0f}円", font=small_font, fill=(90, 90, 90))
+        draw.text((10, pad_t + plot_h - 12), f"{lo:,.0f}円", font=small_font, fill=(90, 90, 90))
+        draw.text((pad_l, h - pad_b + 20), "3ヶ月前", font=small_font, fill=(90, 90, 90))
+        end_label = "直近"
+        end_w = draw.textbbox((0, 0), end_label, font=small_font)[2]
+        draw.text((w - pad_r - end_w, h - pad_b + 20), end_label, font=small_font, fill=(90, 90, 90))
+
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+    except Exception as e:
+        print(f"    ⚠ チャート画像生成失敗: {e}")
+        return None
+
+
+def build_price_chart_for_article(code: str, name: str) -> "str | None":
+    """直近3ヶ月の株価チャートを生成・アップロードし、記事本文に埋め込む<img>用URLを返す。
+    生成・アップロードのどこかで失敗すればNone（呼び出し側はチャートなしで本文を使う）。"""
+    image_bytes = generate_price_chart_image(code, name)
+    if not image_bytes:
+        return None
+    return upload_price_chart(image_bytes)
 
 
 def build_eyecatch_for_article(title: str, category: str) -> "dict | None":
@@ -359,6 +441,44 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
     return round(amount_yen / 1e8, 1)
 
 
+def get_company_description(code: str, name: str) -> str:
+    """対象企業の事業内容を1文程度で返す。jpx_stock_list.descriptionにキャッシュがあれば
+    それを使い、無ければClaudeの一般知識で生成してキャッシュする（classify_filerと同じ方針。
+    Web検索確認済みの投資家分類マスターと異なり事業内容は検証手段が無いため、
+    プロンプト側で「不明なら空文字」と念押しし、断定できない場合に創作させない）。"""
+    cached = sb.select_one("jpx_stock_list", f"code=eq.{code}&select=description")
+    if cached and cached.get("description"):
+        return cached["description"]
+
+    import anthropic
+
+    if not ANTHROPIC_API_KEY:
+        return ""
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    prompt = f"""日本の上場企業「{name}」（証券コード{code}）の主な事業内容を、一般知識の範囲で
+1文（40字程度）で簡潔に説明してください。確信が持てない場合は空文字を返してください。
+
+出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
+{{"description": "事業内容の説明、または空文字"}}
+"""
+    try:
+        resp = client.messages.create(
+            model=CLAUDE_MODEL, max_tokens=200, messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text[4:] if text.lower().startswith("json") else text
+        description = json.loads(text).get("description", "") or ""
+    except Exception as e:
+        print(f"    ⚠ 事業内容取得に失敗: {e}")
+        description = ""
+
+    if description:
+        sb.upsert("jpx_stock_list", [{"code": code, "description": description}], on_conflict="code")
+    return description
+
+
 def dp_level_label(drop_prob: float) -> str:
     """README記載の5段階表示（高30/やや高22/中14/やや低7）と同じ閾値でdrop_probを
     ラベル化する。Isotonic較正の特性上、小数%そのままだと多数の銘柄が同値に見えるため、
@@ -400,17 +520,14 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     context_dp_level = fact_sheet.get("context_dp_level")
     if context_close is not None and context_dp_level is not None:
         context_line = f"- 開示日時点の株価: {context_close:,.0f}円 / 弊社モデルの下落リスク水準: {context_dp_level}\n"
-        so_what_instruction = (
-            "さらに、上記の開示日時点の株価・下落リスク水準を踏まえて、この買い集めが投資家に"
-            "とってどんな意味を持ちうるか（例: 下落リスクが低い局面での買い増しか、リスクが高い局面での"
-            "打診買いか）を1文加えてください。数値や意図の創作はせず、上記の事実のみから読み取れる範囲に"
-            "留めてください。"
-        )
+        risk_hint = "下落リスクが低い局面での買い増しか、リスクが高い局面での打診買いか、といった観点も交えつつ、"
     else:
         context_line = ""
-        so_what_instruction = ""
+        risk_hint = ""
     filer_description = fact_sheet.get("filer_description") or ""
     filer_description_line = f"- 提出者について: {filer_description}\n" if filer_description else ""
+    company_description = fact_sheet.get("company_description") or ""
+    company_description_line = f"- {fact_sheet['stock_name']}の事業内容: {company_description}\n" if company_description else ""
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
 金額が概算であることは見出しの「推定取得金額」表記のみで十分伝わるため、本文中で改めて
@@ -425,13 +542,21 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
 - 推定取得金額: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
-{filer_description_line}{context_line}
-{so_what_instruction}
+{filer_description_line}{company_description_line}{context_line}
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
 （例: 提出者が海外の資産運用会社なら「海外の資産運用会社による取得」等）。無い場合は無理に触れなくてよいです。
+{fact_sheet['stock_name']}の事業内容 の事実がある場合は、冒頭でその会社が何をしている会社かを
+1文で読者に補足してください。また保有比率{fact_sheet['holding_ratio']}%という数字が、対象企業の
+株式のどれくらいの規模を占めるかが実感できるよう自然に触れてください（時価総額の一角を占める大株主、等）。
+
+最後に1文だけ、{risk_hint}この取得が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
+加えてください。ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
+分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
+上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
+事実として存在しない具体的な計画やコメントの引用は創作しないでください。
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
-{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（500〜700字程度、3〜4段落）"}}
+{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（500〜700字程度、3〜4段落。最後の段落に※推測文を含む）"}}
 """
     try:
         resp = client.messages.create(
@@ -593,6 +718,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
         context_close = snapshot.get("close") if snapshot else None
         context_dp = snapshot.get("drop_prob") if snapshot else None
         filer_info = classify_filer(filer_name)
+        company_description = get_company_description(code, name)
 
         fact_sheet = {
             "stock_name": name,
@@ -605,6 +731,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             "context_close": context_close,
             "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
             "filer_description": filer_info.get("description") or "",
+            "company_description": company_description,
         }
         article = generate_article_body(fact_sheet)
         if article is None:
@@ -631,6 +758,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
         eyecatch = build_eyecatch_for_article(article["title"], deal_type)
         if eyecatch:
             payload["eyecatch"] = eyecatch
+
+        chart_url = build_price_chart_for_article(code, name)
+        if chart_url:
+            payload["body"] += f'<p><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）"></p>'
 
         try:
             content_id = publish_article(payload)
