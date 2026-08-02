@@ -1,7 +1,8 @@
-# クジラウォッチ
+# 大口投資家の監視ブログ
 
 EDINET大量保有報告書などの公開情報をもとに、機関投資家・インサイダー・自社株買いなど
 「クジラ」（相場を動かすほどの資金力を持つ大口投資家の俗称）の動きを監視・解説するブログ。
+ブランド名は「大口投資家の監視ブログ」、ドメインは`kujira-watch.com`（クジラのイメージで確保）。
 SEO/AIO（AI Overview・LLM引用）対策済み。
 
 デプロイ先: https://kujira-watch.com/ （旧URL: https://stock-alert-lyart.vercel.app/ 。
@@ -28,7 +29,7 @@ cp .env.local.example .env.local
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
 NEXT_PUBLIC_SITE_URL=https://kujira-watch.com
-NEXT_PUBLIC_SITE_NAME=クジラウォッチ
+NEXT_PUBLIC_SITE_NAME=大口投資家の監視ブログ
 ```
 
 `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に
