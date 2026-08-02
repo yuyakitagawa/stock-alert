@@ -1,5 +1,19 @@
 # Dev Log
 
+## 2026-08-02 LINE大口保有動向を3件に縮小、残りはWeb記事URLへ
+
+```
+通知疲れ対策の追加調整。web/market_timing_alert.py の LARGE_HOLDINGS_LIMIT を 5→3 に縮小し、
+上限を超えた分は「LINEで聞けば個別回答」ではなく microCMSブログ（詳細解説記事）のURLに委ねる
+方針に変更。check_catalystツールでの都度回答に頼らず、Web側に情報を寄せる。
+モデル・ハードフィルター・特徴量定義には無変更（バックテスト対象外）。
+
+検証: tests/test_market_timing_alert.py 含む既存テスト全9ファイル実行し regression なしを確認。
+README.md も同一コミットで更新。
+```
+
+---
+
 ## 2026-08-01 コンサルレビューの残り5件に着手（通知疲れ・記事のso what・screener整理・可観測性・閾値整合）
 
 ```
