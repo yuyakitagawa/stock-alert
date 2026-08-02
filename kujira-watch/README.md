@@ -67,6 +67,7 @@ npm run dev
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
+| `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。フッター・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/api/counter` | フッターの累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
 
 ## 計測・ログ

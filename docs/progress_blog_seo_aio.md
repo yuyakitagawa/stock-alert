@@ -128,7 +128,19 @@
 - Check: `python3 tests/test_publish_blog_articles.py`含む全Pythonテスト成功。実際に
   `generate_eyecatch_image()`をダミー写真で呼び出し、日本語タイトルの折り返し・合成を目視確認済み
   （このサンドボックスはPexels自体には接続不可のため、実写真での確認はGitHub Actions実行時が初回）
-- Act: 未着手（PEXELS_API_KEYの発行をユーザーに依頼中。取得後にPR化・マージ）
+- Act: PR #196としてマージ済み。PEXELS_API_KEY発行・microCMSメディアアップロード権限設定は
+  ユーザー側で完了。撮影者クレジット（Pexels API利用ガイドライン推奨）を画像右下に追加で焼き込み。
+
+**Cycle 4（完了）**
+- Plan: RSSフィードが無く、フィードリーダー経由の継続読者・外部サイトへのシンジケーション導線が
+  存在しなかった。実装コストが低く「ちゃんとしたブログ」の標準機能でもあるため対応。
+- Do:
+  - `src/app/feed.xml/route.ts`: 新着記事20件のRSS 2.0フィードを生成するRoute Handler
+  - `layout.tsx`の`alternates.types`に`application/rss+xml`を追加（`<head>`に自動でlink要素が出る）
+  - フッターに`/feed.xml`へのリンクを追加
+  - `llms.txt`にRSSフィードのパスを追記
+- Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功（`/feed.xml`ルートが生成されることを確認）。
+- Act: 未着手（このサイクルの成果をコミット・PR化する）
 
 **未着手・保留**
-- なし（アイキャッチ画像はCycle 3で対応中）
+- なし
