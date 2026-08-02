@@ -27,7 +27,10 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost lightgbm \
-            gspread google-auth yfinance anthropic
+            gspread google-auth yfinance anthropic Pillow
+
+      - name: Install Noto Sans CJK (ブログのアイキャッチ画像生成用フォント)
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
 
       - name: Link repo to ~/stock-alert
         run: |
@@ -45,6 +48,7 @@ jobs:
           echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
           echo "MICROCMS_SERVICE_DOMAIN=${{ secrets.MICROCMS_SERVICE_DOMAIN }}" >> ~/stock-alert/.env
           echo "MICROCMS_API_KEY=${{ secrets.MICROCMS_API_KEY }}" >> ~/stock-alert/.env
+          echo "PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}" >> ~/stock-alert/.env
 
       - name: Create gcp_key.json from secret
         run: |
@@ -92,7 +96,7 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
-      - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説・microCMS検証用）
+      - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説「クジラウォッチ」）
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
 
