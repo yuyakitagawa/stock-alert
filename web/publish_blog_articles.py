@@ -1,7 +1,8 @@
 """
 web/publish_blog_articles.py
-EDINET大量保有報告書（買い方向のみ）を基に、microCMSブログ（microcms-blog-demo）へ
-解説記事を自動生成・即時公開する（人間は後からmicroCMS管理画面で修正する運用）。
+EDINET大量保有報告書（買い方向のみ）を基に、microCMSブログ「クジラウォッチ」（kujira-watch/、
+https://kujira-watch.com/ ）へ解説記事を自動生成・即時公開する（人間は後からmicroCMS管理画面で
+修正する運用）。
 
 データ源: lib.db.get_edinet_large_holdings_recent（tools/scan_large_holdings.py が
           daily_alert.yml Step 2c で日次蓄積）を web.market_timing_alert 経由でノイズ除外
