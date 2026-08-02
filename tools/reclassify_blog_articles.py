@@ -65,6 +65,14 @@ def find_filer_names(code: str, disc_date: str) -> set[str]:
     return {r["filer_name"] for r in rows if r.get("filer_name")}
 
 
+def normalize_deal_type(value) -> "str | None":
+    """microCMSのdealTypeは複数選択(配列)設定の記事が混在するため単一値に正規化する。
+    空配列（値未設定）はNoneを返す（旧: value[0]が空配列でIndexErrorになっていたバグの修正）。"""
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true", help="更新せず変更内容を表示するのみ")
@@ -100,8 +108,7 @@ def main():
 
         info = classify_filer(filer_name)
         new_deal_type = info["category"]
-        old_deal_type = a.get("dealType")
-        old_deal_type = old_deal_type[0] if isinstance(old_deal_type, list) else old_deal_type
+        old_deal_type = normalize_deal_type(a.get("dealType"))
 
         if new_deal_type == old_deal_type:
             unchanged += 1
