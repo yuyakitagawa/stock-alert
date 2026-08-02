@@ -4,9 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
+import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
-import { getArticleDetail } from "@/lib/microcms";
+import { getArticleDetail, getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
 
@@ -63,6 +64,11 @@ export default async function ArticleDetailPage({ params }: Props) {
 
   const category = article.dealType ? categoryLabel(article.dealType) : undefined;
   const url = `${SITE_URL}/articles/${id}`;
+
+  const { contents: sameCategoryArticles } = article.dealType
+    ? await getArticleList({ dealType: article.dealType, limit: 5 })
+    : { contents: [] };
+  const relatedArticles = sameCategoryArticles.filter((a) => a.id !== id).slice(0, 4);
 
   const articleJsonLd = {
     "@context": "https://schema.org",
@@ -199,6 +205,18 @@ export default async function ArticleDetailPage({ params }: Props) {
                 #{tag}
               </span>
             ))}
+          </div>
+        )}
+        {relatedArticles.length > 0 && (
+          <div className="mt-10 border-t border-gray-200 pt-6">
+            <h2 className="mb-4 text-lg font-bold text-brand-navy">
+              関連記事（{category}）
+            </h2>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              {relatedArticles.map((related) => (
+                <ArticleCard key={related.id} article={related} />
+              ))}
+            </div>
           </div>
         )}
       </div>

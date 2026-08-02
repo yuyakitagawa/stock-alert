@@ -387,9 +387,10 @@ def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
 
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからtitle/bodyを生成させる。JSONで {"title", "body"} を返す。
-    パース失敗時はNone（記事は投稿しない）。dealType（投資家カテゴリ）は事前にclassify_filer()で
-    判定済みのものをfact_sheet['deal_type']として渡す（edinet_filer_classificationマスター
-    参照＋未登録時のみClaude判定、記事本文生成とは別の呼び出しに分離してキャッシュ可能にした）。"""
+    パース失敗時はNone（記事は投稿しない）。投資家分類（dealType）は事前にclassify_filer()で
+    判定済み（edinet_filer_classificationマスター参照＋未登録時のみClaude判定、記事本文生成とは
+    別の呼び出しに分離してキャッシュ可能にした）で、その分類の一言説明が
+    fact_sheet['filer_description']としてあれば本文に自然に織り込む。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
@@ -408,6 +409,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     else:
         context_line = ""
         so_what_instruction = ""
+    filer_description = fact_sheet.get("filer_description") or ""
+    filer_description_line = f"- 提出者について: {filer_description}\n" if filer_description else ""
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
 金額は発行済株式数と株価からの概算であり、実際の取得価格ではないことを本文中で明記してください。
@@ -419,16 +422,18 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
 - 推定取得金額: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
-{context_line}
+{filer_description_line}{context_line}
 {so_what_instruction}
+提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
+（例: 提出者が海外の資産運用会社なら「海外の資産運用会社による取得」等）。無い場合は無理に触れなくてよいです。
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
-{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（250〜400字程度、2〜3段落）"}}
+{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（500〜700字程度、3〜4段落）"}}
 """
     try:
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=800,
+            max_tokens=1400,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
@@ -596,6 +601,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             "deal_amount_oku": deal_amount,
             "context_close": context_close,
             "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
+            "filer_description": filer_info.get("description") or "",
         }
         article = generate_article_body(fact_sheet)
         if article is None:
