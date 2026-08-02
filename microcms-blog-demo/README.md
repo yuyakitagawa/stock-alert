@@ -1,6 +1,10 @@
-# 大口取引解説ブログ（microCMS検証用ダミーサイト）
+# 大口取引解説ブログ
 
-microCMSの操作感・API設計を検証するためのダミーサイト。本番運用は想定しない。
+EDINET大量保有報告書などの公開情報をもとに、機関投資家買い・インサイダー買い・自社株買いなど
+日本株市場の大口取引を解説するブログ。SEO/AIO（AI Overview・LLM引用）対策済み。
+
+デプロイ先: https://stock-alert-lyart.vercel.app/ （独自ドメイン移行予定。進捗は
+リポジトリルートの `docs/progress_blog_seo_aio.md` を参照）
 
 ## スタック
 
@@ -16,12 +20,18 @@ npm install
 cp .env.local.example .env.local
 ```
 
-`.env.local` に microCMS サービスの値を設定する。
+`.env.local` に microCMS サービスの値と、SEO用のサイトURL/サイト名を設定する。
 
 ```
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
+NEXT_PUBLIC_SITE_URL=https://stock-alert-lyart.vercel.app
+NEXT_PUBLIC_SITE_NAME=大口取引解説ブログ
 ```
+
+`NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に
+値を差し替えるだけで、metadata・OGP・構造化データ・サイトマップの全ページに反映される
+（未設定時は現行のVercelドメイン・現行ブランド名にフォールバックする）。
 
 ```bash
 npm run dev
@@ -48,9 +58,20 @@ npm run dev
 
 | パス | 内容 |
 |---|---|
-| `/` | 記事一覧（新着順、10件ページネーション、`?page=`） |
+| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順10件ページネーション、`?page=`） |
 | `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（`?page=` 対応） |
+| `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
+| `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリを含む） |
+| `/robots.txt` | `src/app/robots.ts` |
+
+## SEO/AIO対策
+
+- **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
+- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`、記事詳細に `Article`（`about`に銘柄名・証券コード、`citation`に出典URL）と `BreadcrumbList` を埋め込み。Google/AI Overview双方の情報抽出を想定。
+- **サイトマップ**: `src/app/sitemap.ts` はビルド時ではなくリクエスト時に生成（`dynamic = "force-dynamic"`）。microCMSの一時的な障害でVercelのビルド自体が失敗しないようにするため。
+- **AIO向け**: `public/llms.txt` にサイトの目的・データソース・主要パスをLLMクローラ向けに明記。
+- **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、フッター/ヘッダーから常時リンク。
 
 ## 実装メモ
 
@@ -69,13 +90,6 @@ npm run dev
 
 投稿後の内容確認・修正はmicroCMS管理画面で人間が行う想定。詳細はスクリプト冒頭のdocstringを参照。
 
-## 検証観点
-
-- スキーマ変更時のフロントエンド追従のしやすさ → `src/types/article.ts` の `Article` 型と `src/lib/microcms.ts` を変更すれば追従できる構成にしている。
-- リッチエディタ出力HTMLの扱いやすさ → `@tailwindcss/typography` の `prose` クラスで装飾。
-- REST APIレスポンス速度・データ構造の使い勝手 → `microcms-js-sdk` の `getList` / `getListDetail` をそのまま利用。
-- 管理画面での記事投稿のしやすさ（非エンジニア視点） → 人間側で確認。
-
 ## スコープ外
 
-認証・会員機能、検索機能、コメント機能、本番デプロイ後の運用・監視。
+認証・会員機能、検索機能、コメント機能。

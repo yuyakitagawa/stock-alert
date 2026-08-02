@@ -1,11 +1,32 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import Pagination from "@/components/Pagination";
 import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
+import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
 
 export function generateStaticParams() {
   return CATEGORIES.map((category) => ({ category }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ category: string }>;
+}): Promise<Metadata> {
+  const { category } = await params;
+  const decodedCategory = decodeURIComponent(category);
+  if (!DEAL_TYPE_BY_CATEGORY[decodedCategory]) return {};
+
+  const title = `${decodedCategory}の記事一覧`;
+  const description = `${decodedCategory}に関する大口取引の解説記事一覧。`;
+  return {
+    title,
+    description,
+    alternates: { canonical: `${SITE_URL}/category/${category}` },
+    openGraph: { title, description, url: `${SITE_URL}/category/${category}` },
+  };
 }
 
 export default async function CategoryPage({

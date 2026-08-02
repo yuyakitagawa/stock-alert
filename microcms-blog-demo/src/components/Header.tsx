@@ -9,7 +9,7 @@ export default function Header() {
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-blue" />
           大口取引解説ブログ
         </Link>
-        <nav className="flex flex-wrap gap-2 text-sm">
+        <nav className="flex flex-wrap items-center gap-2 text-sm">
           {CATEGORIES.map((category) => (
             <Link
               key={category}
@@ -19,6 +19,12 @@ export default function Header() {
               {category}
             </Link>
           ))}
+          <Link
+            href="/about"
+            className="ml-auto text-xs font-medium text-gray-500 hover:text-brand-blue"
+          >
+            運営者情報
+          </Link>
         </nav>
       </div>
     </header>
