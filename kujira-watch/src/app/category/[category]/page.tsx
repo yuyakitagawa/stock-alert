@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import Pagination from "@/components/Pagination";
+import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
@@ -53,20 +55,33 @@ export default async function CategoryPage({
     dealType,
   });
   const totalPages = Math.max(1, Math.ceil(totalCount / ARTICLES_PER_PAGE));
+  const groups = groupArticlesByDealDate(contents);
 
   return (
     <div>
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-gray-500">
+        <Link href="/" className="hover:text-brand-blue">トップ</Link>
+        {" / "}
+        <span className="text-gray-700">{decodedCategory}</span>
+      </nav>
       <h1 className="mb-6 text-2xl font-bold text-brand-navy">
         カテゴリ: {decodedCategory}
       </h1>
       {contents.length === 0 ? (
         <p className="text-gray-500">このカテゴリの記事がまだありません。</p>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          {contents.map((article) => (
-            <ArticleCard key={article.id} article={article} />
-          ))}
-        </div>
+        groups.map((group) => (
+          <div key={group.date} className="mb-8">
+            <h2 className="mb-3 border-b border-gray-200 pb-2 text-sm font-bold text-gray-500">
+              {group.label}
+            </h2>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              {group.articles.map((article) => (
+                <ArticleCard key={article.id} article={article} />
+              ))}
+            </div>
+          </div>
+        ))
       )}
       <Pagination
         currentPage={currentPage}

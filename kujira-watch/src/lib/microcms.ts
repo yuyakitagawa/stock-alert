@@ -37,7 +37,8 @@ export async function getArticleList(params: {
     queries: {
       offset,
       limit,
-      orders: "-publishedAt",
+      // 取引日(dealDate)が新しい順、同じ日の中では金額規模(dealAmount)が大きい順。
+      orders: "-dealDate,-dealAmount",
       ...(dealType ? { filters: `dealType[contains]${dealType}` } : {}),
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
@@ -50,7 +51,7 @@ export async function getArticlesByStockCode(stockCode: string) {
     endpoint: "articles",
     queries: {
       filters: `stockCode[equals]${stockCode}`,
-      orders: "-dealDate",
+      orders: "-dealDate,-dealAmount",
       limit: 100,
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },

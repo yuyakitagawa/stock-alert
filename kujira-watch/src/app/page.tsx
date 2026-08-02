@@ -1,8 +1,9 @@
 import ArticleCard from "@/components/ArticleCard";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import Pagination from "@/components/Pagination";
+import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
-import { SITE_DESCRIPTION } from "@/lib/site";
+import { SITE_NAME } from "@/lib/site";
 
 export default async function HomePage({
   searchParams,
@@ -18,23 +19,39 @@ export default async function HomePage({
 
   const [featured, ...rest] = contents;
   const showFeatured = currentPage === 1 && featured;
+  const groups = groupArticlesByDealDate(showFeatured ? rest : contents);
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-brand-navy">新着記事</h1>
-        <p className="mt-1 text-sm text-gray-500">{SITE_DESCRIPTION}</p>
+      <div className="mb-8 rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+        <h1 className="text-2xl font-bold text-brand-navy">
+          🐋 {SITE_NAME}へようこそ
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-gray-700">
+          {SITE_NAME}は、EDINETの大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
+          アクティビストファンド・インサイダー・自社株買いといった「クジラ」（相場を動かすほどの
+          資金力を持つ大口投資家の俗称）が、どの銘柄をいつ・どれくらいの規模で動かしたかを
+          日次でまとめて解説するブログです。個人投資家では追いきれない大口投資家の動きを、
+          取引日ごとに一覧できます。
+        </p>
       </div>
       {contents.length === 0 ? (
         <p className="text-gray-500">記事がまだありません。</p>
       ) : (
         <>
           {showFeatured && <FeaturedArticleCard article={featured} />}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {(showFeatured ? rest : contents).map((article) => (
-              <ArticleCard key={article.id} article={article} />
-            ))}
-          </div>
+          {groups.map((group) => (
+            <div key={group.date} className="mb-8">
+              <h2 className="mb-3 border-b border-gray-200 pb-2 text-sm font-bold text-gray-500">
+                {group.label}
+              </h2>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {group.articles.map((article) => (
+                  <ArticleCard key={article.id} article={article} />
+                ))}
+              </div>
+            </div>
+          ))}
         </>
       )}
       <Pagination currentPage={currentPage} totalPages={totalPages} basePath="/" />

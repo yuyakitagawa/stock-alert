@@ -7,7 +7,12 @@ export default function Header() {
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-4">
         <Link href="/" className="flex items-center gap-2 text-lg font-bold text-brand-navy">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-blue" />
+          <span
+            aria-hidden
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-blue text-base"
+          >
+            🐋
+          </span>
           {SITE_NAME}
         </Link>
         <nav className="flex flex-wrap items-center gap-2 text-sm">
