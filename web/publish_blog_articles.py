@@ -344,20 +344,24 @@ def publish_article(payload: dict) -> "str | None":
         return None
 
 
-def _patch_once(content_id: str, payload: dict) -> requests.Response:
-    return requests.patch(
+def _put_once(content_id: str, payload: dict) -> requests.Response:
+    return requests.put(
         f"{_microcms_base_url()}/{content_id}", headers=_microcms_headers(), json=payload, timeout=20,
     )
 
 
 def update_article(content_id: str, payload: dict) -> bool:
-    """既存記事をPATCHで更新する（publish_article()と同じ型不一致リトライを流用）。
-    tools/reclassify_blog_articles.py の一括再分類で使う。"""
+    """既存記事をPUTで更新する（publish_article()と同じ型不一致リトライを流用）。
+    tools/reclassify_blog_articles.py の一括再分類で使う。PUTは完全上書きのため、
+    payloadには変更したいフィールドだけでなく必須項目（title/body/stockName/stockCode/
+    dealType/dealDate/dealAmount）を全て含めること（呼び出し側が既存レコード全体を
+    取得してから該当フィールドだけ書き換えて渡す想定）。
+    PATCH権限が無いAPIキー（'PATCH is forbidden'）でも動くようPUTを使っている。"""
     try:
         working_payload = dict(payload)
         fixed_fields = set()
         for _ in range(MAX_TYPE_MISMATCH_RETRIES + 1):
-            resp = _patch_once(content_id, working_payload)
+            resp = _put_once(content_id, working_payload)
             if resp.status_code in (401, 403) or (
                 resp.status_code == 400 and "forbidden" in resp.text.lower()
             ):
