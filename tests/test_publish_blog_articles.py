@@ -245,13 +245,24 @@ def test_search_pexels_photo_returns_none_without_api_key():
         assert m.search_pexels_photo("finance") is None
 
 
-def test_search_pexels_photo_returns_bytes_on_success():
+def test_search_pexels_photo_returns_bytes_and_photographer_on_success():
+    search_resp = _FakeResponse(200, "", {"photos": [{
+        "src": {"large": "https://example.test/a.jpg"}, "photographer": "Jane Doe",
+    }]})
+    photo_resp = _FakeResponse(200, "", content=b"fake-image-bytes")
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=[search_resp, photo_resp]):
+        result = m.search_pexels_photo("finance")
+    assert result == {"bytes": b"fake-image-bytes", "photographer": "Jane Doe"}
+
+
+def test_search_pexels_photo_defaults_photographer_when_missing():
     search_resp = _FakeResponse(200, "", {"photos": [{"src": {"large": "https://example.test/a.jpg"}}]})
     photo_resp = _FakeResponse(200, "", content=b"fake-image-bytes")
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch("requests.get", side_effect=[search_resp, photo_resp]):
         result = m.search_pexels_photo("finance")
-    assert result == b"fake-image-bytes"
+    assert result["photographer"] == "Pexels"
 
 
 def test_search_pexels_photo_returns_none_when_no_results():
@@ -531,7 +542,8 @@ if __name__ == "__main__":
     test_wrap_text_lines_breaks_on_width()
     test_wrap_text_lines_respects_max_lines()
     test_search_pexels_photo_returns_none_without_api_key()
-    test_search_pexels_photo_returns_bytes_on_success()
+    test_search_pexels_photo_returns_bytes_and_photographer_on_success()
+    test_search_pexels_photo_defaults_photographer_when_missing()
     test_search_pexels_photo_returns_none_when_no_results()
     test_search_pexels_photo_returns_none_on_exception()
     test_upload_eyecatch_returns_url_on_success()
@@ -541,4 +553,4 @@ if __name__ == "__main__":
     test_build_eyecatch_for_article_returns_url_dict_on_success()
     test_build_and_publish_includes_eyecatch_when_available()
     test_build_and_publish_skips_eyecatch_on_dry_run()
-    print("全テスト成功 (34件)")
+    print("全テスト成功 (35件)")

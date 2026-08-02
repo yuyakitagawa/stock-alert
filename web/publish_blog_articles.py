@@ -161,8 +161,10 @@ EYECATCH_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 EYECATCH_W, EYECATCH_H = 1200, 630
 
 
-def search_pexels_photo(query: str) -> "bytes | None":
-    """Pexels検索APIで1枚選び、画像本体(bytes)を返す。未設定・取得失敗時はNone。"""
+def search_pexels_photo(query: str) -> "dict | None":
+    """Pexels検索APIで1枚選び、{"bytes": 画像本体, "photographer": 撮影者名} を返す。
+    未設定・取得失敗時はNone。撮影者名はPexelsのAPI利用ガイドラインが推奨するクレジット表記
+    （"Photo by <撮影者> on Pexels"）を画像に焼き込むために保持する。"""
     if not PEXELS_API_KEY:
         return None
     try:
@@ -176,9 +178,10 @@ def search_pexels_photo(query: str) -> "bytes | None":
         photos = resp.json().get("photos", [])
         if not photos:
             return None
-        photo_resp = requests.get(photos[0]["src"]["large"], timeout=20)
+        photo = photos[0]
+        photo_resp = requests.get(photo["src"]["large"], timeout=20)
         photo_resp.raise_for_status()
-        return photo_resp.content
+        return {"bytes": photo_resp.content, "photographer": photo.get("photographer") or "Pexels"}
     except Exception as e:
         print(f"    ⚠ Pexels写真取得失敗: {e}")
         return None
@@ -209,14 +212,14 @@ def generate_eyecatch_image(title: str, category: str) -> "bytes | None":
     import io
 
     query = EYECATCH_QUERY_BY_CATEGORY.get(category, EYECATCH_DEFAULT_QUERY)
-    photo_bytes = search_pexels_photo(query)
-    if not photo_bytes:
+    photo = search_pexels_photo(query)
+    if not photo:
         return None
 
     try:
         ss = 2
         w, h = EYECATCH_W * ss, EYECATCH_H * ss
-        img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+        img = Image.open(io.BytesIO(photo["bytes"])).convert("RGB")
         sw, sh = img.size
         scale = max(w / sw, h / sh)
         nw, nh = int(sw * scale + 0.5), int(sh * scale + 0.5)
@@ -239,6 +242,16 @@ def generate_eyecatch_image(title: str, category: str) -> "bytes | None":
         for line in lines:
             draw.text((pad_left, y), line, font=font, fill=(255, 255, 255, 255))
             y += line_h
+
+        # Pexels API利用ガイドラインが推奨するクレジット表記を右下に小さく焼き込む
+        # （ライセンス上は必須ではないが、APIレート制限緩和申請等でも使用実績として示せるようにする）
+        credit_font = ImageFont.truetype(EYECATCH_FONT_PATH, 18 * ss, index=0)
+        credit_text = f"Photo: {photo['photographer']} / Pexels"
+        credit_w = draw.textbbox((0, 0), credit_text, font=credit_font)[2]
+        draw.text(
+            (w - credit_w - 24 * ss, h - 38 * ss),
+            credit_text, font=credit_font, fill=(255, 255, 255, 170),
+        )
 
         img = img.resize((EYECATCH_W, EYECATCH_H), Image.LANCZOS)
         buf = io.BytesIO()
