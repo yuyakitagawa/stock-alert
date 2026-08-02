@@ -145,7 +145,9 @@ export default async function ArticleDetailPage({ params }: Props) {
           <div>
             <dt className="text-gray-500">銘柄</dt>
             <dd className="font-medium text-brand-navy">
-              {article.stockName}（{article.stockCode}）
+              <Link href={`/stocks/${article.stockCode}`} className="hover:underline">
+                {article.stockName}（{article.stockCode}）の履歴を見る
+              </Link>
             </dd>
           </div>
           <div>

@@ -42,7 +42,7 @@ MICROCMS_DOMAIN = os.getenv("MICROCMS_SERVICE_DOMAIN", "")
 MICROCMS_KEY = os.getenv("MICROCMS_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-MAX_ARTICLES_PER_RUN = 3
+MAX_ARTICLES_PER_RUN = 10
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 DOC_TYPE_LABELS = {"350": "大量保有報告書", "360": "変更報告書（保有比率の変更）"}

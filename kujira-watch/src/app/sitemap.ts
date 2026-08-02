@@ -23,10 +23,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }));
 
+  const stockCodes = [...new Set(articles.map((article) => article.stockCode).filter(Boolean))];
+  const stockEntries: MetadataRoute.Sitemap = stockCodes.map((code) => ({
+    url: `${SITE_URL}/stocks/${code}`,
+    changeFrequency: "weekly",
+    priority: 0.6,
+  }));
+
   return [
     { url: SITE_URL, changeFrequency: "daily", priority: 1 },
     { url: `${SITE_URL}/about`, changeFrequency: "yearly", priority: 0.3 },
     ...categoryEntries,
+    ...stockEntries,
     ...articleEntries,
   ];
 }

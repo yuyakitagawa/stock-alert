@@ -45,6 +45,19 @@ export async function getArticleList(params: {
   return { ...result, contents: result.contents.map(normalizeDealType) };
 }
 
+export async function getArticlesByStockCode(stockCode: string) {
+  const result = await client.getList<Article>({
+    endpoint: "articles",
+    queries: {
+      filters: `stockCode[equals]${stockCode}`,
+      orders: "-dealDate",
+      limit: 100,
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return { ...result, contents: result.contents.map(normalizeDealType) };
+}
+
 export async function getArticleDetail(id: string) {
   const article = await client.getListDetail<Article>({
     endpoint: "articles",
@@ -55,9 +68,9 @@ export async function getArticleDetail(id: string) {
 }
 
 export async function getAllArticlesForSitemap() {
-  const contents = await client.getAllContents<Pick<Article, "dealType">>({
+  const contents = await client.getAllContents<Pick<Article, "dealType" | "stockCode">>({
     endpoint: "articles",
-    queries: { fields: "id,updatedAt,publishedAt,dealType", orders: "-publishedAt" },
+    queries: { fields: "id,updatedAt,publishedAt,dealType,stockCode", orders: "-publishedAt" },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
   return contents.map(normalizeDealType);

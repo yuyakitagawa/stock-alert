@@ -4,7 +4,7 @@
 
 ## 追加タスク: ディレクトリリネーム
 - [x] `microcms-blog-demo/` → `kujira-watch/` にリネーム（`git mv`でhistory維持）、`package.json`/`package-lock.json`の`name`も追従
-- [ ]（ユーザー）Vercelプロジェクト設定 → General → Root Directory を `microcms-blog-demo` から `kujira-watch` に変更（**これをしないと次回デプロイが失敗する**）
+- [x]（ユーザー）Vercelプロジェクト設定 → General → Root Directory を `microcms-blog-demo` から `kujira-watch` に変更済み、デプロイ成功確認済み
 
 ## 背景・ゴール
 現状は「microCMS検証用ダミーサイト」という位置付けだが、実際に読まれるブログへ格上げする。
@@ -31,6 +31,7 @@
 - [x] Stage 5: 独自ドメイン切替（`kujira-watch.com`。DNS/Vercel接続・GSC検証・サイトマップ送信・SSL警告の原因判明まで完了）
 - [x] Stage 6: 訪問者カウンター＋クローラーログ（Supabase連携、下記詳細）
 - [ ] Stage 7: Google Analytics(GA4)導入（要ユーザーの測定ID）
+- [x] Stage 8: 閲覧者数向上 Cycle 1 — 銘柄別まとめページ＋記事本数上限引き上げ（下記詳細）
 
 ## Stage詳細
 
@@ -77,3 +78,27 @@
 
 ### Stage 7: Google Analytics(GA4)導入（未着手）
 - ユーザーがGA4プロパティを作成し測定ID(`G-XXXXXXXXXX`)を発行後、`@next/third-parties`の`GoogleAnalytics`コンポーネントで組み込み予定
+
+### Stage 8: 閲覧者数向上 PDCAサイクル（進行中）
+
+**運用方針**: ユーザーからの明示的な開始指示で1サイクル進める。実際のユーザーには接触できないため
+「AIペルソナによるコードベースレビュー」を代替手段とし、Google Search Console等の実データが
+溜まり次第そちらを優先する（本物のユーザーリサーチの代替にはならない点は都度明記する）。
+
+**Cycle 1（完了）**
+- Plan: コードレビューによるペルソナ所見 — (1)専門用語（dealType）の説明導線が記事から辿れない、
+  (2)検索流入者向けの内部リンク（銘柄の他の記事）が無い、(3)銘柄を継続的に追う手段が無い。
+  直近14日のEDINET候補が1日25〜164件に対し投稿上限が3件と大きく余裕があることも確認。
+- Do:
+  - `/stocks/[code]`（銘柄別の大量保有・自社株買い履歴まとめページ）を新設。`getArticlesByStockCode()`
+    追加、`ItemList`+`BreadcrumbList`のJSON-LD、sitemap.tsに追加
+  - 記事詳細ページの「銘柄」欄から `/stocks/[code]` への内部リンクを追加
+  - `web/publish_blog_articles.py`の`MAX_ARTICLES_PER_RUN`を3→10に引き上げ
+- Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功。Pythonの既存テスト全件(tests/test_*.py、
+  100件超)成功、今回の変更による新規失敗なし。
+- Act: 未着手（このサイクルの成果をコミット・PR化する）
+
+**未着手・保留**
+- アイキャッチ画像生成: ユーザーが言及した「note記事生成」の既存実装がこのリポジトリ内に見当たらず、
+  詳細確認待ちで保留
+- 用語解説の導線改善（Cycle 2候補）
