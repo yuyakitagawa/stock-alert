@@ -1,5 +1,14 @@
 # Dev Log
 
+## 2026-08-02 ブログ記事の投稿件数上限を撤廃
+
+```
+web/publish_blog_articles.py の MAX_ARTICLES_PER_RUN=10（1回の実行での投稿上限）を撤廃。
+build_and_publish() の max_articles デフォルトを None にし、None のときはループを打ち切らない
+（--max-articles 未指定時も同様）。テスト（tests/test_publish_blog_articles.py）は元々
+max_articles=3 を明示的に渡しているため無影響、全45件成功を確認。
+```
+
 ## 2026-08-02 ブログ記事に事業内容紹介・規模感・ラベル付き推測・株価チャートを追加
 
 ```

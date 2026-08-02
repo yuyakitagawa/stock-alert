@@ -50,7 +50,6 @@ MICROCMS_KEY = os.getenv("MICROCMS_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
-MAX_ARTICLES_PER_RUN = 10
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 DOC_TYPE_LABELS = {"350": "大量保有報告書", "360": "変更報告書（保有比率の変更）"}
@@ -680,7 +679,7 @@ def update_article(content_id: str, payload: dict) -> bool:
         return False
 
 
-def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_ARTICLES_PER_RUN,
+def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
                        dry_run: bool = False) -> list:
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):
         print("[publish_blog_articles] MICROCMS_SERVICE_DOMAIN / MICROCMS_API_KEY 未設定のためスキップ")
@@ -698,7 +697,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
 
     published = []
     for h in candidates:
-        if len(published) >= max_articles:
+        if max_articles is not None and len(published) >= max_articles:
             break
         code = str(h["issuer_code"])
         disc_date = h["disc_date"]
@@ -780,7 +779,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--days", type=int, default=LARGE_HOLDINGS_DAYS, help="EDINET開示を見る直近日数")
-    p.add_argument("--max-articles", type=int, default=MAX_ARTICLES_PER_RUN, help="1回の実行で投稿する上限件数")
+    p.add_argument("--max-articles", type=int, default=None, help="1回の実行で投稿する上限件数（未指定なら上限なし）")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
     args = p.parse_args()
 
