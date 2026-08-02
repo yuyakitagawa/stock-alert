@@ -59,6 +59,7 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション（開示日優先ソート・根拠なき買い/売り推測の抑制込み）・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止・売り閾値ギャップの上書き・通知疲れ対策の要約表示・前日比表示込み）・投資家ウォッチ（提出者名の部分一致照合・大口保有動向セクション生成）のユニットテスト（26件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・訂正報告書除外・ノイズ除外）のユニットテスト（11件）|
+| `tests/test_reclassify_blog_articles.py` | 既存ブログ記事の投資家分類一括再分類ツールのユニットテスト（microCMSのdealType配列/空配列/None正規化。空配列でIndexErrorになっていた本番バグの再発防止）のユニットテスト（4件）|
 | `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・投資家分類マスター参照とClaudeフォールバック/保存・売却除外・重複防止・権限エラー時の早期打ち切り・投稿/更新のセレクト配列形式への自動リトライ・PIT文脈(株価/下落リスク水準)のプロンプト反映）のユニットテスト（22件、ネットワークは全てモック）|
 | `tests/test_supabase_client.py` | Supabase REST APIクライアントのリトライ挙動（一時的なネットワーク失敗時のバックオフ再試行・最終失敗時に呼び出し元を落とさないこと）のユニットテスト（3件）|
 
