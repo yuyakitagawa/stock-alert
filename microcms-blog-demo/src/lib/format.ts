@@ -10,3 +10,11 @@ export function formatDate(dateString: string): string {
 export function formatDealAmount(amount: number): string {
   return `${amount.toLocaleString("ja-JP")}億円`;
 }
+
+export function excerptFromHtml(html: string, maxLength = 120): string {
+  const text = html
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}

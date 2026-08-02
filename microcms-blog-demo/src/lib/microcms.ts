@@ -53,3 +53,12 @@ export async function getArticleDetail(id: string) {
   });
   return normalizeDealType(article);
 }
+
+export async function getAllArticlesForSitemap() {
+  const contents = await client.getAllContents<Pick<Article, "dealType">>({
+    endpoint: "articles",
+    queries: { fields: "id,updatedAt,publishedAt,dealType", orders: "-publishedAt" },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return contents.map(normalizeDealType);
+}

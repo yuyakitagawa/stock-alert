@@ -1,13 +1,18 @@
-# 大口取引解説ブログ（microCMS検証用ダミーサイト）
+# クジラウォッチ
 
-microCMSの操作感・API設計を検証するためのダミーサイト。本番運用は想定しない。
+EDINET大量保有報告書などの公開情報をもとに、機関投資家・インサイダー・自社株買いなど
+「クジラ」（相場を動かすほどの資金力を持つ大口投資家の俗称）の動きを監視・解説するブログ。
+SEO/AIO（AI Overview・LLM引用）対策済み。
+
+デプロイ先: https://kujira-watch.com/ （旧URL: https://stock-alert-lyart.vercel.app/ 。
+進捗はリポジトリルートの `docs/progress_blog_seo_aio.md` を参照）
 
 ## スタック
 
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
 - microCMS（`microcms-js-sdk`）
-- Vercel想定（ISR: `revalidate = 60`）
+- Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）
 
 ## セットアップ
 
@@ -16,12 +21,18 @@ npm install
 cp .env.local.example .env.local
 ```
 
-`.env.local` に microCMS サービスの値を設定する。
+`.env.local` に microCMS サービスの値と、SEO用のサイトURL/サイト名を設定する。
 
 ```
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
+NEXT_PUBLIC_SITE_URL=https://kujira-watch.com
+NEXT_PUBLIC_SITE_NAME=クジラウォッチ
 ```
+
+`NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に
+値を差し替えるだけで、metadata・OGP・構造化データ・サイトマップの全ページに反映される
+（未設定時は現行のVercelドメイン・現行ブランド名にフォールバックする）。
 
 ```bash
 npm run dev
@@ -48,16 +59,27 @@ npm run dev
 
 | パス | 内容 |
 |---|---|
-| `/` | 記事一覧（新着順、10件ページネーション、`?page=`） |
+| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順10件ページネーション、`?page=`） |
 | `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（`?page=` 対応） |
+| `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
+| `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリを含む） |
+| `/robots.txt` | `src/app/robots.ts` |
+
+## SEO/AIO対策
+
+- **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
+- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`、記事詳細に `Article`（`about`に銘柄名・証券コード、`citation`に出典URL）と `BreadcrumbList` を埋め込み。Google/AI Overview双方の情報抽出を想定。
+- **サイトマップ**: `src/app/sitemap.ts` はビルド時ではなくリクエスト時に生成（`dynamic = "force-dynamic"`）。microCMSの一時的な障害でVercelのビルド自体が失敗しないようにするため。
+- **AIO向け**: `public/llms.txt` にサイトの目的・データソース・主要パスをLLMクローラ向けに明記。
+- **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、フッター/ヘッダーから常時リンク。
 
 ## 実装メモ
 
 - 一覧・カテゴリ別一覧はページネーションに `searchParams`（`?page=`）を使うため、その2ルートは実行時に動的レンダリングされる。ただしmicroCMSへの `fetch` 自体は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
-- `eyecatch`（アイキャッチ画像）フィールドはCMSスキーマ上は残っているが、現在のUIでは表示していない（テキスト中心のカードレイアウト）。
+- `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
 - デザインは東京ガス公式サイトを参考に、ブランドブルー(`#0068b7`)＋ネイビー＋ゴールドのアクセント、アウトライン型ピルバッジを採用（`src/app/globals.css` のCSS変数で調整可）。
 - カテゴリフィルター（`/category/[category]`）はmicroCMS側に別フィールドを持たず、`dealType`から「買い」を除いた値をフロントエンドでその場で導出する（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
 
@@ -69,13 +91,6 @@ npm run dev
 
 投稿後の内容確認・修正はmicroCMS管理画面で人間が行う想定。詳細はスクリプト冒頭のdocstringを参照。
 
-## 検証観点
-
-- スキーマ変更時のフロントエンド追従のしやすさ → `src/types/article.ts` の `Article` 型と `src/lib/microcms.ts` を変更すれば追従できる構成にしている。
-- リッチエディタ出力HTMLの扱いやすさ → `@tailwindcss/typography` の `prose` クラスで装飾。
-- REST APIレスポンス速度・データ構造の使い勝手 → `microcms-js-sdk` の `getList` / `getListDetail` をそのまま利用。
-- 管理画面での記事投稿のしやすさ（非エンジニア視点） → 人間側で確認。
-
 ## スコープ外
 
-認証・会員機能、検索機能、コメント機能、本番デプロイ後の運用・監視。
+認証・会員機能、検索機能、コメント機能。
