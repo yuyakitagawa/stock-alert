@@ -9,8 +9,11 @@ tools/reclassify_blog_articles.py
 解消するために使う（web/publish_blog_articles.py の classify_filer() 導入に伴う一括移行）。
 
 各記事のstockCode+dealDateからedinet_large_holdingsを逆引きしてfiler_nameを特定し、
-classify_filer()で新分類を判定してdealTypeをPATCHする。同一銘柄・同一開示日に複数の
+classify_filer()で新分類を判定してdealTypeを更新する。同一銘柄・同一開示日に複数の
 提出者がいて一意に特定できない記事はスキップし、末尾にリストアップする（手動確認用）。
+
+更新はPUT（完全上書き）で行う。PATCH権限が無いAPIキーでも動くようにするため、
+記事は全フィールド取得し、dealTypeだけ書き換えて他のフィールドはそのまま送り返す。
 
 Usage:
   python3 tools/reclassify_blog_articles.py --dry-run   # 変更内容の確認のみ（何も更新しない）
@@ -33,8 +36,13 @@ from web.publish_blog_articles import (
 load_dotenv()
 
 
+# PUTでの完全上書きに含めてはいけないmicroCMSのメタ情報フィールド
+_METADATA_FIELDS = {"id", "createdAt", "updatedAt", "publishedAt", "revisedAt"}
+
+
 def fetch_all_articles() -> list[dict]:
-    """microCMSから全記事を取得する（100件ずつページング）。"""
+    """microCMSから全記事を全フィールド取得する（100件ずつページング）。
+    PUTでの更新時に他フィールドをそのまま送り返せるよう、fieldsで絞り込まない。"""
     articles = []
     offset = 0
     limit = 100
@@ -42,7 +50,7 @@ def fetch_all_articles() -> list[dict]:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
-            params={"fields": "id,stockCode,dealDate,dealType", "limit": limit, "offset": offset},
+            params={"limit": limit, "offset": offset},
             timeout=20,
         )
         resp.raise_for_status()
@@ -53,6 +61,13 @@ def fetch_all_articles() -> list[dict]:
             break
         offset += limit
     return articles
+
+
+def build_put_payload(article: dict, new_deal_type: str) -> dict:
+    """記事の全フィールドからメタ情報を除いてdealTypeだけ書き換えたPUT用payloadを作る。"""
+    payload = {k: v for k, v in article.items() if k not in _METADATA_FIELDS}
+    payload["dealType"] = new_deal_type
+    return payload
 
 
 def find_filer_names(code: str, disc_date: str) -> set[str]:
@@ -118,7 +133,9 @@ def main():
         print(f"  {a['id']}: {code} {deal_date} 「{filer_name}」 {old_deal_type} → {new_deal_type}")
         if not args.dry_run:
             try:
-                update_article(a["id"], {"dealType": new_deal_type})
+                ok = update_article(a["id"], build_put_payload(a, new_deal_type))
+                if not ok:
+                    print(f"  ⚠ {a['id']} の更新に失敗しました（詳細は上記ログ参照）")
             except MicroCMSPermissionError as e:
                 print(f"  ✖ 権限エラーのため中断: {e}")
                 break
