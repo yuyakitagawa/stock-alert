@@ -7,7 +7,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.market_timing_alert import build_large_holdings_section, build_watchlist_section, BLOG_SITE_URL
+from web.market_timing_alert import (
+    build_large_holdings_section, build_watchlist_section, BLOG_SITE_URL,
+    _normalize_filer_name, _filer_name_matches, build_filer_watch_section,
+)
 
 
 def test_empty_holdings_returns_empty_string():
@@ -258,6 +261,46 @@ def test_watchlist_omits_change_when_no_previous_data():
     assert "前日比" not in msg
 
 
+def test_normalize_filer_name_strips_corp_suffix_and_symbols():
+    assert _normalize_filer_name("シンプレクス・アセット・マネジメント株式会社") == "シンプレクスアセットマネジメント"
+    assert _normalize_filer_name("　全角スペース　") == "全角スペース"
+    assert _normalize_filer_name("") == ""
+    assert _normalize_filer_name(None) == ""
+
+
+def test_filer_name_matches_substring_both_directions():
+    """登録名が実データの略称/正式名のどちらでも部分一致すればヒットする。"""
+    assert _filer_name_matches("シグマクシス", "株式会社シグマクシス・ホールディングス")
+    assert _filer_name_matches("シンプレクス・アセット・マネジメント株式会社", "シンプレクスアセットマネジメント")
+    assert not _filer_name_matches("清原達郎", "○○アセットマネジメント株式会社")
+
+
+def test_build_filer_watch_section_empty_returns_empty_string():
+    assert build_filer_watch_section([]) == ""
+
+
+def test_build_filer_watch_section_formats_filer_and_target():
+    hits = [{
+        "issuer_code": "8058", "name": "三菱商事", "filer_name": "シンプレクス・アセット・マネジメント株式会社",
+        "holding_ratio": 5.5, "disc_date": "2026-07-30", "doc_description": "大量保有報告書",
+    }]
+    msg = build_filer_watch_section(hits)
+    assert "ウォッチ中の投資家の動き" in msg
+    assert "シンプレクス・アセット・マネジメント株式会社" in msg
+    assert "三菱商事(8058)" in msg
+    assert "5.5%" in msg
+
+
+def test_build_filer_watch_section_shows_sell_direction_from_ratio_decrease():
+    hits = [{
+        "issuer_code": "285A", "name": "キオクシアホールディングス", "filer_name": "株式会社東芝",
+        "holding_ratio": 15.10, "holding_ratio_prior": 16.10,
+        "disc_date": "2026-07-23", "doc_description": "変更報告書",
+    }]
+    msg = build_filer_watch_section(hits)
+    assert "📉売り" in msg
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
@@ -281,4 +324,9 @@ if __name__ == "__main__":
     test_watchlist_summarizes_unchanged_stocks_instead_of_listing_each()
     test_watchlist_shows_previous_day_change_for_actionable_stocks()
     test_watchlist_omits_change_when_no_previous_data()
-    print("OK: test_market_timing_alert (22 tests)")
+    test_normalize_filer_name_strips_corp_suffix_and_symbols()
+    test_filer_name_matches_substring_both_directions()
+    test_build_filer_watch_section_empty_returns_empty_string()
+    test_build_filer_watch_section_formats_filer_and_target()
+    test_build_filer_watch_section_shows_sell_direction_from_ratio_decrease()
+    print("OK: test_market_timing_alert (26 tests)")
