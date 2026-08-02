@@ -13,6 +13,10 @@ export default function Footer() {
         <Link href="/about" className="underline hover:text-white">
           運営者情報・免責事項
         </Link>
+        {" ・ "}
+        <Link href="/feed.xml" className="underline hover:text-white">
+          RSS
+        </Link>
       </p>
       <p className="mt-2">
         © {year} {SITE_NAME}
