@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextRequest } from "next/server";
-import { detectBot } from "@/lib/crawlers";
+import { classifyVisitor } from "@/lib/crawlers";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
 export function proxy(request: NextRequest, event: NextFetchEvent) {
   const userAgent = request.headers.get("user-agent") ?? "";
-  const botName = detectBot(userAgent);
+  const botName = classifyVisitor(userAgent);
 
   if (botName) {
     event.waitUntil(

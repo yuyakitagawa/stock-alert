@@ -74,7 +74,7 @@ npm run dev
 ## 計測・ログ
 
 - **累計訪問者カウンター**: フッターに表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
-- **クローラーアクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot等の既知クローラーだけをSupabaseの `blog_crawler_log` に記録する（一般訪問者は記録しない）。パターン一覧は `src/lib/crawlers.ts`。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
+- **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
 ## SEO/AIO対策
