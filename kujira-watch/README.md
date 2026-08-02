@@ -12,6 +12,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
 - microCMS（`microcms-js-sdk`）
+- Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC）
 - Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）
 
 ## セットアップ
@@ -65,6 +66,13 @@ npm run dev
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
+| `/api/counter` | フッターの累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
+
+## 計測・ログ
+
+- **累計訪問者カウンター**: フッターに表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
+- **クローラーアクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot等の既知クローラーだけをSupabaseの `blog_crawler_log` に記録する（一般訪問者は記録しない）。パターン一覧は `src/lib/crawlers.ts`。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
+- どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
 ## SEO/AIO対策
 
