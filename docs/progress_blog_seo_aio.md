@@ -9,8 +9,9 @@
 - 独自ドメインへ切替える
 
 ## 未確定事項（ユーザー判断待ち・作業はブロックしない設計にする）
-- [x] ブランド名: 「大口投資家の監視ブログ」に決定・反映済み（`NEXT_PUBLIC_SITE_NAME`のデフォルト値）。
-- [ ] 独自ドメイン名: 未取得。候補は`kabu-tairyohoyu.com`系だったが、ブランド名変更に伴い`oguchi-toushika`系に寄せるか要相談。取得・Vercelへの追加・DNS設定はダッシュボード作業のためユーザー側で実施が必要。
+- [x] ブランド名: 「クジラウォッチ」に決定・反映済み（`NEXT_PUBLIC_SITE_NAME`のデフォルト値、「クジラ」=大口投資家の俗称という説明を`/about`に追記）。
+- [x] 独自ドメイン名: `kujira-watch.com` に決定。コード側（`.env.local.example`/README記載）は反映済み。
+- [ ] Vercel側のドメイン接続・DNS設定・`NEXT_PUBLIC_SITE_URL`環境変数の設定（ユーザー側の実施が必要。手順は本ドキュメントのStage 5参照）。設定完了後、`src/lib/site.ts`のフォールバックデフォルトも`kujira-watch.com`に切り替える。
 - 対応方針: `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` の環境変数化で、後から値を変えるだけで全ページに反映される設計にする（コード変更なしでドメイン・ブランド名切替可能）。
 
 ## ステージ一覧（トークン分割実行・各ステージ単位でコミット）
@@ -45,9 +46,9 @@
 ### Stage 4: 計測
 - `@vercel/analytics` 導入（ドメイン非依存で先行導入可能）
 
-### Stage 5: 独自ドメイン切替（要ユーザー作業）
-1. （ユーザー）ドメイン取得
-2. （ユーザー）Vercelプロジェクト設定 → Domains に追加、指示されたDNSレコードをレジストラ側に設定
-3. （私）Vercelの環境変数 `NEXT_PUBLIC_SITE_URL` を新ドメインに更新して再デプロイ
-4. （私）canonical/sitemap/OGP/構造化データが新ドメインを指すことを確認
-5. （ユーザー）Google Search Consoleで新ドメインを検証・サイトマップ再送信
+### Stage 5: 独自ドメイン切替（`kujira-watch.com`、要ユーザー作業）
+1. [ ]（ユーザー）ドメイン`kujira-watch.com`を取得
+2. [ ]（ユーザー）Vercelプロジェクト設定 → Domains に`kujira-watch.com`を追加、指示されたDNSレコードをレジストラ側に設定
+3. [ ]（ユーザー）VercelのEnvironment Variablesに `NEXT_PUBLIC_SITE_URL=https://kujira-watch.com` を設定してRedeploy
+4. [ ]（私）`src/lib/site.ts`のフォールバックデフォルトを`kujira-watch.com`に切り替え、canonical/sitemap/OGP/構造化データが新ドメインを指すことを確認
+5. [ ]（ユーザー）Google Search Consoleで新ドメインを検証・サイトマップ再送信

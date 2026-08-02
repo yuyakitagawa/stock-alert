@@ -1,10 +1,11 @@
-# 大口投資家の監視ブログ
+# クジラウォッチ
 
 EDINET大量保有報告書などの公開情報をもとに、機関投資家・インサイダー・自社株買いなど
-大口投資家の動きを監視・解説するブログ。SEO/AIO（AI Overview・LLM引用）対策済み。
+「クジラ」（相場を動かすほどの資金力を持つ大口投資家の俗称）の動きを監視・解説するブログ。
+SEO/AIO（AI Overview・LLM引用）対策済み。
 
-デプロイ先: https://stock-alert-lyart.vercel.app/ （独自ドメイン移行予定。進捗は
-リポジトリルートの `docs/progress_blog_seo_aio.md` を参照）
+デプロイ先: https://stock-alert-lyart.vercel.app/ （独自ドメイン `kujira-watch.com` へ移行予定。
+進捗はリポジトリルートの `docs/progress_blog_seo_aio.md` を参照）
 
 ## スタック
 
@@ -25,8 +26,8 @@ cp .env.local.example .env.local
 ```
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
-NEXT_PUBLIC_SITE_URL=https://stock-alert-lyart.vercel.app
-NEXT_PUBLIC_SITE_NAME=大口投資家の監視ブログ
+NEXT_PUBLIC_SITE_URL=https://kujira-watch.com
+NEXT_PUBLIC_SITE_NAME=クジラウォッチ
 ```
 
 `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に

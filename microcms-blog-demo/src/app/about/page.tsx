@@ -19,7 +19,8 @@ export default function AboutPage() {
         <h2 className="mb-2 text-lg font-semibold text-brand-navy">このサイトについて</h2>
         <p className="text-sm leading-relaxed text-gray-700">
           {SITE_NAME}は、EDINET大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
-          インサイダー・自社株買いといった大口投資家の動きを監視し、解説するブログです。
+          インサイダー・自社株買いといった「クジラ」（相場を動かすほどの資金力を持つ大口投資家を指す
+          金融業界の俗称）の動きを監視し、解説するブログです。
         </p>
       </section>
 

@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME}｜大量保有報告書から読む株式市場の大口取引`,
+    default: `${SITE_NAME}｜大量保有報告書から読む「クジラ」の動き`,
     template: `%s｜${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
