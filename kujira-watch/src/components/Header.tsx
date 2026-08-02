@@ -6,14 +6,19 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-3">
-        <Link href="/" className="flex items-center gap-2 text-lg font-bold text-brand-navy">
+        <Link href="/" className="flex items-center gap-2">
           <span
             aria-hidden
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-blue text-base"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-blue text-base"
           >
             🐋
           </span>
-          {SITE_NAME}
+          <span className="leading-tight">
+            <span className="block text-lg font-bold text-brand-navy">{SITE_NAME}</span>
+            <span className="block text-xs text-gray-500">
+              大口投資家の動向ブログ
+            </span>
+          </span>
         </Link>
         {/* モバイルでは折り返さず1行の横スクロールにして、フィルターが縦に何行も
             積み重なってページ本文を押し下げないようにする（sm以上では通常の折り返し）。 */}
