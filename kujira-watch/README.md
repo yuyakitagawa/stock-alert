@@ -63,8 +63,9 @@ npm run dev
 | `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順10件ページネーション、`?page=`） |
 | `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（`?page=` 対応） |
+| `/stocks/[code]` | 銘柄別の大量保有・自社株買い履歴まとめ（同一`stockCode`の記事を`-dealDate`順に一覧表示）。記事詳細の「銘柄」欄から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
-| `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリを含む） |
+| `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
 | `/api/counter` | フッターの累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
 
