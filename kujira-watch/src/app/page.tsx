@@ -1,26 +1,9 @@
-import ArticleCard from "@/components/ArticleCard";
-import DealDateHeading from "@/components/DealDateHeading";
-import FeaturedArticleCard from "@/components/FeaturedArticleCard";
-import Pagination from "@/components/Pagination";
-import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
+import InfiniteArticleList from "@/components/InfiniteArticleList";
+import { getArticleList } from "@/lib/microcms";
 import { SITE_NAME } from "@/lib/site";
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ page?: string }>;
-}) {
-  const { page } = await searchParams;
-  const currentPage = Math.max(1, Number(page) || 1);
-  const offset = (currentPage - 1) * ARTICLES_PER_PAGE;
-
-  const { contents, totalCount } = await getArticleList({ offset });
-  const totalPages = Math.max(1, Math.ceil(totalCount / ARTICLES_PER_PAGE));
-
-  const [featured, ...rest] = contents;
-  const showFeatured = currentPage === 1 && featured;
-  const groups = groupArticlesByDealDate(showFeatured ? rest : contents);
+export default async function HomePage() {
+  const { contents, totalCount } = await getArticleList();
 
   return (
     <div>
@@ -28,21 +11,12 @@ export default async function HomePage({
       {contents.length === 0 ? (
         <p className="text-gray-500">記事がまだありません。</p>
       ) : (
-        <>
-          {showFeatured && <FeaturedArticleCard article={featured} />}
-          {groups.map((group) => (
-            <div key={group.date} className="mb-8">
-              <DealDateHeading label={group.label} />
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                {group.articles.map((article) => (
-                  <ArticleCard key={article.id} article={article} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </>
+        <InfiniteArticleList
+          initialArticles={contents}
+          totalCount={totalCount}
+          showFeatured
+        />
       )}
-      <Pagination currentPage={currentPage} totalPages={totalPages} basePath="/" />
       <div className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 sm:p-8">
         <h2 className="text-xl font-bold text-brand-navy sm:text-2xl">
           🐋 {SITE_NAME}へようこそ
