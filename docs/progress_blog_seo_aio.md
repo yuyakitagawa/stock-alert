@@ -18,7 +18,7 @@
 - [x] Stage 1: 技術的SEO基盤（metadata/canonical/OGP/sitemap/robots/構造化データ）
 - [x] Stage 2: AIO対策（llms.txt、E-E-A-T用の運営者情報・免責事項ページ、パンくず）
 - [x] Stage 3: トップページの「人気ブログ」化（ヒーロー/注目記事、カード強化、フッター導線）— 一次対応。タグクラウド・検索・アイキャッチ画像表示は未着手。
-- [ ] Stage 4: 計測（Vercel Analytics導入）
+- [x] Stage 4: 計測（`@vercel/analytics`導入）+ アイキャッチ画像表示（カード一覧/ヒーロー/記事詳細/OGP画像）
 - [ ] Stage 5: 独自ドメイン切替（ユーザー作業 + 切替後のコード側対応）
 
 ## Stage詳細

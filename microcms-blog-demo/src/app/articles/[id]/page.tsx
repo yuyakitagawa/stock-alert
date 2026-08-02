@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
@@ -34,6 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       publishedTime: article.publishedAt,
       modifiedTime: article.updatedAt,
+      ...(article.eyecatch ? { images: [article.eyecatch.url] } : {}),
     },
     twitter: {
       card: "summary_large_image",
@@ -121,6 +123,18 @@ export default async function ArticleDetailPage({ params }: Props) {
         {" / "}
         <span className="text-gray-700">{article.title}</span>
       </nav>
+      {article.eyecatch && (
+        <div className="relative aspect-video w-full bg-section-tint">
+          <Image
+            src={article.eyecatch.url}
+            alt={article.eyecatch.alt || article.title}
+            fill
+            priority
+            className="object-cover"
+            sizes="(min-width: 768px) 768px, 100vw"
+          />
+        </div>
+      )}
       <div className="p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <DealTypeBadge dealType={article.dealType} />

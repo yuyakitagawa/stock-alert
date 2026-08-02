@@ -11,7 +11,7 @@ EDINET大量保有報告書などの公開情報をもとに、機関投資家�
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
 - microCMS（`microcms-js-sdk`）
-- Vercel想定（ISR: `revalidate = 60`）
+- Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測）
 
 ## セットアップ
 
@@ -78,7 +78,7 @@ npm run dev
 - 一覧・カテゴリ別一覧はページネーションに `searchParams`（`?page=`）を使うため、その2ルートは実行時に動的レンダリングされる。ただしmicroCMSへの `fetch` 自体は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
-- `eyecatch`（アイキャッチ画像）フィールドはCMSスキーマ上は残っているが、現在のUIでは表示していない（テキスト中心のカードレイアウト）。
+- `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
 - デザインは東京ガス公式サイトを参考に、ブランドブルー(`#0068b7`)＋ネイビー＋ゴールドのアクセント、アウトライン型ピルバッジを採用（`src/app/globals.css` のCSS変数で調整可）。
 - カテゴリフィルター（`/category/[category]`）はmicroCMS側に別フィールドを持たず、`dealType`から「買い」を除いた値をフロントエンドでその場で導出する（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
 
