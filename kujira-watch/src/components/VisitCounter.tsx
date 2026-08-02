@@ -21,7 +21,7 @@ export default function VisitCounter() {
   if (count === null) return null;
 
   return (
-    <p className="mt-3 font-mono text-[11px] tracking-wider text-white/50">
+    <p className="mt-3 font-mono text-[11px] tracking-wider text-gray-400">
       累計訪問数: {count.toLocaleString("ja-JP")}
     </p>
   );
