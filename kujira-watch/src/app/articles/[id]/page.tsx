@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
+import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import { getArticleDetail } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -136,10 +137,18 @@ export default async function ArticleDetailPage({ params }: Props) {
         </div>
       )}
       <div className="p-6">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           <DealTypeBadge dealType={article.dealType} />
           <CategoryBadge category={category} />
         </div>
+        {article.dealType && (
+          <p className="mb-4 text-xs text-gray-500">
+            {DEAL_TYPE_DESCRIPTIONS[article.dealType]}{" "}
+            <Link href="/about#dealtype-glossary" className="text-brand-blue hover:underline">
+              分類の一覧を見る
+            </Link>
+          </p>
+        )}
         <h1 className="mb-4 text-3xl font-bold text-brand-navy">{article.title}</h1>
         <dl className="mb-6 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-section-tint p-4 text-sm sm:grid-cols-4">
           <div>
