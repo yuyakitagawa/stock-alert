@@ -344,6 +344,49 @@ def publish_article(payload: dict) -> "str | None":
         return None
 
 
+def _patch_once(content_id: str, payload: dict) -> requests.Response:
+    return requests.patch(
+        f"{_microcms_base_url()}/{content_id}", headers=_microcms_headers(), json=payload, timeout=20,
+    )
+
+
+def update_article(content_id: str, payload: dict) -> bool:
+    """既存記事をPATCHで更新する（publish_article()と同じ型不一致リトライを流用）。
+    tools/reclassify_blog_articles.py の一括再分類で使う。"""
+    try:
+        working_payload = dict(payload)
+        fixed_fields = set()
+        for _ in range(MAX_TYPE_MISMATCH_RETRIES + 1):
+            resp = _patch_once(content_id, working_payload)
+            if resp.status_code in (401, 403) or (
+                resp.status_code == 400 and "forbidden" in resp.text.lower()
+            ):
+                raise MicroCMSPermissionError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+
+            if resp.status_code not in (200, 201) and resp.status_code == 400:
+                match = _UNEXPECTED_TYPE_RE.search(resp.text)
+                field = match.group(1) if match else None
+                if (
+                    field and field not in fixed_fields
+                    and field in working_payload
+                    and isinstance(working_payload[field], str)
+                ):
+                    working_payload[field] = [working_payload[field]]
+                    fixed_fields.add(field)
+                    print(f"    ↻ '{field}' を配列形式に変えて再送信します")
+                    continue
+
+            if resp.status_code not in (200, 201):
+                print(f"    ⚠ 更新失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+                return False
+            return True
+    except MicroCMSPermissionError:
+        raise
+    except Exception as e:
+        print(f"    ⚠ 更新例外: {e}")
+        return False
+
+
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_ARTICLES_PER_RUN,
                        dry_run: bool = False) -> list:
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):

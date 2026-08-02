@@ -195,6 +195,29 @@ def test_publish_article_gives_up_when_same_field_fails_twice():
     assert content_id is None
 
 
+def test_update_article_retries_as_array_on_type_mismatch():
+    """update_article()もpublish_article()と同じ型不一致リトライを行う
+    （tools/reclassify_blog_articles.py の一括再分類で使う）。"""
+    responses = [
+        _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
+        _FakeResponse(200, "", {"id": "content-1"}),
+    ]
+    payload = {"dealType": "アクティビスト"}
+    with mock.patch.object(m, "_patch_once", side_effect=responses) as patch_mock:
+        ok = m.update_article("content-1", payload)
+    assert ok is True
+    assert patch_mock.call_count == 2
+    retried_payload = patch_mock.call_args_list[1].args[1]
+    assert retried_payload["dealType"] == ["アクティビスト"]
+
+
+def test_update_article_returns_false_on_failure():
+    responses = [_FakeResponse(400, '{"message":"invalid"}')]
+    with mock.patch.object(m, "_patch_once", side_effect=responses):
+        ok = m.update_article("content-1", {"dealType": "その他"})
+    assert ok is False
+
+
 def test_build_and_publish_stops_early_on_permission_error():
     """1件目でAPIキーの権限エラーが出たら、2件目以降はClaude呼び出しごと打ち切る
     （無駄なトークン消費を防ぐ）。"""
@@ -373,4 +396,6 @@ if __name__ == "__main__":
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    print("全テスト成功 (20件)")
+    test_update_article_retries_as_array_on_type_mismatch()
+    test_update_article_returns_false_on_failure()
+    print("全テスト成功 (22件)")
