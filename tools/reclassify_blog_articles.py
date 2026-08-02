@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tools/reclassify_blog_articles.py
-既存のmicroCMSブログ「クジラウォッチ」（kujira-watch/）記事のdealType（投資家分類）を、
+既存のmicroCMSブログ「大口投資家の監視ブログ」（kujira-watch/）記事のdealType（投資家分類）を、
 新しい14分類（edinet_filer_classificationマスター）に基づいて再分類する。
 
 旧dealType（インサイダー買い/日系ファンド買い/外資系ファンド買い等）は現在のmicroCMS

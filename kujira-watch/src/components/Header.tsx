@@ -16,7 +16,7 @@ export default function Header() {
           <span className="leading-tight">
             <span className="block text-lg font-bold text-brand-navy">{SITE_NAME}</span>
             <span className="block text-xs text-gray-500">
-              大口投資家の動向ブログ
+              EDINET大量保有報告書から読む「クジラ」の動き
             </span>
           </span>
         </Link>
