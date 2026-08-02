@@ -8,7 +8,7 @@ export default function FeaturedArticleCard({ article }: { article: ArticleConte
   return (
     <Link
       href={`/articles/${article.id}`}
-      className="mb-6 flex flex-col overflow-hidden rounded-xl bg-brand-navy text-white shadow-md transition-transform hover:-translate-y-0.5 hover:shadow-lg"
+      className="mb-8 flex flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-brand-navy to-[#122d4a] text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl"
     >
       {article.eyecatch && (
         <div className="relative aspect-[21/9] w-full">

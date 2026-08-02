@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
+import DealDateHeading from "@/components/DealDateHeading";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
@@ -84,9 +85,7 @@ export default async function StockPage({ params }: Props) {
       </div>
       {groupArticlesByDealDate(contents).map((group) => (
         <div key={group.date} className="mb-8">
-          <h2 className="mb-3 border-b border-gray-200 pb-2 text-sm font-bold text-gray-500">
-            {group.label}
-          </h2>
+          <DealDateHeading label={group.label} />
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {group.articles.map((article) => (
               <ArticleCard key={article.id} article={article} />

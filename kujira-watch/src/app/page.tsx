@@ -1,4 +1,5 @@
 import ArticleCard from "@/components/ArticleCard";
+import DealDateHeading from "@/components/DealDateHeading";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import Pagination from "@/components/Pagination";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
@@ -23,8 +24,8 @@ export default async function HomePage({
 
   return (
     <div>
-      <div className="mb-8 rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-        <h1 className="text-2xl font-bold text-brand-navy">
+      <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 sm:p-8">
+        <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">
           🐋 {SITE_NAME}へようこそ
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-700">
@@ -42,9 +43,7 @@ export default async function HomePage({
           {showFeatured && <FeaturedArticleCard article={featured} />}
           {groups.map((group) => (
             <div key={group.date} className="mb-8">
-              <h2 className="mb-3 border-b border-gray-200 pb-2 text-sm font-bold text-gray-500">
-                {group.label}
-              </h2>
+              <DealDateHeading label={group.label} />
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 {group.articles.map((article) => (
                   <ArticleCard key={article.id} article={article} />
