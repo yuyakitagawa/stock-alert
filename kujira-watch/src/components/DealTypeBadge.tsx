@@ -1,4 +1,5 @@
 import type { DealType } from "@/types/article";
+import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 
 const COLOR_MAP: Record<DealType, string> = {
   個人: "border-brand-gold text-amber-700",
@@ -20,6 +21,7 @@ export default function DealTypeBadge({ dealType }: { dealType: DealType }) {
   if (!dealType) return null;
   return (
     <span
+      title={DEAL_TYPE_DESCRIPTIONS[dealType]}
       className={`inline-flex items-center rounded-full border bg-white px-2.5 py-0.5 text-xs font-semibold ${
         COLOR_MAP[dealType] ?? "border-gray-400 text-gray-600"
       }`}

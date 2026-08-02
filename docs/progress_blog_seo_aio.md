@@ -96,9 +96,20 @@
   - `web/publish_blog_articles.py`の`MAX_ARTICLES_PER_RUN`を3→10に引き上げ
 - Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功。Pythonの既存テスト全件(tests/test_*.py、
   100件超)成功、今回の変更による新規失敗なし。
+- Act: PR #192としてマージ済み。
+
+**Cycle 2（完了）**
+- Plan: 投資家分類（14分類）がバッジで表示されるが、初心者には意味が分からず記事から説明に
+  辿る導線もない（Cycle 1の所見(1)）。他セッションの分類14分類化(`classify_filer()`)と
+  タイミングが合ったため定義文言をフロントエンドに移植する形で対応。
+- Do:
+  - `src/lib/dealTypeInfo.ts`: `classify_filer()`の判断基準に準拠した14分類の説明文を追加
+  - `DealTypeBadge`にHTML `title`属性でツールチップ表示
+  - 記事詳細ページのバッジ直下に該当分類の説明1文＋`/about#dealtype-glossary`へのリンクを追加
+  - `/about`に用語集セクション（`#dealtype-glossary`）を新設し全14分類を一覧表示
+- Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功。
 - Act: 未着手（このサイクルの成果をコミット・PR化する）
 
 **未着手・保留**
 - アイキャッチ画像生成: ユーザーが言及した「note記事生成」の既存実装がこのリポジトリ内に見当たらず、
   詳細確認待ちで保留
-- 用語解説の導線改善（Cycle 2候補）
