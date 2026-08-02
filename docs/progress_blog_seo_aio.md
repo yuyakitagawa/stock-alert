@@ -140,7 +140,21 @@
   - フッターに`/feed.xml`へのリンクを追加
   - `llms.txt`にRSSフィードのパスを追記
 - Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功（`/feed.xml`ルートが生成されることを確認）。
+- Act: PR #198としてマージ済み。
+
+**Cycle 5（完了）**
+- Plan: (1)記事本文が250〜400字と薄くSEO的に弱い、(2)記事詳細から他記事への回遊導線が
+  「銘柄別」しか無く「同じ投資家分類の他の記事」が無い、の2点に対応。
+- Do:
+  - `web/publish_blog_articles.py`: `generate_article_body()`の目標文字数を250〜400字→
+    500〜700字（3〜4段落）に緩和し`max_tokens`を800→1400に増加。`classify_filer()`が
+    既に返している`description`（提出者の一言説明、これまで未使用だった）を`fact_sheet
+    ['filer_description']`としてプロンプトに渡し、事実の範囲内で投資家の種類を1文補足させる
+    （新しい事実の創作はさせない）
+  - 記事詳細ページ（`articles/[id]/page.tsx`）に「関連記事（同じ投資家分類）」セクションを追加。
+    既存の`getArticleList({dealType, limit})`を再利用し自分自身を除いて最大4件表示
+- Check: Pythonテスト全件成功。`npx tsc --noEmit`/`npm run lint`/`npm run build`成功。
 - Act: 未着手（このサイクルの成果をコミット・PR化する）
 
 **未着手・保留**
-- なし
+- X(Twitter)自動投稿（サイトの基盤が整ったので着手を検討してよい段階）
