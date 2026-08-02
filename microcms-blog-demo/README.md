@@ -1,7 +1,7 @@
-# 大口取引解説ブログ
+# 大口投資家の監視ブログ
 
-EDINET大量保有報告書などの公開情報をもとに、機関投資家買い・インサイダー買い・自社株買いなど
-日本株市場の大口取引を解説するブログ。SEO/AIO（AI Overview・LLM引用）対策済み。
+EDINET大量保有報告書などの公開情報をもとに、機関投資家・インサイダー・自社株買いなど
+大口投資家の動きを監視・解説するブログ。SEO/AIO（AI Overview・LLM引用）対策済み。
 
 デプロイ先: https://stock-alert-lyart.vercel.app/ （独自ドメイン移行予定。進捗は
 リポジトリルートの `docs/progress_blog_seo_aio.md` を参照）
@@ -26,7 +26,7 @@ cp .env.local.example .env.local
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
 NEXT_PUBLIC_SITE_URL=https://stock-alert-lyart.vercel.app
-NEXT_PUBLIC_SITE_NAME=大口取引解説ブログ
+NEXT_PUBLIC_SITE_NAME=大口投資家の監視ブログ
 ```
 
 `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に

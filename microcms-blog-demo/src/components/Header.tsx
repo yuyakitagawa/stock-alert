@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SITE_NAME } from "@/lib/site";
 import { CATEGORIES } from "@/types/article";
 
 export default function Header() {
@@ -7,7 +8,7 @@ export default function Header() {
       <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-4">
         <Link href="/" className="flex items-center gap-2 text-lg font-bold text-brand-navy">
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-blue" />
-          大口取引解説ブログ
+          {SITE_NAME}
         </Link>
         <nav className="flex flex-wrap items-center gap-2 text-sm">
           {CATEGORIES.map((category) => (
