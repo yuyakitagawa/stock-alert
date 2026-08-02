@@ -1,6 +1,10 @@
 # ブログ SEO/AIO最適化 + トップページ改善 + ドメイン変更
 
-対象: `microcms-blog-demo`（デプロイ先: https://kujira-watch.com/ 、旧URL: https://stock-alert-lyart.vercel.app/）
+対象: `kujira-watch/`（旧ディレクトリ名: `microcms-blog-demo`。デプロイ先: https://kujira-watch.com/ 、旧URL: https://stock-alert-lyart.vercel.app/）
+
+## 追加タスク: ディレクトリリネーム
+- [x] `microcms-blog-demo/` → `kujira-watch/` にリネーム（`git mv`でhistory維持）、`package.json`/`package-lock.json`の`name`も追従
+- [ ]（ユーザー）Vercelプロジェクト設定 → General → Root Directory を `microcms-blog-demo` から `kujira-watch` に変更（**これをしないと次回デプロイが失敗する**）
 
 ## 背景・ゴール
 現状は「microCMS検証用ダミーサイト」という位置付けだが、実際に読まれるブログへ格上げする。
