@@ -31,39 +31,66 @@ def test_estimate_deal_amount_oku_none_when_shares_missing():
 
 def test_generate_article_body_parses_plain_json():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "日系ファンド買い"})
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"title": "タイトル", "body": "<p>本文</p>", "dealType": "日系ファンド買い"}
+    assert result == {"title": "タイトル", "body": "<p>本文</p>"}
 
 
 def test_generate_article_body_strips_code_fence():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "インサイダー買い"})
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     fenced = f"```json\n{raw}\n```"
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(fenced)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"title": "タイトル", "body": "<p>本文</p>", "dealType": "インサイダー買い"}
+    assert result == {"title": "タイトル", "body": "<p>本文</p>"}
 
 
 def test_generate_article_body_none_on_empty_title():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "", "body": "<p>本文</p>", "dealType": "その他"})
+    raw = json.dumps({"title": "", "body": "<p>本文</p>"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         assert m.generate_article_body(fact_sheet) is None
 
 
-def test_generate_article_body_falls_back_to_sonota_on_invalid_deal_type():
-    """Claudeが決められた選択肢以外を返したら「その他」に丸める。"""
-    fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "謎の分類"})
+def test_classify_filer_returns_cached_master_row_without_calling_claude():
+    """edinet_filer_classificationに登録済みの提出者はClaudeを呼ばずマスターの値を返す。"""
+    cached = {"category": "外資系伝統運用会社", "is_foreign": True, "description": "米大手運用会社"}
+    with mock.patch.object(m.sb, "select_one", return_value=cached) as select_mock, \
+         mock.patch("anthropic.Anthropic") as anthropic_mock:
+        result = m.classify_filer("Ｆｉｄｅｌｉｔｙ")
+    assert result == cached
+    assert select_mock.called
+    assert not anthropic_mock.called
+
+
+def test_classify_filer_asks_claude_and_persists_when_not_cached():
+    """マスター未登録の提出者はClaudeに判定させ、結果をedinet_filer_classificationへ保存する。"""
+    raw = json.dumps({"category": "アクティビスト", "is_foreign": True, "description": "海外の物言う株主"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert") as upsert_mock, \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
-        result = m.generate_article_body(fact_sheet)
-    assert result["dealType"] == "その他"
+        result = m.classify_filer("新規ファンド")
+    assert result == {"category": "アクティビスト", "is_foreign": True, "description": "海外の物言う株主"}
+    upsert_mock.assert_called_once()
+    saved_rows = upsert_mock.call_args.args[1]
+    assert saved_rows[0]["filer_name"] == "新規ファンド"
+    assert saved_rows[0]["confidence"] == "low"
+
+
+def test_classify_filer_falls_back_to_sonota_on_invalid_category():
+    """Claudeが決められた選択肢以外を返したら「その他」に丸める。"""
+    raw = json.dumps({"category": "謎の分類", "is_foreign": False, "description": ""})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.classify_filer("謎の提出者")
+    assert result["category"] == "その他"
 
 
 def test_build_and_publish_excludes_sell_and_maps_fields():
@@ -87,18 +114,20 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
-         mock.patch.object(m, "generate_article_body",
+         mock.patch.object(m, "classify_filer",
                             side_effect=[
-                                {"title": "テストタイトル1", "body": "<p>本文</p>", "dealType": "インサイダー買い"},
-                                {"title": "テストタイトル2", "body": "<p>本文</p>", "dealType": "日系ファンド買い"},
+                                {"category": "個人", "is_foreign": False, "description": ""},
+                                {"category": "国内アセットマネジメント", "is_foreign": False, "description": ""},
                             ]), \
+         mock.patch.object(m, "generate_article_body",
+                            return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
     assert len(results) == 2  # 売却は除外される（概要文言に頼らず保有比率の増減でも判定）
     assert [r["stockCode"] for r in results] == ["7203", "9999"]  # |比率|降順
-    assert results[0]["dealType"] == "インサイダー買い"
-    assert results[1]["dealType"] == "日系ファンド買い"
+    assert results[0]["dealType"] == "個人"
+    assert results[1]["dealType"] == "国内アセットマネジメント"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
 
@@ -146,13 +175,13 @@ def test_publish_article_retries_as_array_on_type_mismatch():
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
         _FakeResponse(201, "", {"id": "retried-id"}),
     ]
-    payload = {"title": "t", "dealType": "機関投資家買い"}
+    payload = {"title": "t", "dealType": "個人"}
     with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
         content_id = m.publish_article(payload)
     assert content_id == "retried-id"
     assert post_mock.call_count == 2
     retried_payload = post_mock.call_args_list[1].args[0]
-    assert retried_payload["dealType"] == ["機関投資家買い"]
+    assert retried_payload["dealType"] == ["個人"]
 
 
 def test_publish_article_gives_up_when_same_field_fails_twice():
@@ -160,7 +189,7 @@ def test_publish_article_gives_up_when_same_field_fails_twice():
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
     ]
-    payload = {"title": "t", "dealType": "機関投資家買い"}
+    payload = {"title": "t", "dealType": "個人"}
     with mock.patch.object(m, "_post_once", side_effect=responses):
         content_id = m.publish_article(payload)
     assert content_id is None
@@ -181,7 +210,7 @@ def test_build_and_publish_stops_early_on_permission_error():
 
     def _track_generate(fact_sheet):
         generate_calls.append(fact_sheet)
-        return {"title": "テストタイトル", "body": "<p>本文</p>", "dealType": "その他"}
+        return {"title": "テストタイトル", "body": "<p>本文</p>"}
 
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
@@ -189,6 +218,8 @@ def test_build_and_publish_stops_early_on_permission_error():
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "その他", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body", side_effect=_track_generate), \
          mock.patch.object(m, "publish_article",
                             side_effect=m.MicroCMSPermissionError("HTTP 400: forbidden")):
@@ -250,7 +281,7 @@ def test_generate_article_body_includes_context_when_available():
     fact_sheet = _fact_sheet()
     fact_sheet["context_close"] = 3000.0
     fact_sheet["context_dp_level"] = "やや低"
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "日系ファンド買い"})
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
@@ -262,7 +293,7 @@ def test_generate_article_body_includes_context_when_available():
 
 def test_generate_article_body_omits_context_when_unavailable():
     fact_sheet = _fact_sheet()  # context_close/context_dp_level 無し
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "その他"})
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
@@ -279,7 +310,7 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
 
     def _fake_generate(fact_sheet):
         captured.update(fact_sheet)
-        return {"title": "t", "body": "<p>本文</p>", "dealType": "インサイダー買い"}
+        return {"title": "t", "body": "<p>本文</p>"}
 
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
@@ -288,6 +319,8 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
          mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 3000.0, "drop_prob": 25.0}), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body", side_effect=_fake_generate), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         m.build_and_publish(days=3, max_articles=3, dry_run=False)
@@ -326,7 +359,9 @@ if __name__ == "__main__":
     test_generate_article_body_parses_plain_json()
     test_generate_article_body_strips_code_fence()
     test_generate_article_body_none_on_empty_title()
-    test_generate_article_body_falls_back_to_sonota_on_invalid_deal_type()
+    test_classify_filer_returns_cached_master_row_without_calling_claude()
+    test_classify_filer_asks_claude_and_persists_when_not_cached()
+    test_classify_filer_falls_back_to_sonota_on_invalid_category()
     test_dp_level_label_thresholds()
     test_get_pit_ranking_snapshot_queries_as_of_disc_date()
     test_generate_article_body_includes_context_when_available()
@@ -338,4 +373,4 @@ if __name__ == "__main__":
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    print("全テスト成功 (18件)")
+    print("全テスト成功 (20件)")

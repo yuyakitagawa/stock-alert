@@ -49,7 +49,7 @@ npm run dev
 | body | 本文 | リッチエディタ | ○ |
 | stockName | 銘柄名 | テキスト | ○ |
 | stockCode | 証券コード | テキスト | ○ |
-| dealType | 大口取引種別 | セレクトフィールド（機関投資家買い[レガシー]／インサイダー買い／日系ファンド買い／外資系ファンド買い／ベンチャーキャピタル買い／財団買い／日系企業買い／外資系企業買い／自社株買い／ETFフロー／その他） | ○ |
+| dealType | 投資家分類 | セレクトフィールド（個人／創業家の資産管理会社／公益/一般財団法人／プライムブローカー／アクティビスト／VC／PE・メザニンファンド／独立系ブティックAM／国内アセットマネジメント／外資系伝統運用会社／日系証券銀行／事業会社／その他） | ○ |
 | dealDate | 取引日 | 日付 | ○ |
 | dealAmount | 金額規模（億円） | 数値 | ○ |
 | sourceUrl | 出典URL | テキスト | △ |
@@ -89,13 +89,13 @@ npm run dev
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
 - デザインは東京ガス公式サイトを参考に、ブランドブルー(`#0068b7`)＋ネイビー＋ゴールドのアクセント、アウトライン型ピルバッジを採用（`src/app/globals.css` のCSS変数で調整可）。
-- カテゴリフィルター（`/category/[category]`）はmicroCMS側に別フィールドを持たず、`dealType`から「買い」を除いた値をフロントエンドでその場で導出する（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
+- カテゴリフィルター（`/category/[category]`）はmicroCMS側に別フィールドを持たず、`dealType`の値をそのままカテゴリ名として使う（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`、値はidentity）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
 
 ## コンテンツの自動生成（任意）
 
 リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（買い方向のみ）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。
 
-`dealType`（提出者が個人/日系ファンド/外資系ファンド/VC/財団/日系企業/外資系企業のどれか）はキーワード一致ではなく、記事本文生成と同じClaude呼び出しで提出者名から一般知識で判定させている（キーワード一致だけでは日系/外資の区別や、スペース無し個人名を正しく判定できないため）。判定不能な場合は「その他」に丸める。
+`dealType`（提出者の投資家分類）は、Supabaseの`edinet_filer_classification`マスター（Web検索で確認済みの投資家分類テーブル、バックテスト分析とも共用）をまず参照し、未登録の提出者のみClaudeの一般知識で判定して結果をマスターへ保存する（`web/publish_blog_articles.py`の`classify_filer()`）。キーワード一致だけでは日系/外資の区別やスペース無し個人名を正しく判定できないため。判定不能な場合は「その他」に丸める。
 
 投稿後の内容確認・修正はmicroCMS管理画面で人間が行う想定。詳細はスクリプト冒頭のdocstringを参照。
 

@@ -47,18 +47,96 @@ CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 DOC_TYPE_LABELS = {"350": "大量保有報告書", "360": "変更報告書（保有比率の変更）"}
 
-# EDINET大量保有報告書の提出者からこのパイプラインが選びうるdealType。
-# 自社株買い/ETFフローはこのデータ源では判定不能なため含めない（手動投稿用に別途存在）。
+# EDINET大量保有報告書の提出者分類。edinet_filer_classification（tools/backtest系の
+# 投資家分類マスター）と1対1で対応する14分類。自社株買い/ETFフローはこのデータ源では
+# 判定不能なため含めない（手動投稿用に別途存在）。
 FILER_DEAL_TYPES = (
-    "インサイダー買い",
-    "日系ファンド買い",
-    "外資系ファンド買い",
-    "ベンチャーキャピタル買い",
-    "財団買い",
-    "日系企業買い",
-    "外資系企業買い",
+    "個人",
+    "創業家の資産管理会社",
+    "公益/一般財団法人",
+    "プライムブローカー",
+    "アクティビスト",
+    "VC",
+    "PE・メザニンファンド",
+    "独立系ブティックAM",
+    "国内アセットマネジメント",
+    "外資系伝統運用会社",
+    "日系証券銀行",
+    "事業会社",
     "その他",
 )
+
+
+def classify_filer(filer_name: str) -> dict:
+    """提出者名から投資家カテゴリを判定する。まずedinet_filer_classification
+    （Web検索で確認済みの投資家マスター、tools/backtest系の分析でも共用）を引き、
+    無ければClaudeの一般知識で判定して結果をマスターに保存する（confidence='low'として、
+    後で人手やWeb検索での確認・上書きに備える）。キーワード一致だけでは日系/外資の区別や
+    スペース無し個人名（例:「金親晋午」）を正しく判定できないため。"""
+    cached = sb.select_one(
+        "edinet_filer_classification",
+        f"filer_name=eq.{requests.utils.quote(filer_name)}&select=category,is_foreign,description",
+    )
+    if cached:
+        return cached
+
+    import anthropic
+
+    if not ANTHROPIC_API_KEY:
+        return {"category": "その他", "is_foreign": False, "description": ""}
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    category_options = "\n".join(f"- {t}" for t in FILER_DEAL_TYPES)
+    prompt = f"""以下の投資家（EDINET大量保有報告書の提出者）が何者かを一般知識から判断してください。
+
+提出者名: {filer_name}
+
+以下のうち最も当てはまるカテゴリを1つだけ選んでください（不明な場合は「その他」）:
+{category_options}
+
+判断基準の例:
+- 個人名（役員・大株主等、スペースの有無に関わらず）→ 個人
+- 創業家・オーナー一族の資産管理会社（非上場・実業なし）→ 創業家の資産管理会社
+- 公益/一般財団法人 → 公益/一般財団法人
+- プライムブローカー業務での保有（Goldman Sachs International等） → プライムブローカー
+- エンゲージメント/株主提案/イベントドリブン戦略のファンド → アクティビスト
+- ベンチャーキャピタル → VC
+- プライベートエクイティ/バイアウト/メザニンファンド → PE・メザニンファンド
+- megabank/保険系列以外の国内独立系登録運用会社 → 独立系ブティックAM
+- megabank/保険系列の伝統的資産運用会社（信託銀行の信託口含む）→ 国内アセットマネジメント
+- 海外拠点の大手分散型資産運用会社（プライムブローカー業務以外） → 外資系伝統運用会社
+- 日本の証券会社・銀行本体（資産運用会社ではない） → 日系証券銀行
+- 非金融の一般事業会社（内外問わず） → 事業会社
+
+出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
+{{"category": "上記リストから1つ", "is_foreign": true または false, "description": "何をしている先か1行で"}}
+"""
+    try:
+        resp = client.messages.create(
+            model=CLAUDE_MODEL, max_tokens=300, messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text[4:] if text.lower().startswith("json") else text
+        data = json.loads(text)
+        if data.get("category") not in FILER_DEAL_TYPES:
+            data["category"] = "その他"
+        result = {
+            "category": data["category"],
+            "is_foreign": bool(data.get("is_foreign", False)),
+            "description": data.get("description", ""),
+        }
+    except Exception as e:
+        print(f"    ⚠ 投資家分類に失敗（その他扱い）: {e}")
+        result = {"category": "その他", "is_foreign": False, "description": ""}
+
+    sb.upsert(
+        "edinet_filer_classification",
+        [{"filer_name": filer_name, "confidence": "low", **result}],
+        on_conflict="filer_name",
+    )
+    return result
+
 
 def _microcms_base_url() -> str:
     return f"https://{MICROCMS_DOMAIN}.microcms.io/api/v1/articles"
@@ -152,17 +230,15 @@ def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
 
 
 def generate_article_body(fact_sheet: dict) -> "dict | None":
-    """Claudeに与えた事実のみからtitle/body/dealTypeを生成させる。
-    JSONで {"title", "body", "dealType"} を返す。パース失敗時はNone（記事は投稿しない）。
-    dealTypeは提出者名から実体（個人/日系ファンド/外資系ファンド/VC/財団/日系企業/外資系企業）を
-    Claudeの一般知識で判断させる。キーワード一致だけでは日系/外資の区別や
-    スペース無し個人名（例:「金親晋午」）を正しく判定できないため。"""
+    """Claudeに与えた事実のみからtitle/bodyを生成させる。JSONで {"title", "body"} を返す。
+    パース失敗時はNone（記事は投稿しない）。dealType（投資家カテゴリ）は事前にclassify_filer()で
+    判定済みのものをfact_sheet['deal_type']として渡す（edinet_filer_classificationマスター
+    参照＋未登録時のみClaude判定、記事本文生成とは別の呼び出しに分離してキャッシュ可能にした）。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
         return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    deal_type_options = "\n".join(f"- {t}" for t in FILER_DEAL_TYPES)
     context_close = fact_sheet.get("context_close")
     context_dp_level = fact_sheet.get("context_dp_level")
     if context_close is not None and context_dp_level is not None:
@@ -190,21 +266,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 {context_line}
 {so_what_instruction}
 
-さらに、提出者名（{fact_sheet['filer_name']}）が何者かを一般知識から判断し、
-以下のうち最も当てはまるものを1つだけ選んでください（不明な場合は「その他」）:
-{deal_type_options}
-
-判断基準の例:
-- 個人名（役員・大株主等）→ インサイダー買い
-- 日本国内に拠点を持つ投資ファンド・アセットマネジメント会社 → 日系ファンド買い
-- 海外に拠点を持つ投資ファンド・アセットマネジメント会社 → 外資系ファンド買い
-- ベンチャーキャピタル（VC、Ventures等）→ ベンチャーキャピタル買い
-- 財団・育英会など非営利法人 → 財団買い
-- ファンドではない日本の事業会社（自己勘定投資等）→ 日系企業買い
-- ファンドではない海外の事業会社 → 外資系企業買い
-
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
-{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（250〜400字程度、2〜3段落）", "dealType": "上記リストから1つ"}}
+{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（250〜400字程度、2〜3段落）"}}
 """
     try:
         resp = client.messages.create(
@@ -219,8 +282,6 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
         data = json.loads(text)
         if not data.get("title") or not data.get("body"):
             return None
-        if data.get("dealType") not in FILER_DEAL_TYPES:
-            data["dealType"] = "その他"
         return data
     except Exception as e:
         print(f"    ⚠ 記事生成失敗: {e}")
@@ -320,6 +381,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
         snapshot = get_pit_ranking_snapshot(code, disc_date)
         context_close = snapshot.get("close") if snapshot else None
         context_dp = snapshot.get("drop_prob") if snapshot else None
+        filer_info = classify_filer(filer_name)
 
         fact_sheet = {
             "stock_name": name,
@@ -337,7 +399,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
             continue
 
-        deal_type = article["dealType"]
+        deal_type = filer_info["category"]
         payload = {
             "title": article["title"],
             "body": article["body"],
