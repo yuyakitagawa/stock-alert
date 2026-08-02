@@ -1,7 +1,8 @@
-# クジラウォッチ
+# 大口投資家の監視ブログ
 
 EDINET大量保有報告書などの公開情報をもとに、機関投資家・インサイダー・自社株買いなど
 「クジラ」（相場を動かすほどの資金力を持つ大口投資家の俗称）の動きを監視・解説するブログ。
+ブランド名は「大口投資家の監視ブログ」、ドメインは`kujira-watch.com`（クジラのイメージで確保）。
 SEO/AIO（AI Overview・LLM引用）対策済み。
 
 デプロイ先: https://kujira-watch.com/ （旧URL: https://stock-alert-lyart.vercel.app/ 。
@@ -28,7 +29,7 @@ cp .env.local.example .env.local
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
 NEXT_PUBLIC_SITE_URL=https://kujira-watch.com
-NEXT_PUBLIC_SITE_NAME=クジラウォッチ
+NEXT_PUBLIC_SITE_NAME=大口投資家の監視ブログ
 ```
 
 `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に
@@ -60,20 +61,21 @@ npm run dev
 
 | パス | 内容 |
 |---|---|
-| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順10件ページネーション、`?page=`） |
+| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順。下端までスクロールすると自動で次の10件を読み込むオートスクロール方式） |
 | `/articles/[id]` | 記事詳細 |
-| `/category/[category]` | カテゴリ別一覧（`?page=` 対応） |
+| `/category/[category]` | カテゴリ別一覧（同じくオートスクロール） |
 | `/stocks/[code]` | 銘柄別の大量保有・自社株買い履歴まとめ（同一`stockCode`の記事を`-dealDate`順に一覧表示）。記事詳細の「銘柄」欄から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。フッター・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/api/counter` | フッターの累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
+| `/api/articles` | 記事一覧のオートスクロール用（GET、`offset`/`dealType`クエリでmicroCMSの次のページを返す） |
 
 ## 計測・ログ
 
 - **累計訪問者カウンター**: フッターに表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
-- **クローラーアクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot等の既知クローラーだけをSupabaseの `blog_crawler_log` に記録する（一般訪問者は記録しない）。パターン一覧は `src/lib/crawlers.ts`。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
+- **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
 ## SEO/AIO対策
@@ -87,7 +89,8 @@ npm run dev
 
 ## 実装メモ
 
-- 一覧・カテゴリ別一覧はページネーションに `searchParams`（`?page=`）を使うため、その2ルートは実行時に動的レンダリングされる。ただしmicroCMSへの `fetch` 自体は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
+- 一覧・カテゴリ別一覧は初回表示分（10件）のみサーバー側で取得し、以降は`src/components/InfiniteArticleList.tsx`（クライアントコンポーネント）が画面下端の要素を`IntersectionObserver`で検知して`/api/articles`から次の10件を都度取得・追記するオートスクロール方式。ページネーションのUIやURLの`?page=`は廃止した。
+- `/api/articles`が返す一覧・初回表示分ともmicroCMSへの `fetch` は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。

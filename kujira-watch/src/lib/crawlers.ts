@@ -30,3 +30,16 @@ export function detectBot(userAgent: string): string | null {
   }
   return null;
 }
+
+// 主要ブラウザのUAパターン。クローラーでもこれらでもないUA（curl/スクリプト等の
+// ノイズ）はclassifyVisitorの対象外（ログしない）とする。
+const BROWSER_PATTERNS: RegExp[] = [/Chrome\//, /Safari\//, /Firefox\//, /Edg\//, /OPR\//];
+
+// bot_nameに記録する値を決める。既知クローラーはその名前、主要ブラウザは"Browser"、
+// どちらでもなければnull（記録対象外）。
+export function classifyVisitor(userAgent: string): string | null {
+  const bot = detectBot(userAgent);
+  if (bot) return bot;
+  if (BROWSER_PATTERNS.some((pattern) => pattern.test(userAgent))) return "Browser";
+  return null;
+}

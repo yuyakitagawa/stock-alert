@@ -96,7 +96,7 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
-      - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説「クジラウォッチ」）
+      - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説「大口投資家の監視ブログ」）
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
 
