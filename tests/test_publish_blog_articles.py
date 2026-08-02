@@ -159,13 +159,18 @@ def test_build_and_publish_skips_when_amount_unestimable():
 
 
 class _FakeResponse:
-    def __init__(self, status_code, text, json_data=None):
+    def __init__(self, status_code, text, json_data=None, content=b""):
         self.status_code = status_code
         self.text = text
         self._json_data = json_data
+        self.content = content
 
     def json(self):
         return self._json_data
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise Exception(f"HTTP {self.status_code}")
 
 
 def test_publish_article_retries_as_array_on_type_mismatch():
@@ -216,6 +221,142 @@ def test_update_article_returns_false_on_failure():
     with mock.patch.object(m, "_put_once", side_effect=responses):
         ok = m.update_article("content-1", {"dealType": "その他"})
     assert ok is False
+
+
+class _FakeDraw:
+    """textbboxの幅を文字数×10pxで返すダミーdraw（実フォント無しで折り返しロジックだけ検証する）。"""
+
+    def textbbox(self, xy, text, font=None):
+        return (0, 0, len(text) * 10, 20)
+
+
+def test_wrap_text_lines_breaks_on_width():
+    lines = m._wrap_text_lines(_FakeDraw(), "あいうえおかきくけこ", font=None, max_width=50)
+    assert lines == ["あいうえお", "かきくけこ"]
+
+
+def test_wrap_text_lines_respects_max_lines():
+    lines = m._wrap_text_lines(_FakeDraw(), "あ" * 30, font=None, max_width=50, max_lines=2)
+    assert len(lines) == 2
+
+
+def test_search_pexels_photo_returns_none_without_api_key():
+    with mock.patch.object(m, "PEXELS_API_KEY", ""):
+        assert m.search_pexels_photo("finance") is None
+
+
+def test_search_pexels_photo_returns_bytes_and_photographer_on_success():
+    search_resp = _FakeResponse(200, "", {"photos": [{
+        "src": {"large": "https://example.test/a.jpg"}, "photographer": "Jane Doe",
+    }]})
+    photo_resp = _FakeResponse(200, "", content=b"fake-image-bytes")
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=[search_resp, photo_resp]):
+        result = m.search_pexels_photo("finance")
+    assert result == {"bytes": b"fake-image-bytes", "photographer": "Jane Doe"}
+
+
+def test_search_pexels_photo_defaults_photographer_when_missing():
+    search_resp = _FakeResponse(200, "", {"photos": [{"src": {"large": "https://example.test/a.jpg"}}]})
+    photo_resp = _FakeResponse(200, "", content=b"fake-image-bytes")
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=[search_resp, photo_resp]):
+        result = m.search_pexels_photo("finance")
+    assert result["photographer"] == "Pexels"
+
+
+def test_search_pexels_photo_returns_none_when_no_results():
+    search_resp = _FakeResponse(200, "", {"photos": []})
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", return_value=search_resp):
+        assert m.search_pexels_photo("finance") is None
+
+
+def test_search_pexels_photo_returns_none_on_exception():
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=Exception("timeout")):
+        assert m.search_pexels_photo("finance") is None
+
+
+def test_upload_eyecatch_returns_url_on_success():
+    resp = _FakeResponse(201, "", {"url": "https://images.microcms-assets.io/assets/x/y.png"})
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.post", return_value=resp):
+        url = m.upload_eyecatch(b"png-bytes")
+    assert url == "https://images.microcms-assets.io/assets/x/y.png"
+
+
+def test_upload_eyecatch_returns_none_on_failure():
+    resp = _FakeResponse(403, "forbidden")
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.post", return_value=resp):
+        assert m.upload_eyecatch(b"png-bytes") is None
+
+
+def test_build_eyecatch_for_article_none_without_pexels_key():
+    with mock.patch.object(m, "PEXELS_API_KEY", ""):
+        assert m.build_eyecatch_for_article("タイトル", "その他") is None
+
+
+def test_build_eyecatch_for_article_none_when_generation_fails():
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch.object(m, "generate_eyecatch_image", return_value=None):
+        assert m.build_eyecatch_for_article("タイトル", "その他") is None
+
+
+def test_build_eyecatch_for_article_returns_url_dict_on_success():
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch.object(m, "generate_eyecatch_image", return_value=b"png-bytes"), \
+         mock.patch.object(m, "upload_eyecatch", return_value="https://images.microcms-assets.io/x.png"):
+        result = m.build_eyecatch_for_article("タイトル", "その他")
+    assert result == {"url": "https://images.microcms-assets.io/x.png"}
+
+
+def test_build_and_publish_includes_eyecatch_when_available():
+    holdings = [
+        {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+         "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+         "doc_description": "大量保有報告書"},
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body",
+                            return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_eyecatch_for_article",
+                            return_value={"url": "https://images.microcms-assets.io/x.png"}) as eyecatch_mock, \
+         mock.patch.object(m, "publish_article", return_value="fakeid123"):
+        results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
+
+    assert results[0]["eyecatch"] == {"url": "https://images.microcms-assets.io/x.png"}
+    eyecatch_mock.assert_called_once_with("テストタイトル", "個人")
+
+
+def test_build_and_publish_skips_eyecatch_on_dry_run():
+    holdings = [
+        {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+         "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+         "doc_description": "大量保有報告書"},
+    ]
+    with mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body",
+                            return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_eyecatch_for_article") as eyecatch_mock:
+        m.build_and_publish(days=3, max_articles=3, dry_run=True)
+
+    eyecatch_mock.assert_not_called()
 
 
 def test_build_and_publish_stops_early_on_permission_error():
@@ -398,4 +539,18 @@ if __name__ == "__main__":
     test_publish_article_gives_up_when_same_field_fails_twice()
     test_update_article_retries_as_array_on_type_mismatch()
     test_update_article_returns_false_on_failure()
-    print("全テスト成功 (22件)")
+    test_wrap_text_lines_breaks_on_width()
+    test_wrap_text_lines_respects_max_lines()
+    test_search_pexels_photo_returns_none_without_api_key()
+    test_search_pexels_photo_returns_bytes_and_photographer_on_success()
+    test_search_pexels_photo_defaults_photographer_when_missing()
+    test_search_pexels_photo_returns_none_when_no_results()
+    test_search_pexels_photo_returns_none_on_exception()
+    test_upload_eyecatch_returns_url_on_success()
+    test_upload_eyecatch_returns_none_on_failure()
+    test_build_eyecatch_for_article_none_without_pexels_key()
+    test_build_eyecatch_for_article_none_when_generation_fails()
+    test_build_eyecatch_for_article_returns_url_dict_on_success()
+    test_build_and_publish_includes_eyecatch_when_available()
+    test_build_and_publish_skips_eyecatch_on_dry_run()
+    print("全テスト成功 (35件)")

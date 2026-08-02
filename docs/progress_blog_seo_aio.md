@@ -108,8 +108,27 @@
   - 記事詳細ページのバッジ直下に該当分類の説明1文＋`/about#dealtype-glossary`へのリンクを追加
   - `/about`に用語集セクション（`#dealtype-glossary`）を新設し全14分類を一覧表示
 - Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功。
-- Act: 未着手（このサイクルの成果をコミット・PR化する）
+- Act: PR #193としてマージ済み。
+
+**Cycle 3（Do完了・Act未実施）**
+- Plan: ユーザーが`.claude/skills/note-cover/`（note記事用カバー画像生成スキル、Pillow合成）を
+  参照しつつ「アイキャッチ画像をやりたい」と要望。Pexels写真背景版を選択。
+- Do:
+  - `web/publish_blog_articles.py`: `search_pexels_photo()`（Pexels検索API）、
+    `generate_eyecatch_image()`（写真+黒帯+Noto Sans CJK Bold太字白文字を合成、1200x630）、
+    `upload_eyecatch()`（microCMSメディアアップロードAPI）、`build_eyecatch_for_article()`
+    （上記をまとめてimage型フィールド用の`{"url":...}`を返す）を追加し`build_and_publish()`に統合
+  - 投資家分類ごとのPexels検索クエリ`EYECATCH_QUERY_BY_CATEGORY`を定義（銘柄固有の写真は
+    現実的でない＋商標リスク回避のため、分類のイメージに合う汎用写真を使用。個別銘柄名は
+    画像内テキストの方で表現）
+  - `.github/workflows/daily_alert.yml`: `Pillow`追加、`fonts-noto-cjk`インストールステップ追加、
+    `PEXELS_API_KEY`シークレットを`.env`に追加
+  - `.github/workflows/ci.yml`: `Pillow`追加（テストの折り返しロジック等で使用）
+  - `tests/test_publish_blog_articles.py`: 上記関数のユニットテスト12件を追加（22→34件）
+- Check: `python3 tests/test_publish_blog_articles.py`含む全Pythonテスト成功。実際に
+  `generate_eyecatch_image()`をダミー写真で呼び出し、日本語タイトルの折り返し・合成を目視確認済み
+  （このサンドボックスはPexels自体には接続不可のため、実写真での確認はGitHub Actions実行時が初回）
+- Act: 未着手（PEXELS_API_KEYの発行をユーザーに依頼中。取得後にPR化・マージ）
 
 **未着手・保留**
-- アイキャッチ画像生成: ユーザーが言及した「note記事生成」の既存実装がこのリポジトリ内に見当たらず、
-  詳細確認待ちで保留
+- なし（アイキャッチ画像はCycle 3で対応中）

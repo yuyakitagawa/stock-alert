@@ -41,6 +41,7 @@ load_dotenv()
 MICROCMS_DOMAIN = os.getenv("MICROCMS_SERVICE_DOMAIN", "")
 MICROCMS_KEY = os.getenv("MICROCMS_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 MAX_ARTICLES_PER_RUN = 10
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
@@ -136,6 +137,161 @@ def classify_filer(filer_name: str) -> dict:
         on_conflict="filer_name",
     )
     return result
+
+
+# 投資家分類ごとのPexels検索クエリ（英語の方がPexelsの検索精度が高い）。
+# 銘柄固有の写真は現実的に存在しないため、分類のイメージに合う汎用的な金融系写真を使う。
+EYECATCH_QUERY_BY_CATEGORY = {
+    "個人": "confident businessperson office",
+    "創業家の資産管理会社": "family business heritage",
+    "公益/一般財団法人": "foundation charity building",
+    "プライムブローカー": "wall street trading floor",
+    "アクティビスト": "boardroom meeting negotiation",
+    "VC": "startup office technology team",
+    "PE・メザニンファンド": "corporate merger handshake",
+    "独立系ブティックAM": "modern office finance",
+    "国内アセットマネジメント": "tokyo financial district",
+    "外資系伝統運用会社": "new york stock exchange skyline",
+    "日系証券銀行": "bank building japan",
+    "事業会社": "corporate headquarters building",
+}
+EYECATCH_DEFAULT_QUERY = "stock market finance city"
+
+EYECATCH_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+EYECATCH_W, EYECATCH_H = 1200, 630
+
+
+def search_pexels_photo(query: str) -> "dict | None":
+    """Pexels検索APIで1枚選び、{"bytes": 画像本体, "photographer": 撮影者名} を返す。
+    未設定・取得失敗時はNone。撮影者名はPexelsのAPI利用ガイドラインが推奨するクレジット表記
+    （"Photo by <撮影者> on Pexels"）を画像に焼き込むために保持する。"""
+    if not PEXELS_API_KEY:
+        return None
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": PEXELS_API_KEY},
+            params={"query": query, "per_page": 5, "orientation": "landscape"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        photos = resp.json().get("photos", [])
+        if not photos:
+            return None
+        photo = photos[0]
+        photo_resp = requests.get(photo["src"]["large"], timeout=20)
+        photo_resp.raise_for_status()
+        return {"bytes": photo_resp.content, "photographer": photo.get("photographer") or "Pexels"}
+    except Exception as e:
+        print(f"    ⚠ Pexels写真取得失敗: {e}")
+        return None
+
+
+def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) -> list:
+    """1文字ずつ幅を測って折り返す（CJKは単語区切りが無いため文字単位で判定する）。"""
+    lines, current = [], ""
+    for ch in text:
+        trial = current + ch
+        if current and draw.textbbox((0, 0), trial, font=font)[2] > max_width:
+            lines.append(current)
+            current = ch
+            if len(lines) >= max_lines:
+                break
+        else:
+            current = trial
+    else:
+        if current:
+            lines.append(current)
+    return lines[:max_lines]
+
+
+def generate_eyecatch_image(title: str, category: str) -> "bytes | None":
+    """タイトル文字列と投資家分類から、Pexels写真+黒帯+太字白文字のアイキャッチPNG(bytes)を
+    生成する。Pexels未設定・取得失敗・合成失敗時はNone（呼び出し側は画像なしで記事を投稿する）。"""
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+
+    query = EYECATCH_QUERY_BY_CATEGORY.get(category, EYECATCH_DEFAULT_QUERY)
+    photo = search_pexels_photo(query)
+    if not photo:
+        return None
+
+    try:
+        ss = 2
+        w, h = EYECATCH_W * ss, EYECATCH_H * ss
+        img = Image.open(io.BytesIO(photo["bytes"])).convert("RGB")
+        sw, sh = img.size
+        scale = max(w / sw, h / sh)
+        nw, nh = int(sw * scale + 0.5), int(sh * scale + 0.5)
+        img = img.resize((nw, nh), Image.LANCZOS).crop(
+            ((nw - w) // 2, (nh - h) // 2, (nw - w) // 2 + w, (nh - h) // 2 + h)
+        )
+        draw = ImageDraw.Draw(img, "RGBA")
+        font = ImageFont.truetype(EYECATCH_FONT_PATH, 56 * ss, index=0)
+        pad_left = 80 * ss
+        max_text_width = w - pad_left - 60 * ss
+        lines = _wrap_text_lines(draw, title, font, max_text_width)
+
+        line_h = int(56 * ss * 1.35)
+        band_h = line_h * len(lines) + 60 * ss
+        band_y = (h - band_h) // 2
+        band = Image.new("RGBA", (w, band_h), (10, 9, 8, 200))
+        img.paste(band, (0, band_y), band)
+
+        y = band_y + 30 * ss
+        for line in lines:
+            draw.text((pad_left, y), line, font=font, fill=(255, 255, 255, 255))
+            y += line_h
+
+        # Pexels API利用ガイドラインが推奨するクレジット表記を右下に小さく焼き込む
+        # （ライセンス上は必須ではないが、APIレート制限緩和申請等でも使用実績として示せるようにする）
+        credit_font = ImageFont.truetype(EYECATCH_FONT_PATH, 18 * ss, index=0)
+        credit_text = f"Photo: {photo['photographer']} / Pexels"
+        credit_w = draw.textbbox((0, 0), credit_text, font=credit_font)[2]
+        draw.text(
+            (w - credit_w - 24 * ss, h - 38 * ss),
+            credit_text, font=credit_font, fill=(255, 255, 255, 170),
+        )
+
+        img = img.resize((EYECATCH_W, EYECATCH_H), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+    except Exception as e:
+        print(f"    ⚠ アイキャッチ合成失敗: {e}")
+        return None
+
+
+def upload_eyecatch(image_bytes: bytes) -> "str | None":
+    """microCMSのメディアアップロードAPI(management API)へPNGを送りURLを返す。
+    APIキーに「メディアアップロード」権限が無い場合は失敗するので、その場合はNoneを返し
+    呼び出し側は画像なしで記事を投稿する。"""
+    try:
+        resp = requests.post(
+            f"https://{MICROCMS_DOMAIN}.microcms-management.io/api/v1/media",
+            headers={"X-MICROCMS-API-KEY": MICROCMS_KEY},
+            files={"file": ("eyecatch.png", image_bytes, "image/png")},
+            timeout=30,
+        )
+        if resp.status_code not in (200, 201):
+            print(f"    ⚠ アイキャッチアップロード失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        return resp.json().get("url")
+    except Exception as e:
+        print(f"    ⚠ アイキャッチアップロード例外: {e}")
+        return None
+
+
+def build_eyecatch_for_article(title: str, category: str) -> "dict | None":
+    """記事タイトル・分類からアイキャッチを生成・アップロードし、microCMSのimage型フィールドに
+    そのまま設定できる {"url": ...} を返す。どこかで失敗すればNone（画像なしで記事を投稿する）。"""
+    if not PEXELS_API_KEY:
+        return None
+    image_bytes = generate_eyecatch_image(title, category)
+    if not image_bytes:
+        return None
+    url = upload_eyecatch(image_bytes)
+    return {"url": url} if url else None
 
 
 def _microcms_base_url() -> str:
@@ -462,6 +618,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: int = MAX_A
             print(f"  [dry-run] {name}({code}) {disc_date} 推定{deal_amount}億円\n    title: {payload['title']}")
             published.append({**payload, "id": None})
             continue
+
+        eyecatch = build_eyecatch_for_article(article["title"], deal_type)
+        if eyecatch:
+            payload["eyecatch"] = eyecatch
 
         try:
             content_id = publish_article(payload)
