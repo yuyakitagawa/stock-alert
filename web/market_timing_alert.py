@@ -32,7 +32,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
 MARKET_DP_CASH_THRESHOLD = 15.0
 LARGE_HOLDINGS_DAYS = 3
-LARGE_HOLDINGS_LIMIT = 5
+LARGE_HOLDINGS_LIMIT = 3
 FILER_WATCH_DAYS = 3
 BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/"
 
@@ -166,7 +166,7 @@ def build_large_holdings_section(
     開示日を優先しないと、古い日付のウォッチ銘柄ヒットが新しい開示を押しのけて
     何日も居座り、「毎日同じ古い日付が出る」状態になるため。増減トレンドも売却キーワードも
     取れない場合は買い/売りを推測せず方向性を表示しない。
-    残りはLINEチャットで「大量保有」等と聞けば個別に答えられる（check_catalystツール）。"""
+    LINEは通知疲れ防止のため上位3件のみに絞り、残りはWebの詳細解説記事URLに委ねる。"""
     from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer
 
     if not holdings:
@@ -219,8 +219,9 @@ def build_large_holdings_section(
         direction_str = f" {direction}" if direction else ""
         lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有{direction_str} [{doc_type}] ({disc})")
     if len(ordered) > limit:
-        lines.append(f"  ...他{len(ordered) - limit}件（LINEで「大量保有」と聞けば確認できます）")
-    lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}")
+        lines.append(f"  ...他{len(ordered) - limit}件は 📰 {BLOG_SITE_URL} でご確認いただけます")
+    else:
+        lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}")
     return "\n".join(lines)
 
 
