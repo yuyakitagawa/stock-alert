@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SITE_NAME } from "@/lib/site";
+import VisitCounter from "./VisitCounter";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -16,6 +17,7 @@ export default function Footer() {
       <p className="mt-2">
         © {year} {SITE_NAME}
       </p>
+      <VisitCounter />
     </footer>
   );
 }
