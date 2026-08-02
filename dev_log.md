@@ -1,5 +1,32 @@
 # Dev Log
 
+## 2026-08-02 クジラウォッチ「注目」枠を1件→取得金額上位3件に変更
+
+```
+きっかけ: 「注目の一件」が実際には単に直近の新着記事(contents[0])を機械的に表示している
+だけで、取得金額の大小など「注目に値するか」の判定を一切していなかった。ユーザーから
+「1件である必要はない」という指摘を受け、直近プール(20件)の中から推定取得金額
+(dealAmount)が大きい順に3件を選ぶロジックに変更。
+
+- kujira-watch/src/lib/microcms.ts: getFeaturedArticles(poolSize=20, count=3) を追加。
+  直近20件を取得しdealAmount降順にソートして上位3件を返す。
+- kujira-watch/src/components/FeaturedArticleCard.tsx: rankプロップを追加し、
+  バッジを「注目の一件」固定から「🥇/🥈/🥉 注目N位」に変更。
+- kujira-watch/src/app/page.tsx: 単一のfeatured抽出をgetFeaturedArticles()呼び出しに
+  置き換え、選ばれた3件をメイン一覧(日付グループ)から重複除外。
+
+検証: npx tsc --noEmit / npm run lint (eslint) いずれもエラーなし。next build は
+MICROCMS_SERVICE_DOMAIN/API_KEY未設定（このサンドボックスに.env.localが無い）のため
+ページデータ収集の直前で失敗するが、コンパイル・型チェックまでは成功しており
+今回の変更に起因する失敗ではないことを確認済み。実データでの動作確認はVercel
+プレビューデプロイで行う。
+
+判定: フロントエンドの表示ロジック変更のみ（Python側のモデル・特徴量・下落確率
+ロジックには一切触れていないためbacktest対象外）。
+```
+
+---
+
 ## 2026-08-01 コンサルレビューの残り5件に着手（通知疲れ・記事のso what・screener整理・可観測性・閾値整合）
 
 ```

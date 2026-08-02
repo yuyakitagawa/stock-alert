@@ -4,11 +4,23 @@ import type { ArticleContent } from "@/types/article";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import DealTypeBadge from "./DealTypeBadge";
 
-export default function FeaturedArticleCard({ article }: { article: ArticleContent }) {
+const RANK_LABELS: Record<number, string> = {
+  1: "🥇 注目1位",
+  2: "🥈 注目2位",
+  3: "🥉 注目3位",
+};
+
+export default function FeaturedArticleCard({
+  article,
+  rank,
+}: {
+  article: ArticleContent;
+  rank: number;
+}) {
   return (
     <Link
       href={`/articles/${article.id}`}
-      className="mb-8 flex flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-brand-navy to-[#122d4a] text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl"
+      className="flex flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-brand-navy to-[#122d4a] text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl"
     >
       {article.eyecatch && (
         <div className="relative aspect-[21/9] w-full">
@@ -25,7 +37,7 @@ export default function FeaturedArticleCard({ article }: { article: ArticleConte
       <div className="p-6 sm:p-8">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-brand-gold px-2.5 py-0.5 text-xs font-bold text-brand-navy">
-            注目の一件
+            {RANK_LABELS[rank] ?? "注目"}
           </span>
           <DealTypeBadge dealType={article.dealType} />
           <span className="text-xs text-white/70">{formatDate(article.dealDate)}</span>

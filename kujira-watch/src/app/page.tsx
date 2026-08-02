@@ -3,7 +3,7 @@ import DealDateHeading from "@/components/DealDateHeading";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import Pagination from "@/components/Pagination";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { ARTICLES_PER_PAGE, getArticleList } from "@/lib/microcms";
+import { ARTICLES_PER_PAGE, getArticleList, getFeaturedArticles } from "@/lib/microcms";
 import { SITE_NAME } from "@/lib/site";
 
 export default async function HomePage({
@@ -18,9 +18,12 @@ export default async function HomePage({
   const { contents, totalCount } = await getArticleList({ offset });
   const totalPages = Math.max(1, Math.ceil(totalCount / ARTICLES_PER_PAGE));
 
-  const [featured, ...rest] = contents;
-  const showFeatured = currentPage === 1 && featured;
-  const groups = groupArticlesByDealDate(showFeatured ? rest : contents);
+  const showFeatured = currentPage === 1 && contents.length > 0;
+  const featuredArticles = showFeatured ? await getFeaturedArticles() : [];
+  const featuredIds = new Set(featuredArticles.map((a) => a.id));
+  const groups = groupArticlesByDealDate(
+    showFeatured ? contents.filter((a) => !featuredIds.has(a.id)) : contents
+  );
 
   return (
     <div>
@@ -40,7 +43,13 @@ export default async function HomePage({
         <p className="text-gray-500">記事がまだありません。</p>
       ) : (
         <>
-          {showFeatured && <FeaturedArticleCard article={featured} />}
+          {featuredArticles.length > 0 && (
+            <div className="mb-8 space-y-4">
+              {featuredArticles.map((article, i) => (
+                <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
+              ))}
+            </div>
+          )}
           {groups.map((group) => (
             <div key={group.date} className="mb-8">
               <DealDateHeading label={group.label} />
