@@ -433,6 +433,7 @@ def main():
 
     # フェーズ3: モデルスコア計算
     results = []
+    _qv_fund_missing_count = 0  # ファンダ欠損によりQV条件(qv_ok)が成立しない銘柄数（可観測性用）
     for idx, (code, prices, feat) in enumerate(raw_data):
         feat_aug = feats_aug[idx]
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1])
@@ -470,6 +471,11 @@ def main():
         r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
         buy_ok = passes_buy_filter(feat, close, volumes)
         _fm = fund_map.get(code) or {}
+        if _fm.get("piotroski") is None or (_fm.get("eps_surprise") is None and _fm.get("bps_growth") is None):
+            # piotroski欠損、またはeps_surprise/bps_growthが両方欠損だとqv_okが常にFalseになり
+            # 下落確率がどれだけ低くても💎買いになり得ない。「相場が悪い」のか「データ欠損」なのか
+            # 運用上区別できるよう件数だけ集計する。
+            _qv_fund_missing_count += 1
         valid_vols = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
         _turnover_m = float(np.mean(valid_vols) * close / 1e6) if len(valid_vols) >= 10 else None
         _down_streak_raw = round(feat[12] * 20)
@@ -539,6 +545,16 @@ def main():
     result_df.insert(0, "順位", result_df.index)
 
     # PER/PBR/ROE は全銘柄 fund_map（pit eps/bps 由来）で既に設定済み
+
+    # 可観測性: 💎買いが0件の日に「相場が悪い」のか「ファンダ欠損でQV条件に入れない」のかを
+    # 区別できるよう、ファンダ欠損銘柄数を常にログ出力する。
+    _buy_count_now = int((result_df["推奨"] == "💎 買い").sum())
+    if _qv_fund_missing_count > 0:
+        print(
+            f"[QV可観測性] piotroski/eps_surprise・bps_growth欠損によりQV条件(qv_ok)に"
+            f"入れない銘柄: {_qv_fund_missing_count}/{len(result_df)}件"
+            f"（現時点の💎買い: {_buy_count_now}件）"
+        )
 
     # 表示（動的銘柄数: レジームに応じて 3/5/10）
     print(f"\n{'='*90}")
@@ -718,7 +734,7 @@ def main():
     print(f"🌐 日経 vs S&P500: {_compare_summary(market_verdict)}")
     try:
         import json as _json
-        _market_out = {"date": target_date.strftime("%Y-%m-%d"), **market_verdict}
+        _market_out = {"date": datetime.now().strftime("%Y-%m-%d"), **market_verdict}
         with open(os.path.join(BASE_DIR, "data", "market_compare.json"), "w", encoding="utf-8") as _f:
             _json.dump(_market_out, _f, ensure_ascii=False)
     except Exception as _e:

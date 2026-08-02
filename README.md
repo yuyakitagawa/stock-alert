@@ -8,7 +8,8 @@
 
 ```
 【20:00 JST】アラートパイプライン（daily_alert.yml）
-core/screener.py → core/rank_stocks.py
+core/rank_stocks.py（銘柄取得・下落確率ランキング生成を単独で実施。core/screener.pyは2026-08-01に
+日次パイプラインから除外済み。詳細は下のファイル構成参照）
 → web/export_to_web.py（Supabase同期）→ web/market_timing_alert.py（LINE通知）
 core/rf_train_v3.py（金曜 or モデル未存在時のみ）は配信より後段で実行。
 配信のクリティカルパスから切り離すことで、学習が長時間化/タイムアウト
@@ -27,13 +28,13 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 
 | ファイル | 役割 |
 |---|---|
-| `core/screener.py` | JPX全銘柄から条件通過銘柄を抽出して `data/screeners/` に保存 |
+| `core/screener.py` | **手動実行専用ツール**（日次パイプラインからは2026-08-01に除外済み）。`get_tse_stock_list()`（JPX全銘柄取得）のみ`rank_stocks.py`/`backfill_history.py`が再利用。`apply_screener_v1`によるスクリーニング自体は現在ほぼ価格・流動性のみで`rank_stocks.py`のハードフィルターと重複しており、出力する`data/screeners/*.csv`はどこからも読まれない（下落確率ランキングは`rank_stocks.py`が全銘柄取得〜フィルターまで単独で実施）。手動での銘柄スクリーニング確認用に残置 |
 | `tools/fetch_history.py` | Yahoo Finance で全銘柄株価四本値を取得し `yahoo_price_cache` を差分更新（daily_alert.yml Step 0で毎日 `--years 1` 実行。`rank_stocks.py`の「直近株価」の鮮度に直結。既存(code,date)は insert_ignore で保護されるため初回10年分バックフィルにも日次更新にも使える） |
 | `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可。既存日付は既定でスキップするため、価格データ修正後に再生成したい場合は`--force`で上書き。生成後に`check_price_freshness`で複数日にまたがるclose凍結（更新漏れ）を検査）|
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
 | `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
-| `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。ウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大5件、個人名の提出者は後回し。残りはLINEで「大量保有」と聞けば`check_catalyst`ツールで個別回答。大口保有の話がある場合はmicroCMSブログ（`microcms-blog-demo`の詳細解説記事）へのリンクも案内）・ユーザー別ウォッチリストのdp閾値アラートを配信 |
+| `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。開示日が新しい順を最優先し、同日内はウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大5件、個人名の提出者は後回し。残りはLINEで「大量保有」と聞けば`check_catalyst`ツールで個別回答。大口保有の話がある場合はmicroCMSブログ（`microcms-blog-demo`の詳細解説記事）へのリンクも案内）・🔍ユーザー別ウォッチ投資家の動き（`filer_watchlist`に登録した提出者名で部分一致照合し、その投資家がどの銘柄を動かしても通知。自己申告・過半数超は除外しない）・ユーザー別ウォッチリストのdp閾値アラート（ランキング本体の推奨が「🔴 売り検討」の銘柄は、個人のdp_sell_threshold設定値に関わらず必ず⚠️売り検討を表示。既定値20%はシステム全体の売り検討基準(drop_prob≥10%等)より緩いため、この上書きが無いと10〜20%の間で警告が沈黙するギャップが生じていた。閾値未達で変化のない銘柄は個別表示せず件数のみ要約し、前日比のdrop_prob変化があれば表示：通知疲れ対策）を配信 |
 | `config.py` | 戦略パラメータの一元管理（閾値・フィルター値）|
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗は指数バックオフで自動リトライ）|
@@ -48,16 +49,16 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `tools/screen_catalyst_candidates.py` | カタリスト候補スクリーン（GARP補助）。PBR<1.0・ROE<8%・自己資本比率>50%・流動性の「安い箱」抽出は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計（J-Quants財務データ使用）。通過候補に **利益の質フィルター(A/B)** で化粧決算（営業赤字・純利益>営業益×1.5）と斜陽事業（本業減益）を除外し、売上CAGR・営業利益率・会社予想方向で加減点。`data/catalyst_candidates.csv`（残）＋ `data/catalyst_excluded.csv`（除外理由付き・レビュー用）。`--no-quality` で品質フィルター無効 |
 | `tools/catalyst_backtest.py` | カタリスト候補スクリーンのヒストリカルBT（point-in-time・disc_date≤基準日）。A/Bあり/なしで平均・勝率・大勝率を比較。データは J-Quants財務＋yahoo_price_cache |
 | `lib/earnings_quality.py` | カタリスト候補の利益の質・本業方向性を判定（年次の営業益/売上/純益から化粧決算/斜陽を機械判定）。データ源は kabutan 優先、取れない環境（クラウドはkabutanがIPブロック）では J-Quants 実績にフォールバック |
-| `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）・過半数超(51%以上)・譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`is_sell_disclosure`/`is_individual_filer` は `market_timing_alert.py` のLINE通知セクションでも再利用（売却を除外せず方向性表示、個人名提出者を優先度で後回し）。買い/売りの方向判定はXBRLの直前保有割合(`holding_ratio_prior`)と現在の保有割合を比較して行い（概要欄の「譲渡/売却」等の文言が無い開示でも保有比率の減少を正しく売りと判定）、取得できない場合のみ概要欄のキーワードにフォールバックする。`EDINET_API_KEY` 必須 |
-| `web/publish_blog_articles.py` | **ブログ記事自動生成・投稿**（Step 5c、microCMS検証用サイト`microcms-blog-demo`向け）。`market_timing_alert.get_recent_large_holdings`（自己申告・過半数超・売却を除外し買い方向のみ）からネタを取得し、yfinanceの発行済株式数×株価×保有比率変化で取得金額(億円)を概算（推定不能な銘柄はスキップ）、Claude（`ANTHROPIC_API_KEY`）に事実のみを渡して解説記事とdealType（インサイダー買い/日系ファンド買い/外資系ファンド買い/ベンチャーキャピタル買い/財団買い/日系企業買い/外資系企業買い/その他。提出者名からの一般知識判定、キーワード一致だけでは日系/外資やスペース無し個人名を判定できないため）を生成しmicroCMSへ即時公開（人間は事後にmicroCMS管理画面で修正する運用）。サイト上部のカテゴリフィルターはdealTypeから「買い」を除いた値をフロントエンド側でその場で導出する構成にしており、microCMSに`category`フィールドは持たない（CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない）。同一銘柄・同一開示日の重複投稿は事前チェックでスキップ。`--dry-run`で投稿せず内容確認のみ可。`MICROCMS_SERVICE_DOMAIN`/`MICROCMS_API_KEY`（書き込み権限）必須、未設定ならスキップ |
+| `lib/edinet.py` + `tools/scan_large_holdings.py` | **EDINET大量保有スキャナー**（イベント駆動）。EDINET APIから大量保有報告書(350)/変更報告書(360)を日次スキャンして `edinet_large_holdings` に蓄積し、カタリスト候補と突合（構造的候補×実際の買い集め＝先回り候補）。突合時に自己申告（提出者≒対象企業）・過半数超(51%以上)・訂正報告書（既存開示の事後修正で実際の持分変動ではない）・譲渡/売却の報告を除外し、外部の買い集めだけ残す（`--no-exclude` で無効化可）。`is_sell_disclosure`/`is_individual_filer` は `market_timing_alert.py` のLINE通知セクションでも再利用（売却を除外せず方向性表示、個人名提出者を優先度で後回し）。買い/売りの方向判定はXBRLの直前保有割合(`holding_ratio_prior`)と現在の保有割合を比較して行い（概要欄の「譲渡/売却」等の文言が無い開示でも保有比率の減少を正しく売りと判定）、取得できない場合のみ概要欄のキーワードにフォールバックし、どちらも取得できない場合は買い/売りを推測せず方向性を表示しない。`EDINET_API_KEY` 必須 |
+| `web/publish_blog_articles.py` | **ブログ記事自動生成・投稿**（Step 5c、microCMS検証用サイト`microcms-blog-demo`向け）。`market_timing_alert.get_recent_large_holdings`（自己申告・過半数超を除外）からネタを取得し、保有比率の増減（取得できない場合のみ概要欄キーワード）で売却方向を判定して除外し買い方向のみに絞り、yfinanceの発行済株式数×株価×保有比率変化で取得金額(億円)を概算（推定不能な銘柄はスキップ）、Claude（`ANTHROPIC_API_KEY`）に事実のみを渡して解説記事とdealType（インサイダー買い/日系ファンド買い/外資系ファンド買い/ベンチャーキャピタル買い/財団買い/日系企業買い/外資系企業買い/その他。提出者名からの一般知識判定、キーワード一致だけでは日系/外資やスペース無し個人名を判定できないため）を生成しmicroCMSへ即時公開。事実の並置だけで終わらず投資家への示唆(so what)を加えられるよう、`gen_rankings`から開示日時点(point-in-time、記事公開時点のpost-hocスナップショットではない)の株価・下落リスク水準(高/やや高/中/やや低/低)を取得できた場合はプロンプトに文脈として渡し、その範囲内での意味づけを1文加えさせる（取得できない銘柄は従来通り事実のみ）（人間は事後にmicroCMS管理画面で修正する運用）。サイト上部のカテゴリフィルターはdealTypeから「買い」を除いた値をフロントエンド側でその場で導出する構成にしており、microCMSに`category`フィールドは持たない（CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない）。同一銘柄・同一開示日の重複投稿は事前チェックでスキップ。`--dry-run`で投稿せず内容確認のみ可。`MICROCMS_SERVICE_DOMAIN`/`MICROCMS_API_KEY`（書き込み権限）必須、未設定ならスキップ |
 | `tests/test_fundamentals.py` | point-in-timeファンダ（`lib/fundamentals.py`）のユニットテスト。先読みバイアス防止（as_of日より後の開示を含めない）を確認（6件）|
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
 | `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（14件）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
-| `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション整形のユニットテスト（13件）|
-| `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・ノイズ除外）のユニットテスト（9件）|
-| `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・dealType分類・売却除外・重複防止・権限エラー時の早期打ち切り・セレクト配列形式への自動リトライ）のユニットテスト（13件、ネットワークは全てモック）|
+| `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション（開示日優先ソート・根拠なき買い/売り推測の抑制込み）・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止・売り閾値ギャップの上書き・通知疲れ対策の要約表示・前日比表示込み）・投資家ウォッチ（提出者名の部分一致照合・大口保有動向セクション生成）のユニットテスト（26件）|
+| `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・訂正報告書除外・ノイズ除外）のユニットテスト（11件）|
+| `tests/test_publish_blog_articles.py` | ブログ記事自動投稿の判定ロジック（金額概算・記事生成JSONパース・dealType分類・売却除外・重複防止・権限エラー時の早期打ち切り・セレクト配列形式への自動リトライ・PIT文脈(株価/下落リスク水準)のプロンプト反映）のユニットテスト（18件、ネットワークは全てモック）|
 | `tests/test_supabase_client.py` | Supabase REST APIクライアントのリトライ挙動（一時的なネットワーク失敗時のバックオフ再試行・最終失敗時に呼び出し元を落とさないこと）のユニットテスト（3件）|
 
 ---
@@ -98,16 +99,22 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 - 🔴 売り検討: drop_prob≥10% / drawdown60<-20% / 連続下落≥5日
 - —: それ以外
 
-## スクリーナー条件（screener.py / 前段フィルター）
+## スクリーナー条件（screener.py、現在は手動実行専用）
 
-`screener.py → rank_stocks.py` の前段として動作する追加フィルター:
+`core/screener.py` は2026-08-01に日次パイプラインから除外済み（出力`data/screeners/*.csv`が
+`rank_stocks.py`から読まれておらず、全銘柄価格取得を二重に行うだけの無駄な処理だったため）。
+以下は`screener.py`単体を手動実行した場合の条件で、現在の自動配信ランキングには**適用されない**
+（自動配信の実フィルターは上記「S買い 発令条件」表のみ）。
 
 | 条件 | 値 |
 |---|---|
-| 3ヶ月相対強度 ≥ | 0%（通常）/ +5%（下落相場：日経20日 < -5%）|
+| 株価 ≥ | 300円 |
+| 20日平均売買代金 ≥ | 50百万円 |
 | セクター集中除外 | 同一業種3銘柄以上でセクター全除外（バブル兆候回避）|
 
-> 下落モデル一本化後のバックテスト再検証は未実施（別環境でのbacktest.py実行が必要。詳細は `dev_log.md`）。
+> 3ヶ月相対強度フィルター（`rel_strength_min`引数）は`apply_screener_v1`内で既に未使用（実装上の
+> デッドパラメータ）だったため、上表からは削除した。下落モデル一本化後のバックテスト再検証は未実施
+> （別環境でのbacktest.py実行が必要。詳細は `dev_log.md`）。
 
 ---
 
@@ -195,6 +202,7 @@ DBキャッシュは廃止。
 | `line_chat_history` | LINE Bot会話履歴（直近3往復、文脈保持用） |
 | `line_users` | LINE Bot登録ユーザー |
 | `dp_watchlist` | ユーザー別ウォッチ銘柄・dp閾値（LINE Bot）|
+| `filer_watchlist` | ユーザー別ウォッチ投資家（EDINET提出者名。銘柄は問わずその投資家の保有比率増減を通知、LINE Bot）|
 
 全銘柄スクリーン（カタリスト候補）は Postgres RPC `screen_catalyst_candidates()` でサーバーサイド集計する
 （REST per-code を避け高速化）。
@@ -302,8 +310,8 @@ python3 tests/test_screener.py     # スクリーナーユニットテスト
 ## 設計上の注意点
 
 - **モデルの限界**：AUC 0.766（下落）はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
-- **2段階構造が必須**：モデル単体を全銘柄に適用しても効果なし。スクリーナー→モデル→下落確率フィルターの順で使うことでアルファが出る。
-- **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告。3ヶ月相対強度閾値も自動引き上げ。
+- **多段フィルターが必須**：モデル単体を全銘柄に適用しても効果なし。`rank_stocks.py`内のハードフィルター→モデル→下落確率フィルターの順で使うことでアルファが出る（`core/screener.py`による事前スクリーニングは2026-08-01に廃止。詳細は上の「スクリーナー条件」参照）。
+- **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告（`lib/risk_regime.py`の相場リスク管制官がS買いを自動見送り）。
 - **日経急騰時の限界**：大型株主導の急騰相場（例：2025年7月 日経+21%超）では中小型株主体の選定が相対的に不利。日経60日 ≥ +15% のときオレンジバナーで警告（新規の日経超え率: 7% vs 通常時59%）。
 - **季節性**：3〜5月エントリーが最も好成績（avg+8〜10%、勝率75〜82%）。8〜9月は低調（avg−2.6〜+2.7%）。
 - **主要特徴量**：下落モデルはcs_vol20（ボラ相対ランク、8%）・sin_month（7%）・div_ex_feat（7%）が上位。

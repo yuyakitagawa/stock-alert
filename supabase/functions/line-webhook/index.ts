@@ -211,6 +211,36 @@ async function removeFromWatchlist(userId: string, code: string): Promise<boolea
   return res.ok;
 }
 
+// ── 投資家（EDINET提出者）ウォッチリスト管理 ──
+// 銘柄ではなく提出者名で登録し、その提出者がどの銘柄を動かしても拾う（web/market_timing_alert.pyの
+// get_all_filer_watchlists/get_filer_watch_hits/build_filer_watch_sectionが日次通知で参照する）。
+
+async function getFilerWatchlist(userId: string): Promise<string[]> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/filer_watchlist?line_user_id=eq.${userId}&select=filer_name&order=created_at`,
+    { headers: sbHeaders() },
+  );
+  const rows: { filer_name: string }[] = res.ok ? await res.json() : [];
+  return rows.map((r) => r.filer_name);
+}
+
+async function addToFilerWatchlist(userId: string, filerName: string): Promise<boolean> {
+  const res = await fetch(`${SB_URL}/rest/v1/filer_watchlist`, {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "resolution=merge-duplicates" }),
+    body: JSON.stringify({ line_user_id: userId, filer_name: filerName }),
+  });
+  return res.ok;
+}
+
+async function removeFromFilerWatchlist(userId: string, filerName: string): Promise<boolean> {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/filer_watchlist?line_user_id=eq.${userId}&filer_name=eq.${encodeURIComponent(filerName)}`,
+    { method: "DELETE", headers: sbHeaders() },
+  );
+  return res.ok;
+}
+
 async function lookupStock(
   code: string,
 ): Promise<{ code: string; name: string; close: number; drop_prob: number } | null> {
@@ -318,6 +348,11 @@ function isSellDisclosure(
   return SELL_KEYWORDS.some((k) => (docDescription || "").includes(k));
 }
 
+// 訂正報告書は既存開示の事後修正であり実際の持分変動ではないため除外する
+function isCorrectionReport(docDescription: string): boolean {
+  return (docDescription || "").includes("訂正");
+}
+
 function isSelfFiling(filerName: string, issuerName: string): boolean {
   const f = normalizeCompanyName(filerName);
   const i = normalizeCompanyName(issuerName);
@@ -399,6 +434,11 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
         "  「ウォッチ 8473」→ 追加\n" +
         "  「解除 8473」→ 削除\n" +
         "  「リスト」→ 一覧表示\n\n" +
+        "【投資家ウォッチ】\n" +
+        "  「投資家ウォッチ シンプレクス・アセット・マネジメント」→ 追加\n" +
+        "  「投資家解除 シンプレクス・アセット・マネジメント」→ 削除\n" +
+        "  「投資家リスト」→ 一覧表示\n" +
+        "  ※ 登録した投資家が保有割合を増減させたら銘柄を問わず通知\n\n" +
         "【ランキング】\n" +
         "  「ランキング」→ 本日のランキング\n\n" +
         "【AI相談】\n" +
@@ -540,7 +580,7 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     const threshold = addMatch[2] ? parseFloat(addMatch[2]) : 8.0;
     const sellThreshold = addMatch[3] ? parseFloat(addMatch[3]) : 20.0;
 
-    if (/^\d{4}$/.test(target)) {
+    if (/^[0-9]{3}[0-9A-Za-z]$/.test(target)) {
       const stock = await lookupStock(target);
       if (!stock) {
         return { handled: true, reply: `${target} はランキングに見つかりません。銘柄コード4桁で指定してください。` };
@@ -579,21 +619,52 @@ async function handleCommand(text: string, userId: string, user?: UserRecord): P
     };
   }
 
-  const removeMatch = trimmed.match(/^(解除|削除|外す)\s+(\d{4})$/i);
+  const removeMatch = trimmed.match(/^(解除|削除|外す)\s+([0-9]{3}[0-9A-Za-z])$/i);
   if (removeMatch) {
     const code = removeMatch[2];
     await removeFromWatchlist(userId, code);
     return { handled: true, reply: `🗑 ${code} をウォッチリストから削除しました。` };
   }
 
+  if (/^(投資家リスト|投資家一覧|投資家)$/i.test(trimmed)) {
+    const list = await getFilerWatchlist(userId);
+    if (list.length === 0) {
+      return { handled: true, reply: "投資家ウォッチリストは空です。\n「投資家ウォッチ シンプレクス・アセット・マネジメント」で追加できます。" };
+    }
+    const lines = ["🔍 投資家ウォッチリスト:"];
+    for (const name of list) lines.push(`  ${name}`);
+    lines.push(`\n※ この投資家が保有割合を増減させたら通知します（銘柄は問いません）`);
+    return { handled: true, reply: lines.join("\n") };
+  }
+
+  const filerAddMatch = trimmed.match(/^投資家ウォッチ\s+(.+)$/i);
+  if (filerAddMatch) {
+    const filerName = filerAddMatch[1].trim();
+    if (!filerName) {
+      return { handled: true, reply: "投資家名を指定してください。\n例: 投資家ウォッチ シンプレクス・アセット・マネジメント" };
+    }
+    await addToFilerWatchlist(userId, filerName);
+    return {
+      handled: true,
+      reply: `✅ 「${filerName}」を投資家ウォッチリストに追加\n\n※ この投資家が保有割合を増減させたら通知します（銘柄は問いません）`,
+    };
+  }
+
+  const filerRemoveMatch = trimmed.match(/^(投資家解除|投資家削除)\s+(.+)$/i);
+  if (filerRemoveMatch) {
+    const filerName = filerRemoveMatch[2].trim();
+    await removeFromFilerWatchlist(userId, filerName);
+    return { handled: true, reply: `🗑 「${filerName}」を投資家ウォッチリストから削除しました。` };
+  }
+
   // 「7203 推移」「7203の下落確率履歴」など — 時系列専用
-  const historyMatch = trimmed.match(/^(\d{4})\s*(推移|履歴|時系列|history)/);
+  const historyMatch = trimmed.match(/^([0-9]{3}[0-9A-Za-z])\s*(推移|履歴|時系列|history)/);
   if (historyMatch) {
     const hist = await fetchDropProbHistory(historyMatch[1], 30);
     return { handled: true, reply: hist };
   }
 
-  if (/^\d{4}$/.test(trimmed)) {
+  if (/^[0-9]{3}[0-9A-Za-z]$/.test(trimmed)) {
     const stock = await lookupStock(trimmed);
     if (!stock) {
       return { handled: true, reply: `${trimmed} のデータが見つかりません。` };
@@ -984,10 +1055,16 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
   }
 
   if (watchlist.length > 0) {
-    // ウォッチリスト銘柄の直近6営業日分を取得（前日比=直近2日、前週比=直近6営業日≒1週間で算出）
+    // ウォッチリスト銘柄の直近6営業日分を取得（前日比=直近2日、前週比=直近6営業日≒1週間で算出）。
+    // date絞り込み無しだと銘柄数×蓄積履歴で行数がPostgRESTの既定上限(1000件)を超え、
+    // code.asc順で後方の銘柄が丸ごと切り捨てられる（実例: 17銘柄×137行=2329行で
+    // アルファベット後半9銘柄が「データ未取得」になっていた）。直近を日数指定で絞る。
     const watchCodes = watchlist.map((w) => w.code);
+    const trendSince = new Date();
+    trendSince.setDate(trendSince.getDate() - 14); // 6営業日分を余裕をもってカバー
+    const trendSinceStr = trendSince.toISOString().slice(0, 10);
     const trendRes = await fetch(
-      `${SB_URL}/rest/v1/gen_rankings?code=in.(${watchCodes.join(",")})&select=code,date,close,drop_prob&order=code.asc,date.desc`,
+      `${SB_URL}/rest/v1/gen_rankings?code=in.(${watchCodes.join(",")})&date=gte.${trendSinceStr}&select=code,date,close,drop_prob&order=code.asc,date.desc`,
       { headers: sbHeaders() },
     );
     const trendRows: { code: string; date: string; close: number; drop_prob: number }[] = trendRes.ok ? await trendRes.json() : [];
@@ -1018,7 +1095,7 @@ async function fetchMarketContext(userId: string, userMessage: string): Promise<
     }
   }
 
-  const codeMatch = userMessage.match(/(\d{4})/);
+  const codeMatch = userMessage.match(/([0-9]{3}[0-9A-Za-z])/);
   if (codeMatch) {
     const detail = await fetchStockDetail(codeMatch[1]);
     if (detail) lines.push("\n" + detail);
@@ -1109,7 +1186,7 @@ const TOOLS: Anthropic.Tool[] = [
 async function resolveCode(
   query: string,
 ): Promise<{ code: string; name: string } | { candidates: { code: string; name: string }[] } | null> {
-  if (/^\d{4}$/.test(query)) {
+  if (/^[0-9]{3}[0-9A-Za-z]$/.test(query)) {
     const stock = await lookupStock(query);
     return stock ? { code: stock.code, name: stock.name } : null;
   }
@@ -1376,6 +1453,8 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
     holdings = holdings.filter(
       (h) => h.holding_ratio == null || Math.abs(h.holding_ratio as number) < MAJORITY_HOLDING_THRESHOLD,
     );
+    // 訂正報告書は既存開示の事後修正であり実際の持分変動を表さないため除外する
+    holdings = holdings.filter((h) => !isCorrectionReport(h.doc_description as string));
 
     // 銘柄+提出者ごとに、期間内で最も古い/新しい保有比率を集計。
     // 同一提出者の開示が複数あれば「5.2%→10.1%」のように変化を見せる
@@ -1424,12 +1503,21 @@ async function executeCheckCatalyst(input: Record<string, unknown>, userId: stri
         }
         const priorRatio = (h.holding_ratio_prior as number | null) ??
           (hist && hist.oldest !== hist.newest ? hist.oldest : null);
-        const direction = isSellDisclosure(
-          h.doc_description as string,
-          h.holding_ratio as number | null,
-          priorRatio,
-        ) ? "📉売り" : "📈買い";
-        lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio} ${direction} (${h.disc_date})`);
+        const hasRatioSignal = h.holding_ratio != null && priorRatio != null;
+        const hasKeywordSignal = isSellDisclosure(h.doc_description as string);
+        let direction: string;
+        if (hasRatioSignal || hasKeywordSignal) {
+          direction = isSellDisclosure(
+            h.doc_description as string,
+            h.holding_ratio as number | null,
+            priorRatio,
+          ) ? "📉売り" : "📈買い";
+        } else {
+          // 増減トレンドも売却キーワードも取れない場合は買い/売りを推測しない
+          direction = "";
+        }
+        const directionStr = direction ? ` ${direction}` : "";
+        lines.push(`📋 ${h.issuer_code} ${h.issuer_name}\n   ${h.filer_name} 保有比率${ratio}${directionStr} (${h.disc_date})`);
       }
       lines.push(`\n📰 詳細解説記事: ${BLOG_SITE_URL}`);
     } else {

@@ -1,5 +1,103 @@
 # Dev Log
 
+## 2026-08-01 コンサルレビューの残り5件に着手（通知疲れ・記事のso what・screener整理・可観測性・閾値整合）
+
+```
+前回(2026-07-31)のコンサルレビューで保留した改善案5件に着手。いずれもモデル・ハードフィルター・
+特徴量定義には無変更（バックテスト対象外）。
+
+1. LINE通知疲れ対策（web/market_timing_alert.py）
+   ウォッチリストで閾値未達・変化なしの銘柄を毎日個別表示すると同文の繰り返しで読み飛ばされる
+   ため、アクションのある銘柄（買い時/売り検討）だけ個別表示し、変化なし銘柄は末尾に件数だけ
+   要約するよう変更。あわせて前営業日のdrop_probをまとめて取得し（get_previous_rankings、
+   2クエリで完結）、個別表示する銘柄には前日比（pt）を添えるようにした。
+   tests/test_market_timing_alert.py に4件追加。
+
+2. ブログ記事の「だから何？」不足（web/publish_blog_articles.py）
+   事実の並置だけで終わっていた記事に、開示日時点（point-in-time、記事公開時点の
+   post-hocスナップショットではない）の株価・下落リスク水準（高/やや高/中/やや低/低、
+   README記載の5段階表示と同じ閾値）を取得できた場合はプロンプトへ文脈として渡し、
+   その範囲内での投資家への意味づけを1文加えさせるようにした（取得不可なら従来通り事実のみ）。
+   post-hocの現在値ではなくPITスナップショットを使うのはCLAUDE.md PIT規律に準拠するため。
+   tests/test_publish_blog_articles.py に5件追加。
+
+3. core/screener.pyの実質デッドパス化を解消
+   core/rank_stocks.pyはcore.screenerからget_tse_stock_list()のみを再利用し、
+   screener.pyが生成するdata/screeners/*.csvはリポジトリ全体のどこからも読まれていない
+   （grep確認済み）ことが判明。全銘柄の株価取得（約30分）を screener.py と rank_stocks.py で
+   二重に行っているだけだった。daily_alert.ymlのStep 1（screener.py実行）を削除し、
+   README（システム概要・ファイル構成・スクリーナー条件・設計上の注意点）を実態に合わせて
+   修正。あわせてapply_screener_v1のrel_strength_min引数がロジック内で未使用（デッド
+   パラメータ）だったことも判明したためREADMEから該当記述を削除。core/screener.py自体は
+   get_tse_stock_list()が現役利用されているため削除せず、手動スクリーニング確認用ツールとして残置。
+
+4. 💎買い0件時のファンダ欠損可観測性ログ追加（core/rank_stocks.py）
+   piotroski/eps_surprise/bps_growthの欠損によりqv_okが常にFalseになり、下落確率が
+   どれだけ低くても💎買いになり得ない銘柄がある。「相場が悪いのか」「ファンダデータが
+   欠損しているのか」を運用上区別できるよう、ファンダ欠損銘柄数と現時点の💎買い件数を
+   ログ出力するようにした（ロジック自体は無変更、観測性のみ追加）。
+
+5. ウォッチリスト売り閾値デフォルト(20%)とシステム全体基準(10%)の乖離解消
+   （web/market_timing_alert.py）
+   dp_sell_thresholdの既定値20%は、recommend_from_scoresの売り検討基準（drop_prob≥10%等）
+   より緩い。前回のコミットで追加した「dp<buy_thの時だけrecommendを見るガード」では、
+   dpがbuy_th〜sell_thの間（例: 8%〜20%）にあるとシステムは既に🔴売り検討と判定していても
+   ウォッチ通知は沈黙していた。判定順序を変更し、recommendが「🔴 売り検討」なら
+   個人の閾値設定に関わらず必ず⚠️売り検討を表示するようにした（dp>=sell_thのelif分岐は、
+   ユーザーが独自により厳しい閾値を設定した場合の補助として残す）。
+   tests/test_market_timing_alert.py に1件追加。
+
+検証: 既存テスト全9ファイル（tests/test_*.py）を実行し regression なしを確認。
+      test_market_timing_alert.py 16→20件、test_publish_blog_articles.py 13→18件。
+      core/rank_stocks.pyの可観測性ログ追加箇所は専用テストファイルが元々存在しない
+      （DB/モデル依存の統合的処理のため）ため構文チェックのみ。
+
+判定: マージ可（通知UX改善・記事品質改善・デッドコード整理・可観測性向上・閾値整合）。
+```
+
+---
+
+## 2026-07-31 コンサルエージェントによる利用者価値レビュー→バグ修正3件
+
+```
+経緯: 「モデルバッチ・LINEメッセージ・web記事について、利用者にとってもっと
+      役立つツールになるようアドバイスし、修正させる」という依頼を受け、
+      general-purposeエージェントに3領域（core/rf_train_v3.py・screener.py・
+      rank_stocks.py／web/market_timing_alert.py／web/publish_blog_articles.py）の
+      実コード・テスト・README・dev_log.mdを読ませて利用者視点でレビューさせた。
+
+指摘のうち、確認済みバグ・モデル無関係・バックテスト不要な3件を即修正:
+
+1. core/rank_stocks.py:721 未定義変数 target_date による NameError（無音でexcept握りつぶし）
+   → 2026-07-14の日経vsS&P500機能追加以来、毎日必ず失敗し data/market_compare.json が
+     更新されないままLINE配信されていた疑い。datetime.now()に修正（1行）。
+
+2. web/publish_blog_articles.py:289 is_sell_disclosure() の呼び出しが概要欄キーワードのみで
+   holding_ratio/holding_ratio_prior を渡していなかった。2026-07-23に他3箇所
+   （market_timing_alert.py等）で修正済みの「保有比率増減による売り判定」が
+   このファイルだけ未反映で、東芝型（概要「変更報告書」のみ・実際は比率減少=売り）を
+   「買い」記事として自動投稿しうる状態だった。引数を追加して修正、
+   tests/test_publish_blog_articles.py に東芝型ケースを追加（既存テスト関数の強化のため件数は変更なし。
+   なお同ブランチのmainマージ後は、別PR #181のcategoryフィールド廃止に伴うテスト削減で17→13件）。
+
+3. web/market_timing_alert.py: ウォッチリストの「🔔買い時！」判定がdrop_prob閾値のみで、
+   ランキング本体（品質フィルター込み）の推奨ラベルを見ておらず、同一銘柄で
+   「ウォッチ通知は買い時／ランキングは🔴売り検討」という矛盾表示になりえた。
+   get_today_rankings の select に recommend を追加し、build_watchlist_section で
+   recommend=="🔴 売り検討" の場合は dp閾値未達でも買い時表示を抑制するガードを追加。
+   tests/test_market_timing_alert.py にテスト3件追加（13→16件）。
+
+検証: 既存テスト全件（tests/test_*.py 全9ファイル）実行し regression なしを確認。
+      いずれもモデル・ハードフィルター・特徴量定義には無変更のためバックテスト対象外。
+
+判定: マージ可（バグ修正・可観測性改善のみ）。
+      レビューで指摘された残りの改善案（LINEの通知疲れ対策、web記事のso what不足、
+      screener.pyの実質デッドパス化、💎買い0件時のファンダ欠損可観測性など）は
+      次タスク候補として保留。
+```
+
+---
+
 ## 2026-07-31 CI (ci.yml) にanthropicが不足していて4件のテストが実CIで失敗していたのを修正
 
 ```

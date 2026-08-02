@@ -7,7 +7,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.scan_large_holdings import is_sell_disclosure, is_individual_filer, is_noise_match
+from tools.scan_large_holdings import (
+    is_sell_disclosure, is_individual_filer, is_noise_match, is_correction_report,
+)
 
 
 def test_sell_keywords_detected():
@@ -61,6 +63,17 @@ def test_noise_match_detects_sell_by_ratio_decrease():
     assert is_noise_match("○○ファンド", "三菱商事", "変更報告書", 20.0, 15.0) is None
 
 
+def test_correction_report_detected():
+    """訂正報告書は既存開示の事後修正であり、実際の持分変動ではないため除外対象。"""
+    assert is_correction_report("訂正報告書（大量保有報告書・変更報告書）")
+    assert not is_correction_report("変更報告書")
+    assert not is_correction_report("大量保有報告書")
+
+
+def test_noise_match_detects_correction_report():
+    assert is_noise_match("○○ファンド", "三菱商事", "訂正報告書（大量保有報告書・変更報告書）") == "correction"
+
+
 def test_noise_match_detects_majority_holding():
     """51%以上はスクイーズアウト対象になりうる水準で上値が見込めないため除外する。"""
     assert is_noise_match("メディパルホールディングス株式会社", "ＰＡＬＴＡＣ", "変更報告書", 97.79) == "majority"
@@ -77,6 +90,8 @@ if __name__ == "__main__":
     test_fullwidth_latin_institution_name_normalized()
     test_empty_filer_not_individual()
     test_noise_match_still_detects_sell_and_self_filing()
+    test_correction_report_detected()
+    test_noise_match_detects_correction_report()
     test_noise_match_detects_majority_holding()
     test_noise_match_detects_sell_by_ratio_decrease()
-    print("OK: test_scan_large_holdings (9 tests)")
+    print("OK: test_scan_large_holdings (11 tests)")

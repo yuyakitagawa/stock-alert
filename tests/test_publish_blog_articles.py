@@ -77,6 +77,9 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
         {"issuer_code": "1234", "name": "売却テスト", "filer_name": "ファンド株式会社",
          "holding_ratio": 4.0, "disc_date": "2026-07-20", "doc_type_code": "360",
          "doc_description": "株式の譲渡・売却による変更報告書"},
+        {"issuer_code": "6502", "name": "東芝型テスト", "filer_name": "キオクシアファンド",
+         "holding_ratio": 15.10, "holding_ratio_prior": 16.10, "disc_date": "2026-07-20",
+         "doc_type_code": "360", "doc_description": "変更報告書"},  # 概要はキーワード無しだが比率減少=売り
     ]
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
@@ -92,7 +95,7 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
-    assert len(results) == 2  # 売却は除外される
+    assert len(results) == 2  # 売却は除外される（概要文言に頼らず保有比率の増減でも判定）
     assert [r["stockCode"] for r in results] == ["7203", "9999"]  # |比率|降順
     assert results[0]["dealType"] == "インサイダー買い"
     assert results[1]["dealType"] == "日系ファンド買い"
@@ -201,6 +204,98 @@ def _fact_sheet():
             "disc_date": "2026-07-20", "deal_amount_oku": 12.3}
 
 
+def test_dp_level_label_thresholds():
+    assert m.dp_level_label(35) == "高"
+    assert m.dp_level_label(25) == "やや高"
+    assert m.dp_level_label(18) == "中"
+    assert m.dp_level_label(10) == "やや低"
+    assert m.dp_level_label(3) == "低"
+
+
+def test_get_pit_ranking_snapshot_queries_as_of_disc_date():
+    """記事公開時点(post-hoc)ではなく、開示日以前で直近のスナップショットを取る
+    （先読みバイアス防止、CLAUDE.md PIT規律）。"""
+    with mock.patch.object(m.sb, "select_one", return_value={"close": 3000, "drop_prob": 12.0}) as select_mock:
+        result = m.get_pit_ranking_snapshot("7203", "2026-07-20")
+    assert result == {"close": 3000, "drop_prob": 12.0}
+    query = select_mock.call_args.args[1]
+    assert "code=eq.7203" in query
+    assert "date=lte.2026-07-20" in query
+
+
+def _capturing_client(text):
+    calls = []
+
+    class _Block:
+        def __init__(self, text):
+            self.text = text
+
+    class _Resp:
+        def __init__(self, text):
+            self.content = [_Block(text)]
+
+    class _Messages:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _Resp(text)
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+
+    return _Client(), calls
+
+
+def test_generate_article_body_includes_context_when_available():
+    fact_sheet = _fact_sheet()
+    fact_sheet["context_close"] = 3000.0
+    fact_sheet["context_dp_level"] = "やや低"
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "日系ファンド買い"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "やや低" in prompt
+    assert "3,000円" in prompt
+
+
+def test_generate_article_body_omits_context_when_unavailable():
+    fact_sheet = _fact_sheet()  # context_close/context_dp_level 無し
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "dealType": "その他"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "下落リスク水準" not in prompt
+
+
+def test_build_and_publish_includes_pit_context_in_fact_sheet():
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書"}]
+    captured = {}
+
+    def _fake_generate(fact_sheet):
+        captured.update(fact_sheet)
+        return {"title": "t", "body": "<p>本文</p>", "dealType": "インサイダー買い"}
+
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 3000.0, "drop_prob": 25.0}), \
+         mock.patch.object(m, "generate_article_body", side_effect=_fake_generate), \
+         mock.patch.object(m, "publish_article", return_value="fakeid123"):
+        m.build_and_publish(days=3, max_articles=3, dry_run=False)
+
+    assert captured["context_close"] == 3000.0
+    assert captured["context_dp_level"] == "やや高"
+
+
 def _fake_client(text):
     class _Block:
         def __init__(self, text):
@@ -232,10 +327,15 @@ if __name__ == "__main__":
     test_generate_article_body_strips_code_fence()
     test_generate_article_body_none_on_empty_title()
     test_generate_article_body_falls_back_to_sonota_on_invalid_deal_type()
+    test_dp_level_label_thresholds()
+    test_get_pit_ranking_snapshot_queries_as_of_disc_date()
+    test_generate_article_body_includes_context_when_available()
+    test_generate_article_body_omits_context_when_unavailable()
+    test_build_and_publish_includes_pit_context_in_fact_sheet()
     test_build_and_publish_excludes_sell_and_maps_fields()
     test_build_and_publish_skips_when_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_gives_up_when_same_field_fails_twice()
-    print("全テスト成功 (13件)")
+    print("全テスト成功 (18件)")
