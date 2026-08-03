@@ -49,6 +49,9 @@ export default function HeaderMenu() {
               <Link href="/about" onClick={() => setOpen(false)} className="hover:underline">
                 運営者情報・免責事項
               </Link>
+              <Link href="/faq" onClick={() => setOpen(false)} className="hover:underline">
+                よくある質問
+              </Link>
               <Link href="/feed.xml" onClick={() => setOpen(false)} className="hover:underline">
                 RSSフィード
               </Link>
