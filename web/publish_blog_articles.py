@@ -55,7 +55,7 @@ CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 DOC_TYPE_LABELS = {"350": "大量保有報告書", "360": "変更報告書（保有比率の変更）"}
 
 # EDINET大量保有報告書の提出者分類。edinet_filer_classification（tools/backtest系の
-# 投資家分類マスター）と1対1で対応する14分類。自社株買い/ETFフローはこのデータ源では
+# 投資家分類マスター）と1対1で対応する13分類。自社株買い/ETFフローはこのデータ源では
 # 判定不能なため含めない（手動投稿用に別途存在）。
 FILER_DEAL_TYPES = (
     "個人",

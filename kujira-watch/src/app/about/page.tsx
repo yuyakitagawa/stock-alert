@@ -19,6 +19,53 @@ export default function AboutPage() {
       <h1 className="mb-6 text-2xl font-bold text-brand-navy">{title}</h1>
 
       <section className="mb-6">
+        <h2 className="mb-2 text-lg font-semibold text-brand-navy">大口投資家とは</h2>
+        <p className="text-sm leading-relaxed text-gray-700">
+          株式や各種金融市場において、市場価格を動かすほどの巨大な資金を運用する投資主体です。
+        </p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-gray-700">
+          <li>
+            <strong className="text-brand-navy">機関投資家（国内・海外）</strong>:
+            年金基金（GPIFなど）、投資信託、生命保険会社、政府系ファンド
+          </li>
+          <li>
+            <strong className="text-brand-navy">ヘッジファンド</strong>:
+            短期〜中長期で絶対収益を狙うファンド（空売りやデリバティブを多用）
+          </li>
+          <li>
+            <strong className="text-brand-navy">アクティビスト（物言う株主）</strong>:
+            企業に増配や自社株買い、経営改善を要求するファンド
+          </li>
+          <li>
+            <strong className="text-brand-navy">富裕層・個人大口（クジラ・ウルフ等）</strong>:
+            個人枠でありながら億単位で動かす投資家
+          </li>
+        </ul>
+        <p className="mt-3 text-sm leading-relaxed text-gray-700">
+          {SITE_NAME}ではこれらの投資家を13種類に分類しています。詳しくは
+          <Link href="#dealtype-glossary" className="text-brand-blue hover:underline">
+            用語集
+          </Link>
+          をご覧ください。
+        </p>
+      </section>
+
+      <section className="mb-6">
+        <h2 className="mb-2 text-lg font-semibold text-brand-navy">大口投資家の動きを追う意味</h2>
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-gray-700">
+          <li>
+            <strong className="text-brand-navy">資金の流れ（トレンド）の把握</strong>:
+            株価の持続的な上昇・下落は大口投資家の買増し・売却によって作られます。トレンドに逆らわない
+            「順張り」の判断材料として重要です。
+          </li>
+          <li>
+            <strong className="text-brand-navy">銘柄選定のスクリーニング</strong>:
+            業績や成長性が大口プロ投資家の調査基準を満たしているかのフィルターになります。
+          </li>
+        </ul>
+      </section>
+
+      <section className="mb-6">
         <h2 className="mb-2 text-lg font-semibold text-brand-navy">大口投資家の動きとは</h2>
         <p className="text-sm leading-relaxed text-gray-700">
           「大口投資家の動き」とは、機関投資家・アクティビストファンド・創業家の資産管理会社・
