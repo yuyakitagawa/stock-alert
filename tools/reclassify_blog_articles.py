@@ -2,7 +2,7 @@
 """
 tools/reclassify_blog_articles.py
 既存のmicroCMSブログ「大口投資家の監視ブログ」（kujira-watch/）記事のdealType（投資家分類）を、
-新しい14分類（edinet_filer_classificationマスター）に基づいて再分類する。
+新しい13分類（edinet_filer_classificationマスター）に基づいて再分類する。
 
 旧dealType（インサイダー買い/日系ファンド買い/外資系ファンド買い等）は現在のmicroCMS
 セレクトフィールドの選択肢から外れており、既存記事だけが古い値のまま残っている状態を

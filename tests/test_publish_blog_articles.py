@@ -190,6 +190,22 @@ def test_publish_article_retries_as_array_on_type_mismatch():
     assert retried_payload["dealType"] == ["個人"]
 
 
+def test_publish_article_drops_non_string_field_on_type_mismatch():
+    """eyecatch等のオブジェクト値フィールドは配列化では直せないため、
+    そのフィールドを除外して再送信し、記事自体は投稿される。"""
+    responses = [
+        _FakeResponse(400, '{"message":"\'eyecatch\' has unexpected data type."}'),
+        _FakeResponse(201, "", {"id": "no-eyecatch-id"}),
+    ]
+    payload = {"title": "t", "eyecatch": {"url": "https://example.test/x.png"}}
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock:
+        content_id = m.publish_article(payload)
+    assert content_id == "no-eyecatch-id"
+    assert post_mock.call_count == 2
+    retried_payload = post_mock.call_args_list[1].args[0]
+    assert "eyecatch" not in retried_payload
+
+
 def test_publish_article_gives_up_when_same_field_fails_twice():
     responses = [
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
@@ -641,6 +657,7 @@ if __name__ == "__main__":
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
+    test_publish_article_drops_non_string_field_on_type_mismatch()
     test_publish_article_gives_up_when_same_field_fails_twice()
     test_update_article_retries_as_array_on_type_mismatch()
     test_update_article_returns_false_on_failure()
@@ -667,4 +684,4 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    print("全テスト成功 (45件)")
+    print("全テスト成功 (46件)")

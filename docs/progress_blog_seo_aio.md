@@ -99,14 +99,14 @@
 - Act: PR #192としてマージ済み。
 
 **Cycle 2（完了）**
-- Plan: 投資家分類（14分類）がバッジで表示されるが、初心者には意味が分からず記事から説明に
-  辿る導線もない（Cycle 1の所見(1)）。他セッションの分類14分類化(`classify_filer()`)と
+- Plan: 投資家分類（13分類）がバッジで表示されるが、初心者には意味が分からず記事から説明に
+  辿る導線もない（Cycle 1の所見(1)）。他セッションの分類13分類化(`classify_filer()`)と
   タイミングが合ったため定義文言をフロントエンドに移植する形で対応。
 - Do:
-  - `src/lib/dealTypeInfo.ts`: `classify_filer()`の判断基準に準拠した14分類の説明文を追加
+  - `src/lib/dealTypeInfo.ts`: `classify_filer()`の判断基準に準拠した13分類の説明文を追加
   - `DealTypeBadge`にHTML `title`属性でツールチップ表示
   - 記事詳細ページのバッジ直下に該当分類の説明1文＋`/about#dealtype-glossary`へのリンクを追加
-  - `/about`に用語集セクション（`#dealtype-glossary`）を新設し全14分類を一覧表示
+  - `/about`に用語集セクション（`#dealtype-glossary`）を新設し全13分類を一覧表示
 - Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功。
 - Act: PR #193としてマージ済み。
 
@@ -213,6 +213,24 @@
   `text`と一致させたまま、リンクだけを追加する構成）。ヘッダーメニュー・サイトマップ
   （`priority: 0.6`）・`llms.txt`にも`/faq`を追加。READMEのページ構成・SEO/AIO対策節、
   および気づいたついでにフッター（#207で廃止済み）への古い言及2箇所も修正。
+
+**Cycle 7 追補3: 「14分類」表記の誤りを修正 + `/about`にコンテンツ2ブロック追加**
+- 誤り発見の経緯: ユーザーが「大口投資家とは」の説明文を追加したいと提示した際、末尾に
+  「当サイトでは14に分類しています」とあったが、`DEAL_TYPES`（`types/article.ts`）・
+  `FILER_DEAL_TYPES`（`web/publish_blog_articles.py`）を実際に数えると13種類しか無く、
+  README・docs・dev_log・`tools/reclassify_blog_articles.py`・`kujira-watch/src/app/faq/page.tsx`
+  に「14分類/14種類」という誤記が複数箇所に存在していたことが判明。ユーザーに確認の上、
+  実態（13種類）に統一する方針で全箇所を修正。
+- Do:
+  - 「14分類/14種類」の誤記を「13分類/13種類」に統一（README.md、
+    web/publish_blog_articles.py、tools/reclassify_blog_articles.py、
+    docs/progress_blog_seo_aio.md（Cycle 2の記述）、kujira-watch/src/app/faq/page.tsx）
+  - `/about`に「大口投資家とは」節を新設（機関投資家/ヘッジファンド/アクティビスト/
+    富裕層・個人大口の4分類の説明＋用語集への内部リンク、ユーザー提示文をそのまま採用）
+  - `/about`に「大口投資家の動きを追う意味」節を新設（トレンド把握・銘柄選定スクリーニングの
+    2点、ユーザー提示文をそのまま採用）
+- Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功（ダミーmicroCMS環境変数による
+  既知の403エラーのみ）。
 
 **未着手・保留**
 - X(Twitter)自動投稿（サイトの基盤が整ったので着手を検討してよい段階）
