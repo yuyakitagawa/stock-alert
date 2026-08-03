@@ -68,6 +68,23 @@ export async function getArticleDetail(id: string) {
   return normalizeDealType(article);
 }
 
+export async function getRecentArticles(days: number) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+
+  const result = await client.getList<Article>({
+    endpoint: "articles",
+    queries: {
+      filters: `dealDate[greater_than]${cutoffDate}`,
+      orders: "-dealDate,-dealAmount",
+      limit: 100,
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return { ...result, contents: result.contents.map(normalizeDealType) };
+}
+
 export async function getAllArticlesForSitemap() {
   const contents = await client.getAllContents<Pick<Article, "dealType" | "stockCode">>({
     endpoint: "articles",

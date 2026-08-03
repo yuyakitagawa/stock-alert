@@ -30,6 +30,12 @@ export default function Header() {
           aria-label="カテゴリ"
           className="no-scrollbar flex flex-nowrap items-center gap-2 overflow-x-auto text-sm sm:flex-wrap sm:overflow-visible"
         >
+          <Link
+            href="/weekly"
+            className="shrink-0 rounded-full bg-brand-blue px-3 py-1 font-medium text-white transition-colors hover:bg-brand-blue-dark"
+          >
+            今週の動き
+          </Link>
           {CATEGORIES.map((category) => (
             <Link
               key={category}
