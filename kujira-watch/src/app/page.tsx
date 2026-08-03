@@ -9,7 +9,7 @@ export default async function HomePage() {
     <div>
       <h1 className="sr-only">{SITE_NAME}｜新着記事</h1>
       {contents.length === 0 ? (
-        <p className="text-gray-500">記事がまだありません。</p>
+        <p className="text-foreground/50">記事がまだありません。</p>
       ) : (
         <InfiniteArticleList
           initialArticles={contents}

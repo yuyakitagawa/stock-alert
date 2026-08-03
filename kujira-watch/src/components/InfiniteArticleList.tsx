@@ -72,7 +72,7 @@ export default function InfiniteArticleList({
         </div>
       ))}
       {hasMore && (
-        <div ref={sentinelRef} className="flex justify-center py-8 text-sm text-gray-400">
+        <div ref={sentinelRef} className="flex justify-center py-8 text-sm text-foreground/40">
           {loading ? "読み込み中…" : ""}
         </div>
       )}

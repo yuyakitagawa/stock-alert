@@ -5,7 +5,7 @@ export default function CategoryBadge({ category }: { category: string | undefin
   return (
     <Link
       href={`/category/${encodeURIComponent(category)}`}
-      className="inline-flex items-center rounded-full border border-brand-navy/30 bg-white px-2.5 py-0.5 text-xs font-semibold text-brand-navy hover:bg-section-tint"
+      className="kicker inline-flex items-center border-b border-brand-navy/40 text-brand-navy transition-colors hover:border-brand-gold hover:text-brand-gold"
     >
       {category}
     </Link>

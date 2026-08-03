@@ -8,10 +8,10 @@ export default function ArticleCard({ article }: { article: ArticleContent }) {
   return (
     <Link
       href={`/articles/${article.id}`}
-      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+      className="group flex flex-col overflow-hidden border-t border-rule pt-4 transition-opacity hover:opacity-80"
     >
       {article.eyecatch && (
-        <div className="relative aspect-video w-full bg-section-tint">
+        <div className="relative mb-4 aspect-video w-full bg-section-tint">
           <Image
             src={article.eyecatch.url}
             alt={article.eyecatch.alt || article.title}
@@ -21,13 +21,15 @@ export default function ArticleCard({ article }: { article: ArticleContent }) {
           />
         </div>
       )}
-      <div className="flex flex-1 flex-col p-5">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="flex flex-1 flex-col">
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <DealTypeBadge dealType={article.dealType} />
-          <span className="text-xs text-gray-500">{formatDate(article.dealDate)}</span>
+          <span className="kicker text-brand-navy/50">{formatDate(article.dealDate)}</span>
         </div>
-        <h2 className="text-lg font-semibold leading-snug text-brand-navy">{article.title}</h2>
-        <p className="mt-2 text-sm text-gray-600">
+        <h2 className="font-serif text-lg font-bold leading-snug text-brand-navy underline decoration-brand-gold/0 decoration-2 underline-offset-4 group-hover:decoration-brand-gold/70">
+          {article.title}
+        </h2>
+        <p className="mt-2 text-sm text-foreground/60">
           {article.stockName}（{article.stockCode}） ・{" "}
           {formatDealAmount(article.dealAmount)}
         </p>
