@@ -597,7 +597,9 @@ def publish_article(payload: dict) -> "str | None":
     セレクトフィールドが複数選択（配列）設定の場合、'has unexpected data type' を
     フィールドごとに検知して配列に包み直し、直るまで（最大 MAX_TYPE_MISMATCH_RETRIES 回）
     再送信する。1回で1フィールドしか教えてくれないAPIなので、複数フィールドが
-    ズレていても順番に直していける。"""
+    ズレていても順番に直していける。文字列以外（eyecatch等のオブジェクト値）で型不一致に
+    なった場合は配列化では直せないため、そのフィールドを除外して再送信する（記事自体を
+    投稿失敗させるより、画像等の付随情報なしで本文だけ投稿する方を優先する）。"""
     try:
         working_payload = dict(payload)
         fixed_fields = set()
@@ -611,15 +613,17 @@ def publish_article(payload: dict) -> "str | None":
             if resp.status_code not in (200, 201) and resp.status_code == 400:
                 match = _UNEXPECTED_TYPE_RE.search(resp.text)
                 field = match.group(1) if match else None
-                if (
-                    field and field not in fixed_fields
-                    and field in working_payload
-                    and isinstance(working_payload[field], str)
-                ):
-                    working_payload[field] = [working_payload[field]]
-                    fixed_fields.add(field)
-                    print(f"    ↻ '{field}' を配列形式に変えて再送信します")
-                    continue
+                if field and field not in fixed_fields and field in working_payload:
+                    if isinstance(working_payload[field], str):
+                        working_payload[field] = [working_payload[field]]
+                        fixed_fields.add(field)
+                        print(f"    ↻ '{field}' を配列形式に変えて再送信します")
+                        continue
+                    else:
+                        del working_payload[field]
+                        fixed_fields.add(field)
+                        print(f"    ↻ '{field}' の型が不一致のため除外して再送信します")
+                        continue
 
             if resp.status_code not in (200, 201):
                 print(f"    ⚠ 投稿失敗 HTTP {resp.status_code}: {resp.text[:200]}")
