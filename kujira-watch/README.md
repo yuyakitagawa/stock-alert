@@ -62,13 +62,14 @@ npm run dev
 | パス | 内容 |
 |---|---|
 | `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順。下端までスクロールすると自動で次の10件を読み込むオートスクロール方式） |
+| `/weekly` | 大口投資家の動きまとめ（直近7日間の横断要約。「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。件数・合計推定金額を明記し、ヘッダーから常時リンク） |
 | `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（同じくオートスクロール） |
 | `/stocks/[code]` | 銘柄別の大量保有・自社株買い履歴まとめ（同一`stockCode`の記事を`-dealDate`順に一覧表示）。記事詳細の「銘柄」欄から内部リンクあり |
-| `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策） |
+| `/about` | 運営者情報・データソース・免責事項・よくある質問（FAQPage構造化データ付き）（E-E-A-T対策） |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
-| `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。フッター・`<head>`の`alternate`リンク・`llms.txt`から参照 |
+| `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。ヘッダーのハンバーガーメニュー・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/api/counter` | フッターの累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
 | `/api/articles` | 記事一覧のオートスクロール用（GET、`offset`/`dealType`クエリでmicroCMSの次のページを返す） |
 
@@ -82,10 +83,12 @@ npm run dev
 
 - **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`${SITE_NAME}｜%s` の順。記事タイトルが長いとブラウザタブで末尾が切れるため、サイト名を先頭に置いている）・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
 - **アイコン/OGP画像**: `src/app/icon.tsx`（ファビコン）・`src/app/opengraph-image.tsx`（SNSシェア用1200x630）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドブルー背景に合成して動的生成（Next.jsのファイルベースmetadata規約、画像アセット不要）。
-- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`、記事詳細に `Article`（`about`に銘柄名・証券コード、`citation`に出典URL）と `BreadcrumbList` を埋め込み。Google/AI Overview双方の情報抽出を想定。
+- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`、記事詳細に `Article`（`about`に銘柄名・証券コード、`citation`に出典URL）と `BreadcrumbList`、銘柄別・週次まとめページに `ItemList`、`/about`に `FAQPage` を埋め込み。Google/AI Overview双方の情報抽出を想定。
 - **サイトマップ**: `src/app/sitemap.ts` はビルド時ではなくリクエスト時に生成（`dynamic = "force-dynamic"`）。microCMSの一時的な障害でVercelのビルド自体が失敗しないようにするため。
 - **AIO向け**: `public/llms.txt` にサイトの目的・データソース・主要パスをLLMクローラ向けに明記。
-- **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、フッター/ヘッダーから常時リンク。
+- **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、ヘッダーのハンバーガーメニューから常時リンク。
+- **週次まとめページ**: `/weekly`（`src/app/weekly/page.tsx`、`lib/microcms.ts`の`getRecentArticles()`）が直近7日間の開示を横断要約（件数・合計推定金額つき）。「大口投資家の動きを教えて」等の包括的なクエリに個別記事より直接答えられるページとして新設し、ヘッダーから常時リンク・サイトマップに高優先度で登録。
+- **FAQPage構造化データ**: `/about`の「よくある質問」節（大量保有報告書とは・クジラとは・金額の算出方法・投資助言か否か・記事の作成方法）にFAQPage JSON-LDを付与。可視コンテンツと一言一句一致させている。
 
 ## 実装メモ
 
