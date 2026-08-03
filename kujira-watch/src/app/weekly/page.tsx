@@ -64,22 +64,22 @@ export default async function WeeklyDigestPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-gray-500">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-gray-700">大口投資家の動きまとめ</span>
+        <span className="text-foreground/70">大口投資家の動きまとめ</span>
       </nav>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-brand-navy">大口投資家の動き（直近7日間）</h1>
+        <h1 className="font-serif text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の動き（直近7日間）</h1>
         {contents.length > 0 && oldestDate && newestDate ? (
-          <p className="mt-3 text-sm leading-relaxed text-gray-700">
+          <p className="mt-3 text-sm leading-relaxed text-foreground/70">
             {SITE_NAME}がEDINET大量保有報告書をもとに集計した、{formatDate(oldestDate)}〜
             {formatDate(newestDate)}の大口投資家（クジラ）の動きです。この期間に{contents.length}
             件の大量保有・変更報告書が開示され、推定取得金額の合計は約
             {totalAmount.toLocaleString("ja-JP")}億円でした。個別の取引は下記の一覧、または各記事で解説しています。
           </p>
         ) : (
-          <p className="mt-3 text-sm leading-relaxed text-gray-700">
+          <p className="mt-3 text-sm leading-relaxed text-foreground/70">
             直近{WINDOW_DAYS}日間はEDINET大量保有報告書の新規開示がありませんでした。
           </p>
         )}

@@ -70,16 +70,16 @@ export default async function StockPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-gray-500">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-gray-700">{stockName}（{code}）</span>
+        <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-brand-navy">
+        <h1 className="font-serif text-2xl font-bold text-brand-navy sm:text-3xl">
           {stockName}（{code}）の大量保有・自社株買い履歴
         </h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-foreground/50">
           機関投資家・インサイダー・自社株買いなど、この銘柄に関する「クジラ」の動きを{contents.length}件まとめています。
         </p>
       </div>

@@ -5,19 +5,18 @@ import { CATEGORIES } from "@/types/article";
 
 export default function Header() {
   return (
-    <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-3">
+    <header className="sticky top-0 z-10 border-b border-brand-navy bg-paper/95 backdrop-blur">
+      <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between gap-2">
-          <Link href="/" className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-blue text-base"
-            >
+          <Link href="/" className="group flex items-center gap-2.5">
+            <span aria-hidden className="text-xl leading-none">
               🐋
             </span>
             <span className="leading-tight">
-              <span className="block text-lg font-bold text-brand-navy">{SITE_NAME}</span>
-              <span className="block text-xs text-gray-500">
+              <span className="block font-serif text-xl font-bold tracking-tight text-brand-navy sm:text-2xl">
+                {SITE_NAME}
+              </span>
+              <span className="kicker mt-0.5 hidden text-brand-blue sm:block">
                 EDINET大量保有報告書から読む「クジラ」の動き
               </span>
             </span>
@@ -28,11 +27,11 @@ export default function Header() {
             積み重なってページ本文を押し下げないようにする（sm以上では通常の折り返し）。 */}
         <nav
           aria-label="カテゴリ"
-          className="no-scrollbar flex flex-nowrap items-center gap-2 overflow-x-auto text-sm sm:flex-wrap sm:overflow-visible"
+          className="no-scrollbar kicker flex flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto border-t border-rule pt-2 text-brand-navy/70 sm:flex-wrap sm:overflow-visible"
         >
           <Link
             href="/weekly"
-            className="shrink-0 rounded-full bg-brand-blue px-3 py-1 font-medium text-white transition-colors hover:bg-brand-blue-dark"
+            className="shrink-0 text-brand-gold transition-colors hover:text-brand-navy"
           >
             今週の動き
           </Link>
@@ -40,7 +39,7 @@ export default function Header() {
             <Link
               key={category}
               href={`/category/${encodeURIComponent(category)}`}
-              className="shrink-0 rounded-full border border-brand-blue/40 px-3 py-1 font-medium text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
+              className="shrink-0 transition-colors hover:text-brand-navy"
             >
               {category}
             </Link>

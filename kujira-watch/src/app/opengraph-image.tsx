@@ -15,7 +15,7 @@ export default function OpengraphImage() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "#0a2540",
+          background: "#16213a",
           padding: 80,
           textAlign: "center",
         }}
@@ -23,6 +23,19 @@ export default function OpengraphImage() {
         <div style={{ display: "flex", fontSize: 140, marginBottom: 24 }}>🐋</div>
         <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#ffffff" }}>
           {SITE_NAME}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            marginTop: 20,
+            fontSize: 16,
+            fontWeight: 700,
+            letterSpacing: 4,
+            textTransform: "uppercase",
+            color: "#d9a44f",
+          }}
+        >
+          Kujira Watch
         </div>
         <div
           style={{

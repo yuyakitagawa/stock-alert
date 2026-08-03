@@ -19,7 +19,7 @@ export default function HeaderMenu() {
         aria-label="メニュー"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-brand-navy hover:bg-section-tint"
+        className="flex h-9 w-9 items-center justify-center text-brand-navy hover:text-brand-gold"
       >
         <span aria-hidden className="text-xl leading-none">
           {open ? "✕" : "☰"}
@@ -33,8 +33,8 @@ export default function HeaderMenu() {
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-10 cursor-default"
           />
-          <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-lg bg-white p-4 text-xs text-gray-600 shadow-lg ring-1 ring-gray-200">
-            <p className="font-semibold text-brand-navy">🐋 {SITE_NAME}へようこそ</p>
+          <div className="absolute right-0 top-full z-20 mt-2 w-72 border border-rule bg-paper p-4 text-xs text-foreground/70 shadow-lg">
+            <p className="font-serif font-bold text-brand-navy">🐋 {SITE_NAME}へようこそ</p>
             <p className="mt-1 leading-relaxed">
               {SITE_NAME}は、EDINETの大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
               アクティビストファンド・インサイダー・自社株買いといった「クジラ」（相場を動かすほどの
@@ -56,7 +56,7 @@ export default function HeaderMenu() {
                 RSSフィード
               </Link>
             </div>
-            <p className="mt-3 text-gray-400">
+            <p className="mt-3 text-foreground/40">
               © {year} {SITE_NAME}
             </p>
             <VisitCounter />

@@ -109,7 +109,7 @@ export default function FaqPage() {
   };
 
   return (
-    <article className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+    <article className="border-t border-rule bg-paper p-6 sm:p-10">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
@@ -118,20 +118,20 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-gray-500">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-gray-700">{title}</span>
+        <span className="text-foreground/70">{title}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy">{title}</h1>
-      <p className="mb-6 text-sm leading-relaxed text-gray-700">
+      <h1 className="mb-2 font-serif text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <p className="mb-6 text-sm leading-relaxed text-foreground/70">
         {SITE_NAME}の使い方や、大量保有報告書のしくみについてよく寄せられる質問をまとめました。
       </p>
       <dl className="space-y-5 text-sm">
         {FAQS.map((faq) => (
           <div key={faq.question}>
             <dt className="font-semibold text-brand-navy">{faq.question}</dt>
-            <dd className="mt-1 text-gray-700">{faq.render ?? faq.answer}</dd>
+            <dd className="mt-1 text-foreground/70">{faq.render ?? faq.answer}</dd>
           </div>
         ))}
       </dl>
