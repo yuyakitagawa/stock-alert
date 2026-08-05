@@ -13,7 +13,7 @@ export default function Header() {
               🐋
             </span>
             <span className="leading-tight">
-              <span className="block font-serif text-xl font-bold tracking-tight text-brand-navy sm:text-2xl">
+              <span className="block text-xl font-bold tracking-tight text-brand-navy sm:text-2xl">
                 {SITE_NAME}
               </span>
               <span className="kicker mt-0.5 hidden text-brand-blue sm:block">

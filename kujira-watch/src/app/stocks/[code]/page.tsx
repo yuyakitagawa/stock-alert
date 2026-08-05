@@ -56,6 +56,7 @@ export default async function StockPage({ params }: Props) {
     itemListElement: contents.map((article, index) => ({
       "@type": "ListItem",
       position: index + 1,
+      name: article.title,
       url: `${SITE_URL}/articles/${article.id}`,
     })),
   };
@@ -76,7 +77,7 @@ export default async function StockPage({ params }: Props) {
         <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
       <div className="mb-6">
-        <h1 className="font-serif text-2xl font-bold text-brand-navy sm:text-3xl">
+        <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">
           {stockName}（{code}）の大量保有・自社株買い履歴
         </h1>
         <p className="mt-1 text-sm text-foreground/50">

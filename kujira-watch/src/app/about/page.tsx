@@ -16,10 +16,10 @@ export const metadata: Metadata = {
 export default function AboutPage() {
   return (
     <article className="border-t border-rule bg-paper p-6 sm:p-10">
-      <h1 className="mb-6 font-serif text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
 
       <section className="mb-6">
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">大口投資家とは</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家とは</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           株式や各種金融市場において、市場価格を動かすほどの巨大な資金を運用する投資主体です。
         </p>
@@ -51,7 +51,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">大口投資家の動きを追う意味</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家の動きを追う意味</h2>
         <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>
             <strong className="text-brand-navy">資金の流れ（トレンド）の把握</strong>:
@@ -66,7 +66,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">大口投資家の動きとは</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家の動きとは</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           「大口投資家の動き」とは、機関投資家・アクティビストファンド・創業家の資産管理会社・
           自社株買いなど、相場を動かすほどの資金力を持つ投資主体（クジラ）が、上場企業の株式を
@@ -82,7 +82,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">このサイトについて</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">このサイトについて</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           {SITE_NAME}は、EDINET大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
           インサイダー・自社株買いといった「クジラ」（相場を動かすほどの資金力を持つ大口投資家を指す
@@ -91,7 +91,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">データソースと更新方法</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">データソースと更新方法</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>取引情報はEDINET大量保有報告書（買い方向のみ）を日次で取得しています。</li>
           <li>
@@ -114,7 +114,7 @@ export default function AboutPage() {
       </section>
 
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">投資家分類（用語集）</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">投資家分類（用語集）</h2>
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">
           記事に付いているバッジは、大量保有報告書の提出者を以下のいずれかに分類したものです。
         </p>
@@ -129,7 +129,7 @@ export default function AboutPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">免責事項</h2>
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">免責事項</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトの内容は情報提供を目的としたものであり、特定の銘柄や投資判断を推奨・勧誘するものではありません。
           掲載情報の正確性・完全性を保証するものではなく、本サイトの情報に基づいて被ったいかなる損害についても

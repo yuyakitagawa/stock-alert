@@ -84,8 +84,8 @@ npm run dev
 ## SEO/AIO対策
 
 - **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`${SITE_NAME}｜%s` の順。記事タイトルが長いとブラウザタブで末尾が切れるため、サイト名を先頭に置いている）・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
-- **アイコン/OGP画像**: `src/app/icon.tsx`（ファビコン）・`src/app/opengraph-image.tsx`（SNSシェア用1200x630）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドブルー背景に合成して動的生成（Next.jsのファイルベースmetadata規約、画像アセット不要）。
-- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`、記事詳細に `Article`（`about`に銘柄名・証券コード、`citation`に出典URL）と `BreadcrumbList`（トップ＞取引日＞記事タイトル。取引日は`/date/[date]`へリンク）、銘柄別・取引日別・週次まとめ・FAQページに `ItemList`/`BreadcrumbList`/`FAQPage` を埋め込み。Google/AI Overview双方の情報抽出を想定。
+- **アイコン/OGP画像/ロゴ**: `src/app/icon.tsx`（ファビコン）・`src/app/opengraph-image.tsx`（SNSシェア用1200x630）・`src/app/logo/route.ts`（構造化データ用の正方形512x512ロゴ、`/logo`）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドネイビー背景に合成して動的生成（画像アセット不要）。`logo`はOGP画像と違い横長ではなく正方形にしてある（構造化データの`logo`にはOGP用の横長比率ではなく正方形〜近い比率の画像を指定するのがGoogleの推奨のため）。
+- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`（`logo`に`/logo`を指定）。記事詳細には `Article`（`headline`/`url`/`author`＝サイト運営組織/`publisher`＋`publisher.logo`/`image`＝アイキャッチ/`about`に銘柄名・証券コード/`citation`に出典URL）と `BreadcrumbList`（トップ＞取引日＞記事タイトル。取引日は`/date/[date]`へリンク）。トップ・銘柄別・カテゴリ別・取引日別・週次まとめの各一覧ページには `ItemList`（各`itemListElement`に`name`＝記事タイトルを含める）と `BreadcrumbList`（トップ以外）、FAQページには `FAQPage` を埋め込み。Google/AI Overview双方の情報抽出を想定。
 - **サイトマップ**: `src/app/sitemap.ts` はビルド時ではなくリクエスト時に生成（`dynamic = "force-dynamic"`）。microCMSの一時的な障害でVercelのビルド自体が失敗しないようにするため。
 - **AIO向け**: `public/llms.txt` にサイトの目的・データソース・主要パスをLLMクローラ向けに明記。
 - **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、ヘッダーのハンバーガーメニューから常時リンク。
@@ -99,7 +99,7 @@ npm run dev
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
-- デザインはエディトリアル（雑誌）系。見出しは`next/font/google`のNoto Serif JP、本文はNoto Sans JPを使用し使い分ける。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型セリフ表示）を適用。
+- デザインはエディトリアル（雑誌）系。フォントは`next/font/google`のNoto Sans JPで統一。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型表示）を適用。ヒーロー枠（注目記事カード）はアイキャッチ画像がある記事のみ大きな高さを取り、無い記事では余白を残さないコンパクトな表示にフォールバックする。
 - 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。
 - ヘッダーのロゴ（🐋アイコン）・カテゴリ別一覧のパンくずリストから常にTOPへ戻れる（記事詳細・銘柄別履歴には既存のパンくずリストあり）。
 - オートスクロールの導入で記事一覧が際限なく伸び、ページ最下部までスクロールするのが実質困難になったため、独立した`<Footer>`は廃止。運営者情報・免責事項・RSS・累計訪問者カウンターは`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）に集約し、スクロール位置によらず常にアクセスできるようにしている。
