@@ -108,7 +108,7 @@ export default async function ArticleDetailPage({ params }: Props) {
   };
 
   return (
-    <article className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-gray-200">
+    <article className="overflow-hidden bg-paper">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
@@ -117,7 +117,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="border-b border-gray-100 px-6 py-3 text-xs text-gray-500">
+      <nav aria-label="パンくずリスト" className="border-b border-rule px-6 py-3 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {category && (
           <>
@@ -128,7 +128,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           </>
         )}
         {" / "}
-        <span className="text-gray-700">{article.title}</span>
+        <span className="text-foreground/70">{article.title}</span>
       </nav>
       {article.eyecatch && (
         <div className="relative aspect-video w-full bg-section-tint">
@@ -142,43 +142,45 @@ export default async function ArticleDetailPage({ params }: Props) {
           />
         </div>
       )}
-      <div className="p-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="p-6 sm:p-10">
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <DealTypeBadge dealType={article.dealType} />
           <CategoryBadge category={category} />
         </div>
+        <h1 className="mb-4 font-serif text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
+          {article.title}
+        </h1>
         {article.dealType && (
-          <p className="mb-4 text-xs text-gray-500">
+          <p className="mb-6 text-xs text-foreground/50">
             {DEAL_TYPE_DESCRIPTIONS[article.dealType]}{" "}
             <Link href="/about#dealtype-glossary" className="text-brand-blue hover:underline">
               分類の一覧を見る
             </Link>
           </p>
         )}
-        <h1 className="mb-4 text-3xl font-bold text-brand-navy">{article.title}</h1>
-        <dl className="mb-6 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-section-tint p-4 text-sm sm:grid-cols-4">
+        <dl className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-rule py-4 text-sm sm:grid-cols-4">
           <div>
-            <dt className="text-gray-500">銘柄</dt>
-            <dd className="font-medium text-brand-navy">
+            <dt className="kicker text-foreground/40">銘柄</dt>
+            <dd className="mt-1 font-medium text-brand-navy">
               <Link href={`/stocks/${article.stockCode}`} className="hover:underline">
                 {article.stockName}（{article.stockCode}）の履歴を見る
               </Link>
             </dd>
           </div>
           <div>
-            <dt className="text-gray-500">取引日</dt>
-            <dd className="font-medium text-brand-navy">{formatDate(article.dealDate)}</dd>
+            <dt className="kicker text-foreground/40">取引日</dt>
+            <dd className="mt-1 font-medium text-brand-navy">{formatDate(article.dealDate)}</dd>
           </div>
           <div>
-            <dt className="text-gray-500">金額規模</dt>
-            <dd className="font-medium text-brand-navy">
+            <dt className="kicker text-foreground/40">金額規模</dt>
+            <dd className="mt-1 font-medium text-brand-navy">
               {formatDealAmount(article.dealAmount)}
             </dd>
           </div>
           {article.sourceUrl && (
             <div>
-              <dt className="text-gray-500">出典</dt>
-              <dd>
+              <dt className="kicker text-foreground/40">出典</dt>
+              <dd className="mt-1">
                 <a
                   href={article.sourceUrl}
                   target="_blank"
@@ -192,24 +194,19 @@ export default async function ArticleDetailPage({ params }: Props) {
           )}
         </dl>
         <div
-          className="prose max-w-none prose-a:text-brand-blue"
+          className="prose max-w-none prose-headings:font-serif prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:font-serif first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: article.body }}
         />
         {tags && tags.length > 0 && (
-          <div className="mt-8 flex flex-wrap gap-2 border-t border-gray-200 pt-4">
+          <div className="mt-8 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
             {tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-gray-300 px-2.5 py-0.5 text-xs text-gray-600"
-              >
-                #{tag}
-              </span>
+              <span key={tag}>#{tag}</span>
             ))}
           </div>
         )}
         {relatedArticles.length > 0 && (
-          <div className="mt-10 border-t border-gray-200 pt-6">
-            <h2 className="mb-4 text-lg font-bold text-brand-navy">
+          <div className="mt-10 border-t border-rule pt-6">
+            <h2 className="mb-5 font-serif text-lg font-bold text-brand-navy">
               関連記事（{category}）
             </h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

@@ -46,16 +46,16 @@ export default async function CategoryPage({
 
   return (
     <div>
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-gray-500">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-gray-700">{decodedCategory}</span>
+        <span className="text-foreground/70">{decodedCategory}</span>
       </nav>
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy">
+      <h1 className="mb-6 font-serif text-2xl font-bold text-brand-navy sm:text-3xl">
         カテゴリ: {decodedCategory}
       </h1>
       {contents.length === 0 ? (
-        <p className="text-gray-500">このカテゴリの記事がまだありません。</p>
+        <p className="text-foreground/50">このカテゴリの記事がまだありません。</p>
       ) : (
         <InfiniteArticleList
           initialArticles={contents}

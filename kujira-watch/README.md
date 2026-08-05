@@ -98,7 +98,7 @@ npm run dev
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
-- デザインは東京ガス公式サイトを参考に、ブランドブルー(`#0068b7`)＋ネイビー＋ゴールドのアクセント、アウトライン型ピルバッジを採用（`src/app/globals.css` のCSS変数で調整可）。カードはホバーで浮き上がるトランジション付き、本文フォントは`next/font/google`のNoto Sans JPを使用（日本語の表示品質向上のため、旧来のArial/Helveticaフォールバックから変更）。
+- デザインはエディトリアル（雑誌）系。見出しは`next/font/google`のNoto Serif JP、本文はNoto Sans JPを使用し使い分ける。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型セリフ表示）を適用。
 - 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。
 - ヘッダーのロゴ（🐋アイコン）・カテゴリ別一覧のパンくずリストから常にTOPへ戻れる（記事詳細・銘柄別履歴には既存のパンくずリストあり）。
 - オートスクロールの導入で記事一覧が際限なく伸び、ページ最下部までスクロールするのが実質困難になったため、独立した`<Footer>`は廃止。運営者情報・免責事項・RSS・累計訪問者カウンターは`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）に集約し、スクロール位置によらず常にアクセスできるようにしている。

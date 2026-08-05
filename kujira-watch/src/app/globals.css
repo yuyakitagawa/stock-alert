@@ -2,31 +2,41 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf7f0;
+  --foreground: #201d1a;
+  --paper: #fffdf8;
   --brand-blue: #0068b7;
   --brand-blue-dark: #004c87;
-  --brand-navy: #0b1f33;
-  --brand-gold: #e8a33d;
-  --section-tint: #f4f7fa;
+  --brand-navy: #16213a;
+  --brand-gold: #b8863a;
+  --brand-gold-bright: #d9a44f;
+  --section-tint: #f1ece1;
+  --rule: #ded5c0;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
   --color-brand-blue: var(--brand-blue);
   --color-brand-blue-dark: var(--brand-blue-dark);
   --color-brand-navy: var(--brand-navy);
   --color-brand-gold: var(--brand-gold);
+  --color-brand-gold-bright: var(--brand-gold-bright);
   --color-section-tint: var(--section-tint);
+  --color-rule: var(--rule);
   --font-sans: var(--font-noto-sans-jp), var(--font-geist-sans);
+  --font-serif: var(--font-noto-serif-jp), "Hiragino Mincho ProN", serif;
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #14120f;
     --foreground: #ededed;
+    --paper: #1c1916;
+    --section-tint: #201c17;
+    --rule: #3a352c;
   }
 }
 
@@ -35,6 +45,18 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), "Hiragino Sans", "Yu Gothic", sans-serif;
   letter-spacing: 0.01em;
+}
+
+/* エディトリアル系の見出し・キッカー（小見出しラベル）用ユーティリティ */
+.font-serif {
+  font-feature-settings: "palt";
+}
+
+.kicker {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 /* カテゴリフィルター等、横スクロールバーを見せたくない箇所用 */

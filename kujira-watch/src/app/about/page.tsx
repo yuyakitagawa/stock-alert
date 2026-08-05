@@ -15,15 +15,15 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <article className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy">{title}</h1>
+    <article className="border-t border-rule bg-paper p-6 sm:p-10">
+      <h1 className="mb-6 font-serif text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">大口投資家とは</h2>
-        <p className="text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">大口投資家とは</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
           株式や各種金融市場において、市場価格を動かすほどの巨大な資金を運用する投資主体です。
         </p>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-gray-700">
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>
             <strong className="text-brand-navy">機関投資家（国内・海外）</strong>:
             年金基金（GPIFなど）、投資信託、生命保険会社、政府系ファンド
@@ -41,7 +41,7 @@ export default function AboutPage() {
             個人枠でありながら億単位で動かす投資家
           </li>
         </ul>
-        <p className="mt-3 text-sm leading-relaxed text-gray-700">
+        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
           {SITE_NAME}ではこれらの投資家を13種類に分類しています。詳しくは
           <Link href="#dealtype-glossary" className="text-brand-blue hover:underline">
             用語集
@@ -51,8 +51,8 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">大口投資家の動きを追う意味</h2>
-        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">大口投資家の動きを追う意味</h2>
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>
             <strong className="text-brand-navy">資金の流れ（トレンド）の把握</strong>:
             株価の持続的な上昇・下落は大口投資家の買増し・売却によって作られます。トレンドに逆らわない
@@ -66,8 +66,8 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">大口投資家の動きとは</h2>
-        <p className="text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">大口投資家の動きとは</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
           「大口投資家の動き」とは、機関投資家・アクティビストファンド・創業家の資産管理会社・
           自社株買いなど、相場を動かすほどの資金力を持つ投資主体（クジラ）が、上場企業の株式を
           いつ・どれくらいの規模で売買したかを指します。日本では、株式の5%以上を保有した投資家は
@@ -82,8 +82,8 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">このサイトについて</h2>
-        <p className="text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">このサイトについて</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
           {SITE_NAME}は、EDINET大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
           インサイダー・自社株買いといった「クジラ」（相場を動かすほどの資金力を持つ大口投資家を指す
           金融業界の俗称）の動きを監視し、解説するブログです。
@@ -91,8 +91,8 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">データソースと更新方法</h2>
-        <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">データソースと更新方法</h2>
+        <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>取引情報はEDINET大量保有報告書（買い方向のみ）を日次で取得しています。</li>
           <li>
             金額規模は、発行済株式数×株価×保有比率変化から算出した推定値です。EDINET開示自体には
@@ -104,7 +104,7 @@ export default function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <p className="text-sm leading-relaxed text-gray-700">
+        <p className="text-sm leading-relaxed text-foreground/70">
           大量保有報告書のしくみや本サイトの使い方については
           <Link href="/faq" className="text-brand-blue hover:underline">
             よくある質問
@@ -114,23 +114,23 @@ export default function AboutPage() {
       </section>
 
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">投資家分類（用語集）</h2>
-        <p className="mb-3 text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">投資家分類（用語集）</h2>
+        <p className="mb-3 text-sm leading-relaxed text-foreground/70">
           記事に付いているバッジは、大量保有報告書の提出者を以下のいずれかに分類したものです。
         </p>
         <dl className="space-y-3 text-sm">
           {DEAL_TYPES.map((dealType) => (
             <div key={dealType}>
               <dt className="font-semibold text-brand-navy">{dealType}</dt>
-              <dd className="text-gray-700">{DEAL_TYPE_DESCRIPTIONS[dealType]}</dd>
+              <dd className="text-foreground/70">{DEAL_TYPE_DESCRIPTIONS[dealType]}</dd>
             </div>
           ))}
         </dl>
       </section>
 
       <section>
-        <h2 className="mb-2 text-lg font-semibold text-brand-navy">免責事項</h2>
-        <p className="text-sm leading-relaxed text-gray-700">
+        <h2 className="mb-2 font-serif text-lg font-bold text-brand-navy">免責事項</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
           本サイトの内容は情報提供を目的としたものであり、特定の銘柄や投資判断を推奨・勧誘するものではありません。
           掲載情報の正確性・完全性を保証するものではなく、本サイトの情報に基づいて被ったいかなる損害についても
           運営者は責任を負いません。投資に関する最終判断はご自身の責任で行ってください。

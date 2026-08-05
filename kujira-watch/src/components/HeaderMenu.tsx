@@ -32,7 +32,7 @@ export default function HeaderMenu() {
         aria-label="メニュー"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-brand-navy hover:bg-section-tint"
+        className="flex h-9 w-9 items-center justify-center text-brand-navy hover:text-brand-gold"
       >
         <span aria-hidden className="text-xl leading-none">
           ☰
@@ -56,16 +56,13 @@ export default function HeaderMenu() {
         role="dialog"
         aria-modal="true"
         aria-label="メニュー"
-        className={`fixed right-0 top-0 z-50 h-dvh w-[86%] max-w-xs transform overflow-y-auto bg-white shadow-2xl transition-transform duration-300 ease-out ${
+        className={`fixed right-0 top-0 z-50 h-dvh w-[86%] max-w-xs transform overflow-y-auto border-l border-rule bg-paper shadow-2xl transition-transform duration-300 ease-out ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-          <span className="flex items-center gap-2 text-sm font-bold text-brand-navy">
-            <span
-              aria-hidden
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-blue text-sm"
-            >
+        <div className="flex items-center justify-between border-b border-rule px-4 py-3">
+          <span className="flex items-center gap-2 font-serif text-sm font-bold text-brand-navy">
+            <span aria-hidden className="text-base leading-none">
               🐋
             </span>
             {SITE_NAME}
@@ -74,7 +71,7 @@ export default function HeaderMenu() {
             type="button"
             aria-label="メニューを閉じる"
             onClick={close}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-brand-navy hover:bg-section-tint"
+            className="flex h-8 w-8 items-center justify-center text-brand-navy hover:text-brand-gold"
           >
             <span aria-hidden className="text-lg leading-none">
               ✕
@@ -82,36 +79,34 @@ export default function HeaderMenu() {
           </button>
         </div>
 
-        <p className="px-4 py-3 text-xs leading-relaxed text-gray-600">
+        <p className="px-4 py-3 text-xs leading-relaxed text-foreground/70">
           {SITE_NAME}は、EDINETの大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
           アクティビストファンド・インサイダー・自社株買いといった「クジラ」（相場を動かすほどの
           資金力を持つ大口投資家の俗称）が、どの銘柄をいつ・どれくらいの規模で動かしたかを
           日次でまとめて解説するブログです。
         </p>
 
-        <p className="bg-section-tint px-4 py-1.5 text-xs font-semibold text-gray-500">
-          サイトについて
-        </p>
-        <nav aria-label="サイトについて" className="border-b border-gray-200">
+        <p className="kicker bg-section-tint px-4 py-1.5 text-brand-navy/60">サイトについて</p>
+        <nav aria-label="サイトについて" className="border-b border-rule">
           {SITE_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               onClick={close}
-              className="flex items-center justify-between border-t border-gray-100 px-4 py-3.5 text-sm text-brand-navy first:border-t-0 hover:bg-section-tint"
+              className="flex items-center justify-between border-t border-rule/60 px-4 py-3.5 text-sm text-brand-navy first:border-t-0 hover:bg-section-tint"
             >
               {link.label}
-              <span aria-hidden className="text-gray-300">
+              <span aria-hidden className="text-foreground/30">
                 ›
               </span>
             </Link>
           ))}
         </nav>
 
-        <p className="mt-3 leading-relaxed text-gray-400 text-[11px] px-4">
+        <p className="mt-3 px-4 text-[11px] leading-relaxed text-foreground/70">
           本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。
         </p>
-        <p className="mt-2 px-4 text-gray-400">
+        <p className="mt-2 px-4 text-foreground/40">
           © {year} {SITE_NAME}
         </p>
         <div className="px-4 pb-4">
