@@ -43,9 +43,39 @@ export default async function CategoryPage({
   }
 
   const { contents, totalCount } = await getArticleList({ dealType });
+  const url = `${SITE_URL}/category/${category}`;
+
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: decodedCategory, item: url },
+    ],
+  };
+
+  const itemListJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: `${decodedCategory}の記事一覧`,
+    itemListElement: contents.map((article, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: article.title,
+      url: `${SITE_URL}/articles/${article.id}`,
+    })),
+  };
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+      />
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
