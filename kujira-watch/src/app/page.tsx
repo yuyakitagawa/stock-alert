@@ -2,12 +2,17 @@ import InfiniteArticleList from "@/components/InfiniteArticleList";
 import { getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
-export default async function HomePage() {
-  const { contents, totalCount } = await getArticleList();
+// クローラーが最初のHTML(SSR)だけで辿れるリンク数を増やすため、初回取得件数を
+// ARTICLES_PER_PAGE(10件・オートスクロールの追加取得単位)より多めにする。
+// オートスクロールはJSでのみ発火するため、初回SSR分の実リンクがクロール可能な記事数の下限になる。
+const INITIAL_ARTICLES_COUNT = 30;
 
-  // 初回表示分（最新10件）のみをItemListとして構造化データ化する。オートスクロールで
-  // 追加取得される分はクライアント側描画のためJSON-LDには含めない（クロール時点で
-  // サーバーが返せる範囲と一致させる）。
+export default async function HomePage() {
+  const { contents, totalCount } = await getArticleList({ limit: INITIAL_ARTICLES_COUNT });
+
+  // 初回表示分（INITIAL_ARTICLES_COUNT件）のみをItemListとして構造化データ化する。
+  // オートスクロールで追加取得される分はクライアント側描画のためJSON-LDには含めない
+  // （クロール時点でサーバーが返せる範囲と一致させる）。
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",

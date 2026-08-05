@@ -6,6 +6,9 @@ import { getArticleList } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
 
+// トップページと同様、初回SSRの実リンク数を増やしてクロール可能な記事数を底上げする。
+const INITIAL_ARTICLES_COUNT = 30;
+
 export function generateStaticParams() {
   return CATEGORIES.map((category) => ({ category }));
 }
@@ -42,7 +45,10 @@ export default async function CategoryPage({
     notFound();
   }
 
-  const { contents, totalCount } = await getArticleList({ dealType });
+  const { contents, totalCount } = await getArticleList({
+    dealType,
+    limit: INITIAL_ARTICLES_COUNT,
+  });
   const url = `${SITE_URL}/category/${category}`;
 
   const breadcrumbJsonLd = {
