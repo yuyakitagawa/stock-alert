@@ -56,6 +56,7 @@ export default async function StockPage({ params }: Props) {
     itemListElement: contents.map((article, index) => ({
       "@type": "ListItem",
       position: index + 1,
+      name: article.title,
       url: `${SITE_URL}/articles/${article.id}`,
     })),
   };

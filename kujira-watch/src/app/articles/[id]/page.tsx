@@ -74,6 +74,7 @@ export default async function ArticleDetailPage({ params }: Props) {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: article.title,
+    url,
     datePublished: article.publishedAt ?? article.createdAt,
     dateModified: article.updatedAt,
     inLanguage: "ja",
@@ -84,7 +85,16 @@ export default async function ArticleDetailPage({ params }: Props) {
       tickerSymbol: article.stockCode,
     },
     articleSection: category,
-    publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+    // 記事は人手ではなくAIがEDINET開示等の事実情報から生成しているため、
+    // authorはサイト運営組織そのもの（Organization）とする。
+    author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+    publisher: {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: { "@type": "ImageObject", url: `${SITE_URL}/logo` },
+    },
+    ...(article.eyecatch ? { image: article.eyecatch.url } : {}),
     ...(article.sourceUrl ? { citation: article.sourceUrl } : {}),
   };
 

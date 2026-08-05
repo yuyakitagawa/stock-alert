@@ -71,6 +71,7 @@ const organizationJsonLd = {
   "@type": "Organization",
   name: SITE_NAME,
   url: SITE_URL,
+  logo: `${SITE_URL}/logo`,
 };
 
 export default function RootLayout({
