@@ -34,7 +34,7 @@ export default function HeaderMenu() {
             className="fixed inset-0 z-10 cursor-default"
           />
           <div className="absolute right-0 top-full z-20 mt-2 w-72 border border-rule bg-paper p-4 text-xs text-foreground/70 shadow-lg">
-            <p className="font-serif font-bold text-brand-navy">🐋 {SITE_NAME}へようこそ</p>
+            <p className="font-bold text-brand-navy">🐋 {SITE_NAME}へようこそ</p>
             <p className="mt-1 leading-relaxed">
               {SITE_NAME}は、EDINETの大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
               アクティビストファンド・インサイダー・自社株買いといった「クジラ」（相場を動かすほどの

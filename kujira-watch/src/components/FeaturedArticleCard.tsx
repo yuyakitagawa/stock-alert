@@ -5,10 +5,13 @@ import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import DealTypeBadge from "./DealTypeBadge";
 
 export default function FeaturedArticleCard({ article }: { article: ArticleContent }) {
+  const hasImage = Boolean(article.eyecatch);
   return (
     <Link
       href={`/articles/${article.id}`}
-      className="group relative mb-10 flex min-h-[22rem] flex-col justify-end overflow-hidden bg-brand-navy text-white"
+      className={`group relative mb-10 flex flex-col overflow-hidden bg-brand-navy text-white ${
+        hasImage ? "min-h-[22rem] justify-end" : ""
+      }`}
     >
       {article.eyecatch && (
         <div className="absolute inset-0">
@@ -29,7 +32,7 @@ export default function FeaturedArticleCard({ article }: { article: ArticleConte
           <DealTypeBadge dealType={article.dealType} />
           <span className="kicker text-white/60">{formatDate(article.dealDate)}</span>
         </div>
-        <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">
+        <h2 className="text-2xl font-bold leading-snug sm:text-3xl">
           {article.title}
         </h2>
         <p className="mt-3 text-sm text-white/80">

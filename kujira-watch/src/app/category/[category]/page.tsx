@@ -51,7 +51,7 @@ export default async function CategoryPage({
         {" / "}
         <span className="text-foreground/70">{decodedCategory}</span>
       </nav>
-      <h1 className="mb-6 font-serif text-2xl font-bold text-brand-navy sm:text-3xl">
+      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">
         カテゴリ: {decodedCategory}
       </h1>
       {contents.length === 0 ? (
