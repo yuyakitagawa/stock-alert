@@ -26,7 +26,6 @@
   --color-section-tint: var(--section-tint);
   --color-rule: var(--rule);
   --font-sans: var(--font-noto-sans-jp), var(--font-geist-sans);
-  --font-serif: var(--font-noto-serif-jp), "Hiragino Mincho ProN", serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -45,11 +44,6 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), "Hiragino Sans", "Yu Gothic", sans-serif;
   letter-spacing: 0.01em;
-}
-
-/* エディトリアル系の見出し・キッカー（小見出しラベル）用ユーティリティ */
-.font-serif {
-  font-feature-settings: "palt";
 }
 
 .kicker {

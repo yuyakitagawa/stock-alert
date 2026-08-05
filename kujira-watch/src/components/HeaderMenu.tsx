@@ -61,7 +61,7 @@ export default function HeaderMenu() {
         }`}
       >
         <div className="flex items-center justify-between border-b border-rule px-4 py-3">
-          <span className="flex items-center gap-2 font-serif text-sm font-bold text-brand-navy">
+          <span className="flex items-center gap-2 text-sm font-bold text-brand-navy">
             <span aria-hidden className="text-base leading-none">
               🐋
             </span>

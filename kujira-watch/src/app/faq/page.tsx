@@ -123,7 +123,7 @@ export default function FaqPage() {
         {" / "}
         <span className="text-foreground/70">{title}</span>
       </nav>
-      <h1 className="mb-2 font-serif text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
       <p className="mb-6 text-sm leading-relaxed text-foreground/70">
         {SITE_NAME}の使い方や、大量保有報告書のしくみについてよく寄せられる質問をまとめました。
       </p>
