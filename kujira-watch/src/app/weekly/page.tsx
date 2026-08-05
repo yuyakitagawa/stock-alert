@@ -50,6 +50,7 @@ export default async function WeeklyDigestPage() {
     itemListElement: contents.map((article, index) => ({
       "@type": "ListItem",
       position: index + 1,
+      name: article.title,
       url: `${SITE_URL}/articles/${article.id}`,
     })),
   };
@@ -70,7 +71,7 @@ export default async function WeeklyDigestPage() {
         <span className="text-foreground/70">大口投資家の動きまとめ</span>
       </nav>
       <div className="mb-8">
-        <h1 className="font-serif text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の動き（直近7日間）</h1>
+        <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の動き（直近7日間）</h1>
         {contents.length > 0 && oldestDate && newestDate ? (
           <p className="mt-3 text-sm leading-relaxed text-foreground/70">
             {SITE_NAME}がEDINET大量保有報告書をもとに集計した、{formatDate(oldestDate)}〜

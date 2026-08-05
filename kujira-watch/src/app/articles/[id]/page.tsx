@@ -74,6 +74,7 @@ export default async function ArticleDetailPage({ params }: Props) {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: article.title,
+    url,
     datePublished: article.publishedAt ?? article.createdAt,
     dateModified: article.updatedAt,
     inLanguage: "ja",
@@ -84,7 +85,16 @@ export default async function ArticleDetailPage({ params }: Props) {
       tickerSymbol: article.stockCode,
     },
     articleSection: category,
-    publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+    // 記事は人手ではなくAIがEDINET開示等の事実情報から生成しているため、
+    // authorはサイト運営組織そのもの（Organization）とする。
+    author: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+    publisher: {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: { "@type": "ImageObject", url: `${SITE_URL}/logo` },
+    },
+    ...(article.eyecatch ? { image: article.eyecatch.url } : {}),
     ...(article.sourceUrl ? { citation: article.sourceUrl } : {}),
   };
 
@@ -147,7 +157,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           <DealTypeBadge dealType={article.dealType} />
           <CategoryBadge category={category} />
         </div>
-        <h1 className="mb-4 font-serif text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
+        <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.title}
         </h1>
         {article.dealType && (
@@ -194,7 +204,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           )}
         </dl>
         <div
-          className="prose max-w-none prose-headings:font-serif prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:font-serif first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
+          className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: article.body }}
         />
         {tags && tags.length > 0 && (
@@ -206,7 +216,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         )}
         {relatedArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-5 font-serif text-lg font-bold text-brand-navy">
+            <h2 className="mb-5 text-lg font-bold text-brand-navy">
               関連記事（{category}）
             </h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

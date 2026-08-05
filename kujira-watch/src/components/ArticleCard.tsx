@@ -26,7 +26,7 @@ export default function ArticleCard({ article }: { article: ArticleContent }) {
           <DealTypeBadge dealType={article.dealType} />
           <span className="kicker text-brand-navy/50">{formatDate(article.dealDate)}</span>
         </div>
-        <h2 className="font-serif text-lg font-bold leading-snug text-brand-navy underline decoration-brand-gold/0 decoration-2 underline-offset-4 group-hover:decoration-brand-gold/70">
+        <h2 className="text-lg font-bold leading-snug text-brand-navy underline decoration-brand-gold/0 decoration-2 underline-offset-4 group-hover:decoration-brand-gold/70">
           {article.title}
         </h2>
         <p className="mt-2 text-sm text-foreground/60">
