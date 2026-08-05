@@ -59,6 +59,21 @@ export async function getArticlesByStockCode(stockCode: string) {
   return { ...result, contents: result.contents.map(normalizeDealType) };
 }
 
+// dealDateはweb/publish_blog_articles.pyが`${disc_date}T00:00:00.000Z`形式(UTC深夜0時)で
+// 保存しているため、日付部分(YYYY-MM-DD)から同じ形式を組み立ててequalsで完全一致させる。
+export async function getArticlesByDealDate(date: string) {
+  const result = await client.getList<Article>({
+    endpoint: "articles",
+    queries: {
+      filters: `dealDate[equals]${date}T00:00:00.000Z`,
+      orders: "-dealAmount",
+      limit: 100,
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return { ...result, contents: result.contents.map(normalizeDealType) };
+}
+
 export async function getArticleDetail(id: string) {
   const article = await client.getListDetail<Article>({
     endpoint: "articles",
@@ -86,9 +101,14 @@ export async function getRecentArticles(days: number) {
 }
 
 export async function getAllArticlesForSitemap() {
-  const contents = await client.getAllContents<Pick<Article, "dealType" | "stockCode">>({
+  const contents = await client.getAllContents<
+    Pick<Article, "dealType" | "stockCode" | "dealDate">
+  >({
     endpoint: "articles",
-    queries: { fields: "id,updatedAt,publishedAt,dealType,stockCode", orders: "-publishedAt" },
+    queries: {
+      fields: "id,updatedAt,publishedAt,dealType,stockCode,dealDate",
+      orders: "-publishedAt",
+    },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
   return contents.map(normalizeDealType);

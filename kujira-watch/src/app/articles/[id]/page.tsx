@@ -64,6 +64,7 @@ export default async function ArticleDetailPage({ params }: Props) {
 
   const category = article.dealType ? categoryLabel(article.dealType) : undefined;
   const url = `${SITE_URL}/articles/${id}`;
+  const dealDateOnly = article.dealDate.slice(0, 10);
 
   const { contents: sameCategoryArticles } = article.dealType
     ? await getArticleList({ dealType: article.dealType, limit: 5 })
@@ -93,17 +94,13 @@ export default async function ArticleDetailPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      ...(category
-        ? [
-            {
-              "@type": "ListItem",
-              position: 2,
-              name: category,
-              item: `${SITE_URL}/category/${encodeURIComponent(category)}`,
-            },
-          ]
-        : []),
-      { "@type": "ListItem", position: category ? 3 : 2, name: article.title, item: url },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: formatDate(article.dealDate),
+        item: `${SITE_URL}/date/${dealDateOnly}`,
+      },
+      { "@type": "ListItem", position: 3, name: article.title, item: url },
     ],
   };
 
@@ -119,14 +116,10 @@ export default async function ArticleDetailPage({ params }: Props) {
       />
       <nav aria-label="パンくずリスト" className="border-b border-rule px-6 py-3 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
-        {category && (
-          <>
-            {" / "}
-            <Link href={`/category/${encodeURIComponent(category)}`} className="hover:text-brand-blue">
-              {category}
-            </Link>
-          </>
-        )}
+        {" / "}
+        <Link href={`/date/${dealDateOnly}`} className="hover:text-brand-blue">
+          {formatDate(article.dealDate)}
+        </Link>
         {" / "}
         <span className="text-foreground/70">{article.title}</span>
       </nav>
