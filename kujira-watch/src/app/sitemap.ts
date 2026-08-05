@@ -30,6 +30,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
+  const dealDates = [
+    ...new Set(articles.map((article) => article.dealDate.slice(0, 10)).filter(Boolean)),
+  ];
+  const dateEntries: MetadataRoute.Sitemap = dealDates.map((date) => ({
+    url: `${SITE_URL}/date/${date}`,
+    changeFrequency: "monthly",
+    priority: 0.5,
+  }));
+
   return [
     { url: SITE_URL, changeFrequency: "daily", priority: 1 },
     { url: `${SITE_URL}/weekly`, changeFrequency: "daily", priority: 0.9 },
@@ -37,6 +46,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.6 },
     ...categoryEntries,
     ...stockEntries,
+    ...dateEntries,
     ...articleEntries,
   ];
 }

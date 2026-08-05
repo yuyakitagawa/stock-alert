@@ -66,9 +66,10 @@ npm run dev
 | `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（同じく初回30件サーバーレンダリング＋オートスクロール） |
 | `/stocks/[code]` | 銘柄別の大量保有・自社株買い履歴まとめ（同一`stockCode`の記事を`-dealDate`順に一覧表示）。記事詳細の「銘柄」欄から内部リンクあり |
+| `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策）。投資家分類の用語集（`#dealtype-glossary`）も含む |
 | `/faq` | よくある質問（FAQPage構造化データ付き、11問）。大量保有報告書のしくみ・本サイトの使い方 |
-| `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別ページを含む） |
+| `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別・取引日別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。ヘッダーのハンバーガーメニュー・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/api/counter` | ヘッダーのハンバーガーメニュー内の累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
@@ -84,7 +85,7 @@ npm run dev
 
 - **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`${SITE_NAME}｜%s` の順。記事タイトルが長いとブラウザタブで末尾が切れるため、サイト名を先頭に置いている）・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
 - **アイコン/OGP画像/ロゴ**: `src/app/icon.tsx`（ファビコン）・`src/app/opengraph-image.tsx`（SNSシェア用1200x630）・`src/app/logo/route.ts`（構造化データ用の正方形512x512ロゴ、`/logo`）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドネイビー背景に合成して動的生成（画像アセット不要）。`logo`はOGP画像と違い横長ではなく正方形にしてある（構造化データの`logo`にはOGP用の横長比率ではなく正方形〜近い比率の画像を指定するのがGoogleの推奨のため）。
-- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`（`logo`に`/logo`を指定）。記事詳細には `Article`（`headline`/`url`/`author`＝サイト運営組織/`publisher`＋`publisher.logo`/`image`＝アイキャッチ/`about`に銘柄名・証券コード/`citation`に出典URL）と `BreadcrumbList`。トップ・銘柄別・カテゴリ別・週次まとめの各一覧ページには `ItemList`（各`itemListElement`に`name`＝記事タイトルを含める）と `BreadcrumbList`（トップ以外）、FAQページには `FAQPage` を埋め込み。Google/AI Overview双方の情報抽出を想定。
+- **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`（`logo`に`/logo`を指定）。記事詳細には `Article`（`headline`/`url`/`author`＝サイト運営組織/`publisher`＋`publisher.logo`/`image`＝アイキャッチ/`about`に銘柄名・証券コード/`citation`に出典URL）と `BreadcrumbList`（トップ＞取引日＞記事タイトル。取引日は`/date/[date]`へリンク）。トップ・銘柄別・カテゴリ別・取引日別・週次まとめの各一覧ページには `ItemList`（各`itemListElement`に`name`＝記事タイトルを含める）と `BreadcrumbList`（トップ以外）、FAQページには `FAQPage` を埋め込み。Google/AI Overview双方の情報抽出を想定。
 - **サイトマップ**: `src/app/sitemap.ts` はビルド時ではなくリクエスト時に生成（`dynamic = "force-dynamic"`）。microCMSの一時的な障害でVercelのビルド自体が失敗しないようにするため。
 - **AIO向け**: `public/llms.txt` にサイトの目的・データソース・主要パスをLLMクローラ向けに明記。
 - **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、ヘッダーのハンバーガーメニューから常時リンク。
