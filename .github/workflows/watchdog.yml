@@ -2,7 +2,13 @@ name: Watchdog
 
 on:
   schedule:
-    - cron: '30 9 * * 1-5'  # 09:30 UTC = 18:30 JST（daily_alertの1時間後）
+    # daily_alert.ymlは11:00 UTC(20:00 JST)予定だが、GitHub Actionsのschedule実行は
+    # 遅延することが多く、実測では11:00 UTC〜最大13:45 UTC頃に開始している。
+    # 旧cron('30 9'=09:30 UTC)はdaily_alertの予定開始より前に発火してしまい、
+    # 「まだ今日の成功実行が無い」と誤判定して毎日二重にworkflow_run（延いてはLINE二重通知）
+    # を引き起こしていた（実測: 2026-08-03に09:50と13:44の2回実行）。
+    # 実測の最遅開始+実行時間(約1時間)を踏まえ、確実に完了した後の14:30 UTC(23:30 JST)に変更。
+    - cron: '30 14 * * 1-5'  # 14:30 UTC = 23:30 JST（daily_alertの実測完了後）
   workflow_dispatch:
 
 jobs:
