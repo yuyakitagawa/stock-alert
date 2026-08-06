@@ -34,13 +34,13 @@ from lib.db import save_price_cache, get_price_cache_coverage, init_db
 
 BATCH_SIZE = 100
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--years",  type=int, default=10, help="取得する年数（デフォルト: 10）")
-parser.add_argument("--resume", action="store_true",  help="取得済み銘柄をスキップ")
-parser.add_argument("--sleep",  type=float, default=2.0, help="バッチ間隔（秒）")
-args = parser.parse_args()
 
-TARGET_DAYS = args.years * 365
+def _parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--years",  type=int, default=10, help="取得する年数（デフォルト: 10）")
+    parser.add_argument("--resume", action="store_true",  help="取得済み銘柄をスキップ")
+    parser.add_argument("--sleep",  type=float, default=2.0, help="バッチ間隔（秒）")
+    return parser.parse_args()
 
 
 def fetch_yahoo_batch(codes: list, days: int) -> dict:
@@ -105,13 +105,16 @@ def get_all_codes():
 
 
 def main():
+    args = _parse_args()
+    target_days = args.years * 365
+
     init_db()
     codes = get_all_codes()
     if not codes:
         print("ERROR: 銘柄コードが取得できません。先に screener.py を実行してください。")
         sys.exit(1)
 
-    target_start = (date.today() - timedelta(days=TARGET_DAYS)).isoformat()
+    target_start = (date.today() - timedelta(days=target_days)).isoformat()
 
     # --resume: すでに十分なデータがある銘柄は対象から除外
     skip = 0
@@ -131,7 +134,7 @@ def main():
     print("=" * 60)
 
     done = fail = 0
-    days = TARGET_DAYS + 30  # 少し余裕を持って取得
+    days = target_days + 30  # 少し余裕を持って取得
     for b in range(n_batches):
         batch_codes = codes[b * BATCH_SIZE:(b + 1) * BATCH_SIZE]
         fetched = fetch_yahoo_batch(batch_codes, days)
