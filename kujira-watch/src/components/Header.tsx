@@ -1,6 +1,7 @@
 import Link from "next/link";
 import HeaderMenu from "./HeaderMenu";
 import StockSearch from "./StockSearch";
+import VisitCounter from "./VisitCounter";
 import { SITE_NAME } from "@/lib/site";
 import { CATEGORIES } from "@/types/article";
 
@@ -22,8 +23,9 @@ export default function Header() {
               </span>
             </span>
           </Link>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-3">
             <StockSearch />
+            <VisitCounter />
             <HeaderMenu />
           </div>
         </div>

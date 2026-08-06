@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { SITE_NAME } from "@/lib/site";
-import VisitCounter from "./VisitCounter";
 
 type MenuLink = {
   href: string;
@@ -106,12 +105,9 @@ export default function HeaderMenu() {
         <p className="mt-3 px-4 text-[11px] leading-relaxed text-foreground/70">
           本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。
         </p>
-        <p className="mt-2 px-4 text-foreground/40">
+        <p className="mt-2 px-4 pb-4 text-foreground/40">
           © {year} {SITE_NAME}
         </p>
-        <div className="px-4 pb-4">
-          <VisitCounter />
-        </div>
       </div>
     </div>
   );
