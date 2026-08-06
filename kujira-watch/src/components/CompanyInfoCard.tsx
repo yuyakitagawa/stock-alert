@@ -1,5 +1,51 @@
-import type { CompanyInfo } from "@/lib/companyInfo";
+import type { CompanyInfo, PricePoint } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
+
+const CHART_WIDTH = 600;
+const CHART_HEIGHT = 120;
+const CHART_PADDING = 4;
+
+function PriceChart({ history }: { history: PricePoint[] }) {
+  if (history.length < 2) return null;
+
+  const closes = history.map((point) => point.close);
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const range = max - min || 1;
+
+  const points = history
+    .map((point, i) => {
+      const x =
+        (i / (history.length - 1)) * (CHART_WIDTH - CHART_PADDING * 2) + CHART_PADDING;
+      const y =
+        CHART_HEIGHT -
+        CHART_PADDING -
+        ((point.close - min) / range) * (CHART_HEIGHT - CHART_PADDING * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  const first = history[0];
+  const last = history[history.length - 1];
+
+  return (
+    <div className="mb-4">
+      <svg
+        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+        preserveAspectRatio="none"
+        className="h-24 w-full sm:h-28"
+        role="img"
+        aria-label={`株価推移（${formatDate(first.date)}〜${formatDate(last.date)}、${first.close.toLocaleString("ja-JP")}円→${last.close.toLocaleString("ja-JP")}円）`}
+      >
+        <polyline points={points} fill="none" stroke="var(--color-brand-blue)" strokeWidth="2" />
+      </svg>
+      <div className="mt-1 flex justify-between text-xs text-foreground/40">
+        <span>{formatDate(first.date)}（{first.close.toLocaleString("ja-JP")}円）</span>
+        <span>{formatDate(last.date)}（{last.close.toLocaleString("ja-JP")}円）</span>
+      </div>
+    </div>
+  );
+}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -27,15 +73,18 @@ export default function CompanyInfoCard({ info }: { info: CompanyInfo }) {
     value: info.hasYutai ? `あり${info.yutaiMonth ? `（${info.yutaiMonth}月権利）` : ""}` : "なし",
   });
 
-  if (stats.length === 0) return null;
+  if (stats.length === 0 && info.priceHistory.length < 2) return null;
 
   return (
     <div className="mb-6 border border-rule bg-paper p-4 sm:p-5">
-      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {stats.map((stat) => (
-          <Stat key={stat.label} {...stat} />
-        ))}
-      </dl>
+      <PriceChart history={info.priceHistory} />
+      {stats.length > 0 && (
+        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {stats.map((stat) => (
+            <Stat key={stat.label} {...stat} />
+          ))}
+        </dl>
+      )}
       {info.closeDate && (
         <p className="mt-3 text-xs text-foreground/40">
           株価・指標は{formatDate(info.closeDate)}時点
