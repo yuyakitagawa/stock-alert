@@ -28,6 +28,10 @@ MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性�
 MAX_SECTOR_COUNT = 2      # 同セクター通過上限（3銘柄以上集まったらバブル兆候とみなしセクター全除外）
 MAX_FROM_HI20    = -8.0   # 直近20日高値からの下落率上限（急騰→急落パターン除外）
 
+# 銘柄コードの形式（従来の4桁数字 + TSEが2024年以降に発行する新形式、末尾1桁が英字の
+# コード。例: 151A）。旧 ^\d{4}$ のままだと新形式コードが銘柄リストから恒久的に漏れる。
+STOCK_CODE_PATTERN = r"^\d{3}[0-9A-Z]$"
+
 
 def get_tse_stock_list():
     """JPXから全上場銘柄を取得（ETF・REIT除外）"""
@@ -49,10 +53,10 @@ def get_tse_stock_list():
         if market_col:
             market_filter = df[market_col[0]].str.contains("内国株式", na=False)
             result = result[market_filter]
-            result = result[result["code"].str.match(r"^\d{4}$")]
+            result = result[result["code"].str.match(STOCK_CODE_PATTERN)]
             print(f"   市場区分フィルター適用")
         else:
-            result = result[result["code"].str.match(r"^\d{4}$")]
+            result = result[result["code"].str.match(STOCK_CODE_PATTERN)]
             result = result[~result["name"].str.contains(
                 "ETF|REIT|投信|上場投資|ファンド", na=False
             )]

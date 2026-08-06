@@ -71,15 +71,10 @@ def fetch_yahoo_batch(codes: list, days: int) -> dict:
     return result
 
 
-def get_all_codes():
-    """yahoo_price_cache 既存コード + JPX 銘柄リストを合わせた全コード"""
-    from lib.db import get_price_cache_codes
-    codes_from_db = get_price_cache_codes()
-    if codes_from_db:
-        return codes_from_db
-
-    # DB が空の場合は JPX から取得
-    print("yahoo_price_cache が空のため JPX から銘柄リストを取得...")
+def _fetch_jpx_codes() -> list:
+    """JPXから国内株式の銘柄コード一覧を取得する（4桁数字に加え、新形式の英数字コード
+    （例: 151A）も含む。市場区分列での絞り込みのみで桁数・文字種は制限しない）。
+    取得失敗時は空リスト。"""
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
     try:
         r = requests.get(url, timeout=30)
@@ -93,6 +88,20 @@ def get_all_codes():
     except Exception as e:
         print(f"[WARN] JPX 取得失敗: {e}")
     return []
+
+
+def get_all_codes():
+    """yahoo_price_cache 既存コード + JPX 最新銘柄リストの和集合。
+    既存コードだけで打ち切ると新規上場銘柄（新形式の英数字コード含む）が
+    yahoo_price_cacheに永久に追加されないため、日次実行のたびにJPXリストとの
+    差分も取り込む（JPX取得に失敗した場合は既存コードのみにフォールバック）。"""
+    from lib.db import get_price_cache_codes
+    codes_from_db = set(get_price_cache_codes())
+    jpx_codes = set(_fetch_jpx_codes())
+    new_codes = jpx_codes - codes_from_db
+    if new_codes:
+        print(f"JPX最新リストとの差分: 新規銘柄{len(new_codes)}件を追加取得します")
+    return sorted(codes_from_db | jpx_codes)
 
 
 def main():

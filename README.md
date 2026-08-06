@@ -28,8 +28,8 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 
 | ファイル | 役割 |
 |---|---|
-| `core/screener.py` | **手動実行専用ツール**（日次パイプラインからは2026-08-01に除外済み）。`get_tse_stock_list()`（JPX全銘柄取得）のみ`rank_stocks.py`/`backfill_history.py`が再利用。`apply_screener_v1`によるスクリーニング自体は現在ほぼ価格・流動性のみで`rank_stocks.py`のハードフィルターと重複しており、出力する`data/screeners/*.csv`はどこからも読まれない（下落確率ランキングは`rank_stocks.py`が全銘柄取得〜フィルターまで単独で実施）。手動での銘柄スクリーニング確認用に残置 |
-| `tools/fetch_history.py` | Yahoo Finance で全銘柄株価四本値を取得し `yahoo_price_cache` を差分更新（daily_alert.yml Step 0で毎日 `--years 1` 実行。`rank_stocks.py`の「直近株価」の鮮度に直結。既存(code,date)は insert_ignore で保護されるため初回10年分バックフィルにも日次更新にも使える） |
+| `core/screener.py` | **手動実行専用ツール**（日次パイプラインからは2026-08-01に除外済み）。`get_tse_stock_list()`（JPX全銘柄取得）のみ`rank_stocks.py`/`backfill_history.py`が再利用。銘柄コード絞り込みは`STOCK_CODE_PATTERN`（`^\d{3}[0-9A-Z]$`）で、旧4桁数字に加えTSEが2024年以降に発行する新形式（末尾1桁が英字。例: 151A）も含める（旧`^\d{4}$`では新形式コードが全銘柄スキャンから恒久的に漏れていた）。`apply_screener_v1`によるスクリーニング自体は現在ほぼ価格・流動性のみで`rank_stocks.py`のハードフィルターと重複しており、出力する`data/screeners/*.csv`はどこからも読まれない（下落確率ランキングは`rank_stocks.py`が全銘柄取得〜フィルターまで単独で実施）。手動での銘柄スクリーニング確認用に残置 |
+| `tools/fetch_history.py` | Yahoo Finance で全銘柄株価四本値を取得し `yahoo_price_cache` を差分更新（daily_alert.yml Step 0で毎日 `--years 1` 実行。`rank_stocks.py`の「直近株価」の鮮度に直結。既存(code,date)は insert_ignore で保護されるため初回10年分バックフィルにも日次更新にも使える）。`get_all_codes()`はyahoo_price_cache既存コードだけで打ち切らず、毎回JPX最新銘柄リストとの和集合を対象にする（新規上場銘柄が価格キャッシュに永久に追加されない事態を防止。JPX取得失敗時は既存コードのみにフォールバック） |
 | `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可。既存日付は既定でスキップするため、価格データ修正後に再生成したい場合は`--force`で上書き。生成後に`check_price_freshness`で複数日にまたがるclose凍結（更新漏れ）を検査）|
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
@@ -54,7 +54,8 @@ data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（�
 | `web/publish_blog_articles.py` | **ブログ記事自動生成・投稿**（Step 5c、microCMSブログ「大口投資家の監視ブログ」`kujira-watch/`向け）。`market_timing_alert.get_recent_large_holdings`（自己申告・過半数超を除外）からネタを取得し、保有比率の増減（取得できない場合のみ概要欄キーワード）で売却方向を判定して除外し買い方向のみに絞り、yfinanceの発行済株式数×株価×保有比率変化で取得金額(億円)を概算（推定不能な銘柄はスキップ）。`classify_filer()`が提出者の投資家分類（個人/創業家の資産管理会社/公益・一般財団法人/プライムブローカー/アクティビスト/VC/PE・メザニンファンド/独立系ブティックAM/国内アセットマネジメント/外資系伝統運用会社/日系証券銀行/事業会社/その他）をSupabaseの`edinet_filer_classification`マスター（Web検索で確認済みの投資家分類テーブル、バックテスト分析とも共用）から参照し、未登録の提出者のみClaudeの一般知識で判定して結果をマスターへ保存（キーワード一致だけでは日系/外資やスペース無し個人名を判定できないため）。Claude（`ANTHROPIC_API_KEY`）には事実と分類済みdealTypeのみを渡して解説記事本文を生成しmicroCMSへ即時公開。事実の並置だけで終わらず投資家への示唆(so what)を加えられるよう、`gen_rankings`から開示日時点(point-in-time、記事公開時点のpost-hocスナップショットではない)の株価・下落リスク水準(高/やや高/中/やや低/低)を取得できた場合はプロンプトに文脈として渡し、その範囲内での意味づけを1文加えさせる（取得できない銘柄は従来通り事実のみ）。`get_company_description()`が対象企業の事業内容をClaudeの一般知識（`jpx_stock_list.description`にキャッシュ）から1文取得できた場合は冒頭の紹介文と保有比率の規模感（時価総額の一角を占める大株主、等）に自然に織り込む。本文の最後には「この取得が今後どんな意味を持ちうるか」の推測を必ず1文加えさせるが、事実と混同しないよう文頭に「※推測:」ラベルを付けさせ、事実として存在しない具体的計画やコメントの引用は創作しないよう明示的に指示する。金額が概算である旨・大量保有報告書制度の一般的な説明・「今後の動向を注視する必要がある」等の定型的な結びは、既に見出しや事実で伝わっているため本文で繰り返さないよう指示する（人間は事後にmicroCMS管理画面で修正する運用）。`build_price_chart_for_article()`が`yahoo_price_cache`から直近3ヶ月の終値を取得し、PIL（Pillowのみ、追加依存なし）で簡易な折れ線チャートPNGを描画してmicroCMSへアップロードし、本文HTML末尾に`<img>`タグとして埋め込む（株価取得・生成・アップロードのいずれかが失敗すればチャート無しで記事のみ投稿）。サイト上部のカテゴリフィルターはdealTypeの値をそのままカテゴリ名として使う構成にしており、microCMSに`category`フィールドは持たない（CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない）。同一銘柄・同一開示日の重複投稿は事前チェックでスキップ。アイキャッチ画像は`PEXELS_API_KEY`が設定されていれば、投資家分類に応じたPexels写真（`EYECATCH_QUERY_BY_CATEGORY`、銘柄固有の写真は現実的でないため分類のイメージに合う汎用写真を使用）に黒帯＋Noto Sans CJK Bold太字白文字のタイトルを合成し、microCMSのメディアアップロードAPI(`{domain}.microcms-management.io`)へアップロードして`eyecatch`フィールドへ設定する（`PEXELS_API_KEY`未設定・取得失敗時は画像無しで記事のみ投稿）。`--dry-run`で投稿せず内容確認のみ可（アイキャッチ生成もスキップ）。`MICROCMS_SERVICE_DOMAIN`/`MICROCMS_API_KEY`（書き込み権限）必須、未設定ならスキップ |
 | `tests/test_fundamentals.py` | point-in-timeファンダ（`lib/fundamentals.py`）のユニットテスト。先読みバイアス防止（as_of日より後の開示を含めない）を確認（6件）|
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
-| `tests/test_screener.py` | スクリーナー条件のユニットテスト（9件）|
+| `tests/test_screener.py` | スクリーナー条件のユニットテスト（銘柄コード絞り込み正規表現の新形式コード対応込み、13件）|
+| `tests/test_fetch_history.py` | 株価キャッシュ更新の銘柄コード収集ロジック（既存コード+JPX最新リストの和集合・JPX取得失敗時のフォールバック）のユニットテスト（3件）|
 | `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（14件）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション（開示日優先ソート・根拠なき買い/売り推測の抑制込み）・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止・売り閾値ギャップの上書き・通知疲れ対策の要約表示・前日比表示込み）・投資家ウォッチ（提出者名の部分一致照合・大口保有動向セクション生成）のユニットテスト（26件）|
@@ -307,6 +308,7 @@ python3 multi_backtest.py        # 33期間一括バックテスト＋フィル�
 python3 multi_backtest.py --skip-run  # 既存CSVのみ集計（バックテスト実行なし）
 
 python3 tests/test_screener.py     # スクリーナーユニットテスト
+python3 tests/test_fetch_history.py  # 株価キャッシュ銘柄コード収集ユニットテスト
 ```
 
 ---
