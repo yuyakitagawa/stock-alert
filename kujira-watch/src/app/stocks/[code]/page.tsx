@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (contents.length === 0) return {};
 
   const stockName = contents[0].stockName;
-  const title = `${stockName}（${code}）の大量保有・自社株買い履歴`;
+  const title = `${stockName}（${code}）`;
   const description = `${stockName}（${code}）に関する機関投資家・インサイダー・自社株買いなど「クジラ」の動きをまとめました。全${contents.length}件。`;
   const url = `${SITE_URL}/stocks/${code}`;
 
@@ -85,15 +85,16 @@ export default async function StockPage({ params }: Props) {
         {" / "}
         <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
+      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">
+        {stockName}（{code}）
+      </h1>
+      {companyInfo && <CompanyInfoCard info={companyInfo} />}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">
-          {stockName}（{code}）の大量保有・自社株買い履歴
-        </h1>
+        <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
         <p className="mt-1 text-sm text-foreground/50">
           機関投資家・インサイダー・自社株買いなど、この銘柄に関する「クジラ」の動きを{contents.length}件まとめています。
         </p>
       </div>
-      {companyInfo && <CompanyInfoCard info={companyInfo} />}
       {groupArticlesByDealDate(contents).map((group) => (
         <div key={group.date} className="mb-8">
           <DealDateHeading label={group.label} />
