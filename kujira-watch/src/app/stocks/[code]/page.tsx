@@ -2,10 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
+import CompanyInfoCard from "@/components/CompanyInfoCard";
 import DealDateHeading from "@/components/DealDateHeading";
+import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+
+// 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次で更新するため、
+// microCMS記事(revalidate:60)とずれない範囲で定期的に再取得する。
+export const revalidate = 300;
 
 type Props = {
   params: Promise<{ code: string }>;
@@ -31,7 +37,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const { contents } = await getArticlesByStockCode(code);
+  const [{ contents }, companyInfo] = await Promise.all([
+    getArticlesByStockCode(code),
+    getCompanyInfo(code),
+  ]);
 
   if (contents.length === 0) {
     notFound();
@@ -84,6 +93,7 @@ export default async function StockPage({ params }: Props) {
           機関投資家・インサイダー・自社株買いなど、この銘柄に関する「クジラ」の動きを{contents.length}件まとめています。
         </p>
       </div>
+      {companyInfo && <CompanyInfoCard info={companyInfo} />}
       {groupArticlesByDealDate(contents).map((group) => (
         <div key={group.date} className="mb-8">
           <DealDateHeading label={group.label} />
