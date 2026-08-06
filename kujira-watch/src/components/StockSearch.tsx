@@ -83,9 +83,11 @@ export default function StockSearch() {
         onClick={() => setOpen((prev) => !prev)}
         className="flex h-9 w-9 items-center justify-center text-brand-navy hover:text-brand-gold"
       >
+        {/* viewBoxをマイナスオフセットし、円+持ち手の絵が隣のハンバーガー(☰)と
+            ボタン内で同じ視覚的重心に来るよう補正している（0 0 24 24のままだと左上に寄って見える）。 */}
         <svg
           aria-hidden
-          viewBox="0 0 24 24"
+          viewBox="-1.5 -1.5 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
