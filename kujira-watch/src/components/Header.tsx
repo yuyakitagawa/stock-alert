@@ -1,5 +1,6 @@
 import Link from "next/link";
 import HeaderMenu from "./HeaderMenu";
+import StockSearch from "./StockSearch";
 import { SITE_NAME } from "@/lib/site";
 import { CATEGORIES } from "@/types/article";
 
@@ -21,7 +22,10 @@ export default function Header() {
               </span>
             </span>
           </Link>
-          <HeaderMenu />
+          <div className="flex items-center gap-1">
+            <StockSearch />
+            <HeaderMenu />
+          </div>
         </div>
         {/* モバイルでは折り返さず1行の横スクロールにして、フィルターが縦に何行も
             積み重なってページ本文を押し下げないようにする（sm以上では通常の折り返し）。 */}
