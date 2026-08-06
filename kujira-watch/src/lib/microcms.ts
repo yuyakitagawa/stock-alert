@@ -100,6 +100,32 @@ export async function getRecentArticles(days: number) {
   return { ...result, contents: result.contents.map(normalizeDealType) };
 }
 
+export type StockSearchResult = { stockCode: string; stockName: string };
+
+// ヘッダーの検索ボックス用。企業名・証券コードの部分一致で記事を引き、
+// 銘柄(stockCode)単位で重複排除して返す。
+export async function searchStocks(keyword: string): Promise<StockSearchResult[]> {
+  const q = keyword.trim();
+  if (!q) return [];
+
+  const result = await client.getList<Article>({
+    endpoint: "articles",
+    queries: {
+      filters: `stockCode[contains]${q}[or]stockName[contains]${q}`,
+      fields: "stockCode,stockName",
+      orders: "-dealDate",
+      limit: 100,
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+
+  const seen = new Map<string, string>();
+  for (const { stockCode, stockName } of result.contents) {
+    if (!seen.has(stockCode)) seen.set(stockCode, stockName);
+  }
+  return Array.from(seen, ([stockCode, stockName]) => ({ stockCode, stockName })).slice(0, 20);
+}
+
 export async function getAllArticlesForSitemap() {
   const contents = await client.getAllContents<
     Pick<Article, "dealType" | "stockCode" | "dealDate">
