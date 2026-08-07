@@ -29,7 +29,7 @@
 - Deep Test: `python3 tools/backtest.py bear` (暴落耐性チェック)
 
 ## 4. Context & Workflow
-- **CI/CD**: GitHub Actions (平日 17:00 JST / 8:00 UTC、金曜に再学習).
+- **CI/CD**: GitHub Actions (平日 16:00 JST / 7:00 UTC、金曜に再学習).
 - **Env**: GMAIL, GCP_KEY_JSON, SPREADSHEET_ID が必須。
 - **Dev Cycle**: 
   1. 修正 2. `backtest.py bear` で性能確認 3. `dev_log.md` 追記 4. Commit
