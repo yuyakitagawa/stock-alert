@@ -76,8 +76,9 @@ export default async function WeeklyDigestPage() {
           <p className="mt-3 text-sm leading-relaxed text-foreground/70">
             {SITE_NAME}がEDINET大量保有報告書をもとに集計した、{formatDate(oldestDate)}〜
             {formatDate(newestDate)}の大口投資家（クジラ）の動きです。この期間に{contents.length}
-            件の大量保有・変更報告書が開示され、推定取得金額の合計は約
-            {totalAmount.toLocaleString("ja-JP")}億円でした。個別の取引は下記の一覧、または各記事で解説しています。
+            件の大量保有・変更報告書が開示され、推定取引金額の合計は約
+            {totalAmount.toLocaleString("ja-JP")}億円でした（取得・売却双方向を合算した規模で、
+            資金の純流入額ではありません）。個別の取引は下記の一覧、または各記事で解説しています。
           </p>
         ) : (
           <p className="mt-3 text-sm leading-relaxed text-foreground/70">

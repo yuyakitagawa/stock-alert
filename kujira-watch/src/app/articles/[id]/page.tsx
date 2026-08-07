@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import CategoryBadge from "@/components/CategoryBadge";
+import DealDirectionBadge from "@/components/DealDirectionBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
@@ -148,6 +149,7 @@ export default async function ArticleDetailPage({ params }: Props) {
       <div className="p-6 sm:p-10">
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <DealTypeBadge dealType={article.dealType} />
+          <DealDirectionBadge tags={article.tags} />
           <CategoryBadge category={category} />
         </div>
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">

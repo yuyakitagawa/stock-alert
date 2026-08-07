@@ -93,7 +93,11 @@ export default function AboutPage() {
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">データソースと更新方法</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
-          <li>取引情報はEDINET大量保有報告書（買い方向のみ）を日次で取得しています。</li>
+          <li>
+            取引情報はEDINET大量保有報告書を日次で取得しています。保有比率の増加（取得）・
+            減少（譲渡・売却）の双方向を対象とし、売り方向の記事には「売り」タグを付与して
+            区別しています。
+          </li>
           <li>
             金額規模は、発行済株式数×株価×保有比率変化から算出した推定値です。EDINET開示自体には
             金額の記載がないため、正確な金額を保証するものではありません。
