@@ -8,6 +8,8 @@ on:
 jobs:
   check-and-trigger:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
       - name: Check if daily alert ran today
         id: check
