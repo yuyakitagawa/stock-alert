@@ -7,7 +7,7 @@
 平日にGitHub Actionsが自動実行される。
 
 ```
-【17:00 JST】アラートパイプライン（daily_alert.yml）
+【16:00 JST】アラートパイプライン（daily_alert.yml）
 core/rank_stocks.py（銘柄取得・下落確率ランキング生成を単独で実施。core/screener.pyは2026-08-01に
 日次パイプラインから除外済み。詳細は下のファイル構成参照）
 → web/export_to_web.py（Supabase同期）→ web/market_timing_alert.py（LINE通知）
