@@ -11,6 +11,15 @@ export type FaqItem = {
   render?: React.ReactNode;
 };
 
+// カテゴリごとに色分けした質問バッジ用。5カテゴリ固定のため、増減時はここも見直す。
+const CATEGORY_COLORS: Record<string, string> = {
+  basics: "text-brand-blue",
+  terms: "text-violet-600",
+  usage: "text-emerald-600",
+  howto: "text-brand-gold",
+  "about-site": "text-foreground/50",
+};
+
 // カテゴリタブは見た目上の絞り込みのみで、初期状態は必ず「すべて」（全件表示）。
 // クローラー・AIOがJS実行前に読むSSR済みHTMLには常に全問が含まれるようにするため。
 export default function FaqList({
@@ -22,6 +31,8 @@ export default function FaqList({
 }) {
   const [active, setActive] = useState<string>("all");
   const filtered = active === "all" ? faqs : faqs.filter((faq) => faq.category === active);
+  const categoryLabel = (id: string) =>
+    categories.find((category) => category.id === id)?.label ?? id;
 
   return (
     <div>
@@ -66,7 +77,17 @@ export default function FaqList({
       <dl className="space-y-5 text-sm">
         {filtered.map((faq) => (
           <div key={faq.question}>
-            <dt className="font-semibold text-brand-navy">{faq.question}</dt>
+            <dt>
+              <span
+                className={`kicker mb-1 flex items-center gap-1.5 ${
+                  CATEGORY_COLORS[faq.category] ?? "text-foreground/50"
+                }`}
+              >
+                <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                {categoryLabel(faq.category)}
+              </span>
+              <span className="font-semibold text-brand-navy">{faq.question}</span>
+            </dt>
             <dd className="mt-1 leading-relaxed text-foreground/70">{faq.render ?? faq.answer}</dd>
           </div>
         ))}
