@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ArticleContent } from "@/types/article";
 import { formatDate, formatDealAmount } from "@/lib/format";
+import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
 
 export default function ArticleCard({ article }: { article: ArticleContent }) {
@@ -24,6 +25,7 @@ export default function ArticleCard({ article }: { article: ArticleContent }) {
       <div className="flex flex-1 flex-col">
         <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <DealTypeBadge dealType={article.dealType} />
+          <DealDirectionBadge tags={article.tags} />
           <span className="kicker text-brand-navy/50">{formatDate(article.dealDate)}</span>
         </div>
         <h2 className="text-lg font-bold leading-snug text-brand-navy underline decoration-brand-gold/0 decoration-2 underline-offset-4 group-hover:decoration-brand-gold/70">

@@ -1,12 +1,15 @@
 """
 web/publish_blog_articles.py
-EDINET大量保有報告書（買い方向のみ）を基に、microCMSブログ「大口投資家の監視ブログ」
+EDINET大量保有報告書（買い・売り双方向）を基に、microCMSブログ「大口投資家の監視ブログ」
 （kujira-watch/、https://kujira-watch.com/ ）へ解説記事を自動生成・即時公開する（人間は後から
 microCMS管理画面で修正する運用）。
 
 データ源: lib.db.get_edinet_large_holdings_recent（tools/scan_large_holdings.py が
           daily_alert.yml Step 2c で日次蓄積）を web.market_timing_alert 経由でノイズ除外
-          （自己申告・過半数超を除外済み）して取得。売り方向（譲渡/売却）は対象外。
+          （自己申告・過半数超・訂正報告書を除外済み）して取得。売り方向（譲渡/売却、
+          保有比率の減少）も買いと同様に記事化する（tools.scan_large_holdings.is_sell_disclosure()
+          で方向を判定し、売り記事には payload["tags"] に "売り" を付与して区別する。
+          microCMSのスキーマ変更を避けるため、既存の自由記述tagsフィールドで方向を表現する）。
 
 金額規模(dealAmount, 億円)の扱い:
   EDINET大量保有報告書は保有"比率(%)"のみで金額は開示されない。このスクリプトでは
@@ -526,11 +529,19 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     if not ANTHROPIC_API_KEY:
         return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    is_sell = fact_sheet.get("direction") == "sell"
+    deal_verb = "売却" if is_sell else "取得"
+    deal_amount_label = fact_sheet.get("deal_amount_label") or (
+        "推定売却金額" if is_sell else "推定取得金額"
+    )
     context_close = fact_sheet.get("context_close")
     context_dp_level = fact_sheet.get("context_dp_level")
     if context_close is not None and context_dp_level is not None:
         context_line = f"- 開示日時点の株価: {context_close:,.0f}円 / 弊社モデルの下落リスク水準: {context_dp_level}\n"
-        risk_hint = "下落リスクが低い局面での買い増しか、リスクが高い局面での打診買いか、といった観点も交えつつ、"
+        if is_sell:
+            risk_hint = "下落リスクが高まる局面でのリスク回避的な売却か、値上がり後の利益確定売りか、といった観点も交えつつ、"
+        else:
+            risk_hint = "下落リスクが低い局面での買い増しか、リスクが高い局面での打診買いか、といった観点も交えつつ、"
     else:
         context_line = ""
         risk_hint = ""
@@ -540,8 +551,9 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     company_description_line = f"- {fact_sheet['stock_name']}の事業内容: {company_description}\n" if company_description else ""
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
-金額が概算であることは見出しの「推定取得金額」表記のみで十分伝わるため、本文中で改めて
-「概算であり実際の取得価格ではない」等の注記を繰り返さないでください。
+この取引は保有比率が{"減少した売却（譲渡等を含む）" if is_sell else "増加した取得（買い増し・新規取得）"}です。
+金額が概算であることは見出しの「{deal_amount_label}」表記のみで十分伝わるため、本文中で改めて
+「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。
 大量保有報告書制度そのものの一般的な説明（5%ルールの趣旨、市場透明性・投資家保護目的など）や、
 「今後の動向を注視する必要がある」といった、この取引固有ではない定型的な結びの文も書かないでください。
 
@@ -551,15 +563,15 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 報告書種別: {fact_sheet['doc_type_label']}
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
-- 推定取得金額: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
+- {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
 {filer_description_line}{company_description_line}{context_line}
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
-（例: 提出者が海外の資産運用会社なら「海外の資産運用会社による取得」等）。無い場合は無理に触れなくてよいです。
+（例: 提出者が海外の資産運用会社なら「海外の資産運用会社による{deal_verb}」等）。無い場合は無理に触れなくてよいです。
 {fact_sheet['stock_name']}の事業内容 の事実がある場合は、冒頭でその会社が何をしている会社かを
 1文で読者に補足してください。また保有比率{fact_sheet['holding_ratio']}%という数字が、対象企業の
 株式のどれくらいの規模を占めるかが実感できるよう自然に触れてください（時価総額の一角を占める大株主、等）。
 
-最後に1文だけ、{risk_hint}この取得が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
+最後に1文だけ、{risk_hint}この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
 加えてください。ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
 分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
@@ -704,9 +716,6 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
     candidates = [
         h for h in holdings
         if h.get("issuer_code") and h.get("holding_ratio") is not None
-        and not is_sell_disclosure(
-            h.get("doc_description") or "", h.get("holding_ratio"), h.get("holding_ratio_prior")
-        )
     ]
     candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
 
@@ -728,6 +737,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 金額を概算できないためスキップ")
             continue
 
+        is_sell = is_sell_disclosure(
+            h.get("doc_description") or "", h.get("holding_ratio"), h.get("holding_ratio_prior")
+        )
+        direction = "sell" if is_sell else "buy"
+
         snapshot = get_pit_ranking_snapshot(code, disc_date)
         context_close = snapshot.get("close") if snapshot else None
         context_dp = snapshot.get("drop_prob") if snapshot else None
@@ -742,6 +756,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "holding_ratio": h["holding_ratio"],
             "disc_date": disc_date,
             "deal_amount_oku": deal_amount,
+            "direction": direction,
+            "deal_amount_label": "推定売却金額" if is_sell else "推定取得金額",
             "context_close": context_close,
             "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
             "filer_description": filer_info.get("description") or "",
@@ -753,6 +769,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             continue
 
         deal_type = filer_info["category"]
+        tags = "EDINET,自動生成,売り" if is_sell else "EDINET,自動生成"
         payload = {
             "title": article["title"],
             "body": article["body"],
@@ -761,11 +778,12 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "dealType": deal_type,
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
-            "tags": "EDINET,自動生成",
+            "tags": tags,
         }
 
+        direction_mark = "📉売り" if is_sell else "📈買い"
         if dry_run:
-            print(f"  [dry-run] {name}({code}) {disc_date} 推定{deal_amount}億円\n    title: {payload['title']}")
+            print(f"  [dry-run] {direction_mark} {name}({code}) {disc_date} 推定{deal_amount}億円\n    title: {payload['title']}")
             published.append({**payload, "id": None})
             continue
 
@@ -783,7 +801,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ✖ 権限エラーのため以降の候補もスキップして終了します: {e}")
             break
         if content_id:
-            print(f"  ✅ 投稿: {name}({code}) {disc_date} 推定{deal_amount}億円 → id={content_id}")
+            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} 推定{deal_amount}億円 → id={content_id}")
             published.append({**payload, "id": content_id})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")

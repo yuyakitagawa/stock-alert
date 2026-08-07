@@ -116,7 +116,9 @@ def test_classify_filer_falls_back_to_sonota_on_invalid_category():
     assert result["category"] == "その他"
 
 
-def test_build_and_publish_excludes_sell_and_maps_fields():
+def test_build_and_publish_includes_sell_and_tags_them():
+    """売り方向（概要のキーワード or 保有比率の減少で判定）も除外せず記事化し、
+    tagsに"売り"を付与して買いと区別する（買い側はtagsを変えない後方互換）。"""
     holdings = [
         {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
          "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
@@ -139,19 +141,25 @@ def test_build_and_publish_excludes_sell_and_maps_fields():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             side_effect=[
+                                {"category": "外資系伝統運用会社", "is_foreign": True, "description": ""},
                                 {"category": "個人", "is_foreign": False, "description": ""},
                                 {"category": "国内アセットマネジメント", "is_foreign": False, "description": ""},
+                                {"category": "PE・メザニンファンド", "is_foreign": False, "description": ""},
                             ]), \
          mock.patch.object(m, "generate_article_body",
                             return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
-        results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
+        results = m.build_and_publish(days=3, max_articles=4, dry_run=False)
 
-    assert len(results) == 2  # 売却は除外される（概要文言に頼らず保有比率の増減でも判定）
-    assert [r["stockCode"] for r in results] == ["7203", "9999"]  # |比率|降順
-    assert results[0]["dealType"] == "個人"
-    assert results[1]["dealType"] == "国内アセットマネジメント"
+    assert len(results) == 4  # 売りも除外されない
+    # |比率|降順: 6502(15.10) > 7203(8.5) > 9999(6.0) > 1234(4.0)
+    assert [r["stockCode"] for r in results] == ["6502", "7203", "9999", "1234"]
+    by_code = {r["stockCode"]: r for r in results}
+    assert by_code["6502"]["tags"] == "EDINET,自動生成,売り"  # 比率減少による売り判定
+    assert by_code["1234"]["tags"] == "EDINET,自動生成,売り"  # キーワードによる売り判定
+    assert by_code["7203"]["tags"] == "EDINET,自動生成"  # 買いはtags不変
+    assert by_code["9999"]["tags"] == "EDINET,自動生成"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
 
@@ -508,6 +516,35 @@ def test_generate_article_body_omits_context_when_unavailable():
     assert "下落リスク水準" not in prompt
 
 
+def test_generate_article_body_uses_buy_wording_by_default():
+    """directionを指定しない場合は従来通り「取得」「推定取得金額」として扱う（後方互換）。"""
+    fact_sheet = _fact_sheet()
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "推定取得金額" in prompt
+    assert "推定売却金額" not in prompt
+
+
+def test_generate_article_body_uses_sell_wording_when_direction_is_sell():
+    """direction="sell"なら「売却」「推定売却金額」の文言でプロンプトを構成する。"""
+    fact_sheet = _fact_sheet()
+    fact_sheet["direction"] = "sell"
+    fact_sheet["deal_amount_label"] = "推定売却金額"
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "推定売却金額" in prompt
+    assert "推定取得金額" not in prompt
+    assert "この売却が今後" in prompt
+
+
 def test_generate_article_body_includes_company_description_when_available():
     """事業内容の事実があればプロンプトに織り込み、冒頭で触れるよう指示する。"""
     fact_sheet = _fact_sheet()
@@ -677,8 +714,10 @@ if __name__ == "__main__":
     test_get_pit_ranking_snapshot_queries_as_of_disc_date()
     test_generate_article_body_includes_context_when_available()
     test_generate_article_body_omits_context_when_unavailable()
+    test_generate_article_body_uses_buy_wording_by_default()
+    test_generate_article_body_uses_sell_wording_when_direction_is_sell()
     test_build_and_publish_includes_pit_context_in_fact_sheet()
-    test_build_and_publish_excludes_sell_and_maps_fields()
+    test_build_and_publish_includes_sell_and_tags_them()
     test_build_and_publish_skips_when_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
@@ -710,4 +749,4 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    print("全テスト成功 (49件)")
+    print("全テスト成功 (51件)")
