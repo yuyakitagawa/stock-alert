@@ -401,13 +401,24 @@ def already_published(stock_code: str, disc_date: str) -> bool:
 
 
 def shares_outstanding(code: str) -> "float | None":
+    """yfinanceの.infoは一時的なレート制限で単発失敗することが多く（2026-08-06の実行では
+    価格データが揃っている銘柄（サンリオ等）でもこれが原因で「金額を概算できない」スキップに
+    なっていた）、最大3回まで短い間隔でリトライする。J-REIT（投資口）はsharesOutstandingが
+    空でimpliedSharesOutstandingに口数が入ることがあるためフォールバックで見る。"""
+    import time
     import yfinance as yf
-    try:
-        info = yf.Ticker(f"{code}.T").info
-        shares = info.get("sharesOutstanding")
-        return float(shares) if shares else None
-    except Exception:
-        return None
+    for attempt in range(3):
+        try:
+            info = yf.Ticker(f"{code}.T").info
+            shares = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+            if shares:
+                return float(shares)
+            return None
+        except Exception:
+            if attempt == 2:
+                return None
+            time.sleep(1.5 * (attempt + 1))
+    return None
 
 
 def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date: str) -> float:

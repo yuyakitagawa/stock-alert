@@ -72,8 +72,12 @@ def fetch_yahoo_batch(codes: list, days: int) -> dict:
 
 
 def _fetch_jpx_codes() -> list:
-    """JPXから国内株式の銘柄コード一覧を取得する（4桁数字に加え、新形式の英数字コード
+    """JPXから国内株式＋J-REITの銘柄コード一覧を取得する（4桁数字に加え、新形式の英数字コード
     （例: 151A）も含む。市場区分列での絞り込みのみで桁数・文字種は制限しない）。
+    「内国株式」のみだとJ-REIT（市場・商品区分が"REIT・ベンチャーファンド..."等になる）が
+    恒久的にyahoo_price_cacheへ入らず、ブログ記事のdealAmount推定が常にスキップされていた
+    ため、REITも対象に含める（コア銘柄スクリーニング側のREIT除外はcore/screener.pyで別途
+    維持しており、ここでの拡張は価格キャッシュの網羅性のみに影響する）。
     取得失敗時は空リスト。"""
     url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
     try:
@@ -83,7 +87,7 @@ def _fetch_jpx_codes() -> list:
         mc = [c for c in df.columns if "市場・商品区分" in c]
         cc = [c for c in df.columns if "コード" in c]
         if mc and cc:
-            mask = df[mc[0]].str.contains("内国株式", na=False)
+            mask = df[mc[0]].str.contains("内国株式|REIT", na=False)
             return df.loc[mask, cc[0]].str.strip().tolist()
     except Exception as e:
         print(f"[WARN] JPX 取得失敗: {e}")

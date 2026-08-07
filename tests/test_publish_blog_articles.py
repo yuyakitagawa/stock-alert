@@ -29,6 +29,29 @@ def test_estimate_deal_amount_oku_none_when_shares_missing():
         assert m.estimate_deal_amount_oku("7203", 5.0, "2026-07-20") is None
 
 
+def test_shares_outstanding_retries_then_succeeds():
+    ticker = mock.MagicMock()
+    type(ticker).info = mock.PropertyMock(
+        side_effect=[Exception("rate limited"), Exception("rate limited"), {"sharesOutstanding": 5_000_000}]
+    )
+    with mock.patch("yfinance.Ticker", return_value=ticker), mock.patch("time.sleep"):
+        assert m.shares_outstanding("7203") == 5_000_000.0
+
+
+def test_shares_outstanding_falls_back_to_implied_shares_outstanding():
+    ticker = mock.MagicMock()
+    type(ticker).info = mock.PropertyMock(return_value={"impliedSharesOutstanding": 3_000_000})
+    with mock.patch("yfinance.Ticker", return_value=ticker):
+        assert m.shares_outstanding("3269") == 3_000_000.0
+
+
+def test_shares_outstanding_returns_none_after_exhausting_retries():
+    ticker = mock.MagicMock()
+    type(ticker).info = mock.PropertyMock(side_effect=Exception("rate limited"))
+    with mock.patch("yfinance.Ticker", return_value=ticker), mock.patch("time.sleep"):
+        assert m.shares_outstanding("7203") is None
+
+
 def test_generate_article_body_parses_plain_json():
     fact_sheet = _fact_sheet()
     raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
@@ -641,6 +664,9 @@ if __name__ == "__main__":
     test_estimate_deal_amount_oku_calculation()
     test_estimate_deal_amount_oku_none_when_no_change()
     test_estimate_deal_amount_oku_none_when_shares_missing()
+    test_shares_outstanding_retries_then_succeeds()
+    test_shares_outstanding_falls_back_to_implied_shares_outstanding()
+    test_shares_outstanding_returns_none_after_exhausting_retries()
     test_generate_article_body_parses_plain_json()
     test_generate_article_body_strips_code_fence()
     test_generate_article_body_none_on_empty_title()
@@ -684,4 +710,4 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    print("全テスト成功 (46件)")
+    print("全テスト成功 (49件)")

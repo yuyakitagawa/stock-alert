@@ -34,8 +34,29 @@ def test_fetch_jpx_codes_returns_empty_on_request_exception():
     assert codes == []
 
 
+def test_fetch_jpx_codes_includes_reit_and_domestic_stock():
+    """J-REIT（市場・商品区分にREITを含む行）も内国株式と同様に含める。
+    「内国株式」のみだとJ-REITの株価が yahoo_price_cache に恒久的に入らず、
+    ブログ記事の金額推定が常にスキップされていたため対象を広げた。
+    ETF・ETN等それ以外の商品区分は引き続き除外する。"""
+    import pandas as pd
+    fake_df = pd.DataFrame({
+        "コード": ["7203", "3269", "1301"],
+        "市場・商品区分": [
+            "プライム（内国株式）",
+            "REIT・ベンチャーファンド・カントリーファンド・インフラファンド",
+            "ETF・ETN",
+        ],
+    })
+    with mock.patch.object(m.requests, "get", return_value=mock.MagicMock(content=b"")), \
+         mock.patch.object(m.pd, "read_excel", return_value=fake_df):
+        codes = m._fetch_jpx_codes()
+    assert codes == ["7203", "3269"]
+
+
 if __name__ == "__main__":
     test_get_all_codes_unions_db_and_jpx()
     test_get_all_codes_falls_back_to_db_when_jpx_fetch_fails()
     test_fetch_jpx_codes_returns_empty_on_request_exception()
-    print("OK: test_fetch_history (3 tests)")
+    test_fetch_jpx_codes_includes_reit_and_domestic_stock()
+    print("OK: test_fetch_history (4 tests)")
