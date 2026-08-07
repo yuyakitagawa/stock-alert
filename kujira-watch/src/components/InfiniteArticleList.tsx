@@ -63,7 +63,7 @@ export default function InfiniteArticleList({
       {featured && <FeaturedArticleCard article={featured} />}
       {groups.map((group) => (
         <div key={group.date} className="mb-8">
-          <DealDateHeading label={group.label} />
+          <DealDateHeading date={group.date} label={group.label} />
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {group.articles.map((article) => (
               <ArticleCard key={article.id} article={article} />
