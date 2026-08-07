@@ -594,33 +594,15 @@ const FAQS: FaqItem[] = [
   },
   {
     category: "about-site",
-    question: "このサイトはどんな技術で作られていますか？",
-    answer:
-      "Next.js（React）で構築されたWebサイトで、記事データはmicroCMSというヘッドレスCMSで管理しています。ホスティングにはVercelを利用しています。",
-  },
-  {
-    category: "about-site",
     question: "個人情報は収集されますか？",
     answer:
       "会員登録・ログイン機能自体を提供していないため、アカウントに紐づく個人情報は収集していません。アクセス解析のために、匿名化された訪問データを計測しています。",
   },
   {
     category: "about-site",
-    question: "アクセス解析は行っていますか？",
-    answer:
-      "はい、Vercel AnalyticsおよびSpeed Insightsを用いて、ページの閲覧数やCore Web Vitals（表示速度等）といった匿名化された指標を計測しています。個人を特定する情報は取得していません。",
-  },
-  {
-    category: "about-site",
     question: "このサイトの記事を引用してもよいですか？",
     answer:
       "出典を明記していただければ、記事の一部を引用いただくこと自体は問題ありません。ただし記事全文の無断転載や、あたかも自社のオリジナル情報であるかのような転用はお控えください。",
-  },
-  {
-    category: "about-site",
-    question: "トレーディングシステムとはどんな関係がありますか？",
-    answer:
-      "本サイトの運営者は、EDINET開示情報などを活用した株式トレーディングシステムも別途開発しています。累計訪問者数カウンターや銘柄別ページの会社情報カードなど、一部のデータベースをトレーディングシステム側と共有しています。",
   },
   {
     category: "about-site",
@@ -636,18 +618,6 @@ const FAQS: FaqItem[] = [
   },
   {
     category: "about-site",
-    question: "記事の生成にどんなAIを使っていますか？",
-    answer:
-      "Anthropic社のClaudeを用いて、EDINET開示情報などの事実情報から記事の下書きを生成しています。投資家分類の判定など一部の処理にも活用しています。",
-  },
-  {
-    category: "about-site",
-    question: "サイトの表示速度やパフォーマンスは意識されていますか？",
-    answer:
-      "はい、Vercel Speed InsightsでCore Web Vitals（表示速度等の指標）を計測しているほか、記事データにキャッシュを活用することでページの表示を高速化しています。",
-  },
-  {
-    category: "about-site",
     question: "スマートフォンアプリはありますか？",
     answer:
       "いいえ、専用のスマートフォンアプリは提供していません。Webブラウザからスマートフォン・タブレット・PCのいずれでも同じ内容を閲覧できます。",
@@ -656,12 +626,6 @@ const FAQS: FaqItem[] = [
     category: "about-site",
     question: "広告は掲載されていますか？",
     answer: "記事本文中に第三者広告を掲載する仕組みは設けていません。",
-  },
-  {
-    category: "about-site",
-    question: "今後追加予定の機能はありますか？",
-    answer:
-      "具体的な機能追加のロードマップは公表していませんが、EDINET開示情報を分かりやすく伝えるという目的に沿って、継続的に改善を行っています。",
   },
   {
     category: "about-site",
