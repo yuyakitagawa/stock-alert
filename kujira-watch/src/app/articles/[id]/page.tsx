@@ -166,8 +166,11 @@ export default async function ArticleDetailPage({ params }: Props) {
         <dl className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-rule py-4 text-sm sm:grid-cols-4">
           <div>
             <dt className="kicker text-foreground/40">銘柄</dt>
-            <dd className="mt-1 font-medium text-brand-navy">
-              <Link href={`/stocks/${article.stockCode}`} className="hover:underline">
+            <dd className="mt-1 font-medium">
+              <Link
+                href={`/stocks/${article.stockCode}`}
+                className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
+              >
                 {article.stockName}（{article.stockCode}）の履歴を見る
               </Link>
             </dd>
