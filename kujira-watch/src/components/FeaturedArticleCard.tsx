@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ArticleContent } from "@/types/article";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
+import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
 
 export default function FeaturedArticleCard({ article }: { article: ArticleContent }) {
@@ -30,6 +31,7 @@ export default function FeaturedArticleCard({ article }: { article: ArticleConte
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="kicker text-brand-gold-bright">注目の一件</span>
           <DealTypeBadge dealType={article.dealType} />
+          <DealDirectionBadge tags={article.tags} />
           <span className="kicker text-white/60">{formatDate(article.dealDate)}</span>
         </div>
         <h2 className="text-2xl font-bold leading-snug sm:text-3xl">

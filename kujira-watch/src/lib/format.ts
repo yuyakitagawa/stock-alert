@@ -18,3 +18,9 @@ export function excerptFromHtml(html: string, maxLength = 120): string {
     .trim();
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
+
+// 売り方向（譲渡/売却）の記事はweb/publish_blog_articles.pyがtagsに"売り"を追加して
+// 買いと区別する（microCMSのスキーマ変更を避けるため、既存の自由記述tagsフィールドを流用）。
+export function isSellArticle(tags?: string): boolean {
+  return (tags ?? "").split(",").map((tag) => tag.trim()).includes("売り");
+}

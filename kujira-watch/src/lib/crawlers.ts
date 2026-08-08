@@ -22,6 +22,7 @@ const BOT_PATTERNS: [RegExp, string][] = [
   [/AhrefsBot/i, "AhrefsBot"],
   [/SemrushBot/i, "SemrushBot"],
   [/MJ12bot/i, "MJ12bot"],
+  [/GoogleOther/i, "GoogleOther"],
 ];
 
 export function detectBot(userAgent: string): string | null {

@@ -14,8 +14,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "core"))
 
+import re
 from unittest.mock import patch
-from screener import apply_screener_v1, apply_sector_concentration_filter
+from screener import apply_screener_v1, apply_sector_concentration_filter, STOCK_CODE_PATTERN
 
 
 def _make_universe(rows):
@@ -102,6 +103,26 @@ class TestSectorConcentrationFilter(unittest.TestCase):
         kept, excluded = apply_sector_concentration_filter(df)
         self.assertTrue(kept.empty)
         self.assertEqual(excluded, [])
+
+
+class TestStockCodePattern(unittest.TestCase):
+    """get_tse_stock_list()の銘柄コード絞り込み正規表現。旧4桁数字に加え、
+    TSEが2024年以降に発行する新形式（末尾1桁が英字）のコードも通す必要がある
+    （実例: 151A・603A等が旧正規表現^\\d{4}$では恒久的に除外されていた）。"""
+
+    def test_matches_legacy_4digit_code(self):
+        self.assertIsNotNone(re.match(STOCK_CODE_PATTERN, "7203"))
+
+    def test_matches_new_style_alphanumeric_code(self):
+        self.assertIsNotNone(re.match(STOCK_CODE_PATTERN, "151A"))
+        self.assertIsNotNone(re.match(STOCK_CODE_PATTERN, "603A"))
+
+    def test_rejects_non_4char_code(self):
+        self.assertIsNone(re.match(STOCK_CODE_PATTERN, "720"))
+        self.assertIsNone(re.match(STOCK_CODE_PATTERN, "72033"))
+
+    def test_rejects_non_numeric_prefix(self):
+        self.assertIsNone(re.match(STOCK_CODE_PATTERN, "A203"))
 
 
 if __name__ == "__main__":

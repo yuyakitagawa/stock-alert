@@ -13,7 +13,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
 - microCMS（`microcms-js-sdk`）
-- Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC）
+- Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを参照）
 - Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）
 
 ## セットアップ
@@ -54,7 +54,7 @@ npm run dev
 | dealDate | 取引日 | 日付 | ○ |
 | dealAmount | 金額規模（億円） | 数値 | ○ |
 | sourceUrl | 出典URL | テキスト | △ |
-| tags | タグ | テキスト（カンマ区切り） | △ |
+| tags | タグ | テキスト（カンマ区切り。売り方向の記事には`"売り"`を含める） | △ |
 | eyecatch | アイキャッチ画像 | 画像 | △ |
 
 ## ページ構成
@@ -65,32 +65,33 @@ npm run dev
 | `/weekly` | 大口投資家の動きまとめ（直近7日間の横断要約。「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。件数・合計推定金額を明記し、ヘッダーから常時リンク） |
 | `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（同じく初回30件サーバーレンダリング＋オートスクロール） |
-| `/stocks/[code]` | 銘柄別の大量保有・自社株買い履歴まとめ（同一`stockCode`の記事を`-dealDate`順に一覧表示）。記事詳細の「銘柄」欄から内部リンクあり |
+| `/stocks/[code]` | 銘柄ページ。見出しは企業名・証券コードのみ。直近90営業日の株価推移グラフ・業種・終値・PER/PBR・52週レンジ位置・株主優待有無の会社情報カードの下に「大量保有・自社株買い履歴」の見出しを置き、同一`stockCode`の記事を`-dealDate`順に一覧表示する。記事詳細の「銘柄」欄から内部リンクあり |
 | `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策）。投資家分類の用語集（`#dealtype-glossary`）も含む |
-| `/faq` | よくある質問（FAQPage構造化データ付き、17問）。大量保有報告書のしくみ・本サイトの使い方 |
+| `/faq` | よくある質問（FAQPage構造化データ付き、95問。各質問に色分けされたカテゴリバッジを表示し、5カテゴリのタブでも絞り込み可能）。大量保有報告書のしくみ・投資家分類・本サイトの使い方・初心者/中級者向けの読み方 |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別・取引日別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。ヘッダーのハンバーガーメニュー・`<head>`の`alternate`リンク・`llms.txt`から参照 |
-| `/api/counter` | ヘッダーのハンバーガーメニュー内の累計訪問者カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
+| `/api/counter` | ヘッダー上部の累計訪問者数カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
 | `/api/articles` | 記事一覧のオートスクロール用（GET、`offset`/`dealType`クエリでmicroCMSの次のページを返す） |
+| `/api/stocks/search` | ヘッダーの企業名・証券コード検索用（GET、`q`クエリで`stockCode`/`stockName`の部分一致を返す） |
 
 ## 計測・ログ
 
-- **累計訪問者カウンター**: ヘッダー右上のハンバーガーメニュー内に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
+- **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
 ## SEO/AIO対策
 
 - **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`${SITE_NAME}｜%s` の順。記事タイトルが長いとブラウザタブで末尾が切れるため、サイト名を先頭に置いている）・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
-- **アイコン/OGP画像/ロゴ**: `src/app/icon.tsx`（ファビコン）・`src/app/opengraph-image.tsx`（SNSシェア用1200x630）・`src/app/logo/route.ts`（構造化データ用の正方形512x512ロゴ、`/logo`）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドネイビー背景に合成して動的生成（画像アセット不要）。`logo`はOGP画像と違い横長ではなく正方形にしてある（構造化データの`logo`にはOGP用の横長比率ではなく正方形〜近い比率の画像を指定するのがGoogleの推奨のため）。
+- **アイコン/OGP画像/ロゴ**: `src/app/icon.tsx`（ファビコン、HTMLページの`<head>`にのみ`<link rel="icon">`として注入される）・`src/app/opengraph-image.tsx`（SNSシェア用1200x630）・`src/app/logo/route.ts`（構造化データ用の正方形512x512ロゴ、`/logo`）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドネイビー背景に合成して動的生成（画像アセット不要）。`logo`はOGP画像と違い横長ではなく正方形にしてある（構造化データの`logo`にはOGP用の横長比率ではなく正方形〜近い比率の画像を指定するのがGoogleの推奨のため）。加えて`src/app/favicon.ico`（同デザインの静的PNG内蔵ICO、16/32/48/64px）を配置している。Next.jsは`favicon`をコードから生成できず画像ファイルが必須なため、`icon.tsx`だけでは`/sitemap.xml`・`/robots.txt`・`/feed.xml`のような`<head>`を持たないルートを直接開いたときにブラウザが`/favicon.ico`にフォールバックし、ファイルが無いとVercelの既定favicon（三角ロゴ）が表示されてしまう。静的ファイルを置くことでサイト全体のフォールバック先を統一している。
 - **構造化データ (JSON-LD)**: ルートレイアウトに `WebSite`/`Organization`（`logo`に`/logo`を指定）。記事詳細には `Article`（`headline`/`url`/`author`＝サイト運営組織/`publisher`＋`publisher.logo`/`image`＝アイキャッチ/`about`に銘柄名・証券コード/`citation`に出典URL）と `BreadcrumbList`（トップ＞取引日＞記事タイトル。取引日は`/date/[date]`へリンク）。トップ・銘柄別・カテゴリ別・取引日別・週次まとめの各一覧ページには `ItemList`（各`itemListElement`に`name`＝記事タイトルを含める）と `BreadcrumbList`（トップ以外）、FAQページには `FAQPage` を埋め込み。Google/AI Overview双方の情報抽出を想定。
 - **サイトマップ**: `src/app/sitemap.ts` はビルド時ではなくリクエスト時に生成（`dynamic = "force-dynamic"`）。microCMSの一時的な障害でVercelのビルド自体が失敗しないようにするため。
 - **AIO向け**: `public/llms.txt` にサイトの目的・データソース・主要パスをLLMクローラ向けに明記。
 - **E-E-A-T**: `/about` にデータソース・算出方法・免責事項を明記し、ヘッダーのハンバーガーメニューから常時リンク。
 - **週次まとめページ**: `/weekly`（`src/app/weekly/page.tsx`、`lib/microcms.ts`の`getRecentArticles()`）が直近7日間の開示を横断要約（件数・合計推定金額つき）。「大口投資家の動きを教えて」等の包括的なクエリに個別記事より直接答えられるページとして新設し、ヘッダーから常時リンク・サイトマップに高優先度で登録。
-- **FAQPage構造化データ**: `/faq`（独立ページ。大量保有報告書とは・クジラとは・金額の算出方法・投資助言か否か・記事の作成方法・大量保有報告書と変更報告書の違い・提出義務者・更新頻度・週次まとめ/銘柄別履歴/投資家分類への導線・提出期限・取引日別ページへの導線・売り方向を扱わない旨・海外投資家の扱い・自社株買い/ETFフローを含まない旨・変更報告書による記事の重複、計17問）にFAQPage JSON-LDを付与。可視コンテンツと一言一句一致させている。`/about`からはリンクのみで誘導。
+- **FAQPage構造化データ**: `/faq`（独立ページ、計95問）にFAQPage JSON-LDを付与。「大量保有報告書のきほん」（5%ルール・提出期限・保有目的・共同保有者・特例報告など制度の基礎、22問）「用語・投資家分類」（クジラ・13分類それぞれの解説・議決権・EDINET等の用語、20問）「サイトの使い方」（金額規模の算出方法・検索・会社情報カード・銘柄別/取引日別ページ・RSS等、20問）「読み方・活用法」（大量保有報告書は株価にどう影響するか等、投資初心者・中級者向けの実践的な疑問、20問）「運営・データについて」（記事の作成方法・売り方向の扱い・データの対象範囲・運営体制、13問）の5カテゴリに分類。投資助言でない旨・免責事項などサイト運用に関する定型的な質問は`/about`の免責事項セクションに一本化して`/faq`からは割愛しているほか、使用技術スタック・アクセス解析ツール・利用AIベンダー・トレーディングシステムとの内部関係など、読者にとって価値が低くサイト運営の内部情報を不必要に開示する質問は含めていない。`src/components/FaqList.tsx`（クライアントコンポーネント）で、各質問に色分けされたカテゴリバッジ（ドット+ラベル、カテゴリごとに固定色）を表示するほか、タブUIでも絞り込み表示できる。タブの初期状態は必ず「すべて」（全件表示）にしているため、SSR済みHTMLには常に全問が含まれ、クローラー・AIOが辿れる内容はJSの実行有無によらず変わらない。回答文はAI Overview等でそのまま引用されても意味が通じるよう、質問文を読まなくても完結する1〜3文の自己完結型の文章にしている。可視コンテンツと構造化データの回答文は一言一句一致させている。`/about`からはリンクのみで誘導。
 
 ## 実装メモ
 
@@ -100,15 +101,17 @@ npm run dev
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
 - デザインはエディトリアル（雑誌）系。フォントは`next/font/google`のNoto Sans JPで統一。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型表示）を適用。ヒーロー枠（注目記事カード）はアイキャッチ画像がある記事のみ大きな高さを取り、無い記事では余白を残さないコンパクトな表示にフォールバックする。
-- 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。
+- 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。各見出しの下には、その取引日の全記事を一覧できる`/date/[date]`アーカイブページへのリンクを表示する。
 - ヘッダーのロゴ（🐋アイコン）・カテゴリ別一覧のパンくずリストから常にTOPへ戻れる（記事詳細・銘柄別履歴には既存のパンくずリストあり）。
 - オートスクロールの導入で記事一覧が際限なく伸び、ページ最下部までスクロールするのが実質困難になったため、独立した`<Footer>`は廃止。運営者情報・免責事項・RSS・累計訪問者カウンターは`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）に集約し、スクロール位置によらず常にアクセスできるようにしている。
 - ヘッダーのカテゴリフィルターはスマホ幅では折り返さず横スクロール1行にし（`.no-scrollbar`、`src/app/globals.css`）、13カテゴリぶんが縦に何行も積み重なって本文を押し下げないようにしている。sm以上（タブレット・PC幅）では通常の折り返し表示に戻る。
 - カテゴリフィルター（`/category/[category]`）はmicroCMS側に別フィールドを持たず、`dealType`の値をそのままカテゴリ名として使う（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`、値はidentity）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
+- `/stocks/[code]`の会社情報カード（`src/lib/companyInfo.ts`/`src/components/CompanyInfoCard.tsx`）はトレーディングシステム側が日次で更新するSupabaseの`jpx_stock_list`（業種・株主優待）と`gen_rankings`（直近90営業日分の終値・PER・PBR・52週レンジ位置）を参照する。株価推移グラフは外部チャートライブラリを使わず、直近90営業日分の終値をインラインSVGの折れ線（`polyline`）で自前描画している。`gen_rankings`の`drop_prob`（下落確率）・`recommend`（売買シグナル）はstock-alert本体の提供価値そのものなので、ブログ側では意図的に表示しない。取得失敗時（未設定・障害）は記事一覧の表示を止めないよう`null`を返しカードごと非表示にする。ページ全体に`export const revalidate = 300`を設定し、Supabase側のfetchも含めて5分周期で再検証する。
+- ヘッダー右上の🔍アイコン（`src/components/StockSearch.tsx`）から企業名・証券コードで検索できる。入力停止から300ms後に`/api/stocks/search`（`lib/microcms.ts`の`searchStocks()`、`stockCode`/`stockName`の`[contains]`部分一致、銘柄単位で重複排除・最大20件）を叩き、結果をクリック（またはEnterで先頭候補）すると`/stocks/[code]`（銘柄別履歴）に遷移する。
 
 ## コンテンツの自動生成（任意）
 
-リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（買い方向のみ）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。
+リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（保有比率が増加する取得＝買い方向、減少する譲渡・売却＝売り方向の双方）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得・売却金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。売り方向の記事は`tags`に`"売り"`を追加して買いと区別する（microCMSのセレクトフィールド追加を避け、既存の自由記述`tags`フィールドを流用）。フロント側は`src/lib/format.ts`の`isSellArticle()`が`tags`から判定し、`src/components/DealDirectionBadge.tsx`が`DealTypeBadge`の隣に「売り」バッジを表示する（買い方向の記事にはバッジを出さない）。
 
 `dealType`（提出者の投資家分類）は、Supabaseの`edinet_filer_classification`マスター（Web検索で確認済みの投資家分類テーブル、バックテスト分析とも共用）をまず参照し、未登録の提出者のみClaudeの一般知識で判定して結果をマスターへ保存する（`web/publish_blog_articles.py`の`classify_filer()`）。キーワード一致だけでは日系/外資の区別やスペース無し個人名を正しく判定できないため。判定不能な場合は「その他」に丸める。
 
@@ -116,4 +119,4 @@ npm run dev
 
 ## スコープ外
 
-認証・会員機能、検索機能、コメント機能。
+認証・会員機能、コメント機能。

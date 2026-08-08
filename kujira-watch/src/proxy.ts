@@ -3,9 +3,22 @@ import type { NextFetchEvent, NextRequest } from "next/server";
 import { classifyVisitor } from "@/lib/crawlers";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
+const VISITOR_COOKIE = "kw_vid";
+
 export function proxy(request: NextRequest, event: NextFetchEvent) {
   const userAgent = request.headers.get("user-agent") ?? "";
   const botName = classifyVisitor(userAgent);
+
+  const response = NextResponse.next();
+  let visitorId = request.cookies.get(VISITOR_COOKIE)?.value;
+  if (!visitorId) {
+    visitorId = crypto.randomUUID();
+    response.cookies.set(VISITOR_COOKIE, visitorId, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
 
   if (botName) {
     event.waitUntil(
@@ -15,6 +28,7 @@ export function proxy(request: NextRequest, event: NextFetchEvent) {
             path: request.nextUrl.pathname,
             bot_name: botName,
             user_agent: userAgent,
+            visitor_id: botName === "Browser" ? visitorId : null,
           });
         } catch {
           // ログ記録の失敗でサイト表示に影響を出さないよう握りつぶす
@@ -23,7 +37,7 @@ export function proxy(request: NextRequest, event: NextFetchEvent) {
     );
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
