@@ -232,5 +232,33 @@
 - Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功（ダミーmicroCMS環境変数による
   既知の403エラーのみ）。
 
+**Cycle 8: アクセス解析の精度向上 + 投資家別ページ（差別化戦略）**
+- Plan: 流入が伸びない相談を受けアクセスログ・GSCを分析。(1)`blog_crawler_log`の"Browser"件数(12,350件)は
+  prefetch/RSC取得込みで水増しされており実訪問数として使えなかった、(2)`GoogleOther`が未登録のため
+  実訪問者に誤分類、(3)GSC確認の結果インデックス自体は61件登録済みで順調（「ゼロ」仮説は誤りと判明）、
+  (4)本命の課題は「日経・JPX公式・証券会社・バフェットコード等の強力な競合が独占する頭金ワードでは
+  技術SEOだけでは勝てない」「YMYL領域なのにAI生成・匿名法人でE-E-A-Tが弱い」の2点と特定。
+- Do:
+  - `blog_crawler_log`に匿名`visitor_id`列を追加（`kw_vid` cookie、個人情報なし）。`GoogleOther`を
+    `BOT_PATTERNS`に追加（PR #238）。
+  - 差別化施策として「投資家別ページ」(`/investors`, `/investors/[filer]`)を新設。既存の
+    個別銘柄ページ(`/stocks/[code]`)はEDINET開示データベース系の競合と同じ切り口だが、
+    「特定の投資家（ファンド）が横断的にどの銘柄を買い増し/売却しているか」を追える構成は競合に
+    存在しない空白地帯。Supabaseに集計ビュー`edinet_filer_summary`を新設し
+    （`edinet_large_holdings`は626投資家分・1000行上限に近いため、filer_name単位に事前集計した
+    ビュー経由でアプリ側のページング無しに1クエリ取得）、`src/lib/investors.ts`で参照。
+    `/stocks/[code]`側にも「大量保有報告書の提出投資家」の相互内部リンクを追加。
+  - X(Twitter)自動投稿を新設（`web/x_client.py`）。`publish_blog_articles.py`の`main()`が
+    投稿完了後に呼び出し、その回に投稿した記事のうち金額規模上位3件（`TWEETS_PER_RUN`）だけを
+    X API v2に投稿する（新規アカウントで全件投稿するとスパム的に見えるため件数を絞る設計。
+    「サイトを磨いてから」より「配信は即着手すべき」という判断）。OAuth 1.0a User Context
+    （`X_API_KEY`/`X_API_KEY_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET`）が必要で、
+    未設定時は他のステップに影響せずスキップする。
+- Check: `npx tsc --noEmit`/`npm run lint`/`npm run build`成功。Pythonテスト全156件成功
+  （`tests/test_x_client.py`を新規追加、10件）。
+- Act: PR作成・マージ待ち。
+
 **未着手・保留**
-- X(Twitter)自動投稿（サイトの基盤が整ったので着手を検討してよい段階）
+- X Developer Portalでのアプリ作成・4つのAPIキー発行とGitHub Secretsへの登録（ユーザー側の作業。
+  `X_API_KEY`/`X_API_KEY_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET`）
+- E-E-A-T強化（運営者の実名/ペンネーム・経歴の開示。ユーザー判断待ち）

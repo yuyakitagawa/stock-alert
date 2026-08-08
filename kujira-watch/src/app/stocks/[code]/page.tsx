@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import CompanyInfoCard from "@/components/CompanyInfoCard";
 import DealDateHeading from "@/components/DealDateHeading";
+import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
+import { getFilersByStockCode } from "@/lib/investors";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 
@@ -37,9 +39,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo] = await Promise.all([
+  const [{ contents }, companyInfo, filers] = await Promise.all([
     getArticlesByStockCode(code),
     getCompanyInfo(code),
+    getFilersByStockCode(code),
   ]);
 
   if (contents.length === 0) {
@@ -89,6 +92,24 @@ export default async function StockPage({ params }: Props) {
         {stockName}（{code}）
       </h1>
       {companyInfo && <CompanyInfoCard info={companyInfo} />}
+      {filers.length > 0 && (
+        <div className="mb-8 border-t border-rule pt-4">
+          <h2 className="mb-2 text-sm font-bold text-brand-navy">大量保有報告書の提出投資家</h2>
+          <ul className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+            {filers.map((filer) => (
+              <li key={filer.filerName} className="flex items-center gap-2">
+                <Link
+                  href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                  className="text-brand-blue hover:underline"
+                >
+                  {filer.filerName}
+                </Link>
+                <DealTypeBadge dealType={filer.category} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="mb-6">
         <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
         <p className="mt-1 text-sm text-foreground/50">
