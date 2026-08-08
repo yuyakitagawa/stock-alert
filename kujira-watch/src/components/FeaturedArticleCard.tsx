@@ -5,7 +5,19 @@ import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
 
-export default function FeaturedArticleCard({ article }: { article: ArticleContent }) {
+const RANK_LABELS: Record<number, string> = {
+  1: "🥇 注目1位",
+  2: "🥈 注目2位",
+  3: "🥉 注目3位",
+};
+
+export default function FeaturedArticleCard({
+  article,
+  rank,
+}: {
+  article: ArticleContent;
+  rank: number;
+}) {
   const hasImage = Boolean(article.eyecatch);
   return (
     <Link
@@ -29,7 +41,7 @@ export default function FeaturedArticleCard({ article }: { article: ArticleConte
       )}
       <div className="relative p-6 sm:p-10">
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="kicker text-brand-gold-bright">注目の一件</span>
+          <span className="kicker text-brand-gold-bright">{RANK_LABELS[rank] ?? "注目"}</span>
           <DealTypeBadge dealType={article.dealType} />
           <DealDirectionBadge tags={article.tags} />
           <span className="kicker text-white/60">{formatDate(article.dealDate)}</span>
