@@ -20,7 +20,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost \
-            gspread google-auth yfinance pytest anthropic Pillow
+            gspread google-auth yfinance pytest anthropic Pillow requests-oauthlib
 
       - name: Run tests
         run: |

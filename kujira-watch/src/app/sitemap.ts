@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllArticlesForSitemap } from "@/lib/microcms";
+import { getAllFilers } from "@/lib/investors";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES } from "@/types/article";
 
@@ -8,7 +9,14 @@ import { CATEGORIES } from "@/types/article";
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const articles = await getAllArticlesForSitemap();
+  const [articles, filers] = await Promise.all([getAllArticlesForSitemap(), getAllFilers()]);
+
+  const investorEntries: MetadataRoute.Sitemap = filers.map((filer) => ({
+    url: `${SITE_URL}/investors/${encodeURIComponent(filer.filerName)}`,
+    lastModified: filer.latestDiscDate,
+    changeFrequency: "weekly",
+    priority: 0.5,
+  }));
 
   const articleEntries: MetadataRoute.Sitemap = articles.map((article) => ({
     url: `${SITE_URL}/articles/${article.id}`,
@@ -44,9 +52,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/weekly`, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/about`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${SITE_URL}/investors`, changeFrequency: "daily", priority: 0.6 },
     ...categoryEntries,
     ...stockEntries,
     ...dateEntries,
+    ...investorEntries,
     ...articleEntries,
   ];
 }
