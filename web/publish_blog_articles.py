@@ -819,6 +819,12 @@ def main():
     results = build_and_publish(days=args.days, max_articles=args.max_articles, dry_run=args.dry_run)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
+    if not args.dry_run:
+        from web.x_client import post_top_articles
+        posted = post_top_articles(results)
+        if posted:
+            print(f"🐦 X投稿: {posted}件")
+
 
 if __name__ == "__main__":
     main()

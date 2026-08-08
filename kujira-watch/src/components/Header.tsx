@@ -41,6 +41,12 @@ export default function Header() {
           >
             今週の動き
           </Link>
+          <Link
+            href="/investors"
+            className="shrink-0 transition-colors hover:text-brand-navy"
+          >
+            投資家一覧
+          </Link>
           {CATEGORIES.map((category) => (
             <Link
               key={category}
