@@ -16,7 +16,7 @@ export const UI = {
     categoryPrefix: "カテゴリ: ",
     noArticlesInCategory: "このカテゴリの記事がまだありません。",
     loadingMore: "読み込み中…",
-    featuredRankLabels: { 1: "🥇 1", 2: "🥈 2", 3: "🥉 3" } as Record<number, string>,
+    featuredRankLabels: { 1: "注目①", 2: "注目②", 3: "注目③" } as Record<number, string>,
     featuredFallback: "注目",
     relatedArticlesHeading: (category: string | undefined) => `関連記事（${category}）`,
     stockHistoryHeading: "大量保有・自社株買い履歴",
