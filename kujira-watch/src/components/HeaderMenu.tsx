@@ -13,15 +13,6 @@ type MenuLink = {
   label: string;
 };
 
-const SITE_LINKS: MenuLink[] = [
-  { href: "/weekly", label: "今週の動き" },
-  { href: "/investors", label: "大口投資家一覧" },
-  { href: "/stocks", label: "株式銘柄一覧" },
-  { href: "/about", label: "運営者情報・免責事項" },
-  { href: "/faq", label: "よくある質問" },
-  { href: "/feed.xml", label: "RSSフィード" },
-];
-
 // 現在のパスから、もう一方のロケールの等価URLを計算する。
 // 記事(id)・銘柄(code)はロケール間で共通のキーなのでprefixの付け替えだけで対応できるが、
 // カテゴリだけは日本語文字列⇄英語slugの変換が要る。/weekly, /investors, /date, /faq は
@@ -70,6 +61,9 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
     locale === "en"
       ? [{ href: "/en/about", label: t.aboutMenuLabel }]
       : [
+          { href: "/weekly", label: "今週の動き" },
+          { href: "/investors", label: "大口投資家一覧" },
+          { href: "/stocks", label: "株式銘柄一覧" },
           { href: "/about", label: "運営者情報・免責事項" },
           { href: "/faq", label: "よくある質問" },
           { href: "/feed.xml", label: "RSSフィード" },
