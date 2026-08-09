@@ -158,3 +158,30 @@ export async function getAllArticlesForSitemap() {
   });
   return contents.map(normalizeDealType);
 }
+
+export type StockSummary = { stockCode: string; stockName: string; articleCount: number; latestDealDate: string };
+
+// /stocks（銘柄一覧）用。記事が1件以上ある銘柄をstockCode単位で集約する。
+export async function getAllStocksForIndex(): Promise<StockSummary[]> {
+  const contents = await client.getAllContents<Pick<Article, "stockCode" | "stockName" | "dealDate">>({
+    endpoint: "articles",
+    queries: {
+      fields: "stockCode,stockName,dealDate",
+      orders: "-dealDate",
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+
+  const byCode = new Map<string, StockSummary>();
+  for (const { stockCode, stockName, dealDate } of contents) {
+    const existing = byCode.get(stockCode);
+    if (!existing) {
+      byCode.set(stockCode, { stockCode, stockName, articleCount: 1, latestDealDate: dealDate });
+    } else {
+      existing.articleCount += 1;
+    }
+  }
+  return Array.from(byCode.values()).sort((a, b) =>
+    b.latestDealDate.localeCompare(a.latestDealDate)
+  );
+}
