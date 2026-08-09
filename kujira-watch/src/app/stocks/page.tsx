@@ -43,7 +43,7 @@ export default async function StocksIndexPage() {
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">銘柄一覧</h1>
       <p className="mb-6 text-sm text-foreground/50">
         {SITE_NAME}が大量保有・自社株買いの動きを追跡している銘柄{stocks.length}件です。
-        最終開示日が新しい順に並んでいます。
+        証券コード順に並んでいます。
       </p>
       {stocks.length === 0 ? (
         <p className="text-foreground/50">銘柄データがまだありません。</p>
