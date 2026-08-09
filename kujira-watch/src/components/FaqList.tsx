@@ -11,10 +11,14 @@ export type FaqItem = {
   render?: React.ReactNode;
 };
 
-// カテゴリごとに色分けした質問バッジ用。5カテゴリ固定のため、増減時はここも見直す。
+// カテゴリごとに色分けした質問バッジ用。9カテゴリ固定のため、増減時はここも見直す。
 const CATEGORY_COLORS: Record<string, string> = {
   basics: "text-brand-blue",
   terms: "text-violet-600",
+  "term-supplement": "text-indigo-600",
+  "regulation-deep-dive": "text-rose-600",
+  "investor-players": "text-cyan-600",
+  "investing-basics-extra": "text-amber-600",
   usage: "text-emerald-600",
   howto: "text-brand-gold",
   "about-site": "text-foreground/50",
