@@ -633,6 +633,48 @@ def test_get_company_description_returns_empty_without_api_key_when_not_cached()
         assert m.get_company_description("9439", "エム・エイチ・グループ") == ""
 
 
+def test_get_filer_profile_returns_cached_without_calling_claude():
+    cached = {"profile": "1990年代設立の国内独立系運用会社。"}
+    with mock.patch.object(m.sb, "select_one", return_value=cached) as select_mock, \
+         mock.patch("anthropic.Anthropic") as anthropic_mock:
+        result = m.get_filer_profile("テストファンド", "独立系ブティックAM")
+    assert result == "1990年代設立の国内独立系運用会社。"
+    assert select_mock.called
+    assert not anthropic_mock.called
+
+
+def test_get_filer_profile_asks_claude_and_persists_when_not_cached():
+    raw = json.dumps({"profile": "1990年代設立の国内独立系運用会社。"})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert") as upsert_mock, \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.get_filer_profile("テストファンド", "独立系ブティックAM")
+    assert result == "1990年代設立の国内独立系運用会社。"
+    upsert_mock.assert_called_once()
+    saved_rows = upsert_mock.call_args.args[1]
+    assert saved_rows[0]["filer_name"] == "テストファンド"
+    assert saved_rows[0]["profile"] == "1990年代設立の国内独立系運用会社。"
+
+
+def test_get_filer_profile_returns_empty_without_api_key_when_not_cached():
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", ""), \
+         mock.patch.object(m.sb, "select_one", return_value=None):
+        assert m.get_filer_profile("テストファンド", "独立系ブティックAM") == ""
+
+
+def test_get_filer_profile_returns_empty_when_claude_returns_blank():
+    """情報が乏しい個人名義等の提出者は空文字のまま(創作させない)。"""
+    raw = json.dumps({"profile": ""})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert") as upsert_mock, \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.get_filer_profile("個人 太郎", "個人")
+    assert result == ""
+    upsert_mock.assert_not_called()
+
+
 def test_upload_price_chart_returns_url_on_success():
     resp = _FakeResponse(201, "", {"url": "https://images.microcms-assets.io/assets/x/chart.png"})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \

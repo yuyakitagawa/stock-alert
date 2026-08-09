@@ -93,6 +93,14 @@ export default async function InvestorPage({ params }: Props) {
           <p className="text-sm text-foreground/60">{classification.description}</p>
         )}
       </div>
+      {classification?.profile && (
+        <div className="mb-8 border-t border-rule pt-4">
+          <h2 className="mb-2 text-sm font-bold text-brand-navy">{filerName}について</h2>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/70">
+            {classification.profile}
+          </p>
+        </div>
+      )}
       <p className="mb-6 text-sm text-foreground/50">
         EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
         {holdings.length}件まとめています。個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
