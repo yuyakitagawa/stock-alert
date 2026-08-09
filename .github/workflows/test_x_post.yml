@@ -1,0 +1,28 @@
+name: Test X Post
+
+# X(Twitter)投稿の認証情報(X_API_KEY等)が正しく設定されているかを、日次パイプライン
+# 全体を動かさずに確認するための一時的な手動実行ワークフロー。確認できたら削除する。
+on:
+  workflow_dispatch:
+
+jobs:
+  test-post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests requests-oauthlib
+
+      - name: Post test tweet
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_KEY_SECRET: ${{ secrets.X_API_KEY_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: python3 tools/test_x_post.py
