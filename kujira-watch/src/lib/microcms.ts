@@ -181,7 +181,6 @@ export async function getAllStocksForIndex(): Promise<StockSummary[]> {
       existing.articleCount += 1;
     }
   }
-  return Array.from(byCode.values()).sort((a, b) =>
-    b.latestDealDate.localeCompare(a.latestDealDate)
-  );
+  // 一覧は「見て探す」用途のため、更新順ではなく証券コード昇順（辞書的に引ける順番）にする。
+  return Array.from(byCode.values()).sort((a, b) => a.stockCode.localeCompare(b.stockCode));
 }
