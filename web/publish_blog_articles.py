@@ -386,6 +386,37 @@ def _microcms_headers() -> dict:
     return {"X-MICROCMS-API-KEY": MICROCMS_KEY, "Content-Type": "application/json"}
 
 
+# kujira-watch/src/lib/microcms.ts の FEATURED_POOL_SIZE/FEATURED_COUNT
+# （ホームページ「注目」枠 getFeaturedArticles()）と同じ値。ここを変える場合は
+# あちらも合わせて変更すること。
+FEATURED_POOL_SIZE = 20
+FEATURED_COUNT = 3
+
+
+def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = FEATURED_COUNT) -> set:
+    """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件のプールを
+    dealAmount降順に並べ直し上位count件）をPython側で再現し、現在ホームページで
+    「注目」表示されている記事のidセットを返す。X投稿をこれと一致させることで、
+    サイトで目立っていない小粒な開示がXにだけ投稿される事態を防ぐ。
+    取得失敗時は空集合（この場合X投稿は0件になる）。"""
+    try:
+        resp = requests.get(
+            _microcms_base_url(),
+            headers=_microcms_headers(),
+            params={"orders": "-dealDate,-dealAmount", "limit": pool_size, "fields": "id,dealAmount"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return set()
+        contents = resp.json().get("contents", [])
+    except Exception as e:
+        print(f"  ⚠ 注目記事プール取得失敗: {e}")
+        return set()
+
+    contents.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
+    return {a["id"] for a in contents[:count]}
+
+
 def already_published(stock_code: str, disc_date: str) -> bool:
     """同一銘柄・同一開示日の記事が既にmicroCMSにあればTrue（重複投稿防止）。"""
     try:
@@ -821,7 +852,8 @@ def main():
 
     if not args.dry_run:
         from web.x_client import post_top_articles
-        posted = post_top_articles(results)
+        featured_ids = get_featured_article_ids()
+        posted = post_top_articles(results, featured_ids)
         if posted:
             print(f"🐦 X投稿: {posted}件")
 

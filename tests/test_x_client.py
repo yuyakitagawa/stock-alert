@@ -73,25 +73,111 @@ def test_post_tweet_returns_false_on_http_error():
         assert m.post_tweet("hello") is False
 
 
+def test_upload_media_returns_media_id_on_success():
+    resp = mock.Mock(ok=True, json=lambda: {"media_id_string": "999"})
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m.requests, "post", return_value=resp) as mock_post:
+        assert m.upload_media(b"png-bytes") == "999"
+    assert mock_post.call_args.kwargs["files"]["media"][0] == "chart.png"
+
+
+def test_upload_media_returns_none_on_http_error():
+    resp = mock.Mock(ok=False, status_code=400, text="Bad Request")
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m.requests, "post", return_value=resp):
+        assert m.upload_media(b"png-bytes") is None
+
+
+def test_upload_media_returns_none_without_auth():
+    with mock.patch.dict(os.environ, {}, clear=True), \
+         mock.patch.object(m.requests, "post") as mock_post:
+        assert m.upload_media(b"png-bytes") is None
+        mock_post.assert_not_called()
+
+
+def test_post_tweet_includes_media_ids_when_media_id_given():
+    captured = {}
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(
+             m.requests, "post",
+             side_effect=lambda url, auth, json, timeout: captured.update(json) or mock.Mock(status_code=201),
+         ):
+        assert m.post_tweet("hello", media_id="999") is True
+    assert captured["media"] == {"media_ids": ["999"]}
+
+
 def test_post_top_articles_skips_without_auth():
-    published = [{"id": "1", "title": "t", "dealAmount": 100.0, "tags": ""}]
+    published = [{"id": "1", "title": "t", "dealAmount": 100.0, "tags": "",
+                  "stockCode": "1234", "stockName": "テスト"}]
     with mock.patch.dict(os.environ, {}, clear=True):
-        assert m.post_top_articles(published) == 0
+        assert m.post_top_articles(published, featured_ids={"1"}) == 0
 
 
-def test_post_top_articles_picks_largest_deal_amount_first():
+def test_post_top_articles_picks_largest_deal_amount_first_among_featured():
     published = [
-        {"id": "1", "title": "小さい取引", "dealAmount": 10.0, "tags": ""},
-        {"id": "2", "title": "大きい取引", "dealAmount": 500.0, "tags": ""},
-        {"id": None, "title": "dry-runなのでID無し", "dealAmount": 999.0, "tags": ""},
+        {"id": "1", "title": "小さい取引", "dealAmount": 10.0, "tags": "",
+         "stockCode": "1111", "stockName": "小さい会社"},
+        {"id": "2", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
+         "stockCode": "2222", "stockName": "大きい会社"},
+        {"id": None, "title": "dry-runなのでID無し", "dealAmount": 999.0, "tags": "",
+         "stockCode": "3333", "stockName": "対象外"},
     ]
     posted_texts = []
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(m, "post_tweet", side_effect=lambda text: posted_texts.append(text) or True):
-        posted = m.post_top_articles(published, top_n=1)
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
+         mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
+        posted = m.post_top_articles(published, featured_ids={"1", "2"}, top_n=1)
 
     assert posted == 1
     assert "大きい取引" in posted_texts[0]
+
+
+def test_post_top_articles_excludes_articles_not_in_featured_ids():
+    """当日一番金額が大きくても、ホームページの「注目」に入っていなければ投稿しない
+    （8/9運用で9.6億円の記事が投稿された一方、8/7の1406億円の記事が「注目」に
+    居座り続けていた実例を踏まえた仕様）。"""
+    published = [
+        {"id": "1", "title": "今日の中では一番大きいが注目には入らない", "dealAmount": 9.6, "tags": "",
+         "stockCode": "1111", "stockName": "小さい会社"},
+    ]
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
+         mock.patch.object(m, "post_tweet") as mock_tweet:
+        posted = m.post_top_articles(published, featured_ids={"other-id"})
+
+    assert posted == 0
+    mock_tweet.assert_not_called()
+
+
+def test_post_top_articles_attaches_chart_when_generated():
+    """チャート画像が生成できた場合、アップロードしてmedia_idを付けて投稿する。"""
+    published = [{"id": "1", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
+                  "stockCode": "2222", "stockName": "大きい会社"}]
+    calls = []
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=b"png-bytes"), \
+         mock.patch.object(m, "upload_media", return_value="777"), \
+         mock.patch.object(m, "post_tweet",
+                            side_effect=lambda text, media_id=None: calls.append(media_id) or True):
+        posted = m.post_top_articles(published, featured_ids={"1"}, top_n=1)
+
+    assert posted == 1
+    assert calls == ["777"]
+
+
+def test_post_top_articles_posts_without_chart_when_generation_fails():
+    """チャート生成に失敗してもテキストのみで投稿を続行する。"""
+    published = [{"id": "1", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
+                  "stockCode": "2222", "stockName": "大きい会社"}]
+    calls = []
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
+         mock.patch.object(m, "post_tweet",
+                            side_effect=lambda text, media_id=None: calls.append(media_id) or True):
+        posted = m.post_top_articles(published, featured_ids={"1"}, top_n=1)
+
+    assert posted == 1
+    assert calls == [None]
 
 
 if __name__ == "__main__":
