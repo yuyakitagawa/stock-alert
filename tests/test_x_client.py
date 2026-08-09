@@ -110,10 +110,10 @@ def test_post_top_articles_skips_without_auth():
     published = [{"id": "1", "title": "t", "dealAmount": 100.0, "tags": "",
                   "stockCode": "1234", "stockName": "テスト"}]
     with mock.patch.dict(os.environ, {}, clear=True):
-        assert m.post_top_articles(published) == 0
+        assert m.post_top_articles(published, featured_ids={"1"}) == 0
 
 
-def test_post_top_articles_picks_largest_deal_amount_first():
+def test_post_top_articles_picks_largest_deal_amount_first_among_featured():
     published = [
         {"id": "1", "title": "小さい取引", "dealAmount": 10.0, "tags": "",
          "stockCode": "1111", "stockName": "小さい会社"},
@@ -126,10 +126,27 @@ def test_post_top_articles_picks_largest_deal_amount_first():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
          mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
-        posted = m.post_top_articles(published, top_n=1)
+        posted = m.post_top_articles(published, featured_ids={"1", "2"}, top_n=1)
 
     assert posted == 1
     assert "大きい取引" in posted_texts[0]
+
+
+def test_post_top_articles_excludes_articles_not_in_featured_ids():
+    """当日一番金額が大きくても、ホームページの「注目」に入っていなければ投稿しない
+    （8/9運用で9.6億円の記事が投稿された一方、8/7の1406億円の記事が「注目」に
+    居座り続けていた実例を踏まえた仕様）。"""
+    published = [
+        {"id": "1", "title": "今日の中では一番大きいが注目には入らない", "dealAmount": 9.6, "tags": "",
+         "stockCode": "1111", "stockName": "小さい会社"},
+    ]
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
+         mock.patch.object(m, "post_tweet") as mock_tweet:
+        posted = m.post_top_articles(published, featured_ids={"other-id"})
+
+    assert posted == 0
+    mock_tweet.assert_not_called()
 
 
 def test_post_top_articles_attaches_chart_when_generated():
@@ -142,7 +159,7 @@ def test_post_top_articles_attaches_chart_when_generated():
          mock.patch.object(m, "upload_media", return_value="777"), \
          mock.patch.object(m, "post_tweet",
                             side_effect=lambda text, media_id=None: calls.append(media_id) or True):
-        posted = m.post_top_articles(published, top_n=1)
+        posted = m.post_top_articles(published, featured_ids={"1"}, top_n=1)
 
     assert posted == 1
     assert calls == ["777"]
@@ -157,7 +174,7 @@ def test_post_top_articles_posts_without_chart_when_generation_fails():
          mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
          mock.patch.object(m, "post_tweet",
                             side_effect=lambda text, media_id=None: calls.append(media_id) or True):
-        posted = m.post_top_articles(published, top_n=1)
+        posted = m.post_top_articles(published, featured_ids={"1"}, top_n=1)
 
     assert posted == 1
     assert calls == [None]

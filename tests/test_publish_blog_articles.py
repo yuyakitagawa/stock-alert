@@ -190,6 +190,38 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
+def test_get_featured_article_ids_reorders_pool_by_deal_amount():
+    """kujira-watch側getFeaturedArticles()と同じロジック: 直近プール(-dealDate,-dealAmount順で
+    取得)をdealAmount降順に並べ直し、上位count件のidだけを返す。"""
+    pool = [
+        {"id": "newest-small", "dealAmount": 9.6},
+        {"id": "older-huge", "dealAmount": 1406.8},
+        {"id": "older-medium", "dealAmount": 807.7},
+        {"id": "oldest-small", "dealAmount": 5.0},
+    ]
+    resp = _FakeResponse(200, "", {"contents": pool})
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.get", return_value=resp):
+        ids = m.get_featured_article_ids(pool_size=20, count=3)
+    assert ids == {"older-huge", "older-medium", "newest-small"}
+
+
+def test_get_featured_article_ids_returns_empty_set_on_http_error():
+    resp = _FakeResponse(500, "server error")
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.get", return_value=resp):
+        assert m.get_featured_article_ids() == set()
+
+
+def test_get_featured_article_ids_returns_empty_set_on_exception():
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=Exception("timeout")):
+        assert m.get_featured_article_ids() == set()
+
+
 class _FakeResponse:
     def __init__(self, status_code, text, json_data=None, content=b""):
         self.status_code = status_code

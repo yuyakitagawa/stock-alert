@@ -1,8 +1,11 @@
 """
 web/x_client.py
-publish_blog_articles.py が投稿した新着記事のうち、金額規模が大きい上位数件だけを
-X(Twitter)へ自動投稿する。新規アカウントで全件投稿するとスパム的に見えるため、
-質を優先し件数を絞る（TWEETS_PER_RUN）。株価チャート画像
+publish_blog_articles.py が投稿した新着記事のうち、ホームページの「注目」枠
+（kujira-watch側 getFeaturedArticles()、直近プールをdealAmount降順に並べ直した
+上位3件）に入っている記事だけをX(Twitter)へ自動投稿する。サイトで目立っていない
+小粒な開示が「その日一番大きい」というだけでXに投稿される事態を避けるため、
+「その日新規公開した記事」×「現在サイトで注目表示されている記事」の積集合を対象にする
+（該当が無い地味な日は0件のこともある）。株価チャート画像
 （publish_blog_articles.generate_price_chart_image、記事本文埋め込みと同じもの）を
 添付し、テキストのみの投稿よりタイムライン上で目立つようにする（画像生成に
 失敗した場合は画像無しでテキストのみ投稿する）。
@@ -22,8 +25,8 @@ SITE_URL = "https://kujira-watch.com"
 API_URL = "https://api.x.com/2/tweets"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 
-# 1回の実行(1日1回)あたりの投稿上限。新規アカウントでフォロワーが少ない段階では
-# 全件投稿よりも金額規模の大きい注目度の高い開示に絞った方が質が保てる。
+# 1回の実行(1日1回)あたりの投稿上限（安全上限。実際にはfeatured_idsとの積集合が
+# 3件を超えることは無い想定だが、念のためのキャップとして残す）。
 TWEETS_PER_RUN = 3
 
 # 無料/Basicプランのポスト上限(280字)に対する安全マージン。全角文字はX側の重み付けで
@@ -89,17 +92,19 @@ def post_tweet(text: str, media_id: "str | None" = None) -> bool:
         return False
 
 
-def post_top_articles(published: list, top_n: int = TWEETS_PER_RUN) -> int:
-    """publish_blog_articles.build_and_publish()が返すpublishedリストのうち、
-    金額規模(dealAmount)が大きい順に上位top_n件をXへ投稿する。dry-run(id=None)の
-    記事は対象外。X認証情報が未設定の場合は何もせず0を返す。"""
+def post_top_articles(published: list, featured_ids: set, top_n: int = TWEETS_PER_RUN) -> int:
+    """publish_blog_articles.build_and_publish()が返すpublishedリスト（今日新規公開した
+    記事）のうち、featured_ids（publish_blog_articles.get_featured_article_ids()、
+    現在ホームページで「注目」表示されている記事id）にも含まれるものだけを、
+    金額規模(dealAmount)が大きい順にXへ投稿する。積集合が無ければ0件（dry-run記事や
+    featured_idsに入らない小粒な開示は対象外）。X認証情報が未設定の場合も0を返す。"""
     if _auth() is None:
         print("[x_client] X_API_KEY等が未設定のため投稿をスキップします")
         return 0
 
     from web.publish_blog_articles import generate_price_chart_image
 
-    candidates = [a for a in published if a.get("id")]
+    candidates = [a for a in published if a.get("id") and a["id"] in featured_ids]
     candidates.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
 
     posted = 0
