@@ -1,5 +1,6 @@
 import type { DealType } from "@/types/article";
-import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import { DEAL_TYPE_DESCRIPTIONS, DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
+import type { Locale } from "@/lib/i18n";
 
 const COLOR_MAP: Record<DealType, string> = {
   個人: "bg-amber-600 text-amber-800",
@@ -17,16 +18,24 @@ const COLOR_MAP: Record<DealType, string> = {
   その他: "bg-gray-400 text-foreground/60",
 };
 
-export default function DealTypeBadge({ dealType }: { dealType: DealType }) {
+export default function DealTypeBadge({
+  dealType,
+  locale = "ja",
+}: {
+  dealType: DealType;
+  locale?: Locale;
+}) {
   if (!dealType) return null;
   const [dotColor, textColor] = (COLOR_MAP[dealType] ?? COLOR_MAP.その他).split(" ");
+  const label = locale === "en" ? DEAL_TYPE_EN[dealType].label : dealType;
+  const title = locale === "en" ? DEAL_TYPE_EN[dealType].description : DEAL_TYPE_DESCRIPTIONS[dealType];
   return (
     <span
-      title={DEAL_TYPE_DESCRIPTIONS[dealType]}
+      title={title}
       className={`kicker inline-flex items-center gap-1.5 ${textColor}`}
     >
       <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
-      {dealType}
+      {label}
     </span>
   );
 }

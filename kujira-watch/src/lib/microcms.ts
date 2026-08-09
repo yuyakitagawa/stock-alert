@@ -1,5 +1,5 @@
 import { createClient } from "microcms-js-sdk";
-import type { Article, DealType } from "@/types/article";
+import type { AboutPage, Article, DealType } from "@/types/article";
 
 const serviceDomain = process.env.MICROCMS_SERVICE_DOMAIN;
 const apiKey = process.env.MICROCMS_API_KEY;
@@ -25,12 +25,19 @@ function normalizeDealType<T extends { dealType: unknown }>(article: T): T {
   };
 }
 
+// 複数条件をmicroCMSの`[and]`区切りフィルタ文字列に組み立てる。
+function buildFilters(conditions: (string | undefined)[]): string | undefined {
+  const active = conditions.filter((c): c is string => Boolean(c));
+  return active.length > 0 ? active.join("[and]") : undefined;
+}
+
 export async function getArticleList(params: {
   offset?: number;
   limit?: number;
   dealType?: DealType;
+  translatedOnly?: boolean;
 } = {}) {
-  const { offset = 0, limit = ARTICLES_PER_PAGE, dealType } = params;
+  const { offset = 0, limit = ARTICLES_PER_PAGE, dealType, translatedOnly = false } = params;
 
   const result = await client.getList<Article>({
     endpoint: "articles",
@@ -39,11 +46,16 @@ export async function getArticleList(params: {
       limit,
       // 取引日(dealDate)が新しい順、同じ日の中では金額規模(dealAmount)が大きい順。
       orders: "-dealDate,-dealAmount",
-      ...(dealType ? { filters: `dealType[contains]${dealType}` } : {}),
+      filters: buildFilters([
+        dealType ? `dealType[contains]${dealType}` : undefined,
+        translatedOnly ? "titleEn[exists]true" : undefined,
+      ]),
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  return { ...result, contents: result.contents.map(normalizeDealType) };
+  // フィルタが0件にマッチする場合、microCMSがtotalCountを返さないことがある
+  // （NaN化してページネーション/オートスクロール側の計算が壊れるのを防ぐ）。
+  return { ...result, totalCount: result.totalCount ?? 0, contents: result.contents.map(normalizeDealType) };
 }
 
 export const FEATURED_POOL_SIZE = 20;
@@ -52,12 +64,17 @@ export const FEATURED_COUNT = 3;
 // 「注目」枠: 直近FEATURED_POOL_SIZE件の中から取得金額(dealAmount)が大きい順にFEATURED_COUNT件を選ぶ。
 // 単純な新着1件だと金額の小さい取引が「注目」に出てしまうため、直近プールの中で規模の大きい
 // 取引を優先する。
-export async function getFeaturedArticles(poolSize = FEATURED_POOL_SIZE, count = FEATURED_COUNT) {
+export async function getFeaturedArticles(
+  poolSize = FEATURED_POOL_SIZE,
+  count = FEATURED_COUNT,
+  translatedOnly = false
+) {
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
       limit: poolSize,
       orders: "-dealDate,-dealAmount",
+      filters: translatedOnly ? "titleEn[exists]true" : undefined,
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
@@ -65,17 +82,21 @@ export async function getFeaturedArticles(poolSize = FEATURED_POOL_SIZE, count =
   return [...contents].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
 }
 
-export async function getArticlesByStockCode(stockCode: string) {
+export async function getArticlesByStockCode(stockCode: string, params: { translatedOnly?: boolean } = {}) {
+  const { translatedOnly = false } = params;
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
-      filters: `stockCode[equals]${stockCode}`,
+      filters: buildFilters([
+        `stockCode[equals]${stockCode}`,
+        translatedOnly ? "titleEn[exists]true" : undefined,
+      ]),
       orders: "-dealDate,-dealAmount",
       limit: 100,
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  return { ...result, contents: result.contents.map(normalizeDealType) };
+  return { ...result, totalCount: result.totalCount ?? 0, contents: result.contents.map(normalizeDealType) };
 }
 
 // dealDateはweb/publish_blog_articles.pyが`${disc_date}T00:00:00.000Z`形式(UTC深夜0時)で
@@ -183,4 +204,27 @@ export async function getAllStocksForIndex(): Promise<StockSummary[]> {
   }
   // 一覧は「見て探す」用途のため、更新順ではなく証券コード昇順（辞書的に引ける順番）にする。
   return Array.from(byCode.values()).sort((a, b) => a.stockCode.localeCompare(b.stockCode));
+}
+
+export async function getAboutPage() {
+  return client.getObject<AboutPage>({
+    endpoint: "about",
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+}
+
+// EN側サイトマップ用。titleEn/bodyEn両方がある記事のみ（日英混在ページを出さないため）。
+export async function getTranslatedArticlesForSitemap() {
+  const contents = await client.getAllContents<
+    Pick<Article, "dealType" | "stockCode" | "titleEn" | "bodyEn">
+  >({
+    endpoint: "articles",
+    queries: {
+      fields: "id,updatedAt,publishedAt,dealType,stockCode,titleEn,bodyEn",
+      filters: "titleEn[exists]true",
+      orders: "-publishedAt",
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return contents.map(normalizeDealType).filter((a) => a.titleEn && a.bodyEn);
 }

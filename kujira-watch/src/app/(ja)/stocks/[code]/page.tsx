@@ -21,18 +21,25 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code } = await params;
-  const { contents } = await getArticlesByStockCode(code);
+  const [{ contents }, { contents: enContents }] = await Promise.all([
+    getArticlesByStockCode(code),
+    getArticlesByStockCode(code, { translatedOnly: true }),
+  ]);
   if (contents.length === 0) return {};
 
   const stockName = contents[0].stockName;
   const title = `${stockName}（${code}）`;
   const description = `${stockName}（${code}）に関する機関投資家・インサイダー・自社株買いなど「クジラ」の動きをまとめました。全${contents.length}件。`;
   const url = `${SITE_URL}/stocks/${code}`;
+  const hasEn = enContents.length > 0;
 
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates: {
+      canonical: url,
+      ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/stocks/${code}` } } : {}),
+    },
     openGraph: { title, description, url },
   };
 }

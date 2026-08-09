@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { StockSearchResult } from "@/lib/microcms";
+import { UI, type Locale } from "@/lib/i18n";
 
 // 企業名・証券コードで検索し、選択(またはEnter)で /stocks/[code] に遷移する。
 // レスポンスを都度撃たないよう、入力停止から300ms待ってからAPIを叩く。
 const DEBOUNCE_MS = 300;
 
-export default function StockSearch() {
+export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
+  const t = UI[locale];
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -66,7 +68,7 @@ export default function StockSearch() {
 
   const goToStock = (stockCode: string) => {
     close();
-    router.push(`/stocks/${stockCode}`);
+    router.push(locale === "en" ? `/en/stocks/${stockCode}` : `/stocks/${stockCode}`);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -78,7 +80,7 @@ export default function StockSearch() {
     <div ref={containerRef} className="relative shrink-0">
       <button
         type="button"
-        aria-label="企業名・証券コードで検索"
+        aria-label={t.searchAria}
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         className="flex h-9 w-9 items-center justify-center text-brand-navy hover:text-brand-gold"
@@ -109,18 +111,18 @@ export default function StockSearch() {
               inputMode="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="企業名 or 証券コードで検索"
+              placeholder={t.searchPlaceholder}
               className="w-full rounded border border-rule bg-transparent px-3 py-2 text-sm text-brand-navy outline-none focus:border-brand-blue"
             />
           </form>
 
           <div className="max-h-80 overflow-y-auto">
             {loading && (
-              <p className="px-3 py-3 text-xs text-foreground/50">検索中…</p>
+              <p className="px-3 py-3 text-xs text-foreground/50">{t.searchLoading}</p>
             )}
             {!loading && trimmedQuery && visibleResults.length === 0 && (
               <p className="px-3 py-3 text-xs text-foreground/50">
-                「{query}」に一致する銘柄が見つかりません
+                {t.searchNoResults(query)}
               </p>
             )}
             {!loading &&

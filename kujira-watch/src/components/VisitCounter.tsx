@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { UI, type Locale } from "@/lib/i18n";
 
-export default function VisitCounter() {
+export default function VisitCounter({ locale = "ja" }: { locale?: Locale }) {
   const [count, setCount] = useState<number | null>(null);
+  const t = UI[locale];
 
   useEffect(() => {
     fetch("/api/counter", { method: "POST" })
@@ -22,7 +24,8 @@ export default function VisitCounter() {
 
   return (
     <p className="font-mono text-[11px] tracking-wider text-foreground/40">
-      累計訪問者数: {count.toLocaleString("ja-JP")}
+      {t.totalVisitsLabel}
+      {count.toLocaleString(locale === "en" ? "en-US" : "ja-JP")}
     </p>
   );
 }
