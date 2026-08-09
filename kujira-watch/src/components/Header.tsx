@@ -45,7 +45,7 @@ export default function Header() {
             href="/investors"
             className="shrink-0 text-brand-gold transition-colors hover:text-brand-navy"
           >
-            投資家一覧
+            大口投資家一覧
           </Link>
           {CATEGORIES.map((category) => (
             <Link

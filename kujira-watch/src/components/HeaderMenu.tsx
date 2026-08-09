@@ -11,7 +11,8 @@ type MenuLink = {
 
 const SITE_LINKS: MenuLink[] = [
   { href: "/weekly", label: "今週の動き" },
-  { href: "/investors", label: "投資家一覧" },
+  { href: "/investors", label: "大口投資家一覧" },
+  { href: "/stocks", label: "株式銘柄一覧" },
   { href: "/about", label: "運営者情報・免責事項" },
   { href: "/faq", label: "よくある質問" },
   { href: "/feed.xml", label: "RSSフィード" },
