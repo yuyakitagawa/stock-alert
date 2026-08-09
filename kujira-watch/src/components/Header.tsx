@@ -29,34 +29,45 @@ export default function Header() {
             <HeaderMenu />
           </div>
         </div>
-        {/* モバイルでは折り返さず1行の横スクロールにして、フィルターが縦に何行も
-            積み重なってページ本文を押し下げないようにする（sm以上では通常の折り返し）。 */}
+        {/* ハブページ(今週の動き/大口投資家一覧/株式銘柄一覧)と、13個ある投資家カテゴリの
+            絞り込みリンクを分離。カテゴリが同列に並ぶと項目数が多く見づらいため、
+            カテゴリ側は<details>で折りたたみ、JS無しで開閉できるようにする。 */}
         <nav
-          aria-label="カテゴリ"
-          className="no-scrollbar kicker flex flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto border-t border-rule pt-2 text-brand-navy/70 sm:flex-wrap sm:overflow-visible"
+          aria-label="主要ページ"
+          className="kicker flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-rule pt-2 text-brand-navy/70"
         >
-          <Link
-            href="/weekly"
-            className="shrink-0 text-brand-gold transition-colors hover:text-brand-navy"
-          >
+          <Link href="/weekly" className="text-brand-gold transition-colors hover:text-brand-navy">
             今週の動き
           </Link>
-          <Link
-            href="/investors"
-            className="shrink-0 transition-colors hover:text-brand-navy"
-          >
-            投資家一覧
+          <Link href="/investors" className="text-brand-gold transition-colors hover:text-brand-navy">
+            大口投資家一覧
           </Link>
-          {CATEGORIES.map((category) => (
-            <Link
-              key={category}
-              href={`/category/${encodeURIComponent(category)}`}
-              className="shrink-0 transition-colors hover:text-brand-navy"
-            >
-              {category}
-            </Link>
-          ))}
+          <Link href="/stocks" className="text-brand-gold transition-colors hover:text-brand-navy">
+            株式銘柄一覧
+          </Link>
         </nav>
+        <details className="group">
+          <summary className="kicker cursor-pointer list-none text-brand-navy/50 transition-colors hover:text-brand-navy [&::-webkit-details-marker]:hidden">
+            カテゴリで絞り込む
+            <span aria-hidden className="ml-1 inline-block transition-transform group-open:rotate-180">
+              ▾
+            </span>
+          </summary>
+          <nav
+            aria-label="カテゴリ"
+            className="kicker mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-brand-navy/70"
+          >
+            {CATEGORIES.map((category) => (
+              <Link
+                key={category}
+                href={`/category/${encodeURIComponent(category)}`}
+                className="shrink-0 transition-colors hover:text-brand-navy"
+              >
+                {category}
+              </Link>
+            ))}
+          </nav>
+        </details>
       </div>
     </header>
   );

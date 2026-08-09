@@ -46,6 +46,25 @@ export async function getArticleList(params: {
   return { ...result, contents: result.contents.map(normalizeDealType) };
 }
 
+export const FEATURED_POOL_SIZE = 20;
+export const FEATURED_COUNT = 3;
+
+// 「注目」枠: 直近FEATURED_POOL_SIZE件の中から取得金額(dealAmount)が大きい順にFEATURED_COUNT件を選ぶ。
+// 単純な新着1件だと金額の小さい取引が「注目」に出てしまうため、直近プールの中で規模の大きい
+// 取引を優先する。
+export async function getFeaturedArticles(poolSize = FEATURED_POOL_SIZE, count = FEATURED_COUNT) {
+  const result = await client.getList<Article>({
+    endpoint: "articles",
+    queries: {
+      limit: poolSize,
+      orders: "-dealDate,-dealAmount",
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  const contents = result.contents.map(normalizeDealType);
+  return [...contents].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
+}
+
 export async function getArticlesByStockCode(stockCode: string) {
   const result = await client.getList<Article>({
     endpoint: "articles",
@@ -138,4 +157,30 @@ export async function getAllArticlesForSitemap() {
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
   return contents.map(normalizeDealType);
+}
+
+export type StockSummary = { stockCode: string; stockName: string; articleCount: number; latestDealDate: string };
+
+// /stocks（銘柄一覧）用。記事が1件以上ある銘柄をstockCode単位で集約する。
+export async function getAllStocksForIndex(): Promise<StockSummary[]> {
+  const contents = await client.getAllContents<Pick<Article, "stockCode" | "stockName" | "dealDate">>({
+    endpoint: "articles",
+    queries: {
+      fields: "stockCode,stockName,dealDate",
+      orders: "-dealDate",
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+
+  const byCode = new Map<string, StockSummary>();
+  for (const { stockCode, stockName, dealDate } of contents) {
+    const existing = byCode.get(stockCode);
+    if (!existing) {
+      byCode.set(stockCode, { stockCode, stockName, articleCount: 1, latestDealDate: dealDate });
+    } else {
+      existing.articleCount += 1;
+    }
+  }
+  // 一覧は「見て探す」用途のため、更新順ではなく証券コード昇順（辞書的に引ける順番）にする。
+  return Array.from(byCode.values()).sort((a, b) => a.stockCode.localeCompare(b.stockCode));
 }

@@ -5,18 +5,18 @@ import type { ArticleContent, DealType } from "@/types/article";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import ArticleCard from "./ArticleCard";
 import DealDateHeading from "./DealDateHeading";
-import FeaturedArticleCard from "./FeaturedArticleCard";
 
 export default function InfiniteArticleList({
   initialArticles,
   totalCount,
   dealType,
-  showFeatured = false,
+  excludeIds,
 }: {
   initialArticles: ArticleContent[];
   totalCount: number;
   dealType?: DealType;
-  showFeatured?: boolean;
+  // ページ上部の「注目」枠に既に表示済みの記事IDを一覧から除外する（重複表示防止）。
+  excludeIds?: Set<string>;
 }) {
   const [articles, setArticles] = useState(initialArticles);
   const [loading, setLoading] = useState(false);
@@ -54,13 +54,11 @@ export default function InfiniteArticleList({
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
-  const featured = showFeatured ? articles[0] : undefined;
-  const rest = showFeatured ? articles.slice(1) : articles;
+  const rest = excludeIds ? articles.filter((a) => !excludeIds.has(a.id)) : articles;
   const groups = groupArticlesByDealDate(rest);
 
   return (
     <>
-      {featured && <FeaturedArticleCard article={featured} />}
       {groups.map((group) => (
         <div key={group.date} className="mb-8">
           <DealDateHeading date={group.date} label={group.label} />

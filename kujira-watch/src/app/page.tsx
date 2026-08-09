@@ -1,5 +1,6 @@
+import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
-import { getArticleList } from "@/lib/microcms";
+import { getArticleList, getFeaturedArticles } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 // クローラーが最初のHTML(SSR)だけで辿れるリンク数を増やすため、初回取得件数を
@@ -9,6 +10,8 @@ const INITIAL_ARTICLES_COUNT = 30;
 
 export default async function HomePage() {
   const { contents, totalCount } = await getArticleList({ limit: INITIAL_ARTICLES_COUNT });
+  const featuredArticles = contents.length > 0 ? await getFeaturedArticles() : [];
+  const featuredIds = new Set(featuredArticles.map((a) => a.id));
 
   // 初回表示分（INITIAL_ARTICLES_COUNT件）のみをItemListとして構造化データ化する。
   // オートスクロールで追加取得される分はクライアント側描画のためJSON-LDには含めない
@@ -37,11 +40,20 @@ export default async function HomePage() {
       {contents.length === 0 ? (
         <p className="text-foreground/50">記事がまだありません。</p>
       ) : (
-        <InfiniteArticleList
-          initialArticles={contents}
-          totalCount={totalCount}
-          showFeatured
-        />
+        <>
+          {featuredArticles.length > 0 && (
+            <div className="mb-8 space-y-4">
+              {featuredArticles.map((article, i) => (
+                <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
+              ))}
+            </div>
+          )}
+          <InfiniteArticleList
+            initialArticles={contents}
+            totalCount={totalCount}
+            excludeIds={featuredIds}
+          />
+        </>
       )}
     </div>
   );
