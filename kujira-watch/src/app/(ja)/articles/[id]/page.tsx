@@ -26,11 +26,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const description = `${article.stockName}(${article.stockCode})の${article.dealType}を解説。${excerptFromHtml(article.body)}`;
   const url = `${SITE_URL}/articles/${id}`;
+  const hasEn = Boolean(article.titleEn && article.bodyEn);
 
   return {
     title: article.title,
     description,
-    alternates: { canonical: url },
+    alternates: {
+      canonical: url,
+      ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/articles/${id}` } } : {}),
+    },
     openGraph: {
       type: "article",
       url,
@@ -150,7 +154,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <DealTypeBadge dealType={article.dealType} />
           <DealDirectionBadge tags={article.tags} />
-          <CategoryBadge category={category} />
+          <CategoryBadge dealType={article.dealType} />
         </div>
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.title}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
 
@@ -10,13 +11,20 @@ const description = "本サイトの運営方針、データソース、免責�
 export const metadata: Metadata = {
   title,
   description,
-  alternates: { canonical: `${SITE_URL}/about` },
+  alternates: {
+    canonical: `${SITE_URL}/about`,
+    languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` },
+  },
 };
 
-export default function AboutPage() {
+export const revalidate = 60;
+
+export default async function AboutPage() {
+  const about = await getAboutPage();
+
   return (
     <article className="border-t border-rule bg-paper p-6 sm:p-10">
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{about.heroTitle}</h1>
 
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家とは</h2>
@@ -83,28 +91,24 @@ export default function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">このサイトについて</h2>
-        <p className="text-sm leading-relaxed text-foreground/70">
-          {SITE_NAME}は、EDINET大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
-          インサイダー・自社株買いといった「クジラ」（相場を動かすほどの資金力を持つ大口投資家を指す
-          金融業界の俗称）の動きを監視し、解説するブログです。
-        </p>
+        <div
+          className="prose prose-sm max-w-none text-foreground/70"
+          dangerouslySetInnerHTML={{ __html: about.profileBody }}
+        />
       </section>
 
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">データソースと更新方法</h2>
-        <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
-          <li>
-            取引情報はEDINET大量保有報告書を日次で取得しています。保有比率の増加（取得）・
-            減少（譲渡・売却）の双方向を対象とし、売り方向の記事には「売り」タグを付与して
-            区別しています。
-          </li>
-          <li>
-            金額規模は、発行済株式数×株価×保有比率変化から算出した推定値です。EDINET開示自体には
-            金額の記載がないため、正確な金額を保証するものではありません。
-          </li>
-          <li>記事はAIが事実情報から生成した上で、必要に応じて人が内容を確認・修正しています。</li>
-          <li>出典元（適時開示・プレスリリース等）が判明している記事には、記事内にリンクを掲載しています。</li>
-        </ul>
+        <div
+          className="prose prose-sm max-w-none text-foreground/70"
+          dangerouslySetInnerHTML={{ __html: about.dataSources }}
+        />
+        {about.methodology && (
+          <div
+            className="prose prose-sm mt-3 max-w-none text-foreground/70"
+            dangerouslySetInnerHTML={{ __html: about.methodology }}
+          />
+        )}
       </section>
 
       <section className="mb-6">
@@ -132,13 +136,22 @@ export default function AboutPage() {
         </dl>
       </section>
 
+      {about.faq && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-lg font-bold text-brand-navy">よくある質問</h2>
+          <div
+            className="prose prose-sm max-w-none text-foreground/70"
+            dangerouslySetInnerHTML={{ __html: about.faq }}
+          />
+        </section>
+      )}
+
       <section>
         <h2 className="mb-2 text-lg font-bold text-brand-navy">免責事項</h2>
-        <p className="text-sm leading-relaxed text-foreground/70">
-          本サイトの内容は情報提供を目的としたものであり、特定の銘柄や投資判断を推奨・勧誘するものではありません。
-          掲載情報の正確性・完全性を保証するものではなく、本サイトの情報に基づいて被ったいかなる損害についても
-          運営者は責任を負いません。投資に関する最終判断はご自身の責任で行ってください。
-        </p>
+        <div
+          className="prose prose-sm max-w-none text-foreground/70"
+          dangerouslySetInnerHTML={{ __html: about.disclaimer }}
+        />
       </section>
     </article>
   );

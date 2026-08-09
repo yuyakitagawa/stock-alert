@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
   const dealType = (DEAL_TYPES as string[]).includes(dealTypeParam ?? "")
     ? (dealTypeParam as DealType)
     : undefined;
+  const translatedOnly = searchParams.get("translatedOnly") === "1";
 
-  const { contents, totalCount } = await getArticleList({ offset, dealType });
+  const { contents, totalCount } = await getArticleList({ offset, dealType, translatedOnly });
   return NextResponse.json({ contents, totalCount });
 }

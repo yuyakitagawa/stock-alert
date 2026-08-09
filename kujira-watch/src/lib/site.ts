@@ -10,3 +10,10 @@ export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "大口投資家�
 
 export const SITE_DESCRIPTION =
   "EDINET大量保有報告書をもとに、機関投資家・インサイダー・自社株買いなど「クジラ(大口投資家)」の動きを監視・解説するブログです。";
+
+// 英語版（/en）用。ブランド名（日本語「大口投資家の監視ブログ」）とドメイン(kujira-watch.com)は
+// 別物として管理されているため、英語ブランド名も直訳ではなく既存のクジラ文脈に合わせる。
+export const SITE_NAME_EN = "Big Investor Watch";
+
+export const SITE_DESCRIPTION_EN =
+  "A blog tracking Japanese-market \"whales\" — institutional investors, insiders, and buybacks — based on EDINET large-shareholding filings.";

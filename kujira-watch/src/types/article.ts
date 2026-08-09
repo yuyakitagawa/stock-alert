@@ -1,4 +1,4 @@
-import type { MicroCMSImage, MicroCMSListContent } from "microcms-js-sdk";
+import type { MicroCMSImage, MicroCMSListContent, MicroCMSObjectContent } from "microcms-js-sdk";
 
 // EDINET提出者(投資家)分類。web/publish_blog_articles.pyのclassify_filer()が参照する
 // Supabase edinet_filer_classificationマスターと1対1で対応する（値そのものがカテゴリ名で
@@ -52,6 +52,10 @@ export const DEAL_TYPE_BY_CATEGORY: Record<string, DealType> = Object.fromEntrie
 export type Article = {
   title: string;
   body: string;
+  // 英語版（/en）用の翻訳フィールド。未設定の記事はEN側の一覧・詳細には出さない
+  // （日英混在ページを検索エンジンに出さないため）。
+  titleEn?: string;
+  bodyEn?: string;
   stockName: string;
   stockCode: string;
   dealType: DealType;
@@ -63,3 +67,16 @@ export type Article = {
 };
 
 export type ArticleContent = Article & MicroCMSListContent;
+
+// /about ページ用（microCMSオブジェクト形式API）。methodology/faqは未入力の場合がある任意項目。
+export type AboutPage = {
+  heroTitle: string;
+  heroLead: string;
+  profileBody: string;
+  dataSources: string;
+  methodology?: string;
+  disclaimer: string;
+  faq?: string;
+};
+
+export type AboutPageContent = AboutPage & MicroCMSObjectContent;
