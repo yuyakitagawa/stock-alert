@@ -191,7 +191,7 @@ def main():
         print("\n候補CSVが無いため全大量保有イベントを表示します（突合なし）:")
 
     matches = []
-    excluded = {"self_filing": 0, "sell": 0, "majority": 0}
+    excluded = {"self_filing": 0, "sell": 0, "majority": 0, "correction": 0}
     for h in holdings:
         issuer = h.get("issuer_code")
         if cands and issuer not in cands:
@@ -222,10 +222,10 @@ def main():
         })
 
     title = "構造的候補 × 実際の買い集め（本物の先回り候補）" if cands else "大量保有イベント（直近）"
-    if not args.no_exclude and (excluded["self_filing"] or excluded["sell"] or excluded["majority"]):
+    if not args.no_exclude and any(excluded.values()):
         print(
             f"\n（ノイズ除外: 自己申告{excluded['self_filing']}件 / 譲渡・売却{excluded['sell']}件"
-            f" / 過半数超{excluded['majority']}件）"
+            f" / 過半数超{excluded['majority']}件 / 訂正報告書{excluded['correction']}件）"
         )
     print(f"\n🎯 {title}: {len(matches)}件\n")
     print(f"{'対象':<6}{'銘柄名':<20}{'種別':<8}{'開示日':<12}{'保有%':>6}  {'提出者':<24}  概要")
