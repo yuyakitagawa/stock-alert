@@ -7,8 +7,9 @@ import DealDirectionBadge from "@/components/DealDirectionBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
-import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
+import { excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
 import { getArticleDetail, getArticleList } from "@/lib/microcms";
+import { getFilersByStockCode } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
 
@@ -75,6 +76,9 @@ export default async function ArticleDetailPage({ params }: Props) {
     ? await getArticleList({ dealType: article.dealType, limit: 5 })
     : { contents: [] };
   const relatedArticles = sameCategoryArticles.filter((a) => a.id !== id).slice(0, 4);
+
+  const filers = await getFilersByStockCode(article.stockCode);
+  const linkedBody = linkifyFilerNames(article.body, filers.map((f) => f.filerName));
 
   const articleJsonLd = {
     "@context": "https://schema.org",
@@ -175,7 +179,7 @@ export default async function ArticleDetailPage({ params }: Props) {
                 href={`/stocks/${article.stockCode}`}
                 className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
               >
-                {article.stockName}（{article.stockCode}）の履歴を見る
+                {article.stockName}（{article.stockCode}）
               </Link>
             </dd>
           </div>
@@ -207,7 +211,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         </dl>
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
-          dangerouslySetInnerHTML={{ __html: article.body }}
+          dangerouslySetInnerHTML={{ __html: linkedBody }}
         />
         {tags && tags.length > 0 && (
           <div className="mt-8 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
