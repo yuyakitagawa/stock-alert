@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Noto_Sans_JP } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import GaClickTracker from "@/components/GaClickTracker";
 import Header from "@/components/Header";
 import { SITE_DESCRIPTION_EN, SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import "../../globals.css";
@@ -99,6 +100,7 @@ export default function EnRootLayout({
         </main>
         <Analytics />
         <SpeedInsights />
+        <GaClickTracker />
       </body>
       <GoogleAnalytics gaId="G-0Z3FMTXC5B" />
     </html>
