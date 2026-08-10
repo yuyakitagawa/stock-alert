@@ -1,7 +1,8 @@
-name: Backfill Filer Profiles
+name: Backfill Investor Profiles
 
-# 既存投資家(edinet_filer_classification)のprofile一括バックフィル用の一時的な手動実行
-# ワークフロー。tools/backfill_filer_profiles.pyを参照。実行後、このワークフローは削除する。
+# edinet_large_holdingsに登場する提出者のうちプロフィール未設定（未分類 or 分類済みだが
+# profile未生成）の投資家を一括バックフィルする一時的な手動実行ワークフロー。
+# tools/backfill_investor_profiles.pyを参照。実行後、このワークフローは削除する。
 on:
   workflow_dispatch:
     inputs:
@@ -45,7 +46,7 @@ jobs:
         run: |
           cd ~/stock-alert
           if [ -n "${{ github.event.inputs.limit }}" ]; then
-            python3 tools/backfill_filer_profiles.py --limit "${{ github.event.inputs.limit }}"
+            python3 tools/backfill_investor_profiles.py --limit "${{ github.event.inputs.limit }}"
           else
-            python3 tools/backfill_filer_profiles.py
+            python3 tools/backfill_investor_profiles.py
           fi
