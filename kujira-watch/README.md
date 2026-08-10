@@ -63,7 +63,7 @@ npm run dev
 |---|---|
 | `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順。初回30件をサーバー側でレンダリングし、下端までスクロールすると自動で次の10件を読み込むオートスクロール方式） |
 | `/weekly` | 大口投資家の動きまとめ（直近7日間の横断要約。「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。件数・合計推定金額を明記し、ヘッダーから常時リンク） |
-| `/articles/[id]` | 記事詳細。銘柄コード+取引日でEDINET大量保有履歴を逆引きし、提出者が一意に特定できれば「大口投資家」欄に`/investors/[filer]`への内部リンクを表示する（`investors.getFilerForArticle()`。microCMS側にfiler_nameを保存していないための逆引き。複数提出者がいて一意特定できない記事はリンクを出さない） |
+| `/articles/[id]` | 記事詳細 |
 | `/category/[category]` | カテゴリ別一覧（同じく初回30件サーバーレンダリング＋オートスクロール） |
 | `/stocks` | 銘柄一覧。記事のある銘柄を証券コード順（辞書的に引ける順番）に列挙（`lib/microcms.ts`の`getAllStocksForIndex()`） |
 | `/stocks/[code]` | 銘柄ページ。見出しは企業名・証券コードのみ。直近90営業日の株価推移グラフ・業種・終値・PER/PBR・52週レンジ位置・株主優待有無の会社情報カードの下に、この銘柄へ大量保有報告書を提出したことがある投資家一覧（`/investors/[filer]`への内部リンク）、続いて「大量保有・自社株買い履歴」の見出しを置き、同一`stockCode`の記事を`-dealDate`順に一覧表示する。記事詳細の「銘柄」欄から内部リンクあり |
@@ -101,7 +101,7 @@ npm run dev
 - 一覧・カテゴリ別一覧は初回表示分（`INITIAL_ARTICLES_COUNT`＝30件）のみサーバー側で取得し、以降は`src/components/InfiniteArticleList.tsx`（クライアントコンポーネント）が画面下端の要素を`IntersectionObserver`で検知して`/api/articles`から次の10件を都度取得・追記するオートスクロール方式。ページネーションのUIやURLの`?page=`は廃止した。初回件数を10→30に引き上げているのは、オートスクロール分（JS実行後にのみ取得される）はクローラーが辿れない実リンクになるため、クロール可能な記事数の下限を底上げする狙い（クロールログで新着記事の巡回が10件相当に留まっていたための対策）。
 - `/api/articles`が返す一覧・初回表示分ともmicroCMSへの `fetch` は `next: { revalidate: 60 }` を指定しており、Next.jsのData Cacheが60秒間キャッシュ・再検証を行う（App RouterにおけるISRの実体）。
 - 記事詳細（`/articles/[id]`）は動的APIを使わないため `export const revalidate = 60` をルートセグメントに設定し、オンデマンドISR（初回アクセス時に生成し60秒キャッシュ）として動作する。
-- 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。
+- 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。ja記事詳細ページは描画前に`linkifyFilerNames()`（`src/lib/format.ts`）で本文中の投資家名（初出のみ）を`/investors/[filer]`へのリンクに変換する。投資家名はCMS側に構造化フィールドが無く自由記述本文の一部でしかないため、`getFilersByStockCode()`でこの銘柄の開示実績がある投資家名一覧を取得し文字列突合する。EDINETのXBRLは提出者名を全角（`Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…`）で保持する一方、AI生成本文は半角で書くため、NFKC正規化した文字列上で位置を探し、本文側の表記（半角）はそのまま残しつつリンク先だけDB上の正式表記（全角）でエンコードする。英語版記事（`/en/articles/[id]`）には未適用（`/en/investors/...`相当のページが存在しないため）。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
 - デザインはエディトリアル（雑誌）系。フォントは`next/font/google`のNoto Sans JPで統一。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型表示）を適用。ヒーロー枠（注目記事カード）はアイキャッチ画像がある記事のみ大きな高さを取り、無い記事では余白を残さないコンパクトな表示にフォールバックする。
 - 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。各見出しの下には、その取引日の全記事を一覧できる`/date/[date]`アーカイブページへのリンクを表示する。
