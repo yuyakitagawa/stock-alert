@@ -46,12 +46,13 @@ def _auth() -> "OAuth1 | None":
 
 def build_tweet_text(title: str, deal_amount_oku: float, is_sell: bool, article_id: str) -> str:
     """記事タイトル・金額規模からツイート本文を組み立てる。URLはX側でt.co短縮されるため
-    文字数上限の計算には含めない。"""
+    文字数上限の計算には含めない。GA4で流入経路をXの自動投稿と識別できるようUTMを付与する。"""
     direction = "売却" if is_sell else "取得"
     body = f"{title}\n推定{direction}金額: {deal_amount_oku}億円"
     if len(body) > TWEET_BODY_MAX_CHARS:
         body = body[: TWEET_BODY_MAX_CHARS - 1] + "…"
-    return f"{body}\n{SITE_URL}/articles/{article_id}\n#EDINET #大量保有報告書"
+    url = f"{SITE_URL}/articles/{article_id}?utm_source=x&utm_medium=social&utm_campaign=auto_post"
+    return f"{body}\n{url}\n#EDINET #大量保有報告書"
 
 
 def upload_media(image_bytes: bytes) -> "str | None":
