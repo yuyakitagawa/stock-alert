@@ -85,7 +85,11 @@ export default async function AboutPage() {
           <Link href="/weekly" className="text-brand-blue hover:underline">
             「今週の動き」ページ
           </Link>
-          でまとめて確認できます。
+          でまとめて確認できるほか、特定の投資家（ファンド）を軸に保有銘柄の推移を追いたい場合は
+          <Link href="/investors" className="text-brand-blue hover:underline">
+            「投資家一覧」ページ
+          </Link>
+          も参照できます。
         </p>
       </section>
 
