@@ -90,6 +90,38 @@ export async function getAllFilers(): Promise<FilerSummary[]> {
   }));
 }
 
+// /articles/[id] からのクロスリンク用。記事はmicroCMS側にfiler_nameを持たない
+// （publish_blog_articles.pyのfact_sheetには含まれるが、article本体には保存していない）ため、
+// 銘柄コード+開示日でedinet_large_holdingsを逆引きする（tools/reclassify_blog_articles.pyの
+// 記事→提出者特定ロジックと同じ考え方）。同一銘柄・同一開示日に複数提出者がいて一意特定
+// できない場合はnullを返し、記事側ではリンクを出さない。
+export async function getFilerForArticle(
+  stockCode: string,
+  dealDate: string
+): Promise<{ filerName: string; category: DealType } | null> {
+  const supabase = getSupabaseServerClient();
+  const { data: holdings } = await supabase
+    .from("edinet_large_holdings")
+    .select("filer_name")
+    .eq("issuer_code", stockCode)
+    .eq("disc_date", dealDate);
+
+  const filerNames = [...new Set((holdings ?? []).map((h) => h.filer_name).filter(Boolean))];
+  if (filerNames.length !== 1) return null;
+
+  const filerName = filerNames[0] as string;
+  const { data: classification } = await supabase
+    .from("edinet_filer_classification")
+    .select("category")
+    .eq("filer_name", filerName)
+    .maybeSingle();
+
+  return {
+    filerName,
+    category: (classification?.category as DealType) ?? "その他",
+  };
+}
+
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
 // 投資家一覧（名称+分類）を返す。
 export async function getFilersByStockCode(

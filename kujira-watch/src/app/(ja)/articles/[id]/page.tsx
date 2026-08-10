@@ -8,6 +8,7 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
+import { getFilerForArticle } from "@/lib/investors";
 import { getArticleDetail, getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
@@ -75,6 +76,8 @@ export default async function ArticleDetailPage({ params }: Props) {
     ? await getArticleList({ dealType: article.dealType, limit: 5 })
     : { contents: [] };
   const relatedArticles = sameCategoryArticles.filter((a) => a.id !== id).slice(0, 4);
+
+  const filer = await getFilerForArticle(article.stockCode, dealDateOnly).catch(() => null);
 
   const articleJsonLd = {
     "@context": "https://schema.org",
@@ -189,6 +192,20 @@ export default async function ArticleDetailPage({ params }: Props) {
               {formatDealAmount(article.dealAmount)}
             </dd>
           </div>
+          {filer && (
+            <div>
+              <dt className="kicker text-foreground/40">大口投資家</dt>
+              <dd className="mt-1 flex items-center gap-2 font-medium">
+                <Link
+                  href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                  className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
+                >
+                  {filer.filerName}のページを見る
+                </Link>
+                <DealTypeBadge dealType={filer.category} />
+              </dd>
+            </div>
+          )}
           {article.sourceUrl && (
             <div>
               <dt className="kicker text-foreground/40">出典</dt>
