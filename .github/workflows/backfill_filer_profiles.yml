@@ -1,0 +1,51 @@
+name: Backfill Filer Profiles
+
+# 既存投資家(edinet_filer_classification)のprofile一括バックフィル用の一時的な手動実行
+# ワークフロー。tools/backfill_filer_profiles.pyを参照。実行後、このワークフローは削除する。
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "処理件数の上限（空なら全件）"
+        required: false
+        default: ""
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost lightgbm \
+            gspread google-auth yfinance anthropic Pillow requests-oauthlib
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Run backfill
+        run: |
+          cd ~/stock-alert
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            python3 tools/backfill_filer_profiles.py --limit "${{ github.event.inputs.limit }}"
+          else
+            python3 tools/backfill_filer_profiles.py
+          fi

@@ -523,6 +523,53 @@ def get_company_description(code: str, name: str) -> str:
     return description
 
 
+def get_filer_profile(filer_name: str, category: str) -> str:
+    """kujira-watch側 /investors/[filer] に表示する投資家プロフィール(日本語800〜1000字程度)を
+    返す。edinet_filer_classification.profileにキャッシュがあればそれを使い、無ければClaudeの
+    一般知識で生成してキャッシュする（get_company_descriptionと同じ方針。設立時期・運用方針・
+    著名な投資事例など、確信が持てる範囲のみ記述させ、役員名や具体的な運用資産額等の検証不能な
+    事実は創作させない。一般個人など公開情報が乏しい提出者は空文字を返す想定）。"""
+    cached = sb.select_one(
+        "edinet_filer_classification",
+        f"filer_name=eq.{requests.utils.quote(filer_name)}&select=profile",
+    )
+    if cached and cached.get("profile"):
+        return cached["profile"]
+
+    import anthropic
+
+    if not ANTHROPIC_API_KEY:
+        return ""
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    prompt = f"""日本の株式市場でEDINET大量保有報告書（5%ルール）を提出している投資家
+「{filer_name}」（当サイトでの分類: {category}）について、一般知識の範囲で分かることを
+800〜1000字程度で説明してください。設立時期・拠点・運用方針や投資スタイル・過去の著名な
+投資事例・業界内での位置づけなど、確信が持てる情報のみを記述してください。個人名義の
+提出者や情報が乏しい提出者の場合、無理に埋めず分かる範囲だけで構いません（それでも
+何も書けない場合は空文字を返してください）。存在しない具体的な事実（役員名・具体的な
+運用資産額・未公開の投資判断の理由等）は絶対に創作しないでください。
+
+出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
+{{"profile": "説明文、または空文字"}}
+"""
+    try:
+        resp = client.messages.create(
+            model=CLAUDE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text[4:] if text.lower().startswith("json") else text
+        profile = json.loads(text).get("profile", "") or ""
+    except Exception as e:
+        print(f"    ⚠ 投資家プロフィール取得に失敗: {e}")
+        profile = ""
+
+    if profile:
+        sb.upsert("edinet_filer_classification", [{"filer_name": filer_name, "profile": profile}], on_conflict="filer_name")
+    return profile
+
+
 def dp_level_label(drop_prob: float) -> str:
     """README記載の5段階表示（高30/やや高22/中14/やや低7）と同じ閾値でdrop_probを
     ラベル化する。Isotonic較正の特性上、小数%そのままだと多数の銘柄が同値に見えるため、
@@ -778,6 +825,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         context_dp = snapshot.get("drop_prob") if snapshot else None
         filer_info = classify_filer(filer_name)
         company_description = get_company_description(code, name)
+        get_filer_profile(filer_name, filer_info["category"])
 
         fact_sheet = {
             "stock_name": name,

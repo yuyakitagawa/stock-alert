@@ -15,6 +15,7 @@ export type FilerClassification = {
   category: DealType;
   isForeign: boolean;
   description: string | null;
+  profile: string | null;
 };
 
 export type FilerSummary = {
@@ -40,7 +41,7 @@ export async function getFilerClassification(
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_filer_classification")
-    .select("category, is_foreign, description")
+    .select("category, is_foreign, description, profile")
     .eq("filer_name", filerName)
     .maybeSingle();
   if (!data) return null;
@@ -48,6 +49,7 @@ export async function getFilerClassification(
     category: data.category as DealType,
     isForeign: data.is_foreign,
     description: data.description,
+    profile: data.profile,
   };
 }
 
