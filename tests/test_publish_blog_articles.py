@@ -654,6 +654,9 @@ def test_get_filer_profile_asks_claude_and_persists_when_not_cached():
     upsert_mock.assert_called_once()
     saved_rows = upsert_mock.call_args.args[1]
     assert saved_rows[0]["filer_name"] == "テストファンド"
+    # categoryも含めること: PostgreSQLはON CONFLICT時のUPDATE分岐でも候補行構築時点で
+    # NOT NULL制約(category)を評価するため、欠くと既存行の更新のつもりでも失敗する。
+    assert saved_rows[0]["category"] == "独立系ブティックAM"
     assert saved_rows[0]["profile"] == "1990年代設立の国内独立系運用会社。"
 
 

@@ -566,7 +566,15 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         profile = ""
 
     if profile:
-        sb.upsert("edinet_filer_classification", [{"filer_name": filer_name, "profile": profile}], on_conflict="filer_name")
+        # categoryもペイロードに含める: on_conflict時のUPDATEでは不要だが、PostgreSQLは
+        # ON CONFLICTのUPDATE分岐に関わらずINSERT側の候補行構築時点でNOT NULL制約を
+        # 評価するため、category(NOT NULL)を欠いたペイロードだとUPDATEのみのつもりでも
+        # 「null value in column "category"」で失敗する（実運用で発生: 2026-08-10）。
+        sb.upsert(
+            "edinet_filer_classification",
+            [{"filer_name": filer_name, "category": category, "profile": profile}],
+            on_conflict="filer_name",
+        )
     return profile
 
 
