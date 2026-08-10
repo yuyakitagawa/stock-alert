@@ -41,23 +41,38 @@ export function isSellArticle(tags?: string): boolean {
   return (tags ?? "").split(",").map((tag) => tag.trim()).includes("売り");
 }
 
+// DBの正式名（例:「シンフォニー・フィナンシャル・パートナーズ（シンガポール）ピーティーイー・
+// リミテッド」）は法人格・所在地の注記が括弧書きで付くことが多いが、AI生成本文は読みやすさの
+// ため括弧より前の通称だけで書くことがある。完全一致が無ければこの通称でも試す。
+function filerNameCandidates(name: string): string[] {
+  const candidates = [name];
+  const beforeParen = name.split(/[（(]/)[0].trim();
+  if (beforeParen && beforeParen !== name && beforeParen.length >= 4) {
+    candidates.push(beforeParen);
+  }
+  return candidates;
+}
+
 // 記事本文（生成HTML）中の投資家名（初出のみ）を/investors/[filer]へのリンクに変換する。
 // filerNameは自由記述本文の一部として埋め込まれておりCMS側に構造化フィールドが無いため、
 // レンダリング時にこの銘柄の提出実績がある投資家名(getFilersByStockCode)と文字列突合する。
 // EDINETのXBRLは提出者名を全角（Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…）で保持する一方、
 // 記事本文は半角で書かれるため、NFKC正規化した文字列上で位置を探し、本文側の表記
-// （半角）はそのまま残しつつ、リンク先だけDB上の正式表記（全角）でエンコードする。
+// （半角・通称）はそのまま残しつつ、リンク先だけDB上の正式表記（全角・フルネーム）でエンコードする。
 export function linkifyFilerNames(html: string, filerNames: string[]): string {
   let result = html;
   for (const name of [...filerNames].sort((a, b) => b.length - a.length)) {
     if (!name) continue;
-    const normalizedName = name.normalize("NFKC");
-    const normalizedResult = result.normalize("NFKC");
-    const idx = normalizedResult.indexOf(normalizedName);
-    if (idx === -1) continue;
-    const matchedText = result.slice(idx, idx + normalizedName.length);
-    const link = `<a href="/investors/${encodeURIComponent(name)}" class="text-brand-blue hover:underline">${matchedText}</a>`;
-    result = result.slice(0, idx) + link + result.slice(idx + matchedText.length);
+    for (const candidate of filerNameCandidates(name)) {
+      const normalizedCandidate = candidate.normalize("NFKC");
+      const normalizedResult = result.normalize("NFKC");
+      const idx = normalizedResult.indexOf(normalizedCandidate);
+      if (idx === -1) continue;
+      const matchedText = result.slice(idx, idx + normalizedCandidate.length);
+      const link = `<a href="/investors/${encodeURIComponent(name)}" class="text-brand-blue hover:underline">${matchedText}</a>`;
+      result = result.slice(0, idx) + link + result.slice(idx + matchedText.length);
+      break;
+    }
   }
   return result;
 }
