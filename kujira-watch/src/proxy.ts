@@ -8,6 +8,11 @@ const VISITOR_COOKIE = "kw_vid";
 export function proxy(request: NextRequest, event: NextFetchEvent) {
   const userAgent = request.headers.get("user-agent") ?? "";
   const botName = classifyVisitor(userAgent);
+  // NextRequest.ip はv15で削除されたため、Vercelが付与するヘッダーから取得する。
+  const ipAddress =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    null;
 
   const response = NextResponse.next();
   let visitorId = request.cookies.get(VISITOR_COOKIE)?.value;
@@ -29,6 +34,7 @@ export function proxy(request: NextRequest, event: NextFetchEvent) {
             bot_name: botName,
             user_agent: userAgent,
             visitor_id: botName === "Browser" ? visitorId : null,
+            ip_address: ipAddress,
           });
         } catch {
           // ログ記録の失敗でサイト表示に影響を出さないよう握りつぶす
