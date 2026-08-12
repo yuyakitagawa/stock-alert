@@ -190,21 +190,24 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
-def test_get_featured_article_ids_reorders_pool_by_deal_amount():
-    """kujira-watch側getFeaturedArticles()と同じロジック: 直近プール(-dealDate,-dealAmount順で
-    取得)をdealAmount降順に並べ直し、上位count件のidだけを返す。"""
+def test_get_featured_article_ids_preserves_pool_order_without_reordering():
+    """kujira-watch側getFeaturedArticles()と同じロジック: プールはmicroCMS側で
+    -dealDate,-dealAmount順（日付優先→同日内は金額降順）に返ってくるので、
+    Python側では並べ替えず先頭count件のidをそのまま採用する。プール全体を
+    金額だけで並べ替えると、投稿数が少ない日に数日前の大型取引が「注目」を
+    占有し続けてしまう（実際に発生したバグ）ため、この並べ替えはしない。"""
     pool = [
-        {"id": "newest-small", "dealAmount": 9.6},
-        {"id": "older-huge", "dealAmount": 1406.8},
-        {"id": "older-medium", "dealAmount": 807.7},
-        {"id": "oldest-small", "dealAmount": 5.0},
+        {"id": "today-big"},
+        {"id": "today-small"},
+        {"id": "older-huge"},
+        {"id": "older-medium"},
     ]
     resp = _FakeResponse(200, "", {"contents": pool})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch("requests.get", return_value=resp):
-        ids = m.get_featured_article_ids(pool_size=20, count=3)
-    assert ids == {"older-huge", "older-medium", "newest-small"}
+        ids = m.get_featured_article_ids(pool_size=20, count=2)
+    assert ids == {"today-big", "today-small"}
 
 
 def test_get_featured_article_ids_returns_empty_set_on_http_error():
@@ -826,4 +829,11 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    print("全テスト成功 (51件)")
+    test_get_featured_article_ids_preserves_pool_order_without_reordering()
+    test_get_featured_article_ids_returns_empty_set_on_http_error()
+    test_get_featured_article_ids_returns_empty_set_on_exception()
+    test_get_filer_profile_returns_cached_without_calling_claude()
+    test_get_filer_profile_asks_claude_and_persists_when_not_cached()
+    test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
+    test_get_filer_profile_returns_empty_when_claude_returns_blank()
+    print("全テスト成功 (58件)")

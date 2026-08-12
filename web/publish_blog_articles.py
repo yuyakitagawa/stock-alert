@@ -394,16 +394,17 @@ FEATURED_COUNT = 3
 
 
 def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = FEATURED_COUNT) -> set:
-    """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件のプールを
-    dealAmount降順に並べ直し上位count件）をPython側で再現し、現在ホームページで
-    「注目」表示されている記事のidセットを返す。X投稿をこれと一致させることで、
-    サイトで目立っていない小粒な開示がXにだけ投稿される事態を防ぐ。
-    取得失敗時は空集合（この場合X投稿は0件になる）。"""
+    """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件を
+    「日付優先→同日内は金額降順」で取得し先頭count件を採用）をPython側で再現し、
+    現在ホームページで「注目」表示されている記事のidセットを返す。X投稿をこれと
+    一致させることで、サイトで目立っていない小粒な開示がXにだけ投稿される事態を防ぐ。
+    プール全体を金額だけで並べ替えないため、投稿数が少ない日に数日前の大型取引が
+    「注目」を占有し続けることもない。取得失敗時は空集合（この場合X投稿は0件になる）。"""
     try:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
-            params={"orders": "-dealDate,-dealAmount", "limit": pool_size, "fields": "id,dealAmount"},
+            params={"orders": "-dealDate,-dealAmount", "limit": pool_size, "fields": "id"},
             timeout=15,
         )
         if resp.status_code != 200:
@@ -413,7 +414,6 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
         print(f"  ⚠ 注目記事プール取得失敗: {e}")
         return set()
 
-    contents.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
     return {a["id"] for a in contents[:count]}
 
 
