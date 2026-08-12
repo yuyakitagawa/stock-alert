@@ -258,7 +258,24 @@
   （`tests/test_x_client.py`を新規追加、10件）。
 - Act: PR作成・マージ待ち。
 
+**Cycle 9: `/about`にEDINET一次情報源への外部リンクを追加**
+- Plan: ユーザーから「EEATのためにAPIのリンクをaboutに書いたほうがいいか、引用元の説明も」という相談。
+  記事詳細ページの出典URL表示（`sourceUrl`＋JSON-LDの`citation`）は既存実装済みと確認。`/about`側に
+  一次情報源（EDINET本体）への外部リンクが無かったため追加する方針とした。
+- Do:
+  - `(ja)/about/page.tsx`・`(en)/en/about/page.tsx`に「情報源について（EDINET）」節を新設。
+    EDINET書類検索（https://disclosure2.edinet-fsa.go.jp/）とEDINET API仕様書
+    （https://disclosure2dl.edinet-fsa.go.jp/guide/static/disclosure/WZEK0110.html）への外部リンクを
+    掲載し、記事の出典リンクとの関係も一文で説明。URLはWebSearchで実在確認済み。
+  - EN側の文言は`src/lib/i18n.ts`に`aboutSource*`キーを追加（`aboutDataItems`等の既存パターンに準拠）。
+  - README「SEO/AIO対策」節のE-E-A-T項目を同一コミットで更新。
+- Check: `npx tsc --noEmit`/`npm run lint`成功。`npm run build`はダミーmicroCMS環境変数による
+  既知の403エラー（`/category/個人`等、コンテンツ取得系ページ）のみで、コンパイル・型チェック自体は成功
+  （過去サイクルと同じ既知の制約）。
+- Act: 未実施（コミット・プッシュ予定）。
+
 **未着手・保留**
 - X Developer Portalでのアプリ作成・4つのAPIキー発行とGitHub Secretsへの登録（ユーザー側の作業。
   `X_API_KEY`/`X_API_KEY_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET`）
-- E-E-A-T強化（運営者の実名/ペンネーム・経歴の開示。ユーザー判断待ち）
+- E-E-A-T強化（運営者の実名/ペンネーム・経歴の開示。ユーザー判断待ち。Cycle 9はデータソース一次情報
+  リンクの追加のみで、実名/経歴開示は引き続き未着手）
