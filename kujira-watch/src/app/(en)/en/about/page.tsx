@@ -74,6 +74,35 @@ export default function EnAboutPage() {
         </ul>
       </section>
 
+      <section className="mb-6">
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutSourceHeading}</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">{t.aboutSourceIntro}</p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
+          <li>
+            <a
+              href="https://disclosure2.edinet-fsa.go.jp/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-blue hover:underline"
+            >
+              {t.aboutSourceEdinetLabel}
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://disclosure2dl.edinet-fsa.go.jp/guide/static/disclosure/WZEK0110.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-blue hover:underline"
+            >
+              {t.aboutSourceApiLabel}
+            </a>
+            {t.aboutSourceApiNote}
+          </li>
+        </ul>
+        <p className="mt-3 text-sm leading-relaxed text-foreground/70">{t.aboutSourceNote}</p>
+      </section>
+
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutGlossaryHeading}</h2>
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">{t.aboutGlossaryIntro}</p>

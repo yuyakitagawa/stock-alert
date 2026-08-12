@@ -116,6 +116,42 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">情報源について（EDINET）</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
+          本サイトが扱う大量保有報告書などの開示情報は、金融庁が運営する電子開示システム
+          「EDINET（Electronic Disclosure for Investors&apos; NETwork）」の公開情報を一次情報源としています。
+          ご自身で開示書類の原本を確認したい場合は、以下から直接検索できます。
+        </p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
+          <li>
+            <a
+              href="https://disclosure2.edinet-fsa.go.jp/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-blue hover:underline"
+            >
+              EDINET（書類検索）
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://disclosure2dl.edinet-fsa.go.jp/guide/static/disclosure/WZEK0110.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-blue hover:underline"
+            >
+              EDINET API仕様書
+            </a>
+            （本サイトが開示情報の自動取得に利用している金融庁公式APIの仕様書です）
+          </li>
+        </ul>
+        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+          各記事の「出典」欄には、判明している場合、その記事の元になった個別の開示書類・適時開示への
+          直接リンクを掲載しています。
+        </p>
+      </section>
+
+      <section className="mb-6">
         <p className="text-sm leading-relaxed text-foreground/70">
           大量保有報告書のしくみや本サイトの使い方については
           <Link href="/faq" className="text-brand-blue hover:underline">
