@@ -61,9 +61,11 @@ export async function getArticleList(params: {
 export const FEATURED_POOL_SIZE = 20;
 export const FEATURED_COUNT = 3;
 
-// 「注目」枠: 直近FEATURED_POOL_SIZE件の中から取得金額(dealAmount)が大きい順にFEATURED_COUNT件を選ぶ。
-// 単純な新着1件だと金額の小さい取引が「注目」に出てしまうため、直近プールの中で規模の大きい
-// 取引を優先する。
+// 「注目」枠: 直近FEATURED_POOL_SIZE件を「日付優先→同日内は金額が大きい順」で取得し、
+// 先頭FEATURED_COUNT件を選ぶ。単純な新着1件だと金額の小さい取引が「注目」に出てしまうため
+// 同日内では規模の大きい取引を優先しつつ、当日分がある限りは古い日の大型取引に
+// 押しのけられないようにする（プール全体を金額だけで並べ替えると、投稿数が少ない日に
+// 数日前の大型取引が「注目」を占有し続けてしまうため、この並び替えはしない）。
 export async function getFeaturedArticles(
   poolSize = FEATURED_POOL_SIZE,
   count = FEATURED_COUNT,
@@ -78,8 +80,7 @@ export async function getFeaturedArticles(
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  const contents = result.contents.map(normalizeDealType);
-  return [...contents].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
+  return result.contents.map(normalizeDealType).slice(0, count);
 }
 
 export async function getArticlesByStockCode(stockCode: string, params: { translatedOnly?: boolean } = {}) {
