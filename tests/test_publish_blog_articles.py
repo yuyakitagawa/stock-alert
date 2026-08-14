@@ -284,24 +284,24 @@ def test_publish_article_gives_up_when_same_field_fails_twice():
 
 
 def test_update_article_retries_as_array_on_type_mismatch():
-    """update_article()（PUT）もpublish_article()（POST）と同じ型不一致リトライを行う
+    """update_article()（PATCH）もpublish_article()（POST）と同じ型不一致リトライを行う
     （tools/reclassify_blog_articles.py の一括再分類で使う）。"""
     responses = [
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
         _FakeResponse(200, "", {"id": "content-1"}),
     ]
     payload = {"dealType": "アクティビスト"}
-    with mock.patch.object(m, "_put_once", side_effect=responses) as put_mock:
+    with mock.patch.object(m, "_patch_once", side_effect=responses) as patch_mock:
         ok = m.update_article("content-1", payload)
     assert ok is True
-    assert put_mock.call_count == 2
-    retried_payload = put_mock.call_args_list[1].args[1]
+    assert patch_mock.call_count == 2
+    retried_payload = patch_mock.call_args_list[1].args[1]
     assert retried_payload["dealType"] == ["アクティビスト"]
 
 
 def test_update_article_returns_false_on_failure():
     responses = [_FakeResponse(400, '{"message":"invalid"}')]
-    with mock.patch.object(m, "_put_once", side_effect=responses):
+    with mock.patch.object(m, "_patch_once", side_effect=responses):
         ok = m.update_article("content-1", {"dealType": "その他"})
     assert ok is False
 
@@ -551,6 +551,34 @@ def test_generate_article_body_omits_context_when_unavailable():
     assert "下落リスク水準" not in prompt
 
 
+def test_generate_article_body_includes_ratio_increase_when_available():
+    """既存開示からの増加分が分かる場合、変化幅(ポイント)をプロンプトに織り込む。"""
+    fact_sheet = _fact_sheet()
+    fact_sheet["ratio_change_pct"] = 2.48
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "これまでの開示から2.48ポイント増加" in prompt
+
+
+def test_generate_article_body_describes_new_position_when_change_equals_ratio():
+    """過去開示が無く変化幅=保有比率そのものの場合は「新規保有」の文脈で伝える（実際には
+    5%未満だった保証は無いため、データで確認できる範囲の表現に留める）。"""
+    fact_sheet = _fact_sheet()
+    fact_sheet["ratio_change_pct"] = fact_sheet["holding_ratio"]
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "新規保有" in prompt
+    assert "ポイント増加" not in prompt
+
+
 def test_generate_article_body_uses_buy_wording_by_default():
     """directionを指定しない場合は従来通り「取得」「推定取得金額」として扱う（後方互換）。"""
     fact_sheet = _fact_sheet()
@@ -604,6 +632,67 @@ def test_generate_article_body_always_requests_labelled_speculation():
     prompt = calls[0]["messages"][0]["content"]
     assert "※推測:" in prompt
     assert "創作しないでください" in prompt
+
+
+def test_generate_article_body_prompt_requests_english_translation():
+    """kujira-watch(/en)向けにtitleEn/bodyEnもJSONに含めるよう1回の呼び出しでプロンプトに要求する
+    （JA/ENを別々に生成すると事実がズレたりAPI呼び出しが倍になるため）。"""
+    fact_sheet = _fact_sheet()
+    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "titleEn": "Title", "bodyEn": "<p>Body</p>"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        result = m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "titleEn" in prompt
+    assert "bodyEn" in prompt
+    assert result["titleEn"] == "Title"
+    assert result["bodyEn"] == "<p>Body</p>"
+
+
+def test_build_and_publish_includes_english_fields_when_generated():
+    """generate_article_body()がtitleEn/bodyEnを返した場合、publish_article()へのpayloadに含める。"""
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d: ratio), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body",
+                            return_value={"title": "テストタイトル", "body": "<p>本文</p>",
+                                          "titleEn": "Test Title", "bodyEn": "<p>Body</p>"}), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "publish_article", return_value="fakeid123"):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
+    assert results[0]["titleEn"] == "Test Title"
+    assert results[0]["bodyEn"] == "<p>Body</p>"
+
+
+def test_build_and_publish_omits_english_fields_when_not_generated():
+    """titleEn/bodyEnが無い（部分失敗・後方互換ケース）場合はpayloadにキー自体を含めない。"""
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d: ratio), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body",
+                            return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "publish_article", return_value="fakeid123"):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
+    assert "titleEn" not in results[0]
+    assert "bodyEn" not in results[0]
 
 
 def test_get_company_description_returns_cached_without_calling_claude():
@@ -752,6 +841,7 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
 
     assert captured["context_close"] == 3000.0
     assert captured["context_dp_level"] == "やや高"
+    assert captured["ratio_change_pct"] == 8.5
 
 
 def _fake_client(text):
@@ -794,8 +884,13 @@ if __name__ == "__main__":
     test_get_pit_ranking_snapshot_queries_as_of_disc_date()
     test_generate_article_body_includes_context_when_available()
     test_generate_article_body_omits_context_when_unavailable()
+    test_generate_article_body_includes_ratio_increase_when_available()
+    test_generate_article_body_describes_new_position_when_change_equals_ratio()
     test_generate_article_body_uses_buy_wording_by_default()
     test_generate_article_body_uses_sell_wording_when_direction_is_sell()
+    test_generate_article_body_prompt_requests_english_translation()
+    test_build_and_publish_includes_english_fields_when_generated()
+    test_build_and_publish_omits_english_fields_when_not_generated()
     test_build_and_publish_includes_pit_context_in_fact_sheet()
     test_build_and_publish_includes_sell_and_tags_them()
     test_build_and_publish_skips_when_already_published()
@@ -836,4 +931,4 @@ if __name__ == "__main__":
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
-    print("全テスト成功 (58件)")
+    print("全テスト成功 (63件)")

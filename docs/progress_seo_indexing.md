@@ -38,7 +38,7 @@
   - 検証(2026-08-14): 本番`https://kujira-watch.com/sitemap.xml`を直接curlで取得し確認。全1713URL中、記事URLは359件、ユーザー提示の2例（`/articles/5f2o0ulbo`, `/articles/1f72d8k-mm`）とも含まれていることを`<loc>`タグで確認済み（WebFetchツールの要約では見落とされていたが、生XMLでは実在）。sitemap自体は正常に機能している。
 - [x] トップページ／サイドバー等、浅い階層への重要ページリンク配置を確認 → `Header.tsx`で「今週の動き」「大口投資家一覧」「株式銘柄一覧」を全ページ共通ヘッダーに、カテゴリ13種も折りたたみnavで既に配置済み。記事詳細ページも「関連記事(同カテゴリ)」「銘柄ページへのリンク」「投資家名の自動リンク化」「パンくず」を実装済み。追加実装は不要と判断。
 - [x] 「クロール済み-未登録」104件の主因を特定 → ユーザー提示の例 https://kujira-watch.com/articles/1f72d8k-mm を分析した結果、`web/publish_blog_articles.py`の記事生成プロンプトが本文500〜700字固定・EDINET開示の限られた事実のみを根拠にしており、定型文（下落リスク水準の言及・投資家分類の説明等）の比率が高く同工異曲の記事になりやすい構成だった。
-- [x] 対策として、既に計算済みだが本文生成に使っていなかった「保有比率の変化幅(ratio_change_pct)」を新たな事実としてプロンプトに追加投入し、本文目標を650〜900字に微増（[web/publish_blog_articles.py](../web/publish_blog_articles.py)、テスト2件追加、README更新、[[feedback_abbreviations]]遵守）。字数を機械的に増やすのではなく、既存データで裏付けられる事実を1つ追加する形にして創作リスクを回避。2026-08-14実装、テスト53件全成功。今後生成される新規記事から反映（過去公開済みの104件は未対応）。
+- [x] 対策として、既に計算済みだが本文生成に使っていなかった「保有比率の変化幅(ratio_change_pct)」を新たな事実としてプロンプトに追加投入し、本文目標を650〜900字に微増（[web/publish_blog_articles.py](../web/publish_blog_articles.py)、テスト2件追加、README更新、[[feedback_abbreviations]]遵守）。字数を機械的に増やすのではなく、既存データで裏付けられる事実を1つ追加する形にして創作リスクを回避。2026-08-14実装、テスト63件全成功（同ファイルを並行編集していた別セッションの英訳(titleEn/bodyEn)生成・重複判定強化・PATCH更新化と合流済み）。今後生成される新規記事から反映（過去公開済みの104件は未対応）。
 - [ ] Google Search Console「サイトマップ」メニューで送信状況・自動取得状況を確認（ユーザー側の手動作業。Search Console UIの操作はエージェントから実行不可）
 - [x] 既存公開済み記事のリライト用スクリプト作成 → [tools/rewrite_thin_blog_articles.py](../tools/rewrite_thin_blog_articles.py)。stockCode+dealDateからedinet_large_holdingsを逆引きしてfact_sheetを再構築し、現行の`generate_article_body()`（650〜900字・保有比率変化幅つき）で本文のみ再生成、既存タイトル・株価チャートは据え置く。`--dry-run`で確認可能。
 - [x] ユーザー判断: 104件全部のCSVエクスポートは「無理」とのことで、ユーザーがSearch Consoleから手動で貼り付けた9件（URL末尾が途中で切れていた1件を除く）に絞って実行することで合意。
@@ -48,5 +48,5 @@
   - スキップ（`edinet_large_holdings`に該当データなし）: `5z7hnve3_z`
   - 実行中にmicroCMS APIキーの権限変更を発見: PUTが`Content is already exists. If you want update, please use PATCH request.`で拒否されるようになっていた（2026-08-14時点）。`web/publish_blog_articles.py`の`update_article()`を`_put_once`→`_patch_once`（PUT→PATCH）に切替、`tools/reclassify_blog_articles.py`もこの共有関数を使うため恩恵を受ける。テスト2件更新、README更新。
   - 事故と復旧: 動作確認のため`5f2o0ulbo`にPATCHで一時テスト文字列を書き込んでしまい、直後に元の本文へ復元済み（実害なし、公開サイトに一時的にテスト文言が出た可能性は数分未満）。
-- [ ] 残り95件（9件以外）の扱いは未定。ユーザーがCSVエクスポートを試せるようになったら`--ids`で追加実行、またはURLをこのファイルに追記して都度対応する。
-- [ ] 対応後、[[feedback_seo_indexing_wait]] の通り、インデックス反映確認は数日〜数週間待つ前提でユーザーに伝える
+- [x] ユーザー判断（2026-08-14）: 残り95件は**そのまま放置**。今後生成される新規記事だけ改善プロンプト（650〜900字・保有比率変化幅つき）の恩恵を受ければよく、既存104件の追加バックフィルは行わない。`tools/rewrite_thin_blog_articles.py`は将来気が変わった場合のために残置（`--ids`で個別指定して再開可能）。
+- [x] 本タスクはここで区切り。対応後の検証は[[feedback_seo_indexing_wait]]の通りインデックス反映確認は数日〜数週間待つ前提（急かさない）。

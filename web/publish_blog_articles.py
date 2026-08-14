@@ -420,19 +420,30 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
     return {a["id"] for a in contents[:count]}
 
 
-def already_published(stock_code: str, disc_date: str) -> bool:
-    """同一銘柄・同一開示日の記事が既にmicroCMSにあればTrue（重複投稿防止）。"""
+def already_published(stock_code: str, disc_date: str, deal_amount: "float | None" = None) -> bool:
+    """同一銘柄・同一開示日・同一金額規模の記事が既にmicroCMSにあればTrue（重複投稿防止）。
+    同一銘柄・同日に複数提出者の開示が別々にある場合があり（実運用で発生: 2026-08-14、
+    402Aの2025-08-20にグローバル・ブレインと31VENTURESの2件が同日開示）、日付だけの
+    突き合わせだと2件目を別イベントと認識できず誤って重複扱いしてしまう。dealAmountも
+    突き合わせて別イベントとして区別する（filerNameはmicroCMS未実装のため使えない）。"""
     try:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
-            params={"filters": f"stockCode[equals]{stock_code}", "fields": "id,dealDate", "limit": 20},
+            params={"filters": f"stockCode[equals]{stock_code}", "fields": "id,dealDate,dealAmount", "limit": 20},
             timeout=15,
         )
         if resp.status_code != 200:
             return False
         contents = resp.json().get("contents", [])
-        return any(str(c.get("dealDate", ""))[:10] == disc_date for c in contents)
+        for c in contents:
+            if str(c.get("dealDate", ""))[:10] != disc_date:
+                continue
+            if deal_amount is None or c.get("dealAmount") is None:
+                return True
+            if abs(c["dealAmount"] - deal_amount) < 0.05:
+                return True
+        return False
     except Exception:
         return False
 
@@ -608,11 +619,14 @@ def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
 
 
 def generate_article_body(fact_sheet: dict) -> "dict | None":
-    """Claudeに与えた事実のみからtitle/bodyを生成させる。JSONで {"title", "body"} を返す。
-    パース失敗時はNone（記事は投稿しない）。投資家分類（dealType）は事前にclassify_filer()で
-    判定済み（edinet_filer_classificationマスター参照＋未登録時のみClaude判定、記事本文生成とは
-    別の呼び出しに分離してキャッシュ可能にした）で、その分類の一言説明が
-    fact_sheet['filer_description']としてあれば本文に自然に織り込む。"""
+    """Claudeに与えた事実のみからtitle/bodyを生成させる。JSONで
+    {"title", "body", "titleEn", "bodyEn"} を返す。パース失敗時はNone（記事は投稿しない）。
+    投資家分類（dealType）は事前にclassify_filer()で判定済み（edinet_filer_classification
+    マスター参照＋未登録時のみClaude判定、記事本文生成とは別の呼び出しに分離してキャッシュ
+    可能にした）で、その分類の一言説明がfact_sheet['filer_description']としてあれば本文に
+    自然に織り込む。titleEn/bodyEnはkujira-watch（/en）の英語版用の英訳で、日本語版と同じ
+    事実・トーンを保った自然な英語にする（1回のClaude呼び出しでJA/EN両方を生成し、
+    翻訳による事実のズレとAPI呼び出し回数の増加を防ぐ）。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
@@ -638,6 +652,14 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     filer_description_line = f"- 提出者について: {filer_description}\n" if filer_description else ""
     company_description = fact_sheet.get("company_description") or ""
     company_description_line = f"- {fact_sheet['stock_name']}の事業内容: {company_description}\n" if company_description else ""
+    ratio_change_pct = fact_sheet.get("ratio_change_pct")
+    if ratio_change_pct is not None:
+        if ratio_change_pct >= fact_sheet["holding_ratio"]:
+            change_line = "- 変化: 直近400日以内に同一提出者による当銘柄の開示が確認できず、今回が実質的な新規保有（または大幅な保有再開）とみられる\n"
+        else:
+            change_line = f"- 変化: 保有比率はこれまでの開示から{ratio_change_pct:.2f}ポイント{'減少' if is_sell else '増加'}し、今回{fact_sheet['holding_ratio']}%になった\n"
+    else:
+        change_line = ""
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
 この取引は保有比率が{"減少した売却（譲渡等を含む）" if is_sell else "増加した取得（買い増し・新規取得）"}です。
@@ -653,12 +675,14 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
 - {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
-{filer_description_line}{company_description_line}{context_line}
+{filer_description_line}{company_description_line}{context_line}{change_line}
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
 （例: 提出者が海外の資産運用会社なら「海外の資産運用会社による{deal_verb}」等）。無い場合は無理に触れなくてよいです。
 {fact_sheet['stock_name']}の事業内容 の事実がある場合は、冒頭でその会社が何をしている会社かを
 1文で読者に補足してください。また保有比率{fact_sheet['holding_ratio']}%という数字が、対象企業の
 株式のどれくらいの規模を占めるかが実感できるよう自然に触れてください（時価総額の一角を占める大株主、等）。
+変化 の事実がある場合は、今回の保有比率が一回限りの数字ではなく前回からの推移であることが
+伝わるよう、1文で自然に触れてください。
 
 最後に1文だけ、{risk_hint}この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
 加えてください。ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
@@ -666,13 +690,17 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
 事実として存在しない具体的な計画やコメントの引用は創作しないでください。
 
+titleEn/bodyEnには、上と同じ事実・トーンを保った自然な英語訳を書いてください（直訳調は避け、
+英語ネイティブの投資ニュース記事として自然な文章にする）。※推測の文はEnglishでは
+"*Speculation:" という接頭辞で始めてください。金額は円建てのまま（例: "¥3.34 billion"）でよいです。
+
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
-{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（500〜700字程度、3〜4段落。最後の段落に※推測文を含む）"}}
+{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（650〜900字程度、3〜4段落。最後の段落に※推測文を含む）", "titleEn": "English title (under 70 chars)", "bodyEn": "<p>...</p> HTML body in English, same structure as body"}}
 """
     try:
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=1400,
+            max_tokens=2400,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
@@ -748,24 +776,24 @@ def publish_article(payload: dict) -> "str | None":
         return None
 
 
-def _put_once(content_id: str, payload: dict) -> requests.Response:
-    return requests.put(
+def _patch_once(content_id: str, payload: dict) -> requests.Response:
+    return requests.patch(
         f"{_microcms_base_url()}/{content_id}", headers=_microcms_headers(), json=payload, timeout=20,
     )
 
 
 def update_article(content_id: str, payload: dict) -> bool:
-    """既存記事をPUTで更新する（publish_article()と同じ型不一致リトライを流用）。
-    tools/reclassify_blog_articles.py の一括再分類で使う。PUTは完全上書きのため、
-    payloadには変更したいフィールドだけでなく必須項目（title/body/stockName/stockCode/
-    dealType/dealDate/dealAmount）を全て含めること（呼び出し側が既存レコード全体を
-    取得してから該当フィールドだけ書き換えて渡す想定）。
-    PATCH権限が無いAPIキー（'PATCH is forbidden'）でも動くようPUTを使っている。"""
+    """既存記事をPATCHで更新する（publish_article()と同じ型不一致リトライを流用）。
+    tools/reclassify_blog_articles.py の一括再分類などで使う。PATCHは差分更新のため、
+    payloadは変更したいフィールドだけを含めればよい（既存の他フィールドは保持される）。
+    以前はPUT（完全上書き）を使っていたが、2026-08-14頃にAPIキーの権限設定が変わり、
+    既存コンテンツの更新はPUTが `Content is already exists. If you want update, please
+    use PATCH request.`（HTTP 400）で拒否されるようになったためPATCHに切替。"""
     try:
         working_payload = dict(payload)
         fixed_fields = set()
         for _ in range(MAX_TYPE_MISMATCH_RETRIES + 1):
-            resp = _put_once(content_id, working_payload)
+            resp = _patch_once(content_id, working_payload)
             if resp.status_code in (401, 403) or (
                 resp.status_code == 400 and "forbidden" in resp.text.lower()
             ):
@@ -817,13 +845,13 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         filer_name = h.get("filer_name", "")
         name = h.get("name") or code
 
-        if already_published(code, disc_date):
-            continue
-
         change = ratio_change_pct(code, filer_name, h["holding_ratio"], disc_date)
         deal_amount = estimate_deal_amount_oku(code, change, disc_date)
         if deal_amount is None:
             print(f"  ⏭ {name}({code}): 金額を概算できないためスキップ")
+            continue
+
+        if already_published(code, disc_date, deal_amount):
             continue
 
         is_sell = is_sell_disclosure(
@@ -852,6 +880,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
             "filer_description": filer_info.get("description") or "",
             "company_description": company_description,
+            "ratio_change_pct": change,
         }
         article = generate_article_body(fact_sheet)
         if article is None:
@@ -870,6 +899,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "dealAmount": deal_amount,
             "tags": tags,
         }
+        if article.get("titleEn") and article.get("bodyEn"):
+            payload["titleEn"] = article["titleEn"]
+            payload["bodyEn"] = article["bodyEn"]
 
         direction_mark = "📉売り" if is_sell else "📈買い"
         if dry_run:
