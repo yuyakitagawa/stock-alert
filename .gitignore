@@ -10,6 +10,7 @@ backtest_*.csv
 alpha_analysis_*.csv
 data/edinet_holding_matches.csv
 data/catalyst_candidates.csv
+data/filer_win_rate.csv
 *.pyc
 .DS_Store
 watch_list.csv

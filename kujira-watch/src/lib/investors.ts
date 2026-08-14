@@ -25,6 +25,18 @@ export type FilerSummary = {
   latestDiscDate: string;
 };
 
+export type FilerWinRate = {
+  filerName: string;
+  category: DealType;
+  n: number;
+  winRate: number;
+  shrunkWinRate: number;
+  avgReturn: number;
+  bigWinRate: number;
+  holdDays: number;
+  updatedAt: string;
+};
+
 // web/publish_blog_articles.py の DOC_TYPE_LABELS と対応。
 const DOC_TYPE_LABELS: Record<string, string> = {
   "350": "大量保有報告書",
@@ -118,4 +130,28 @@ export async function getFilersByStockCode(
       category: categoryByFiler.get(filerName) ?? ("その他" as DealType),
     }))
     .sort((a, b) => a.filerName.localeCompare(b.filerName, "ja"));
+}
+
+// /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
+// 収縮後勝率(shrunk_win_rate)の降順で返す（サンプル数が少ない投資家ほど分類平均に
+// 寄せた値。生の勝率だけで並べるとn=1で100%の投資家が上位に来てしまうため）。
+export async function getFilerWinRates(minN = 1): Promise<FilerWinRate[]> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("filer_win_rate")
+    .select("filer_name, category, n, win_rate, shrunk_win_rate, avg_return, big_win_rate, hold_days, updated_at")
+    .gte("n", minN)
+    .order("shrunk_win_rate", { ascending: false });
+
+  return (data ?? []).map((r) => ({
+    filerName: r.filer_name,
+    category: r.category as DealType,
+    n: r.n,
+    winRate: r.win_rate,
+    shrunkWinRate: r.shrunk_win_rate,
+    avgReturn: r.avg_return,
+    bigWinRate: r.big_win_rate,
+    holdDays: r.hold_days,
+    updatedAt: r.updated_at,
+  }));
 }

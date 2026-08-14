@@ -1,0 +1,38 @@
+name: Filer Win Rate
+
+# tools/filer_win_rate.pyを週次で実行し、投資家別の「乗っかり勝率」(filer_win_rateテーブル)を
+# 再計算する。kujira-watchの/rankingページが参照するデータの更新元。
+on:
+  schedule:
+    - cron: '0 21 * * 0'  # 毎週月曜 6:00 JST（日曜21:00 UTC）
+  workflow_dispatch: {}
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas python-dotenv
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+
+      - name: 投資家別勝率を再計算
+        run: cd ~/stock-alert && python3 tools/filer_win_rate.py
