@@ -30,7 +30,6 @@ export type FilerWinRate = {
   category: DealType;
   n: number;
   winRate: number;
-  shrunkWinRate: number;
   avgReturn: number;
   bigWinRate: number;
   holdDays: number;
@@ -133,22 +132,20 @@ export async function getFilersByStockCode(
 }
 
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
-// 収縮後勝率(shrunk_win_rate)の降順で返す（サンプル数が少ない投資家ほど分類平均に
-// 寄せた値。生の勝率だけで並べるとn=1で100%の投資家が上位に来てしまうため）。
+// 勝率(win_rate)の降順で返す。
 export async function getFilerWinRates(minN = 1): Promise<FilerWinRate[]> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("filer_win_rate")
-    .select("filer_name, category, n, win_rate, shrunk_win_rate, avg_return, big_win_rate, hold_days, updated_at")
+    .select("filer_name, category, n, win_rate, avg_return, big_win_rate, hold_days, updated_at")
     .gte("n", minN)
-    .order("shrunk_win_rate", { ascending: false });
+    .order("win_rate", { ascending: false });
 
   return (data ?? []).map((r) => ({
     filerName: r.filer_name,
     category: r.category as DealType,
     n: r.n,
     winRate: r.win_rate,
-    shrunkWinRate: r.shrunk_win_rate,
     avgReturn: r.avg_return,
     bigWinRate: r.big_win_rate,
     holdDays: r.hold_days,

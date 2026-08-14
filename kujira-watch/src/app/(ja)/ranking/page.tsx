@@ -12,7 +12,7 @@ export const revalidate = 3600;
 // 「参考にできる」ランキングとして出すには信頼性が低すぎるため。
 const MIN_N = 5;
 
-const title = "投資家別 過去勝率ランキング";
+const title = "投資家別 3ヶ月勝率ランキング";
 const description =
   "EDINET大量保有報告書で買い増しを開示した投資家について、開示後63営業日(3ヶ月)の株価が" +
   "上昇していたかを投資家別に集計したランキング。過去の実績が良い投資家を参考にできます。";
@@ -82,21 +82,21 @@ export default async function RankingPage({ searchParams }: Props) {
         {" / "}
         <span className="text-foreground/70">{title}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
-      <p className="mb-2 text-sm text-foreground/50">
+      <h1 className="mb-1 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      {updatedAt && (
+        <p className="kicker mb-3 text-brand-blue">最終更新: {formatDate(updatedAt)}</p>
+      )}
+      <p className="mb-4 text-sm text-foreground/50">
         投資家がEDINET大量保有報告書で保有比率を増やした（買い増し・新規取得）ことを開示した後、
-        {holdDays}営業日（約3ヶ月）保有していたら株価が上昇していたかを集計しています。
-        自己申告・訂正報告書・保有比率51%超・売却方向の開示は除外し、開示からまだ
+        {holdDays}営業日（約3ヶ月）保有していたら株価が上昇していたかを投資家別に集計したランキングです。
+        過去の実績が良い投資家を参考にできます。投資助言ではありません。
+      </p>
+      <p className="mb-2 text-xs text-foreground/40">
+        ※自己申告・訂正報告書・保有比率51%超・売却方向の開示は除外し、開示からまだ
         {holdDays}営業日経っていないものは結果未確定として集計から外しています。
       </p>
-      <p className="mb-6 text-sm text-foreground/50">
-        開示件数（n）が少ない投資家は勝率のブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
-        「収縮後勝率」は開示件数が少ない投資家ほど、その投資家の分類（{" "}
-        <Link href="/about#dealtype-glossary" className="text-brand-blue hover:underline">
-          分類の一覧
-        </Link>
-        ）の平均勝率に寄せて補正した値です。件数が十分な投資家では生の勝率とほぼ一致します。
-        投資助言ではありません。{updatedAt && `（最終更新: ${formatDate(updatedAt)}）`}
+      <p className="mb-6 text-xs text-foreground/40">
+        ※開示件数（n）が少ない投資家は勝率のブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
       </p>
       {filers.length > 0 && (
         <nav aria-label="カテゴリで絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -136,7 +136,7 @@ export default async function RankingPage({ searchParams }: Props) {
                 <th className="py-2 pr-4 font-normal">投資家</th>
                 <th className="py-2 pr-4 font-normal">分類</th>
                 <th className="py-2 pr-4 font-normal text-right">件数</th>
-                <th className="py-2 pr-4 font-normal text-right">収縮後勝率</th>
+                <th className="py-2 pr-4 font-normal text-right">勝率</th>
                 <th className="py-2 pr-4 font-normal text-right">平均リターン</th>
                 <th className="py-2 font-normal text-right">大勝率</th>
               </tr>
@@ -158,7 +158,7 @@ export default async function RankingPage({ searchParams }: Props) {
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap text-right text-foreground/60">{f.n}</td>
                   <td className="py-3 pr-4 whitespace-nowrap text-right font-medium text-brand-navy">
-                    {f.shrunkWinRate.toFixed(1)}%
+                    {f.winRate.toFixed(1)}%
                   </td>
                   <td
                     className={`py-3 pr-4 whitespace-nowrap text-right ${

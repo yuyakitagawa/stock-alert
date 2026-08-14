@@ -11,18 +11,13 @@ tools/filer_win_rate.py
 自己申告・訂正報告書・過半数超・売り方向を除外した残り）。開示からまだ
 63営業日経っていないイベントは結果未確定として除外する。
 
-サンプル数が少ない投資家（n=1〜2件）の勝率は統計的に信頼できないため、
-その投資家の分類（13分類、edinet_filer_classification）の勝率を事前分布とした
-ベイズ収縮（Bayesian shrinkage）で「収縮後勝率」も併記する。
-
 Usage:
   python3 tools/filer_win_rate.py                  # 全投資家（開示件数の多い順）
   python3 tools/filer_win_rate.py --min-n 3         # 3件以上開示している投資家のみ
-  python3 tools/filer_win_rate.py --hold 63 --shrink-k 5
+  python3 tools/filer_win_rate.py --hold 63
   python3 tools/filer_win_rate.py --out data/filer_win_rate.csv
 """
 import sys, os, argparse, csv
-from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -85,8 +80,6 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--hold", type=int, default=63, help="保有期間（営業日）")
     p.add_argument("--min-n", type=int, default=1, help="最低サンプル件数（未満は表示しない）")
-    p.add_argument("--shrink-k", type=float, default=5.0,
-                   help="ベイズ収縮の仮想サンプル数（大きいほど分類側の事前分布に強く寄る）")
     p.add_argument("--out", type=str, default=None, help="CSV出力先（省略時は標準出力のみ）")
     p.add_argument("--no-persist", action="store_true",
                    help="Supabase filer_win_rateへの保存をスキップ（確認用）")
@@ -124,14 +117,6 @@ def main():
         print("結果確定イベントが0件のため集計できません。")
         return
 
-    # 分類別の事前分布（ベイズ収縮の基準）
-    cat_stats = {}
-    for _filer, category, ret in outcomes:
-        s = cat_stats.setdefault(category, {"n": 0, "wins": 0})
-        s["n"] += 1
-        s["wins"] += 1 if ret > 0 else 0
-    cat_prior = {c: s["wins"] / s["n"] for c, s in cat_stats.items()}
-
     # 投資家別集計
     filer_stats = {}
     for filer, category, ret in outcomes:
@@ -147,34 +132,27 @@ def main():
         if s["n"] < args.min_n:
             continue
         n = s["n"]
-        raw_win_rate = s["wins"] / n
-        prior = cat_prior.get(s["category"], 0.5)
-        k = args.shrink_k
-        shrunk_win_rate = (s["wins"] + k * prior) / (n + k)
+        win_rate = s["wins"] / n
         avg_return = sum(s["returns"]) / n
         big_win_rate = s["big_wins"] / n
         rows.append({
             "filer_name": filer,
             "category": s["category"],
             "n": n,
-            "win_rate": round(raw_win_rate * 100, 1),
-            "shrunk_win_rate": round(shrunk_win_rate * 100, 1),
+            "win_rate": round(win_rate * 100, 1),
             "avg_return": round(avg_return, 2),
             "big_win_rate": round(big_win_rate * 100, 1),
             "hold_days": args.hold,
         })
 
-    rows.sort(key=lambda r: (-r["n"], -r["shrunk_win_rate"]))
+    rows.sort(key=lambda r: (-r["win_rate"], -r["n"]))
 
-    print(f"{'投資家':40s} {'分類':14s} {'n':>4s} {'勝率':>7s} {'収縮後勝率':>9s} {'平均リターン':>10s} {'大勝率':>7s}")
-    print("-" * 100)
+    print(f"{'投資家':40s} {'分類':14s} {'n':>4s} {'勝率':>7s} {'平均リターン':>10s} {'大勝率':>7s}")
+    print("-" * 90)
     for r in rows:
         print(f"{r['filer_name'][:40]:40s} {r['category']:14s} {r['n']:>4d} "
-              f"{r['win_rate']:>6.1f}% {r['shrunk_win_rate']:>8.1f}% "
+              f"{r['win_rate']:>6.1f}% "
               f"{r['avg_return']:>+9.2f}% {r['big_win_rate']:>6.1f}%")
-
-    print(f"\n分類別の事前分布（勝率）: " +
-          ", ".join(f"{c}={v*100:.1f}%(n={cat_stats[c]['n']})" for c, v in sorted(cat_prior.items())))
 
     if args.out:
         os.makedirs(os.path.dirname(args.out), exist_ok=True) if os.path.dirname(args.out) else None
