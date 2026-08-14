@@ -137,8 +137,11 @@ def classify_filer(filer_name: str) -> dict:
             "description": data.get("description", ""),
         }
     except Exception as e:
-        print(f"    ⚠ 投資家分類に失敗（その他扱い）: {e}")
-        result = {"category": "その他", "is_foreign": False, "description": ""}
+        # API障害等の一時的な失敗まで「その他」として永続キャッシュすると誤分類が固定化される
+        # （実運用で発生: 2026-08-14、課金切れでVC/個人の提出者が軒並み「その他」に上書きされた）。
+        # キャッシュせず、次回呼び出し時に再判定させる。
+        print(f"    ⚠ 投資家分類に失敗（今回はその他扱い、キャッシュはしない）: {e}")
+        return {"category": "その他", "is_foreign": False, "description": ""}
 
     sb.upsert(
         "edinet_filer_classification",

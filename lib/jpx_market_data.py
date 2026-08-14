@@ -52,14 +52,14 @@ def _to_float(v) -> float | None:
 
 
 def _normalize_code(raw) -> str | None:
-    """銘柄コードを4桁に正規化。5桁末尾0は4桁に。"""
+    """銘柄コードを4桁に正規化。5桁末尾0は4桁に。3桁数字+英字の新形式コード（例: 402A）も許容。"""
     if raw is None:
         return None
-    s = str(raw).strip()
+    s = str(raw).strip().upper()
     s = re.sub(r"\.0$", "", s)  # pandas が 7203 → '7203.0' にするケース
     if len(s) == 5 and s.endswith("0"):
         s = s[:4]
-    if not re.match(r"^\d{4}", s):
+    if not re.match(r"^[0-9A-Z]{4}", s):
         return None
     return s[:4]
 
