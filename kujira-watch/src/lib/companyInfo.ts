@@ -4,6 +4,7 @@ export type PricePoint = { date: string; close: number };
 
 export type CompanyInfo = {
   sector: string | null;
+  description: string | null;
   hasYutai: boolean;
   yutaiMonth: number | null;
   close: number | null;
@@ -29,7 +30,7 @@ export async function getCompanyInfo(code: string): Promise<CompanyInfo | null> 
     const [{ data: meta }, { data: rankingRows }] = await Promise.all([
       supabase
         .from("jpx_stock_list")
-        .select("sector, has_yutai, yutai_month")
+        .select("sector, description, has_yutai, yutai_month")
         .eq("code", code)
         .maybeSingle(),
       supabase
@@ -50,6 +51,7 @@ export async function getCompanyInfo(code: string): Promise<CompanyInfo | null> 
 
     return {
       sector: meta?.sector ?? null,
+      description: meta?.description ?? null,
       hasYutai: meta?.has_yutai ?? false,
       yutaiMonth: meta?.yutai_month ?? null,
       close: latest?.close ?? null,

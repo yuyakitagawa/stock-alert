@@ -1,5 +1,5 @@
 import { createClient } from "microcms-js-sdk";
-import type { AboutPage, Article, DealType } from "@/types/article";
+import type { AboutPage, Article, ArticleContent, DealType } from "@/types/article";
 
 const serviceDomain = process.env.MICROCMS_SERVICE_DOMAIN;
 const apiKey = process.env.MICROCMS_API_KEY;
@@ -25,10 +25,24 @@ function normalizeDealType<T extends { dealType: unknown }>(article: T): T {
   };
 }
 
-// 複数条件をmicroCMSの`[and]`区切りフィルタ文字列に組み立てる。
-function buildFilters(conditions: (string | undefined)[]): string | undefined {
-  const active = conditions.filter((c): c is string => Boolean(c));
-  return active.length > 0 ? active.join("[and]") : undefined;
+// microCMSの`titleEn[exists]true`フィルタは実データがあってもヒットしない既知不具合が
+// あるため（2026-08-14確認、begins_with等の他演算子は正常に動く一方でexistsだけ0件を返す。
+// 原因はmicroCMS側未特定）、EN側の絞り込みはこのフィルタに頼らず、dealType等の
+// 信頼できる条件でサーバー側フィルタした後、titleEn/bodyEnの有無をクライアント側で判定する。
+function isTranslated(article: Pick<Article, "titleEn" | "bodyEn">): boolean {
+  return Boolean(article.titleEn && article.bodyEn);
+}
+
+async function fetchAllArticles(dealType?: DealType): Promise<ArticleContent[]> {
+  const contents = await client.getAllContents<Article>({
+    endpoint: "articles",
+    queries: {
+      orders: "-dealDate,-dealAmount",
+      filters: dealType ? `dealType[contains]${dealType}` : undefined,
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return contents.map(normalizeDealType);
 }
 
 export async function getArticleList(params: {
@@ -39,6 +53,12 @@ export async function getArticleList(params: {
 } = {}) {
   const { offset = 0, limit = ARTICLES_PER_PAGE, dealType, translatedOnly = false } = params;
 
+  if (translatedOnly) {
+    const all = await fetchAllArticles(dealType);
+    const translated = all.filter(isTranslated);
+    return { totalCount: translated.length, contents: translated.slice(offset, offset + limit) };
+  }
+
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
@@ -46,10 +66,7 @@ export async function getArticleList(params: {
       limit,
       // 取引日(dealDate)が新しい順、同じ日の中では金額規模(dealAmount)が大きい順。
       orders: "-dealDate,-dealAmount",
-      filters: buildFilters([
-        dealType ? `dealType[contains]${dealType}` : undefined,
-        translatedOnly ? "titleEn[exists]true" : undefined,
-      ]),
+      filters: dealType ? `dealType[contains]${dealType}` : undefined,
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
@@ -71,12 +88,15 @@ export async function getFeaturedArticles(
   count = FEATURED_COUNT,
   translatedOnly = false
 ) {
+  if (translatedOnly) {
+    const all = await fetchAllArticles();
+    return all.filter(isTranslated).slice(0, poolSize).slice(0, count);
+  }
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
       limit: poolSize,
       orders: "-dealDate,-dealAmount",
-      filters: translatedOnly ? "titleEn[exists]true" : undefined,
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
@@ -88,16 +108,15 @@ export async function getArticlesByStockCode(stockCode: string, params: { transl
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
-      filters: buildFilters([
-        `stockCode[equals]${stockCode}`,
-        translatedOnly ? "titleEn[exists]true" : undefined,
-      ]),
+      filters: `stockCode[equals]${stockCode}`,
       orders: "-dealDate,-dealAmount",
       limit: 100,
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  return { ...result, totalCount: result.totalCount ?? 0, contents: result.contents.map(normalizeDealType) };
+  let contents = result.contents.map(normalizeDealType);
+  if (translatedOnly) contents = contents.filter(isTranslated);
+  return { ...result, totalCount: contents.length, contents };
 }
 
 // dealDateはweb/publish_blog_articles.pyが`${disc_date}T00:00:00.000Z`形式(UTC深夜0時)で
@@ -215,6 +234,7 @@ export async function getAboutPage() {
 }
 
 // EN側サイトマップ用。titleEn/bodyEn両方がある記事のみ（日英混在ページを出さないため）。
+// titleEn[exists]true フィルタが機能しないため、全件取得してクライアント側で絞り込む。
 export async function getTranslatedArticlesForSitemap() {
   const contents = await client.getAllContents<
     Pick<Article, "dealType" | "stockCode" | "titleEn" | "bodyEn">
@@ -222,7 +242,6 @@ export async function getTranslatedArticlesForSitemap() {
     endpoint: "articles",
     queries: {
       fields: "id,updatedAt,publishedAt,dealType,stockCode,titleEn,bodyEn",
-      filters: "titleEn[exists]true",
       orders: "-publishedAt",
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
