@@ -14,8 +14,14 @@ const MIN_N = 5;
 
 const title = "投資家別 3ヶ月勝率ランキング";
 const description =
-  "EDINET大量保有報告書で買い増しを開示した投資家について、開示後63営業日(3ヶ月)の株価が" +
-  "上昇していたかを投資家別に集計したランキング。過去の実績が良い投資家を参考にできます。";
+  "EDINET大量保有報告書で買い増しを開示した投資家について、その銘柄を1株買って" +
+  "63営業日(3ヶ月)後まで保有していたら株価がいくら動いたかを投資家別に集計したランキング。" +
+  "過去の実績が良い投資家を参考にできます。";
+
+function formatYen(value: number): string {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${Math.round(value).toLocaleString("ja-JP")}円`;
+}
 
 export const metadata: Metadata = {
   title,
@@ -87,16 +93,16 @@ export default async function RankingPage({ searchParams }: Props) {
         <p className="kicker mb-3 text-brand-blue">最終更新: {formatDate(updatedAt)}</p>
       )}
       <p className="mb-4 text-sm text-foreground/50">
-        投資家がEDINET大量保有報告書で保有比率を増やした（買い増し・新規取得）ことを開示した後、
-        {holdDays}営業日（約3ヶ月）保有していたら株価が上昇していたかを投資家別に集計したランキングです。
-        過去の実績が良い投資家を参考にできます。投資助言ではありません。
+        投資家がEDINET大量保有報告書で保有比率を増やした（買い増し・新規取得）ことを開示するたびに、
+        その銘柄を1株買って{holdDays}営業日（約3ヶ月）後まで持っていたら株価がいくら動いたかを
+        投資家別に集計したランキングです。過去の実績が良い投資家を参考にできます。投資助言ではありません。
       </p>
       <p className="mb-2 text-xs text-foreground/40">
         ※自己申告・訂正報告書・保有比率51%超・売却方向の開示は除外し、開示からまだ
         {holdDays}営業日経っていないものは結果未確定として集計から外しています。
       </p>
       <p className="mb-6 text-xs text-foreground/40">
-        ※開示件数（n）が少ない投資家は勝率のブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
+        ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
       </p>
       {filers.length > 0 && (
         <nav aria-label="カテゴリで絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -136,9 +142,8 @@ export default async function RankingPage({ searchParams }: Props) {
                 <th className="py-2 pr-4 font-normal">投資家</th>
                 <th className="py-2 pr-4 font-normal">分類</th>
                 <th className="py-2 pr-4 font-normal text-right">件数</th>
-                <th className="py-2 pr-4 font-normal text-right">勝率</th>
-                <th className="py-2 pr-4 font-normal text-right">平均リターン</th>
-                <th className="py-2 font-normal text-right">大勝率</th>
+                <th className="py-2 pr-4 font-normal text-right">1株あたりのリターン</th>
+                <th className="py-2 font-normal text-right">トータルのリターン</th>
               </tr>
             </thead>
             <tbody>
@@ -157,19 +162,19 @@ export default async function RankingPage({ searchParams }: Props) {
                     <DealTypeBadge dealType={f.category} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap text-right text-foreground/60">{f.n}</td>
-                  <td className="py-3 pr-4 whitespace-nowrap text-right font-medium text-brand-navy">
-                    {f.winRate.toFixed(1)}%
-                  </td>
                   <td
                     className={`py-3 pr-4 whitespace-nowrap text-right ${
-                      f.avgReturn >= 0 ? "text-emerald-700" : "text-rose-700"
+                      f.avgReturnYen >= 0 ? "text-emerald-700" : "text-rose-700"
                     }`}
                   >
-                    {f.avgReturn >= 0 ? "+" : ""}
-                    {f.avgReturn.toFixed(2)}%
+                    {formatYen(f.avgReturnYen)}
                   </td>
-                  <td className="py-3 whitespace-nowrap text-right text-foreground/60">
-                    {f.bigWinRate.toFixed(1)}%
+                  <td
+                    className={`py-3 whitespace-nowrap text-right font-medium ${
+                      f.totalReturnYen >= 0 ? "text-emerald-700" : "text-rose-700"
+                    }`}
+                  >
+                    {formatYen(f.totalReturnYen)}
                   </td>
                 </tr>
               ))}
