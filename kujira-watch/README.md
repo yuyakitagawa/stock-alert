@@ -13,7 +13,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
 - microCMS（`microcms-js-sdk`）
-- Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を参照）
+- Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を、`/ranking`が`filer_win_rate`テーブルを参照）
 - Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）
 
 ## セットアップ
@@ -56,19 +56,21 @@ npm run dev
 | sourceUrl | 出典URL | テキスト | △ |
 | tags | タグ | テキスト（カンマ区切り。売り方向の記事には`"売り"`を含める） | △ |
 | eyecatch | アイキャッチ画像 | 画像 | △ |
+| filerName | 取引企業（提出者名） | テキスト | △ |
 
 ## ページ構成
 
 | パス | 内容 |
 |---|---|
-| `/` | 記事一覧（先頭記事はヒーロー枠でピックアップ表示、新着順。初回30件をサーバー側でレンダリングし、下端までスクロールすると自動で次の10件を読み込むオートスクロール方式） |
+| `/` | 記事一覧。見出し「今日の注目取引」の直下にカテゴリ絞り込み（`src/components/CategoryFilterDetails.tsx`、`<details>`で開閉、`/category/[category]`への内部リンク）を配置し、その下に金額規模上位の記事をヒーロー枠でピックアップ表示（新着順）。初回30件をサーバー側でレンダリングし、下端までスクロールすると自動で次の10件を読み込むオートスクロール方式 |
 | `/weekly` | 大口投資家の動きまとめ（直近7日間の横断要約。「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。「今週のポイント」で買い/売りの件数・金額、投資家分類別・銘柄別の上位内訳を集計表示し（`lib/weeklyStats.ts`の`buildWeeklySummary()`）、金額規模が大きい上位3件を「注目の取引」としてヒーロー枠で見せ、残りは取引日ごとに件数・金額つきで`/date/[date]`へのリンクに集約する。全記事をカード表示していた旧構成は縦に長すぎるため廃止。ヘッダーから常時リンク） |
-| `/articles/[id]` | 記事詳細 |
+| `/articles/[id]` | 記事詳細。銘柄｜取引日｜金額規模｜取引企業（`filerName`、`/investors/[filer]`への内部リンク）のdlを表示。`filerName`が無い記事（フィールド追加前の既存記事）は列自体を出さない |
 | `/category/[category]` | カテゴリ別一覧（同じく初回30件サーバーレンダリング＋オートスクロール） |
-| `/stocks` | 銘柄一覧。記事のある銘柄を証券コード順（辞書的に引ける順番）に列挙（`lib/microcms.ts`の`getAllStocksForIndex()`） |
-| `/stocks/[code]` | 銘柄ページ。見出しは企業名・証券コードのみ。事業内容（1文）・直近90営業日の株価推移グラフ・業種・終値・PER/PBR・52週レンジ位置・株主優待有無の会社情報カードの下に、この銘柄へ大量保有報告書を提出したことがある投資家一覧（`/investors/[filer]`への内部リンク）、続いて「大量保有・自社株買い履歴」の見出しを置き、同一`stockCode`の記事を`-dealDate`順に一覧表示する。記事詳細の「銘柄」欄から内部リンクあり |
-| `/investors` | 投資家一覧。EDINET大量保有報告書を提出したことがある投資家を最終開示日が新しい順に列挙（`edinet_filer_summary` Supabaseビュー経由） |
-| `/investors/[filer]` | 投資家別ページ。その投資家が開示した保有銘柄・保有比率の推移を一覧表示（`edinet_large_holdings`/`edinet_filer_classification`）。競合の大量保有報告書データベースには無い「投資家を軸にした横断トラッキング」がこのサイトの差別化ポイント。`edinet_filer_classification.profile`（`web/publish_blog_articles.get_filer_profile()`がClaudeの一般知識から800〜1000字程度で生成・キャッシュ）があれば「{投資家名}について」の解説文として一覧の上に表示する |
+| `/stocks` | 銘柄一覧。見出し直下に業種（セクター）別の絞り込み（Supabase `jpx_stock_list.sector`から集計、`?sector=`クエリでSSRフィルタ、各業種の件数を`(N件)`で表示）を配置し、記事のある銘柄を証券コード順（辞書的に引ける順番）に列挙（`lib/microcms.ts`の`getAllStocksForIndex()`＋`lib/companyInfo.ts`の`getSectorsByCode()`） |
+| `/stocks/[code]` | 銘柄ページ。見出しは企業名・証券コードのみ。直近90営業日の株価推移グラフ・業種・終値・PER/PBR・52週レンジ位置・株主優待有無の会社情報カードの下に、この銘柄へ大量保有報告書を提出したことがある投資家を1件ずつ改行して一覧表示（`/investors/[filer]`への内部リンク）、続いて「大量保有・自社株買い履歴」の見出しを置き、同一`stockCode`の記事を`-dealDate`順に一覧表示する。記事詳細の「銘柄」欄から内部リンクあり |
+| `/investors` | 投資家一覧。見出し直下にカテゴリ別の絞り込み（`?category=`クエリでSSRフィルタ、各カテゴリの件数を`(N件)`で表示）を配置し、EDINET大量保有報告書を提出したことがある投資家を最終開示日が新しい順に列挙（`edinet_filer_summary` Supabaseビュー経由） |
+| `/investors/[filer]` | 投資家別ページ。プロフィールの下に「主な保有銘柄」（`holdings`を`issuerCode`で重複排除し保有比率つきで列挙）、続けて「最近の取引」の見出しでその投資家が開示した保有銘柄・保有比率の推移を一覧表示（`edinet_large_holdings`/`edinet_filer_classification`）。競合の大量保有報告書データベースには無い「投資家を軸にした横断トラッキング」がこのサイトの差別化ポイント。`edinet_filer_classification.profile`（`web/publish_blog_articles.get_filer_profile()`がClaudeの一般知識から800〜1000字程度で生成・キャッシュ）があれば「{投資家名}について」の解説文として一覧の上に表示する |
+| `/ranking` | 投資家別 過去勝率ランキング。`tools/filer_win_rate.py`が週次（GitHub Actions `filer_win_rate.yml`）で再計算するSupabase `filer_win_rate`テーブルを`lib/investors.ts`の`getFilerWinRates()`が収縮後勝率(shrunk_win_rate)降順で取得。買い開示件数(n)が5未満の投資家は表示しない（サンプル不足で勝率のブレが大きいため）。`/investors`と同じ`?category=`クエリでのカテゴリ絞り込みに対応 |
 | `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策）。投資家分類の用語集（`#dealtype-glossary`）も含む |
 | `/faq` | よくある質問（FAQPage構造化データ付き、500問。各質問に色分けされたカテゴリバッジを表示し、9カテゴリのタブでも絞り込み可能）。大量保有報告書のしくみ・制度の深掘り・用語解説・投資家分類/業界プレイヤー・本サイトの使い方・初心者/中級者向けの読み方・投資基礎の周辺知識 |
@@ -107,9 +109,10 @@ npm run dev
 - 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。各見出しの下には、その取引日の全記事を一覧できる`/date/[date]`アーカイブページへのリンクを表示する。
 - ヘッダーのロゴ（🐋アイコン）・カテゴリ別一覧のパンくずリストから常にTOPへ戻れる（記事詳細・銘柄別履歴には既存のパンくずリストあり）。
 - オートスクロールの導入で記事一覧が際限なく伸び、ページ最下部までスクロールするのが実質困難になったため、独立した`<Footer>`は廃止。運営者情報・免責事項・RSS・累計訪問者カウンターは`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）に集約し、スクロール位置によらず常にアクセスできるようにしている。
-- ヘッダーのカテゴリフィルターはスマホ幅では折り返さず横スクロール1行にし（`.no-scrollbar`、`src/app/globals.css`）、13カテゴリぶんが縦に何行も積み重なって本文を押し下げないようにしている。sm以上（タブレット・PC幅）では通常の折り返し表示に戻る。
-- カテゴリフィルター（`/category/[category]`）はmicroCMS側に別フィールドを持たず、`dealType`の値をそのままカテゴリ名として使う（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`、値はidentity）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
-- `/stocks/[code]`の会社情報カード（`src/lib/companyInfo.ts`/`src/components/CompanyInfoCard.tsx`）はトレーディングシステム側が日次で更新するSupabaseの`jpx_stock_list`（業種・事業内容の1文説明・株主優待）と`gen_rankings`（直近90営業日分の終値・PER・PBR・52週レンジ位置）を参照する。事業内容はトレーディングシステム側（`web/publish_blog_articles.py`の`get_company_description`）がブログ記事生成時にClaudeの一般知識で生成し`jpx_stock_list.description`にキャッシュしたもので、対象銘柄の記事がまだ生成されていない場合は空欄になりうる。株価推移グラフは外部チャートライブラリを使わず、直近90営業日分の終値をインラインSVGの折れ線（`polyline`）で自前描画している。`gen_rankings`の`drop_prob`（下落確率）・`recommend`（売買シグナル）はstock-alert本体の提供価値そのものなので、ブログ側では意図的に表示しない。取得失敗時（未設定・障害）は記事一覧の表示を止めないよう`null`を返しカードごと非表示にする。ページ全体に`export const revalidate = 300`を設定し、Supabase側のfetchも含めて5分周期で再検証する。
+- ヘッダー上部のハブナビ（今週の動き／大口投資家一覧／株式銘柄一覧）はスマホ幅では折り返さず横スクロール1行にし（`.no-scrollbar`、`src/app/globals.css`）ている。カテゴリ絞り込み（13カテゴリ）は以前ヘッダーに常設していたが、全ページ共通で常時表示すると場所を取り本文の文脈からも離れて見えるため`src/components/CategoryFilterDetails.tsx`に切り出し、TOPページの見出し「今日の注目取引」の直下にのみ表示する構成に変更した。
+- カテゴリフィルター（`/category/[category]`、`CategoryFilterDetails.tsx`）はmicroCMS側に別フィールドを持たず、`dealType`の値をそのままカテゴリ名として使う（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`、値はidentity）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
+- `/investors`・`/stocks`のカテゴリ／業種フィルターはクライアントJSを使わず、`searchParams`（`?category=`/`?sector=`）を読んでサーバー側で絞り込んだ結果を返すシンプルな構成（フィルターのリンク自体もただの`<Link>`）。`/investors`はカテゴリ別、`/stocks`は業種別で、切り口をあえて分けている。
+- `/stocks/[code]`の会社情報カード（`src/lib/companyInfo.ts`/`src/components/CompanyInfoCard.tsx`）はトレーディングシステム側が日次で更新するSupabaseの`jpx_stock_list`（業種・事業内容の1文説明・株主優待）と`gen_rankings`（直近90営業日分の終値・PER・PBR・52週レンジ位置）を参照する。株価推移グラフは外部チャートライブラリを使わず、直近90営業日分の終値をインラインSVGの折れ線（`polyline`）で自前描画している。`gen_rankings`の`drop_prob`（下落確率）・`recommend`（売買シグナル）はstock-alert本体の提供価値そのものなので、ブログ側では意図的に表示しない。取得失敗時（未設定・障害）は記事一覧の表示を止めないよう`null`を返しカードごと非表示にする。ページ全体に`export const revalidate = 300`を設定し、Supabase側のfetchも含めて5分周期で再検証する。
 - ヘッダー右上の🔍アイコン（`src/components/StockSearch.tsx`）から企業名・証券コードで検索できる。入力停止から300ms後に`/api/stocks/search`（`lib/microcms.ts`の`searchStocks()`、`stockCode`/`stockName`の`[contains]`部分一致、銘柄単位で重複排除・最大20件）を叩き、結果をクリック（またはEnterで先頭候補）すると`/stocks/[code]`（銘柄別履歴）に遷移する。
 
 ## コンテンツの自動生成（任意）
@@ -117,6 +120,8 @@ npm run dev
 リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（保有比率が増加する取得＝買い方向、減少する譲渡・売却＝売り方向の双方）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得・売却金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。売り方向の記事は`tags`に`"売り"`を追加して買いと区別する（microCMSのセレクトフィールド追加を避け、既存の自由記述`tags`フィールドを流用）。フロント側は`src/lib/format.ts`の`isSellArticle()`が`tags`から判定し、`src/components/DealDirectionBadge.tsx`が`DealTypeBadge`の隣に「売り」バッジを表示する（買い方向の記事にはバッジを出さない）。
 
 `dealType`（提出者の投資家分類）は、Supabaseの`edinet_filer_classification`マスター（Web検索で確認済みの投資家分類テーブル、バックテスト分析とも共用）をまず参照し、未登録の提出者のみClaudeの一般知識で判定して結果をマスターへ保存する（`web/publish_blog_articles.py`の`classify_filer()`）。キーワード一致だけでは日系/外資の区別やスペース無し個人名を正しく判定できないため。判定不能な場合は「その他」に丸める。
+
+`filerName`（記事詳細の「取引企業」欄）には、EDINET開示から取得した提出者名（`filer_name`）をそのまま送信する。フロント側の`/investors/[filer]`は投資家名をパスパラメータにしているため、両者は常に一致する。
 
 投稿後の内容確認・修正はmicroCMS管理画面で人間が行う想定。詳細はスクリプト冒頭のdocstringを参照。
 

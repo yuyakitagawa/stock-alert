@@ -784,11 +784,11 @@ def _patch_once(content_id: str, payload: dict) -> requests.Response:
 
 def update_article(content_id: str, payload: dict) -> bool:
     """既存記事をPATCHで更新する（publish_article()と同じ型不一致リトライを流用）。
-    tools/reclassify_blog_articles.py の一括再分類などで使う。PATCHは差分更新のため、
-    payloadは変更したいフィールドだけを含めればよい（既存の他フィールドは保持される）。
-    以前はPUT（完全上書き）を使っていたが、2026-08-14頃にAPIキーの権限設定が変わり、
-    既存コンテンツの更新はPUTが `Content is already exists. If you want update, please
-    use PATCH request.`（HTTP 400）で拒否されるようになったためPATCHに切替。"""
+    tools/reclassify_blog_articles.py の一括再分類・tools/rewrite_thin_blog_articles.py の
+    本文リライトで使う。以前はPATCH権限が無いAPIキーでも動くようPUTを使っていたが、
+    2026-08-14にAPIキーの権限が変わりPUTが「Content is already exists. If you want update,
+    please use PATCH request.」で拒否されるようになったため切り替えた。PATCHは差分更新のため、
+    呼び出し側は変更したいフィールドだけをpayloadに含めればよい（全フィールド送付でも問題ない）。"""
     try:
         working_payload = dict(payload)
         fixed_fields = set()
@@ -898,6 +898,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
             "tags": tags,
+            "filerName": filer_name,
         }
         if article.get("titleEn") and article.get("bodyEn"):
             payload["titleEn"] = article["titleEn"]

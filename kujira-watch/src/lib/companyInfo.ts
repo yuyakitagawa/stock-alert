@@ -2,6 +2,27 @@ import { getSupabaseServerClient } from "@/lib/supabase";
 
 export type PricePoint = { date: string; close: number };
 
+// 銘柄一覧ページの業種フィルター用。1リクエストで全銘柄分の業種をまとめて取得する。
+export async function getSectorsByCode(codes: string[]): Promise<Map<string, string>> {
+  if (codes.length === 0) return new Map();
+  try {
+    const supabase = getSupabaseServerClient();
+    const { data } = await supabase
+      .from("jpx_stock_list")
+      .select("code, sector")
+      .in("code", codes);
+
+    const bySector = new Map<string, string>();
+    for (const row of data ?? []) {
+      if (row.sector) bySector.set(row.code, row.sector);
+    }
+    return bySector;
+  } catch (error) {
+    console.error("[getSectorsByCode] 取得失敗", error);
+    return new Map();
+  }
+}
+
 export type CompanyInfo = {
   sector: string | null;
   description: string | null;

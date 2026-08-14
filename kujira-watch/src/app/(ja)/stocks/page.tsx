@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAllStocksForIndex } from "@/lib/microcms";
+import { getSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
@@ -17,8 +18,25 @@ export const metadata: Metadata = {
   openGraph: { title, description, url: `${SITE_URL}/stocks` },
 };
 
-export default async function StocksIndexPage() {
+type Props = {
+  searchParams: Promise<{ sector?: string }>;
+};
+
+export default async function StocksIndexPage({ searchParams }: Props) {
+  const { sector } = await searchParams;
   const stocks = await getAllStocksForIndex();
+  const sectorByCode = await getSectorsByCode(stocks.map((s) => s.stockCode));
+
+  const counts = new Map<string, number>();
+  for (const s of stocks) {
+    const sec = sectorByCode.get(s.stockCode);
+    if (sec) counts.set(sec, (counts.get(sec) ?? 0) + 1);
+  }
+  const sectors = Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, "ja"));
+  const selectedSector = sector && counts.has(sector) ? sector : null;
+  const visibleStocks = selectedSector
+    ? stocks.filter((s) => sectorByCode.get(s.stockCode) === selectedSector)
+    : stocks;
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -41,15 +59,44 @@ export default async function StocksIndexPage() {
         <span className="text-foreground/70">銘柄一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">銘柄一覧</h1>
-      <p className="mb-6 text-sm text-foreground/50">
+      <p className="mb-4 text-sm text-foreground/50">
         {SITE_NAME}が大量保有・自社株買いの動きを追跡している銘柄{stocks.length}件です。
         証券コード順に並んでいます。
       </p>
-      {stocks.length === 0 ? (
-        <p className="text-foreground/50">銘柄データがまだありません。</p>
+      {sectors.length > 0 && (
+        <nav aria-label="業種で絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <Link
+            href="/stocks"
+            className={
+              selectedSector === null
+                ? "font-bold text-brand-navy"
+                : "text-brand-navy/60 transition-colors hover:text-brand-navy"
+            }
+          >
+            すべて（{stocks.length}件）
+          </Link>
+          {sectors.map((sec) => (
+            <Link
+              key={sec}
+              href={`/stocks?sector=${encodeURIComponent(sec)}`}
+              className={
+                selectedSector === sec
+                  ? "font-bold text-brand-navy"
+                  : "text-brand-navy/60 transition-colors hover:text-brand-navy"
+              }
+            >
+              {sec}（{counts.get(sec)}件）
+            </Link>
+          ))}
+        </nav>
+      )}
+      {visibleStocks.length === 0 ? (
+        <p className="text-foreground/50">
+          {stocks.length === 0 ? "銘柄データがまだありません。" : "該当する銘柄がありません。"}
+        </p>
       ) : (
         <ul className="divide-y divide-rule/50 border-t border-rule">
-          {stocks.map((stock) => (
+          {visibleStocks.map((stock) => (
             <li key={stock.stockCode} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
               <Link
                 href={`/stocks/${stock.stockCode}`}
@@ -57,6 +104,9 @@ export default async function StocksIndexPage() {
               >
                 {stock.stockName}（{stock.stockCode}）
               </Link>
+              {sectorByCode.get(stock.stockCode) && (
+                <span className="text-xs text-foreground/40">{sectorByCode.get(stock.stockCode)}</span>
+              )}
               <span className="text-xs text-foreground/40">
                 記事{stock.articleCount}件・最終開示{formatDate(stock.latestDealDate)}
               </span>

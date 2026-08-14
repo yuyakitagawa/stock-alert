@@ -1,3 +1,4 @@
+import CategoryFilterDetails from "@/components/CategoryFilterDetails";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import { getArticleList, getFeaturedArticles } from "@/lib/microcms";
@@ -36,11 +37,12 @@ export default async function HomePage() {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
         />
       )}
-      <h1 className="sr-only">{SITE_NAME}｜新着記事</h1>
+      <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">今日の注目取引</h1>
       {contents.length === 0 ? (
         <p className="text-foreground/50">記事がまだありません。</p>
       ) : (
         <>
+          <CategoryFilterDetails />
           {featuredArticles.length > 0 && (
             <div className="mb-8 space-y-4">
               {featuredArticles.map((article, i) => (

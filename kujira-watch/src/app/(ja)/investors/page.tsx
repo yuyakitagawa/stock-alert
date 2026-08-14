@@ -4,6 +4,7 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import { getAllFilers } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { DEAL_TYPES, type DealType } from "@/types/article";
 
 export const revalidate = 3600;
 
@@ -18,8 +19,24 @@ export const metadata: Metadata = {
   openGraph: { title, description, url: `${SITE_URL}/investors` },
 };
 
-export default async function InvestorsPage() {
+type Props = {
+  searchParams: Promise<{ category?: string }>;
+};
+
+export default async function InvestorsPage({ searchParams }: Props) {
+  const { category } = await searchParams;
   const filers = await getAllFilers();
+
+  const counts = new Map<DealType, number>();
+  for (const filer of filers) {
+    counts.set(filer.category, (counts.get(filer.category) ?? 0) + 1);
+  }
+  const activeCategories = DEAL_TYPES.filter((c) => (counts.get(c) ?? 0) > 0);
+  const selectedCategory =
+    category && DEAL_TYPES.includes(category as DealType) ? (category as DealType) : null;
+  const visibleFilers = selectedCategory
+    ? filers.filter((f) => f.category === selectedCategory)
+    : filers;
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -42,15 +59,44 @@ export default async function InvestorsPage() {
         <span className="text-foreground/70">投資家一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">投資家一覧</h1>
-      <p className="mb-6 text-sm text-foreground/50">
+      <p className="mb-4 text-sm text-foreground/50">
         {SITE_NAME}がEDINET大量保有報告書から追跡している投資家（機関投資家・アクティビストファンド・
         創業家の資産管理会社など）{filers.length}件です。最終開示日が新しい順に並んでいます。
       </p>
-      {filers.length === 0 ? (
-        <p className="text-foreground/50">投資家データがまだありません。</p>
+      {filers.length > 0 && (
+        <nav aria-label="カテゴリで絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <Link
+            href="/investors"
+            className={
+              selectedCategory === null
+                ? "font-bold text-brand-navy"
+                : "text-brand-navy/60 transition-colors hover:text-brand-navy"
+            }
+          >
+            すべて（{filers.length}件）
+          </Link>
+          {activeCategories.map((c) => (
+            <Link
+              key={c}
+              href={`/investors?category=${encodeURIComponent(c)}`}
+              className={
+                selectedCategory === c
+                  ? "font-bold text-brand-navy"
+                  : "text-brand-navy/60 transition-colors hover:text-brand-navy"
+              }
+            >
+              {c}（{counts.get(c)}件）
+            </Link>
+          ))}
+        </nav>
+      )}
+      {visibleFilers.length === 0 ? (
+        <p className="text-foreground/50">
+          {filers.length === 0 ? "投資家データがまだありません。" : "該当する投資家がいません。"}
+        </p>
       ) : (
         <ul className="divide-y divide-rule/50 border-t border-rule">
-          {filers.map((filer) => (
+          {visibleFilers.map((filer) => (
             <li key={filer.filerName} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
               <Link
                 href={`/investors/${encodeURIComponent(filer.filerName)}`}

@@ -285,7 +285,8 @@ def test_publish_article_gives_up_when_same_field_fails_twice():
 
 def test_update_article_retries_as_array_on_type_mismatch():
     """update_article()（PATCH）もpublish_article()（POST）と同じ型不一致リトライを行う
-    （tools/reclassify_blog_articles.py の一括再分類で使う）。"""
+    （tools/reclassify_blog_articles.py の一括再分類・tools/rewrite_thin_blog_articles.py の
+    本文リライトで使う）。"""
     responses = [
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
         _FakeResponse(200, "", {"id": "content-1"}),

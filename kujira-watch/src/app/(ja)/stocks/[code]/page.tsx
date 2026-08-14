@@ -102,7 +102,7 @@ export default async function StockPage({ params }: Props) {
       {filers.length > 0 && (
         <div className="mb-8 border-t border-rule pt-4">
           <h2 className="mb-2 text-sm font-bold text-brand-navy">大量保有報告書の提出投資家</h2>
-          <ul className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+          <ul className="space-y-2 text-sm">
             {filers.map((filer) => (
               <li key={filer.filerName} className="flex items-center gap-2">
                 <Link

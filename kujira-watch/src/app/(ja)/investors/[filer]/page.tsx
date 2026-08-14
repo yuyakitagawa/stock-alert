@@ -47,6 +47,11 @@ export default async function InvestorPage({ params }: Props) {
   const url = `${SITE_URL}/investors/${filer}`;
   const category = classification?.category ?? "その他";
 
+  // holdingsはdisc_date降順のため、issuerCodeごとに最初に出現したもの(=最新の開示)を採用する。
+  const majorHoldings = Array.from(
+    new Map(holdings.map((h) => [h.issuerCode, h])).values()
+  );
+
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -101,10 +106,30 @@ export default async function InvestorPage({ params }: Props) {
           </p>
         </div>
       )}
-      <p className="mb-6 text-sm text-foreground/50">
-        EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
-        {holdings.length}件まとめています。個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
-      </p>
+      {majorHoldings.length > 0 && (
+        <div className="mb-8 border-t border-rule pt-4">
+          <h2 className="mb-2 text-sm font-bold text-brand-navy">主な保有銘柄</h2>
+          <ul className="space-y-2 text-sm">
+            {majorHoldings.map((h) => (
+              <li key={h.issuerCode}>
+                <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
+                  {h.issuerName}（{h.issuerCode}）
+                </Link>
+                {h.holdingRatio !== null && (
+                  <span className="ml-2 text-xs text-foreground/40">保有比率{h.holdingRatio}%</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="mb-6 border-t border-rule pt-4">
+        <h2 className="text-lg font-bold text-brand-navy">最近の取引</h2>
+        <p className="mt-1 text-sm text-foreground/50">
+          EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
+          {holdings.length}件まとめています。個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
+        </p>
+      </div>
       <div className="overflow-x-auto border-t border-rule">
         <table className="w-full text-left text-sm">
           <thead>

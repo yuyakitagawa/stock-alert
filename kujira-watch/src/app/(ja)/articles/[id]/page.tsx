@@ -193,6 +193,19 @@ export default async function ArticleDetailPage({ params }: Props) {
               {formatDealAmount(article.dealAmount)}
             </dd>
           </div>
+          {article.filerName && (
+            <div>
+              <dt className="kicker text-foreground/40">取引企業</dt>
+              <dd className="mt-1 font-medium">
+                <Link
+                  href={`/investors/${encodeURIComponent(article.filerName)}`}
+                  className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
+                >
+                  {article.filerName}
+                </Link>
+              </dd>
+            </div>
+          )}
           {article.sourceUrl && (
             <div>
               <dt className="kicker text-foreground/40">出典</dt>

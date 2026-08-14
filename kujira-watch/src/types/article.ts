@@ -64,6 +64,8 @@ export type Article = {
   sourceUrl?: string;
   tags?: string;
   eyecatch?: MicroCMSImage;
+  // 取引を行った投資家（提出者）名。過去記事には設定されていない場合がある。
+  filerName?: string;
 };
 
 export type ArticleContent = Article & MicroCMSListContent;
