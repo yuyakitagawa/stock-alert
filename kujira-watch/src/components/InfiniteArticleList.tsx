@@ -6,6 +6,7 @@ import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { UI, type Locale } from "@/lib/i18n";
 import ArticleCard from "./ArticleCard";
 import DealDateHeading from "./DealDateHeading";
+import DealDateSeeMoreLink from "./DealDateSeeMoreLink";
 
 export default function InfiniteArticleList({
   initialArticles,
@@ -66,12 +67,13 @@ export default function InfiniteArticleList({
     <>
       {groups.map((group) => (
         <div key={group.date} className="mb-8">
-          <DealDateHeading date={group.date} label={group.label} locale={locale} />
+          <DealDateHeading label={group.label} />
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {group.articles.map((article) => (
               <ArticleCard key={article.id} article={article} locale={locale} />
             ))}
           </div>
+          <DealDateSeeMoreLink date={group.date} locale={locale} />
         </div>
       ))}
       {hasMore && (

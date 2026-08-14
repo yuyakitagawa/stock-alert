@@ -4,11 +4,13 @@ import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import CompanyInfoCard from "@/components/CompanyInfoCard";
 import DealDateHeading from "@/components/DealDateHeading";
+import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
+import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 
 export const revalidate = 300;
 
@@ -18,13 +20,18 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code } = await params;
-  const { contents } = await getArticlesByStockCode(code, { translatedOnly: true });
+  const [{ contents }, companyInfo] = await Promise.all([
+    getArticlesByStockCode(code, { translatedOnly: true }),
+    getCompanyInfo(code),
+  ]);
   if (contents.length === 0) return {};
 
-  const t = UI.en;
   const stockName = contents[0].stockName;
   const title = `${stockName} (${code})`;
-  const description = t.stockHistoryDescription(contents.length);
+  const dealSummaryText = formatStockDealSummary(buildStockDealSummary(contents), stockName, code, "en");
+  const description = companyInfo?.description
+    ? `${companyInfo.description}. ${dealSummaryText}`
+    : dealSummaryText;
   const url = `${SITE_URL}/en/stocks/${code}`;
 
   return {
@@ -49,6 +56,7 @@ export default async function EnStockPage({ params }: Props) {
 
   const stockName = contents[0].stockName;
   const url = `${SITE_URL}/en/stocks/${code}`;
+  const dealSummary = buildStockDealSummary(contents);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -86,24 +94,28 @@ export default async function EnStockPage({ params }: Props) {
         {" / "}
         <span className="text-foreground/70">{stockName} ({code})</span>
       </nav>
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">
+      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${companyInfo?.description ? "mb-2" : "mb-6"}`}>
         {stockName} ({code})
       </h1>
+      {companyInfo?.description && (
+        <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>
+      )}
       {companyInfo && <CompanyInfoCard info={companyInfo} locale="en" />}
       <div className="mb-6">
         <h2 className="text-xl font-bold text-brand-navy">{t.stockHistoryHeading}</h2>
-        <p className="mt-1 text-sm text-foreground/50">
-          {t.stockHistoryDescription(contents.length)}
+        <p className="mt-1 text-sm text-foreground/80">
+          {formatStockDealSummary(dealSummary, stockName, code, "en")}
         </p>
       </div>
       {groupArticlesByDealDate(contents, "en").map((group) => (
         <div key={group.date} className="mb-8">
-          <DealDateHeading date={group.date} label={group.label} locale="en" />
+          <DealDateHeading label={group.label} />
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {group.articles.map((article) => (
               <ArticleCard key={article.id} article={article} locale="en" />
             ))}
           </div>
+          <DealDateSeeMoreLink date={group.date} locale="en" />
         </div>
       ))}
     </div>

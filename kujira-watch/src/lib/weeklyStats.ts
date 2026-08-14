@@ -11,11 +11,11 @@ export type WeeklySummary = {
   buyAmount: number;
   sellCount: number;
   sellAmount: number;
-  topCategories: CategoryBreakdown[];
+  // 開示があった投資家分類すべてを金額降順で返す（テーブル表示用。上位3件等への絞り込みは呼び出し側で行わない）。
+  categoryBreakdown: CategoryBreakdown[];
   topStocks: StockBreakdown[];
 };
 
-const TOP_CATEGORY_COUNT = 3;
 const TOP_STOCK_COUNT = 3;
 
 // /weeklyの「今週のポイント」向けに、件数・金額を買い/売り・投資家分類・銘柄の軸で集計する。
@@ -60,7 +60,7 @@ export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
     buyAmount,
     sellCount,
     sellAmount,
-    topCategories: [...categoryMap.values()].sort((a, b) => b.amount - a.amount).slice(0, TOP_CATEGORY_COUNT),
+    categoryBreakdown: [...categoryMap.values()].sort((a, b) => b.amount - a.amount),
     topStocks: [...stockMap.values()].sort((a, b) => b.amount - a.amount).slice(0, TOP_STOCK_COUNT),
   };
 }

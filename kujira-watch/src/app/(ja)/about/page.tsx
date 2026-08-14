@@ -83,7 +83,7 @@ export default async function AboutPage() {
           保有比率が1%以上増減した場合は変更報告書として再提出されます。{SITE_NAME}はこの公開情報を
           毎日追跡し、銘柄別・投資家分類別に整理して解説しています。直近の動きは
           <Link href="/weekly" className="text-brand-blue hover:underline">
-            「今週の動き」ページ
+            「今週のまとめ」ページ
           </Link>
           でまとめて確認できるほか、特定の投資家（ファンド）を軸に保有銘柄の推移を追いたい場合は
           <Link href="/investors" className="text-brand-blue hover:underline">

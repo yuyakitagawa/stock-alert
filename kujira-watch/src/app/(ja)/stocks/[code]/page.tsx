@@ -4,12 +4,14 @@ import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import CompanyInfoCard from "@/components/CompanyInfoCard";
 import DealDateHeading from "@/components/DealDateHeading";
+import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getFilersByStockCode } from "@/lib/investors";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 
 // 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次で更新するため、
 // microCMS記事(revalidate:60)とずれない範囲で定期的に再取得する。
@@ -21,15 +23,19 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code } = await params;
-  const [{ contents }, { contents: enContents }] = await Promise.all([
+  const [{ contents }, { contents: enContents }, companyInfo] = await Promise.all([
     getArticlesByStockCode(code),
     getArticlesByStockCode(code, { translatedOnly: true }),
+    getCompanyInfo(code),
   ]);
   if (contents.length === 0) return {};
 
   const stockName = contents[0].stockName;
   const title = `${stockName}（${code}）`;
-  const description = `${stockName}（${code}）に関する機関投資家・インサイダー・自社株買いなど「クジラ」の動きをまとめました。全${contents.length}件。`;
+  const dealSummaryText = formatStockDealSummary(buildStockDealSummary(contents), stockName, code);
+  const description = companyInfo?.description
+    ? `${companyInfo.description}。${dealSummaryText}`
+    : dealSummaryText;
   const url = `${SITE_URL}/stocks/${code}`;
   const hasEn = enContents.length > 0;
 
@@ -58,6 +64,7 @@ export default async function StockPage({ params }: Props) {
 
   const stockName = contents[0].stockName;
   const url = `${SITE_URL}/stocks/${code}`;
+  const dealSummary = buildStockDealSummary(contents);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -95,9 +102,12 @@ export default async function StockPage({ params }: Props) {
         {" / "}
         <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">
+      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${companyInfo?.description ? "mb-2" : "mb-6"}`}>
         {stockName}（{code}）
       </h1>
+      {companyInfo?.description && (
+        <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>
+      )}
       {companyInfo && <CompanyInfoCard info={companyInfo} />}
       {filers.length > 0 && (
         <div className="mb-8 border-t border-rule pt-4">
@@ -119,18 +129,19 @@ export default async function StockPage({ params }: Props) {
       )}
       <div className="mb-6">
         <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
-        <p className="mt-1 text-sm text-foreground/50">
-          機関投資家・インサイダー・自社株買いなど、この銘柄に関する「クジラ」の動きを{contents.length}件まとめています。
+        <p className="mt-1 text-sm text-foreground/80">
+          {formatStockDealSummary(dealSummary, stockName, code)}
         </p>
       </div>
       {groupArticlesByDealDate(contents).map((group) => (
         <div key={group.date} className="mb-8">
-          <DealDateHeading date={group.date} label={group.label} />
+          <DealDateHeading label={group.label} />
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {group.articles.map((article) => (
               <ArticleCard key={article.id} article={article} />
             ))}
           </div>
+          <DealDateSeeMoreLink date={group.date} />
         </div>
       ))}
     </div>

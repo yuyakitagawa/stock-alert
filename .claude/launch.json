@@ -48,6 +48,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "kujira-watch"],
       "port": 3002
+    },
+    {
+      "name": "KujiraWatch (alt port)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "kujira-watch", "--", "-p", "3009"],
+      "port": 3009
     }
   ]
 }

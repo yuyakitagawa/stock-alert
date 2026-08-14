@@ -20,12 +20,10 @@ export default function VisitCounter({ locale = "ja" }: { locale?: Locale }) {
       });
   }, []);
 
-  if (count === null) return null;
-
   return (
-    <p className="font-mono text-[11px] tracking-wider text-foreground/40">
+    <p className="font-mono text-[11px] tracking-wider text-foreground/40 tabular-nums" aria-hidden={count === null}>
       {t.totalVisitsLabel}
-      {count.toLocaleString(locale === "en" ? "en-US" : "ja-JP")}
+      {count !== null ? count.toLocaleString(locale === "en" ? "en-US" : "ja-JP") : "…"}
     </p>
   );
 }

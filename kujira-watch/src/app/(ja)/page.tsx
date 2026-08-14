@@ -42,7 +42,6 @@ export default async function HomePage() {
         <p className="text-foreground/50">記事がまだありません。</p>
       ) : (
         <>
-          <CategoryFilterDetails />
           {featuredArticles.length > 0 && (
             <div className="mb-8 space-y-4">
               {featuredArticles.map((article, i) => (
@@ -50,6 +49,8 @@ export default async function HomePage() {
               ))}
             </div>
           )}
+          <h2 className="mb-4 text-xl font-bold text-brand-navy">今日の取引</h2>
+          <CategoryFilterDetails />
           <InfiniteArticleList
             initialArticles={contents}
             totalCount={totalCount}

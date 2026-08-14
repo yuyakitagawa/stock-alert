@@ -59,11 +59,16 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
 
   const siteLinks: MenuLink[] =
     locale === "en"
-      ? [{ href: "/en/about", label: t.aboutMenuLabel }]
+      ? [
+          { href: "/en", label: "Top" },
+          { href: "/en/about", label: t.aboutMenuLabel },
+        ]
       : [
-          { href: "/weekly", label: "今週の動き" },
-          { href: "/investors", label: "大口投資家一覧" },
-          { href: "/stocks", label: "株式銘柄一覧" },
+          { href: "/", label: "TOP" },
+          { href: "/weekly", label: "今週のまとめ" },
+          { href: "/ranking", label: "投資家勝率ランキング" },
+          { href: "/investors", label: "投資家一覧" },
+          { href: "/stocks", label: "銘柄一覧" },
           { href: "/about", label: "運営者情報・免責事項" },
           { href: "/faq", label: "よくある質問" },
           { href: "/feed.xml", label: "RSSフィード" },
@@ -174,9 +179,9 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
         </nav>
 
         <p className="kicker bg-section-tint px-4 py-1.5 text-brand-navy/60">
-          {locale === "en" ? "About This Site" : "サイトについて"}
+          {locale === "en" ? "Menu" : "メニュー"}
         </p>
-        <nav aria-label={locale === "en" ? "About this site" : "サイトについて"} className="border-b border-rule">
+        <nav aria-label={locale === "en" ? "Menu" : "メニュー"} className="border-b border-rule">
           {siteLinks.map((link) => (
             <Link
               key={link.href}

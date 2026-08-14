@@ -40,28 +40,36 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
           className="no-scrollbar kicker flex flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto border-t border-rule pt-2 text-brand-navy/70 sm:flex-wrap sm:overflow-visible"
         >
           {locale === "en" ? (
-            DEAL_TYPES.map((dealType) => (
-              <Link
-                key={dealType}
-                href={`/en/category/${DEAL_TYPE_EN[dealType].slug}`}
-                className="shrink-0 transition-colors hover:text-brand-navy"
-              >
-                {DEAL_TYPE_EN[dealType].label}
+            <>
+              <Link href="/en" className="shrink-0 transition-colors hover:text-brand-navy">
+                Top
               </Link>
-            ))
+              {DEAL_TYPES.map((dealType) => (
+                <Link
+                  key={dealType}
+                  href={`/en/category/${DEAL_TYPE_EN[dealType].slug}`}
+                  className="shrink-0 transition-colors hover:text-brand-navy"
+                >
+                  {DEAL_TYPE_EN[dealType].label}
+                </Link>
+              ))}
+            </>
           ) : (
             <>
-              <Link href="/weekly" className="shrink-0 text-brand-gold transition-colors hover:text-brand-navy">
-                今週の動き
+              <Link href="/" className="shrink-0 transition-colors hover:text-brand-navy">
+                TOP
               </Link>
-              <Link href="/investors" className="shrink-0 transition-colors hover:text-brand-navy">
-                大口投資家一覧
+              <Link href="/weekly" className="shrink-0 text-brand-gold transition-colors hover:text-brand-navy">
+                今週のまとめ
               </Link>
               <Link href="/ranking" className="shrink-0 transition-colors hover:text-brand-navy">
-                投資家別勝率ランキング
+                投資家勝率ランキング
+              </Link>
+              <Link href="/investors" className="shrink-0 transition-colors hover:text-brand-navy">
+                投資家一覧
               </Link>
               <Link href="/stocks" className="shrink-0 transition-colors hover:text-brand-navy">
-                株式銘柄一覧
+                銘柄一覧
               </Link>
             </>
           )}

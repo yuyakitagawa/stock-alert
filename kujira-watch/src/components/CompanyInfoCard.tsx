@@ -94,16 +94,10 @@ export default function CompanyInfoCard({ info, locale = "ja" }: { info: Company
     value: info.hasYutai ? t.companyYutaiYes(info.yutaiMonth) : t.companyYutaiNo,
   });
 
-  if (stats.length === 0 && info.priceHistory.length < 2 && !info.description) return null;
+  if (stats.length === 0 && info.priceHistory.length < 2) return null;
 
   return (
     <div className="mb-6 border border-rule bg-paper p-4 sm:p-5">
-      {info.description && (
-        <div className="mb-4">
-          <dt className="kicker text-foreground/40">{t.companyDescriptionLabel}</dt>
-          <dd className="mt-0.5 text-sm text-foreground/80">{info.description}</dd>
-        </div>
-      )}
       <PriceChart history={info.priceHistory} locale={locale} />
       {stats.length > 0 && (
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">

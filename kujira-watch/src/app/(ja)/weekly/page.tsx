@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { getRecentArticles } from "@/lib/microcms";
+import { getPreviousPeriodArticles, getRecentArticles } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { formatDate, formatDealAmount } from "@/lib/format";
 import { buildWeeklySummary } from "@/lib/weeklyStats";
@@ -16,6 +16,10 @@ const WINDOW_DAYS = 7;
 // 一覧を全件カード表示すると縦に長くなりすぎるため、金額規模が大きい上位3件のみ
 // 「注目」として本文付きで見せ、残りは取引日ごとに/date/[date]へのリンクへ集約する。
 const FEATURED_COUNT = 3;
+
+function formatSigned(value: number, unit: string): string {
+  return `${value >= 0 ? "+" : ""}${value.toLocaleString("ja-JP")}${unit}`;
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const { contents } = await getRecentArticles(WINDOW_DAYS);
@@ -32,16 +36,30 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function WeeklyDigestPage() {
-  const { contents } = await getRecentArticles(WINDOW_DAYS);
+  const [{ contents }, { contents: previousContents }] = await Promise.all([
+    getRecentArticles(WINDOW_DAYS),
+    getPreviousPeriodArticles(WINDOW_DAYS),
+  ]);
   const url = `${SITE_URL}/weekly`;
 
   const oldestDate = contents.length > 0 ? contents[contents.length - 1].dealDate : null;
   const newestDate = contents.length > 0 ? contents[0].dealDate : null;
   const summary = buildWeeklySummary(contents);
+  const previousSummary = buildWeeklySummary(previousContents);
+  const countDelta = summary.totalCount - previousSummary.totalCount;
+  const amountDelta = summary.totalAmount - previousSummary.totalAmount;
+  const amountDeltaPct = previousSummary.totalAmount > 0 ? (amountDelta / previousSummary.totalAmount) * 100 : null;
   const netAmount = summary.buyAmount - summary.sellAmount;
   const netLabel = netAmount >= 0 ? "買い越し" : "売り越し";
   const featured = [...contents].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, FEATURED_COUNT);
   const dateGroups = groupArticlesByDealDate(contents);
+  const dateGroupMap = new Map(dateGroups.map((g) => [g.date, g]));
+  // 開示が無い日も含めて直近7日分を並べる（dateGroupsは開示があった日しか持たないため）。
+  const last7Dates = Array.from({ length: WINDOW_DAYS }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    return d.toISOString().slice(0, 10);
+  });
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -92,13 +110,38 @@ export default async function WeeklyDigestPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の動き（直近7日間）</h1>
         {contents.length > 0 && oldestDate && newestDate ? (
-          <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-            {SITE_NAME}がEDINET大量保有報告書をもとに集計した、{formatDate(oldestDate)}〜
-            {formatDate(newestDate)}の大口投資家（クジラ）の動きです。この期間に{summary.totalCount}
-            件の大量保有・変更報告書が開示され、推定取引金額の合計は約
-            {formatDealAmount(summary.totalAmount)}でした（取得・売却双方向を合算した規模で、
-            資金の純流入額ではありません）。
-          </p>
+          <>
+            <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+              {SITE_NAME}がEDINET大量保有報告書をもとに集計した、{formatDate(oldestDate)}〜
+              {formatDate(newestDate)}の大口投資家（クジラ）の動きです。
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <div className="border-l-4 border-brand-gold bg-section-tint p-4">
+                <p className="kicker text-foreground/50">開示件数</p>
+                <p className="mt-1 text-3xl font-bold text-brand-navy">
+                  {summary.totalCount}
+                  <span className="ml-0.5 text-base font-normal">件</span>
+                </p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  先週比 {formatSigned(countDelta, "件")}（先週{previousSummary.totalCount}件）
+                </p>
+              </div>
+              <div className="border-l-4 border-brand-gold bg-section-tint p-4">
+                <p className="kicker text-foreground/50">推定取引金額</p>
+                <p className="mt-1 text-3xl font-bold text-brand-navy">{formatDealAmount(summary.totalAmount)}</p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  先週比{" "}
+                  {amountDeltaPct !== null
+                    ? formatSigned(Number(amountDeltaPct.toFixed(1)), "%")
+                    : formatSigned(amountDelta, "億円")}
+                  （先週{formatDealAmount(previousSummary.totalAmount)}）
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-foreground/50">
+              ※推定取引金額は取得・売却双方向を合算した規模で、資金の純流入額ではありません。
+            </p>
+          </>
         ) : (
           <p className="mt-3 text-sm leading-relaxed text-foreground/70">
             直近{WINDOW_DAYS}日間はEDINET大量保有報告書の新規開示がありませんでした。
@@ -112,56 +155,67 @@ export default async function WeeklyDigestPage() {
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div className="bg-section-tint p-4">
               <p className="kicker text-foreground/50">買い</p>
-              <p className="mt-1 text-xl font-bold text-brand-navy">{summary.buyCount}件</p>
-              <p className="mt-0.5 text-sm text-foreground/60">{formatDealAmount(summary.buyAmount)}</p>
+              <p className="mt-1 text-2xl font-bold text-brand-navy">{formatDealAmount(summary.buyAmount)}</p>
+              <p className="mt-0.5 text-sm text-foreground/60">{summary.buyCount}件</p>
             </div>
             <div className="bg-section-tint p-4">
               <p className="kicker text-foreground/50">売り</p>
-              <p className="mt-1 text-xl font-bold text-brand-navy">{summary.sellCount}件</p>
-              <p className="mt-0.5 text-sm text-foreground/60">{formatDealAmount(summary.sellAmount)}</p>
+              <p className="mt-1 text-2xl font-bold text-brand-navy">{formatDealAmount(summary.sellAmount)}</p>
+              <p className="mt-0.5 text-sm text-foreground/60">{summary.sellCount}件</p>
             </div>
           </div>
           <p className="mt-4 text-sm leading-relaxed text-foreground/70">
             金額ベースでは買いが{formatDealAmount(summary.buyAmount)}、売りが
             {formatDealAmount(summary.sellAmount)}で、差し引き{formatDealAmount(Math.abs(netAmount))}の
             {netLabel}でした（複数の開示を合算した推定値のため、実際の資金フローとは異なります）。
-            {summary.topCategories.length > 0 && (
-              <>
-                取引額で最も存在感が大きかった投資家分類は
-                {summary.topCategories.map((c, i) => (
-                  <span key={c.dealType}>
-                    {i > 0 && "、"}
-                    <span title={DEAL_TYPE_DESCRIPTIONS[c.dealType]} className="font-bold text-brand-navy">
-                      {c.dealType}
-                    </span>
-                    （{c.count}件・{formatDealAmount(c.amount)}）
-                  </span>
-                ))}
-                でした。
-              </>
-            )}
-            {summary.topStocks.length > 0 && (
-              <>
-                個別銘柄では
-                {summary.topStocks.map((s, i) => (
-                  <span key={s.stockCode}>
-                    {i > 0 && "、"}
-                    <Link href={`/stocks/${s.stockCode}`} className="font-bold text-brand-blue hover:underline">
-                      {s.stockName}（{s.stockCode}）
-                    </Link>
-                    （{s.count}件・{formatDealAmount(s.amount)}）
-                  </span>
-                ))}
-                への開示が目立ちました。
-              </>
-            )}
           </p>
+
+          {summary.categoryBreakdown.length > 0 && (
+            <div className="mt-6 overflow-x-auto">
+              <p className="kicker mb-2 text-foreground/50">投資家分類別の内訳</p>
+              <table className="w-full min-w-[420px] text-sm">
+                <thead>
+                  <tr className="border-b border-rule text-left text-foreground/50">
+                    <th className="py-2 font-normal">投資家分類</th>
+                    <th className="py-2 text-right font-normal">件数</th>
+                    <th className="py-2 text-right font-normal">推定金額</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.categoryBreakdown.map((c) => (
+                    <tr key={c.dealType} className="border-b border-rule/60">
+                      <td className="py-2 text-brand-navy" title={DEAL_TYPE_DESCRIPTIONS[c.dealType]}>
+                        {c.dealType}
+                      </td>
+                      <td className="py-2 text-right text-foreground/70">{c.count}件</td>
+                      <td className="py-2 text-right font-bold text-brand-navy">{formatDealAmount(c.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 
       {featured.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-4 text-lg font-bold text-brand-navy">注目の取引</h2>
+          <h2 className="mb-2 text-lg font-bold text-brand-navy">注目の取引</h2>
+          {summary.topStocks.length > 0 && (
+            <p className="mb-4 text-sm leading-relaxed text-foreground/70">
+              個別銘柄では
+              {summary.topStocks.map((s, i) => (
+                <span key={s.stockCode}>
+                  {i > 0 && "、"}
+                  <Link href={`/stocks/${s.stockCode}`} className="font-bold text-brand-blue hover:underline">
+                    {s.stockName}（{s.stockCode}）
+                  </Link>
+                  （{s.count}件・{formatDealAmount(s.amount)}）
+                </span>
+              ))}
+              への開示が目立ちました。
+            </p>
+          )}
           <div className="space-y-4">
             {featured.map((article, i) => (
               <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
@@ -170,20 +224,32 @@ export default async function WeeklyDigestPage() {
         </section>
       )}
 
-      {dateGroups.length > 0 && (
+      {contents.length > 0 && (
         <section>
           <h2 className="mb-2 text-lg font-bold text-brand-navy">日別の記事一覧</h2>
           <div className="divide-y divide-rule border-y border-rule">
-            {dateGroups.map((group) => {
+            {last7Dates.map((date) => {
+              const group = dateGroupMap.get(date);
+              const label = group?.label ?? formatDate(date);
+              if (!group) {
+                return (
+                  <div key={date} className="flex items-center justify-between gap-4 py-4 text-foreground/40">
+                    <div>
+                      <p className="font-bold">{label}</p>
+                      <p className="mt-0.5 text-sm">開示なし</p>
+                    </div>
+                  </div>
+                );
+              }
               const dayAmount = group.articles.reduce((sum, a) => sum + a.dealAmount, 0);
               return (
                 <Link
-                  key={group.date}
-                  href={`/date/${group.date}`}
+                  key={date}
+                  href={`/date/${date}`}
                   className="group flex items-center justify-between gap-4 py-4 transition-colors hover:bg-section-tint"
                 >
                   <div>
-                    <p className="font-bold text-brand-navy">{group.label}</p>
+                    <p className="font-bold text-brand-navy">{label}</p>
                     <p className="mt-0.5 text-sm text-foreground/60">
                       {group.articles.length}件・{formatDealAmount(dayAmount)}
                     </p>

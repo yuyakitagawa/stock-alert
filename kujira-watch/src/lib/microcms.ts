@@ -25,6 +25,26 @@ function normalizeDealType<T extends { dealType: unknown }>(article: T): T {
   };
 }
 
+// microCMSの1リクエストあたりの取得上限は100件（APIの仕様）。/weeklyの週間集計は
+// 週によっては100件を超える（実測で直近週196件）ため、上限に達したらoffsetページネーションで
+// 追加取得し、範囲内の全件を取りこぼさないようにする。
+const MAX_PAGE_SIZE = 100;
+async function fetchAllArticlesByFilter(filters: string): Promise<ArticleContent[]> {
+  const all: ArticleContent[] = [];
+  let offset = 0;
+  for (;;) {
+    const result = await client.getList<Article>({
+      endpoint: "articles",
+      queries: { filters, orders: "-dealDate,-dealAmount", limit: MAX_PAGE_SIZE, offset },
+      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+    });
+    all.push(...result.contents.map(normalizeDealType));
+    offset += MAX_PAGE_SIZE;
+    if (result.contents.length < MAX_PAGE_SIZE || offset >= (result.totalCount ?? offset)) break;
+  }
+  return all;
+}
+
 // microCMSの`titleEn[exists]true`フィルタは実データがあってもヒットしない既知不具合が
 // あるため（2026-08-14確認、begins_with等の他演算子は正常に動く一方でexistsだけ0件を返す。
 // 原因はmicroCMS側未特定）、EN側の絞り込みはこのフィルタに頼らず、dealType等の
@@ -143,21 +163,34 @@ export async function getArticleDetail(id: string) {
   return normalizeDealType(article);
 }
 
+// 注意: `dealDate[greater_than]YYYY-MM-DD`は日付のみのフィルタ値がJSTとして解釈される
+// らしく（dealDateは常にUTC深夜0時で保存）、境界日当日のdealDateも含まれる（実機検証で
+// 確認済み: greater_than当日 = equalsした場合と同じ件数がヒットする）。一方`less_than`は
+// 境界日当日を含まない。そのため「直近days日間」を暦日ベースでdays日ぴったりにするには、
+// カットオフを`days`日前ではなく`days - 1`日前にする必要がある。
 export async function getRecentArticles(days: number) {
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
-  const result = await client.getList<Article>({
-    endpoint: "articles",
-    queries: {
-      filters: `dealDate[greater_than]${cutoffDate}`,
-      orders: "-dealDate,-dealAmount",
-      limit: 100,
-    },
-    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-  });
-  return { ...result, contents: result.contents.map(normalizeDealType) };
+  const contents = await fetchAllArticlesByFilter(`dealDate[greater_than]${cutoffDate}`);
+  return { contents };
+}
+
+// /weeklyの「先週比」用。getRecentArticles(days)が取得する直近days暦日の直前・
+// 同じ日数分の期間を取得する（境界の扱いはgetRecentArticles上部の注意書きを参照）。
+export async function getPreviousPeriodArticles(days: number) {
+  const from = new Date();
+  from.setDate(from.getDate() - (days * 2 - 1));
+  const fromDate = from.toISOString().slice(0, 10);
+  const to = new Date();
+  to.setDate(to.getDate() - (days - 1));
+  const toDate = to.toISOString().slice(0, 10);
+
+  const contents = await fetchAllArticlesByFilter(
+    `dealDate[greater_than]${fromDate}[and]dealDate[less_than]${toDate}`
+  );
+  return { contents };
 }
 
 export type StockSearchResult = { stockCode: string; stockName: string };
