@@ -18,6 +18,7 @@ Usage:
   python3 tools/translate_blog_articles_en.py                     # 全件処理
 """
 import os
+import re
 import sys
 import json
 import time
@@ -72,14 +73,24 @@ def fetch_untranslated_articles(limit: "int | None" = None) -> list[dict]:
     return articles
 
 
+_CHART_FIGURE_RE = re.compile(r"<figure>.*?</figure>\s*$", re.S)
+
+
 def translate_article(title: str, body: str) -> "dict | None":
     """日本語のtitle/bodyを英訳したtitleEn/bodyEnをJSONで返す。パース失敗時はNone。
     事実の追加・削除はせず翻訳のみ行わせる（generate_article_body()と同じ「※推測:」規約を
-    "*Speculation:"に対応づける）。"""
+    "*Speculation:"に対応づける）。末尾の<figure><img>株価チャートは翻訳対象外の画像タグで、
+    src/alt属性の引用符が入れ子になりJSON出力を壊すことがあるため、翻訳前に切り離して
+    そのままbodyEnに付け戻す（画像・alt文言自体は言語に依存しないので翻訳不要）。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
         return None
+
+    chart_match = _CHART_FIGURE_RE.search(body)
+    chart_html = chart_match.group(0) if chart_match else ""
+    body_without_chart = body[: chart_match.start()] if chart_match else body
+
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     prompt = f"""以下は日本株の大量保有報告書に基づくブログ記事（日本語）です。
 事実を追加・削除・変更せず、自然な英語（投資ニュース記事のトーン、直訳調は避ける）に翻訳してください。
@@ -87,7 +98,7 @@ def translate_article(title: str, body: str) -> "dict | None":
 「※推測:」で始まる文がある場合は "*Speculation:" という接頭辞に置き換えてください。
 
 タイトル: {title}
-本文: {body}
+本文: {body_without_chart}
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
 {{"titleEn": "英訳タイトル", "bodyEn": "<p>...</p>形式の英訳本文"}}
@@ -105,6 +116,8 @@ def translate_article(title: str, body: str) -> "dict | None":
         data = json.loads(text)
         if not data.get("titleEn") or not data.get("bodyEn"):
             return None
+        if chart_html:
+            data["bodyEn"] = data["bodyEn"] + chart_html
         return data
     except Exception as e:
         print(f"    ⚠ 翻訳失敗: {e}")
