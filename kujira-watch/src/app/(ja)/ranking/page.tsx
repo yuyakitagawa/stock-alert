@@ -4,8 +4,8 @@ import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import { getFilerWinRates } from "@/lib/investors";
-import { formatDate } from "@/lib/format";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { displayFilerName, formatAmountParts, formatDate } from "@/lib/format";
+import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 
@@ -23,7 +23,9 @@ const description =
 
 function formatOku(value: number): string {
   const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}億円`;
+  // 「+107,900.0億円」は桁が読み取れないため、1兆円以上は兆円へ繰り上げる。
+  const { value: amount, unit } = formatAmountParts(value, 1);
+  return `${sign}${amount}${unit}`;
 }
 
 export const metadata: Metadata = {
@@ -174,7 +176,7 @@ export default async function RankingPage({ searchParams }: Props) {
                   className="font-medium text-brand-blue hover:underline"
                   style={{ overflowWrap: "anywhere" }}
                 >
-                  {f.filerName}
+                  {displayFilerName(f.filerName)}
                 </Link>
                 <Box sx={{ mt: 0.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
                   <DealTypeBadge dealType={f.category} />

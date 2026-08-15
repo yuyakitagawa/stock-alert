@@ -39,6 +39,46 @@ export function formatDealAmount(amount: number, locale: Locale = "ja"): string 
   return `${amount.toLocaleString("ja-JP")}億円`;
 }
 
+// 億円単位の金額を表示用に「数字」と「単位」へ分ける。1兆円(1万億円)以上は兆円へ繰り上げ、
+// 「+107,900.0億円」のような桁読みできない表記を避ける（/ranking・/weeklyの集計値用。
+// 記事単体のdealAmountは兆に届かないためformatDealAmountのまま）。
+export function formatAmountParts(
+  amountOku: number,
+  fractionDigits = 0
+): { value: string; unit: "億円" | "兆円" } {
+  if (Math.abs(amountOku) >= 10000) {
+    return {
+      value: (amountOku / 10000).toLocaleString("ja-JP", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }),
+      unit: "兆円",
+    };
+  }
+  return {
+    value: amountOku.toLocaleString("ja-JP", {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }),
+    unit: "億円",
+  };
+}
+
+// EDINETの提出者名は英数字が全角（例:「ＢＣＰＥ　Ｐａｎｇｅａ　Ｃａｙｍａｎ，　Ｌ．Ｐ．」）で
+// 登録されており、そのままでは読みにくい。表示専用に全角英数字と英文文脈の記号だけ半角へ寄せる。
+// リンクhref・DB照合・JSON-LD・metadataは原文のまま使うこと（照合が壊れるため）。
+// 日本語の句読点・中黒・全角括弧は変換しない。
+export function displayFilerName(name: string): string {
+  return name
+    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/　/g, " ")
+    .replace(/．/g, ".")
+    .replace(/，/g, ",")
+    .replace(/＆/g, "&")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
 export function excerptFromHtml(html: string, maxLength = 120): string {
   const text = html
     .replace(/<[^>]+>/g, "")

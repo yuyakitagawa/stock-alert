@@ -935,3 +935,25 @@ MUI除去は真っ向から対立していた（試しにマージすると11フ
 - レビュー手順は Playwright スクリーンショット（375px/1280px × ja/en）による目視必須。報告は P1/P2/P3 の優先度付きフォーマット。
 - Think Small 原則: 大規模リデザインは提案せず、既存デザインシステム内での調整に限定。実装はユーザー依頼時のみ。
 - モデル・パイプラインのコード変更なし（ドキュメント/スキルのみ。バックテスト対象外）。
+
+## 2026-08-15 kujira-watch: デザインコンサルレビューと改善（design-consultスキル初回実行）
+
+外部ネットワーク遮断環境のため、本番Supabaseの実データ抜粋＋microCMS/PostgREST互換モックで
+ローカル再現し、Playwrightで375px/1280px × ja/en 全主要ページを目視監査（モックはscratchpadのみ、
+コミット対象外）。レビュー詳細は `kujira-watch/docs/progress_design_consult.md`。
+
+### P1（可読性の実害）
+- 注目カード: アイキャッチ焼き込みテキストとカード文字の二重表示 → 画像opacity 0.5＋スクリム強化
+- 注目カード上の分類/売りバッジがダーク地で沈む → `onDark` プロパティ追加（文字白・色はドットのみ）
+- モバイルヘッダーで「クジラウォッチ」が3行折返し → ロゴnowrap＋訪問者数カウンターをsm以上のみに
+- 記事詳細で分類バッジが二重（DealTypeBadge＋CategoryBadge同一ラベル）→ リンク付きChipへ一本化(ja/en)
+
+### P2（一貫性・洗練）
+- /rankingの「+107,900.0億円」→ 1兆円以上は兆円へ繰り上げ（`formatAmountParts`、/weeklyタイルと共用）
+- EDINET全角英数名（ＢＣＰＥ　Ｐａｎｇｅａ…）→ 表示専用 `displayFilerName()`（href/DB照合は原文維持）を
+  ranking/investors一覧・詳細/trending/記事メタに適用
+- /weekly金額タイルの数字折返し → 数字+単位分離＋レスポンシブfontSizeで左タイルと構造統一
+- 投資家一覧の行レイアウト揺れ → 名前/メタの2行構造に統一
+
+検証: `npx tsc --noEmit`・eslint（変更12ファイル）クリーン、全主要ルート200、
+修正後スクリーンショットで before/after 目視確認済み。Python側パイプラインへの変更なし。

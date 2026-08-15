@@ -3,7 +3,7 @@ import Link from "next/link";
 import DealTypeLabel from "@/components/DealTypeLabel";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import { getAllFilers } from "@/lib/investors";
-import { formatDate } from "@/lib/format";
+import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -118,20 +118,21 @@ export default async function InvestorsPage({ searchParams }: Props) {
            素のul/liにしている。MUI版はHTMLが1.5MBまで膨らみTTFBが約1.9秒だった。 */
         <ul className="border-t border-rule">
           {visibleFilers.map((filer) => (
-            <li
-              key={filer.filerName}
-              className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-rule py-3"
-            >
+            /* 1行目=名前 / 2行目=分類+開示メタ の2行構造。flex-wrap任せだと名前の長さで
+               分類ラベルの位置が行ごとに揺れて一覧が読みにくかった。 */
+            <li key={filer.filerName} className="border-b border-rule py-3">
               <Link
                 href={`/investors/${encodeURIComponent(filer.filerName)}`}
                 className="font-medium text-brand-blue hover:underline"
               >
-                {filer.filerName}
+                {displayFilerName(filer.filerName)}
               </Link>
-              <DealTypeLabel dealType={filer.category} />
-              <span className="text-xs text-foreground/50">
-                保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
-              </span>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <DealTypeLabel dealType={filer.category} />
+                <span className="text-xs text-foreground/50">
+                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                </span>
+              </div>
             </li>
           ))}
         </ul>

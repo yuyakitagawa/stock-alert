@@ -10,7 +10,7 @@ import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { docTypeLabel, getFilerClassification, getFilerHoldings } from "@/lib/investors";
-import { formatDate } from "@/lib/format";
+import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
@@ -96,9 +96,9 @@ export default async function InvestorPage({ params }: Props) {
         {" / "}
         <Link href="/investors" className="hover:text-brand-blue">投資家一覧</Link>
         {" / "}
-        <span className="text-foreground/70">{filerName}</span>
+        <span className="text-foreground/70">{displayFilerName(filerName)}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{filerName}</h1>
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{displayFilerName(filerName)}</h1>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <DealTypeBadge dealType={category} />
         {classification?.description && (
@@ -107,7 +107,7 @@ export default async function InvestorPage({ params }: Props) {
       </div>
       {classification?.profile && (
         <div className="mb-8 border-t border-rule pt-4">
-          <h2 className="mb-2 text-sm font-bold text-brand-navy">{filerName}について</h2>
+          <h2 className="mb-2 text-sm font-bold text-brand-navy">{displayFilerName(filerName)}について</h2>
           <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/70">
             {classification.profile}
           </p>

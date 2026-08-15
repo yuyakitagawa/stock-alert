@@ -6,7 +6,7 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import { formatDate } from "@/lib/format";
+import { displayFilerName, formatDate } from "@/lib/format";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getHoldingsInRange } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -64,10 +64,10 @@ function TrendingTable({
                 <TableCell>
                   {href ? (
                     <Link href={href} className="text-brand-blue hover:underline">
-                      {entry.label}
+                      {displayFilerName(entry.label)}
                     </Link>
                   ) : (
-                    <span className="text-foreground/80">{entry.label}</span>
+                    <span className="text-foreground/80">{displayFilerName(entry.label)}</span>
                   )}
                   {entry.isNew && (
                     <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>

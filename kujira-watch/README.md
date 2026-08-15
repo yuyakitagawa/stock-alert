@@ -126,7 +126,7 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 
 ## 計測・ログ
 
-- **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
+- **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側、モバイル幅ではロゴの1行表示を優先して非表示・sm以上のみ）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
@@ -177,7 +177,7 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 
 ## コンテンツの自動生成（任意）
 
-リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（保有比率が増加する取得＝買い方向、減少する譲渡・売却＝売り方向の双方）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得・売却金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。売り方向の記事は`tags`に`"売り"`を追加して買いと区別する（microCMSのセレクトフィールド追加を避け、既存の自由記述`tags`フィールドを流用）。フロント側は`src/lib/format.ts`の`isSellArticle()`が`tags`から判定し、`src/components/DealDirectionBadge.tsx`が`DealTypeBadge`の隣に「売り」バッジを表示する（買い方向の記事にはバッジを出さない）。
+リポジトリルートの `web/publish_blog_articles.py` が、EDINET大量保有報告書（保有比率が増加する取得＝買い方向、減少する譲渡・売却＝売り方向の双方）を基にClaudeで解説記事を生成し、このAPIへ即時投稿する（GitHub Actions `daily_alert.yml` Step 5c、日次）。取得・売却金額(億円)はyfinanceの発行済株式数×株価×保有比率変化からの推定値であることを本文に明記させている。売り方向の記事は`tags`に`"売り"`を追加して買いと区別する（microCMSのセレクトフィールド追加を避け、既存の自由記述`tags`フィールドを流用）。フロント側は`src/lib/format.ts`の`isSellArticle()`が`tags`から判定し、`src/components/DealDirectionBadge.tsx`が分類バッジの隣に「売り」バッジを表示する（買い方向の記事にはバッジを出さない）。
 
 `dealType`（提出者の投資家分類）は、Supabaseの`edinet_filer_classification`マスター（Web検索で確認済みの投資家分類テーブル、バックテスト分析とも共用）をまず参照し、未登録の提出者のみClaudeの一般知識で判定して結果をマスターへ保存する（`web/publish_blog_articles.py`の`classify_filer()`）。キーワード一致だけでは日系/外資の区別やスペース無し個人名を正しく判定できないため。判定不能な場合は「その他」に丸める。
 
