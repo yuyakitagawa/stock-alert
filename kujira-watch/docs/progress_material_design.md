@@ -16,10 +16,11 @@ MUIの`ButtonBase`(Button/Chip/IconButton等)は独自のTouchRippleを持つた
 Phase 1でHeader/HeaderMenuをMUI化する際、`.MuiButtonBase-root`をRippleEffectの対象から除外するか、他セッションと調整すること。
 
 ## Phase 1 — ヘッダー/ナビゲーション
-- [ ] Header.tsx → AppBar/Toolbar/Tabs
-- [ ] HeaderMenu.tsx → Drawer
-- [ ] StockSearch.tsx → Autocomplete
-- [ ] VisitCounter.tsx → Typography
+- [x] Header.tsx → AppBar/Toolbar/Tabs (activeHref計算でサブページのハイライトも維持)
+- [x] HeaderMenu.tsx → Drawer (List/ListItemButton)
+- [x] StockSearch.tsx → Autocomplete (disablePortal必須。デフォルトのportal描画だと外側クリック判定と競合し選択遷移が効かない)
+- [x] VisitCounter.tsx → Typography
+- [x] ブラウザ確認: ja/en, デスクトップ/モバイル, 検索→銘柄ページ遷移, Drawer開閉, tsc/eslintクリーン
 
 ## Phase 2 — カード/バッジ ライブラリ
 - [ ] ArticleCard.tsx

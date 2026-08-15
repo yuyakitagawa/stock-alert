@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
+import Autocomplete from "@mui/material/Autocomplete";
+import TextField from "@mui/material/TextField";
+import CircularProgress from "@mui/material/CircularProgress";
+import SearchIcon from "@mui/icons-material/Search";
 import type { StockSearchResult } from "@/lib/microcms";
 import { UI, type Locale } from "@/lib/i18n";
 
@@ -17,17 +23,12 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
   const [results, setResults] = useState<StockSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const close = () => {
     setOpen(false);
     setQuery("");
     setResults([]);
   };
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,84 +65,77 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
     return () => clearTimeout(timer);
   }, [trimmedQuery]);
 
-  const visibleResults = trimmedQuery ? results : [];
-
   const goToStock = (stockCode: string) => {
     close();
     router.push(locale === "en" ? `/en/stocks/${stockCode}` : `/stocks/${stockCode}`);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (visibleResults[0]) goToStock(visibleResults[0].stockCode);
-  };
-
   return (
-    <div ref={containerRef} className="relative shrink-0">
-      <button
-        type="button"
+    <Box ref={containerRef} sx={{ position: "relative", flexShrink: 0 }}>
+      <IconButton
         aria-label={t.searchAria}
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-9 w-9 items-center justify-center text-brand-navy hover:text-brand-gold"
+        size="small"
+        sx={{ color: "primary.main" }}
       >
-        {/* viewBoxをマイナスオフセットし、円+持ち手の絵が隣のハンバーガー(☰)と
-            ボタン内で同じ視覚的重心に来るよう補正している（0 0 24 24のままだと左上に寄って見える）。 */}
-        <svg
-          aria-hidden
-          viewBox="-1.5 -1.5 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-5 w-5"
-        >
-          <circle cx="11" cy="11" r="7" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      </button>
+        <SearchIcon fontSize="small" />
+      </IconButton>
 
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-72 rounded-md border border-rule bg-paper shadow-xl sm:w-80">
-          <form onSubmit={handleSubmit} className="border-b border-rule p-2">
-            <input
-              ref={inputRef}
-              type="text"
-              inputMode="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t.searchPlaceholder}
-              className="w-full rounded border border-rule bg-transparent px-3 py-2 text-sm text-brand-navy outline-none focus:border-brand-blue"
-            />
-          </form>
-
-          <div className="max-h-80 overflow-y-auto">
-            {loading && (
-              <p className="px-3 py-3 text-xs text-foreground/50">{t.searchLoading}</p>
+        <Box sx={{ position: "absolute", right: 0, top: 44, zIndex: (theme) => theme.zIndex.appBar + 1, width: { xs: 288, sm: 320 } }}>
+          <Autocomplete
+            open
+            disablePortal
+            disableCloseOnSelect={false}
+            filterOptions={(x) => x}
+            options={trimmedQuery ? results : []}
+            loading={loading}
+            getOptionLabel={(option) => option.stockName}
+            noOptionsText={trimmedQuery ? t.searchNoResults(query) : t.searchPlaceholder}
+            loadingText={t.searchLoading}
+            onInputChange={(_, value) => setQuery(value)}
+            onChange={(_, value) => {
+              if (value) goToStock(value.stockCode);
+            }}
+            onClose={(_, reason) => {
+              if (reason === "selectOption") return;
+            }}
+            renderOption={(props, option) => {
+              const { key, ...rest } = props;
+              return (
+                <Box component="li" key={key ?? option.stockCode} {...rest} sx={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{option.stockName}</span>
+                  <Box component="span" sx={{ ml: 1, flexShrink: 0, fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "text.secondary" }}>
+                    {option.stockCode}
+                  </Box>
+                </Box>
+              );
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                autoFocus
+                placeholder={t.searchPlaceholder}
+                size="small"
+                sx={{ bgcolor: "background.paper" }}
+                slotProps={{
+                  ...params.slotProps,
+                  input: {
+                    ...params.slotProps.input,
+                    endAdornment: (
+                      <>
+                        {loading ? <CircularProgress color="inherit" size={16} /> : null}
+                        {params.slotProps.input.endAdornment}
+                      </>
+                    ),
+                  },
+                }}
+              />
             )}
-            {!loading && trimmedQuery && visibleResults.length === 0 && (
-              <p className="px-3 py-3 text-xs text-foreground/50">
-                {t.searchNoResults(query)}
-              </p>
-            )}
-            {!loading &&
-              visibleResults.map((result) => (
-                <button
-                  key={result.stockCode}
-                  type="button"
-                  onClick={() => goToStock(result.stockCode)}
-                  className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm text-brand-navy hover:bg-section-tint"
-                >
-                  <span className="truncate">{result.stockName}</span>
-                  <span className="ml-2 shrink-0 font-mono text-xs text-foreground/50">
-                    {result.stockCode}
-                  </span>
-                </button>
-              ))}
-          </div>
-        </div>
+          />
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

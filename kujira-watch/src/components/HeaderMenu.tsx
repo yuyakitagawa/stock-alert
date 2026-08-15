@@ -3,6 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Box from "@mui/material/Box";
+import Drawer from "@mui/material/Drawer";
+import IconButton from "@mui/material/IconButton";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemText from "@mui/material/ListItemText";
+import Typography from "@mui/material/Typography";
+import Divider from "@mui/material/Divider";
+import MenuIcon from "@mui/icons-material/Menu";
+import CloseIcon from "@mui/icons-material/Close";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
 import { DEAL_TYPE_EN, EN_SLUG_TO_DEAL_TYPE } from "@/lib/dealTypeInfo";
 import type { DealType } from "@/types/article";
@@ -82,132 +93,79 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
   return (
     // PCでは中央寄せの本文カラムではなく、画面の本当の右端にハンバーガーを固定する
     // (ヘッダーはposition:stickyでabsolute配置の基準になる)
-    <div className="shrink-0 sm:absolute sm:right-4 sm:top-4">
-      <button
-        type="button"
+    <Box sx={{ flexShrink: 0, position: { sm: "absolute" }, right: { sm: 16 }, top: { sm: 16 } }}>
+      <IconButton
         aria-label={t.menuLabel}
         aria-expanded={open}
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex h-9 w-9 items-center justify-center text-brand-navy hover:text-brand-gold"
+        onClick={() => setOpen(true)}
+        size="small"
+        sx={{ color: "primary.main" }}
       >
-        <span aria-hidden className="text-xl leading-none">
-          ☰
-        </span>
-      </button>
+        <MenuIcon fontSize="small" />
+      </IconButton>
 
-      {/* 背景の暗幕。タップで閉じる */}
-      <button
-        type="button"
-        aria-hidden={!open}
-        aria-label={locale === "en" ? "Close menu" : "メニューを閉じる"}
-        onClick={close}
-        tabIndex={open ? 0 : -1}
-        className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
-          open ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-      />
-
-      {/* 右からスライドインするフルハイトのメニューパネル */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t.menuLabel}
-        className={`fixed right-0 top-0 z-50 h-dvh w-[86%] max-w-xs transform overflow-y-auto border-l border-rule bg-paper shadow-2xl transition-transform duration-300 ease-out ${
-          open ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <div className="flex items-center justify-between border-b border-rule px-4 py-3">
-          <span className="flex items-center gap-2 text-sm font-bold text-brand-navy">
-            <span aria-hidden className="text-base leading-none">
-              🐋
-            </span>
-            {locale === "en" ? SITE_NAME_EN : SITE_NAME}
-          </span>
-          <button
-            type="button"
-            aria-label={locale === "en" ? "Close menu" : "メニューを閉じる"}
-            onClick={close}
-            className="flex h-8 w-8 items-center justify-center text-brand-navy hover:text-brand-gold"
-          >
-            <span aria-hidden className="text-lg leading-none">
-              ✕
-            </span>
-          </button>
-        </div>
-
-        <p className="px-4 py-3 text-xs leading-relaxed text-foreground/70">
-          {locale === "en" ? (
-            <>
-              {SITE_NAME_EN} is a blog that tracks who is moving which stock, when, and how much — based on public information such as EDINET large-shareholding reports (Japan&rsquo;s &ldquo;5% rule&rdquo; filings) — covering institutional investors, activist funds, insiders, and share buybacks (collectively &ldquo;whales&rdquo;: large investors with enough capital to move the market).
-            </>
-          ) : (
-            <>
-              {SITE_NAME}は、EDINETの大量保有報告書（5%ルール）などの公開情報をもとに、機関投資家・
-              アクティビストファンド・インサイダー・自社株買いといった「クジラ」（相場を動かすほどの
-              資金力を持つ大口投資家の俗称）が、どの銘柄をいつ・どれくらいの規模で動かしたかを
-              日次でまとめて解説するブログです。
-            </>
-          )}
-        </p>
-
-        <p className="kicker bg-section-tint px-4 py-1.5 text-brand-navy/60">{t.langSectionLabel}</p>
-        <nav aria-label={t.langSectionLabel} className="border-b border-rule">
-          <Link
-            href={jaHref}
-            onClick={close}
-            aria-current={locale === "ja" ? "page" : undefined}
-            className={`flex items-center justify-between border-t border-rule/60 px-4 py-3.5 text-sm first:border-t-0 hover:bg-section-tint ${
-              locale === "ja" ? "font-bold text-brand-blue" : "text-brand-navy"
-            }`}
-          >
-            日本語
-            <span aria-hidden className="text-foreground/30">
-              ›
-            </span>
-          </Link>
-          <Link
-            href={enHref}
-            onClick={close}
-            aria-current={locale === "en" ? "page" : undefined}
-            className={`flex items-center justify-between border-t border-rule/60 px-4 py-3.5 text-sm hover:bg-section-tint ${
-              locale === "en" ? "font-bold text-brand-blue" : "text-brand-navy"
-            }`}
-          >
-            English
-            <span aria-hidden className="text-foreground/30">
-              ›
-            </span>
-          </Link>
-        </nav>
-
-        <p className="kicker bg-section-tint px-4 py-1.5 text-brand-navy/60">
-          {locale === "en" ? "Menu" : "メニュー"}
-        </p>
-        <nav aria-label={locale === "en" ? "Menu" : "メニュー"} className="border-b border-rule">
-          {siteLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
+      <Drawer anchor="right" open={open} onClose={close}>
+        <Box sx={{ width: "86vw", maxWidth: 320, height: "100%", overflowY: "auto" }} role="presentation">
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: 1, borderColor: "divider", px: 2, py: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 700, color: "primary.main" }}>
+              <Box component="span" aria-hidden>
+                🐋
+              </Box>
+              {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+            </Typography>
+            <IconButton
+              aria-label={locale === "en" ? "Close menu" : "メニューを閉じる"}
               onClick={close}
-              className="flex items-center justify-between border-t border-rule/60 px-4 py-3.5 text-sm text-brand-navy first:border-t-0 hover:bg-section-tint"
+              size="small"
+              sx={{ color: "primary.main" }}
             >
-              {link.label}
-              <span aria-hidden className="text-foreground/30">
-                ›
-              </span>
-            </Link>
-          ))}
-        </nav>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
 
-        <p className="mt-3 px-4 text-[11px] leading-relaxed text-foreground/70">
-          {locale === "en"
-            ? "This site is commentary based on public EDINET large-shareholding filings and is not investment advice."
-            : "本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。"}
-        </p>
-        <p className="mt-2 px-4 pb-4 text-foreground/40">
-          © {year} {locale === "en" ? SITE_NAME_EN : SITE_NAME}
-        </p>
-      </div>
-    </div>
+          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
+            {t.langSectionLabel}
+          </Typography>
+          <List component="nav" aria-label={t.langSectionLabel} disablePadding>
+            <ListItemButton component={Link} href={jaHref} onClick={close} divider selected={locale === "ja"}>
+              <ListItemText
+                primary="日本語"
+                slotProps={{ primary: { sx: { fontWeight: locale === "ja" ? 700 : 400, color: locale === "ja" ? "brand.blue" : "primary.main" } } }}
+              />
+              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+            </ListItemButton>
+            <ListItemButton component={Link} href={enHref} onClick={close} divider selected={locale === "en"}>
+              <ListItemText
+                primary="English"
+                slotProps={{ primary: { sx: { fontWeight: locale === "en" ? 700 : 400, color: locale === "en" ? "brand.blue" : "primary.main" } } }}
+              />
+              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+            </ListItemButton>
+          </List>
+
+          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
+            {locale === "en" ? "Menu" : "メニュー"}
+          </Typography>
+          <List component="nav" aria-label={locale === "en" ? "Menu" : "メニュー"} disablePadding>
+            {siteLinks.map((link) => (
+              <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
+                <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+              </ListItemButton>
+            ))}
+          </List>
+
+          <Typography variant="caption" sx={{ display: "block", mt: 1.5, px: 2, lineHeight: 1.6, color: "text.secondary" }}>
+            {locale === "en"
+              ? "This site is commentary based on public EDINET large-shareholding filings and is not investment advice."
+              : "本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。"}
+          </Typography>
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="caption" sx={{ display: "block", px: 2, pb: 2, color: "text.disabled" }}>
+            © {year} {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+          </Typography>
+        </Box>
+      </Drawer>
+    </Box>
   );
 }

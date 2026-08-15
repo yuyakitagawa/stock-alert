@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import AppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import Box from "@mui/material/Box";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
 import HeaderMenu from "./HeaderMenu";
 import StockSearch from "./StockSearch";
 import VisitCounter from "./VisitCounter";
@@ -17,102 +22,120 @@ function isActiveTab(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-const navLinkClass = (active: boolean) =>
-  `shrink-0 border-b-2 pb-0.5 transition-colors ${
-    active
-      ? "border-brand-blue font-bold text-brand-blue"
-      : "border-transparent hover:text-brand-navy"
-  }`;
-
 export default function Header({ locale = "ja" }: { locale?: Locale }) {
   const homeHref = locale === "en" ? "/en" : "/";
   const pathname = usePathname() ?? homeHref;
 
+  const navLinks =
+    locale === "en"
+      ? [
+          { href: "/en", label: "Top" },
+          ...DEAL_TYPES.map((dealType) => ({
+            href: `/en/category/${DEAL_TYPE_EN[dealType].slug}`,
+            label: DEAL_TYPE_EN[dealType].label,
+          })),
+        ]
+      : [
+          { href: "/", label: "TOP" },
+          { href: "/weekly", label: "今週のまとめ" },
+          { href: "/ranking", label: "投資家勝率ランキング" },
+          { href: "/investors", label: "投資家一覧" },
+          { href: "/stocks", label: "銘柄一覧" },
+        ];
+
+  // MUI TabsのvalueはchildのTabのvalueと厳密一致する必要があるため、
+  // サブページ(配下URL)では一致する先頭リンクのhrefを採用する。どれにも
+  // 一致しない場合はfalseにして「選択中タブなし」の状態にする。
+  const activeHref = navLinks.find((link) => isActiveTab(pathname, link.href))?.href ?? false;
+
   return (
-    <header className="sticky top-0 z-10 border-b border-brand-navy bg-paper/95 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 pt-4 pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <Link href={homeHref} className="group flex items-center gap-2.5">
-            <span aria-hidden className="text-xl leading-none">
-              🐋
-            </span>
-            <span className="leading-tight">
-              <span className="block text-xl font-bold tracking-tight text-brand-navy sm:text-2xl">
-                {locale === "en" ? SITE_NAME_EN : SITE_NAME}
-              </span>
-              <span className="kicker mt-0.5 hidden text-brand-blue sm:block">
-                {locale === "en"
-                  ? "Tracking Japan's Market \"Whales\" from Large-Holding Filings"
-                  : "EDINET大量保有報告書から読む「クジラ」の動き"}
-              </span>
-            </span>
-          </Link>
-          <div className="flex shrink-0 items-center gap-3">
-            <StockSearch locale={locale} />
-            <VisitCounter locale={locale} />
-            <HeaderMenu locale={locale} />
-          </div>
-        </div>
-        <nav
-          aria-label={locale === "en" ? "Categories" : "主要ページ"}
-          className="no-scrollbar kicker flex flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto border-t border-rule pt-2 text-brand-navy/70 sm:flex-wrap sm:overflow-visible"
-        >
-          {locale === "en" ? (
-            <>
-              <Link href="/en" aria-current={isActiveTab(pathname, "/en") ? "page" : undefined} className={navLinkClass(isActiveTab(pathname, "/en"))}>
-                Top
-              </Link>
-              {DEAL_TYPES.map((dealType) => {
-                const href = `/en/category/${DEAL_TYPE_EN[dealType].slug}`;
-                return (
-                  <Link
-                    key={dealType}
-                    href={href}
-                    aria-current={isActiveTab(pathname, href) ? "page" : undefined}
-                    className={navLinkClass(isActiveTab(pathname, href))}
-                  >
-                    {DEAL_TYPE_EN[dealType].label}
-                  </Link>
-                );
-              })}
-            </>
-          ) : (
-            <>
-              <Link href="/" aria-current={isActiveTab(pathname, "/") ? "page" : undefined} className={navLinkClass(isActiveTab(pathname, "/"))}>
-                TOP
-              </Link>
-              <Link
-                href="/weekly"
-                aria-current={isActiveTab(pathname, "/weekly") ? "page" : undefined}
-                className={navLinkClass(isActiveTab(pathname, "/weekly"))}
-              >
-                今週のまとめ
-              </Link>
-              <Link
-                href="/ranking"
-                aria-current={isActiveTab(pathname, "/ranking") ? "page" : undefined}
-                className={navLinkClass(isActiveTab(pathname, "/ranking"))}
-              >
-                投資家勝率ランキング
-              </Link>
-              <Link
-                href="/investors"
-                aria-current={isActiveTab(pathname, "/investors") ? "page" : undefined}
-                className={navLinkClass(isActiveTab(pathname, "/investors"))}
-              >
-                投資家一覧
-              </Link>
-              <Link
-                href="/stocks"
-                aria-current={isActiveTab(pathname, "/stocks") ? "page" : undefined}
-                className={navLinkClass(isActiveTab(pathname, "/stocks"))}
-              >
-                銘柄一覧
-              </Link>
-            </>
-          )}
-        </nav>
-      </div>
-    </header>
+    <AppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        bgcolor: "rgba(255, 253, 248, 0.95)",
+        backdropFilter: "blur(6px)",
+        borderBottom: 1,
+        borderColor: "primary.main",
+        color: "primary.main",
+      }}
+    >
+      <Toolbar
+        disableGutters
+        sx={{ mx: "auto", width: "100%", maxWidth: "48rem", px: 2, pt: 2, pb: 1, alignItems: "flex-start" }}
+      >
+        <Box sx={{ width: "100%" }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+            <Box
+              component={Link}
+              href={homeHref}
+              sx={{ display: "flex", alignItems: "center", gap: 1.25, textDecoration: "none" }}
+            >
+              <Box component="span" aria-hidden sx={{ fontSize: "1.25rem", lineHeight: 1 }}>
+                🐋
+              </Box>
+              <Box component="span" sx={{ lineHeight: 1.2 }}>
+                <Box
+                  component="span"
+                  sx={{
+                    display: "block",
+                    fontSize: { xs: "1.25rem", sm: "1.5rem" },
+                    fontWeight: 700,
+                    letterSpacing: "-0.01em",
+                    color: "primary.main",
+                  }}
+                >
+                  {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+                </Box>
+                <Box
+                  component="span"
+                  className="kicker"
+                  sx={{ display: { xs: "none", sm: "block" }, mt: 0.25, color: "brand.blue" }}
+                >
+                  {locale === "en"
+                    ? "Tracking Japan's Market \"Whales\" from Large-Holding Filings"
+                    : "EDINET大量保有報告書から読む「クジラ」の動き"}
+                </Box>
+              </Box>
+            </Box>
+            <Box sx={{ display: "flex", flexShrink: 0, alignItems: "center", gap: 1 }}>
+              <StockSearch locale={locale} />
+              <VisitCounter locale={locale} />
+              <HeaderMenu locale={locale} />
+            </Box>
+          </Box>
+          <Tabs
+            value={activeHref}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            aria-label={locale === "en" ? "Categories" : "主要ページ"}
+            sx={{
+              mt: 1,
+              borderTop: 1,
+              borderColor: "divider",
+              minHeight: 40,
+              "& .MuiTab-root": {
+                minHeight: 40,
+                minWidth: "auto",
+                px: 0,
+                mr: 3,
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "text.secondary",
+              },
+              "& .Mui-selected": { color: "brand.blue" },
+              "& .MuiTabs-indicator": { bgcolor: "brand.blue" },
+            }}
+          >
+            {navLinks.map((link) => (
+              <Tab key={link.href} value={link.href} label={link.label} component={Link} href={link.href} />
+            ))}
+          </Tabs>
+        </Box>
+      </Toolbar>
+    </AppBar>
   );
 }
