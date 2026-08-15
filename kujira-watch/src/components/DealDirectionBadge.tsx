@@ -1,3 +1,8 @@
+"use client";
+
+import Chip from "@mui/material/Chip";
+import Tooltip from "@mui/material/Tooltip";
+import Box from "@mui/material/Box";
 import { isSellArticle } from "@/lib/format";
 import { UI, type Locale } from "@/lib/i18n";
 
@@ -6,12 +11,22 @@ export default function DealDirectionBadge({ tags, locale = "ja" }: { tags?: str
   if (!isSellArticle(tags)) return null;
   const t = UI[locale];
   return (
-    <span
-      title={t.sellBadgeTitle}
-      className="kicker inline-flex items-center gap-1.5 text-rose-700"
-    >
-      <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-600" />
-      {t.sellBadge}
-    </span>
+    <Tooltip title={t.sellBadgeTitle}>
+      <Chip
+        size="small"
+        variant="outlined"
+        icon={<Box component="span" sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "error.dark", ml: "6px !important" }} />}
+        label={t.sellBadge}
+        sx={{
+          height: "auto",
+          borderColor: "transparent",
+          color: "error.main",
+          fontSize: "0.6875rem",
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          "& .MuiChip-label": { px: 0.75, py: 0.25 },
+        }}
+      />
+    </Tooltip>
   );
 }

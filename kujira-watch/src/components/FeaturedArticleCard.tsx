@@ -1,5 +1,12 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import Card from "@mui/material/Card";
+import CardActionArea from "@mui/material/CardActionArea";
+import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import type { ArticleContent } from "@/types/article";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import { UI, type Locale } from "@/lib/i18n";
@@ -21,44 +28,76 @@ export default function FeaturedArticleCard({
   const title = locale === "en" ? article.titleEn ?? article.title : article.title;
   const body = locale === "en" ? article.bodyEn ?? article.body : article.body;
   return (
-    <Link
-      href={href}
-      className={`group relative mb-10 flex flex-col overflow-hidden bg-brand-navy text-white ${
-        hasImage ? "min-h-[22rem] justify-end" : ""
-      }`}
+    <Card
+      elevation={4}
+      sx={{
+        position: "relative",
+        mb: 5,
+        minHeight: hasImage ? { xs: 320, sm: 352 } : "auto",
+        bgcolor: "primary.main",
+        color: "common.white",
+        overflow: "hidden",
+      }}
     >
-      {article.eyecatch && (
-        <div className="absolute inset-0">
-          <Image
-            src={article.eyecatch.url}
-            alt={article.eyecatch.alt || title}
-            fill
-            priority
-            className="object-cover opacity-70 transition-transform duration-300 group-hover:scale-105"
-            sizes="100vw"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-brand-navy via-brand-navy/60 to-transparent" />
-        </div>
-      )}
-      <div className="relative p-6 sm:p-10">
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="kicker text-brand-gold-bright">{t.featuredRankLabels[rank] ?? t.featuredFallback}</span>
-          <DealTypeBadge dealType={article.dealType} locale={locale} />
-          <DealDirectionBadge tags={article.tags} locale={locale} />
-          <span className="kicker text-white/60">{formatDate(article.dealDate, locale)}</span>
-        </div>
-        <h2 className="text-2xl font-bold leading-snug sm:text-3xl">
-          {title}
-        </h2>
-        <p className="mt-3 text-sm text-white/80">
-          {locale === "en"
-            ? `${article.stockName} (${article.stockCode}) · ${formatDealAmount(article.dealAmount, locale)}`
-            : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmount(article.dealAmount, locale)}`}
-        </p>
-        <p className="mt-3 max-w-2xl text-sm text-white/70">
-          {excerptFromHtml(body, 90)}
-        </p>
-      </div>
-    </Link>
+      <CardActionArea
+        component={Link}
+        href={href}
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: hasImage ? "flex-end" : "flex-start",
+          alignItems: "stretch",
+          height: "100%",
+          minHeight: "inherit",
+          "&:hover .featured-media": { transform: "scale(1.05)" },
+        }}
+      >
+        {article.eyecatch && (
+          <Box sx={{ position: "absolute", inset: 0 }}>
+            <Image
+              src={article.eyecatch.url}
+              alt={article.eyecatch.alt || title}
+              fill
+              priority
+              className="featured-media"
+              style={{ objectFit: "cover", opacity: 0.7, transition: "transform 0.3s" }}
+              sizes="100vw"
+            />
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                // primary.main(#16213a)に合わせた固定値。sxでのtheme callbackはRSC境界を越えて
+                // 関数を渡せないため使えない（Server ComponentからClient Componentへのprops）。
+                background: "linear-gradient(to top, #16213a, rgba(22, 33, 58, 0.6) 60%, transparent)",
+              }}
+            />
+          </Box>
+        )}
+        <Box sx={{ position: "relative", p: { xs: 3, sm: 5 } }}>
+          <Stack direction="row" sx={{ mb: 2, flexWrap: "wrap", alignItems: "center", columnGap: 2, rowGap: 0.5 }}>
+            <Typography variant="overline" sx={{ color: "brand.goldBright" }}>
+              {t.featuredRankLabels[rank] ?? t.featuredFallback}
+            </Typography>
+            <DealTypeBadge dealType={article.dealType} locale={locale} />
+            <DealDirectionBadge tags={article.tags} locale={locale} />
+            <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.6)" }}>
+              {formatDate(article.dealDate, locale)}
+            </Typography>
+          </Stack>
+          <Typography variant="h4" component="h2" sx={{ fontWeight: 700, lineHeight: 1.3, fontSize: { xs: "1.5rem", sm: "1.875rem" } }}>
+            {title}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1.5, color: "rgba(255,255,255,0.8)" }}>
+            {locale === "en"
+              ? `${article.stockName} (${article.stockCode}) · ${formatDealAmount(article.dealAmount, locale)}`
+              : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmount(article.dealAmount, locale)}`}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1.5, maxWidth: 640, color: "rgba(255,255,255,0.7)" }}>
+            {excerptFromHtml(body, 90)}
+          </Typography>
+        </Box>
+      </CardActionArea>
+    </Card>
   );
 }

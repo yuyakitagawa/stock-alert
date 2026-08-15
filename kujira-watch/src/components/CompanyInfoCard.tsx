@@ -1,3 +1,6 @@
+import Card from "@mui/material/Card";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import type { CompanyInfo, PricePoint } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
 import { UI, type Locale } from "@/lib/i18n";
@@ -32,11 +35,12 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
   const localeCode = locale === "en" ? "en-US" : "ja-JP";
 
   return (
-    <div className="mb-4">
-      <svg
+    <Box sx={{ mb: 2 }}>
+      <Box
+        component="svg"
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         preserveAspectRatio="none"
-        className="h-24 w-full sm:h-28"
+        sx={{ height: { xs: 96, sm: 112 }, width: "100%" }}
         role="img"
         aria-label={t.priceChartAlt(
           formatDate(first.date, locale),
@@ -46,31 +50,35 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
         )}
       >
         <polyline points={points} fill="none" stroke="var(--color-brand-blue)" strokeWidth="2" />
-      </svg>
-      <div className="mt-1 flex justify-between text-xs text-foreground/40">
-        <span>
+      </Box>
+      <Box sx={{ mt: 0.5, display: "flex", justifyContent: "space-between" }}>
+        <Typography variant="caption" sx={{ color: "text.disabled" }}>
           {formatDate(first.date, locale)}
           {locale === "en"
             ? ` (¥${first.close.toLocaleString(localeCode)})`
             : `（${first.close.toLocaleString(localeCode)}円）`}
-        </span>
-        <span>
+        </Typography>
+        <Typography variant="caption" sx={{ color: "text.disabled" }}>
           {formatDate(last.date, locale)}
           {locale === "en"
             ? ` (¥${last.close.toLocaleString(localeCode)})`
             : `（${last.close.toLocaleString(localeCode)}円）`}
-        </span>
-      </div>
-    </div>
+        </Typography>
+      </Box>
+    </Box>
   );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="kicker text-foreground/40">{label}</dt>
-      <dd className="mt-0.5 text-sm font-bold text-brand-navy">{value}</dd>
-    </div>
+    <Box>
+      <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+        {label}
+      </Typography>
+      <Typography variant="body2" component="dd" sx={{ mt: 0.25, fontWeight: 700, color: "primary.main" }}>
+        {value}
+      </Typography>
+    </Box>
   );
 }
 
@@ -97,20 +105,28 @@ export default function CompanyInfoCard({ info, locale = "ja" }: { info: Company
   if (stats.length === 0 && info.priceHistory.length < 2) return null;
 
   return (
-    <div className="mb-6 border border-rule bg-paper p-4 sm:p-5">
+    <Card variant="outlined" sx={{ mb: 3, p: { xs: 2, sm: 2.5 }, borderColor: "divider" }}>
       <PriceChart history={info.priceHistory} locale={locale} />
       {stats.length > 0 && (
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <Box
+          component="dl"
+          sx={{
+            m: 0,
+            display: "grid",
+            gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)" },
+            gap: 2,
+          }}
+        >
           {stats.map((stat) => (
             <Stat key={stat.label} {...stat} />
           ))}
-        </dl>
+        </Box>
       )}
       {info.closeDate && (
-        <p className="mt-3 text-xs text-foreground/40">
+        <Typography variant="caption" sx={{ display: "block", mt: 1.5, color: "text.disabled" }}>
           {t.companyAsOf(formatDate(info.closeDate, locale))}
-        </p>
+        </Typography>
       )}
-    </div>
+    </Card>
   );
 }

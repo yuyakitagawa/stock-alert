@@ -23,12 +23,14 @@ Phase 1でHeader/HeaderMenuをMUI化する際、`.MuiButtonBase-root`をRippleEf
 - [x] ブラウザ確認: ja/en, デスクトップ/モバイル, 検索→銘柄ページ遷移, Drawer開閉, tsc/eslintクリーン
 
 ## Phase 2 — カード/バッジ ライブラリ
-- [ ] ArticleCard.tsx
-- [ ] FeaturedArticleCard.tsx
-- [ ] DealTypeBadge.tsx (COLOR_MAPをhex化)
-- [ ] DealDirectionBadge.tsx
-- [ ] CategoryBadge.tsx
-- [ ] CompanyInfoCard.tsx
+- [x] ArticleCard.tsx → Card/CardActionArea/CardMedia ("use client"化: component={Link}をMUIポリモーフィックpropに渡すとRSC境界エラーになるため)
+- [x] FeaturedArticleCard.tsx → 同上。sxのtheme callback((theme)=>...)もRSC境界を跨げないため静的値に置換
+- [x] DealTypeBadge.tsx → Chip(COLOR_MAPをhexに変換) + Tooltip ("use client"化: TooltipのSSR/クライアント差分でhydration mismatchが出るため)
+- [x] DealDirectionBadge.tsx → 同上
+- [x] CategoryBadge.tsx → Chip(outlined, clickable) + "use client"
+- [x] CompanyInfoCard.tsx → Card + dl相当のBox Grid (サーバーコンポーネントのまま変更なし、component={Link}やTooltipを使わないため問題なし)
+- [x] ブラウザ確認: home/stocks/[code]/articles/[id]、デスクトップ/モバイル、tsc/eslintクリーン
+- メモ: MUIのポリモーフィックcomponent propにnext/link等の関数を渡す・Tooltipを使う場合は、Server Componentのままだとhydration/RSC境界エラーになるため一律"use client"にする方針で統一
 
 ## Phase 3 — テーブル
 - [ ] ranking/page.tsx (+en)
