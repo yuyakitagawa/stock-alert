@@ -143,7 +143,7 @@ export default async function RankingPage({ searchParams }: Props) {
                 <th className="py-2 pr-4 font-normal">投資家</th>
                 <th className="py-2 pr-4 font-normal">分類</th>
                 <th className="py-2 pr-4 font-normal text-right">件数</th>
-                <th className="py-2 font-normal text-right">トータルのリターン</th>
+                <th className="py-2 font-normal text-right">トータルの推計リターン</th>
               </tr>
             </thead>
             <tbody>
