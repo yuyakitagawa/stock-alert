@@ -25,14 +25,17 @@
   --color-brand-gold-bright: var(--brand-gold-bright);
   --color-section-tint: var(--section-tint);
   --color-rule: var(--rule);
-  --font-sans: var(--font-noto-sans-jp), var(--font-geist-sans);
+  /* 欧文はGeist(ウェブフォント)、和文は端末内蔵フォントに任せる。"Noto Sans JP"は
+     ローカル指定で、Androidの内蔵Noto Sans CJK JPに当たる（ダウンロードは発生しない）。 */
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic Medium", "Yu Gothic", Meiryo, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), "Hiragino Sans", "Yu Gothic", sans-serif;
+  font-family: var(--font-sans);
   letter-spacing: 0.01em;
 }
 

@@ -61,7 +61,7 @@ function alternatePath(pathname: string): string {
 }
 
 // オートスクロールで記事一覧が際限なく伸びるため、ページ最下部のフッターまで
-// スクロールしてたどり着くのが実質困難になった。運営者情報・免責事項等は
+// スクロールしてたどり着くのが実質困難になった。このサイトについて・免責事項等は
 // ヘッダー右上のハンバーガーメニューに集約し、常にアクセスできるようにする。
 export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
   const [open, setOpen] = useState(false);
@@ -84,7 +84,7 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
           { href: "/ranking", label: "投資家勝率ランキング" },
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },
-          { href: "/about", label: "運営者情報・免責事項" },
+          { href: "/about", label: "このサイトについて" },
           { href: "/privacy", label: t.privacyMenuLabel },
           { href: "/faq", label: "よくある質問" },
           { href: "/feed.xml", label: "RSSフィード" },

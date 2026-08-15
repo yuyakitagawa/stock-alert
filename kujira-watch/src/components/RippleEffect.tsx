@@ -53,7 +53,10 @@ export default function RippleEffect() {
       }, RIPPLE_DURATION_MS);
     };
 
-    document.addEventListener("pointerdown", handlePointerDown);
+    // passive指定。このハンドラはpreventDefaultを呼ばないので、ブラウザに
+    // 「スクロール開始前にこの処理の完了を待つ必要はない」と伝えられる。
+    // 指定が無いとdocument上のpointerdownがスクロール開始をブロックしうる。
+    document.addEventListener("pointerdown", handlePointerDown, { passive: true });
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 

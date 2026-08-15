@@ -122,7 +122,7 @@ export default function PrivacyPage() {
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトの内容に関する免責事項、データソース、運営者情報については
           <Link href="/about" className="text-brand-blue hover:underline">
-            運営者情報・免責事項
+            このサイトについて
           </Link>
           をご覧ください。本サイトからリンクした外部サイト・広告主のサイトで提供される情報・
           サービスについては、運営者は一切の責任を負いません。

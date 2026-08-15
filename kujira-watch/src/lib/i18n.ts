@@ -11,7 +11,7 @@ export const UI = {
     sourceLabel: "出典",
     viewOriginal: "元記事を見る",
     viewClassificationList: "分類の一覧を見る",
-    aboutMenuLabel: "運営者情報・免責事項",
+    aboutMenuLabel: "このサイトについて",
     privacyMenuLabel: "プライバシーポリシー",
     adLabel: "広告",
     noArticlesYet: "記事がまだありません。",
@@ -23,7 +23,7 @@ export const UI = {
     featuredFallback: "注目",
     relatedArticlesHeading: (category: string | undefined) => `関連記事（${category}）`,
     stockHistoryHeading: "大量保有・自社株買い履歴",
-    aboutTitle: "運営者情報・免責事項",
+    aboutTitle: "このサイトについて",
     aboutMetaDescription: "本サイトの運営方針、データソース、免責事項について。",
     aboutGlossaryHeading: "投資家分類（用語集）",
     aboutGlossaryIntro:
