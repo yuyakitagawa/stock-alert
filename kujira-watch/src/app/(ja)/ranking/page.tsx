@@ -1,11 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
+import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import { getFilerWinRates } from "@/lib/investors";
@@ -132,46 +127,75 @@ export default async function RankingPage({ searchParams }: Props) {
       {visibleFilers.length === 0 ? (
         <p className="text-foreground/50">該当する投資家がいません。</p>
       ) : (
-        <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-          <Table size="small" sx={{ "& .MuiTableCell-root": { borderColor: "divider" } }}>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ color: "text.disabled" }}>順位</TableCell>
-                <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
-                <TableCell sx={{ color: "text.disabled" }}>分類</TableCell>
-                <TableCell align="right" sx={{ color: "text.disabled" }}>件数</TableCell>
-                <TableCell align="right" sx={{ color: "text.disabled" }}>トータルの推計リターン</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {visibleFilers.map((f, index) => (
-                <TableRow key={f.filerName}>
-                  <TableCell sx={{ color: "text.disabled" }}>{index + 1}</TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/investors/${encodeURIComponent(f.filerName)}`}
-                      className="font-medium text-brand-blue hover:underline"
-                    >
-                      {f.filerName}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <DealTypeBadge dealType={f.category} />
-                  </TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                    {f.n}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{ whiteSpace: "nowrap", fontWeight: 500, color: f.totalReturnOku >= 0 ? "success.main" : "error.main" }}
-                  >
-                    {formatOku(f.totalReturnOku)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        // 5列テーブルは狭い画面で投資家名が1文字ずつ折り返されて読めないため、
+        // 全画面幅で1件1行のリスト表示にする（分類は名前の下にバッジで添える）。
+        <Box>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 1,
+              pb: 0.75,
+              fontSize: "0.6875rem",
+              letterSpacing: "0.08em",
+              color: "text.disabled",
+            }}
+          >
+            <span>順位・投資家</span>
+            <span>トータルの推計リターン</span>
+          </Box>
+          {visibleFilers.map((f, index) => (
+            <Box
+              key={f.filerName}
+              sx={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 1.25,
+                py: 1.25,
+                borderTop: 1,
+                borderColor: "divider",
+              }}
+            >
+              <Box
+                sx={{
+                  flexShrink: 0,
+                  width: 22,
+                  fontWeight: 700,
+                  color: "text.disabled",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {index + 1}
+              </Box>
+              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                <Link
+                  href={`/investors/${encodeURIComponent(f.filerName)}`}
+                  className="font-medium text-brand-blue hover:underline"
+                  style={{ overflowWrap: "anywhere" }}
+                >
+                  {f.filerName}
+                </Link>
+                <Box sx={{ mt: 0.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+                  <DealTypeBadge dealType={f.category} />
+                  <Box component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
+                    {f.n}件
+                  </Box>
+                </Box>
+              </Box>
+              <Box
+                sx={{
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                  color: f.totalReturnOku >= 0 ? "success.main" : "error.main",
+                }}
+              >
+                {formatOku(f.totalReturnOku)}
+              </Box>
+            </Box>
+          ))}
+        </Box>
       )}
     </div>
   );
