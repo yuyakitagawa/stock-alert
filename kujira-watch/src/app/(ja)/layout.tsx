@@ -5,6 +5,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import GaClickTracker from "@/components/GaClickTracker";
 import Header from "@/components/Header";
+import ThemeRegistry from "@/components/ThemeRegistry";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "../globals.css";
 
@@ -105,10 +106,12 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
-        <Header />
-        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
-          {children}
-        </main>
+        <ThemeRegistry>
+          <Header />
+          <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+            {children}
+          </main>
+        </ThemeRegistry>
         <Analytics />
         <SpeedInsights />
         <GaClickTracker />
