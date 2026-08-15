@@ -392,6 +392,17 @@ export default async function ArticleDetailPage({ params }: Props) {
             </p>
           </div>
         )}
+        <div className="mt-10 border-t border-rule pt-6">
+          <h2 className="mb-2 text-lg font-bold text-brand-navy">関連ランキング</h2>
+          <nav aria-label="関連ランキング" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
+            <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
+            <Link href="/ranking/filings" className="text-brand-blue hover:underline">報告書件数ランキング</Link>
+            <Link href={`/date/${dealDateOnly}`} className="text-brand-blue hover:underline">
+              {formatDate(article.dealDate)}の全開示
+            </Link>
+          </nav>
+        </div>
         {relatedArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
             <h2 className="mb-5 text-lg font-bold text-brand-navy">
