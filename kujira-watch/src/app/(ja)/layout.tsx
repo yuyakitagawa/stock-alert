@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import GaClickTracker from "@/components/GaClickTracker";
+import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "../globals.css";
@@ -112,6 +113,7 @@ export default function RootLayout({
         <Analytics />
         <SpeedInsights />
         <GaClickTracker />
+        <RippleEffect />
       </body>
       <GoogleAnalytics gaId="G-0Z3FMTXC5B" />
     </html>
