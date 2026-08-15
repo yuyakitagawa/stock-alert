@@ -58,6 +58,21 @@ jobs:
           path: ~/.cache/remotion
           key: remotion-browser-${{ runner.os }}
 
+      # ナレーション合成用のVOICEVOXエンジン（ずんだもん）。起動失敗しても
+      # publish_video.py 側が無音動画にフォールバックするため continue-on-error にする。
+      - name: Start VOICEVOX engine
+        continue-on-error: true
+        run: |
+          docker run -d --name voicevox -p 50021:50021 \
+            voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+          # エンジンの起動待ち（モデルロードに数十秒かかる）
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:50021/version > /dev/null; then
+              echo "VOICEVOX ready"; break
+            fi
+            sleep 5
+          done
+
       - name: Link repo to ~/stock-alert
         run: |
           rm -f ~/stock-alert

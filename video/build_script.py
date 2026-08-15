@@ -28,7 +28,9 @@ from web.publish_blog_articles import (  # noqa: E402
     CLAUDE_MODEL,
     _microcms_base_url,
     _microcms_headers,
+    get_company_description,
     get_featured_article_ids,
+    get_filer_profile,
 )
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -85,14 +87,38 @@ def _trim(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-# 縦動画の1行は40字を超えると3行に折り返して読み切れなくなるため、この長さを上限とする。
-# 生成が長すぎた場合は一度だけ作り直し、それでも超えるものは末尾を詰める。
-BULLET_MAX_CHARS = 40
-HOOK_MAX_CHARS = 30
+def _trim_narration(text: str, limit: int) -> str:
+    """ナレーション用の切り詰め。「…こ…」のような文の途中切りはそのまま読み上げられて
+    しまうため、上限内の最後の句点で切り落とす（句点が見つからない場合のみ_trimに落ちる）。"""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    last_period = cut.rfind("。")
+    if last_period >= 20:  # 先頭近くの句点で切ると1文も残らないため下限を設ける
+        return cut[: last_period + 1]
+    return _trim(text, limit)
 
 
-def generate_script(article: dict, _retry: bool = True) -> "dict | None":
-    """記事本文から縦動画用の台本（hook / bullets / closing）を生成する。
+# 画面に出す字幕(caption)の上限。縦画面で1行に収まり、読み上げと同時に目で追える長さ。
+CAPTION_MAX_CHARS = 26
+# 1シーンの読み上げ文の上限。長すぎるとシーンが間延びして飽きられる。
+NARRATION_MAX_CHARS = 90
+
+# 動画の構成。kind は Remotion 側の見せ方（video/remotion/src/scenes/）に対応する。
+# 「記事の内容をほぼ読む」構成にするため、事実の羅列だけでなく銘柄と提出者の説明を挟む。
+SECTION_SPEC = [
+    ("company", "この会社が何をしている会社か。事業内容を初見の視聴者にわかるように"),
+    ("deal", "誰がいくら分をどう動かしたのか。金額と保有比率という数字の事実"),
+    ("filer", "その提出者がどんな投資家か。運用方針や性格がわかるように"),
+    ("change", "前回の開示からどう変わったのか。数字の推移が持つ意味"),
+    ("outlook", "この取引が今後どんな意味を持ちうるか。記事の※推測部分に対応する"),
+]
+
+
+def generate_script(article: dict, company_description: str = "", filer_profile: str = "",
+                    _retry: bool = True) -> "dict | None":
+    """記事本文から縦動画用の台本を生成する。各シーンは
+    `narration`（読み上げ文）と `caption`（画面に出す短い字幕）の対で構成する。
     パース失敗時は None（呼び出し側は動画を作らない）。"""
     import anthropic
 
@@ -104,36 +130,60 @@ def generate_script(article: dict, _retry: bool = True) -> "dict | None":
     is_sell = "売り" in (article.get("tags") or "")
     direction_label = "売却（保有比率の減少）" if is_sell else "取得（保有比率の増加）"
 
+    # 銘柄・提出者の説明は記事本文に入り切っていないことがあるため、Supabaseに
+    # キャッシュ済みの事実を別途渡す（どちらも publish_blog_articles.py が生成・保存したもの）。
+    company_line = f"\n対象銘柄の事業内容: {company_description}" if company_description else ""
+    filer_line = f"\n提出者のプロフィール: {filer_profile[:800]}" if filer_profile else ""
+
+    sections_spec = "\n".join(
+        f'  - kind="{kind}": {desc}' for kind, desc in SECTION_SPEC
+    )
+
     prompt = f"""以下は、日本株の大量保有報告書（EDINET開示）を解説した公開済みブログ記事です。
-この記事に書かれている事実だけを使って、縦型ショート動画（20秒）の台本を作ってください。
-記事に無い数字・意図・背景は絶対に足さないでください。
+この記事と補足事実だけを使って、**ナレーション付きの縦型ショート動画**の台本を作ってください。
+記事・補足事実に無い数字・意図・背景は絶対に足さないでください。
 
 記事タイトル: {article.get('title', '')}
 対象銘柄: {article.get('stockName', '')}（{article.get('stockCode', '')}）
 提出者: {article.get('filerName', '')}
 取引の向き: {direction_label}
-推定金額: {article.get('dealAmount')}億円
+推定金額: {article.get('dealAmount')}億円{company_line}{filer_line}
 
 記事本文:
-{body_text[:2000]}
+{body_text[:2500]}
 
-次の3つを作ってください。**字数は動画のレイアウト上の制約なので厳守してください。**
-1. hook: 冒頭1.5秒で指を止めさせる一文（20〜{HOOK_MAX_CHARS}字。{HOOK_MAX_CHARS}字を超えたら不合格）。
-   誇張や煽りは禁止。記事にある具体的な数字を1つ含めること。体言止めか言い切りで、句点は付けない。
-2. bullets: 要点3行（各25〜{BULLET_MAX_CHARS}字。{BULLET_MAX_CHARS}字を超えたら不合格）。
-   1行目は「何が起きたか」、2行目は「数字の意味・前回からの変化」、3行目は「読者にとっての着眼点」。
-   会社名や提出者名は動画の別の場面で表示済みなので、bulletsでは繰り返さず要点だけを短く書くこと。
-   記事の※推測部分を使う場合は「〜の可能性」と明示して断定しない。
-3. closing: 締めの一文（12〜18字）。サイトへ誘導する自然な言い回しにする（例: 「続きはクジラウォッチで」）。
+この動画は音声ナレーションで記事の内容をほぼ読み上げ、画面には要点だけを大きく出します。
+そのため各シーンについて **narration（読み上げ文）** と **caption（画面に出す字幕）** の
+2つを作ってください。captionはnarrationの要約であって、同じ文をそのまま入れないこと。
+
+1. hook: 冒頭で指を止めさせる部分。
+   - narration: 40〜60字。記事にある具体的な数字を含め、視聴者が「続きを聞きたい」と思う入り。
+   - caption: {CAPTION_MAX_CHARS}字以内。体言止めか言い切りで句点は付けない。
+2. sections: 以下の5つを**この順で**作る（kindは指定どおりの文字列にすること）。
+{sections_spec}
+   各セクション:
+   - narration: 50〜{NARRATION_MAX_CHARS}字。話し言葉として自然に繋がるようにし、
+     前のセクションと同じ言い回しを繰り返さない。数字は読み上げやすい表記にする
+     （例: 「8.77%」は「8.77パーセント」）。
+   - caption: {CAPTION_MAX_CHARS}字以内。そのシーンで一番伝えたい一点だけ。
+   kind="outlook" は断定を避け「〜の可能性があります」等の推測の言い回しにすること。
+   補足事実が無くて書けないkindがある場合でも、記事本文から言える範囲で必ず埋めること。
+3. closing: 締め。
+   - narration: 20〜35字。サイトで続きが読めることを伝える。
+   - caption: 12〜18字。
+
+**字数は動画のレイアウトと尺の制約なので厳守してください。**
 
 出力はJSON形式のみとし、コードフェンスや他のテキストは含めないでください:
-{{"hook": "...", "bullets": ["...", "...", "..."], "closing": "..."}}
+{{"hook": {{"narration": "...", "caption": "..."}},
+  "sections": [{{"kind": "company", "narration": "...", "caption": "..."}}, ...5件...],
+  "closing": {{"narration": "...", "caption": "..."}}}}
 """
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=1000,
+            max_tokens=2500,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
@@ -141,27 +191,49 @@ def generate_script(article: dict, _retry: bool = True) -> "dict | None":
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
         data = json.loads(text)
-        bullets = data.get("bullets") or []
-        if not data.get("hook") or len(bullets) < 3:
-            print("  ⚠ 台本の形式が不正（hook欠落 or bullets不足）")
-            return None
-
-        bullets = bullets[:3]
-        too_long = [b for b in bullets if len(b) > BULLET_MAX_CHARS] or (
-            [data["hook"]] if len(data["hook"]) > HOOK_MAX_CHARS else []
-        )
-        if too_long and _retry:
-            print(f"  ↻ 台本が長すぎるため作り直します（最長{max(len(t) for t in too_long)}字）")
-            return generate_script(article, _retry=False)
-
-        return {
-            "hook": _trim(data["hook"], HOOK_MAX_CHARS),
-            "bullets": [_trim(b, BULLET_MAX_CHARS) for b in bullets],
-            "closing": data.get("closing") or "続きはクジラウォッチで",
-        }
     except Exception as e:
         print(f"  ⚠ 台本生成失敗: {e}")
         return None
+
+    scenes = _flatten_scenes(data)
+    if scenes is None:
+        print("  ⚠ 台本の形式が不正（hook / sections / closing の欠落）")
+        return None
+
+    too_long = [s["caption"] for s in scenes if len(s["caption"]) > CAPTION_MAX_CHARS]
+    too_long += [s["narration"] for s in scenes if len(s["narration"]) > NARRATION_MAX_CHARS]
+    if too_long and _retry:
+        print(f"  ↻ 台本が長すぎるため作り直します（最長{max(len(t) for t in too_long)}字）")
+        return generate_script(article, company_description, filer_profile, _retry=False)
+
+    for scene in scenes:
+        scene["caption"] = _trim(scene["caption"], CAPTION_MAX_CHARS)
+        scene["narration"] = _trim_narration(scene["narration"], NARRATION_MAX_CHARS)
+    return {"scenes": scenes}
+
+
+def _flatten_scenes(data: dict) -> "list | None":
+    """Claudeの出力（hook / sections / closing）を、Remotionが順に再生する
+    フラットなシーン列に変換する。kindが見せ方の分岐になる。"""
+    hook = data.get("hook") or {}
+    closing = data.get("closing") or {}
+    sections = data.get("sections") or []
+    if not hook.get("narration") or not closing.get("narration") or len(sections) < len(SECTION_SPEC):
+        return None
+
+    scenes = [{"kind": "hook", "caption": hook.get("caption", ""), "narration": hook["narration"]}]
+    expected_kinds = [kind for kind, _ in SECTION_SPEC]
+    for kind, section in zip(expected_kinds, sections):
+        if not section.get("narration"):
+            return None
+        # kindはClaudeの出力に頼らず期待順で上書きする（見せ方の分岐がずれると崩れるため）
+        scenes.append({
+            "kind": kind,
+            "caption": section.get("caption", ""),
+            "narration": section["narration"],
+        })
+    scenes.append({"kind": "cta", "caption": closing.get("caption", ""), "narration": closing["narration"]})
+    return scenes
 
 
 def deal_type_label(article: dict) -> str:
@@ -189,9 +261,7 @@ def build_props(article: dict, script: dict) -> dict:
         "dealAmountOku": float(article.get("dealAmount") or 0),
         "holdingRatio": extract_holding_ratio(article),
         "discDate": deal_date,
-        "hook": script["hook"],
-        "bullets": script["bullets"],
-        "closing": script["closing"],
+        "scenes": script["scenes"],
     }
 
 
@@ -222,7 +292,19 @@ def build(dry_run: bool = False) -> "dict | None":
         return None
 
     print(f"[build_script] 対象記事: {article['title']}（{article['stockName']} / id={article['id']}）")
-    script = generate_script(article)
+
+    # 銘柄の事業内容と提出者のプロフィールは publish_blog_articles.py が既に生成して
+    # Supabaseにキャッシュ済み。動画で「どんな会社か・どんな投資家か」を語るために再利用する
+    # （キャッシュが無い場合はClaudeが生成して保存するので、ここが初出になることもある）。
+    company_description = get_company_description(
+        str(article.get("stockCode") or ""), article.get("stockName") or ""
+    )
+    filer_name = article.get("filerName") or ""
+    filer_profile = (
+        get_filer_profile(filer_name, deal_type_label(article)) if filer_name else ""
+    )
+
+    script = generate_script(article, company_description, filer_profile)
     if script is None:
         return None
 

@@ -1,5 +1,42 @@
 # Dev Log
 
+## 2026-08-15 ショート動画v2: ナレーション付き・TikTok運用の定石を反映した全面改修
+
+```
+背景: 初版は「文字が順に出てくるだけ」で動画である必然性が無かった（オーナー評:
+面白くない）。TikTokで再生される動画の定石に沿って全面的に作り直した。
+
+台本の変更（video/build_script.py）:
+- hook/bullets/closing の3要素 → 7シーン構成（hook→company→deal→filer→change→outlook→cta）
+- 各シーンは narration（読み上げ文50〜90字）と caption（字幕26字以内）の対
+- 「記事をほぼ読む」密度にするため、記事本文に加えSupabaseキャッシュ済みの
+  事業内容(get_company_description)と投資家プロフィール(get_filer_profile)も
+  プロンプトへ渡す（どちらもpublish_blog_articles.pyが生成済みの事実。新規の情報源は足さない）
+- ナレーションの切り詰めは句点境界（_trim_narration）。文の途中切りは
+  そのまま読み上げられてしまうため（実際に「…こ…」で切れる例が出た）
+
+音声（video/tts.py）:
+- Google Cloud TTSで実装 → GCPプロジェクトに請求先が無くAPI有効化不可 → VOICEVOXへ切替
+- VOICEVOX（ずんだもん）は無料・登録不要・商用可（クレジット表記必須）で、
+  日本のTikTok/Shorts解説動画で視聴者の馴染みが最も深い
+- CIは公式Dockerイメージ voicevox/voicevox_engine:cpu-ubuntu20.04-latest をジョブ内起動
+- エンジン未接続・合成失敗時は全編無音にフォールバックして投稿は続行
+- クレジット「VOICEVOX:ずんだもん」はCTAシーン・YouTube説明文・TikTokキャプションに自動挿入
+
+映像（video/remotion/）:
+- 尺は固定20秒 → ナレーション音声の実測長で決まる可変尺（calculateMetadata）
+- 冒頭はブランド・日付の前置きを廃止し、金額を画面いっぱいに叩き込む1秒目に変更
+- 全表示をsafeArea内に（下部470px/右190pxはTikTokのUIに隠れて読めない）
+- 無音視聴者向けに caption大型字幕＋narration全文の小型字幕を常時表示
+- 上部に進行バー（完走率対策）、背景はズームドリフト＋波で常時動かす
+- 締めはブランド画面でループ再生に繋がる構成、outlookには「※ここから先は推測」ラベル
+
+検証: 実データ（アインホールディングス9627、Oasisの20.93%取得記事）で
+台本→レンダリングまで通し確認。字幕の字数制御・safeArea・全シーンの表示を目視確認。
+tests/test_video_pipeline.py を29件に更新、全216件pass。
+（ローカルにVOICEVOXエンジンが無いため音声付きの通しはCI初回実行で確認する）
+```
+
 ## 2026-08-15 自動動画投稿パイプライン（YouTube Shorts / TikTok）を新設
 
 ```
@@ -927,6 +964,36 @@ MUI除去は真っ向から対立していた（試しにマージすると11フ
 | `@font-face` 宣言数 | 510 | 13 |
 | woff2 ファイル | 135個 / 5.5MB | 11個 / 184KB |
 | 初期JS | 410 KB | 410 KB（MUIを残したため変化なし） |
+
+## 2026-08-15 kujira-watch: MUIを残したまま初期JSを削る（遅延読み込み）
+
+「MUI入れても早くする方法はあるでしょ」の指摘を受けて再検討。あった。
+MUIを外さずに、**閉じているのが既定なのに全ページの初期JSに積まれていた**
+コンポーネントを`next/dynamic`で遅延化する。
+
+- `StockSearch` → パネル(Autocomplete/TextField/CircularProgress)を
+  `StockSearchPanel.tsx`へ切り出し。虫眼鏡をタップするまで読み込まない。
+- `HeaderMenu` → ドロワー本体(Drawer/List/ListItemButton/Divider/ChevronRight)を
+  `HeaderMenuDrawer.tsx`へ切り出し。MUI DrawerはModal/Portal/Backdrop/Slide一式を
+  引き連れている。
+
+使うMUIコンポーネントも見た目も挙動も一切変えていない。読み込みのタイミングを
+後ろにずらしただけなので、Material Design化の方針とは衝突しない。
+
+### 結果（初期ロードJS・gzip後）
+| ページ | 前 | 後 |
+|---|---|---|
+| `/` | 321.4 KB | 288.3 KB (-33.1 KB) |
+| `/articles/[id]` | 318.1 KB | 285.3 KB (-32.8 KB, -10.3%) |
+| 他の主要ページ | 約317 KB | 約284 KB |
+
+※ `next build` の `/monthly/[month]` の collect 失敗は、ダミーAPIキーでの403による
+ローカル環境の制約。main でも同様に出るため今回の変更とは無関係（tsc・eslintはクリーン）。
+
+### まだ残っている手（未着手）
+emotionのランタイムが全ページに残っている。MUIのゼロランタイム版(Pigment CSS)へ
+移行すればMUIの見た目を保ったまま更に削れるが、全コンポーネントに影響する移行なので
+別途判断が要る。
 
 ## 2026-08-15 デザインコンサルスキルの導入
 

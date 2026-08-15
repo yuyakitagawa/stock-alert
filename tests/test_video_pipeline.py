@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import video.build_script as bs
 import video.tiktok_client as tk
+import video.tts as tts_mod
 import video.youtube_client as yt
 
 YT_ENV = {
@@ -33,9 +34,15 @@ PROPS = {
     "dealAmountOku": 40.1,
     "holdingRatio": 8.77,
     "discDate": "2026-08-14",
-    "hook": "東陽テクニカを40億円超で売却",
-    "bullets": ["要点1", "要点2", "要点3"],
-    "closing": "続きはクジラウォッチで",
+    "scenes": [
+        {"kind": "hook", "caption": "40億円超の売却", "narration": "東陽テクニカの株式が40億円分売却されました。"},
+        {"kind": "company", "caption": "電子計測の専業", "narration": "電子計測装置を手がける会社です。"},
+        {"kind": "deal", "caption": "8.77%まで低下", "narration": "保有比率は8.77パーセントまで低下しました。"},
+        {"kind": "filer", "caption": "国内独立系AM", "narration": "国内独立系の資産運用会社による売却です。"},
+        {"kind": "change", "caption": "利益確定売りか", "narration": "値上がり後の利益確定の可能性があります。"},
+        {"kind": "outlook", "caption": "需給に注意", "narration": "今後の需給の変化に注意が必要です。"},
+        {"kind": "cta", "caption": "続きはブログで", "narration": "詳しくはクジラウォッチで。"},
+    ],
     "articleId": "abc123",
 }
 
@@ -74,7 +81,7 @@ def test_build_props_marks_sell_from_tags():
     article = {"stockName": "A社", "stockCode": "1234", "tags": "EDINET,自動生成,売り",
                "dealType": ["個人"], "dealDate": "2026-08-14T00:00:00.000Z", "dealAmount": 12.3,
                "body": "<p>保有比率を6.10%に低下</p>"}
-    props = bs.build_props(article, {"hook": "h", "bullets": ["1", "2", "3"], "closing": "c"})
+    props = bs.build_props(article, {"scenes": PROPS["scenes"]})
     assert props["direction"] == "sell"
     assert props["discDate"] == "2026-08-14"
     assert props["dealAmountOku"] == 12.3
@@ -84,7 +91,7 @@ def test_build_props_defaults_missing_filer_name_to_empty():
     """古い記事はfilerNameが未設定（microCMSは空フィールドを返さない）。動画側で行ごと省く。"""
     article = {"stockName": "A社", "stockCode": "1234", "tags": "", "dealType": ["個人"],
                "dealDate": "2026-08-14T00:00:00.000Z", "dealAmount": 1.0, "body": "<p>5.00%</p>"}
-    props = bs.build_props(article, {"hook": "h", "bullets": ["1", "2", "3"], "closing": "c"})
+    props = bs.build_props(article, {"scenes": PROPS["scenes"]})
     assert props["filerName"] == ""
 
 
@@ -108,48 +115,130 @@ def _claude_response(text: str):
     return client
 
 
-def test_generate_script_parses_json():
-    payload = '{"hook": "40億円の売却", "bullets": ["a", "b", "c"], "closing": "続きはこちら"}'
+def _script_json(caption_len: int = 10, narration_len: int = 60) -> str:
+    """新形式（hook/sections/closing、各narration+caption）の正常なClaude出力を作る。"""
+    import json as _json
+    cap = "あ" * caption_len
+    nar = "い" * (narration_len - 1) + "。"
+    section = {"narration": nar, "caption": cap}
+    return _json.dumps({
+        "hook": dict(section),
+        "sections": [
+            {"kind": k, **section} for k, _ in bs.SECTION_SPEC
+        ],
+        "closing": dict(section),
+    }, ensure_ascii=False)
+
+
+def test_generate_script_parses_json_into_flat_scenes():
+    """hook/sections/closing がフラットなシーン列（kind付き）に展開される。"""
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
-         mock.patch("anthropic.Anthropic", return_value=_claude_response(payload)):
+         mock.patch("anthropic.Anthropic", return_value=_claude_response(_script_json())):
         script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
-    assert script["hook"] == "40億円の売却"
-    assert script["bullets"] == ["a", "b", "c"]
+    kinds = [sc["kind"] for sc in script["scenes"]]
+    assert kinds == ["hook"] + [k for k, _ in bs.SECTION_SPEC] + ["cta"]
+    assert all(sc["narration"] and sc["caption"] for sc in script["scenes"])
 
 
-def test_generate_script_retries_once_when_bullets_too_long():
+def test_generate_script_overrides_kind_by_expected_order():
+    """Claudeがkindを誤っても、期待順（SECTION_SPEC）で上書きされる。"""
+    import json as _json
+    data = _json.loads(_script_json())
+    for sec in data["sections"]:
+        sec["kind"] = "wrong"
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=_claude_response(_json.dumps(data, ensure_ascii=False))):
+        script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
+    assert [sc["kind"] for sc in script["scenes"][1:-1]] == [k for k, _ in bs.SECTION_SPEC]
+
+
+def test_generate_script_retries_once_when_caption_too_long():
     """字数超過は動画のレイアウトを壊すため、一度だけ作り直す。"""
-    long_bullet = "あ" * (bs.BULLET_MAX_CHARS + 10)
-    first = f'{{"hook": "短い", "bullets": ["{long_bullet}", "b", "c"], "closing": "c"}}'
-    second = '{"hook": "短い", "bullets": ["a", "b", "c"], "closing": "c"}'
     client = mock.Mock()
     client.messages.create.side_effect = [
-        mock.Mock(content=[mock.Mock(text=first)]),
-        mock.Mock(content=[mock.Mock(text=second)]),
+        mock.Mock(content=[mock.Mock(text=_script_json(caption_len=bs.CAPTION_MAX_CHARS + 10))]),
+        mock.Mock(content=[mock.Mock(text=_script_json())]),
     ]
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
     assert client.messages.create.call_count == 2
-    assert script["bullets"] == ["a", "b", "c"]
+    assert all(len(sc["caption"]) <= bs.CAPTION_MAX_CHARS for sc in script["scenes"])
 
 
 def test_generate_script_trims_when_retry_still_too_long():
     """作り直しても長い場合は末尾を詰めてレイアウト崩れを防ぐ。"""
-    long_bullet = "あ" * (bs.BULLET_MAX_CHARS + 10)
-    payload = f'{{"hook": "短い", "bullets": ["{long_bullet}", "b", "c"], "closing": "c"}}'
+    payload = _script_json(caption_len=bs.CAPTION_MAX_CHARS + 10)
     client = mock.Mock()
     client.messages.create.return_value = mock.Mock(content=[mock.Mock(text=payload)])
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
-    assert len(script["bullets"][0]) == bs.BULLET_MAX_CHARS
-    assert script["bullets"][0].endswith("…")
+    assert all(len(sc["caption"]) <= bs.CAPTION_MAX_CHARS for sc in script["scenes"])
 
 
 def test_generate_script_returns_none_without_api_key():
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", ""):
         assert bs.generate_script({"title": "t", "body": "b", "tags": ""}) is None
+
+
+def test_generate_script_returns_none_when_sections_missing():
+    """sectionsが5件に満たない不正な出力は捨てる（不完全な動画を作らない）。"""
+    payload = '{"hook": {"narration": "a", "caption": "b"}, "sections": [], "closing": {"narration": "c", "caption": "d"}}'
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=_claude_response(payload)):
+        assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
+
+
+def test_trim_narration_cuts_at_sentence_boundary():
+    """ナレーションの切り詰めは文の途中ではなく句点で切る（読み上げが不自然になるため）。"""
+    text = "最初の文です。" * 20  # 140字
+    trimmed = bs._trim_narration(text, bs.NARRATION_MAX_CHARS)
+    assert len(trimmed) <= bs.NARRATION_MAX_CHARS
+    assert trimmed.endswith("。")
+
+
+def test_trim_narration_falls_back_when_no_period():
+    text = "あ" * 120
+    trimmed = bs._trim_narration(text, bs.NARRATION_MAX_CHARS)
+    assert len(trimmed) == bs.NARRATION_MAX_CHARS
+    assert trimmed.endswith("…")
+
+
+# ---------------- ナレーション（VOICEVOX） ----------------
+
+def test_narrate_sections_skips_when_engine_unavailable(tmp_path):
+    """VOICEVOXエンジンに繋がらない場合は無音扱い（動画は止めない）。"""
+    with mock.patch.object(tts_mod, "engine_available", return_value=False):
+        assert tts_mod.narrate_sections([{"narration": "テスト。"}], str(tmp_path)) is False
+
+
+def test_narrate_sections_writes_audio_and_duration(tmp_path):
+    """成功時は各シーンに audio ファイル名と durationSec が書き込まれる。"""
+    sections = [{"narration": "テストです。"}, {"narration": "二つ目です。"}]
+
+    def fake_synthesize(text, out_path):
+        with open(out_path, "wb") as f:
+            f.write(b"RIFF")
+        return True
+
+    with mock.patch.object(tts_mod, "engine_available", return_value=True), \
+         mock.patch.object(tts_mod, "synthesize", side_effect=fake_synthesize), \
+         mock.patch.object(tts_mod, "duration_seconds", return_value=2.5):
+        ok = tts_mod.narrate_sections(sections, str(tmp_path))
+
+    assert ok is True
+    assert sections[0]["audio"] == "narration_0.wav"
+    assert sections[1]["audio"] == "narration_1.wav"
+    assert all(s["durationSec"] == 2.5 for s in sections)
+
+
+def test_narrate_sections_all_or_nothing(tmp_path):
+    """1つでも合成に失敗したら全体を無音扱いにする（一部だけ音が出る動画を防ぐ）。"""
+    sections = [{"narration": "一つ目。"}, {"narration": "二つ目。"}]
+    with mock.patch.object(tts_mod, "engine_available", return_value=True), \
+         mock.patch.object(tts_mod, "synthesize", side_effect=[True, False]):
+        assert tts_mod.narrate_sections(sections, str(tmp_path)) is False
 
 
 # ---------------- YouTube ----------------

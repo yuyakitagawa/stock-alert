@@ -3,20 +3,27 @@ import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
 import {brand} from './theme';
 
 /**
- * 全シーン共通の背景。クジラ＝海のイメージに合わせた濃紺のグラデーションに、
- * ゆっくり流れる波を2枚重ねる。動画全体を通して動きが途切れないようにすることで、
- * 静止画スライドショーに見えるのを防ぐ。
+ * 全シーン共通の背景。ゆっくりズームし続ける濃紺のグラデーションに波を2枚重ねる。
+ * 「1フレームも完全静止させない」ことで、静止画スライドショーに見えるのを防ぐ
+ * （TikTokでは画面が止まった瞬間にスワイプされる）。
  */
 export const Background: React.FC = () => {
+  const frame = useCurrentFrame();
+  // 20〜60秒かけてわずかに寄る。気づかれない程度のドリフトが「映像感」を作る。
+  const zoom = 1 + frame * 0.00012;
+
   return (
-    <AbsoluteFill
-      style={{
-        background: `radial-gradient(120% 80% at 50% 0%, ${brand.blueDark} 0%, ${brand.navy} 45%, ${brand.navyDeep} 100%)`,
-      }}
-    >
-      <Wave y={1420} speed={0.55} opacity={0.16} color={brand.blue} amplitude={38} />
-      <Wave y={1520} speed={-0.38} opacity={0.1} color={brand.goldBright} amplitude={52} />
-      <Grain />
+    <AbsoluteFill style={{overflow: 'hidden'}}>
+      <AbsoluteFill
+        style={{
+          transform: `scale(${zoom})`,
+          background: `radial-gradient(120% 80% at 50% 0%, ${brand.blueDark} 0%, ${brand.navy} 45%, ${brand.navyDeep} 100%)`,
+        }}
+      >
+        <Wave y={1500} speed={1.6} opacity={0.18} color={brand.blue} amplitude={44} />
+        <Wave y={1600} speed={-1.1} opacity={0.12} color={brand.goldBright} amplitude={60} />
+        <Grain />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -30,7 +37,6 @@ const Wave: React.FC<{
 }> = ({y, speed, opacity, color, amplitude}) => {
   const frame = useCurrentFrame();
   const shift = frame * speed;
-  // 波1周期ぶん余分に描いて左右に動かすことで、継ぎ目なくループしているように見せる。
   const period = 540;
   const path = buildWavePath(y, amplitude, period, shift);
 

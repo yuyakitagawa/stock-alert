@@ -1,0 +1,88 @@
+name: Perf Check (表示速度の週次チェック)
+
+on:
+  schedule:
+    # 毎週月曜 00:00 UTC = 09:00 JST。週明けに前週の変更の影響をまとめて見る。
+    # GitHub Actionsのscheduleは混雑時に遅延するが、このチェックは時刻精度を要求しない。
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: '計測対象のベースURL（プレビューURLを指定して比較もできる）'
+        required: false
+        default: 'https://kujira-watch.com'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  perf-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # perf_check.pyは標準ライブラリだけで動く（依存インストール不要）。
+
+      - name: Run perf check
+        id: perf
+        run: |
+          BASE="${{ github.event.inputs.base_url || 'https://kujira-watch.com' }}"
+          set +e
+          python3 tools/perf_check.py --base-url "$BASE" > report.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          cat report.md
+
+      - name: Open or update issue when a page needs attention
+        if: steps.perf.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="表示速度: 閾値を超えたページがあります"
+          BODY_FILE=report.md
+          {
+            echo ""
+            echo "---"
+            echo "[週次チェックの実行ログ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo ""
+            echo "調べ方・直し方は \`tools/perf_check.py\` の docstring と"
+            echo "\`kujira-watch/README.md\` の「表示速度」を参照。"
+          } >> "$BODY_FILE"
+
+          # 同じ内容のIssueを毎週増やさない。既存のオープンIssueがあれば追記する。
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --state open --label perf --limit 1 --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" \
+              --body-file "$BODY_FILE"
+            echo "Updated issue #$EXISTING"
+          else
+            gh label create perf --repo "${{ github.repository }}" \
+              --description "表示速度" --color 0068b7 2>/dev/null || true
+            gh issue create --repo "${{ github.repository }}" \
+              --title "$TITLE" --label perf --body-file "$BODY_FILE"
+          fi
+
+      - name: Close the perf issue when everything is within thresholds
+        if: steps.perf.outputs.exit_code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --state open --label perf --limit 1 --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" \
+              --body-file report.md
+            gh issue close "$EXISTING" --repo "${{ github.repository }}" \
+              --comment "全ページが閾値内に戻ったため自動クローズします。"
+          fi
