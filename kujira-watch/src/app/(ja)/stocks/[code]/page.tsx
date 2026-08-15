@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = `${stockName}（${code}）`;
   const dealSummaryText = formatStockDealSummary(buildStockDealSummary(contents), stockName, code);
   const description = companyInfo?.description
-    ? `${companyInfo.description}。${dealSummaryText}`
+    ? `${companyInfo.description.replace(/。+$/, "")}。${dealSummaryText}`
     : dealSummaryText;
   const url = `${SITE_URL}/stocks/${code}`;
   const hasEn = enContents.length > 0;
