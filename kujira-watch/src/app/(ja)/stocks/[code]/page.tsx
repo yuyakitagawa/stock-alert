@@ -12,7 +12,8 @@ import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { docTypeLabel, getFilersByStockCode, getHoldingsByStockCode } from "@/lib/investors";
+import { docTypeLabel, getFilersByStockCode, getFilerWinRates, getHoldingsByStockCode } from "@/lib/investors";
+import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
 import { formatDate } from "@/lib/format";
 import RatioTransition from "@/components/RatioTransition";
 import Table from "@mui/material/Table";
@@ -65,12 +66,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers, holdings] = await Promise.all([
+  const [{ contents }, companyInfo, filers, holdings, winRates] = await Promise.all([
     getArticlesByStockCode(code),
     getCompanyInfo(code),
     getFilersByStockCode(code),
     getHoldingsByStockCode(code),
+    getFilerWinRates(),
   ]);
+  const winRateByFiler = new Map(winRates.map((w) => [w.filerName, w]));
 
   if (contents.length === 0) {
     notFound();
@@ -129,17 +132,21 @@ export default async function StockPage({ params }: Props) {
             大量保有報告書の提出投資家
           </Typography>
           <List disablePadding dense>
-            {filers.map((filer) => (
-              <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1 }}>
-                <Link
-                  href={`/investors/${encodeURIComponent(filer.filerName)}`}
-                  className="text-brand-blue hover:underline"
-                >
-                  {filer.filerName}
-                </Link>
-                <DealTypeBadge dealType={filer.category} />
-              </ListItem>
-            ))}
+            {filers.map((filer) => {
+              const winRate = winRateByFiler.get(filer.filerName);
+              return (
+                <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1, flexWrap: "wrap" }}>
+                  <Link
+                    href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                    className="text-brand-blue hover:underline"
+                  >
+                    {filer.filerName}
+                  </Link>
+                  <DealTypeBadge dealType={filer.category} />
+                  {winRate && <FilerTrackRecordChip winRate={winRate} />}
+                </ListItem>
+              );
+            })}
           </List>
         </Box>
       )}
