@@ -927,3 +927,33 @@ MUI除去は真っ向から対立していた（試しにマージすると11フ
 | `@font-face` 宣言数 | 510 | 13 |
 | woff2 ファイル | 135個 / 5.5MB | 11個 / 184KB |
 | 初期JS | 410 KB | 410 KB（MUIを残したため変化なし） |
+
+## 2026-08-15 kujira-watch: MUIを残したまま初期JSを削る（遅延読み込み）
+
+「MUI入れても早くする方法はあるでしょ」の指摘を受けて再検討。あった。
+MUIを外さずに、**閉じているのが既定なのに全ページの初期JSに積まれていた**
+コンポーネントを`next/dynamic`で遅延化する。
+
+- `StockSearch` → パネル(Autocomplete/TextField/CircularProgress)を
+  `StockSearchPanel.tsx`へ切り出し。虫眼鏡をタップするまで読み込まない。
+- `HeaderMenu` → ドロワー本体(Drawer/List/ListItemButton/Divider/ChevronRight)を
+  `HeaderMenuDrawer.tsx`へ切り出し。MUI DrawerはModal/Portal/Backdrop/Slide一式を
+  引き連れている。
+
+使うMUIコンポーネントも見た目も挙動も一切変えていない。読み込みのタイミングを
+後ろにずらしただけなので、Material Design化の方針とは衝突しない。
+
+### 結果（初期ロードJS・gzip後）
+| ページ | 前 | 後 |
+|---|---|---|
+| `/` | 321.4 KB | 288.3 KB (-33.1 KB) |
+| `/articles/[id]` | 318.1 KB | 285.3 KB (-32.8 KB, -10.3%) |
+| 他の主要ページ | 約317 KB | 約284 KB |
+
+※ `next build` の `/monthly/[month]` の collect 失敗は、ダミーAPIキーでの403による
+ローカル環境の制約。main でも同様に出るため今回の変更とは無関係（tsc・eslintはクリーン）。
+
+### まだ残っている手（未着手）
+emotionのランタイムが全ページに残っている。MUIのゼロランタイム版(Pigment CSS)へ
+移行すればMUIの見た目を保ったまま更に削れるが、全コンポーネントに影響する移行なので
+別途判断が要る。

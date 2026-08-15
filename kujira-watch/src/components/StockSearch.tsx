@@ -2,11 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
-import Autocomplete from "@mui/material/Autocomplete";
-import TextField from "@mui/material/TextField";
-import CircularProgress from "@mui/material/CircularProgress";
 import SearchIcon from "@mui/icons-material/Search";
 import type { StockSearchResult } from "@/lib/microcms";
 import { UI, type Locale } from "@/lib/i18n";
@@ -14,6 +12,11 @@ import { UI, type Locale } from "@/lib/i18n";
 // 企業名・証券コードで検索し、選択(またはEnter)で /stocks/[code] に遷移する。
 // レスポンスを都度撃たないよう、入力停止から300ms待ってからAPIを叩く。
 const DEBOUNCE_MS = 300;
+
+// パネル(Autocomplete/TextField/CircularProgress)は虫眼鏡をタップするまで表示されない。
+// MUIの中でも重い部類なので、初期JSから外して開いたときに読み込む。
+// ssr:false なのは、閉じている状態のHTMLにパネルの分の出力を含める意味が無いため。
+const StockSearchPanel = dynamic(() => import("./StockSearchPanel"), { ssr: false });
 
 export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
   const t = UI[locale];
@@ -83,56 +86,22 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
       </IconButton>
 
       {open && (
-        <Box sx={{ position: "absolute", right: 0, top: 44, zIndex: (theme) => theme.zIndex.appBar + 1, width: { xs: 288, sm: 320 } }}>
-          <Autocomplete
-            open
-            disablePortal
-            disableCloseOnSelect={false}
-            filterOptions={(x) => x}
-            options={trimmedQuery ? results : []}
+        <Box
+          sx={{
+            position: "absolute",
+            right: 0,
+            top: 44,
+            zIndex: (theme) => theme.zIndex.appBar + 1,
+            width: { xs: 288, sm: 320 },
+          }}
+        >
+          <StockSearchPanel
+            query={query}
+            results={results}
             loading={loading}
-            getOptionLabel={(option) => option.stockName}
-            noOptionsText={trimmedQuery ? t.searchNoResults(query) : t.searchPlaceholder}
-            loadingText={t.searchLoading}
-            onInputChange={(_, value) => setQuery(value)}
-            onChange={(_, value) => {
-              if (value) goToStock(value.stockCode);
-            }}
-            onClose={(_, reason) => {
-              if (reason === "selectOption") return;
-            }}
-            renderOption={(props, option) => {
-              const { key, ...rest } = props;
-              return (
-                <Box component="li" key={key ?? option.stockCode} {...rest} sx={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>{option.stockName}</span>
-                  <Box component="span" sx={{ ml: 1, flexShrink: 0, fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "text.secondary" }}>
-                    {option.stockCode}
-                  </Box>
-                </Box>
-              );
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                autoFocus
-                placeholder={t.searchPlaceholder}
-                size="small"
-                sx={{ bgcolor: "background.paper" }}
-                slotProps={{
-                  ...params.slotProps,
-                  input: {
-                    ...params.slotProps.input,
-                    endAdornment: (
-                      <>
-                        {loading ? <CircularProgress color="inherit" size={16} /> : null}
-                        {params.slotProps.input.endAdornment}
-                      </>
-                    ),
-                  },
-                }}
-              />
-            )}
+            locale={locale}
+            onQueryChange={setQuery}
+            onSelect={goToStock}
           />
         </Box>
       )}
