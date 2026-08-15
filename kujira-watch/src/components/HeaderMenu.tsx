@@ -80,7 +80,9 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
   const enHref = locale === "en" ? currentPath : otherHref;
 
   return (
-    <div className="shrink-0">
+    // PCでは中央寄せの本文カラムではなく、画面の本当の右端にハンバーガーを固定する
+    // (ヘッダーはposition:stickyでabsolute配置の基準になる)
+    <div className="shrink-0 sm:absolute sm:right-4 sm:top-4">
       <button
         type="button"
         aria-label={t.menuLabel}
