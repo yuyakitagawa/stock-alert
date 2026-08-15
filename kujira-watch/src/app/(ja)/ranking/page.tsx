@@ -14,13 +14,13 @@ const MIN_N = 5;
 
 const title = "投資家別 3ヶ月勝率ランキング";
 const description =
-  "EDINET大量保有報告書で買い増しを開示した投資家について、その銘柄を1株買って" +
-  "63営業日(3ヶ月)後まで保有していたら株価がいくら動いたかを投資家別に集計したランキング。" +
+  "EDINET大量保有報告書で買い増しを開示した投資家について、その回の推定取得金額をもとに" +
+  "63営業日(3ヶ月)後までの株価騰落から損益を推定し、投資家別に合算したランキング。" +
   "過去の実績が良い投資家を参考にできます。";
 
-function formatYen(value: number): string {
+function formatOku(value: number): string {
   const sign = value >= 0 ? "+" : "";
-  return `${sign}${Math.round(value).toLocaleString("ja-JP")}円`;
+  return `${sign}${value.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}億円`;
 }
 
 export const metadata: Metadata = {
@@ -94,12 +94,13 @@ export default async function RankingPage({ searchParams }: Props) {
       )}
       <p className="mb-4 text-sm text-foreground/50">
         投資家がEDINET大量保有報告書で保有比率を増やした（買い増し・新規取得）ことを開示するたびに、
-        その銘柄を1株買って{holdDays}営業日（約3ヶ月）後まで持っていたら株価がいくら動いたかを
-        投資家別に集計したランキングです。過去の実績が良い投資家を参考にできます。投資助言ではありません。
+        その回の推定取得金額（発行済株式数×株価×保有比率の変化幅）が{holdDays}営業日（約3ヶ月）後まで
+        の株価騰落でいくら増減したかを推定し、投資家ごとに全開示分を合算したランキングです。
+        過去の実績が良い投資家を参考にできます。投資助言ではありません。
       </p>
       <p className="mb-2 text-xs text-foreground/40">
-        ※自己申告・訂正報告書・保有比率51%超・売却方向の開示は除外し、開示からまだ
-        {holdDays}営業日経っていないものは結果未確定として集計から外しています。
+        ※自己申告・訂正報告書・保有比率51%超・売却方向の開示、発行済株式数が取得できない開示は除外し、
+        開示からまだ{holdDays}営業日経っていないものは結果未確定として集計から外しています。
       </p>
       <p className="mb-6 text-xs text-foreground/40">
         ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
@@ -142,7 +143,6 @@ export default async function RankingPage({ searchParams }: Props) {
                 <th className="py-2 pr-4 font-normal">投資家</th>
                 <th className="py-2 pr-4 font-normal">分類</th>
                 <th className="py-2 pr-4 font-normal text-right">件数</th>
-                <th className="py-2 pr-4 font-normal text-right">1株あたりのリターン</th>
                 <th className="py-2 font-normal text-right">トータルのリターン</th>
               </tr>
             </thead>
@@ -163,18 +163,11 @@ export default async function RankingPage({ searchParams }: Props) {
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap text-right text-foreground/60">{f.n}</td>
                   <td
-                    className={`py-3 pr-4 whitespace-nowrap text-right ${
-                      f.avgReturnYen >= 0 ? "text-emerald-700" : "text-rose-700"
-                    }`}
-                  >
-                    {formatYen(f.avgReturnYen)}
-                  </td>
-                  <td
                     className={`py-3 whitespace-nowrap text-right font-medium ${
-                      f.totalReturnYen >= 0 ? "text-emerald-700" : "text-rose-700"
+                      f.totalReturnOku >= 0 ? "text-emerald-700" : "text-rose-700"
                     }`}
                   >
-                    {formatYen(f.totalReturnYen)}
+                    {formatOku(f.totalReturnOku)}
                   </td>
                 </tr>
               ))}
