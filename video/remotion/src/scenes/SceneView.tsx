@@ -191,7 +191,10 @@ const Visual: React.FC<{scene: Scene; props: ShortProps; accent: string}> = ({
     case 'change':
       return <ChangeVisual props={props} accent={accent} />;
     case 'outlook':
-      return <OutlookVisual props={props} />;
+      // 中央ビジュアル無し。※推測ラベル付きの字幕カードだけで語らせる
+      return null;
+    case 'chart':
+      return <ChartVisual scene={scene} props={props} accent={accent} />;
     case 'cta':
       return <CtaVisual />;
     default:
@@ -353,22 +356,73 @@ const ChangeVisual: React.FC<{props: ShortProps; accent: string}> = ({props, acc
   );
 };
 
-const OutlookVisual: React.FC<{props: ShortProps}> = ({props}) => (
-  <div style={{textAlign: 'center'}}>
-    <div style={{fontSize: 130}}>{props.direction === 'buy' ? '🔭' : '⚖️'}</div>
-    <div
-      style={{
-        fontSize: 46,
-        fontWeight: 800,
-        color: brand.cream,
-        opacity: 0.85,
-        marginTop: 12,
-      }}
-    >
-      この{props.direction === 'buy' ? '買い' : '売り'}が意味するもの
-    </div>
-  </div>
-);
+/** 直近3ヶ月の株価推移。線が左から右へ伸びる描画で「動き」を作る。 */
+const ChartVisual: React.FC<{scene: Scene; props: ShortProps; accent: string}> = ({
+  scene,
+  props,
+  accent,
+}) => {
+  const frame = useCurrentFrame();
+  const closes = scene.closes ?? [];
+  if (closes.length < 2) {
+    return null;
+  }
+
+  const w = 800;
+  const h = 560;
+  const padX = 20;
+  const padY = 60;
+  const lo = Math.min(...closes);
+  const hi = Math.max(...closes);
+  const span = hi - lo || 1;
+  const n = closes.length;
+
+  // 線の伸びる速さ: 約2.5秒で全体を描き切り、残りの時間は完成形を見せる
+  const drawn = interpolate(frame, [6, 81], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const visibleCount = Math.max(2, Math.ceil(n * drawn));
+
+  const pointAt = (i: number): [number, number] => [
+    padX + (i / (n - 1)) * (w - padX * 2),
+    padY + (h - padY * 2) * (1 - (closes[i] - lo) / span),
+  ];
+  const points = Array.from({length: visibleCount}, (_, i) => pointAt(i));
+  const path = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const [headX, headY] = points[points.length - 1];
+
+  const latest = closes[closes.length - 1];
+  const changePct = (latest / closes[0] - 1) * 100;
+  const up = changePct >= 0;
+  const lineColor = up ? brand.buy : brand.sell;
+
+  return (
+    <Card>
+      <Label text="株価の推移（直近3ヶ月）" color={accent} />
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{overflow: 'visible'}}>
+        {/* 面グラデーション（描画済みの範囲だけ） */}
+        <path
+          d={`${path} L${headX.toFixed(1)},${h - padY} L${padX},${h - padY} Z`}
+          fill={lineColor}
+          opacity={0.14}
+        />
+        <path d={path} stroke={lineColor} strokeWidth={7} fill="none" strokeLinecap="round" />
+        {/* 先端マーカー */}
+        <circle cx={headX} cy={headY} r={13} fill={lineColor} />
+      </svg>
+      <div style={{display: 'flex', justifyContent: 'center', gap: 30, alignItems: 'baseline'}}>
+        <span style={{fontSize: 62, fontWeight: 900, color: '#ffffff'}}>
+          {latest.toLocaleString('ja-JP', {maximumFractionDigits: 0})}円
+        </span>
+        <span style={{fontSize: 52, fontWeight: 900, color: lineColor}}>
+          {up ? '+' : ''}
+          {changePct.toFixed(1)}%
+        </span>
+      </div>
+    </Card>
+  );
+};
 
 /**
  * 締め。冒頭と同じ「金額の一撃」で終わることで、ループ再生時に頭と自然に繋がる

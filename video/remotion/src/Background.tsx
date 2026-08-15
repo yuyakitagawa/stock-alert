@@ -1,13 +1,53 @@
 import React from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
+import {
+  AbsoluteFill,
+  Loop,
+  OffthreadVideo,
+  interpolate,
+  staticFile,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 import {brand} from './theme';
 
 /**
- * 全シーン共通の背景。ゆっくりズームし続ける濃紺のグラデーションに波を2枚重ねる。
- * 「1フレームも完全静止させない」ことで、静止画スライドショーに見えるのを防ぐ
- * （TikTokでは画面が止まった瞬間にスワイプされる）。
+ * 全シーン共通の背景。Pexelsの自然映像（海系・縦向き）があればそれをループ再生し、
+ * 文字が読めるよう暗いオーバーレイを重ねる。映像が無い日は従来のグラデーション＋波に
+ * フォールバックする。いずれも「1フレームも完全静止させない」ことで、静止画
+ * スライドショーに見えるのを防ぐ（TikTokでは画面が止まった瞬間にスワイプされる）。
  */
-export const Background: React.FC = () => {
+export const Background: React.FC<{
+  videoFile?: string;
+  videoDurationSec?: number;
+}> = ({videoFile, videoDurationSec}) => {
+  const {fps} = useVideoConfig();
+
+  if (videoFile) {
+    // 素材の尺ぶんでループ。端数フレームの黒落ちを避けるため floor で切る。
+    const loopFrames = Math.max(fps, Math.floor((videoDurationSec ?? 10) * fps));
+    return (
+      <AbsoluteFill style={{overflow: 'hidden', background: brand.navyDeep}}>
+        <Loop durationInFrames={loopFrames}>
+          <OffthreadVideo
+            src={staticFile(videoFile)}
+            muted
+            style={{width: '100%', height: '100%', objectFit: 'cover'}}
+          />
+        </Loop>
+        {/* 文字の可読性を確保する暗幕。ブランドの紺に寄せたトーンで上下を締める */}
+        <AbsoluteFill
+          style={{
+            background: `linear-gradient(180deg, rgba(13,21,38,0.78) 0%, rgba(13,21,38,0.55) 40%, rgba(13,21,38,0.62) 70%, rgba(13,21,38,0.85) 100%)`,
+          }}
+        />
+      </AbsoluteFill>
+    );
+  }
+
+  return <GradientBackground />;
+};
+
+const GradientBackground: React.FC = () => {
   const frame = useCurrentFrame();
   // 20〜60秒かけてわずかに寄る。気づかれない程度のドリフトが「映像感」を作る。
   const zoom = 1 + frame * 0.00012;

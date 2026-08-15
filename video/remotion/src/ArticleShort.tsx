@@ -23,7 +23,10 @@ export const ArticleShort: React.FC<ShortProps> = (props) => {
 
   return (
     <AbsoluteFill>
-      <Background />
+      <Background
+        videoFile={props.backgroundVideo}
+        videoDurationSec={props.backgroundVideoDurationSec}
+      />
       {sequences.map(({scene, from, durationInFrames, key}, i) => (
         <Sequence key={key} from={from} durationInFrames={durationInFrames}>
           {scene.audio ? <Audio src={staticFile(scene.audio)} /> : null}

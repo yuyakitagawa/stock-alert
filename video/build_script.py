@@ -278,6 +278,41 @@ def extract_holding_ratio(article: dict) -> float:
     return float(matches[-1])
 
 
+def build_price_scene(code: str) -> "dict | None":
+    """直近3ヶ月の株価推移シーン（kind="chart"）を作る。データは yahoo_price_cache
+    （lib.utils.get_prices、記事の埋め込みチャートと同じソース）。ナレーションは
+    Claudeではなくテンプレートで組み立てる（実数値の読み上げに創作の余地を作らないため）。
+    株価が取得できない銘柄は None（チャートシーン無しで動画は成立する）。"""
+    try:
+        from lib.utils import get_prices
+
+        prices = get_prices(code, days=100)
+        if prices is None or len(prices) < 20:
+            return None
+        closes = [round(float(c), 1) for c in prices["Close"].values[-63:]]
+    except Exception as e:
+        print(f"  ⚠ チャート用株価取得失敗: {e}")
+        return None
+
+    latest = closes[-1]
+    change_pct = (latest / closes[0] - 1) * 100
+    if change_pct >= 0:
+        trend = f"3ヶ月でおよそ{abs(change_pct):.0f}パーセントの上昇"
+        caption = f"株価は3ヶ月で+{abs(change_pct):.0f}%"
+    else:
+        trend = f"3ヶ月でおよそ{abs(change_pct):.0f}パーセントの下落"
+        caption = f"株価は3ヶ月で−{abs(change_pct):.0f}%"
+    narration = (
+        f"株価の推移も見てみましょう。直近の終値は{latest:,.0f}円で、{trend}となっています。"
+    )
+    return {
+        "kind": "chart",
+        "caption": caption,
+        "narration": narration,
+        "closes": closes,
+    }
+
+
 def build(dry_run: bool = False) -> "dict | None":
     """動画1本ぶんの props を返す。対象記事が無ければ None。"""
     articles = fetch_recent_articles()
@@ -307,6 +342,12 @@ def build(dry_run: bool = False) -> "dict | None":
     script = generate_script(article, company_description, filer_profile)
     if script is None:
         return None
+
+    # 株価推移シーンを outlook と cta の間に挿す（「最後に株価」というオーナー指定の位置。
+    # ctaの後だと締めの後にまた本編が来て不自然なため、締めの直前に置く）。
+    price_scene = build_price_scene(str(article.get("stockCode") or ""))
+    if price_scene is not None:
+        script["scenes"].insert(len(script["scenes"]) - 1, price_scene)
 
     props = build_props(article, script)
     props["articleId"] = article["id"]
