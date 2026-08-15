@@ -1,5 +1,12 @@
 import type { Locale } from "@/lib/i18n";
 
+// 投資家別の推定損益(filer_win_rate.total_return_oku)の表示用。/rankingと
+// /investors/[filer]で同じ表記（符号つき・小数1桁・億円）を使う。
+export function formatSignedOku(value: number): string {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}億円`;
+}
+
 export function formatDate(dateString: string, locale: Locale = "ja"): string {
   const date = new Date(dateString);
   if (locale === "en") {

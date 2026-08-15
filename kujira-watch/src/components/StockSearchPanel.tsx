@@ -4,7 +4,7 @@ import Box from "@mui/material/Box";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
 import CircularProgress from "@mui/material/CircularProgress";
-import type { StockSearchResult } from "@/lib/microcms";
+import type { SearchOption } from "./StockSearch";
 import { UI, type Locale } from "@/lib/i18n";
 
 // 検索パネルの中身。虫眼鏡をタップするまで表示されないので、StockSearch側から
@@ -20,11 +20,11 @@ export default function StockSearchPanel({
   onSelect,
 }: {
   query: string;
-  results: StockSearchResult[];
+  results: SearchOption[];
   loading: boolean;
   locale: Locale;
   onQueryChange: (value: string) => void;
-  onSelect: (stockCode: string) => void;
+  onSelect: (option: SearchOption) => void;
 }) {
   const t = UI[locale];
   const trimmedQuery = query.trim();
@@ -37,12 +37,17 @@ export default function StockSearchPanel({
       filterOptions={(x) => x}
       options={trimmedQuery ? results : []}
       loading={loading}
-      getOptionLabel={(option) => option.stockName}
+      groupBy={(option) =>
+        option.type === "stock" ? t.searchGroupStocks : t.searchGroupInvestors
+      }
+      getOptionLabel={(option) =>
+        option.type === "stock" ? option.stockName : option.filerName
+      }
       noOptionsText={trimmedQuery ? t.searchNoResults(query) : t.searchPlaceholder}
       loadingText={t.searchLoading}
       onInputChange={(_, value) => onQueryChange(value)}
       onChange={(_, value) => {
-        if (value) onSelect(value.stockCode);
+        if (value) onSelect(value);
       }}
       onClose={(_, reason) => {
         if (reason === "selectOption") return;
@@ -52,23 +57,25 @@ export default function StockSearchPanel({
         return (
           <Box
             component="li"
-            key={key ?? option.stockCode}
+            key={key ?? (option.type === "stock" ? option.stockCode : option.filerName)}
             {...rest}
             sx={{ display: "flex", justifyContent: "space-between" }}
           >
-            <span>{option.stockName}</span>
-            <Box
-              component="span"
-              sx={{
-                ml: 1,
-                flexShrink: 0,
-                fontFamily: "var(--font-geist-mono)",
-                fontSize: 12,
-                color: "text.secondary",
-              }}
-            >
-              {option.stockCode}
-            </Box>
+            <span>{option.type === "stock" ? option.stockName : option.filerName}</span>
+            {option.type === "stock" && (
+              <Box
+                component="span"
+                sx={{
+                  ml: 1,
+                  flexShrink: 0,
+                  fontFamily: "var(--font-geist-mono)",
+                  fontSize: 12,
+                  color: "text.secondary",
+                }}
+              >
+                {option.stockCode}
+              </Box>
+            )}
           </Box>
         );
       }}

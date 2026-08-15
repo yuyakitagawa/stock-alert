@@ -220,6 +220,32 @@ export async function getFilerNamesByStockAndDate(
   return resolved;
 }
 
+// /investors/[filer]用。filer_win_rateから当該投資家1件の実績を返す。
+// 実績が未集計（買い開示が無い・結果確定前）の投資家はnull。ページ表示を止めないよう
+// 取得失敗もnullに落とす。
+export async function getFilerWinRate(filerName: string): Promise<FilerWinRate | null> {
+  try {
+    const supabase = getSupabaseServerClient();
+    const { data } = await supabase
+      .from("filer_win_rate")
+      .select("filer_name, category, n, total_return_oku, hold_days, updated_at")
+      .eq("filer_name", filerName)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      filerName: data.filer_name,
+      category: data.category as DealType,
+      n: data.n,
+      totalReturnOku: data.total_return_oku,
+      holdDays: data.hold_days,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.error(`[getFilerWinRate] filer=${filerName} 取得失敗`, error);
+    return null;
+  }
+}
+
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
 // トータルリターン(total_return_oku)の降順で返す。
 // /rankingもsearchParams(category)を読むためdynamic renderingになり、ページ側の

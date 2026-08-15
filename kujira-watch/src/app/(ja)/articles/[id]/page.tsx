@@ -7,6 +7,7 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import AttentionScorePanel from "@/components/AttentionScorePanel";
+import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
@@ -290,7 +291,16 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Box>
           )}
         </Box>
+        <p className="-mt-2 mb-6 text-xs leading-relaxed text-foreground/40">
+          ※
+          取引日はEDINETで報告書が開示された日です。大量保有報告書は報告義務の発生（実際の売買等）から提出まで法令上最大5営業日のずれがあるため、実際の取引はこれより前に行われている場合があります。本記事は公開情報にもとづく解説であり、特定銘柄の売買を推奨する投資助言ではありません。詳しくは
+          <Link href="/about" className="text-brand-blue hover:underline">
+            免責事項
+          </Link>
+          をご覧ください。
+        </p>
         <AttentionScorePanel score={article.attentionScore} reasons={article.attentionReasons} />
+        <PriceAfterDisclosure stockCode={article.stockCode} dealDate={article.dealDate} />
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
