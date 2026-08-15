@@ -52,3 +52,25 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* タップ/クリック時のフィードバックをサイト全体で強化。
+   タッチ端末は:hoverが効かず反応が弱く感じるため、:activeで補強する。 */
+a,
+button,
+[role="button"],
+summary {
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+}
+
+a:active,
+button:active,
+[role="button"]:active,
+summary:active {
+  opacity: 0.6;
+}
+
+button:active,
+[role="button"]:active {
+  transform: scale(0.96);
+}
