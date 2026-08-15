@@ -217,10 +217,10 @@ export default async function RankingPage({ searchParams }: Props) {
             <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { borderColor: "divider" } }}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ color: "text.disabled" }}>順位</TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap", color: "text.disabled" }}>順位</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>分類</TableCell>
-                  <TableCell align="right" sx={{ color: "text.disabled" }}>件数</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap", color: "text.disabled" }}>件数</TableCell>
                   <TableCell align="right" sx={{ color: "text.disabled" }}>トータルの推計リターン</TableCell>
                 </TableRow>
               </TableHead>
