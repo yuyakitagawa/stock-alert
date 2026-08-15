@@ -651,9 +651,62 @@ def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
     )
 
 
+def format_ratio(ratio: float) -> str:
+    """保有比率を表示用文字列にする（20.93→"20.93"、5.00→"5"、末尾ゼロは落とす）。"""
+    return f"{ratio:.2f}".rstrip("0").rstrip(".")
+
+
+def is_new_holding(fact_sheet: dict) -> bool:
+    """実質的な新規保有か（直近400日に同一提出者の過去開示が無く、変化幅=今回比率になるケース）。"""
+    change = fact_sheet.get("ratio_change_pct")
+    return change is not None and change >= fact_sheet["holding_ratio"]
+
+
+# 検索結果で全文が見えるよう、テンプレタイトルはこの長さに収める（超過時は提出者名を短縮する）
+MAX_TITLE_LEN = 60
+
+
+def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_en: str = "") -> dict:
+    """検索クエリ型の記事タイトル（ja/en）を決定的テンプレートで組み立てる（LLM不使用）。
+    「銘柄名（コード）」「保有比率」「大量保有報告書」という検索語が必ずタイトルに入ることを
+    保証するため、LLMの自由生成をやめてテンプレ化した（SEO/AIO 30日計画 P1）。
+    stock_name_en/filer_name_enは英語タイトル用のローマ字名（generate_article_body()が
+    本文英訳と一緒に返す。空なら日本語名のまま使う）。"""
+    name = fact_sheet["stock_name"]
+    code = fact_sheet["stock_code"]
+    filer = fact_sheet["filer_name"]
+    name_en = stock_name_en or name
+    filer_en = filer_name_en or filer
+    ratio = format_ratio(fact_sheet["holding_ratio"])
+    is_sell = fact_sheet.get("direction") == "sell"
+
+    def ja_title(filer_name: str) -> str:
+        if is_new_holding(fact_sheet):
+            action = f"{filer_name}が{ratio}%を新規保有"
+        else:
+            action = f"{filer_name}が保有比率{ratio}%に{'引き下げ' if is_sell else '引き上げ'}"
+        return f"{name}（{code}）、{action}｜大量保有報告書"
+
+    title = ja_title(filer)
+    if len(title) > MAX_TITLE_LEN:
+        excess = len(title) - MAX_TITLE_LEN
+        keep = max(4, len(filer) - excess - 1)
+        title = ja_title(filer[:keep] + "…")
+
+    if is_new_holding(fact_sheet):
+        title_en = f"{filer_en} Takes {ratio}% Stake in {name_en} ({code}) | Large Shareholding Report"
+    elif is_sell:
+        title_en = f"{filer_en} Cuts Stake in {name_en} ({code}) to {ratio}% | Large Shareholding Report"
+    else:
+        title_en = f"{filer_en} Raises Stake in {name_en} ({code}) to {ratio}% | Large Shareholding Report"
+    return {"title": title, "titleEn": title_en}
+
+
 def generate_article_body(fact_sheet: dict) -> "dict | None":
-    """Claudeに与えた事実のみからtitle/bodyを生成させる。JSONで
-    {"title", "body", "titleEn", "bodyEn"} を返す。パース失敗時はNone（記事は投稿しない）。
+    """Claudeに与えた事実のみからbodyを生成させる。JSONで
+    {"body", "bodyEn"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
+    本文の1文目は検索クエリへの直答文（銘柄名・コード・提出者・保有比率を含む）に固定する。
+    パース失敗時はNone（記事は投稿しない）。
     投資家分類（dealType）は事前にclassify_filer()で判定済み（edinet_filer_classification
     マスター参照＋未登録時のみClaude判定、記事本文生成とは別の呼び出しに分離してキャッシュ
     可能にした）で、その分類の一言説明がfact_sheet['filer_description']としてあれば本文に
@@ -686,13 +739,25 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     company_description = fact_sheet.get("company_description") or ""
     company_description_line = f"- {fact_sheet['stock_name']}の事業内容: {company_description}\n" if company_description else ""
     ratio_change_pct = fact_sheet.get("ratio_change_pct")
+    is_new = is_new_holding(fact_sheet)
     if ratio_change_pct is not None:
-        if ratio_change_pct >= fact_sheet["holding_ratio"]:
+        if is_new:
             change_line = "- 変化: 直近400日以内に同一提出者による当銘柄の開示が確認できず、今回が実質的な新規保有（または大幅な保有再開）とみられる\n"
         else:
             change_line = f"- 変化: 保有比率はこれまでの開示から{ratio_change_pct:.2f}ポイント{'減少' if is_sell else '増加'}し、今回{fact_sheet['holding_ratio']}%になった\n"
     else:
         change_line = ""
+    ratio_str = format_ratio(fact_sheet["holding_ratio"])
+    if is_new:
+        answer_sentence = (
+            f"{fact_sheet['stock_name']}（{fact_sheet['stock_code']}）について、{fact_sheet['filer_name']}が"
+            f"同社株式の{ratio_str}%を保有していることが大量保有報告書（EDINET）で分かりました。"
+        )
+    else:
+        answer_sentence = (
+            f"{fact_sheet['stock_name']}（{fact_sheet['stock_code']}）について、{fact_sheet['filer_name']}が"
+            f"保有比率を{ratio_str}%まで{'引き下げ' if is_sell else '引き上げ'}たことが大量保有報告書（EDINET）で分かりました。"
+        )
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
 この取引は保有比率が{"減少した売却（譲渡等を含む）" if is_sell else "増加した取得（買い増し・新規取得）"}です。
@@ -709,9 +774,11 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 開示日: {fact_sheet['disc_date']}
 - {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
 {filer_description_line}{company_description_line}{context_line}{change_line}
+本文の1文目は、必ず次の文をそのまま使ってください（検索してきた読者への直答として最初に置く）:
+「{answer_sentence}」
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
 （例: 提出者が海外の資産運用会社なら「海外の資産運用会社による{deal_verb}」等）。無い場合は無理に触れなくてよいです。
-{fact_sheet['stock_name']}の事業内容 の事実がある場合は、冒頭でその会社が何をしている会社かを
+{fact_sheet['stock_name']}の事業内容 の事実がある場合は、1文目の直後にその会社が何をしている会社かを
 1文で読者に補足してください。また保有比率{fact_sheet['holding_ratio']}%という数字が、対象企業の
 株式のどれくらいの規模を占めるかが実感できるよう自然に触れてください（時価総額の一角を占める大株主、等）。
 変化 の事実がある場合は、今回の保有比率が一回限りの数字ではなく前回からの推移であることが
@@ -723,12 +790,16 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
 事実として存在しない具体的な計画やコメントの引用は創作しないでください。
 
-titleEn/bodyEnには、上と同じ事実・トーンを保った自然な英語訳を書いてください（直訳調は避け、
-英語ネイティブの投資ニュース記事として自然な文章にする）。※推測の文はEnglishでは
+bodyEnには、上と同じ事実・トーンを保った自然な英語訳を書いてください（直訳調は避け、
+英語ネイティブの投資ニュース記事として自然な文章にする）。英語も1文目は日本語の1文目と同じ内容の
+直答（例: "A large shareholding report (EDINET filing) shows that ... raised its stake in ... to ...%."）で
+始めてください。※推測の文はEnglishでは
 "*Speculation:" という接頭辞で始めてください。金額は円建てのまま（例: "¥3.34 billion"）でよいです。
 
-出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
-{{"title": "記事タイトル（40字以内）", "body": "<p>...</p>形式のHTML本文（650〜900字程度、3〜4段落。最後の段落に※推測文を含む）", "titleEn": "English title (under 70 chars)", "bodyEn": "<p>...</p> HTML body in English, same structure as body"}}
+出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
+テンプレートで組み立てるため出力しない）。stockNameEn/filerNameEnには英語タイトル用の
+ローマ字表記（例: "Ain Holdings", "Simplex Asset Management"）を短く書いてください:
+{{"body": "<p>...</p>形式のHTML本文（650〜900字程度、3〜4段落。最後の段落に※推測文を含む）", "bodyEn": "<p>...</p> HTML body in English, same structure as body", "stockNameEn": "...", "filerNameEn": "..."}}
 """
     try:
         resp = client.messages.create(
@@ -741,7 +812,7 @@ titleEn/bodyEnには、上と同じ事実・トーンを保った自然な英語
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
         data = json.loads(text)
-        if not data.get("title") or not data.get("body"):
+        if not data.get("body"):
             return None
         return data
     except Exception as e:
@@ -919,17 +990,24 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if article is None:
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
             continue
+        titles = build_article_titles(
+            fact_sheet,
+            stock_name_en=article.get("stockNameEn") or "",
+            filer_name_en=article.get("filerNameEn") or "",
+        )
 
         deal_type = filer_info["category"]
         tags = "EDINET,自動生成,売り" if is_sell else "EDINET,自動生成"
         payload = {
-            "title": article["title"],
+            "title": titles["title"],
             "body": article["body"],
             "stockName": name,
             "stockCode": code,
             "dealType": deal_type,
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
+            # 保有比率の変化幅(ポイント)。売りは負値で持たせ、フロントのファクトボックスで±表示する
+            "ratioChangePct": round(-change if is_sell else change, 2),
             "tags": tags,
             "filerName": filer_name,
         }
@@ -941,8 +1019,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             )
             payload["attentionScore"] = attention["score"]
             payload["attentionReasons"] = ",".join(attention["reasons"])
-        if article.get("titleEn") and article.get("bodyEn"):
-            payload["titleEn"] = article["titleEn"]
+        if article.get("bodyEn"):
+            payload["titleEn"] = titles["titleEn"]
             payload["bodyEn"] = article["bodyEn"]
 
         direction_mark = "📉売り" if is_sell else "📈買い"

@@ -57,19 +57,19 @@ npm run dev
 | sourceUrl | 出典URL | テキスト | △ |
 | tags | タグ | テキスト（カンマ区切り。売り方向の記事には`"売り"`を含める） | △ |
 | eyecatch | アイキャッチ画像 | 画像 | △ |
-| filerName | 取引企業（提出者名） | テキスト | △（**未作成**。下記の注意書きを参照） |
+| filerName | 取引企業（提出者名） | テキスト | △（2026-08-15にスキーマ作成済み。下記の注意書きを参照） |
+| ratioChangePct | 保有比率の変化幅（ポイント、売りは負値） | 数値 | △（2026-08-15追加。記事詳細のファクトボックス「前回比」に使用） |
 | attentionScore | クジラ注目度（0-100） | 数値 | △（買い記事のみ。`lib/attention_score.py`が算出） |
 | attentionReasons | 注目度の理由 | テキスト（カンマ区切り、`tags`と同じ運用） | △ |
 
-> **注意（2026-08-15確認）**: `filerName` は上表に載っているものの、実際のmicroCMSスキーマには
-> 存在しない。`web/publish_blog_articles.py` はpayloadに`filerName`を載せているが、microCMSは
-> スキーマに無いフィールドを黙って捨てるため、**全記事で値が空**になっている
-> （APIレスポンスのキー一覧＝`body,bodyEn,dealAmount,dealDate,dealType,stockCode,stockName,tags,title,titleEn`で確認）。
-> フロント側はこの間、提出者名をEDINET開示（Supabase `edinet_large_holdings`）と
-> 「銘柄コード×取引日」で突き合わせて補っている（`src/lib/investors.ts` の
+> **注意（2026-08-15更新）**: `filerName` は長らくmicroCMSスキーマに存在せず（microCMSは
+> スキーマに無いフィールドを黙って捨てるため、`web/publish_blog_articles.py`が送っても
+> 全記事で値が空だった）、フロント側は提出者名をEDINET開示（Supabase `edinet_large_holdings`）と
+> 「銘柄コード×取引日」で突き合わせて補ってきた（`src/lib/investors.ts` の
 > `getFilerNamesByStockAndDate()`。同じ銘柄・同じ日に複数の提出者がいる開示＝2026年8月実測で
-> 全体の約7%は、誤った帰属を避けるため除外する）。管理画面でこのフィールドを作成すれば
-> 突合に頼らず全件で提出者名が出るようになる（フロント側はCMSの値を優先する実装）。
+> 全体の約7%は、誤った帰属を避けるため除外する）。2026-08-15に`filerName`・`ratioChangePct`の
+> 両フィールドが管理画面で作成されたため、**以降の新規記事はCMSの値がそのまま入る**
+> （フロント側はCMSの値を優先し、値が空の既存記事のみ突合フォールバックを使う実装）。
 
 ### クジラ注目度（attentionScore）
 
