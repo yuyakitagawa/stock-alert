@@ -162,6 +162,13 @@ def test_build_and_publish_includes_sell_and_tags_them():
     assert by_code["9999"]["tags"] == "EDINET,自動生成"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
+    # クジラ注目度は買い方向のみ付与（スコアカードが買い開示の実績のみで較正済みのため）
+    assert "attentionScore" in by_code["7203"]
+    assert "attentionScore" in by_code["9999"]
+    assert 0 <= by_code["7203"]["attentionScore"] <= 100
+    assert isinstance(by_code["7203"]["attentionReasons"], str)
+    assert "attentionScore" not in by_code["6502"]
+    assert "attentionScore" not in by_code["1234"]
 
 
 def test_build_and_publish_skips_when_already_published():
@@ -190,24 +197,36 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
-def test_get_featured_article_ids_preserves_pool_order_without_reordering():
-    """kujira-watch側getFeaturedArticles()と同じロジック: プールはmicroCMS側で
-    -dealDate,-dealAmount順（日付優先→同日内は金額降順）に返ってくるので、
-    Python側では並べ替えず先頭count件のidをそのまま採用する。プール全体を
-    金額だけで並べ替えると、投稿数が少ない日に数日前の大型取引が「注目」を
-    占有し続けてしまう（実際に発生したバグ）ため、この並べ替えはしない。"""
+def test_get_featured_article_ids_picks_top_attention_score():
+    """kujira-watch側getFeaturedArticles()と同じロジック: プール（microCMS側で
+    -dealDate,-dealAmount順に取得済み）の中からクジラ注目度attentionScoreが
+    高い順に先頭count件を採用する。attentionScore未算出(None)はプール内最下位扱い。"""
     pool = [
-        {"id": "today-big"},
-        {"id": "today-small"},
-        {"id": "older-huge"},
-        {"id": "older-medium"},
+        {"id": "today-big", "dealAmount": 50, "attentionScore": 20},
+        {"id": "today-small", "dealAmount": 1, "attentionScore": 90},
+        {"id": "older-huge", "dealAmount": 999, "attentionScore": None},
+        {"id": "older-medium", "dealAmount": 30, "attentionScore": 60},
     ]
     resp = _FakeResponse(200, "", {"contents": pool})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch("requests.get", return_value=resp):
         ids = m.get_featured_article_ids(pool_size=20, count=2)
-    assert ids == {"today-big", "today-small"}
+    assert ids == {"today-small", "older-medium"}
+
+
+def test_get_featured_article_ids_ties_broken_by_deal_amount():
+    """attentionScoreが同点(未算出同士含む)の場合はdealAmountで比較する。"""
+    pool = [
+        {"id": "small", "dealAmount": 1, "attentionScore": None},
+        {"id": "huge", "dealAmount": 999, "attentionScore": None},
+    ]
+    resp = _FakeResponse(200, "", {"contents": pool})
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.get", return_value=resp):
+        ids = m.get_featured_article_ids(pool_size=20, count=1)
+    assert ids == {"huge"}
 
 
 def test_get_featured_article_ids_returns_empty_set_on_http_error():
@@ -940,7 +959,8 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    test_get_featured_article_ids_preserves_pool_order_without_reordering()
+    test_get_featured_article_ids_picks_top_attention_score()
+    test_get_featured_article_ids_ties_broken_by_deal_amount()
     test_get_featured_article_ids_returns_empty_set_on_http_error()
     test_get_featured_article_ids_returns_empty_set_on_exception()
     test_get_filer_profile_returns_cached_without_calling_claude()

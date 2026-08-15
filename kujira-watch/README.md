@@ -58,6 +58,8 @@ npm run dev
 | tags | タグ | テキスト（カンマ区切り。売り方向の記事には`"売り"`を含める） | △ |
 | eyecatch | アイキャッチ画像 | 画像 | △ |
 | filerName | 取引企業（提出者名） | テキスト | △（**未作成**。下記の注意書きを参照） |
+| attentionScore | クジラ注目度（0-100） | 数値 | △（買い記事のみ。`lib/attention_score.py`が算出） |
+| attentionReasons | 注目度の理由 | テキスト（カンマ区切り、`tags`と同じ運用） | △ |
 
 > **注意（2026-08-15確認）**: `filerName` は上表に載っているものの、実際のmicroCMSスキーマには
 > 存在しない。`web/publish_blog_articles.py` はpayloadに`filerName`を載せているが、microCMSは
@@ -69,13 +71,38 @@ npm run dev
 > 全体の約7%は、誤った帰属を避けるため除外する）。管理画面でこのフィールドを作成すれば
 > 突合に頼らず全件で提出者名が出るようになる（フロント側はCMSの値を優先する実装）。
 
+### クジラ注目度（attentionScore）
+
+「保有比率20%超」「急増」「アクティビスト」等の見た目のインパクトが強い要素は、実際の
+株価リターンとは無関係か弱い負の相関しかない（`lib/attention_score.py`のdocstring参照。
+tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08-15）ことが判明したため、
+直感ではなく実績データで較正した「スコアカード」方式を採用している。保有比率・保有比率の
+変化幅・推定取引金額・投資家分類（13分類）をそれぞれ実績の分位ビン平均リターン（または
+縮小推定した平均リターン）に変換し、Ridge回帰の重みで線形結合、学習時の予測値分布の
+パーセンタイルへ変換して0〜100点にスケーリングする。「過去の取得回数」は検証したが有意な
+関係が見られなかったためスコアに含めない。売り方向の記事（スコアカードが買い方向の実績のみで
+較正済みのため対象外）・生成タイミングが古い記事は`attentionScore`が未設定になる。
+
+- 生成: `web/publish_blog_articles.py`の`build_and_publish()`が新規記事の投稿時に算出。
+- 遡及付与: `tools/backfill_attention_score.py`が既存記事をEDINET開示（Supabase
+  `edinet_large_holdings`）と突き合わせて一括計算・PATCH更新する（`--dry-run`で確認可）。
+- 表示: `src/components/AttentionScoreBadge.tsx`（一覧・カード用の星付きコンパクトバッジ、
+  `FeaturedArticleCard`/`ArticleCard`で使用）、`src/components/AttentionScorePanel.tsx`
+  （記事詳細ページ用の大きいスコア＋星＋理由リストのパネル。理由は日本語のみ生成するため
+  EN版ではスコア・星のみ表示）。
+- 「注目①②③」（`getFeaturedArticles()`、TOP/週次/月別で使用）は、従来の
+  「日付優先→同日内は金額降順」の2軸ソートに代えて、直近プール内でこの`attentionScore`が
+  高い順に選ぶ（未算出はプール内で最下位扱い、同点は`dealAmount`で比較）。
+  `web/publish_blog_articles.py`の`get_featured_article_ids()`（X投稿の対象記事選定）も
+  同じロジックで同期させている。
+
 ## ページ構成
 
 | パス | 内容 |
 |---|---|
-| `/` | 記事一覧。見出し「今日の注目取引」の直下に「今日のクジラ」サマリー（`src/components/TodayWhaleSummary.tsx`。最新の取引日・その日の開示件数・推定金額・買い/売り件数を大きく出し、`/date/[date]`へリンクする。毎日更新されていることが一目で分かるようにするための鮮度表示で、件数・金額は初回取得30件で切れないよう`getArticlesByDealDate()`で取り直す）を置き、続けてカテゴリ絞り込み（`src/components/CategoryFilterDetails.tsx`、`<details>`で開閉、`/category/[category]`への内部リンク）を配置し、その下に金額規模上位の記事をヒーロー枠でピックアップ表示（新着順）。初回30件をサーバー側でレンダリングし、下端までスクロールすると自動で次の10件を読み込むオートスクロール方式 |
+| `/` | 記事一覧。見出し「今日の注目取引」の直下に「今日のクジラ」サマリー（`src/components/TodayWhaleSummary.tsx`。最新の取引日・その日の開示件数・推定金額・買い/売り件数を大きく出し、`/date/[date]`へリンクする。毎日更新されていることが一目で分かるようにするための鮮度表示で、件数・金額は初回取得30件で切れないよう`getArticlesByDealDate()`で取り直す）を置き、続けてカテゴリ絞り込み（`src/components/CategoryFilterDetails.tsx`、MUI Accordionで開閉、`/category/[category]`へのボタン）を配置し、その下に金額規模上位の記事をヒーロー枠でピックアップ表示（新着順）。初回30件をサーバー側でレンダリングし、下端までスクロールすると自動で次の10件を読み込むオートスクロール方式 |
 | `/weekly` | 大口投資家の動きまとめ（直近7日間の横断要約。「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。「今週のポイント」で買い/売りの件数・金額、投資家分類別・銘柄別の上位内訳を集計表示し（`lib/weeklyStats.ts`の`buildWeeklySummary()`）、金額規模が大きい上位3件を「注目の取引」としてヒーロー枠で見せ、残りは取引日ごとに件数・金額つきで`/date/[date]`へのリンクに集約する。全記事をカード表示していた旧構成は縦に長すぎるため廃止。ヘッダーから常時リンク） |
-| `/articles/[id]` | 記事詳細。銘柄｜取引日｜金額規模｜取引企業（`/investors/[filer]`への内部リンク。CMSの`filerName`が空のためEDINET開示との突合で解決する。上記スキーマの注意書きを参照。突合できない場合は列自体を出さない）のdlを表示。本文の下には共有ボタン（`src/components/ShareButtons.tsx`、X/LINE/はてブのWeb Intentへの素の`<a>`）と、回遊導線として「同じ銘柄の他の記事」（`getArticlesByStockCode()`、最大3件の一行リンク＋銘柄ページへの導線）「この取引をした投資家」（投資家ページへの導線）「関連記事（同じ分類）」（カード最大4件）を重複排除して並べる |
+| `/articles/[id]` | 記事詳細。銘柄｜取引日｜金額規模｜取引企業（`/investors/[filer]`への内部リンク。CMSの`filerName`が空のためEDINET開示との突合で解決する。上記スキーマの注意書きを参照。突合できない場合は列自体を出さない）のdlを表示。本文の下には共有ボタン（`src/components/ShareButtons.tsx`、X/LINE/はてブのWeb Intentへのリンク。SDKは読み込まず`ActionButton`の外部リンクとして描画）と、回遊導線として「同じ銘柄の他の記事」（`getArticlesByStockCode()`、最大3件の一行リンク＋銘柄ページへの導線）「この取引をした投資家」（投資家ページへの導線）「関連記事（同じ分類）」（カード最大4件）を重複排除して並べる |
 | `/category/[category]` | カテゴリ別一覧（同じく初回30件サーバーレンダリング＋オートスクロール） |
 | `/stocks` | 銘柄一覧。見出し直下に業種（セクター）別の絞り込み（Supabase `jpx_stock_list.sector`から集計、`?sector=`クエリでSSRフィルタ、各業種の件数を`(N件)`で表示）を配置し、記事のある銘柄を証券コード順（辞書的に引ける順番）に列挙（`lib/microcms.ts`の`getAllStocksForIndex()`＋`lib/companyInfo.ts`の`getSectorsByCode()`） |
 | `/stocks/[code]` | 銘柄ページ。見出し（企業名・証券コード）の直下に事業内容（1文、あれば）を地の文で表示し、続けて直近90営業日の株価推移グラフ・業種・終値・PER/PBR・52週レンジ位置・株主優待有無の会社情報カードを置く。その下にこの銘柄へ大量保有報告書を提出したことがある投資家を1件ずつ改行して一覧表示（`/investors/[filer]`への内部リンク）、続いて「大量保有・自社株買い履歴」の見出しを置き、同一`stockCode`の記事を`-dealDate`順に一覧表示する。記事詳細の「銘柄」欄から内部リンクあり |
@@ -120,12 +147,13 @@ npm run dev
 - 本文（リッチエディタのHTML）は `dangerouslySetInnerHTML` + Tailwind Typography(`prose`)で描画。ja記事詳細ページは描画前に`linkifyFilerNames()`（`src/lib/format.ts`）で本文中の投資家名（初出のみ）を`/investors/[filer]`へのリンクに変換する。投資家名はCMS側に構造化フィールドが無く自由記述本文の一部でしかないため、`getFilersByStockCode()`でこの銘柄の開示実績がある投資家名一覧を取得し文字列突合する。EDINETのXBRLは提出者名を全角（`Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…`）で保持する一方、AI生成本文は半角で書くため、NFKC正規化した文字列上で位置を探し、本文側の表記（半角）はそのまま残しつつリンク先だけDB上の正式表記（全角）でエンコードする。英語版記事（`/en/articles/[id]`）には未適用（`/en/investors/...`相当のページが存在しないため）。
 - `eyecatch`（アイキャッチ画像）はカード一覧・ヒーロー枠・記事詳細で表示する（未設定の記事はテキスト中心のレイアウトにフォールバック）。記事詳細では`generateMetadata`のOGP画像としても使う。
 - デザインはエディトリアル（雑誌）系。フォントは`next/font/google`のNoto Sans JPで統一。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型表示）を適用。ヒーロー枠（注目記事カード）はアイキャッチ画像がある記事のみ大きな高さを取り、無い記事では余白を残さないコンパクトな表示にフォールバックする。
-- 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。各見出しの下には、その取引日の全記事を一覧できる`/date/[date]`アーカイブページへのリンクを表示する。
+- 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。各見出しの下には、その取引日の全記事を一覧できる`/date/[date]`アーカイブページへのボタン（`src/components/DealDateSeeMoreLink.tsx`）を表示する。
 - ヘッダーのロゴ（🐋アイコン）・カテゴリ別一覧のパンくずリストから常にTOPへ戻れる（記事詳細・銘柄別履歴には既存のパンくずリストあり）。
 - オートスクロールの導入で記事一覧が際限なく伸び、ページ最下部までスクロールするのが実質困難になったため、独立した`<Footer>`は廃止。運営者情報・免責事項・RSS・累計訪問者カウンターは`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）に集約し、スクロール位置によらず常にアクセスできるようにしている。
 - ヘッダー上部のハブナビ（今週の動き／大口投資家一覧／株式銘柄一覧）はスマホ幅では折り返さず横スクロール1行にし（`.no-scrollbar`、`src/app/globals.css`）ている。カテゴリ絞り込み（13カテゴリ）は以前ヘッダーに常設していたが、全ページ共通で常時表示すると場所を取り本文の文脈からも離れて見えるため`src/components/CategoryFilterDetails.tsx`に切り出し、TOPページの見出し「今日の注目取引」の直下にのみ表示する構成に変更した。
 - カテゴリフィルター（`/category/[category]`、`CategoryFilterDetails.tsx`）はmicroCMS側に別フィールドを持たず、`dealType`の値をそのままカテゴリ名として使う（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`、値はidentity）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
-- `/investors`・`/stocks`のカテゴリ／業種フィルターはクライアントJSを使わず、`searchParams`（`?category=`/`?sector=`）を読んでサーバー側で絞り込んだ結果を返すシンプルな構成（フィルターのリンク自体もただの`<Link>`）。`/investors`はカテゴリ別、`/stocks`は業種別で、切り口をあえて分けている。
+- `/investors`・`/stocks`・`/ranking`のカテゴリ／業種フィルターはクライアントJSを使わず、`searchParams`（`?category=`/`?sector=`）を読んでサーバー側で絞り込んだ結果を返すシンプルな構成（フィルターの実体は`<Link>`をボタン化した`src/components/FilterButtonNav.tsx`で、選択中のみ塗りつぶし表示）。`/investors`はカテゴリ別、`/stocks`は業種別、`/ranking`は投資家分類別で、切り口をあえて分けている。
+- ボタンUI（押す導線）は全ページでMUI Buttonに統一している。共通ラッパは`src/components/ActionButton.tsx`（内部リンクは`component={Link}`、外部リンクは`component="a"`＋`target="_blank"`。Server Componentから関数を渡せないため`"use client"`をこのファイルに置いている）で、配色・角丸・フォントは`src/theme.ts`の`MuiButton`（デフォルト`variant="outlined"` / `size="small"`、色は`globals.css`のCSS変数を参照）で一元管理する。適用箇所は取引日見出し下の「この日の記事を見る」（`DealDateSeeMoreLink.tsx`）・記事詳細の共有ボタンと銘柄履歴への導線・月別アーカイブの前後の月ナビ・TOPのカテゴリ絞り込み・一覧ページの絞り込みナビ。本文中の文脈依存のリンク（`/about`・`/faq`の説明文中のリンクなど）はテキストリンクのまま残す。
 - `/stocks/[code]`の会社情報（`src/lib/companyInfo.ts`/`src/components/CompanyInfoCard.tsx`）はトレーディングシステム側が日次で更新するSupabaseの`jpx_stock_list`（業種・事業内容の1文説明・株主優待）と`gen_rankings`（直近90営業日分の終値・PER・PBR・52週レンジ位置）を参照する。事業内容はカード内の付加情報ではなく見出し直下に地の文（クローラーが読む本文）として表示し、`generateMetadata`のdescription（`companyInfo.description`＋`formatStockDealSummary()`の取引サマリー）にも組み込むことで、検索結果スニペット・構造化データの両方に銘柄固有の内容が反映されるようにしている（カード内表示のみではSEO評価にほぼ寄与しないため2026-08-15に変更）。株価推移グラフは外部チャートライブラリを使わず、直近90営業日分の終値をインラインSVGの折れ線（`polyline`）で自前描画している。`gen_rankings`の`drop_prob`（下落確率）・`recommend`（売買シグナル）はstock-alert本体の提供価値そのものなので、ブログ側では意図的に表示しない。取得失敗時（未設定・障害）は記事一覧の表示を止めないよう`null`を返しカードごと非表示にする。ページ全体に`export const revalidate = 300`を設定し、Supabase側のfetchも含めて5分周期で再検証する。
 - ヘッダー右上の🔍アイコン（`src/components/StockSearch.tsx`）から企業名・証券コードで検索できる。入力停止から300ms後に`/api/stocks/search`（`lib/microcms.ts`の`searchStocks()`、`stockCode`/`stockName`の`[contains]`部分一致、銘柄単位で重複排除・最大20件）を叩き、結果をクリック（またはEnterで先頭候補）すると`/stocks/[code]`（銘柄別履歴）に遷移する。
 

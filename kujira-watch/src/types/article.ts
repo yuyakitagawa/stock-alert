@@ -66,6 +66,12 @@ export type Article = {
   eyecatch?: MicroCMSImage;
   // 取引を行った投資家（提出者）名。過去記事には設定されていない場合がある。
   filerName?: string;
+  // クジラ注目度(0-100)。lib/attention_score.py(スコアカード方式、買い開示の実績
+  // 63営業日後リターンで較正)が算出。売り方向の記事・生成タイミングが古い記事には無い。
+  attentionScore?: number;
+  // 注目度スコアの根拠(カンマ区切り、tagsと同じ運用)。例:
+  // "推定取引規模45.0億円の大口取引,保有比率2.50%とまだ小さい段階での取得"
+  attentionReasons?: string;
 };
 
 export type ArticleContent = Article & MicroCMSListContent;
