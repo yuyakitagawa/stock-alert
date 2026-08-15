@@ -12,6 +12,7 @@ import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { docTypeLabel, getFilerClassification, getFilerHoldings } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
 
@@ -174,6 +175,7 @@ export default async function InvestorPage({ params }: Props) {
           {DEAL_TYPE_DESCRIPTIONS[category]}
         </p>
       )}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

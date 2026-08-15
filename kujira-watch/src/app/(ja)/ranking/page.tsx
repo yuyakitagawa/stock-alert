@@ -7,6 +7,7 @@ import { getFilerWinRates } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 3600;
 
@@ -197,6 +198,7 @@ export default async function RankingPage({ searchParams }: Props) {
           ))}
         </Box>
       )}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

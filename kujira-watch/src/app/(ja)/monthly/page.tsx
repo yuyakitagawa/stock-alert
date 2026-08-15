@@ -4,6 +4,7 @@ import MonthList from "@/components/MonthList";
 import { formatMonth } from "@/lib/format";
 import { getAllMonthsForIndex } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 60;
 
@@ -73,6 +74,7 @@ export default async function MonthlyIndexPage() {
       ) : (
         <MonthList months={months} />
       )}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

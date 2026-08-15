@@ -15,6 +15,7 @@ import { getAllMonthsForIndex, getArticlesByMonth, MONTH_PATTERN } from "@/lib/m
 import { getFilerNamesByStockAndDate } from "@/lib/investors";
 import { SITE_URL } from "@/lib/site";
 import { buildFilerRanking, buildStockRanking, buildWeeklySummary } from "@/lib/weeklyStats";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 60;
 
@@ -292,6 +293,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
           <span />
         )}
       </nav>
+      <AdUnit placement="bottom" />
     </div>
   );
 }

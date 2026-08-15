@@ -6,6 +6,7 @@ import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
 import { UI } from "@/lib/i18n";
+import AdUnit from "@/components/AdUnit";
 
 const t = UI.en;
 
@@ -126,6 +127,7 @@ export default function EnAboutPage() {
         <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutDisclaimerHeading}</h2>
         <p className="text-sm leading-relaxed text-foreground/70">{t.aboutDisclaimerBody}</p>
       </section>
+      <AdUnit placement="bottom" locale="en" />
     </article>
   );
 }

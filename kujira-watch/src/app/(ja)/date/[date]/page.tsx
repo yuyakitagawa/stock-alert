@@ -6,6 +6,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate, formatMonth } from "@/lib/format";
 import { getArticlesByDealDate } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+import AdUnit from "@/components/AdUnit";
 
 // YYYY-MM-DD形式のみ受け付ける（それ以外はmicroCMSへの無駄な問い合わせをせず404にする）。
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -114,6 +115,7 @@ export default async function DateArchivePage({ params }: Props) {
           </>
         );
       })()}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

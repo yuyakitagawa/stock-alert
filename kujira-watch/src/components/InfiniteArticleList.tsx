@@ -9,7 +9,7 @@ import { UI, type Locale } from "@/lib/i18n";
 import ArticleCard from "./ArticleCard";
 import DealDateHeading from "./DealDateHeading";
 import DealDateSeeMoreLink from "./DealDateSeeMoreLink";
-import InFeedAd from "./InFeedAd";
+import AdUnit from "./AdUnit";
 
 // 広告を挟む間隔（記事件数）。オートスクロールで一覧が際限なく伸びるため、
 // これだけ記事を読み進めた次の取引日グループの区切りで広告を1枠差し込む。
@@ -94,7 +94,7 @@ export default function InfiniteArticleList({
             </div>
             <DealDateSeeMoreLink date={group.date} locale={locale} />
           </div>
-          {withAd && <InFeedAd locale={locale} />}
+          {withAd && <AdUnit placement="infeed" locale={locale} />}
         </Fragment>
       ))}
       {hasMore && (

@@ -17,6 +17,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { formatDate, formatDealAmount } from "@/lib/format";
 import { buildWeeklySummary } from "@/lib/weeklyStats";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import AdUnit from "@/components/AdUnit";
 
 // 「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。
 // 直近7日間の開示を横断的に要約する（個別記事は取引ごとの解説に特化しているため、
@@ -262,6 +263,7 @@ export default async function WeeklyDigestPage() {
           />
         </section>
       )}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

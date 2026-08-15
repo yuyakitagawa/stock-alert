@@ -11,6 +11,7 @@ import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
 
@@ -118,6 +119,7 @@ export default async function EnStockPage({ params }: Props) {
           <DealDateSeeMoreLink date={group.date} locale="en" />
         </div>
       ))}
+      <AdUnit placement="bottom" locale="en" />
     </div>
   );
 }

@@ -132,11 +132,13 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 
 ## 広告（Google AdSense）
 
-- 設定は `src/lib/adsense.ts` の2つの環境変数に集約している。**`NEXT_PUBLIC_ADSENSE_CLIENT` が未設定の間は、広告スクリプト・広告枠・`/ads.txt` のすべてが何も出力しない**（審査申請前・ローカル・プレビュー環境では完全に無効）。
+- 設定は `src/lib/adsense.ts` の環境変数に集約している。**`NEXT_PUBLIC_ADSENSE_CLIENT` が未設定の間は、広告スクリプト・広告枠・`/ads.txt` のすべてが何も出力しない**（ローカル・プレビュー環境では完全に無効）。スロットIDが未設定の掲載位置にも広告は出ないので、片方だけ先に有効化することもできる。
   - `NEXT_PUBLIC_ADSENSE_CLIENT`: サイト運営者ID（`ca-pub-...`）。ローダースクリプト（`src/components/AdSenseScript.tsx`、両ロケールのlayoutに設置）と`<ins>`の`data-ad-client`に使う。`ca-`を除いた値が`/ads.txt`の販売者IDになる。
-  - `NEXT_PUBLIC_ADSENSE_INFEED_SLOT`: 記事一覧に差し込む広告ユニットのスロットID。AdSense管理画面で「ディスプレイ広告（レスポンシブ）」として作成する（`data-ad-format="auto"` + `data-full-width-responsive="true"` で描画するため、in-feed広告ユニット固有の`data-ad-layout-key`は不要）。
-- 掲載位置は記事一覧のオートスクロールの途中（`src/components/InFeedAd.tsx`）。記事カードの間ではなく**取引日グループの区切り**に、`ARTICLES_PER_AD`（=8）件読み進めるごとに1枠挿入する（`src/components/InfiniteArticleList.tsx`）。記事と広告が地続きに見えると誤クリックを誘発しAdSenseのポリシー違反になるため、必ず「広告」ラベル（英語版は"Sponsored"）を上に添える。最後のグループの後ろは読み込み中のsentinelが続くので置かない。
-- ローダーは React 19 が `async`+`src` の `<script>` を `<head>` に巻き上げるため、layoutのbody内に置いても審査コードの検出は通る。広告ブロッカー等で `adsbygoogle.push()` が失敗しても記事一覧の描画は止めない（例外は握りつぶす）。
+  - `NEXT_PUBLIC_ADSENSE_INFEED_SLOT` / `NEXT_PUBLIC_ADSENSE_BOTTOM_SLOT`: 掲載位置ごとの広告ユニットのスロットID（`ADSENSE_SLOTS`の`infeed`/`bottom`）。位置ごとに別ユニットにするのはAdSense管理画面で収益を分けて見るため。どちらもAdSense管理画面で「ディスプレイ広告（レスポンシブ）」として作成する（`data-ad-format="auto"` + `data-full-width-responsive="true"` で描画するため、in-feed広告ユニット固有の`data-ad-layout-key`は不要）。
+- 広告枠は `src/components/AdUnit.tsx`（`placement`で位置を指定）の1コンポーネントに統一。記事と広告が地続きに見えると誤クリックを誘発しAdSenseのポリシー違反になるため、必ず「広告」ラベル（英語版は"Sponsored"）を上に添える。
+  - **infeed**: 記事一覧（TOP・カテゴリ別・`/en`）のオートスクロールの途中。記事カードの間ではなく**取引日グループの区切り**に、`ARTICLES_PER_AD`（=8）件読み進めるごとに1枠挿入する（`src/components/InfiniteArticleList.tsx`）。最後のグループの後ろは読み込み中のsentinelが続くので置かない。
+  - **bottom**: コンテンツ末尾に1枠。記事詳細・銘柄別・投資家別・取引日別・月別・週次・ランキング・銘柄一覧・投資家一覧・トレンド・FAQ・`/about`（日英）に設置。一覧が無限に伸びるTOP・カテゴリ別には置かない（末尾に到達しないため）。**`/privacy`にだけは置かない**（ポリシーページは広告なしで保つ）。
+- ローダーは React 19 が `async`+`src` の `<script>` を `<head>` に巻き上げるため、layoutのbody内に置いても審査コードの検出は通る。広告ブロッカー等で `adsbygoogle.push()` が失敗してもページの描画は止めない（例外は握りつぶす）。
 - プライバシーポリシー（`/privacy`・`/en/privacy`）はAdSense審査の必須要件。広告ツール・解析ツールを増減させたらこのページの記載も合わせて更新すること。
 
 ## SEO/AIO対策

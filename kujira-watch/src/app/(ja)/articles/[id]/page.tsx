@@ -20,6 +20,7 @@ import { getFilerNamesByStockAndDate, getFilersByStockCode } from "@/lib/investo
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
+import AdUnit from "@/components/AdUnit";
 
 // Route segment config requires a literal value (cannot import from lib/microcms).
 export const revalidate = 60;
@@ -343,6 +344,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           </div>
         )}
       </div>
+      <AdUnit placement="bottom" />
     </article>
   );
 }

@@ -11,6 +11,7 @@ import { getAllStocksForIndex } from "@/lib/microcms";
 import { getHoldingsInRange } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { buildTrendingFilers, buildTrendingIssuers, type TrendingEntry } from "@/lib/trendingStats";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
 
@@ -203,6 +204,7 @@ export default async function TrendingPage() {
           月別アーカイブで過去の動きを見る ›
         </Link>
       </nav>
+      <AdUnit placement="bottom" />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { getFilersByStockCode } from "@/lib/investors";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
+import AdUnit from "@/components/AdUnit";
 
 // 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次で更新するため、
 // microCMS記事(revalidate:60)とずれない範囲で定期的に再取得する。
@@ -150,6 +151,7 @@ export default async function StockPage({ params }: Props) {
           <DealDateSeeMoreLink date={group.date} />
         </div>
       ))}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

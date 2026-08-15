@@ -14,6 +14,7 @@ import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import { getArticleDetail, getArticleList } from "@/lib/microcms";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 60;
 
@@ -237,6 +238,7 @@ export default async function EnArticleDetailPage({ params }: Props) {
           </div>
         )}
       </div>
+      <AdUnit placement="bottom" locale="en" />
     </article>
   );
 }

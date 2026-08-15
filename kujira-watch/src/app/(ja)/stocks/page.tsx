@@ -8,6 +8,7 @@ import { getAllStocksForIndex } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
 
@@ -113,6 +114,7 @@ export default async function StocksIndexPage({ searchParams }: Props) {
           ))}
         </List>
       )}
+      <AdUnit placement="bottom" />
     </div>
   );
 }

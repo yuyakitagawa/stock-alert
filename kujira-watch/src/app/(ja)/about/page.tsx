@@ -6,6 +6,7 @@ import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
+import AdUnit from "@/components/AdUnit";
 
 const title = "このサイトについて";
 const description = "本サイトの運営方針、データソース、免責事項について。";
@@ -215,6 +216,7 @@ export default async function AboutPage() {
           dangerouslySetInnerHTML={{ __html: about.disclaimer }}
         />
       </section>
+      <AdUnit placement="bottom" />
     </article>
   );
 }

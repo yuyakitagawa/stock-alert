@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import FaqList, { type FaqCategory, type FaqItem } from "@/components/FaqList";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import AdUnit from "@/components/AdUnit";
 
 const title = "よくある質問";
 const description =
@@ -2733,6 +2734,7 @@ export default function FaqPage() {
         各質問には色分けされたカテゴリラベルを付けているほか、タブでも絞り込んでご覧いただけます。
       </p>
       <FaqList faqs={FAQS} categories={FAQ_CATEGORIES} />
+      <AdUnit placement="bottom" />
     </article>
   );
 }
