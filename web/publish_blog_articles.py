@@ -1074,11 +1074,13 @@ def main():
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
     if not args.dry_run:
-        from web.x_client import post_top_articles
+        from web.x_client import post_daily_summary, post_top_articles
         featured_ids = get_featured_article_ids()
         posted = post_top_articles(results, featured_ids)
         if posted:
             print(f"🐦 X投稿: {posted}件")
+        # 「本日のクジラ」日次サマリー(21時JSTの最終便のみ投稿される。時刻ガードはx_client側)
+        post_daily_summary()
 
 
 if __name__ == "__main__":
