@@ -24,5 +24,6 @@
 - [x] README.md（kujira-watch）更新
 - 注: 並行セッションがFollowCta/Footer等を編集中のため、本作業のコミットは自分の変更のみを
   ステージ（記事ページはFollowCta行を除いた版をステージ）
-- [ ] commit & push
-- [ ] 本番デプロイ反映確認（kujira-watch.com HTTP 200＋新要素の表示確認）
+- [x] commit & push（de90fc82）
+- [x] 本番デプロイ反映確認（2026-08-15: 記事ページに注記＋「開示後の株価推移」表示、
+  /api/stocks/searchがinvestorsを返却、投資家ページに「乗っかりリターン実績（推定）」表示を確認）
