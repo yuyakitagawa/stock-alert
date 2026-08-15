@@ -1,0 +1,123 @@
+"use client";
+
+import Link from "next/link";
+import Box from "@mui/material/Box";
+import Drawer from "@mui/material/Drawer";
+import IconButton from "@mui/material/IconButton";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemText from "@mui/material/ListItemText";
+import Typography from "@mui/material/Typography";
+import Divider from "@mui/material/Divider";
+import CloseIcon from "@mui/icons-material/Close";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
+import { UI, type Locale } from "@/lib/i18n";
+
+// external: 外部サイト（公式Xなど）へのリンク。next/linkではなく素のaで別タブに開く。
+export type MenuLink = { href: string; label: string; external?: boolean };
+
+// ハンバーガーメニューの中身。閉じているのが既定なので、HeaderMenu側から
+// next/dynamicで遅延読み込みする。MUI Drawerは Modal/Portal/Backdrop/Slide 一式を
+// 引き連れており、それが全ページの初期JSに積まれていた。
+// 見た目・挙動は据え置きで、読み込みのタイミングだけ後ろにずらす。
+export default function HeaderMenuDrawer({
+  open,
+  onClose,
+  locale,
+  siteLinks,
+  jaHref,
+  enHref,
+  year,
+}: {
+  open: boolean;
+  onClose: () => void;
+  locale: Locale;
+  siteLinks: MenuLink[];
+  jaHref: string;
+  enHref: string;
+  year: number;
+}) {
+  const t = UI[locale];
+  const close = onClose;
+
+  return (
+      <Drawer anchor="right" open={open} onClose={close}>
+        <Box sx={{ width: "86vw", maxWidth: 320, height: "100%", overflowY: "auto" }} role="presentation">
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: 1, borderColor: "divider", px: 2, py: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 700, color: "primary.main" }}>
+              <Box component="span" aria-hidden>
+                🐋
+              </Box>
+              {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+            </Typography>
+            <IconButton
+              aria-label={locale === "en" ? "Close menu" : "メニューを閉じる"}
+              onClick={close}
+              size="small"
+              sx={{ color: "primary.main" }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+
+          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
+            {t.langSectionLabel}
+          </Typography>
+          <List component="nav" aria-label={t.langSectionLabel} disablePadding>
+            <ListItemButton component={Link} href={jaHref} onClick={close} divider selected={locale === "ja"}>
+              <ListItemText
+                primary="日本語"
+                slotProps={{ primary: { sx: { fontWeight: locale === "ja" ? 700 : 400, color: locale === "ja" ? "brand.blue" : "primary.main" } } }}
+              />
+              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+            </ListItemButton>
+            <ListItemButton component={Link} href={enHref} onClick={close} divider selected={locale === "en"}>
+              <ListItemText
+                primary="English"
+                slotProps={{ primary: { sx: { fontWeight: locale === "en" ? 700 : 400, color: locale === "en" ? "brand.blue" : "primary.main" } } }}
+              />
+              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+            </ListItemButton>
+          </List>
+
+          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
+            {locale === "en" ? "Menu" : "メニュー"}
+          </Typography>
+          <List component="nav" aria-label={locale === "en" ? "Menu" : "メニュー"} disablePadding>
+            {siteLinks.map((link) =>
+              link.external ? (
+                <ListItemButton
+                  key={link.href}
+                  component="a"
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={close}
+                  divider
+                >
+                  <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                  <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+                </ListItemButton>
+              ) : (
+                <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
+                  <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                  <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+                </ListItemButton>
+              ),
+            )}
+          </List>
+
+          <Typography variant="caption" sx={{ display: "block", mt: 1.5, px: 2, lineHeight: 1.6, color: "text.secondary" }}>
+            {locale === "en"
+              ? "This site is commentary based on public EDINET large-shareholding filings and is not investment advice."
+              : "本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。"}
+          </Typography>
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="caption" sx={{ display: "block", px: 2, pb: 2, color: "text.disabled" }}>
+            © {year} {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+          </Typography>
+        </Box>
+      </Drawer>
+  );
+}

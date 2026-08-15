@@ -42,7 +42,8 @@ jobs:
           cache-dependency-path: video/remotion/package-lock.json
 
       - name: Install Python dependencies
-        run: pip install requests anthropic python-dotenv
+        # pandas/numpy は株価チャートシーン（lib.utils.get_prices）が使う
+        run: pip install requests anthropic python-dotenv pandas numpy
 
       - name: Install Noto Sans CJK (動画内の日本語フォント)
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
@@ -58,6 +59,21 @@ jobs:
           path: ~/.cache/remotion
           key: remotion-browser-${{ runner.os }}
 
+      # ナレーション合成用のVOICEVOXエンジン（ずんだもん）。起動失敗しても
+      # publish_video.py 側が無音動画にフォールバックするため continue-on-error にする。
+      - name: Start VOICEVOX engine
+        continue-on-error: true
+        run: |
+          docker run -d --name voicevox -p 50021:50021 \
+            voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+          # エンジンの起動待ち（モデルロードに数十秒かかる）
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:50021/version > /dev/null; then
+              echo "VOICEVOX ready"; break
+            fi
+            sleep 5
+          done
+
       - name: Link repo to ~/stock-alert
         run: |
           rm -f ~/stock-alert
@@ -68,12 +84,19 @@ jobs:
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" > ~/stock-alert/.env
           echo "MICROCMS_SERVICE_DOMAIN=${{ secrets.MICROCMS_SERVICE_DOMAIN }}" >> ~/stock-alert/.env
           echo "MICROCMS_API_KEY=${{ secrets.MICROCMS_API_KEY }}" >> ~/stock-alert/.env
+          # 株価チャートシーン(yahoo_price_cache)・事業内容/投資家プロフィールのキャッシュ参照用
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
 
       - name: 縦動画の生成・投稿（YouTube Shorts / TikTok）
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           MICROCMS_SERVICE_DOMAIN: ${{ secrets.MICROCMS_SERVICE_DOMAIN }}
           MICROCMS_API_KEY: ${{ secrets.MICROCMS_API_KEY }}
+          # 背景の自然映像（Pexels Videos）。未設定ならグラデーション背景で続行
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
