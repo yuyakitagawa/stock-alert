@@ -8,6 +8,7 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
+import RatioTransition from "@/components/RatioTransition";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { docTypeLabel, getFilerClassification, getFilerHoldings } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
@@ -58,6 +59,19 @@ export default async function InvestorPage({ params }: Props) {
   const majorHoldings = Array.from(
     new Map(holdings.map((h) => [h.issuerCode, h])).values()
   );
+  // 最新開示の増減方向で「買い増し・新規」「売却」に分ける（前回比率が取れない開示は方向不明として除外）。
+  const direction = (h: (typeof majorHoldings)[number]) =>
+    h.holdingRatio !== null && h.holdingRatioPrior !== null
+      ? h.holdingRatio - h.holdingRatioPrior
+      : null;
+  const recentBuys = majorHoldings.filter((h) => {
+    const d = direction(h);
+    return d !== null && d > 0;
+  });
+  const recentSells = majorHoldings.filter((h) => {
+    const d = direction(h);
+    return d !== null && d < 0;
+  });
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -130,6 +144,44 @@ export default async function InvestorPage({ params }: Props) {
           </ul>
         </div>
       )}
+      {(recentBuys.length > 0 || recentSells.length > 0) && (
+        <div className="mb-8 grid grid-cols-1 gap-6 border-t border-rule pt-4 sm:grid-cols-2">
+          {recentBuys.length > 0 && (
+            <div>
+              <h2 className="mb-2 text-sm font-bold text-brand-navy">直近で買い増した銘柄</h2>
+              <ul className="space-y-2 text-sm">
+                {recentBuys.map((h) => (
+                  <li key={h.issuerCode}>
+                    <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
+                      {h.issuerName}（{h.issuerCode}）
+                    </Link>
+                    <span className="ml-2 text-xs">
+                      <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {recentSells.length > 0 && (
+            <div>
+              <h2 className="mb-2 text-sm font-bold text-brand-navy">直近で売却した銘柄</h2>
+              <ul className="space-y-2 text-sm">
+                {recentSells.map((h) => (
+                  <li key={h.issuerCode}>
+                    <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
+                      {h.issuerName}（{h.issuerCode}）
+                    </Link>
+                    <span className="ml-2 text-xs">
+                      <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       <div className="mb-6 border-t border-rule pt-4">
         <h2 className="text-lg font-bold text-brand-navy">最近の取引</h2>
         <p className="mt-1 text-sm text-foreground/50">
@@ -162,8 +214,7 @@ export default async function InvestorPage({ params }: Props) {
                   {docTypeLabel(h.docTypeCode)}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                  {h.holdingRatioPrior !== null ? `${h.holdingRatioPrior}% → ` : ""}
-                  {h.holdingRatio !== null ? `${h.holdingRatio}%` : "-"}
+                  <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
                 </TableCell>
               </TableRow>
             ))}

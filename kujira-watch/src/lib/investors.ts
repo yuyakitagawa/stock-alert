@@ -220,6 +220,37 @@ export async function getFilerNamesByStockAndDate(
   return resolved;
 }
 
+export type StockHoldingRow = {
+  docId: string;
+  filerName: string;
+  discDate: string;
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+  docTypeCode: string;
+};
+
+// /stocks/[code]の「保有比率の推移」テーブル用。この銘柄に提出された大量保有・変更報告書を
+// 開示日の新しい順に返す（提出者横断の時系列）。
+export async function getHoldingsByStockCode(stockCode: string): Promise<StockHoldingRow[]> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("edinet_large_holdings")
+    .select("doc_id, filer_name, disc_date, holding_ratio, holding_ratio_prior, doc_type_code")
+    .eq("issuer_code", stockCode)
+    .order("disc_date", { ascending: false })
+    .limit(100);
+  return (data ?? [])
+    .filter((r) => r.filer_name)
+    .map((r) => ({
+      docId: r.doc_id,
+      filerName: r.filer_name,
+      discDate: r.disc_date,
+      holdingRatio: r.holding_ratio,
+      holdingRatioPrior: r.holding_ratio_prior,
+      docTypeCode: r.doc_type_code,
+    }));
+}
+
 // 記事詳細のファクトボックス用。銘柄コード×開示日×提出者名でEDINET開示そのものを1件引き、
 // 保有比率・直前の保有比率を返す（CMSの記事には保有比率フィールドが無いため）。
 // 同一キーで複数行ある場合（同日の訂正等）は保有比率が取れている行を優先する。
