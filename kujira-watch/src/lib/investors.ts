@@ -29,8 +29,7 @@ export type FilerWinRate = {
   filerName: string;
   category: DealType;
   n: number;
-  totalReturnYen: number;
-  avgReturnYen: number;
+  totalReturnOku: number;
   holdDays: number;
   updatedAt: string;
 };
@@ -131,21 +130,20 @@ export async function getFilersByStockCode(
 }
 
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
-// トータルリターン(total_return_yen)の降順で返す。
+// トータルリターン(total_return_oku)の降順で返す。
 export async function getFilerWinRates(minN = 1): Promise<FilerWinRate[]> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("filer_win_rate")
-    .select("filer_name, category, n, total_return_yen, avg_return_yen, hold_days, updated_at")
+    .select("filer_name, category, n, total_return_oku, hold_days, updated_at")
     .gte("n", minN)
-    .order("total_return_yen", { ascending: false });
+    .order("total_return_oku", { ascending: false });
 
   return (data ?? []).map((r) => ({
     filerName: r.filer_name,
     category: r.category as DealType,
     n: r.n,
-    totalReturnYen: r.total_return_yen,
-    avgReturnYen: r.avg_return_yen,
+    totalReturnOku: r.total_return_oku,
     holdDays: r.hold_days,
     updatedAt: r.updated_at,
   }));

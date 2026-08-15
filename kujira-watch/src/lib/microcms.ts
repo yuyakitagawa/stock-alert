@@ -1,4 +1,5 @@
 import { createClient } from "microcms-js-sdk";
+import { unstable_cache } from "next/cache";
 import type { AboutPage, Article, ArticleContent, DealType } from "@/types/article";
 
 const serviceDomain = process.env.MICROCMS_SERVICE_DOMAIN;
@@ -236,28 +237,36 @@ export async function getAllArticlesForSitemap() {
 export type StockSummary = { stockCode: string; stockName: string; articleCount: number; latestDealDate: string };
 
 // /stocks（銘柄一覧）用。記事が1件以上ある銘柄をstockCode単位で集約する。
-export async function getAllStocksForIndex(): Promise<StockSummary[]> {
-  const contents = await client.getAllContents<Pick<Article, "stockCode" | "stockName" | "dealDate">>({
-    endpoint: "articles",
-    queries: {
-      fields: "stockCode,stockName,dealDate",
-      orders: "-dealDate",
-    },
-    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-  });
+// /stocks は searchParams(sector) を読むため Next.js が自動でdynamic renderingにし、
+// ページ単位のrevalidateが効かない。全437件をmicroCMSから100件ずつ取得する
+// getAllContents自体もSDK仕様でページ間に1秒スリープが入り単体で4秒以上かかるため、
+// unstable_cacheで結果自体をrevalidate間キャッシュしてリクエスト毎の再実行を防ぐ。
+export const getAllStocksForIndex = unstable_cache(
+  async (): Promise<StockSummary[]> => {
+    const contents = await client.getAllContents<Pick<Article, "stockCode" | "stockName" | "dealDate">>({
+      endpoint: "articles",
+      queries: {
+        fields: "stockCode,stockName,dealDate",
+        orders: "-dealDate",
+      },
+      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+    });
 
-  const byCode = new Map<string, StockSummary>();
-  for (const { stockCode, stockName, dealDate } of contents) {
-    const existing = byCode.get(stockCode);
-    if (!existing) {
-      byCode.set(stockCode, { stockCode, stockName, articleCount: 1, latestDealDate: dealDate });
-    } else {
-      existing.articleCount += 1;
+    const byCode = new Map<string, StockSummary>();
+    for (const { stockCode, stockName, dealDate } of contents) {
+      const existing = byCode.get(stockCode);
+      if (!existing) {
+        byCode.set(stockCode, { stockCode, stockName, articleCount: 1, latestDealDate: dealDate });
+      } else {
+        existing.articleCount += 1;
+      }
     }
-  }
-  // 一覧は「見て探す」用途のため、更新順ではなく証券コード昇順（辞書的に引ける順番）にする。
-  return Array.from(byCode.values()).sort((a, b) => a.stockCode.localeCompare(b.stockCode));
-}
+    // 一覧は「見て探す」用途のため、更新順ではなく証券コード昇順（辞書的に引ける順番）にする。
+    return Array.from(byCode.values()).sort((a, b) => a.stockCode.localeCompare(b.stockCode));
+  },
+  ["all-stocks-for-index"],
+  { revalidate: REVALIDATE_SECONDS }
+);
 
 export async function getAboutPage() {
   return client.getObject<AboutPage>({
