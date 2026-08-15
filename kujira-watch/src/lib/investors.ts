@@ -220,6 +220,28 @@ export async function getFilerNamesByStockAndDate(
   return resolved;
 }
 
+// 記事詳細のファクトボックス用。銘柄コード×開示日×提出者名でEDINET開示そのものを1件引き、
+// 保有比率・直前の保有比率を返す（CMSの記事には保有比率フィールドが無いため）。
+// 同一キーで複数行ある場合（同日の訂正等）は保有比率が取れている行を優先する。
+export async function getHoldingSnapshot(
+  stockCode: string,
+  discDate: string,
+  filerName: string
+): Promise<{ holdingRatio: number | null; holdingRatioPrior: number | null } | null> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("edinet_large_holdings")
+    .select("holding_ratio, holding_ratio_prior")
+    .eq("issuer_code", stockCode)
+    .eq("disc_date", discDate)
+    .eq("filer_name", filerName)
+    .order("holding_ratio", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { holdingRatio: data.holding_ratio, holdingRatioPrior: data.holding_ratio_prior };
+}
+
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
 // トータルリターン(total_return_oku)の降順で返す。
 // /rankingもsearchParams(category)を読むためdynamic renderingになり、ページ側の
