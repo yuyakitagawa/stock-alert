@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import XTimeline from "@/components/XTimeline";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -41,11 +40,6 @@ export default async function AboutPage() {
           </a>
           でも発信しています。
         </p>
-        <div className="-mx-8 sm:-mx-12">
-          <div className="-rotate-1 rounded-xl border border-rule bg-paper p-3 shadow-lg">
-            <XTimeline tweetLimit={1} />
-          </div>
-        </div>
       </section>
 
       <section className="mb-6">
