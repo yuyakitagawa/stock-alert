@@ -54,9 +54,22 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - Secrets 未登録のためアップロードは未実施。この状態でワークフローが走った場合は
   動画を生成してアーティファクトに残すだけで、投稿はせず正常終了する。
 
+## v2改修（2026-08-15 オーナー指示「動画が面白くない」→ TikTok運用視点で全面改修）
+- [x] 台本を「記事をほぼ読む」ナレーション構成に変更（7シーン: hook→company→deal→filer→change→outlook→cta。
+      各シーン narration+caption の対。銘柄の事業内容・投資家プロフィールはSupabaseキャッシュを再利用）
+- [x] TTS導入。Google Cloud TTSで実装→**GCPに請求先が無くAPI有効化不可**→VOICEVOX（ずんだもん）へ切替。
+      CIは公式Dockerイメージでエンジン起動。クレジット表記はCTAシーン・説明文・キャプションに自動挿入
+- [x] シーンの尺をナレーション音声の長さに連動（固定20秒を廃止、calculateMetadata）
+- [x] TikTok運用の定石を反映: 冒頭は金額の一撃から／safeArea（下部470px・右190px）遵守／
+      無音視聴者向け大型字幕常時表示／進行バー／背景の常時ドリフト／ループに繋がる締め
+- [x] ナレーションの切り詰めを句点境界に（文の途中切りが読み上げられる不具合の防止）
+- [x] テスト29件に更新・全209+件pass
+- [ ] ローカルでVOICEVOXエンジンを立てて音声付きの通し確認（エンジン未導入のため未実施。
+      CIのDocker起動で代替検証可能）
+
 ## 次にやること（オーナー作業）
 1. 上表の Secrets を GitHub に登録する（`video/youtube_auth.py` / `video/tiktok_auth.py` を
    ローカルで1回ずつ実行してリフレッシュトークンを取得）
 2. Actions から `Short Video Post` を「render_only=true」で手動実行し、
-   アーティファクトの mp4 を目視確認する
+   アーティファクトの mp4（音声含む）を目視確認する
 3. 問題なければ render_only なしで手動実行し、初回の実投稿を確認する

@@ -72,12 +72,18 @@ def build_description(props: dict) -> str:
         if article_id
         else SITE_URL
     )
-    bullets = "\n".join(f"・{b}" for b in props.get("bullets", []))
+    scenes = props.get("scenes", [])
+    hook = scenes[0]["caption"] if scenes else ""
+    # 中間シーン（hookとcta以外）の字幕を要点の箇条書きとして載せる
+    points = "\n".join(
+        f"・{s['caption']}" for s in scenes[1:-1] if s.get("caption")
+    )
     return (
-        f"{props.get('hook', '')}\n\n"
-        f"{bullets}\n\n"
+        f"{hook}\n\n"
+        f"{points}\n\n"
         f"▼記事で詳しく読む\n{url}\n\n"
         f"EDINETの大量保有報告書から、大口投資家（クジラ）の売買を毎日追いかけています。\n\n"
+        f"音声: VOICEVOX:ずんだもん\n"
         f"※本動画は公開情報の要約であり、投資勧誘・投資助言ではありません。投資判断はご自身の責任でお願いします。\n\n"
         f"#Shorts #EDINET #大量保有報告書 #日本株 #{props.get('stockName', '')}"
     )

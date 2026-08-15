@@ -64,7 +64,11 @@ def build_caption(props: dict) -> str:
     if len(head) > CAPTION_MAX_CHARS:
         head = head[: CAPTION_MAX_CHARS - 1] + "…"
     # TikTokはキャプション内のURLがリンクにならないため、プロフィール誘導の文言にする。
-    return f"{head}\n詳しくはプロフィールのリンク（kujira-watch.com）から\n#日本株 #株式投資 #EDINET #大量保有報告書"
+    # VOICEVOXのクレジット表記は利用規約上の必須事項。
+    return (
+        f"{head}\n詳しくはプロフィールのリンク（kujira-watch.com）から\n"
+        f"音声: VOICEVOX:ずんだもん\n#日本株 #株式投資 #EDINET #大量保有報告書"
+    )
 
 
 def _upload_bytes(upload_url: str, video_path: str) -> bool:
