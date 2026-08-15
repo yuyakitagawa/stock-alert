@@ -366,3 +366,14 @@ python3 tests/test_fetch_history.py  # 株価キャッシュ銘柄コード収�
 トレーディングシステム本体とは別デプロイの公開ブログサイト「大口投資家の監視ブログ」（Next.js + Tailwind CSS + microCMS、
 https://kujira-watch.com/ ）。EDINET大量保有報告書をもとに機関投資家・インサイダー・自社株買いなど「クジラ」
 （大口投資家の俗称）の動きを解説する。SEO/AIO対策・独自ドメイン対応済み。詳細は `kujira-watch/README.md` を参照。
+
+---
+
+## 付録: Claude Code スキル（`.claude/skills/`）
+
+| スキル | 役割 |
+|---|---|
+| `bear-backtest` | 暴落耐性チェックの bear バックテストを実行し、マージ可否を判定 |
+| `design-consult` | **デザインコンサルタント**。kujira-watchサイト・アイキャッチ画像・Remotion動画のデザインレビューと改善提案。ブランドトークン（globals.css / theme.ts）と技術制約（和文ウェブフォント禁止・MUI規約・RSC境界）を踏まえ、375px/1280px × ja/en のスクリーンショット確認込みで優先度付きの指摘を出す |
+| `manim-video` | Manimによる数学アニメーション動画の生成 |
+| `note-cover` | note記事用の表紙画像（1280x670）生成 |
