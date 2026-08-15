@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMonth } from "@/lib/format";
 import { getArticlesByDealDate } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 
@@ -48,13 +48,18 @@ export default async function DateArchivePage({ params }: Props) {
 
   const label = formatDate(date);
   const url = `${SITE_URL}/date/${date}`;
+  // 取引日別ページは日数ぶんだけ増える一方で、/weeklyから張られるのは直近7日分だけで
+  // 古い日付は内部リンクが切れていた。月ハブ(/monthly/[month])を親に置いて辿れるようにする。
+  const month = date.slice(0, 7);
+  const monthLabel = formatMonth(month);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: label, item: url },
+      { "@type": "ListItem", position: 2, name: monthLabel, item: `${SITE_URL}/monthly/${month}` },
+      { "@type": "ListItem", position: 3, name: label, item: url },
     ],
   };
 
@@ -81,6 +86,8 @@ export default async function DateArchivePage({ params }: Props) {
       />
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
+        {" / "}
+        <Link href={`/monthly/${month}`} className="hover:text-brand-blue">{monthLabel}</Link>
         {" / "}
         <span className="text-foreground/70">{label}</span>
       </nav>

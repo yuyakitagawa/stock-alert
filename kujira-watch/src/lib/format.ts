@@ -16,6 +16,18 @@ export function formatDate(dateString: string, locale: Locale = "ja"): string {
   }).format(date);
 }
 
+// "YYYY-MM" を「2026年8月」形式にする（/monthly の見出し・パンくず用）。
+// Dateを介すとタイムゾーンで前月にずれる余地があるため、文字列のまま組み立てる。
+export function formatMonth(month: string, locale: Locale = "ja"): string {
+  const [year, mon] = month.split("-");
+  if (locale === "en") {
+    const label = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", timeZone: "UTC" })
+      .format(new Date(`${month}-01T00:00:00Z`));
+    return label;
+  }
+  return `${year}年${Number(mon)}月`;
+}
+
 // amount は億円(100,000,000円)単位。英語版は短縮表記(¥X.XB / ¥XXXM)に変換する。
 export function formatDealAmount(amount: number, locale: Locale = "ja"): string {
   if (locale === "en") {

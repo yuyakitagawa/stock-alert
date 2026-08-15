@@ -11,13 +11,8 @@ import ArticleCard from "@/components/ArticleCard";
 import ShareButtons from "@/components/ShareButtons";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
-import {
-  getArticleDetail,
-  getArticleList,
-  getArticlesByFilerName,
-  getArticlesByStockCode,
-} from "@/lib/microcms";
-import { getFilersByStockCode } from "@/lib/investors";
+import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
+import { getFilerNamesByStockAndDate, getFilersByStockCode } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
@@ -108,21 +103,25 @@ export default async function ArticleDetailPage({ params }: Props) {
   const url = `${SITE_URL}/articles/${id}`;
   const dealDateOnly = article.dealDate.slice(0, 10);
 
-  // 関連リンクは「同じ銘柄」→「同じ投資家」→「同じ分類」の順に近いものから並べる。
+  // 関連リンクは「同じ銘柄」→「同じ分類」の順に近いものから並べる。
   // 同じ記事・既に上のセクションで出した記事は重複させない。
-  const [{ contents: sameCategoryArticles }, { contents: sameStockArticles }, sameFilerArticles, filers] =
+  const [{ contents: sameCategoryArticles }, { contents: sameStockArticles }, filers, filerByKey] =
     await Promise.all([
       article.dealType ? getArticleList({ dealType: article.dealType, limit: 5 }) : Promise.resolve({ contents: [] }),
       getArticlesByStockCode(article.stockCode),
-      article.filerName ? getArticlesByFilerName(article.filerName, RELATED_COUNT + 1) : Promise.resolve([]),
       getFilersByStockCode(article.stockCode),
+      getFilerNamesByStockAndDate(dealDateOnly, dealDateOnly),
     ]);
 
   const relatedStockArticles = sameStockArticles.filter((a) => a.id !== id).slice(0, RELATED_COUNT);
   const shownIds = new Set([id, ...relatedStockArticles.map((a) => a.id)]);
-  const relatedFilerArticles = sameFilerArticles.filter((a) => !shownIds.has(a.id)).slice(0, RELATED_COUNT);
-  for (const a of relatedFilerArticles) shownIds.add(a.id);
   const relatedArticles = sameCategoryArticles.filter((a) => !shownIds.has(a.id)).slice(0, 4);
+
+  // microCMSのarticlesスキーマには提出者名フィールドが無く、article.filerNameは常にundefinedに
+  // なる（lib/investors.tsのgetFilerNamesByStockAndDateの注記を参照）。CMS側にフィールドが
+  // 追加されればそれを優先し、無い間はEDINET開示（Supabase）との突き合わせで補う。
+  const filerName =
+    article.filerName ?? filerByKey.get(`${article.stockCode}|${dealDateOnly}`);
 
   const linkedBody = linkifyFilerNames(article.body, filers.map((f) => f.filerName));
 
@@ -255,15 +254,15 @@ export default async function ArticleDetailPage({ params }: Props) {
               {formatDealAmount(article.dealAmount)}
             </Typography>
           </Box>
-          {article.filerName && (
+          {filerName && (
             <Box>
               <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引企業</Typography>
               <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
                 <Link
-                  href={`/investors/${encodeURIComponent(article.filerName)}`}
+                  href={`/investors/${encodeURIComponent(filerName)}`}
                   className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
                 >
-                  {article.filerName}
+                  {filerName}
                 </Link>
               </Typography>
             </Box>
@@ -310,18 +309,19 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Link>
           </div>
         )}
-        {article.filerName && relatedFilerArticles.length > 0 && (
+        {filerName && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-4 text-lg font-bold text-brand-navy">
-              {article.filerName}の他の記事
-            </h2>
-            <RelatedArticleLinks articles={relatedFilerArticles} />
-            <Link
-              href={`/investors/${encodeURIComponent(article.filerName)}`}
-              className="kicker mt-3 inline-block text-brand-blue hover:underline"
-            >
-              この投資家の保有銘柄・取引履歴を見る ›
-            </Link>
+            <h2 className="mb-2 text-lg font-bold text-brand-navy">この取引をした投資家</h2>
+            <p className="text-sm leading-relaxed text-foreground/70">
+              <Link
+                href={`/investors/${encodeURIComponent(filerName)}`}
+                className="font-bold text-brand-blue hover:underline"
+              >
+                {filerName}
+              </Link>
+              のページでは、この投資家がEDINETに提出した大量保有報告書をもとに、
+              保有銘柄と保有比率の推移を横断して確認できます。
+            </p>
           </div>
         )}
         {relatedArticles.length > 0 && (

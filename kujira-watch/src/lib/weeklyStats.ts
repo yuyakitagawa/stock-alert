@@ -3,6 +3,7 @@ import { isSellArticle } from "./format";
 
 export type CategoryBreakdown = { dealType: DealType; count: number; amount: number };
 export type StockBreakdown = { stockCode: string; stockName: string; count: number; amount: number };
+export type FilerBreakdown = { filerName: string; count: number; amount: number };
 
 export type WeeklySummary = {
   totalCount: number;
@@ -18,7 +19,41 @@ export type WeeklySummary = {
 
 const TOP_STOCK_COUNT = 3;
 
-// /weeklyの「今週のポイント」向けに、件数・金額を買い/売り・投資家分類・銘柄の軸で集計する。
+// /monthly（月別アーカイブ）の「今月の主役」向け。誰が動いたかを金額規模の降順で並べる。
+// filerNameはフィールド追加前の記事には無いため、持たない記事は集計から除く。
+export function buildFilerRanking(articles: ArticleContent[], limit: number): FilerBreakdown[] {
+  const byFiler = new Map<string, FilerBreakdown>();
+  for (const article of articles) {
+    const filerName = article.filerName?.trim();
+    if (!filerName) continue;
+    const entry = byFiler.get(filerName) ?? { filerName, count: 0, amount: 0 };
+    entry.count += 1;
+    entry.amount += article.dealAmount;
+    byFiler.set(filerName, entry);
+  }
+  return [...byFiler.values()].sort((a, b) => b.amount - a.amount).slice(0, limit);
+}
+
+// 銘柄別の集計。buildWeeklySummary.topStocks（上位3件）と/monthlyの銘柄ランキング
+// （上位10件）で件数だけが異なるため、limitを引数にして共有する。
+export function buildStockRanking(articles: ArticleContent[], limit: number): StockBreakdown[] {
+  const byStock = new Map<string, StockBreakdown>();
+  for (const article of articles) {
+    const stock = byStock.get(article.stockCode) ?? {
+      stockCode: article.stockCode,
+      stockName: article.stockName,
+      count: 0,
+      amount: 0,
+    };
+    stock.count += 1;
+    stock.amount += article.dealAmount;
+    byStock.set(article.stockCode, stock);
+  }
+  return [...byStock.values()].sort((a, b) => b.amount - a.amount).slice(0, limit);
+}
+
+// /weeklyの「今週のポイント」・/monthlyの「今月のポイント」向けに、件数・金額を
+// 買い/売り・投資家分類・銘柄の軸で集計する。
 // 記事本文の解説とは別に、数字だけから機械的に導ける事実のみを扱う（解釈・予測はしない）。
 export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
   let buyCount = 0;
@@ -26,7 +61,6 @@ export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
   let sellCount = 0;
   let sellAmount = 0;
   const categoryMap = new Map<DealType, CategoryBreakdown>();
-  const stockMap = new Map<string, StockBreakdown>();
 
   for (const article of articles) {
     if (isSellArticle(article.tags)) {
@@ -41,16 +75,6 @@ export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
     category.count += 1;
     category.amount += article.dealAmount;
     categoryMap.set(article.dealType, category);
-
-    const stock = stockMap.get(article.stockCode) ?? {
-      stockCode: article.stockCode,
-      stockName: article.stockName,
-      count: 0,
-      amount: 0,
-    };
-    stock.count += 1;
-    stock.amount += article.dealAmount;
-    stockMap.set(article.stockCode, stock);
   }
 
   return {
@@ -61,6 +85,6 @@ export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
     sellCount,
     sellAmount,
     categoryBreakdown: [...categoryMap.values()].sort((a, b) => b.amount - a.amount),
-    topStocks: [...stockMap.values()].sort((a, b) => b.amount - a.amount).slice(0, TOP_STOCK_COUNT),
+    topStocks: buildStockRanking(articles, TOP_STOCK_COUNT),
   };
 }

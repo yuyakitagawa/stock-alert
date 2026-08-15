@@ -82,10 +82,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }));
 
+  // 月別アーカイブ。取引日別ページの親ハブなので、日別ページより優先度を高くする。
+  const months = [...new Set(dealDates.map((date) => date.slice(0, 7)))];
+  const monthEntries: MetadataRoute.Sitemap = months.map((month) => ({
+    url: `${SITE_URL}/monthly/${month}`,
+    changeFrequency: "weekly",
+    priority: 0.6,
+  }));
+
   return [
     { url: SITE_URL, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
     { url: `${SITE_URL}/en`, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
     { url: `${SITE_URL}/weekly`, changeFrequency: "daily", priority: 0.9 },
+    { url: `${SITE_URL}/monthly`, changeFrequency: "daily", priority: 0.7 },
     { url: `${SITE_URL}/about`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
     { url: `${SITE_URL}/en/about`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
     { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.6 },
@@ -96,6 +105,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...enCategoryEntries,
     ...stockEntries,
     ...enStockEntries,
+    ...monthEntries,
     ...dateEntries,
     ...investorEntries,
     ...articleEntries,

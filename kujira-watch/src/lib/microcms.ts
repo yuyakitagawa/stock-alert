@@ -30,6 +30,33 @@ function normalizeDealType<T extends { dealType: unknown }>(article: T): T {
 // 週によっては100件を超える（実測で直近週196件）ため、上限に達したらoffsetページネーションで
 // 追加取得し、範囲内の全件を取りこぼさないようにする。
 const MAX_PAGE_SIZE = 100;
+// microCMS公式SDKのgetAllContentsはページ間に1秒の固定スリープが入る仕様で、
+// 数百件の全件取得に数秒かかる。全件走査が必要な集計（銘柄一覧・月別アーカイブ）では
+// 1ページ目のtotalCountから残りのoffsetを割り出し、並列に取得して待ち時間を潰す。
+async function fetchAllPagesParallel<T>(queries: { fields: string; orders: string }): Promise<T[]> {
+  const requestInit = { next: { revalidate: REVALIDATE_SECONDS } };
+  const first = await client.getList<T>({
+    endpoint: "articles",
+    queries: { ...queries, limit: MAX_PAGE_SIZE, offset: 0 },
+    customRequestInit: requestInit,
+  });
+
+  const remainingOffsets: number[] = [];
+  for (let offset = MAX_PAGE_SIZE; offset < first.totalCount; offset += MAX_PAGE_SIZE) {
+    remainingOffsets.push(offset);
+  }
+  const restPages = await Promise.all(
+    remainingOffsets.map((offset) =>
+      client.getList<T>({
+        endpoint: "articles",
+        queries: { ...queries, limit: MAX_PAGE_SIZE, offset },
+        customRequestInit: requestInit,
+      })
+    )
+  );
+  return [first, ...restPages].flatMap((page) => page.contents);
+}
+
 async function fetchAllArticlesByFilter(filters: string): Promise<ArticleContent[]> {
   const all: ArticleContent[] = [];
   let offset = 0;
@@ -194,6 +221,52 @@ export async function getPreviousPeriodArticles(days: number) {
   return { contents };
 }
 
+export const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+
+// /monthly/[month]用。YYYY-MM の暦月に含まれる記事を全件取得する。
+// 境界の扱いはgetRecentArticles上部の注意書きの通りで、`greater_than`は境界日当日を
+// 含み`less_than`は含まないため、月初日〜翌月初日を指定するとちょうど1か月分になる。
+export async function getArticlesByMonth(month: string) {
+  const [year, mon] = month.split("-").map(Number);
+  const firstDay = `${month}-01`;
+  const next = new Date(Date.UTC(year, mon, 1)); // mon は1始まりなのでこれで翌月1日
+  const nextFirstDay = next.toISOString().slice(0, 10);
+
+  const contents = await fetchAllArticlesByFilter(
+    `dealDate[greater_than]${firstDay}[and]dealDate[less_than]${nextFirstDay}`
+  );
+  return { contents };
+}
+
+export type MonthSummary = { month: string; count: number; amount: number };
+
+// /monthly（月別アーカイブ一覧）とサイトマップ用。記事が1件以上ある月を新しい順に返す。
+// getAllStocksForIndexと同じくSDKのgetAllContents（ページ間に1秒の固定スリープが入る仕様）
+// を避け、ページを並列取得する。
+export const getAllMonthsForIndex = unstable_cache(
+  async (): Promise<MonthSummary[]> => {
+    const contents = await fetchAllPagesParallel<Pick<Article, "dealDate" | "dealAmount">>({
+      fields: "dealDate,dealAmount",
+      orders: "-dealDate",
+    });
+
+    const byMonth = new Map<string, MonthSummary>();
+    for (const { dealDate, dealAmount } of contents) {
+      const month = dealDate.slice(0, 7);
+      const existing = byMonth.get(month);
+      if (existing) {
+        existing.count += 1;
+        existing.amount += dealAmount;
+      } else {
+        byMonth.set(month, { month, count: 1, amount: dealAmount });
+      }
+    }
+    return [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
+  },
+  ["all-months-for-index"],
+  { revalidate: REVALIDATE_SECONDS }
+);
+
 export type StockSearchResult = { stockCode: string; stockName: string };
 
 // ヘッダーの検索ボックス用。企業名・証券コードの部分一致で記事を引き、
@@ -240,36 +313,15 @@ export type StockSummary = { stockCode: string; stockName: string; articleCount:
 // /stocks は searchParams(sector) を読むため Next.js が自動でdynamic renderingにし、
 // ページ単位のrevalidateが効かない。またVercel上のData Cacheはsearchparam違いの
 // リクエスト間で共有される保証がない（実測でsector絞り込みURLはキャッシュヒットしなかった）ため、
-// unstable_cacheだけに頼らず取得処理自体を速くする。
-// microCMS公式SDKのgetAllContentsはページ間に1秒の固定スリープが入る仕様で
-// 437件(5ページ)取得に4秒以上かかっていたのが根本原因。ページを並列取得して回避する。
+// unstable_cacheだけに頼らず取得処理自体を速くする（fetchAllPagesParallelの並列取得）。
 type StockIndexRow = Pick<Article, "stockCode" | "stockName" | "dealDate">;
 
 export const getAllStocksForIndex = unstable_cache(
   async (): Promise<StockSummary[]> => {
-    const queries = { fields: "stockCode,stockName,dealDate", orders: "-dealDate" };
-    const requestInit = { next: { revalidate: REVALIDATE_SECONDS } };
-
-    const first = await client.getList<StockIndexRow>({
-      endpoint: "articles",
-      queries: { ...queries, limit: MAX_PAGE_SIZE, offset: 0 },
-      customRequestInit: requestInit,
+    const contents = await fetchAllPagesParallel<StockIndexRow>({
+      fields: "stockCode,stockName,dealDate",
+      orders: "-dealDate",
     });
-
-    const remainingOffsets: number[] = [];
-    for (let offset = MAX_PAGE_SIZE; offset < first.totalCount; offset += MAX_PAGE_SIZE) {
-      remainingOffsets.push(offset);
-    }
-    const restPages = await Promise.all(
-      remainingOffsets.map((offset) =>
-        client.getList<StockIndexRow>({
-          endpoint: "articles",
-          queries: { ...queries, limit: MAX_PAGE_SIZE, offset },
-          customRequestInit: requestInit,
-        })
-      )
-    );
-    const contents = [first, ...restPages].flatMap((page) => page.contents);
 
     const byCode = new Map<string, StockSummary>();
     for (const { stockCode, stockName, dealDate } of contents) {

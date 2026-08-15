@@ -129,6 +129,40 @@ export async function getFilersByStockCode(
     .sort((a, b) => a.filerName.localeCompare(b.filerName, "ja"));
 }
 
+// microCMSの`articles`スキーマには提出者名(filerName)フィールドが存在せず、
+// web/publish_blog_articles.py がpayloadに載せている値はAPI側で黙って捨てられている
+// （2026-08-15にAPIレスポンスのキー一覧で確認。CMSのスキーマ変更はGUIでしか行えないため
+// コード側からは追加できない）。そのため記事から提出者を引くには、EDINET開示そのものを
+// 持つSupabase側と「銘柄コード×開示日」で突き合わせるしかない。
+// 同じ銘柄・同じ日に複数の提出者が開示しているケース（2026年8月実測で開示行の14%）は
+// どの記事がどの提出者のものか一意に定まらないため、誤った帰属を出さないよう除外する。
+export async function getFilerNamesByStockAndDate(
+  from: string,
+  to: string
+): Promise<Map<string, string>> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("edinet_large_holdings")
+    .select("issuer_code, disc_date, filer_name")
+    .gte("disc_date", from)
+    .lte("disc_date", to);
+
+  const filersByKey = new Map<string, Set<string>>();
+  for (const row of data ?? []) {
+    if (!row.issuer_code || !row.disc_date || !row.filer_name) continue;
+    const key = `${row.issuer_code}|${row.disc_date}`;
+    const filers = filersByKey.get(key) ?? new Set<string>();
+    filers.add(row.filer_name);
+    filersByKey.set(key, filers);
+  }
+
+  const resolved = new Map<string, string>();
+  for (const [key, filers] of filersByKey) {
+    if (filers.size === 1) resolved.set(key, [...filers][0]);
+  }
+  return resolved;
+}
+
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
 // トータルリターン(total_return_oku)の降順で返す。
 export async function getFilerWinRates(minN = 1): Promise<FilerWinRate[]> {
