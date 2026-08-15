@@ -130,6 +130,8 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
+- **表示速度の週次チェック**: GitHub Actions `perf_check.yml`（毎週月曜 09:00 JST / 手動実行も可）が `tools/perf_check.py`（リポジトリルート）で本番の代表9ページを計測する。見るのは「初期表示までに待たされる量」に直結する3つ ―― **TTFB**（キャッシュが効いていないと伸びる。実例: `/investors` が`searchParams`でdynamic renderingになりキャッシュ無しで1.6〜1.9秒）、**HTML転送量**（一覧の全件描画で膨らむ。実例: `/investors` が1.5MB）、**`<head>`内のレンダリングブロッキングCSS**（ウェブフォントの`@font-face`で膨らむ。実例: Noto Sans JPで496個・gzip 130KB）。いずれもgzip後の実転送量で、TTFBは3回計測の最小値。JSは初期表示を直接ブロックしないため参考値のみ（外部ドメインの広告・計測タグは自分たちで削れないので集計対象外）。閾値（TTFB 0.8秒 / HTML 100KB / CSS 30KB）を超えたページがあれば`perf`ラベルのIssueを立てて追記し、全ページが閾値内に戻ったら自動クローズする。**閾値は「調べる価値がある」ラインであって目標値ではない**。計測ロジックは`tests/test_perf_check.py`で保護している（HTMLのパースを間違えると「CSSが軽い」と誤判定して肥大化を見逃すため）。
+
 ## 広告（Google AdSense）
 
 - 設定は `src/lib/adsense.ts` の環境変数に集約している。**`NEXT_PUBLIC_ADSENSE_CLIENT` が未設定の間は、広告スクリプト・広告枠・`/ads.txt` のすべてが何も出力しない**（ローカル・プレビュー環境では完全に無効）。スロットIDが未設定の掲載位置にも広告は出ないので、片方だけ先に有効化することもできる。
