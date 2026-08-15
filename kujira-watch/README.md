@@ -115,7 +115,8 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 | `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。先頭（同日内で金額最大の1件）はTOP/`/weekly`と同じ`FeaturedArticleCard`でページ冒頭にハイライト表示し、残りを一覧グリッドに表示する（2026-08-15、「今日の注目」の編集的ハイライトとして追加。英語版`/en`には対応ページなし）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり。このページ自身のパンくずは「トップ＞{月}＞{日}」で、月は`/monthly/[month]`へリンクする |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策）。投資家分類の用語集（`#dealtype-glossary`）と公式X（@kujira_watch）への導線も含む |
 | `/privacy`（`/en/privacy`） | プライバシーポリシー（AdSense審査の必須要件）。Google AdSenseによる第三者配信広告・Cookie利用とそのオプトアウト方法、アクセス解析（GA4/Vercel Analytics/独自アクセスログの`kw_vid` cookie）について記載。ヘッダーのハンバーガーメニューから常時リンク |
-| `/faq` | よくある質問（FAQPage構造化データ付き、500問。各質問に色分けされたカテゴリバッジを表示し、9カテゴリのタブでも絞り込み可能）。大量保有報告書のしくみ・制度の深掘り・用語解説・投資家分類/業界プレイヤー・本サイトの使い方・初心者/中級者向けの読み方・投資基礎の周辺知識 |
+| `/faq` | よくある質問のハブ。9カテゴリそれぞれの件数・質問サンプル5件・カテゴリページへのボタンを並べる（回答本文は置かない） |
+| `/faq/[category]` | カテゴリ別のQ&A（全502件を9カテゴリに分割）。MUI Accordionで開閉。FAQPage構造化データはそのページに表示しているQ&Aのみを載せる（構造化データと可視コンテンツの一致がGoogleのガイドラインで必須のため）。データ本体は`src/lib/faqData.tsx` |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別・取引日別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
 | `/ads.txt` | AdSenseの販売者情報（`src/app/ads.txt/route.ts`）。`NEXT_PUBLIC_ADSENSE_CLIENT`未設定時は404を返す |
@@ -130,6 +131,7 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
+- **`/faq`の分割（2026-08-15）**: 以前は全502件のQ&Aを`/faq`1ページに置いており、HTMLが**1.57MB（gzip 241KB）**まで膨らんでいた。内訳は可視HTML 873KB・RSCペイロード 471KB・FAQPage構造化データ 225KBで、**同じ本文が1つの文書に3回**入っていた（クライアントコンポーネント`FaqList`へ全件をpropsで渡すとハイドレーション用にRSCペイロードへ、構造化データで更にもう1回）。さらに可視HTMLは`MuiAccordion-root`が502個・`Mui〜`クラスの出現が14,160回で、**タグを除いた実テキストは220KBだけ＝75%がマークアップ**だった。カテゴリ別ページに分割して解消（gzip後: `/faq` 241KB→18KB、各カテゴリページ22KB）。分割によってタブでの絞り込みが不要になったため`FaqList`は削除した。
 - **表示速度の週次チェック**: GitHub Actions `perf_check.yml`（毎週月曜 09:00 JST / 手動実行も可）が `tools/perf_check.py`（リポジトリルート）で本番の代表9ページを計測する。見るのは「初期表示までに待たされる量」に直結する3つ ―― **TTFB**（キャッシュが効いていないと伸びる。実例: `/investors` が`searchParams`でdynamic renderingになりキャッシュ無しで1.6〜1.9秒）、**HTML転送量**（一覧の全件描画で膨らむ。実例: `/investors` が1.5MB）、**`<head>`内のレンダリングブロッキングCSS**（ウェブフォントの`@font-face`で膨らむ。実例: Noto Sans JPで496個・gzip 130KB）。いずれもgzip後の実転送量で、TTFBは3回計測の最小値。JSは初期表示を直接ブロックしないため参考値のみ（外部ドメインの広告・計測タグは自分たちで削れないので集計対象外）。閾値（TTFB 0.8秒 / HTML 100KB / CSS 30KB）を超えたページがあれば`perf`ラベルのIssueを立てて追記し、全ページが閾値内に戻ったら自動クローズする。**閾値は「調べる価値がある」ラインであって目標値ではない**。計測ロジックは`tests/test_perf_check.py`で保護している（HTMLのパースを間違えると「CSSが軽い」と誤判定して肥大化を見逃すため）。
 
 ## 広告（Google AdSense）
