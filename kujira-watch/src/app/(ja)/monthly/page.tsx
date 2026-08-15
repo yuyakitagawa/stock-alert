@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatDealAmount, formatMonth } from "@/lib/format";
+import MonthList from "@/components/MonthList";
+import { formatMonth } from "@/lib/format";
 import { getAllMonthsForIndex } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
@@ -70,25 +71,7 @@ export default async function MonthlyIndexPage() {
       {months.length === 0 ? (
         <p className="text-sm text-foreground/60">まだ記事がありません。</p>
       ) : (
-        <div className="divide-y divide-rule border-y border-rule">
-          {months.map((m) => (
-            <Link
-              key={m.month}
-              href={`/monthly/${m.month}`}
-              className="group flex items-center justify-between gap-4 py-4 transition-colors hover:bg-section-tint"
-            >
-              <div>
-                <p className="font-bold text-brand-navy">{formatMonth(m.month)}</p>
-                <p className="mt-0.5 text-sm text-foreground/60">
-                  {m.count}件・{formatDealAmount(m.amount)}
-                </p>
-              </div>
-              <span className="kicker shrink-0 text-brand-blue transition-colors group-hover:text-brand-navy">
-                この月のまとめを見る ›
-              </span>
-            </Link>
-          ))}
-        </div>
+        <MonthList months={months} />
       )}
     </div>
   );

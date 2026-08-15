@@ -64,3 +64,14 @@ Phase 0〜5すべて完了。サイト全体がMUIコンポーネントベース
 - [x] ブラウザ確認: TOP・/stocks・/stocks/[code]・/ranking(選択状態)・/investors(デスクトップ/モバイル)・/monthly/[month]・記事詳細、全ルート200、tsc/eslintクリーン
 - メモ: 本文中の文脈依存リンク（/about・/faqの説明文、テーブル内の銘柄・投資家リンク、行全体がリンクのカード）はボタン化せずテキストリンクのまま。行全体リンクの内側にbuttonを置くとHTMLとして不正になるため。
 - メモ: 英語ページ（/en配下）には独立したCTAが無く（/en/date/[date]未実装のためDealDateSeeMoreLinkはnull、共有ボタンはja記事詳細のみ）、テーマ側の統一のみ適用。
+
+## Phase 7 — 残っていたTailwindのみの箇所を対応（2026-08-15）
+- [x] `TodayWhaleSummary.tsx`（TOP冒頭の「今日のクジラ」サマリー）→ Card + CardActionArea
+- [x] `stocks/[code]/page.tsx` の提出投資家リスト → List/ListItem
+- [x] `monthly/page.tsx` の月一覧 → 新規`src/components/MonthList.tsx`（"use client"、ListItemButton+component={Link}）に切り出し
+- [x] `articles/[id]/page.tsx` の`RelatedArticleLinks`（同一銘柄の他記事、一行リンク一覧）→ List/ListItem
+- [x] `en/about/page.tsx` の用語集dl、`en/articles/[id]/page.tsx` のmetadata dlグリッド → Box+Typography（ja版と同じパターン）
+- [x] ついでに発見: 他セッションが追加した`AttentionScorePanel.tsx`にMUI v9 Stackの`alignItems`直渡しエラー（Phase2で踏んだのと同じ問題）があったため修正
+- メモ: page.tsx（async Server Component）から直接MUIの`component={Link}`パターンを使うとRSC境界エラーになるため、`monthly/page.tsx`のように独立した小さな"use client"コンポーネントに切り出す方針で統一（`stocks`/`investors`一覧と同様、List+ListItemに素のLinkを子として置く方法とどちらでも良いが、クリック領域全体をボタン化したい場合は前者）。
+- [x] ブラウザ確認: TOP/monthly/monthly[month]/stocks/[code]/articles/[id]/en/about/en/articles/[id]、コンソールエラーなし、tsc/eslint(自分が触ったファイル)クリーン、`npm run build`成功
+- 対象外（意図的）: `GaClickTracker.tsx`・`RippleEffect.tsx`はUIを描画しない(`return null`)グローバルリスナーのため対象外。CMS本文(prose)は元々対象外。

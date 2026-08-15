@@ -42,7 +42,7 @@ export default function AttentionScorePanel({
         bgcolor: "rgba(184, 134, 58, 0.06)",
       }}
     >
-      <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
+      <Stack direction="row" spacing={0.5} sx={{ mb: 1, alignItems: "center" }}>
         <Typography variant="overline" sx={{ color: "brand.gold", fontWeight: 700, letterSpacing: "0.08em" }}>
           {t.attentionScoreLabel}
         </Typography>
@@ -50,7 +50,7 @@ export default function AttentionScorePanel({
           <HelpOutlineIcon sx={{ fontSize: 14, color: "text.disabled", cursor: "help" }} />
         </Tooltip>
       </Stack>
-      <Stack direction="row" alignItems="baseline" spacing={1.5} sx={{ mb: reasonList?.length ? 1.5 : 0 }}>
+      <Stack direction="row" spacing={1.5} sx={{ mb: reasonList?.length ? 1.5 : 0, alignItems: "baseline" }}>
         <Typography component="span" sx={{ fontSize: "2rem", fontWeight: 800, color: "brand.gold", lineHeight: 1 }}>
           {score}
         </Typography>

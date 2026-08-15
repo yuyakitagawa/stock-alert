@@ -1,4 +1,10 @@
+"use client";
+
 import Link from "next/link";
+import Card from "@mui/material/Card";
+import CardActionArea from "@mui/material/CardActionArea";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import { formatDate, formatDealAmount } from "@/lib/format";
 
 // TOPの冒頭に置く「今日のクジラ」サマリー。見出しは常に「今日の注目取引」で固定だが、
@@ -20,24 +26,30 @@ export default function TodayWhaleSummary({
 }) {
   const dateOnly = date.slice(0, 10);
   return (
-    <Link
-      href={`/date/${dateOnly}`}
-      className="group mb-8 block border-y-2 border-brand-navy py-4 transition-colors hover:bg-section-tint"
+    <Card
+      variant="outlined"
+      sx={{ mb: 4, borderTop: 2, borderBottom: 2, borderLeft: 0, borderRight: 0, borderColor: "primary.main", borderRadius: 0 }}
     >
-      <p className="kicker text-brand-blue">今日のクジラ・{formatDate(date)}</p>
-      <p className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-3xl font-bold leading-none text-brand-navy sm:text-4xl">{count}</span>
-        <span className="text-sm text-foreground/60">件の開示</span>
-        <span className="text-3xl font-bold leading-none text-brand-navy sm:text-4xl">
-          {formatDealAmount(amount)}
-        </span>
-        <span className="text-sm text-foreground/60">
-          （買い{buyCount}件・売り{sellCount}件）
-        </span>
-      </p>
-      <p className="kicker mt-2 text-brand-blue transition-colors group-hover:text-brand-navy">
-        この日の開示をすべて見る ›
-      </p>
-    </Link>
+      <CardActionArea component={Link} href={`/date/${dateOnly}`} sx={{ py: 2, px: { xs: 0, sm: 0 } }}>
+        <Typography variant="overline" sx={{ color: "brand.blue" }}>
+          今日のクジラ・{formatDate(date)}
+        </Typography>
+        <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 1.5, rowGap: 0.5 }}>
+          <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1, color: "primary.main" }}>
+            {count}
+          </Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>件の開示</Typography>
+          <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1, color: "primary.main" }}>
+            {formatDealAmount(amount)}
+          </Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            （買い{buyCount}件・売り{sellCount}件）
+          </Typography>
+        </Box>
+        <Typography variant="overline" sx={{ display: "block", mt: 1, color: "brand.blue" }}>
+          この日の開示をすべて見る ›
+        </Typography>
+      </CardActionArea>
+    </Card>
   );
 }

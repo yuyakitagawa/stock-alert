@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import Box from "@mui/material/Box";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import Typography from "@mui/material/Typography";
 import ArticleCard from "@/components/ArticleCard";
 import CompanyInfoCard from "@/components/CompanyInfoCard";
 import DealDateHeading from "@/components/DealDateHeading";
@@ -110,11 +114,13 @@ export default async function StockPage({ params }: Props) {
       )}
       {companyInfo && <CompanyInfoCard info={companyInfo} />}
       {filers.length > 0 && (
-        <div className="mb-8 border-t border-rule pt-4">
-          <h2 className="mb-2 text-sm font-bold text-brand-navy">大量保有報告書の提出投資家</h2>
-          <ul className="space-y-2 text-sm">
+        <Box sx={{ mb: 4, pt: 2, borderTop: 1, borderColor: "divider" }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: "primary.main" }}>
+            大量保有報告書の提出投資家
+          </Typography>
+          <List disablePadding dense>
             {filers.map((filer) => (
-              <li key={filer.filerName} className="flex items-center gap-2">
+              <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1 }}>
                 <Link
                   href={`/investors/${encodeURIComponent(filer.filerName)}`}
                   className="text-brand-blue hover:underline"
@@ -122,10 +128,10 @@ export default async function StockPage({ params }: Props) {
                   {filer.filerName}
                 </Link>
                 <DealTypeBadge dealType={filer.category} />
-              </li>
+              </ListItem>
             ))}
-          </ul>
-        </div>
+          </List>
+        </Box>
       )}
       <div className="mb-6">
         <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import AttentionScorePanel from "@/components/AttentionScorePanel";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
@@ -156,32 +158,48 @@ export default async function EnArticleDetailPage({ params }: Props) {
             </Link>
           </p>
         )}
-        <dl className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-rule py-4 text-sm sm:grid-cols-4">
-          <div>
-            <dt className="kicker text-foreground/40">{t.stockLabel}</dt>
-            <dd className="mt-1 font-medium">
+        <Box
+          component="dl"
+          sx={{
+            m: 0,
+            mb: 4,
+            py: 2,
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: "divider",
+            display: "grid",
+            gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" },
+            columnGap: 2,
+            rowGap: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>{t.stockLabel}</Typography>
+            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
               <Link
                 href={`/en/stocks/${article.stockCode}`}
                 className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
               >
                 {article.stockName} ({article.stockCode}){t.viewHistorySuffix}
               </Link>
-            </dd>
-          </div>
-          <div>
-            <dt className="kicker text-foreground/40">{t.dealDateLabel}</dt>
-            <dd className="mt-1 font-medium text-brand-navy">{formatDate(article.dealDate, "en")}</dd>
-          </div>
-          <div>
-            <dt className="kicker text-foreground/40">{t.dealSizeLabel}</dt>
-            <dd className="mt-1 font-medium text-brand-navy">
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>{t.dealDateLabel}</Typography>
+            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
+              {formatDate(article.dealDate, "en")}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>{t.dealSizeLabel}</Typography>
+            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
               {formatDealAmount(article.dealAmount, "en")}
-            </dd>
-          </div>
+            </Typography>
+          </Box>
           {article.sourceUrl && (
-            <div>
-              <dt className="kicker text-foreground/40">{t.sourceLabel}</dt>
-              <dd className="mt-1">
+            <Box>
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>{t.sourceLabel}</Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5 }}>
                 <a
                   href={article.sourceUrl}
                   target="_blank"
@@ -190,10 +208,10 @@ export default async function EnArticleDetailPage({ params }: Props) {
                 >
                   {t.viewOriginal}
                 </a>
-              </dd>
-            </div>
+              </Typography>
+            </Box>
           )}
-        </dl>
+        </Box>
         <AttentionScorePanel score={article.attentionScore} reasons={article.attentionReasons} locale="en" />
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"

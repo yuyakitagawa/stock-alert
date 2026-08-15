@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import Box from "@mui/material/Box";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import AttentionScorePanel from "@/components/AttentionScorePanel";
 import CategoryBadge from "@/components/CategoryBadge";
@@ -29,23 +31,25 @@ const RELATED_COUNT = 3;
 // 関連リンクの一行表示（取引日・金額つき）。回遊導線なのでカードより密度を優先する。
 function RelatedArticleLinks({ articles }: { articles: ArticleContent[] }) {
   return (
-    <ul className="divide-y divide-rule border-y border-rule">
+    <List disablePadding sx={{ borderTop: 1, borderBottom: 1, borderColor: "divider" }}>
       {articles.map((related) => (
-        <li key={related.id}>
-          <Link
-            href={`/articles/${related.id}`}
-            className="group flex items-baseline justify-between gap-4 py-3"
-          >
-            <span className="text-sm font-medium text-brand-navy group-hover:text-brand-blue group-hover:underline">
+        <ListItem key={related.id} disableGutters divider sx={{ py: 1.5 }}>
+          <Link href={`/articles/${related.id}`} className="group flex w-full items-baseline justify-between gap-4">
+            <Typography
+              component="span"
+              variant="body2"
+              className="group-hover:underline"
+              sx={{ fontWeight: 500, color: "primary.main", ".group:hover &": { color: "brand.blue" } }}
+            >
               {related.title}
-            </span>
-            <span className="shrink-0 text-xs text-foreground/50">
+            </Typography>
+            <Typography component="span" variant="caption" sx={{ flexShrink: 0, color: "text.disabled" }}>
               {formatDate(related.dealDate)}・{formatDealAmount(related.dealAmount)}
-            </span>
+            </Typography>
           </Link>
-        </li>
+        </ListItem>
       ))}
-    </ul>
+    </List>
   );
 }
 

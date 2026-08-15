@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
@@ -106,14 +108,18 @@ export default function EnAboutPage() {
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutGlossaryHeading}</h2>
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">{t.aboutGlossaryIntro}</p>
-        <dl className="space-y-3 text-sm">
+        <Box component="dl" sx={{ m: 0, display: "flex", flexDirection: "column", gap: 1.5 }}>
           {DEAL_TYPES.map((dealType) => (
-            <div key={dealType}>
-              <dt className="font-semibold text-brand-navy">{DEAL_TYPE_EN[dealType].label}</dt>
-              <dd className="text-foreground/70">{DEAL_TYPE_EN[dealType].description}</dd>
-            </div>
+            <Box key={dealType}>
+              <Typography component="dt" sx={{ fontWeight: 600, color: "primary.main" }}>
+                {DEAL_TYPE_EN[dealType].label}
+              </Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0, color: "text.secondary" }}>
+                {DEAL_TYPE_EN[dealType].description}
+              </Typography>
+            </Box>
           ))}
-        </dl>
+        </Box>
       </section>
 
       <section>
