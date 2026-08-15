@@ -238,19 +238,38 @@ export type StockSummary = { stockCode: string; stockName: string; articleCount:
 
 // /stocks（銘柄一覧）用。記事が1件以上ある銘柄をstockCode単位で集約する。
 // /stocks は searchParams(sector) を読むため Next.js が自動でdynamic renderingにし、
-// ページ単位のrevalidateが効かない。全437件をmicroCMSから100件ずつ取得する
-// getAllContents自体もSDK仕様でページ間に1秒スリープが入り単体で4秒以上かかるため、
-// unstable_cacheで結果自体をrevalidate間キャッシュしてリクエスト毎の再実行を防ぐ。
+// ページ単位のrevalidateが効かない。またVercel上のData Cacheはsearchparam違いの
+// リクエスト間で共有される保証がない（実測でsector絞り込みURLはキャッシュヒットしなかった）ため、
+// unstable_cacheだけに頼らず取得処理自体を速くする。
+// microCMS公式SDKのgetAllContentsはページ間に1秒の固定スリープが入る仕様で
+// 437件(5ページ)取得に4秒以上かかっていたのが根本原因。ページを並列取得して回避する。
+type StockIndexRow = Pick<Article, "stockCode" | "stockName" | "dealDate">;
+
 export const getAllStocksForIndex = unstable_cache(
   async (): Promise<StockSummary[]> => {
-    const contents = await client.getAllContents<Pick<Article, "stockCode" | "stockName" | "dealDate">>({
+    const queries = { fields: "stockCode,stockName,dealDate", orders: "-dealDate" };
+    const requestInit = { next: { revalidate: REVALIDATE_SECONDS } };
+
+    const first = await client.getList<StockIndexRow>({
       endpoint: "articles",
-      queries: {
-        fields: "stockCode,stockName,dealDate",
-        orders: "-dealDate",
-      },
-      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+      queries: { ...queries, limit: MAX_PAGE_SIZE, offset: 0 },
+      customRequestInit: requestInit,
     });
+
+    const remainingOffsets: number[] = [];
+    for (let offset = MAX_PAGE_SIZE; offset < first.totalCount; offset += MAX_PAGE_SIZE) {
+      remainingOffsets.push(offset);
+    }
+    const restPages = await Promise.all(
+      remainingOffsets.map((offset) =>
+        client.getList<StockIndexRow>({
+          endpoint: "articles",
+          queries: { ...queries, limit: MAX_PAGE_SIZE, offset },
+          customRequestInit: requestInit,
+        })
+      )
+    );
+    const contents = [first, ...restPages].flatMap((page) => page.contents);
 
     const byCode = new Map<string, StockSummary>();
     for (const { stockCode, stockName, dealDate } of contents) {
