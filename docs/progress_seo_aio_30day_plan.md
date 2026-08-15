@@ -28,18 +28,22 @@
 | ⑦ | ランキング不足 | `/ranking`（投資家リターン）と`/trending`のみ。買い増し/売却/件数/アクティビスト注目のランキングが無い。データは`edinet_large_holdings`から集計可能 | 🟠 **ギャップ（P2）** |
 | ⑧ | E-E-A-T/情報源の明示 | `/about`（運営者・データソース・免責）・`llms.txt`・記事の出典URL(EDINET)・`/faq`実装済み。記事内の「提出日・データ更新日時」の定型表示のみ未統一 | ✅ 概ね済（出典ブロック統一→P1に同梱） |
 | ⑨ | SNS/外部流入の構造 | 記事単位のX自動投稿（`x_client.py`、画像付き）はあるが、アドバイスの言う「本日のクジラ」日次サマリー投稿（件数・総額・最大買い/売り）が無い | 🟠 **ギャップ（P4）** |
-| ⑩ | KPI設計 | Vercel Analytics + Speed Insightsのみ。GA4未導入（progress_blog_seo_aio.md Stage 7が測定ID待ちで停止中）。GSCのKPI定点観測も未定義 | 🔴 **ギャップ（P0）** |
+| ⑩ | KPI設計 | Vercel Analytics + Speed Insights + GA4（`G-0Z3FMTXC5B`、2026-08-15導入済み確認）。ただしKPI定義とベースライン記録・定点観測の運用が未定義 | 🟠 **ギャップ（P0）** |
 
 ## 2. 30日フェーズ計画
 
 ### P0: 計測基盤（Day 1〜3・効果測定の前提）
-- [ ] GA4導入（Stage 7の再開）。**ユーザー作業**: GA4プロパティ作成と測定ID(`G-…`)の共有。
-      実装は`@next/third-parties`の`GoogleAnalytics`を`layout.tsx`に追加するだけ。
+- [x] GA4導入 → **導入済みと確認**（2026-08-15）。`@next/third-parties`の`GoogleAnalytics`が
+      `(ja)/layout.tsx`・`(en)/en/layout.tsx`の両方に`gaId="G-0Z3FMTXC5B"`で配線済み
+      （並行セッションのモバイル高速化PRに同梱されmainマージ済み）。追加実装不要。
 - [ ] KPI定義を固定（本計画の効果判定に使う）:
   - GSC: クリック数 / 表示回数 / CTR / 平均掲載順位（週次で記録）
   - ページ種別PV: 記事 / `/stocks/*` / `/investors/*` / ランキング（GA4のページパス別）
   - 回遊: ページ/セッション
 - [ ] ベースライン値をこのファイルに記録してから施策を開始する（比較対象が無いと効果判定不能）。
+      GSC・GA4のデータはエージェントから直接取得できないため、**ユーザー作業**:
+      GSCの過去28日（クリック数/表示回数/CTR/平均掲載順位）とGA4のページ種別PVを共有する。
+      GA4は導入直後でデータ蓄積が浅いため、当面はGSC+Vercel Analyticsを主、GA4を従とする。
 
 ### P1: 記事テンプレートの検索クエリ化＋ファクトボックス（Day 4〜10）
 対象: `web/publish_blog_articles.py`（生成側）+ `kujira-watch/src/app/(ja)/articles/[id]/page.tsx`（表示側）
@@ -113,6 +117,7 @@
 
 ## 5. ユーザーに依頼する作業（ブロッカー）
 
-1. **GA4測定IDの発行・共有**（P0の前提）
-2. **microCMSスキーマに`ratioChangePct`（数値）と`filerName`（テキスト）を追加**（P1の前提）
-3. X APIの投稿上限プラン確認（P4で日次+記事投稿の合計がレート制限に収まるか）
+1. ~~GA4測定IDの発行・共有~~ → 導入済み確認（`G-0Z3FMTXC5B`）。不要になった。
+2. **GSC過去28日の数値共有**（クリック数/表示回数/CTR/平均掲載順位。P0ベースライン用）
+3. **microCMSスキーマに`ratioChangePct`（数値）と`filerName`（テキスト）を追加**（P1の前提）
+4. X APIの投稿上限プラン確認（P4で日次+記事投稿の合計がレート制限に収まるか）
