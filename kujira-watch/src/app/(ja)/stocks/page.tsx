@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAllStocksForIndex } from "@/lib/microcms";
-import { getSectorsByCode } from "@/lib/companyInfo";
+import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
@@ -23,9 +23,11 @@ type Props = {
 };
 
 export default async function StocksIndexPage({ searchParams }: Props) {
-  const { sector } = await searchParams;
-  const stocks = await getAllStocksForIndex();
-  const sectorByCode = await getSectorsByCode(stocks.map((s) => s.stockCode));
+  const [{ sector }, stocks, sectorByCode] = await Promise.all([
+    searchParams,
+    getAllStocksForIndex(),
+    getAllSectorsByCode(),
+  ]);
 
   const counts = new Map<string, number>();
   for (const s of stocks) {

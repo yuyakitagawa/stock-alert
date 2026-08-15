@@ -1,26 +1,48 @@
+import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
 export type PricePoint = { date: string; close: number };
 
-// 銘柄一覧ページの業種フィルター用。1リクエストで全銘柄分の業種をまとめて取得する。
-export async function getSectorsByCode(codes: string[]): Promise<Map<string, string>> {
-  if (codes.length === 0) return new Map();
-  try {
-    const supabase = getSupabaseServerClient();
-    const { data } = await supabase
-      .from("jpx_stock_list")
-      .select("code, sector")
-      .in("code", codes);
+// 銘柄一覧ページの業種フィルター用。jpx_stock_list(証券コードのマスター、日次更新)を
+// 全件取得してMapにする。/stocksが記事一覧の取得(getAllStocksForIndex)と並列実行できるよう、
+// 記事側のstockCodeに依存しない全件取得にしている。マスターデータで更新頻度が低いため
+// 記事側(REVALIDATE_SECONDS=60)より長く1時間キャッシュする。
+const SUPABASE_PAGE_SIZE = 1000;
 
-    const bySector = new Map<string, string>();
-    for (const row of data ?? []) {
-      if (row.sector) bySector.set(row.code, row.sector);
+// unstable_cacheはNext.jsのData CacheにJSONとして永続化するため、Mapを直接返すと
+// キャッシュヒット時にプレーンオブジェクトへ化けて.get()が壊れる。
+// [code, sector]の配列でキャッシュし、呼び出し側でMapへ復元する。
+const getAllSectorEntries = unstable_cache(
+  async (): Promise<[string, string][]> => {
+    try {
+      const supabase = getSupabaseServerClient();
+      const entries: [string, string][] = [];
+
+      // jpx_stock_list(約4,500銘柄)はSupabase/PostgRESTのデフォルト行数上限(1,000件)を
+      // 超えるため、.range()で全件を取り切るまでページングする（上限に気づかず
+      // 一部銘柄の業種が欠落するバグを防ぐ）。
+      for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+        const { data } = await supabase
+          .from("jpx_stock_list")
+          .select("code, sector")
+          .range(from, from + SUPABASE_PAGE_SIZE - 1);
+        for (const row of data ?? []) {
+          if (row.sector) entries.push([row.code, row.sector]);
+        }
+        if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+      }
+      return entries;
+    } catch (error) {
+      console.error("[getAllSectorEntries] 取得失敗", error);
+      return [];
     }
-    return bySector;
-  } catch (error) {
-    console.error("[getSectorsByCode] 取得失敗", error);
-    return new Map();
-  }
+  },
+  ["all-sectors-by-code"],
+  { revalidate: 3600 }
+);
+
+export async function getAllSectorsByCode(): Promise<Map<string, string>> {
+  return new Map(await getAllSectorEntries());
 }
 
 export type CompanyInfo = {
