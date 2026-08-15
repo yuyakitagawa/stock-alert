@@ -1,28 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import Box from "@mui/material/Box";
-import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
-import ListItemText from "@mui/material/ListItemText";
-import Typography from "@mui/material/Typography";
-import Divider from "@mui/material/Divider";
 import MenuIcon from "@mui/icons-material/Menu";
-import CloseIcon from "@mui/icons-material/Close";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
+import type { MenuLink } from "./HeaderMenuDrawer";
 import { DEAL_TYPE_EN, EN_SLUG_TO_DEAL_TYPE } from "@/lib/dealTypeInfo";
 import type { DealType } from "@/types/article";
 import { UI, type Locale } from "@/lib/i18n";
 
-type MenuLink = {
-  href: string;
-  label: string;
-};
+// ドロワー本体(Drawer/List/Divider/…)は開くまで要らない。MUI DrawerはModal/Portal/
+// Backdrop/Slide一式を引き連れており、閉じているのが既定なのに全ページの初期JSへ
+// 積まれていた。開いたときに読み込む。
+const HeaderMenuDrawer = dynamic(() => import("./HeaderMenuDrawer"), { ssr: false });
 
 // 現在のパスから、もう一方のロケールの等価URLを計算する。
 // 記事(id)・銘柄(code)はロケール間で共通のキーなのでprefixの付け替えだけで対応できるが、
@@ -109,68 +101,17 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
         <MenuIcon fontSize="small" />
       </IconButton>
 
-      <Drawer anchor="right" open={open} onClose={close}>
-        <Box sx={{ width: "86vw", maxWidth: 320, height: "100%", overflowY: "auto" }} role="presentation">
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: 1, borderColor: "divider", px: 2, py: 1.5 }}>
-            <Typography variant="subtitle2" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 700, color: "primary.main" }}>
-              <Box component="span" aria-hidden>
-                🐋
-              </Box>
-              {locale === "en" ? SITE_NAME_EN : SITE_NAME}
-            </Typography>
-            <IconButton
-              aria-label={locale === "en" ? "Close menu" : "メニューを閉じる"}
-              onClick={close}
-              size="small"
-              sx={{ color: "primary.main" }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-
-          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
-            {t.langSectionLabel}
-          </Typography>
-          <List component="nav" aria-label={t.langSectionLabel} disablePadding>
-            <ListItemButton component={Link} href={jaHref} onClick={close} divider selected={locale === "ja"}>
-              <ListItemText
-                primary="日本語"
-                slotProps={{ primary: { sx: { fontWeight: locale === "ja" ? 700 : 400, color: locale === "ja" ? "brand.blue" : "primary.main" } } }}
-              />
-              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-            </ListItemButton>
-            <ListItemButton component={Link} href={enHref} onClick={close} divider selected={locale === "en"}>
-              <ListItemText
-                primary="English"
-                slotProps={{ primary: { sx: { fontWeight: locale === "en" ? 700 : 400, color: locale === "en" ? "brand.blue" : "primary.main" } } }}
-              />
-              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-            </ListItemButton>
-          </List>
-
-          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
-            {locale === "en" ? "Menu" : "メニュー"}
-          </Typography>
-          <List component="nav" aria-label={locale === "en" ? "Menu" : "メニュー"} disablePadding>
-            {siteLinks.map((link) => (
-              <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
-                <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
-                <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-              </ListItemButton>
-            ))}
-          </List>
-
-          <Typography variant="caption" sx={{ display: "block", mt: 1.5, px: 2, lineHeight: 1.6, color: "text.secondary" }}>
-            {locale === "en"
-              ? "This site is commentary based on public EDINET large-shareholding filings and is not investment advice."
-              : "本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。"}
-          </Typography>
-          <Divider sx={{ my: 1 }} />
-          <Typography variant="caption" sx={{ display: "block", px: 2, pb: 2, color: "text.disabled" }}>
-            © {year} {locale === "en" ? SITE_NAME_EN : SITE_NAME}
-          </Typography>
-        </Box>
-      </Drawer>
+      {open && (
+        <HeaderMenuDrawer
+          open={open}
+          onClose={close}
+          locale={locale}
+          siteLinks={siteLinks}
+          jaHref={jaHref}
+          enHref={enHref}
+          year={year}
+        />
+      )}
     </Box>
   );
 }

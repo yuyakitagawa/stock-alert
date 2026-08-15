@@ -11,7 +11,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 ## スタック
 
 - Next.js 16 (App Router) + TypeScript
-- MUI (Material UI) v9 + Emotion（`@mui/material-nextjs`でApp Router用SSR配線。テーマは`src/theme.ts`、ブランドカラー[紺/青/金]を反映）
+- MUI (Material UI) v9 + Emotion（`@mui/material-nextjs`でApp Router用SSR配線。テーマは`src/theme.ts`、ブランドカラー[紺/青/金]を反映）。**「開くまで表示されない」重いコンポーネントは`next/dynamic`で遅延読み込みする**（`StockSearchPanel`のAutocomplete/TextField、`HeaderMenuDrawer`のDrawer=Modal/Portal/Backdrop/Slide一式）。どちらも閉じているのが既定なのに全ページの初期JSに積まれていた。見た目・挙動は据え置きで読み込みのタイミングだけ後ろにずらす方式なので、Material Designの構成は変えずに初期JSを約33KB(gzip)削れる
 - Tailwind CSS v4（ページレイアウト・グリッド・`@tailwindcss/typography`でのリッチテキスト本文装飾を担当。コンポーネント単位のスタイルはMUI側）
 - microCMS（`microcms-js-sdk`）
 - Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を、`/ranking`が`filer_win_rate`テーブルを参照）
