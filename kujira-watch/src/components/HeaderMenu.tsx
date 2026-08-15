@@ -54,6 +54,9 @@ function alternatePath(pathname: string): string {
   if (pathname === "/en/about") return "/about";
   if (pathname === "/about") return "/en/about";
 
+  if (pathname === "/en/privacy") return "/privacy";
+  if (pathname === "/privacy") return "/en/privacy";
+
   return pathname.startsWith("/en") ? "/" : "/en";
 }
 
@@ -73,6 +76,7 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
       ? [
           { href: "/en", label: "Top" },
           { href: "/en/about", label: t.aboutMenuLabel },
+          { href: "/en/privacy", label: t.privacyMenuLabel },
         ]
       : [
           { href: "/", label: "TOP" },
@@ -81,6 +85,7 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },
           { href: "/about", label: "運営者情報・免責事項" },
+          { href: "/privacy", label: t.privacyMenuLabel },
           { href: "/faq", label: "よくある質問" },
           { href: "/feed.xml", label: "RSSフィード" },
         ];

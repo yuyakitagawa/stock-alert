@@ -1,0 +1,20 @@
+{
+  "name": "kujira-watch-shorts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "kujira-watch のブログ記事を 9:16 縦動画（YouTube Shorts / TikTok）にする Remotion プロジェクト",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render ArticleShort out/video.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.222",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.222"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.3",
+    "typescript": "5.5.4"
+  }
+}

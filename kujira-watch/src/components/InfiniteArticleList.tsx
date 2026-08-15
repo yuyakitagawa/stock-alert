@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent, DealType } from "@/types/article";
@@ -9,6 +9,11 @@ import { UI, type Locale } from "@/lib/i18n";
 import ArticleCard from "./ArticleCard";
 import DealDateHeading from "./DealDateHeading";
 import DealDateSeeMoreLink from "./DealDateSeeMoreLink";
+import InFeedAd from "./InFeedAd";
+
+// 広告を挟む間隔（記事件数）。オートスクロールで一覧が際限なく伸びるため、
+// これだけ記事を読み進めた次の取引日グループの区切りで広告を1枠差し込む。
+const ARTICLES_PER_AD = 8;
 
 export default function InfiniteArticleList({
   initialArticles,
@@ -65,18 +70,32 @@ export default function InfiniteArticleList({
   const rest = excludeIds ? articles.filter((a) => !excludeIds.has(a.id)) : articles;
   const groups = groupArticlesByDealDate(rest, locale);
 
+  // 記事カードの間ではなく取引日グループの区切りに広告を置く（記事と広告が地続きに
+  // 見えないようにするため）。最後のグループの後ろは読み込み中のsentinelが続くので置かない。
+  const blocks: { group: (typeof groups)[number]; withAd: boolean }[] = [];
+  let articlesSinceAd = 0;
+  for (const [index, group] of groups.entries()) {
+    articlesSinceAd += group.articles.length;
+    const withAd = index < groups.length - 1 && articlesSinceAd >= ARTICLES_PER_AD;
+    if (withAd) articlesSinceAd = 0;
+    blocks.push({ group, withAd });
+  }
+
   return (
     <>
-      {groups.map((group) => (
-        <div key={group.date} className="mb-8">
-          <DealDateHeading label={group.label} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
-            {group.articles.map((article) => (
-              <ArticleCard key={article.id} article={article} locale={locale} />
-            ))}
+      {blocks.map(({ group, withAd }) => (
+        <Fragment key={group.date}>
+          <div className="mb-8">
+            <DealDateHeading label={group.label} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
+              {group.articles.map((article) => (
+                <ArticleCard key={article.id} article={article} locale={locale} />
+              ))}
+            </div>
+            <DealDateSeeMoreLink date={group.date} locale={locale} />
           </div>
-          <DealDateSeeMoreLink date={group.date} locale={locale} />
-        </div>
+          {withAd && <InFeedAd locale={locale} />}
+        </Fragment>
       ))}
       {hasMore && (
         <Box ref={sentinelRef} sx={{ display: "flex", justifyContent: "center", py: 4 }}>

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Noto_Sans_JP } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import AdSenseScript from "@/components/AdSenseScript";
 import GaClickTracker from "@/components/GaClickTracker";
 import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
@@ -113,6 +114,7 @@ export default function RootLayout({
             {children}
           </main>
         </ThemeRegistry>
+        <AdSenseScript />
         <Analytics />
         <SpeedInsights />
         <GaClickTracker />

@@ -113,9 +113,11 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 | `/monthly/[month]`（`YYYY-MM`） | 月別まとめ。その月の開示件数・推定金額・買い/売りの要約に続けて、「この月に動いた投資家」（提出者別ランキング上位10件、`lib/weeklyStats.ts`の`buildFilerRanking()`）「この月に狙われた銘柄」（銘柄別ランキング上位10件、`buildStockRanking()`）「注目取引」（金額上位3件の`FeaturedArticleCard`）「日別の記事一覧」（`/date/[date]`へのリンク）と前後月ナビを表示。取引日別ページは日数分だけ増える一方で`/weekly`から張られるのは直近7日分だけで、それより古い日付はサイトマップにしか載らない孤立ページになっていた。この月ハブを親に置くことで、全ての取引日別ページが「ヘッダー→月別アーカイブ→各月→各日」でクロールできるようにしている |
 | `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。先頭（同日内で金額最大の1件）はTOP/`/weekly`と同じ`FeaturedArticleCard`でページ冒頭にハイライト表示し、残りを一覧グリッドに表示する（2026-08-15、「今日の注目」の編集的ハイライトとして追加。英語版`/en`には対応ページなし）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり。このページ自身のパンくずは「トップ＞{月}＞{日}」で、月は`/monthly/[month]`へリンクする |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策）。投資家分類の用語集（`#dealtype-glossary`）と公式X（@kujira_watch）への導線も含む |
+| `/privacy`（`/en/privacy`） | プライバシーポリシー（AdSense審査の必須要件）。Google AdSenseによる第三者配信広告・Cookie利用とそのオプトアウト方法、アクセス解析（GA4/Vercel Analytics/独自アクセスログの`kw_vid` cookie）について記載。ヘッダーのハンバーガーメニューから常時リンク |
 | `/faq` | よくある質問（FAQPage構造化データ付き、500問。各質問に色分けされたカテゴリバッジを表示し、9カテゴリのタブでも絞り込み可能）。大量保有報告書のしくみ・制度の深掘り・用語解説・投資家分類/業界プレイヤー・本サイトの使い方・初心者/中級者向けの読み方・投資基礎の周辺知識 |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別・取引日別ページを含む） |
 | `/robots.txt` | `src/app/robots.ts` |
+| `/ads.txt` | AdSenseの販売者情報（`src/app/ads.txt/route.ts`）。`NEXT_PUBLIC_ADSENSE_CLIENT`未設定時は404を返す |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。ヘッダーのハンバーガーメニュー・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/api/counter` | ヘッダー上部の累計訪問者数カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
 | `/api/articles` | 記事一覧のオートスクロール用（GET、`offset`/`dealType`クエリでmicroCMSの次のページを返す） |
@@ -126,6 +128,15 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 - **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
+
+## 広告（Google AdSense）
+
+- 設定は `src/lib/adsense.ts` の2つの環境変数に集約している。**`NEXT_PUBLIC_ADSENSE_CLIENT` が未設定の間は、広告スクリプト・広告枠・`/ads.txt` のすべてが何も出力しない**（審査申請前・ローカル・プレビュー環境では完全に無効）。
+  - `NEXT_PUBLIC_ADSENSE_CLIENT`: サイト運営者ID（`ca-pub-...`）。ローダースクリプト（`src/components/AdSenseScript.tsx`、両ロケールのlayoutに設置）と`<ins>`の`data-ad-client`に使う。`ca-`を除いた値が`/ads.txt`の販売者IDになる。
+  - `NEXT_PUBLIC_ADSENSE_INFEED_SLOT`: 記事一覧に差し込む広告ユニットのスロットID。AdSense管理画面で「ディスプレイ広告（レスポンシブ）」として作成する（`data-ad-format="auto"` + `data-full-width-responsive="true"` で描画するため、in-feed広告ユニット固有の`data-ad-layout-key`は不要）。
+- 掲載位置は記事一覧のオートスクロールの途中（`src/components/InFeedAd.tsx`）。記事カードの間ではなく**取引日グループの区切り**に、`ARTICLES_PER_AD`（=8）件読み進めるごとに1枠挿入する（`src/components/InfiniteArticleList.tsx`）。記事と広告が地続きに見えると誤クリックを誘発しAdSenseのポリシー違反になるため、必ず「広告」ラベル（英語版は"Sponsored"）を上に添える。最後のグループの後ろは読み込み中のsentinelが続くので置かない。
+- ローダーは React 19 が `async`+`src` の `<script>` を `<head>` に巻き上げるため、layoutのbody内に置いても審査コードの検出は通る。広告ブロッカー等で `adsbygoogle.push()` が失敗しても記事一覧の描画は止めない（例外は握りつぶす）。
+- プライバシーポリシー（`/privacy`・`/en/privacy`）はAdSense審査の必須要件。広告ツール・解析ツールを増減させたらこのページの記載も合わせて更新すること。
 
 ## SEO/AIO対策
 

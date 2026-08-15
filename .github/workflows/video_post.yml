@@ -1,0 +1,100 @@
+name: Short Video Post
+
+on:
+  schedule:
+    # 平日 21:30 JST（UTC 12:30）に1日1回。edinet_blog.yml（毎時 9:00-21:00 JST）が
+    # その日の記事を出し切ったあとに走らせ、当日の一番大きい開示を動画にする。
+    - cron: '30 12 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      render_only:
+        description: 'mp4の書き出しまでで止める（投稿しない）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Remotion のレンダリングは重く、二重に走らせる意味が無いため直列化する。
+concurrency:
+  group: video-post
+  cancel-in-progress: false
+
+jobs:
+  render-and-post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: video/remotion/package-lock.json
+
+      - name: Install Python dependencies
+        run: pip install requests anthropic python-dotenv
+
+      - name: Install Noto Sans CJK (動画内の日本語フォント)
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      - name: Install Remotion dependencies
+        run: cd video/remotion && npm ci
+
+      # Remotion が使う Chrome Headless Shell（約150MB）を実行間でキャッシュする。
+      # キャッシュが無い場合はレンダリング時に自動ダウンロードされる。
+      - name: Cache Remotion browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/remotion
+          key: remotion-browser-${{ runner.os }}
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" > ~/stock-alert/.env
+          echo "MICROCMS_SERVICE_DOMAIN=${{ secrets.MICROCMS_SERVICE_DOMAIN }}" >> ~/stock-alert/.env
+          echo "MICROCMS_API_KEY=${{ secrets.MICROCMS_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: 縦動画の生成・投稿（YouTube Shorts / TikTok）
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MICROCMS_SERVICE_DOMAIN: ${{ secrets.MICROCMS_SERVICE_DOMAIN }}
+          MICROCMS_API_KEY: ${{ secrets.MICROCMS_API_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+          # TikTokアプリの審査通過後に "1" を設定すると直接公開になる（既定は下書き送信）
+          TIKTOK_DIRECT_POST: ${{ secrets.TIKTOK_DIRECT_POST }}
+        run: |
+          cd ~/stock-alert
+          if [ "${{ inputs.render_only }}" = "true" ]; then
+            python video/publish_video.py --render-only --keep-video
+          else
+            python video/publish_video.py --keep-video
+          fi
+
+      - name: 生成した動画を成果物として保存（投稿結果の目視確認用）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-video
+          path: video/out/
+          retention-days: 7
+          if-no-files-found: ignore
