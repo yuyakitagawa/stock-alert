@@ -126,11 +126,18 @@ export async function getArticleList(params: {
 export const FEATURED_POOL_SIZE = 20;
 export const FEATURED_COUNT = 3;
 
-// 「注目」枠: 直近FEATURED_POOL_SIZE件を「日付優先→同日内は金額が大きい順」で取得し、
-// 先頭FEATURED_COUNT件を選ぶ。単純な新着1件だと金額の小さい取引が「注目」に出てしまうため
-// 同日内では規模の大きい取引を優先しつつ、当日分がある限りは古い日の大型取引に
-// 押しのけられないようにする（プール全体を金額だけで並べ替えると、投稿数が少ない日に
-// 数日前の大型取引が「注目」を占有し続けてしまうため、この並び替えはしない）。
+// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得。
+// プール全体を金額だけで並べ替えると、投稿数が少ない日に数日前の大型取引が「注目」を
+// 占有し続けてしまうため、取得時の並び替えはしない）の中から、クジラ注目度
+// (attentionScore、lib/attention_score.pyが実績63営業日後リターンで較正)が高い順に
+// 先頭FEATURED_COUNT件を選ぶ。スコア未算出（売り記事・旧記事）はattentionScoreを
+// 最低値扱いにし、同点はdealAmountで比較する。
+function pickFeatured(pool: ArticleContent[], count: number): ArticleContent[] {
+  return [...pool]
+    .sort((a, b) => (b.attentionScore ?? -1) - (a.attentionScore ?? -1) || b.dealAmount - a.dealAmount)
+    .slice(0, count);
+}
+
 export async function getFeaturedArticles(
   poolSize = FEATURED_POOL_SIZE,
   count = FEATURED_COUNT,
@@ -138,7 +145,7 @@ export async function getFeaturedArticles(
 ) {
   if (translatedOnly) {
     const all = await fetchAllArticles();
-    return all.filter(isTranslated).slice(0, poolSize).slice(0, count);
+    return pickFeatured(all.filter(isTranslated).slice(0, poolSize), count);
   }
   const result = await client.getList<Article>({
     endpoint: "articles",
@@ -148,7 +155,7 @@ export async function getFeaturedArticles(
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  return result.contents.map(normalizeDealType).slice(0, count);
+  return pickFeatured(result.contents.map(normalizeDealType), count);
 }
 
 export async function getArticlesByStockCode(stockCode: string, params: { translatedOnly?: boolean } = {}) {

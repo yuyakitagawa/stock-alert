@@ -55,6 +55,9 @@ export const UI = {
     ],
     sellBadge: "売り",
     sellBadgeTitle: "保有比率が減少した売り方向（譲渡・売却等）の開示です",
+    attentionScoreLabel: "クジラ注目度",
+    attentionScoreTooltip:
+      "保有比率・変化幅・取引規模・投資家分類をもとに、買い開示4,000件超の実績データ（開示後63営業日のリターン）から算出したスコアです。将来の値動きを保証するものではありません。",
     searchAria: "企業名・証券コードで検索",
     searchPlaceholder: "企業名 or 証券コードで検索",
     searchLoading: "検索中…",
@@ -137,6 +140,9 @@ export const UI = {
       "Where identifiable, each article's \"Source\" field links directly to the specific disclosure document or press release it is based on.",
     sellBadge: "Sell",
     sellBadgeTitle: "A sell-direction disclosure (transfer, sale, etc.) where the holding ratio decreased",
+    attentionScoreLabel: "Whale Attention Score",
+    attentionScoreTooltip:
+      "Calculated from holding ratio, change, deal size, and investor category, based on actual 63-trading-day returns following 4,000+ past buy disclosures. Not a guarantee of future performance.",
     searchAria: "Search by company name or stock code",
     searchPlaceholder: "Search by company name or code",
     searchLoading: "Searching…",

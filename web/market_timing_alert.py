@@ -34,7 +34,15 @@ MARKET_DP_CASH_THRESHOLD = 15.0
 LARGE_HOLDINGS_DAYS = 3
 LARGE_HOLDINGS_LIMIT = 3
 FILER_WATCH_DAYS = 3
-BLOG_SITE_URL = "https://stock-alert-lyart.vercel.app/"
+BLOG_SITE_URL = "https://kujira-watch.com"
+# GA4でLINE通知経由の流入を識別するためのUTM（Xの自動投稿はutm_source=x）。
+BLOG_UTM = "utm_source=line&utm_medium=push"
+
+
+def blog_stock_url(code: str) -> str:
+    """LINE通知から銘柄ページ（大量保有履歴・会社情報・関連記事）へ直接飛ばすURL。
+    通知本文にトップURLだけを載せていた頃は、読者が自分で銘柄を探し直す必要があった。"""
+    return f"{BLOG_SITE_URL}/stocks/{code}?{BLOG_UTM}"
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
@@ -218,10 +226,12 @@ def build_large_holdings_section(
             direction = ""
         direction_str = f" {direction}" if direction else ""
         lines.append(f"  {mark}{label}: {filer}が{ratio_str}保有{direction_str} [{doc_type}] ({disc})")
+        if code:
+            lines.append(f"    📰 {blog_stock_url(code)}")
     if len(ordered) > limit:
-        lines.append(f"  ...他{len(ordered) - limit}件は 📰 {BLOG_SITE_URL} でご確認いただけます")
+        lines.append(f"  ...他{len(ordered) - limit}件は 📰 {BLOG_SITE_URL}?{BLOG_UTM} でご確認いただけます")
     else:
-        lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}")
+        lines.append(f"  📰 詳細解説記事: {BLOG_SITE_URL}?{BLOG_UTM}")
     return "\n".join(lines)
 
 
@@ -299,6 +309,8 @@ def build_filer_watch_section(hits: list[dict]) -> str:
             direction = ""
         direction_str = f" {direction}" if direction else ""
         lines.append(f"  {filer}: {label}を{ratio_str}保有{direction_str} ({disc})")
+        if code:
+            lines.append(f"    📰 {blog_stock_url(code)}")
     return "\n".join(lines)
 
 

@@ -4,9 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import AttentionScorePanel from "@/components/AttentionScorePanel";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
+import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import ShareButtons from "@/components/ShareButtons";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
@@ -283,6 +285,7 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Box>
           )}
         </Box>
+        <AttentionScorePanel score={article.attentionScore} reasons={article.attentionReasons} />
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
@@ -301,12 +304,11 @@ export default async function ArticleDetailPage({ params }: Props) {
               {article.stockName}（{article.stockCode}）の他の記事
             </h2>
             <RelatedArticleLinks articles={relatedStockArticles} />
-            <Link
-              href={`/stocks/${article.stockCode}`}
-              className="kicker mt-3 inline-block text-brand-blue hover:underline"
-            >
-              この銘柄の大量保有・自社株買い履歴をすべて見る ›
-            </Link>
+            <div className="mt-3">
+              <ActionButton href={`/stocks/${article.stockCode}`}>
+                この銘柄の大量保有・自社株買い履歴をすべて見る
+              </ActionButton>
+            </div>
           </div>
         )}
         {filerName && (

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import AttentionScorePanel from "@/components/AttentionScorePanel";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
@@ -193,6 +194,7 @@ export default async function EnArticleDetailPage({ params }: Props) {
             </div>
           )}
         </dl>
+        <AttentionScorePanel score={article.attentionScore} reasons={article.attentionReasons} locale="en" />
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: article.bodyEn }}

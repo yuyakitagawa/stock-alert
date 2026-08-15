@@ -11,6 +11,7 @@ import Typography from "@mui/material/Typography";
 import type { ArticleContent } from "@/types/article";
 import { formatDate, formatDealAmount } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
+import AttentionScoreBadge from "./AttentionScoreBadge";
 import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
 
@@ -55,6 +56,7 @@ export default function ArticleCard({
           <Stack direction="row" sx={{ mb: 1, flexWrap: "wrap", alignItems: "center", columnGap: 1.5, rowGap: 0.5 }}>
             <DealTypeBadge dealType={article.dealType} locale={locale} />
             <DealDirectionBadge tags={article.tags} locale={locale} />
+            <AttentionScoreBadge score={article.attentionScore} locale={locale} />
             <Typography variant="overline" sx={{ color: "text.disabled" }}>
               {formatDate(article.dealDate, locale)}
             </Typography>
