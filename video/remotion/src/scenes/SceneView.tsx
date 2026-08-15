@@ -207,6 +207,8 @@ const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accen
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const slam = spring({frame, fps, config: {damping: 11, stiffness: 240}});
+  // 言い切りの動詞だけで締める。決め台詞的な文言は付けない
+  // （興味の引きはClaudeが記事から作る字幕captionに任せる）。
   const verb = props.direction === 'buy' ? '買い集めた' : '売り払った';
 
   return (
@@ -248,7 +250,7 @@ const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accen
           }),
         }}
       >
-        {verb}クジラがいる
+        {verb}
       </div>
     </div>
   );
