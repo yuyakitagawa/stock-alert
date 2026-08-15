@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Box from "@mui/material/Box";
-import DealTypeBadge from "@/components/DealTypeBadge";
 import { formatDate, formatDealAmount } from "@/lib/format";
 import { getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
