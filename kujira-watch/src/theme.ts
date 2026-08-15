@@ -19,8 +19,8 @@ declare module "@mui/material/styles" {
   }
 }
 
-const fontFamily =
-  "var(--font-noto-sans-jp), var(--font-geist-sans), 'Hiragino Sans', 'Yu Gothic', sans-serif";
+// globals.cssの--font-sansと同じスタック（和文は端末内蔵フォント）。
+const fontFamily = "var(--font-sans)";
 
 const theme = createTheme({
   palette: {

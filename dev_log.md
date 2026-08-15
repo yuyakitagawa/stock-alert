@@ -890,3 +890,40 @@ bear (2024-07-01 → 2024-10-01) top-N=5
 - 下落相場での選別精度は限定的だが、日経比ではアウトパフォーム
 - 今回はコード変更なし（bear-backtest skill の動作確認目的）
 - 判定: ベースライン確認のみ（マージ評価対象外）
+
+## 2026-08-15 kujira-watch: スマホ表示改善（最終形）
+
+当初はウェブフォント除去＋MUI除去の両方をやっていたが、並行してmainで
+「Material Design化 Phase 7/8」「ボタンUIをMUI Button統一」が進んでおり、
+MUI除去は真っ向から対立していた（試しにマージすると11ファイルが方針レベルで衝突）。
+ユーザー判断で**MUI除去は取り下げ、MUIと無関係な性能修正のみ**に絞った。
+
+さらに作業中に別セッションが `/investors` の軽量化（PostgREST 1000行上限の
+ページング・200件ずつのページ送り・行の軽量化）をmainへ先にマージしたため、
+こちらで用意していた同等の修正（getAllFilersのrange ページング・
+/investorsのページネーション・Pagination.tsx）は不要になり破棄した。
+※こちらが「1000行上限で黙って切られている可能性」と指摘した点は実害として確認され、
+サイトマップから投資家ページ約1,900件が漏れていたと判明している。
+
+### 最終的に残した修正
+1. **和文ウェブフォントの廃止（最大の効果）**
+   `next/font/google` の `subsets` はプリロード範囲の指定でしかなく、生成CSSから
+   CJKの `@font-face` は落ちない。Noto Sans JP 4ウェイトで `@font-face` が496個・
+   378KB（gzip 130KB）のレンダリングブロッキングCSSになり、さらに本文の漢字に
+   応じて70〜90KBのwoff2スライスをウェイトごとに追加ダウンロードしていた。
+   和文は端末内蔵フォント（iOS: Hiragino Sans / Android: 内蔵のNoto Sans CJK JP）
+   に委ね、欧文のGeistのみ残す。
+2. **`getFilerWinRates()` を `unstable_cache` に載せる**
+   `/ranking` も `searchParams` を読むためdynamic renderingになりページ側の
+   `revalidate` が効かない。`getAllFilers()` は別セッションがキャッシュ済みだったが
+   こちらは未対応のままだった。
+3. **RippleEffectのpointerdownをpassiveに**（スクロール開始をブロックしうるため）
+4. UI: ヘッダーの月別アーカイブを一番右へ / `/about` のタイトルを「このサイトについて」へ
+
+### 結果（gzip後・main 8f95386 との比較）
+| 指標 | 前 | 後 |
+|---|---|---|
+| CSS 合計 | 138 KB | 7 KB (-95%) |
+| `@font-face` 宣言数 | 510 | 13 |
+| woff2 ファイル | 135個 / 5.5MB | 11個 / 184KB |
+| 初期JS | 410 KB | 410 KB（MUIを残したため変化なし） |

@@ -222,20 +222,27 @@ export async function getFilerNamesByStockAndDate(
 
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
 // トータルリターン(total_return_oku)の降順で返す。
-export async function getFilerWinRates(minN = 1): Promise<FilerWinRate[]> {
-  const supabase = getSupabaseServerClient();
-  const { data } = await supabase
-    .from("filer_win_rate")
-    .select("filer_name, category, n, total_return_oku, hold_days, updated_at")
-    .gte("n", minN)
-    .order("total_return_oku", { ascending: false });
+// /rankingもsearchParams(category)を読むためdynamic renderingになり、ページ側の
+// revalidateが効かない。getAllFilersと同じくunstable_cacheに載せて
+// 毎リクエストのSupabase往復を避ける。
+export const getFilerWinRates = unstable_cache(
+  async (minN = 1): Promise<FilerWinRate[]> => {
+    const supabase = getSupabaseServerClient();
+    const { data } = await supabase
+      .from("filer_win_rate")
+      .select("filer_name, category, n, total_return_oku, hold_days, updated_at")
+      .gte("n", minN)
+      .order("total_return_oku", { ascending: false });
 
-  return (data ?? []).map((r) => ({
-    filerName: r.filer_name,
-    category: r.category as DealType,
-    n: r.n,
-    totalReturnOku: r.total_return_oku,
-    holdDays: r.hold_days,
-    updatedAt: r.updated_at,
-  }));
-}
+    return (data ?? []).map((r) => ({
+      filerName: r.filer_name,
+      category: r.category as DealType,
+      n: r.n,
+      totalReturnOku: r.total_return_oku,
+      holdDays: r.hold_days,
+      updatedAt: r.updated_at,
+    }));
+  },
+  ["filer-win-rates"],
+  { revalidate: 3600 }
+);

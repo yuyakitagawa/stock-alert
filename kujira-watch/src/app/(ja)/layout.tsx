@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Noto_Sans_JP } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GoogleAnalytics } from "@next/third-parties/google";
@@ -21,12 +21,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const notoSansJP = Noto_Sans_JP({
-  variable: "--font-noto-sans-jp",
-  subsets: ["latin"],
-  weight: ["400", "500", "700", "900"],
-  display: "swap",
-});
+// 和文はウェブフォントを読まず端末内蔵フォント（globals.cssの--font-sans）に任せる。
+// next/font/googleのsubsetsは「preloadする範囲」の指定でしかなく、生成CSSからCJKの
+// @font-faceは落ちない。Noto Sans JPの4ウェイトでunicode-range分割の@font-faceが
+// 496個・約378KB(gzip 130KB)のレンダリングブロッキングCSSになり、さらに本文の漢字に
+// 応じて70〜90KBのwoff2スライスをウェイトごとに追加ダウンロードしていた。
+// AndroidのシステムフォントはNoto Sans CJK JPそのもので、iOSはHiragino Sansが載っている。
+// 端末が既に持っているものを毎回落としていた形なので、見た目をほぼ変えずに丸ごと削減できる。
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -96,7 +97,7 @@ export default function RootLayout({
   return (
     <html
       lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} ${notoSansJP.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background">
         <script

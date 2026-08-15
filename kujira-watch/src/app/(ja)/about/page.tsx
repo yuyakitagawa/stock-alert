@@ -7,7 +7,7 @@ import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
 
-const title = "運営者情報・免責事項";
+const title = "このサイトについて";
 const description = "本サイトの運営方針、データソース、免責事項について。";
 
 export const metadata: Metadata = {

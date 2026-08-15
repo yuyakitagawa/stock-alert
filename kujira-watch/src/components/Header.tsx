@@ -39,10 +39,11 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
           { href: "/", label: "TOP" },
           { href: "/weekly", label: "今週のまとめ" },
           { href: "/trending", label: "急増ランキング" },
-          { href: "/monthly", label: "月別アーカイブ" },
           { href: "/ranking", label: "投資家勝率ランキング" },
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },
+          // 月別アーカイブは回遊の起点というより過去分の入口なので一番右に置く。
+          { href: "/monthly", label: "月別アーカイブ" },
         ];
 
   // MUI TabsのvalueはchildのTabのvalueと厳密一致する必要があるため、
