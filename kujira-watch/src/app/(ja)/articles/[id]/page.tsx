@@ -2,19 +2,55 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import ArticleCard from "@/components/ArticleCard";
+import ShareButtons from "@/components/ShareButtons";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
-import { getArticleDetail, getArticleList } from "@/lib/microcms";
+import {
+  getArticleDetail,
+  getArticleList,
+  getArticlesByFilerName,
+  getArticlesByStockCode,
+} from "@/lib/microcms";
 import { getFilersByStockCode } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
+import type { ArticleContent } from "@/types/article";
 
 // Route segment config requires a literal value (cannot import from lib/microcms).
 export const revalidate = 60;
+
+// 「同じ銘柄」「同じ投資家」の関連リンクの表示件数。カード表示の関連記事（同じ分類）と
+// 違って一行リンクで並べるため、多すぎない範囲で回遊先を増やす。
+const RELATED_COUNT = 3;
+
+// 関連リンクの一行表示（取引日・金額つき）。回遊導線なのでカードより密度を優先する。
+function RelatedArticleLinks({ articles }: { articles: ArticleContent[] }) {
+  return (
+    <ul className="divide-y divide-rule border-y border-rule">
+      {articles.map((related) => (
+        <li key={related.id}>
+          <Link
+            href={`/articles/${related.id}`}
+            className="group flex items-baseline justify-between gap-4 py-3"
+          >
+            <span className="text-sm font-medium text-brand-navy group-hover:text-brand-blue group-hover:underline">
+              {related.title}
+            </span>
+            <span className="shrink-0 text-xs text-foreground/50">
+              {formatDate(related.dealDate)}・{formatDealAmount(related.dealAmount)}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -72,12 +108,22 @@ export default async function ArticleDetailPage({ params }: Props) {
   const url = `${SITE_URL}/articles/${id}`;
   const dealDateOnly = article.dealDate.slice(0, 10);
 
-  const { contents: sameCategoryArticles } = article.dealType
-    ? await getArticleList({ dealType: article.dealType, limit: 5 })
-    : { contents: [] };
-  const relatedArticles = sameCategoryArticles.filter((a) => a.id !== id).slice(0, 4);
+  // 関連リンクは「同じ銘柄」→「同じ投資家」→「同じ分類」の順に近いものから並べる。
+  // 同じ記事・既に上のセクションで出した記事は重複させない。
+  const [{ contents: sameCategoryArticles }, { contents: sameStockArticles }, sameFilerArticles, filers] =
+    await Promise.all([
+      article.dealType ? getArticleList({ dealType: article.dealType, limit: 5 }) : Promise.resolve({ contents: [] }),
+      getArticlesByStockCode(article.stockCode),
+      article.filerName ? getArticlesByFilerName(article.filerName, RELATED_COUNT + 1) : Promise.resolve([]),
+      getFilersByStockCode(article.stockCode),
+    ]);
 
-  const filers = await getFilersByStockCode(article.stockCode);
+  const relatedStockArticles = sameStockArticles.filter((a) => a.id !== id).slice(0, RELATED_COUNT);
+  const shownIds = new Set([id, ...relatedStockArticles.map((a) => a.id)]);
+  const relatedFilerArticles = sameFilerArticles.filter((a) => !shownIds.has(a.id)).slice(0, RELATED_COUNT);
+  for (const a of relatedFilerArticles) shownIds.add(a.id);
+  const relatedArticles = sameCategoryArticles.filter((a) => !shownIds.has(a.id)).slice(0, 4);
+
   const linkedBody = linkifyFilerNames(article.body, filers.map((f) => f.filerName));
 
   const articleJsonLd = {
@@ -171,45 +217,61 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Link>
           </p>
         )}
-        <dl className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-rule py-4 text-sm sm:grid-cols-4">
-          <div>
-            <dt className="kicker text-foreground/40">銘柄</dt>
-            <dd className="mt-1 font-medium">
+        <Box
+          component="dl"
+          sx={{
+            m: 0,
+            mb: 4,
+            py: 2,
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: "divider",
+            display: "grid",
+            gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" },
+            columnGap: 2,
+            rowGap: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>銘柄</Typography>
+            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
               <Link
                 href={`/stocks/${article.stockCode}`}
                 className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
               >
                 {article.stockName}（{article.stockCode}）
               </Link>
-            </dd>
-          </div>
-          <div>
-            <dt className="kicker text-foreground/40">取引日</dt>
-            <dd className="mt-1 font-medium text-brand-navy">{formatDate(article.dealDate)}</dd>
-          </div>
-          <div>
-            <dt className="kicker text-foreground/40">金額規模</dt>
-            <dd className="mt-1 font-medium text-brand-navy">
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引日</Typography>
+            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
+              {formatDate(article.dealDate)}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>金額規模</Typography>
+            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
               {formatDealAmount(article.dealAmount)}
-            </dd>
-          </div>
+            </Typography>
+          </Box>
           {article.filerName && (
-            <div>
-              <dt className="kicker text-foreground/40">取引企業</dt>
-              <dd className="mt-1 font-medium">
+            <Box>
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引企業</Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
                 <Link
                   href={`/investors/${encodeURIComponent(article.filerName)}`}
                   className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
                 >
                   {article.filerName}
                 </Link>
-              </dd>
-            </div>
+              </Typography>
+            </Box>
           )}
           {article.sourceUrl && (
-            <div>
-              <dt className="kicker text-foreground/40">出典</dt>
-              <dd className="mt-1">
+            <Box>
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>出典</Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5 }}>
                 <a
                   href={article.sourceUrl}
                   target="_blank"
@@ -218,10 +280,10 @@ export default async function ArticleDetailPage({ params }: Props) {
                 >
                   元記事を見る
                 </a>
-              </dd>
-            </div>
+              </Typography>
+            </Box>
           )}
-        </dl>
+        </Box>
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
@@ -231,6 +293,35 @@ export default async function ArticleDetailPage({ params }: Props) {
             {tags.map((tag) => (
               <span key={tag}>#{tag}</span>
             ))}
+          </div>
+        )}
+        <ShareButtons url={url} title={article.title} />
+        {relatedStockArticles.length > 0 && (
+          <div className="mt-10 border-t border-rule pt-6">
+            <h2 className="mb-4 text-lg font-bold text-brand-navy">
+              {article.stockName}（{article.stockCode}）の他の記事
+            </h2>
+            <RelatedArticleLinks articles={relatedStockArticles} />
+            <Link
+              href={`/stocks/${article.stockCode}`}
+              className="kicker mt-3 inline-block text-brand-blue hover:underline"
+            >
+              この銘柄の大量保有・自社株買い履歴をすべて見る ›
+            </Link>
+          </div>
+        )}
+        {article.filerName && relatedFilerArticles.length > 0 && (
+          <div className="mt-10 border-t border-rule pt-6">
+            <h2 className="mb-4 text-lg font-bold text-brand-navy">
+              {article.filerName}の他の記事
+            </h2>
+            <RelatedArticleLinks articles={relatedFilerArticles} />
+            <Link
+              href={`/investors/${encodeURIComponent(article.filerName)}`}
+              className="kicker mt-3 inline-block text-brand-blue hover:underline"
+            >
+              この投資家の保有銘柄・取引履歴を見る ›
+            </Link>
           </div>
         )}
         {relatedArticles.length > 0 && (

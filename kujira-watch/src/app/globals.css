@@ -54,24 +54,26 @@ body {
 }
 
 /* タップ/クリック時のフィードバックをサイト全体で強化。
-   タッチ端末は:hoverが効かず反応が弱く感じるため、:activeで補強する。 */
-a,
-button,
-[role="button"],
-summary {
+   タッチ端末は:hoverが効かず反応が弱く感じるため、:activeで補強する。
+   MUIコンポーネント(.MuiButtonBase-root)は独自のripple/状態管理を持つため対象外
+   (opacity・scaleがMUIのTouchRipple/hover演出と二重に効いてしまうため)。 */
+a:not(.MuiButtonBase-root),
+button:not(.MuiButtonBase-root),
+[role="button"]:not(.MuiButtonBase-root),
+summary:not(.MuiButtonBase-root) {
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.12s ease-out, transform 0.12s ease-out;
 }
 
-a:active,
-button:active,
-[role="button"]:active,
-summary:active {
+a:not(.MuiButtonBase-root):active,
+button:not(.MuiButtonBase-root):active,
+[role="button"]:not(.MuiButtonBase-root):active,
+summary:not(.MuiButtonBase-root):active {
   opacity: 0.6;
 }
 
-button:active,
-[role="button"]:active {
+button:not(.MuiButtonBase-root):active,
+[role="button"]:not(.MuiButtonBase-root):active {
   transform: scale(0.96);
 }
 

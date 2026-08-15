@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -182,14 +184,18 @@ export default async function AboutPage() {
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">
           記事に付いているバッジは、大量保有報告書の提出者を以下のいずれかに分類したものです。
         </p>
-        <dl className="space-y-3 text-sm">
+        <Box component="dl" sx={{ m: 0, display: "flex", flexDirection: "column", gap: 1.5 }}>
           {DEAL_TYPES.map((dealType) => (
-            <div key={dealType}>
-              <dt className="font-semibold text-brand-navy">{dealType}</dt>
-              <dd className="text-foreground/70">{DEAL_TYPE_DESCRIPTIONS[dealType]}</dd>
-            </div>
+            <Box key={dealType}>
+              <Typography component="dt" sx={{ fontWeight: 600, color: "primary.main" }}>
+                {dealType}
+              </Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0, color: "text.secondary" }}>
+                {DEAL_TYPE_DESCRIPTIONS[dealType]}
+              </Typography>
+            </Box>
           ))}
-        </dl>
+        </Box>
       </section>
 
       {about.faq && (

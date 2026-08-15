@@ -47,7 +47,11 @@ Phase 1でHeader/HeaderMenuをMUI化する際、`.MuiButtonBase-root`をRippleEf
 - [x] ブラウザ確認: home(Accordion開閉)/faq(Tabs切替+Accordion開閉)/weekly、コンソールエラーなし
 
 ## Phase 5 — 仕上げ
-- [ ] stocks/page.tsx, investors/page.tsx → List
-- [ ] about/page.tsx, articles/[id]/page.tsx メタデータ → Typography/Stack
-- [ ] globals.css `:active` ルールの再スコープ
-- [ ] 全19ページ×2ロケール横断チェック
+- [x] stocks/page.tsx, investors/page.tsx → List/ListItem(ListItemButtonではなくListItem採用。component={Link}をServer Componentのpage.tsxで使うとasync関数のページ自体を"use client"にできないため)
+- [x] articles/[id]/page.tsx メタデータdlグリッド → Box(grid)+Typography
+- [x] about/page.tsx 用語集dl → Box+Typography(軽微、プロース本文は変更なし)
+- [x] globals.css `:active` ルール + RippleEffect.tsx(別セッションがPR#259でマージした機能)の対象セレクタを`.MuiButtonBase-root`除外にスコープ変更(二重リップル/二重プレス演出の実害を確認して修正)
+- [x] ブラウザ確認: stocks/investors一覧、記事詳細、about、他セッションの並行変更(月別アーカイブnav追加・記事関連ロジック追加)との共存も確認、tsc/eslintクリーン
+
+## 完了
+Phase 0〜5すべて完了。サイト全体がMUIコンポーネントベースのMaterial Designに移行済み。

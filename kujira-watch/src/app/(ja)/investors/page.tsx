@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import Typography from "@mui/material/Typography";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getAllFilers } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
@@ -95,9 +98,13 @@ export default async function InvestorsPage({ searchParams }: Props) {
           {filers.length === 0 ? "投資家データがまだありません。" : "該当する投資家がいません。"}
         </p>
       ) : (
-        <ul className="divide-y divide-rule/50 border-t border-rule">
+        <List disablePadding sx={{ borderTop: 1, borderColor: "divider" }}>
           {visibleFilers.map((filer) => (
-            <li key={filer.filerName} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
+            <ListItem
+              key={filer.filerName}
+              disableGutters
+              sx={{ py: 1.5, borderBottom: 1, borderColor: "divider", flexWrap: "wrap", columnGap: 1.5, rowGap: 0.5 }}
+            >
               <Link
                 href={`/investors/${encodeURIComponent(filer.filerName)}`}
                 className="font-medium text-brand-blue hover:underline"
@@ -105,12 +112,12 @@ export default async function InvestorsPage({ searchParams }: Props) {
                 {filer.filerName}
               </Link>
               <DealTypeBadge dealType={filer.category} />
-              <span className="text-xs text-foreground/40">
+              <Typography variant="caption" sx={{ color: "text.disabled" }}>
                 保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
-              </span>
-            </li>
+              </Typography>
+            </ListItem>
           ))}
-        </ul>
+        </List>
       )}
     </div>
   );

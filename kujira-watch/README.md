@@ -11,7 +11,8 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 ## スタック
 
 - Next.js 16 (App Router) + TypeScript
-- Tailwind CSS v4（`@tailwindcss/typography` でリッチテキスト本文を装飾）
+- MUI (Material UI) v9 + Emotion（`@mui/material-nextjs`でApp Router用SSR配線。テーマは`src/theme.ts`、ブランドカラー[紺/青/金]を反映）
+- Tailwind CSS v4（ページレイアウト・グリッド・`@tailwindcss/typography`でのリッチテキスト本文装飾を担当。コンポーネント単位のスタイルはMUI側）
 - microCMS（`microcms-js-sdk`）
 - Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を、`/ranking`が`filer_win_rate`テーブルを参照）
 - Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）

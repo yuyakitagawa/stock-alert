@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import Typography from "@mui/material/Typography";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
@@ -97,24 +100,27 @@ export default async function StocksIndexPage({ searchParams }: Props) {
           {stocks.length === 0 ? "銘柄データがまだありません。" : "該当する銘柄がありません。"}
         </p>
       ) : (
-        <ul className="divide-y divide-rule/50 border-t border-rule">
+        <List disablePadding sx={{ borderTop: 1, borderColor: "divider" }}>
           {visibleStocks.map((stock) => (
-            <li key={stock.stockCode} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
-              <Link
-                href={`/stocks/${stock.stockCode}`}
-                className="font-medium text-brand-blue hover:underline"
-              >
+            <ListItem
+              key={stock.stockCode}
+              disableGutters
+              sx={{ py: 1.5, borderBottom: 1, borderColor: "divider", flexWrap: "wrap", columnGap: 1.5, rowGap: 0.5 }}
+            >
+              <Link href={`/stocks/${stock.stockCode}`} className="font-medium text-brand-blue hover:underline">
                 {stock.stockName}（{stock.stockCode}）
               </Link>
               {sectorByCode.get(stock.stockCode) && (
-                <span className="text-xs text-foreground/40">{sectorByCode.get(stock.stockCode)}</span>
+                <Typography variant="caption" sx={{ color: "text.disabled" }}>
+                  {sectorByCode.get(stock.stockCode)}
+                </Typography>
               )}
-              <span className="text-xs text-foreground/40">
+              <Typography variant="caption" sx={{ color: "text.disabled" }}>
                 記事{stock.articleCount}件・最終開示{formatDate(stock.latestDealDate)}
-              </span>
-            </li>
+              </Typography>
+            </ListItem>
           ))}
-        </ul>
+        </List>
       )}
     </div>
   );

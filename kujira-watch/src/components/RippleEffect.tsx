@@ -2,7 +2,10 @@
 
 import { useEffect } from "react";
 
-const RIPPLE_SELECTOR = "a, button, [role='button'], summary";
+// MUIコンポーネント(.MuiButtonBase-root)は独自のTouchRippleを持つため対象から除外する
+// (二重にリップルが発火してしまうため)。
+const RIPPLE_SELECTOR =
+  "a:not(.MuiButtonBase-root), button:not(.MuiButtonBase-root), [role='button']:not(.MuiButtonBase-root), summary:not(.MuiButtonBase-root)";
 const RIPPLE_DURATION_MS = 600;
 
 // タップ位置から波紋が広がる視覚フィードバック。各要素に個別実装せず、
