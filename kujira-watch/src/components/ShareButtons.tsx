@@ -13,7 +13,6 @@ export default function ShareButtons({ url, title }: { url: string; title: strin
   const encodedUrl = encodeURIComponent(shareUrl);
   const xHref = `https://x.com/intent/post?text=${encodeURIComponent(`${title}｜${SITE_NAME}`)}&url=${encodedUrl}`;
   const lineHref = `https://social-plugins.line.me/lineit/share?url=${encodedUrl}`;
-  const hatenaHref = `https://b.hatena.ne.jp/entry/panel/?url=${encodedUrl}`;
 
   return (
     <Stack
@@ -35,9 +34,6 @@ export default function ShareButtons({ url, title }: { url: string; title: strin
       </ActionButton>
       <ActionButton href={lineHref} external>
         LINEで送る
-      </ActionButton>
-      <ActionButton href={hatenaHref} external>
-        はてブ
       </ActionButton>
     </Stack>
   );
