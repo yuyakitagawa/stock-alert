@@ -180,6 +180,66 @@ def test_post_top_articles_posts_without_chart_when_generation_fails():
     assert calls == [None]
 
 
+def test_build_daily_summary_text_includes_count_total_and_extremes():
+    articles = [
+        {"stockName": "大型買い", "dealAmount": 40.0, "tags": "EDINET,自動生成", "filerName": "買いファンド"},
+        {"stockName": "大型売り", "dealAmount": 30.0, "tags": "EDINET,自動生成,売り", "filerName": "売りファンド"},
+        {"stockName": "小型買い", "dealAmount": 5.5, "tags": "EDINET,自動生成", "filerName": ""},
+    ]
+    text = m.build_daily_summary_text(articles, "2026-08-15")
+    assert "🐋 本日のクジラ｜8/15の大量保有報告書" in text
+    assert "3件・合計75.5億円" in text
+    assert "大型買い +40.0億円（買いファンド）" in text
+    assert "大型売り -30.0億円（売りファンド）" in text
+    assert f"{m.SITE_URL}/date/2026-08-15" in text
+    assert "utm_campaign=daily_summary" in text
+
+
+def test_build_daily_summary_text_none_when_no_articles():
+    assert m.build_daily_summary_text([], "2026-08-15") is None
+
+
+def test_build_daily_summary_text_uses_total_count_when_truncated():
+    articles = [{"stockName": "A", "dealAmount": 1.0, "tags": "", "filerName": ""}]
+    text = m.build_daily_summary_text(articles, "2026-08-15", total_count=120)
+    assert "120件" in text
+
+
+def test_post_daily_summary_only_fires_at_final_run_hour():
+    """21時JST(12時UTC)の最終便以外の時間帯では投稿しない（1日1回の重複ガード）。"""
+    from datetime import datetime, timezone
+
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m, "fetch_articles_by_deal_date") as fetch_mock:
+        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 5, 0, tzinfo=timezone.utc)) is False
+        fetch_mock.assert_not_called()
+
+
+def test_post_daily_summary_posts_at_final_run_hour():
+    from datetime import datetime, timezone
+
+    articles = [{"stockName": "A", "dealAmount": 10.0, "tags": "", "filerName": ""}]
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m, "fetch_articles_by_deal_date", return_value=(articles, 1)), \
+         mock.patch.object(m, "post_tweet", return_value=True) as tweet_mock:
+        # 12時UTC＝21時JSTなのでJST日付は当日
+        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc))
+    assert ok is True
+    posted_text = tweet_mock.call_args.args[0]
+    assert "8/15" in posted_text
+
+
+def test_post_daily_summary_skips_when_no_articles():
+    from datetime import datetime, timezone
+
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m, "fetch_articles_by_deal_date", return_value=([], 0)), \
+         mock.patch.object(m, "post_tweet") as tweet_mock:
+        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc))
+    assert ok is False
+    tweet_mock.assert_not_called()
+
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))

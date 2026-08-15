@@ -66,6 +66,9 @@ export type Article = {
   eyecatch?: MicroCMSImage;
   // 取引を行った投資家（提出者）名。過去記事には設定されていない場合がある。
   filerName?: string;
+  // 保有比率の変化幅（ポイント）。買いは正・売りは負。2026-08-15にスキーマ追加した
+  // フィールドのため、それ以前の記事には無い。記事詳細のファクトボックス「前回比」に使う。
+  ratioChangePct?: number;
   // クジラ注目度(0-100)。lib/attention_score.py(スコアカード方式、買い開示の実績
   // 63営業日後リターンで較正)が算出。売り方向の記事・生成タイミングが古い記事には無い。
   attentionScore?: number;

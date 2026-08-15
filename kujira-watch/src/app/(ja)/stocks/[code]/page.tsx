@@ -12,7 +12,15 @@ import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { getFilersByStockCode } from "@/lib/investors";
+import { docTypeLabel, getFilersByStockCode, getHoldingsByStockCode } from "@/lib/investors";
+import { formatDate } from "@/lib/format";
+import RatioTransition from "@/components/RatioTransition";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
@@ -57,10 +65,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers] = await Promise.all([
+  const [{ contents }, companyInfo, filers, holdings] = await Promise.all([
     getArticlesByStockCode(code),
     getCompanyInfo(code),
     getFilersByStockCode(code),
+    getHoldingsByStockCode(code),
   ]);
 
   if (contents.length === 0) {
@@ -132,6 +141,48 @@ export default async function StockPage({ params }: Props) {
               </ListItem>
             ))}
           </List>
+        </Box>
+      )}
+      {holdings.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: "primary.main" }}>
+            保有比率の推移（EDINET開示ベース）
+          </Typography>
+          <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
+            <Table size="small" sx={{ minWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {holdings.map((h) => (
+                  <TableRow key={h.docId}>
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                      {formatDate(h.discDate)}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/investors/${encodeURIComponent(h.filerName)}`}
+                        className="text-brand-blue hover:underline"
+                      >
+                        {h.filerName}
+                      </Link>
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                      {docTypeLabel(h.docTypeCode)}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                      <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Box>
       )}
       <div className="mb-6">

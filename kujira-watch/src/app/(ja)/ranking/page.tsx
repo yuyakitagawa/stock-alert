@@ -100,9 +100,15 @@ export default async function RankingPage({ searchParams }: Props) {
         ※自己申告・訂正報告書・保有比率51%超・売却方向の開示、発行済株式数が取得できない開示は除外し、
         開示からまだ{holdDays}営業日経っていないものは結果未確定として集計から外しています。
       </p>
-      <p className="mb-6 text-xs text-foreground/40">
+      <p className="mb-4 text-xs text-foreground/40">
         ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
       </p>
+      <nav aria-label="他のランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
+        <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
+        <Link href="/ranking/filings" className="text-brand-blue hover:underline">報告書件数ランキング</Link>
+        <Link href="/ranking/activist" className="text-brand-blue hover:underline">アクティビストが動いた銘柄</Link>
+      </nav>
       {filers.length > 0 && (
         <FilterButtonNav
           ariaLabel="カテゴリで絞り込む"
