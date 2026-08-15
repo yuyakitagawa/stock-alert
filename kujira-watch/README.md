@@ -11,7 +11,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 ## スタック
 
 - Next.js 16 (App Router) + TypeScript
-- MUI (Material UI) v9 + Emotion（`@mui/material-nextjs`でApp Router用SSR配線。テーマは`src/theme.ts`、ブランドカラー[紺/青/金]を反映）
+- MUI (Material UI) v9 + Emotion（`@mui/material-nextjs`でApp Router用SSR配線。テーマは`src/theme.ts`、ブランドカラー[紺/青/金]を反映）。**「開くまで表示されない」重いコンポーネントは`next/dynamic`で遅延読み込みする**（`StockSearchPanel`のAutocomplete/TextField、`HeaderMenuDrawer`のDrawer=Modal/Portal/Backdrop/Slide一式）。どちらも閉じているのが既定なのに全ページの初期JSに積まれていた。見た目・挙動は据え置きで読み込みのタイミングだけ後ろにずらす方式なので、Material Designの構成は変えずに初期JSを約33KB(gzip)削れる
 - Tailwind CSS v4（ページレイアウト・グリッド・`@tailwindcss/typography`でのリッチテキスト本文装飾を担当。コンポーネント単位のスタイルはMUI側）
 - microCMS（`microcms-js-sdk`）
 - Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を、`/ranking`が`filer_win_rate`テーブルを参照）
@@ -129,6 +129,8 @@ tools/filer_win_rate.pyと同じ手法で買い開示4,232件を検証、2026-08
 - **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
+
+- **表示速度の週次チェック**: GitHub Actions `perf_check.yml`（毎週月曜 09:00 JST / 手動実行も可）が `tools/perf_check.py`（リポジトリルート）で本番の代表9ページを計測する。見るのは「初期表示までに待たされる量」に直結する3つ ―― **TTFB**（キャッシュが効いていないと伸びる。実例: `/investors` が`searchParams`でdynamic renderingになりキャッシュ無しで1.6〜1.9秒）、**HTML転送量**（一覧の全件描画で膨らむ。実例: `/investors` が1.5MB）、**`<head>`内のレンダリングブロッキングCSS**（ウェブフォントの`@font-face`で膨らむ。実例: Noto Sans JPで496個・gzip 130KB）。いずれもgzip後の実転送量で、TTFBは3回計測の最小値。JSは初期表示を直接ブロックしないため参考値のみ（外部ドメインの広告・計測タグは自分たちで削れないので集計対象外）。閾値（TTFB 0.8秒 / HTML 100KB / CSS 30KB）を超えたページがあれば`perf`ラベルのIssueを立てて追記し、全ページが閾値内に戻ったら自動クローズする。**閾値は「調べる価値がある」ラインであって目標値ではない**。計測ロジックは`tests/test_perf_check.py`で保護している（HTMLのパースを間違えると「CSSが軽い」と誤判定して肥大化を見逃すため）。
 
 ## 広告（Google AdSense）
 
