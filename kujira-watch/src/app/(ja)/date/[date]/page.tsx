@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
+import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate } from "@/lib/format";
 import { getArticlesByDealDate } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
@@ -91,11 +92,21 @@ export default async function DateArchivePage({ params }: Props) {
           この日に開示された大量保有・変更報告書を{contents.length}件まとめています。
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        {contents.map((article) => (
-          <ArticleCard key={article.id} article={article} />
-        ))}
-      </div>
+      {(() => {
+        const [top, ...rest] = contents;
+        return (
+          <>
+            <FeaturedArticleCard article={top} rank={1} />
+            {rest.length > 0 && (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {rest.map((article) => (
+                  <ArticleCard key={article.id} article={article} />
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

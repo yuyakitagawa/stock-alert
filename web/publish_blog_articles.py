@@ -217,9 +217,12 @@ def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) 
     return lines[:max_lines]
 
 
-def generate_eyecatch_image(title: str, category: str) -> "bytes | None":
-    """タイトル文字列と投資家分類から、Pexels写真+黒帯+太字白文字のアイキャッチPNG(bytes)を
-    生成する。Pexels未設定・取得失敗・合成失敗時はNone（呼び出し側は画像なしで記事を投稿する）。"""
+def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
+    """投資家分類とニュースカード情報（提出者名・銘柄名・保有比率・売買方向・開示日）から、
+    Pexels写真+黒帯+3段組みテキストのアイキャッチPNG(bytes)を生成する。文章タイトルではなく
+    「誰が／何を／どれだけ／いつ」を一目で読める構造化カードにすることで、Google Discoverの
+    カード面での視認性を上げる狙い。Pexels未設定・取得失敗・合成失敗時はNone
+    （呼び出し側は画像なしで記事を投稿する）。"""
     from PIL import Image, ImageDraw, ImageFont
     import io
 
@@ -239,21 +242,42 @@ def generate_eyecatch_image(title: str, category: str) -> "bytes | None":
             ((nw - w) // 2, (nh - h) // 2, (nw - w) // 2 + w, (nh - h) // 2 + h)
         )
         draw = ImageDraw.Draw(img, "RGBA")
-        font = ImageFont.truetype(EYECATCH_FONT_PATH, 56 * ss, index=0)
         pad_left = 80 * ss
         max_text_width = w - pad_left - 60 * ss
-        lines = _wrap_text_lines(draw, title, font, max_text_width)
 
-        line_h = int(56 * ss * 1.35)
-        band_h = line_h * len(lines) + 60 * ss
+        badge_font = ImageFont.truetype(EYECATCH_FONT_PATH, 30 * ss, index=0)
+        filer_font = ImageFont.truetype(EYECATCH_FONT_PATH, 52 * ss, index=0)
+        stock_font = ImageFont.truetype(EYECATCH_FONT_PATH, 44 * ss, index=0)
+
+        badge_text = f"{card['badge_label']}　{card['disc_date']}"
+        filer_lines = _wrap_text_lines(draw, card["filer_name"], filer_font, max_text_width, max_lines=2)
+        stock_text = f"{card['stock_name']}　{card['holding_ratio']:.2f}%"
+        stock_lines = _wrap_text_lines(draw, stock_text, stock_font, max_text_width, max_lines=2)
+
+        badge_h = int(30 * ss * 1.5)
+        filer_line_h = int(52 * ss * 1.3)
+        stock_line_h = int(44 * ss * 1.3)
+        gap = 16 * ss
+        band_h = (
+            badge_h + gap
+            + filer_line_h * len(filer_lines) + gap
+            + stock_line_h * len(stock_lines)
+            + 60 * ss
+        )
         band_y = (h - band_h) // 2
         band = Image.new("RGBA", (w, band_h), (10, 9, 8, 200))
         img.paste(band, (0, band_y), band)
 
         y = band_y + 30 * ss
-        for line in lines:
-            draw.text((pad_left, y), line, font=font, fill=(255, 255, 255, 255))
-            y += line_h
+        draw.text((pad_left, y), badge_text, font=badge_font, fill=(255, 200, 80, 255))
+        y += badge_h + gap
+        for line in filer_lines:
+            draw.text((pad_left, y), line, font=filer_font, fill=(255, 255, 255, 255))
+            y += filer_line_h
+        y += gap
+        for line in stock_lines:
+            draw.text((pad_left, y), line, font=stock_font, fill=(255, 255, 255, 255))
+            y += stock_line_h
 
         # Pexels API利用ガイドラインが推奨するクレジット表記を右下に小さく焼き込む
         # （ライセンス上は必須ではないが、APIレート制限緩和申請等でも使用実績として示せるようにする）
@@ -369,12 +393,13 @@ def build_price_chart_for_article(code: str, name: str) -> "str | None":
     return upload_price_chart(image_bytes)
 
 
-def build_eyecatch_for_article(title: str, category: str) -> "dict | None":
-    """記事タイトル・分類からアイキャッチを生成・アップロードし、microCMSのimage型フィールドに
-    そのまま設定できる {"url": ...} を返す。どこかで失敗すればNone（画像なしで記事を投稿する）。"""
+def build_eyecatch_for_article(category: str, card: dict) -> "dict | None":
+    """投資家分類・ニュースカード情報からアイキャッチを生成・アップロードし、microCMSのimage型
+    フィールドにそのまま設定できる {"url": ...} を返す。どこかで失敗すればNone
+    （画像なしで記事を投稿する）。"""
     if not PEXELS_API_KEY:
         return None
-    image_bytes = generate_eyecatch_image(title, category)
+    image_bytes = generate_eyecatch_image(category, card)
     if not image_bytes:
         return None
     url = upload_eyecatch(image_bytes)
@@ -910,7 +935,19 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             published.append({**payload, "id": None})
             continue
 
-        eyecatch = build_eyecatch_for_article(article["title"], deal_type)
+        if is_sell:
+            badge_label = "📉 売却"
+        elif h.get("doc_type_code") == "350":
+            badge_label = "📈 新規取得"
+        else:
+            badge_label = "📈 買い増し"
+        eyecatch = build_eyecatch_for_article(deal_type, {
+            "filer_name": filer_name,
+            "stock_name": name,
+            "holding_ratio": h["holding_ratio"],
+            "badge_label": badge_label,
+            "disc_date": disc_date,
+        })
         if eyecatch:
             payload["eyecatch"] = eyecatch
 

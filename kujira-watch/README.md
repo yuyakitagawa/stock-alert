@@ -71,7 +71,7 @@ npm run dev
 | `/investors` | 投資家一覧。見出し直下にカテゴリ別の絞り込み（`?category=`クエリでSSRフィルタ、各カテゴリの件数を`(N件)`で表示）を配置し、EDINET大量保有報告書を提出したことがある投資家を最終開示日が新しい順に列挙（`edinet_filer_summary` Supabaseビュー経由） |
 | `/investors/[filer]` | 投資家別ページ。プロフィールの下に「主な保有銘柄」（`holdings`を`issuerCode`で重複排除し保有比率つきで列挙）、続けて「最近の取引」の見出しでその投資家が開示した保有銘柄・保有比率の推移を一覧表示（`edinet_large_holdings`/`edinet_filer_classification`）。競合の大量保有報告書データベースには無い「投資家を軸にした横断トラッキング」がこのサイトの差別化ポイント。`edinet_filer_classification.profile`（`web/publish_blog_articles.get_filer_profile()`がClaudeの一般知識から800〜1000字程度で生成・キャッシュ）があれば「{投資家名}について」の解説文として一覧の上に表示する |
 | `/ranking` | 投資家別 過去勝率ランキング。`tools/filer_win_rate.py`が週次（GitHub Actions `filer_win_rate.yml`）で再計算するSupabase `filer_win_rate`テーブルを`lib/investors.ts`の`getFilerWinRates()`が収縮後勝率(shrunk_win_rate)降順で取得。買い開示件数(n)が5未満の投資家は表示しない（サンプル不足で勝率のブレが大きいため）。`/investors`と同じ`?category=`クエリでのカテゴリ絞り込みに対応 |
-| `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり |
+| `/date/[date]`（`YYYY-MM-DD`） | 取引日別の大口投資家の動きまとめ（同一`dealDate`の記事を`-dealAmount`順に一覧表示）。先頭（同日内で金額最大の1件）はTOP/`/weekly`と同じ`FeaturedArticleCard`でページ冒頭にハイライト表示し、残りを一覧グリッドに表示する（2026-08-15、「今日の注目」の編集的ハイライトとして追加。英語版`/en`には対応ページなし）。記事詳細のパンくず（トップ＞日付＞記事）から内部リンクあり |
 | `/about` | 運営者情報・データソース・免責事項（E-E-A-T対策）。投資家分類の用語集（`#dealtype-glossary`）も含む |
 | `/faq` | よくある質問（FAQPage構造化データ付き、500問。各質問に色分けされたカテゴリバッジを表示し、9カテゴリのタブでも絞り込み可能）。大量保有報告書のしくみ・制度の深掘り・用語解説・投資家分類/業界プレイヤー・本サイトの使い方・初心者/中級者向けの読み方・投資基礎の周辺知識 |
 | `/sitemap.xml` | 動的サイトマップ（`src/app/sitemap.ts`、全記事・カテゴリ・銘柄別・取引日別ページを含む） |

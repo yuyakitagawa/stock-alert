@@ -379,22 +379,31 @@ def test_upload_eyecatch_returns_none_on_failure():
         assert m.upload_eyecatch(b"png-bytes") is None
 
 
+_SAMPLE_EYECATCH_CARD = {
+    "filer_name": "Oasis Management",
+    "stock_name": "アインHD",
+    "holding_ratio": 20.93,
+    "badge_label": "📈 買い増し",
+    "disc_date": "2026-07-20",
+}
+
+
 def test_build_eyecatch_for_article_none_without_pexels_key():
     with mock.patch.object(m, "PEXELS_API_KEY", ""):
-        assert m.build_eyecatch_for_article("タイトル", "その他") is None
+        assert m.build_eyecatch_for_article("その他", _SAMPLE_EYECATCH_CARD) is None
 
 
 def test_build_eyecatch_for_article_none_when_generation_fails():
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch.object(m, "generate_eyecatch_image", return_value=None):
-        assert m.build_eyecatch_for_article("タイトル", "その他") is None
+        assert m.build_eyecatch_for_article("その他", _SAMPLE_EYECATCH_CARD) is None
 
 
 def test_build_eyecatch_for_article_returns_url_dict_on_success():
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch.object(m, "generate_eyecatch_image", return_value=b"png-bytes"), \
          mock.patch.object(m, "upload_eyecatch", return_value="https://images.microcms-assets.io/x.png"):
-        result = m.build_eyecatch_for_article("タイトル", "その他")
+        result = m.build_eyecatch_for_article("その他", _SAMPLE_EYECATCH_CARD)
     assert result == {"url": "https://images.microcms-assets.io/x.png"}
 
 
@@ -421,7 +430,13 @@ def test_build_and_publish_includes_eyecatch_when_available():
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
     assert results[0]["eyecatch"] == {"url": "https://images.microcms-assets.io/x.png"}
-    eyecatch_mock.assert_called_once_with("テストタイトル", "個人")
+    eyecatch_mock.assert_called_once_with("個人", {
+        "filer_name": "個人 太郎",
+        "stock_name": "テスト自動車",
+        "holding_ratio": 8.5,
+        "badge_label": "📈 新規取得",
+        "disc_date": "2026-07-20",
+    })
 
 
 def test_build_and_publish_skips_eyecatch_on_dry_run():
