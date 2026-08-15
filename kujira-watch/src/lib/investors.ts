@@ -136,23 +136,60 @@ export async function getFilersByStockCode(
 // 持つSupabase側と「銘柄コード×開示日」で突き合わせるしかない。
 // 同じ銘柄・同じ日に複数の提出者が開示しているケース（2026年8月実測で開示行の14%）は
 // どの記事がどの提出者のものか一意に定まらないため、誤った帰属を出さないよう除外する。
+// PostgRESTは1リクエストあたり既定1000行で打ち切るため、期間が長いと取りこぼす
+// （実測: 60日間で2,906行。打ち切られた1000行は順序保証も無く、/trendingの投資家集計が
+// まるごと空になっていた）。日付順に固定してページングし、全期間ぶんを取り切る。
+const HOLDINGS_PAGE_SIZE = 1000;
+// 暴走防止の上限（20ページ＝2万行。EDINETの開示ペースなら数年分に相当する）。
+const HOLDINGS_MAX_PAGES = 20;
+
+export type HoldingRow = {
+  issuerCode: string;
+  issuerName: string;
+  filerName: string;
+  discDate: string;
+};
+
+// 期間内の大量保有・変更報告書を全件返す（/trendingの期間比較と、提出者名の突合で共用）。
+export async function getHoldingsInRange(from: string, to: string): Promise<HoldingRow[]> {
+  const supabase = getSupabaseServerClient();
+  const rows: HoldingRow[] = [];
+  for (let page = 0; page < HOLDINGS_MAX_PAGES; page += 1) {
+    const offset = page * HOLDINGS_PAGE_SIZE;
+    const { data } = await supabase
+      .from("edinet_large_holdings")
+      .select("issuer_code, issuer_name, disc_date, filer_name")
+      .gte("disc_date", from)
+      .lte("disc_date", to)
+      .order("disc_date", { ascending: true })
+      .order("doc_id", { ascending: true })
+      .range(offset, offset + HOLDINGS_PAGE_SIZE - 1);
+    if (!data || data.length === 0) break;
+    for (const row of data) {
+      if (!row.issuer_code || !row.disc_date || !row.filer_name) continue;
+      rows.push({
+        issuerCode: row.issuer_code,
+        issuerName: row.issuer_name ?? row.issuer_code,
+        filerName: row.filer_name,
+        discDate: row.disc_date,
+      });
+    }
+    if (data.length < HOLDINGS_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
 export async function getFilerNamesByStockAndDate(
   from: string,
   to: string
 ): Promise<Map<string, string>> {
-  const supabase = getSupabaseServerClient();
-  const { data } = await supabase
-    .from("edinet_large_holdings")
-    .select("issuer_code, disc_date, filer_name")
-    .gte("disc_date", from)
-    .lte("disc_date", to);
+  const rows = await getHoldingsInRange(from, to);
 
   const filersByKey = new Map<string, Set<string>>();
-  for (const row of data ?? []) {
-    if (!row.issuer_code || !row.disc_date || !row.filer_name) continue;
-    const key = `${row.issuer_code}|${row.disc_date}`;
+  for (const row of rows) {
+    const key = `${row.issuerCode}|${row.discDate}`;
     const filers = filersByKey.get(key) ?? new Set<string>();
-    filers.add(row.filer_name);
+    filers.add(row.filerName);
     filersByKey.set(key, filers);
   }
 
