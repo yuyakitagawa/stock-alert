@@ -58,19 +58,32 @@ async function fetchAllPagesParallel<T>(queries: { fields: string; orders: strin
 }
 
 async function fetchAllArticlesByFilter(filters: string): Promise<ArticleContent[]> {
-  const all: ArticleContent[] = [];
-  let offset = 0;
-  for (;;) {
-    const result = await client.getList<Article>({
-      endpoint: "articles",
-      queries: { filters, orders: "-dealDate,-dealAmount", limit: MAX_PAGE_SIZE, offset },
-      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-    });
-    all.push(...result.contents.map(normalizeDealType));
-    offset += MAX_PAGE_SIZE;
-    if (result.contents.length < MAX_PAGE_SIZE || offset >= (result.totalCount ?? offset)) break;
+  const queries = { filters, orders: "-dealDate,-dealAmount" };
+  const requestInit = { next: { revalidate: REVALIDATE_SECONDS } };
+
+  const first = await client.getList<Article>({
+    endpoint: "articles",
+    queries: { ...queries, limit: MAX_PAGE_SIZE, offset: 0 },
+    customRequestInit: requestInit,
+  });
+
+  // 1ページ目のtotalCountから残りのoffsetを割り出して並列取得する。
+  // 直列に繰り返すと1リクエストぶんの往復（実測で200〜300ms）がページ数だけ積み上がり、
+  // 365件あった2026年8月の/monthlyがTTFB約1秒になっていた。
+  const remainingOffsets: number[] = [];
+  for (let offset = MAX_PAGE_SIZE; offset < (first.totalCount ?? 0); offset += MAX_PAGE_SIZE) {
+    remainingOffsets.push(offset);
   }
-  return all;
+  const restPages = await Promise.all(
+    remainingOffsets.map((offset) =>
+      client.getList<Article>({
+        endpoint: "articles",
+        queries: { ...queries, limit: MAX_PAGE_SIZE, offset },
+        customRequestInit: requestInit,
+      })
+    )
+  );
+  return [first, ...restPages].flatMap((page) => page.contents.map(normalizeDealType));
 }
 
 // microCMSの`titleEn[exists]true`フィルタは実データがあってもヒットしない既知不具合が

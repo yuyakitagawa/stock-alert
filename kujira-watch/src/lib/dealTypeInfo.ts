@@ -1,5 +1,24 @@
 import type { DealType } from "@/types/article";
 
+// 投資家分類ごとの表示色（ドット/文字）。DealTypeBadge（Chip+Tooltip、"use client"）と
+// DealTypeLabel（一覧向けの軽量なサーバーコンポーネント）で同じ色を使うため、
+// コンポーネント側ではなくここに置く。
+export const DEAL_TYPE_COLORS: Record<DealType, { dot: string; text: string }> = {
+  個人: { dot: "#d97706", text: "#92400e" },
+  創業家の資産管理会社: { dot: "#f97316", text: "#c2410c" },
+  "公益/一般財団法人": { dot: "#0d9488", text: "#0f766e" },
+  プライムブローカー: { dot: "#6366f1", text: "#4338ca" },
+  アクティビスト: { dot: "#e11d48", text: "#be123c" },
+  VC: { dot: "#ec4899", text: "#db2777" },
+  "PE・メザニンファンド": { dot: "#c026d3", text: "#a21caf" },
+  独立系ブティックAM: { dot: "#3b82f6", text: "#2563eb" },
+  国内アセットマネジメント: { dot: "#2563eb", text: "#1d4ed8" },
+  外資系伝統運用会社: { dot: "#7c3aed", text: "#6d28d9" },
+  日系証券銀行: { dot: "#0284c7", text: "#0369a1" },
+  事業会社: { dot: "#059669", text: "#047857" },
+  その他: { dot: "#9ca3af", text: "rgba(32, 29, 26, 0.6)" },
+};
+
 // web/publish_blog_articles.py の classify_filer() が使う判断基準と表現をそろえた説明文。
 // 分類の定義そのものを変えるものではなく、初心者向けに意味を補足するための表示用データ。
 export const DEAL_TYPE_DESCRIPTIONS: Record<DealType, string> = {

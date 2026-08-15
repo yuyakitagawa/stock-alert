@@ -1,5 +1,13 @@
+import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type { DealType } from "@/types/article";
+
+// PostgRESTは1リクエストあたり既定1000行で打ち切り、しかも返る行の順序も保証されない
+// （実測: 開示60日間で2,906行、投資家一覧で2,938行）。全件必要なクエリは並び順を固定した
+// うえでこの単位でページングして取り切る。
+const PAGE_SIZE = 1000;
+// 暴走防止の上限（20ページ＝2万行）。
+const MAX_PAGES = 20;
 
 export type FilerHolding = {
   docId: string;
@@ -83,21 +91,40 @@ export async function getFilerHoldings(filerName: string): Promise<FilerHolding[
 }
 
 // /investors（一覧）とサイトマップ用。edinet_filer_summary(Supabaseビュー)は
-// filer_name単位で1行に集計済みのため1000行上限に掛からない。
-export async function getAllFilers(): Promise<FilerSummary[]> {
-  const supabase = getSupabaseServerClient();
-  const { data } = await supabase
-    .from("edinet_filer_summary")
-    .select("filer_name, category, holding_count, latest_disc_date")
-    .order("latest_disc_date", { ascending: false });
-
-  return (data ?? []).map((r) => ({
-    filerName: r.filer_name,
-    category: r.category as DealType,
-    holdingCount: r.holding_count,
-    latestDiscDate: r.latest_disc_date,
-  }));
-}
+// filer_name単位で1行に集計済みだが、投資家は2,938件あり（2026-08-15時点）
+// PostgRESTの既定1000行上限に掛かっていた。1000件しか返らないため一覧ページに出ないだけでなく、
+// サイトマップからも約1,900件の投資家ページが丸ごと漏れていたため、ページングで全件取り切る。
+// /investorsは`?category=`のsearchParamsを読むためリクエストごとの動的レンダリングになり
+// ページ単位のrevalidateが効かない。実測でこのクエリだけで0.2〜1.0秒かかるため、
+// 取得結果をunstable_cacheに載せて毎リクエストのSupabase往復を避ける。
+export const getAllFilers = unstable_cache(
+  async (): Promise<FilerSummary[]> => {
+    const supabase = getSupabaseServerClient();
+    const filers: FilerSummary[] = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const offset = page * PAGE_SIZE;
+      const { data } = await supabase
+        .from("edinet_filer_summary")
+        .select("filer_name, category, holding_count, latest_disc_date")
+        .order("latest_disc_date", { ascending: false })
+        .order("filer_name", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      filers.push(
+        ...data.map((r) => ({
+          filerName: r.filer_name,
+          category: r.category as DealType,
+          holdingCount: r.holding_count,
+          latestDiscDate: r.latest_disc_date,
+        }))
+      );
+      if (data.length < PAGE_SIZE) break;
+    }
+    return filers;
+  },
+  ["all-filers"],
+  { revalidate: 3600 }
+);
 
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
 // 投資家一覧（名称+分類）を返す。
@@ -129,20 +156,6 @@ export async function getFilersByStockCode(
     .sort((a, b) => a.filerName.localeCompare(b.filerName, "ja"));
 }
 
-// microCMSの`articles`スキーマには提出者名(filerName)フィールドが存在せず、
-// web/publish_blog_articles.py がpayloadに載せている値はAPI側で黙って捨てられている
-// （2026-08-15にAPIレスポンスのキー一覧で確認。CMSのスキーマ変更はGUIでしか行えないため
-// コード側からは追加できない）。そのため記事から提出者を引くには、EDINET開示そのものを
-// 持つSupabase側と「銘柄コード×開示日」で突き合わせるしかない。
-// 同じ銘柄・同じ日に複数の提出者が開示しているケース（2026年8月実測で開示行の14%）は
-// どの記事がどの提出者のものか一意に定まらないため、誤った帰属を出さないよう除外する。
-// PostgRESTは1リクエストあたり既定1000行で打ち切るため、期間が長いと取りこぼす
-// （実測: 60日間で2,906行。打ち切られた1000行は順序保証も無く、/trendingの投資家集計が
-// まるごと空になっていた）。日付順に固定してページングし、全期間ぶんを取り切る。
-const HOLDINGS_PAGE_SIZE = 1000;
-// 暴走防止の上限（20ページ＝2万行。EDINETの開示ペースなら数年分に相当する）。
-const HOLDINGS_MAX_PAGES = 20;
-
 export type HoldingRow = {
   issuerCode: string;
   issuerName: string;
@@ -154,8 +167,8 @@ export type HoldingRow = {
 export async function getHoldingsInRange(from: string, to: string): Promise<HoldingRow[]> {
   const supabase = getSupabaseServerClient();
   const rows: HoldingRow[] = [];
-  for (let page = 0; page < HOLDINGS_MAX_PAGES; page += 1) {
-    const offset = page * HOLDINGS_PAGE_SIZE;
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const offset = page * PAGE_SIZE;
     const { data } = await supabase
       .from("edinet_large_holdings")
       .select("issuer_code, issuer_name, disc_date, filer_name")
@@ -163,7 +176,7 @@ export async function getHoldingsInRange(from: string, to: string): Promise<Hold
       .lte("disc_date", to)
       .order("disc_date", { ascending: true })
       .order("doc_id", { ascending: true })
-      .range(offset, offset + HOLDINGS_PAGE_SIZE - 1);
+      .range(offset, offset + PAGE_SIZE - 1);
     if (!data || data.length === 0) break;
     for (const row of data) {
       if (!row.issuer_code || !row.disc_date || !row.filer_name) continue;
@@ -174,11 +187,18 @@ export async function getHoldingsInRange(from: string, to: string): Promise<Hold
         discDate: row.disc_date,
       });
     }
-    if (data.length < HOLDINGS_PAGE_SIZE) break;
+    if (data.length < PAGE_SIZE) break;
   }
   return rows;
 }
 
+// microCMSの`articles`スキーマには提出者名(filerName)フィールドが存在せず、
+// web/publish_blog_articles.py がpayloadに載せている値はAPI側で黙って捨てられている
+// （2026-08-15にAPIレスポンスのキー一覧で確認。CMSのスキーマ変更はGUIでしか行えないため
+// コード側からは追加できない）。そのため記事から提出者を引くには、EDINET開示そのものを
+// 持つSupabase側と「銘柄コード×開示日」で突き合わせるしかない。
+// 同じ銘柄・同じ日に複数の提出者が開示しているケース（2026年8月実測で開示行の14%）は
+// どの記事がどの提出者のものか一意に定まらないため、誤った帰属を出さないよう除外する。
 export async function getFilerNamesByStockAndDate(
   from: string,
   to: string
