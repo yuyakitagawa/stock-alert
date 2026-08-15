@@ -137,7 +137,7 @@ export default async function InvestorPage({ params }: Props) {
         </p>
       </div>
       <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-        <Table size="small" sx={{ "& .MuiTableCell-root": { borderColor: "divider" } }}>
+        <Table size="small" sx={{ minWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
           <TableHead>
             <TableRow>
               <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
