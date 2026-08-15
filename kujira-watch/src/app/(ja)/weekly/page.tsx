@@ -9,6 +9,7 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
+import DailyDigestList from "@/components/DailyDigestList";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getPreviousPeriodArticles, getRecentArticles } from "@/lib/microcms";
@@ -248,40 +249,17 @@ export default async function WeeklyDigestPage() {
       {contents.length > 0 && (
         <section>
           <h2 className="mb-2 text-lg font-bold text-brand-navy">日別の記事一覧</h2>
-          <div className="divide-y divide-rule border-y border-rule">
-            {last7Dates.map((date) => {
+          <DailyDigestList
+            days={last7Dates.map((date) => {
               const group = dateGroupMap.get(date);
-              const label = group?.label ?? formatDate(date);
-              if (!group) {
-                return (
-                  <div key={date} className="flex items-center justify-between gap-4 py-4 text-foreground/40">
-                    <div>
-                      <p className="font-bold">{label}</p>
-                      <p className="mt-0.5 text-sm">開示なし</p>
-                    </div>
-                  </div>
-                );
-              }
-              const dayAmount = group.articles.reduce((sum, a) => sum + a.dealAmount, 0);
-              return (
-                <Link
-                  key={date}
-                  href={`/date/${date}`}
-                  className="group flex items-center justify-between gap-4 py-4 transition-colors hover:bg-section-tint"
-                >
-                  <div>
-                    <p className="font-bold text-brand-navy">{label}</p>
-                    <p className="mt-0.5 text-sm text-foreground/60">
-                      {group.articles.length}件・{formatDealAmount(dayAmount)}
-                    </p>
-                  </div>
-                  <span className="kicker shrink-0 text-brand-blue transition-colors group-hover:text-brand-navy">
-                    この日の記事を見る ›
-                  </span>
-                </Link>
-              );
+              return {
+                date,
+                label: group?.label ?? formatDate(date),
+                count: group?.articles.length ?? 0,
+                amount: group ? group.articles.reduce((sum, a) => sum + a.dealAmount, 0) : 0,
+              };
             })}
-          </div>
+          />
         </section>
       )}
     </div>
