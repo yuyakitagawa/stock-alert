@@ -1,5 +1,30 @@
 # Dev Log
 
+## 2026-08-15 EDINETブログ記事投稿を毎時バッチに分離（株価更新パイプラインから切り離し）
+
+```
+背景: これまで tools/scan_large_holdings.py（EDINET大量保有スキャン）と
+web/publish_blog_articles.py（ブログ記事生成・投稿）は daily_alert.yml の
+Step 2c/5c として、平日16:00 JSTの株価更新パイプラインに相乗りしていた。
+そのため、朝一で提出されたEDINET開示も記事化されるのは同日16時以降になっていた。
+
+変更: 新規ワークフロー .github/workflows/edinet_blog.yml を作成し、
+tools/scan_large_holdings.py（--days 2）→ web/publish_blog_articles.py を
+平日9:00-21:00 JST・毎時（cron '0 0-12 * * 1-5'）で独立実行するように分離。
+daily_alert.yml からは Step 2c/5c を削除（未使用になった依存パッケージ
+Pillow/requests-oauthlib と MICROCMS_*/PEXELS_API_KEY/X_* のenv設定も削除）。
+edinet_large_holdings テーブルはSupabase経由で共有されるため、
+daily_alert.ymlのランキング生成（EDINET大量保有の特徴量edinet_hold_f）は
+引き続き最新の毎時スキャン結果を参照できる。
+
+頻度の検討: このリポジトリはpublic（GitHub Actions分数は無料）で、
+記事生成コスト(Claude Haiku)も新規記事1本あたりで決まり実行頻度に比例しない
+（publish_blog_articles.already_published()が重複生成を防ぐため）。
+よって「毎時」自体のコスト増は実質ゼロ。24時間フル稼働ではなく
+平日9:00-21:00に絞ったのは、EDINETの新規開示がこの時間帯にしか
+出ないため（深夜・早朝に回しても空振りするだけ）。
+```
+
 ## 2026-08-07 ブログ記事の金額推定スキップ（29件中15件が原因不明）を調査・2件修正
 
 ```

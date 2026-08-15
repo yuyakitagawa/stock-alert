@@ -33,10 +33,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost lightgbm \
-            gspread google-auth yfinance anthropic Pillow requests-oauthlib
-
-      - name: Install Noto Sans CJK (ブログのアイキャッチ画像生成用フォント)
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+            gspread google-auth yfinance anthropic
 
       - name: Link repo to ~/stock-alert
         run: |
@@ -52,13 +49,6 @@ jobs:
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
           echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
-          echo "MICROCMS_SERVICE_DOMAIN=${{ secrets.MICROCMS_SERVICE_DOMAIN }}" >> ~/stock-alert/.env
-          echo "MICROCMS_API_KEY=${{ secrets.MICROCMS_API_KEY }}" >> ~/stock-alert/.env
-          echo "PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}" >> ~/stock-alert/.env
-          echo "X_API_KEY=${{ secrets.X_API_KEY }}" >> ~/stock-alert/.env
-          echo "X_API_KEY_SECRET=${{ secrets.X_API_KEY_SECRET }}" >> ~/stock-alert/.env
-          echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
-          echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
 
       - name: Create gcp_key.json from secret
         run: |
@@ -80,9 +70,9 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500
 
-      - name: Step 2c - EDINET大量保有スキャン＋突合（イベント蓄積）
-        continue-on-error: true
-        run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 3
+      # Step 2c（EDINET大量保有スキャン）は edinet_blog.yml（毎時）に移管済み。
+      # edinet_large_holdings は Supabase 経由でこのパイプラインからも参照されるため、
+      # ランキング生成(Step 3)時点では直近の毎時実行分がそのまま使われる。
 
       - name: Step 2d - EDINET決算XBRL取得（財務サマリー差分更新）
         continue-on-error: true
@@ -106,9 +96,7 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/market_timing_alert.py
 
-      - name: Step 5c - ブログ記事自動生成・投稿（EDINET大口取引解説「大口投資家の監視ブログ」）
-        continue-on-error: true
-        run: cd ~/stock-alert && python web/publish_blog_articles.py
+      # Step 5c（ブログ記事自動生成・投稿）は edinet_blog.yml（毎時）に移管済み。
 
       - name: Step 6 - モデル学習（金曜 or 初回のみ）
         # 配信系(Step1〜5c)より後段に配置。学習が長引いてもアラート配信は既に完了しているため、
@@ -151,5 +139,4 @@ jobs:
             data/rankings/ranking_*.csv
             data/screeners/screener_*.csv
             data/catalyst_candidates.csv
-            data/edinet_holding_matches.csv
           retention-days: 7
