@@ -27,6 +27,15 @@ type Props = {
   params: Promise<{ month: string }>;
 };
 
+// 記事のある月をビルド時に事前生成する。generateStaticParamsが無いと動的ルートとして
+// 毎回サーバーレンダリングされ（実測: 本番で x-vercel-cache: MISS、TTFB約0.9〜1.2秒）、
+// ページ単位のrevalidateもCDNに載らないため。月が増えた場合は
+// dynamicParams（既定true）により初回アクセス時にオンデマンド生成される。
+export async function generateStaticParams() {
+  const months = await getAllMonthsForIndex();
+  return months.map((m) => ({ month: m.month }));
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { month } = await params;
   if (!MONTH_PATTERN.test(month)) return {};
