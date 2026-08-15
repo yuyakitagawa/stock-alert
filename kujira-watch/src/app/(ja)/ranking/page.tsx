@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getFilerWinRates } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
@@ -135,45 +141,46 @@ export default async function RankingPage({ searchParams }: Props) {
       {visibleFilers.length === 0 ? (
         <p className="text-foreground/50">該当する投資家がいません。</p>
       ) : (
-        <div className="overflow-x-auto border-t border-rule">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-rule text-xs text-foreground/40">
-                <th className="py-2 pr-3 font-normal">順位</th>
-                <th className="py-2 pr-4 font-normal">投資家</th>
-                <th className="py-2 pr-4 font-normal">分類</th>
-                <th className="py-2 pr-4 font-normal text-right">件数</th>
-                <th className="py-2 font-normal text-right">トータルの推計リターン</th>
-              </tr>
-            </thead>
-            <tbody>
+        <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
+          <Table size="small" sx={{ "& .MuiTableCell-root": { borderColor: "divider" } }}>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ color: "text.disabled" }}>順位</TableCell>
+                <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
+                <TableCell sx={{ color: "text.disabled" }}>分類</TableCell>
+                <TableCell align="right" sx={{ color: "text.disabled" }}>件数</TableCell>
+                <TableCell align="right" sx={{ color: "text.disabled" }}>トータルの推計リターン</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {visibleFilers.map((f, index) => (
-                <tr key={f.filerName} className="border-b border-rule/50">
-                  <td className="py-3 pr-3 text-foreground/40">{index + 1}</td>
-                  <td className="py-3 pr-4">
+                <TableRow key={f.filerName}>
+                  <TableCell sx={{ color: "text.disabled" }}>{index + 1}</TableCell>
+                  <TableCell>
                     <Link
                       href={`/investors/${encodeURIComponent(f.filerName)}`}
                       className="font-medium text-brand-blue hover:underline"
                     >
                       {f.filerName}
                     </Link>
-                  </td>
-                  <td className="py-3 pr-4">
+                  </TableCell>
+                  <TableCell>
                     <DealTypeBadge dealType={f.category} />
-                  </td>
-                  <td className="py-3 pr-4 whitespace-nowrap text-right text-foreground/60">{f.n}</td>
-                  <td
-                    className={`py-3 whitespace-nowrap text-right font-medium ${
-                      f.totalReturnOku >= 0 ? "text-emerald-700" : "text-rose-700"
-                    }`}
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                    {f.n}
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{ whiteSpace: "nowrap", fontWeight: 500, color: f.totalReturnOku >= 0 ? "success.main" : "error.main" }}
                   >
                     {formatOku(f.totalReturnOku)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
     </div>
   );

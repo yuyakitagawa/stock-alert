@@ -33,9 +33,10 @@ Phase 1でHeader/HeaderMenuをMUI化する際、`.MuiButtonBase-root`をRippleEf
 - メモ: MUIのポリモーフィックcomponent propにnext/link等の関数を渡す・Tooltipを使う場合は、Server Componentのままだとhydration/RSC境界エラーになるため一律"use client"にする方針で統一
 
 ## Phase 3 — テーブル
-- [ ] ranking/page.tsx (+en)
-- [ ] investors/[filer]/page.tsx (+en)
-- [ ] weekly/page.tsx 内訳テーブル (+en)
+- [x] ranking/page.tsx (en版は存在しないため対象外)
+- [x] investors/[filer]/page.tsx (en版は存在しないため対象外)
+- [x] weekly/page.tsx 内訳テーブル (en版は存在しないため対象外)
+- [x] ブラウザ確認: 3ページとも表示・色分け(success/error)確認、コンソールエラーなし
 
 ## Phase 4 — 残りのインタラクティブ要素
 - [ ] CategoryFilterDetails.tsx → Accordion

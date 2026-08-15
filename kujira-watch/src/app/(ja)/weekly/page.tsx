@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getPreviousPeriodArticles, getRecentArticles } from "@/lib/microcms";
@@ -171,29 +179,35 @@ export default async function WeeklyDigestPage() {
           </p>
 
           {summary.categoryBreakdown.length > 0 && (
-            <div className="mt-6 overflow-x-auto">
-              <p className="kicker mb-2 text-foreground/50">投資家分類別の内訳</p>
-              <table className="w-full min-w-[420px] text-sm">
-                <thead>
-                  <tr className="border-b border-rule text-left text-foreground/50">
-                    <th className="py-2 font-normal">投資家分類</th>
-                    <th className="py-2 text-right font-normal">件数</th>
-                    <th className="py-2 text-right font-normal">推定金額</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.categoryBreakdown.map((c) => (
-                    <tr key={c.dealType} className="border-b border-rule/60">
-                      <td className="py-2 text-brand-navy" title={DEAL_TYPE_DESCRIPTIONS[c.dealType]}>
-                        {c.dealType}
-                      </td>
-                      <td className="py-2 text-right text-foreground/70">{c.count}件</td>
-                      <td className="py-2 text-right font-bold text-brand-navy">{formatDealAmount(c.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="overline" sx={{ display: "block", mb: 1, color: "text.secondary" }}>
+                投資家分類別の内訳
+              </Typography>
+              <TableContainer>
+                <Table size="small" sx={{ minWidth: 420, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ color: "text.secondary" }}>投資家分類</TableCell>
+                      <TableCell align="right" sx={{ color: "text.secondary" }}>件数</TableCell>
+                      <TableCell align="right" sx={{ color: "text.secondary" }}>推定金額</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {summary.categoryBreakdown.map((c) => (
+                      <TableRow key={c.dealType}>
+                        <TableCell title={DEAL_TYPE_DESCRIPTIONS[c.dealType]} sx={{ color: "primary.main" }}>
+                          {c.dealType}
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: "text.secondary" }}>{c.count}件</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
+                          {formatDealAmount(c.amount)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
           )}
         </section>
       )}

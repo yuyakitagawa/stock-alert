@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { docTypeLabel, getFilerClassification, getFilerHoldings } from "@/lib/investors";
@@ -130,39 +136,39 @@ export default async function InvestorPage({ params }: Props) {
           {holdings.length}件まとめています。個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
         </p>
       </div>
-      <div className="overflow-x-auto border-t border-rule">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-rule text-xs text-foreground/40">
-              <th className="py-2 pr-4 font-normal">開示日</th>
-              <th className="py-2 pr-4 font-normal">銘柄</th>
-              <th className="py-2 pr-4 font-normal">種別</th>
-              <th className="py-2 font-normal">保有比率</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
+        <Table size="small" sx={{ "& .MuiTableCell-root": { borderColor: "divider" } }}>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
+              <TableCell sx={{ color: "text.disabled" }}>銘柄</TableCell>
+              <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
+              <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {holdings.map((h) => (
-              <tr key={h.docId} className="border-b border-rule/50">
-                <td className="py-3 pr-4 whitespace-nowrap text-foreground/60">
+              <TableRow key={h.docId}>
+                <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   {formatDate(h.discDate)}
-                </td>
-                <td className="py-3 pr-4">
+                </TableCell>
+                <TableCell>
                   <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
                     {h.issuerName}（{h.issuerCode}）
                   </Link>
-                </td>
-                <td className="py-3 pr-4 whitespace-nowrap text-foreground/60">
+                </TableCell>
+                <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   {docTypeLabel(h.docTypeCode)}
-                </td>
-                <td className="py-3 whitespace-nowrap text-foreground/60">
+                </TableCell>
+                <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   {h.holdingRatioPrior !== null ? `${h.holdingRatioPrior}% → ` : ""}
                   {h.holdingRatio !== null ? `${h.holdingRatio}%` : "-"}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
       {category !== "その他" && (
         <p className="mt-6 text-xs text-foreground/40">
           {DEAL_TYPE_DESCRIPTIONS[category]}
