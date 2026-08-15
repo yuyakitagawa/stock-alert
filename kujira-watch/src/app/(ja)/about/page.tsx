@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import XTimeline from "@/components/XTimeline";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -25,6 +26,27 @@ export default async function AboutPage() {
   return (
     <article className="border-t border-rule bg-paper p-6 sm:p-10">
       <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{about.heroTitle}</h1>
+
+      <section className="mb-6">
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">Xで最新情報をチェック</h2>
+        <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+          新着記事や注目の大量保有報告書の速報は
+          <a
+            href="https://x.com/kujira_watch"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-blue hover:underline"
+          >
+            公式X（@kujira_watch）
+          </a>
+          でも発信しています。
+        </p>
+        <div className="-mx-8 sm:-mx-12">
+          <div className="-rotate-1 rounded-xl border border-rule bg-paper p-3 shadow-lg">
+            <XTimeline tweetLimit={1} />
+          </div>
+        </div>
+      </section>
 
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家とは</h2>
