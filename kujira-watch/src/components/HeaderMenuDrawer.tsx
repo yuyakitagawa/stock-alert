@@ -14,7 +14,8 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
 import { UI, type Locale } from "@/lib/i18n";
 
-export type MenuLink = { href: string; label: string };
+// external: 外部サイト（公式Xなど）へのリンク。next/linkではなく素のaで別タブに開く。
+export type MenuLink = { href: string; label: string; external?: boolean };
 
 // ハンバーガーメニューの中身。閉じているのが既定なので、HeaderMenu側から
 // next/dynamicで遅延読み込みする。MUI Drawerは Modal/Portal/Backdrop/Slide 一式を
@@ -84,12 +85,27 @@ export default function HeaderMenuDrawer({
             {locale === "en" ? "Menu" : "メニュー"}
           </Typography>
           <List component="nav" aria-label={locale === "en" ? "Menu" : "メニュー"} disablePadding>
-            {siteLinks.map((link) => (
-              <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
-                <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
-                <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-              </ListItemButton>
-            ))}
+            {siteLinks.map((link) =>
+              link.external ? (
+                <ListItemButton
+                  key={link.href}
+                  component="a"
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={close}
+                  divider
+                >
+                  <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                  <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+                </ListItemButton>
+              ) : (
+                <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
+                  <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                  <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+                </ListItemButton>
+              ),
+            )}
           </List>
 
           <Typography variant="caption" sx={{ display: "block", mt: 1.5, px: 2, lineHeight: 1.6, color: "text.secondary" }}>

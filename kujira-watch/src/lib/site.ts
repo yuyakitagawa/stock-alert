@@ -17,3 +17,9 @@ export const SITE_NAME_EN = "Big Investor Watch";
 
 export const SITE_DESCRIPTION_EN =
   "A blog tracking Japanese-market \"whales\" — institutional investors, insiders, and buybacks — based on EDINET large-shareholding filings.";
+
+// 公式Xアカウント。フォロー導線（記事末尾CTA・フッター）で使用する。
+export const X_SCREEN_NAME = "kujira_watch";
+export const X_PROFILE_URL = `https://x.com/${X_SCREEN_NAME}`;
+// フォローintent。プロフィールへの素のリンクよりワンタップ少なくフォローできる。
+export const X_FOLLOW_URL = `https://x.com/intent/follow?screen_name=${X_SCREEN_NAME}`;

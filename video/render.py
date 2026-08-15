@@ -24,18 +24,19 @@ COMPOSITION_ID = "ArticleShort"
 NON_PROP_KEYS = ("articleId", "articleTitle")
 
 
-def _stage_audio(props: dict, audio_dir: "str | None") -> list:
-    """シーンが参照する音声ファイルを remotion/public/ へコピーする。
+def _stage_assets(props: dict, assets_dir: "str | None") -> list:
+    """シーンが参照する音声ファイルと背景動画を remotion/public/ へコピーする。
     コピーしたファイルのパス一覧を返す（レンダリング後に削除するため）。"""
     staged = []
-    if not audio_dir:
+    if not assets_dir:
+        props.pop("backgroundVideo", None)
         return staged
     os.makedirs(PUBLIC_DIR, exist_ok=True)
     for scene in props.get("scenes", []):
         audio = scene.get("audio")
         if not audio:
             continue
-        src = os.path.join(audio_dir, audio)
+        src = os.path.join(assets_dir, audio)
         dst = os.path.join(PUBLIC_DIR, audio)
         if os.path.exists(src):
             shutil.copyfile(src, dst)
@@ -44,10 +45,23 @@ def _stage_audio(props: dict, audio_dir: "str | None") -> list:
             # 音声が見つからないシーンは無音で流す（動画自体は止めない）
             print(f"  ⚠ 音声ファイルが見つかりません: {src}（このシーンは無音になります）")
             scene.pop("audio", None)
+
+    bg = props.get("backgroundVideo")
+    if bg:
+        src = os.path.join(assets_dir, bg)
+        if os.path.exists(src):
+            dst = os.path.join(PUBLIC_DIR, bg)
+            shutil.copyfile(src, dst)
+            staged.append(dst)
+        else:
+            # 背景が無ければグラデーション背景にフォールバック
+            print(f"  ⚠ 背景動画が見つかりません: {src}（グラデーション背景を使います）")
+            props.pop("backgroundVideo", None)
+            props.pop("backgroundVideoDurationSec", None)
     return staged
 
 
-def render(props: dict, out_path: str, audio_dir: "str | None" = None) -> bool:
+def render(props: dict, out_path: str, assets_dir: "str | None" = None) -> bool:
     """props で mp4 を書き出す。成功したら True。"""
     if not os.path.isdir(os.path.join(REMOTION_DIR, "node_modules")):
         print("[render] node_modules がありません。video/remotion で npm ci を実行してください")
@@ -55,7 +69,7 @@ def render(props: dict, out_path: str, audio_dir: "str | None" = None) -> bool:
 
     render_props = {k: v for k, v in props.items() if k not in NON_PROP_KEYS}
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    staged = _stage_audio(render_props, audio_dir)
+    staged = _stage_assets(render_props, assets_dir)
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(render_props, f, ensure_ascii=False)
@@ -93,12 +107,12 @@ def render(props: dict, out_path: str, audio_dir: "str | None" = None) -> bool:
 
 def main():
     if len(sys.argv) not in (3, 4):
-        print("usage: python video/render.py <props.json> <out.mp4> [audio_dir]")
+        print("usage: python video/render.py <props.json> <out.mp4> [assets_dir]")
         sys.exit(2)
     with open(sys.argv[1], encoding="utf-8") as f:
         props = json.load(f)
-    audio_dir = sys.argv[3] if len(sys.argv) == 4 else None
-    sys.exit(0 if render(props, sys.argv[2], audio_dir) else 1)
+    assets_dir = sys.argv[3] if len(sys.argv) == 4 else None
+    sys.exit(0 if render(props, sys.argv[2], assets_dir) else 1)
 
 
 if __name__ == "__main__":

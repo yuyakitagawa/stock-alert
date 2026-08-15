@@ -4,7 +4,7 @@ import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import { getFilerWinRates } from "@/lib/investors";
-import { displayFilerName, formatAmountParts, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -20,13 +20,6 @@ const description =
   "EDINET大量保有報告書で買い増しを開示した投資家について、その回の推定取得金額をもとに" +
   "63営業日(3ヶ月)後までの株価騰落から損益を推定し、投資家別に合算したランキング。" +
   "過去の実績が良い投資家を参考にできます。";
-
-function formatOku(value: number): string {
-  const sign = value >= 0 ? "+" : "";
-  // 「+107,900.0億円」は桁が読み取れないため、1兆円以上は兆円へ繰り上げる。
-  const { value: amount, unit } = formatAmountParts(value, 1);
-  return `${sign}${amount}${unit}`;
-}
 
 export const metadata: Metadata = {
   title,
@@ -194,7 +187,7 @@ export default async function RankingPage({ searchParams }: Props) {
                   color: f.totalReturnOku >= 0 ? "success.main" : "error.main",
                 }}
               >
-                {formatOku(f.totalReturnOku)}
+                {formatSignedOku(f.totalReturnOku)}
               </Box>
             </Box>
           ))}

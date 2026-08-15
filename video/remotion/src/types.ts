@@ -6,6 +6,7 @@ export type SceneKind =
   | 'filer'
   | 'change'
   | 'outlook'
+  | 'chart'
   | 'cta';
 
 export type Scene = {
@@ -18,6 +19,8 @@ export type Scene = {
   audio?: string;
   /** 音声の長さ（秒）。これがシーンの尺になる */
   durationSec?: number;
+  /** kind="chart" のみ: 直近3ヶ月の終値（古い順） */
+  closes?: number[];
 };
 
 export type ShortProps = {
@@ -37,8 +40,12 @@ export type ShortProps = {
   holdingRatio: number;
   /** 開示日 YYYY-MM-DD */
   discDate: string;
-  /** hook → company → deal → filer → change → outlook → cta の順 */
+  /** hook → company → deal → filer → change → outlook → (chart) → cta の順 */
   scenes: Scene[];
+  /** public/ 配下の背景動画ファイル名（Pexelsの自然映像）。無ければグラデーション背景 */
+  backgroundVideo?: string;
+  /** 背景動画の長さ（秒）。ループ再生の区切りに使う */
+  backgroundVideoDurationSec?: number;
 };
 
 /** 音声が無いときの尺の見積もり（日本語の読み上げ速度の実測概算・文字/秒）。 */

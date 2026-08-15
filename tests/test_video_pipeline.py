@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import video.build_script as bs
 import video.tiktok_client as tk
 import video.tts as tts_mod
+import video.background as bg_mod
 import video.youtube_client as yt
 
 YT_ENV = {
@@ -239,6 +240,64 @@ def test_narrate_sections_all_or_nothing(tmp_path):
     with mock.patch.object(tts_mod, "engine_available", return_value=True), \
          mock.patch.object(tts_mod, "synthesize", side_effect=[True, False]):
         assert tts_mod.narrate_sections(sections, str(tmp_path)) is False
+
+
+# ---------------- 株価チャートシーン ----------------
+
+def _fake_prices(closes):
+    import pandas as pd
+    return pd.DataFrame({"Close": closes})
+
+
+def test_build_price_scene_up_trend():
+    closes = [100.0] * 43 + [120.0] * 20
+    with mock.patch("lib.utils.get_prices", return_value=_fake_prices(closes)):
+        scene = bs.build_price_scene("9627")
+    assert scene["kind"] == "chart"
+    assert "+20%" in scene["caption"]
+    assert "上昇" in scene["narration"]
+    assert scene["closes"][-1] == 120.0
+    assert len(scene["closes"]) <= 63
+
+
+def test_build_price_scene_down_trend_uses_minus_sign():
+    closes = [200.0] * 43 + [150.0] * 20
+    with mock.patch("lib.utils.get_prices", return_value=_fake_prices(closes)):
+        scene = bs.build_price_scene("9627")
+    assert "−25%" in scene["caption"]
+    assert "下落" in scene["narration"]
+
+
+def test_build_price_scene_returns_none_without_data():
+    with mock.patch("lib.utils.get_prices", return_value=None):
+        assert bs.build_price_scene("9627") is None
+
+
+# ---------------- 背景動画（Pexels） ----------------
+
+def test_pick_video_file_prefers_portrait_and_min_height():
+    """縦向きかつMIN_HEIGHT以上のファイルだけが候補になり、過剰な解像度は選ばない。"""
+    videos = [
+        {"duration": 15, "video_files": [
+            {"height": 720, "width": 1280, "link": "landscape"},          # 横向き→除外
+            {"height": 1080, "width": 608, "link": "small-portrait"},     # 低解像度→除外
+            {"height": 1920, "width": 1080, "link": "hd-portrait"},
+            {"height": 3840, "width": 2160, "link": "uhd-portrait"},
+        ]},
+    ]
+    picked = bg_mod.pick_video_file(videos)
+    assert picked["file"]["link"] == "hd-portrait"
+    assert picked["duration"] == 15
+
+
+def test_pick_video_file_returns_none_when_no_portrait():
+    videos = [{"duration": 10, "video_files": [{"height": 720, "width": 1280, "link": "x"}]}]
+    assert bg_mod.pick_video_file(videos) is None
+
+
+def test_background_fetch_skips_without_api_key(tmp_path):
+    with mock.patch.dict(os.environ, {}, clear=True):
+        assert bg_mod.fetch(str(tmp_path)) is None
 
 
 # ---------------- YouTube ----------------
