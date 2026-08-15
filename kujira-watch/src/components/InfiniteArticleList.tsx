@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import type { ArticleContent, DealType } from "@/types/article";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { UI, type Locale } from "@/lib/i18n";
@@ -68,7 +70,7 @@ export default function InfiniteArticleList({
       {groups.map((group) => (
         <div key={group.date} className="mb-8">
           <DealDateHeading label={group.label} />
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
             {group.articles.map((article) => (
               <ArticleCard key={article.id} article={article} locale={locale} />
             ))}
@@ -77,9 +79,11 @@ export default function InfiniteArticleList({
         </div>
       ))}
       {hasMore && (
-        <div ref={sentinelRef} className="flex justify-center py-8 text-sm text-foreground/40">
-          {loading ? t.loadingMore : ""}
-        </div>
+        <Box ref={sentinelRef} sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+          <Typography variant="body2" sx={{ color: "text.disabled" }}>
+            {loading ? t.loadingMore : ""}
+          </Typography>
+        </Box>
       )}
     </>
   );

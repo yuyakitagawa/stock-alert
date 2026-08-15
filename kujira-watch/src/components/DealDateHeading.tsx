@@ -1,8 +1,11 @@
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+
 export default function DealDateHeading({ label }: { label: string }) {
   return (
-    <h2 className="mb-5 flex items-center gap-3 text-base font-bold text-brand-navy">
+    <Typography variant="subtitle1" component="h2" sx={{ mb: 2.5, display: "flex", alignItems: "center", gap: 1.5, fontWeight: 700, color: "primary.main" }}>
       {label}
-      <span aria-hidden className="h-px flex-1 bg-rule" />
-    </h2>
+      <Box component="span" aria-hidden sx={{ height: "1px", flex: 1, bgcolor: "divider" }} />
+    </Typography>
   );
 }

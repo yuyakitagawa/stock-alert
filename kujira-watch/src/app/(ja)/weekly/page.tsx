@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -123,29 +124,31 @@ export default async function WeeklyDigestPage() {
               {SITE_NAME}がEDINET大量保有報告書をもとに集計した、{formatDate(oldestDate)}〜
               {formatDate(newestDate)}の大口投資家（クジラ）の動きです。
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <div className="border-l-4 border-brand-gold bg-section-tint p-4">
-                <p className="kicker text-foreground/50">開示件数</p>
-                <p className="mt-1 text-3xl font-bold text-brand-navy">
+            <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
+              <Card variant="outlined" sx={{ borderLeft: 4, borderLeftColor: "brand.gold", bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
+                <Typography variant="overline" sx={{ color: "text.secondary" }}>開示件数</Typography>
+                <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
                   {summary.totalCount}
-                  <span className="ml-0.5 text-base font-normal">件</span>
-                </p>
-                <p className="mt-1 text-xs text-foreground/60">
+                  <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>件</Typography>
+                </Typography>
+                <Typography variant="caption" sx={{ mt: 0.5, display: "block", color: "text.secondary" }}>
                   先週比 {formatSigned(countDelta, "件")}（先週{previousSummary.totalCount}件）
-                </p>
-              </div>
-              <div className="border-l-4 border-brand-gold bg-section-tint p-4">
-                <p className="kicker text-foreground/50">推定取引金額</p>
-                <p className="mt-1 text-3xl font-bold text-brand-navy">{formatDealAmount(summary.totalAmount)}</p>
-                <p className="mt-1 text-xs text-foreground/60">
+                </Typography>
+              </Card>
+              <Card variant="outlined" sx={{ borderLeft: 4, borderLeftColor: "brand.gold", bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
+                <Typography variant="overline" sx={{ color: "text.secondary" }}>推定取引金額</Typography>
+                <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
+                  {formatDealAmount(summary.totalAmount)}
+                </Typography>
+                <Typography variant="caption" sx={{ mt: 0.5, display: "block", color: "text.secondary" }}>
                   先週比{" "}
                   {amountDeltaPct !== null
                     ? formatSigned(Number(amountDeltaPct.toFixed(1)), "%")
                     : formatSigned(amountDelta, "億円")}
                   （先週{formatDealAmount(previousSummary.totalAmount)}）
-                </p>
-              </div>
-            </div>
+                </Typography>
+              </Card>
+            </Box>
             <p className="mt-2 text-xs text-foreground/50">
               ※推定取引金額は取得・売却双方向を合算した規模で、資金の純流入額ではありません。
             </p>
@@ -160,18 +163,22 @@ export default async function WeeklyDigestPage() {
       {contents.length > 0 && (
         <section className="mb-10 border-y border-rule py-6">
           <h2 className="text-lg font-bold text-brand-navy">今週のポイント</h2>
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="bg-section-tint p-4">
-              <p className="kicker text-foreground/50">買い</p>
-              <p className="mt-1 text-2xl font-bold text-brand-navy">{formatDealAmount(summary.buyAmount)}</p>
-              <p className="mt-0.5 text-sm text-foreground/60">{summary.buyCount}件</p>
-            </div>
-            <div className="bg-section-tint p-4">
-              <p className="kicker text-foreground/50">売り</p>
-              <p className="mt-1 text-2xl font-bold text-brand-navy">{formatDealAmount(summary.sellAmount)}</p>
-              <p className="mt-0.5 text-sm text-foreground/60">{summary.sellCount}件</p>
-            </div>
-          </div>
+          <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
+            <Card variant="outlined" sx={{ bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
+              <Typography variant="overline" sx={{ color: "text.secondary" }}>買い</Typography>
+              <Typography variant="h5" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
+                {formatDealAmount(summary.buyAmount)}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.25, color: "text.secondary" }}>{summary.buyCount}件</Typography>
+            </Card>
+            <Card variant="outlined" sx={{ bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
+              <Typography variant="overline" sx={{ color: "text.secondary" }}>売り</Typography>
+              <Typography variant="h5" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
+                {formatDealAmount(summary.sellAmount)}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.25, color: "text.secondary" }}>{summary.sellCount}件</Typography>
+            </Card>
+          </Box>
           <p className="mt-4 text-sm leading-relaxed text-foreground/70">
             金額ベースでは買いが{formatDealAmount(summary.buyAmount)}、売りが
             {formatDealAmount(summary.sellAmount)}で、差し引き{formatDealAmount(Math.abs(netAmount))}の

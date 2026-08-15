@@ -39,10 +39,12 @@ Phase 1でHeader/HeaderMenuをMUI化する際、`.MuiButtonBase-root`をRippleEf
 - [x] ブラウザ確認: 3ページとも表示・色分け(success/error)確認、コンソールエラーなし
 
 ## Phase 4 — 残りのインタラクティブ要素
-- [ ] CategoryFilterDetails.tsx → Accordion
-- [ ] FaqList.tsx → Tabs+Accordion
-- [ ] InfiniteArticleList.tsx 見出し
-- [ ] weekly/page.tsx 統計タイル
+- [x] CategoryFilterDetails.tsx → Accordion ("use client"化。component={Link}をTypographyに渡すため)
+- [x] FaqList.tsx → Tabs(カテゴリ絞り込み)+Accordion(Q&A)。CATEGORY_COLORSをhex/テーマトークン化
+- [x] DealDateHeading.tsx → Typography+Box(区切り線)
+- [x] InfiniteArticleList.tsx 「もっと読み込む」インジケータ → Typography/Box(グリッド自体はTailwindのまま)
+- [x] weekly/page.tsx 統計タイル(開示件数/推定取引金額、買い/売り) → Card+Typography
+- [x] ブラウザ確認: home(Accordion開閉)/faq(Tabs切替+Accordion開閉)/weekly、コンソールエラーなし
 
 ## Phase 5 — 仕上げ
 - [ ] stocks/page.tsx, investors/page.tsx → List

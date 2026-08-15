@@ -1,4 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import Accordion from "@mui/material/Accordion";
+import AccordionSummary from "@mui/material/AccordionSummary";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import Typography from "@mui/material/Typography";
+import Stack from "@mui/material/Stack";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { CATEGORIES } from "@/types/article";
 
 // TOPページの見出し直下に置くカテゴリ絞り込み。以前はHeader(全ページ共通)に
@@ -6,27 +14,41 @@ import { CATEGORIES } from "@/types/article";
 // 導線として分かりやすいため専用コンポーネントに切り出した。
 export default function CategoryFilterDetails() {
   return (
-    <details className="group mb-8 border-b border-rule pb-4">
-      <summary className="kicker cursor-pointer list-none text-brand-navy/50 transition-colors hover:text-brand-navy [&::-webkit-details-marker]:hidden">
-        カテゴリで絞り込む
-        <span aria-hidden className="ml-1 inline-block transition-transform group-open:rotate-180">
-          ▾
-        </span>
-      </summary>
-      <nav
-        aria-label="カテゴリ"
-        className="kicker mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-brand-navy/70"
+    <Accordion
+      disableGutters
+      elevation={0}
+      square
+      sx={{
+        mb: 4,
+        bgcolor: "transparent",
+        borderBottom: 1,
+        borderColor: "divider",
+        "&::before": { display: "none" },
+      }}
+    >
+      <AccordionSummary
+        expandIcon={<ExpandMoreIcon fontSize="small" />}
+        sx={{ px: 0, minHeight: "auto", "& .MuiAccordionSummary-content": { my: 1 } }}
       >
-        {CATEGORIES.map((category) => (
-          <Link
-            key={category}
-            href={`/category/${encodeURIComponent(category)}`}
-            className="shrink-0 transition-colors hover:text-brand-navy"
-          >
-            {category}
-          </Link>
-        ))}
-      </nav>
-    </details>
+        <Typography variant="overline" sx={{ color: "text.secondary" }}>
+          カテゴリで絞り込む
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ px: 0, pb: 2 }}>
+        <Stack direction="row" component="nav" aria-label="カテゴリ" sx={{ flexWrap: "wrap", columnGap: 2, rowGap: 0.75 }}>
+          {CATEGORIES.map((category) => (
+            <Typography
+              key={category}
+              component={Link}
+              href={`/category/${encodeURIComponent(category)}`}
+              variant="overline"
+              sx={{ color: "text.secondary", textDecoration: "none", "&:hover": { color: "primary.main" } }}
+            >
+              {category}
+            </Typography>
+          ))}
+        </Stack>
+      </AccordionDetails>
+    </Accordion>
   );
 }

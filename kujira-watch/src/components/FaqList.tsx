@@ -1,6 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
+import Accordion from "@mui/material/Accordion";
+import AccordionSummary from "@mui/material/AccordionSummary";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import Typography from "@mui/material/Typography";
+import Box from "@mui/material/Box";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 
 export type FaqCategory = { id: string; label: string };
 
@@ -13,15 +21,15 @@ export type FaqItem = {
 
 // カテゴリごとに色分けした質問バッジ用。9カテゴリ固定のため、増減時はここも見直す。
 const CATEGORY_COLORS: Record<string, string> = {
-  basics: "text-brand-blue",
-  terms: "text-violet-600",
-  "term-supplement": "text-indigo-600",
-  "regulation-deep-dive": "text-rose-600",
-  "investor-players": "text-cyan-600",
-  "investing-basics-extra": "text-amber-600",
-  usage: "text-emerald-600",
-  howto: "text-brand-gold",
-  "about-site": "text-foreground/50",
+  basics: "brand.blue",
+  terms: "#7c3aed",
+  "term-supplement": "#4f46e5",
+  "regulation-deep-dive": "#e11d48",
+  "investor-players": "#0891b2",
+  "investing-basics-extra": "#d97706",
+  usage: "#059669",
+  howto: "brand.gold",
+  "about-site": "rgba(32, 29, 26, 0.5)",
 };
 
 // カテゴリタブは見た目上の絞り込みのみで、初期状態は必ず「すべて」（全件表示）。
@@ -39,63 +47,68 @@ export default function FaqList({
     categories.find((category) => category.id === id)?.label ?? id;
 
   return (
-    <div>
-      <div
-        role="tablist"
+    <Box>
+      <Tabs
+        value={active}
+        onChange={(_, value) => setActive(value)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
         aria-label="カテゴリで絞り込み"
-        className="no-scrollbar kicker mb-6 flex flex-nowrap items-center gap-x-4 gap-y-1 overflow-x-auto border-b border-rule pb-2 sm:flex-wrap sm:overflow-visible"
+        sx={{
+          mb: 3,
+          borderBottom: 1,
+          borderColor: "divider",
+          minHeight: 40,
+          "& .MuiTab-root": {
+            minHeight: 40,
+            minWidth: "auto",
+            px: 0,
+            mr: 3,
+            fontSize: "0.6875rem",
+            fontWeight: 700,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: "text.secondary",
+          },
+          "& .Mui-selected": { color: "primary.main" },
+          "& .MuiTabs-indicator": { bgcolor: "brand.gold" },
+        }}
       >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={active === "all"}
-          onClick={() => setActive("all")}
-          className={`shrink-0 border-b-2 pb-1 transition-colors ${
-            active === "all"
-              ? "border-brand-gold text-brand-navy"
-              : "border-transparent text-brand-navy/50 hover:text-brand-navy"
-          }`}
-        >
-          すべて（{faqs.length}）
-        </button>
+        <Tab value="all" label={`すべて（${faqs.length}）`} />
         {categories.map((category) => {
           const count = faqs.filter((faq) => faq.category === category.id).length;
-          return (
-            <button
-              key={category.id}
-              type="button"
-              role="tab"
-              aria-selected={active === category.id}
-              onClick={() => setActive(category.id)}
-              className={`shrink-0 border-b-2 pb-1 transition-colors ${
-                active === category.id
-                  ? "border-brand-gold text-brand-navy"
-                  : "border-transparent text-brand-navy/50 hover:text-brand-navy"
-              }`}
-            >
-              {category.label}（{count}）
-            </button>
-          );
+          return <Tab key={category.id} value={category.id} label={`${category.label}（${count}）`} />;
         })}
-      </div>
-      <dl className="space-y-5 text-sm">
+      </Tabs>
+      <Box>
         {filtered.map((faq) => (
-          <div key={faq.question}>
-            <dt>
-              <span
-                className={`kicker mb-1 flex items-center gap-1.5 ${
-                  CATEGORY_COLORS[faq.category] ?? "text-foreground/50"
-                }`}
-              >
-                <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-                {categoryLabel(faq.category)}
-              </span>
-              <span className="font-semibold text-brand-navy">{faq.question}</span>
-            </dt>
-            <dd className="mt-1 leading-relaxed text-foreground/70">{faq.render ?? faq.answer}</dd>
-          </div>
+          <Accordion key={faq.question} disableGutters elevation={0} square sx={{ bgcolor: "transparent", "&::before": { display: "none" } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon fontSize="small" />} sx={{ px: 0 }}>
+              <Box>
+                <Typography
+                  variant="overline"
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.75,
+                    color: CATEGORY_COLORS[faq.category] ?? "text.secondary",
+                  }}
+                >
+                  <Box component="span" aria-hidden sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "currentColor" }} />
+                  {categoryLabel(faq.category)}
+                </Typography>
+                <Typography sx={{ fontWeight: 600, color: "primary.main" }}>{faq.question}</Typography>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: 0 }}>
+              <Typography variant="body2" sx={{ lineHeight: 1.7, color: "text.secondary" }}>
+                {faq.render ?? faq.answer}
+              </Typography>
+            </AccordionDetails>
+          </Accordion>
         ))}
-      </dl>
-    </div>
+      </Box>
+    </Box>
   );
 }
