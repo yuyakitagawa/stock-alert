@@ -93,7 +93,7 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
   return (
     // PCでは中央寄せの本文カラムではなく、画面の本当の右端にハンバーガーを固定する
     // (ヘッダーはposition:stickyでabsolute配置の基準になる)
-    <Box sx={{ flexShrink: 0, position: { sm: "absolute" }, right: { sm: 16 }, top: { sm: 16 } }}>
+    <Box sx={{ flexShrink: 0, position: { md: "absolute" }, right: { md: 16 }, top: { md: 16 } }}>
       <IconButton
         aria-label={t.menuLabel}
         aria-expanded={open}
