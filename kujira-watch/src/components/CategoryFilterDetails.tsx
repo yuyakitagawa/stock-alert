@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import Accordion from "@mui/material/Accordion";
 import AccordionSummary from "@mui/material/AccordionSummary";
 import AccordionDetails from "@mui/material/AccordionDetails";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ActionButton from "./ActionButton";
 import { CATEGORIES } from "@/types/article";
 
 // TOPページの見出し直下に置くカテゴリ絞り込み。以前はHeader(全ページ共通)に
@@ -35,17 +35,11 @@ export default function CategoryFilterDetails() {
         </Typography>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 0, pb: 2 }}>
-        <Stack direction="row" component="nav" aria-label="カテゴリ" sx={{ flexWrap: "wrap", columnGap: 2, rowGap: 0.75 }}>
+        <Stack direction="row" component="nav" aria-label="カテゴリ" sx={{ flexWrap: "wrap", gap: 1 }}>
           {CATEGORIES.map((category) => (
-            <Typography
-              key={category}
-              component={Link}
-              href={`/category/${encodeURIComponent(category)}`}
-              variant="overline"
-              sx={{ color: "text.secondary", textDecoration: "none", "&:hover": { color: "primary.main" } }}
-            >
+            <ActionButton key={category} href={`/category/${encodeURIComponent(category)}`}>
               {category}
-            </Typography>
+            </ActionButton>
           ))}
         </Stack>
       </AccordionDetails>

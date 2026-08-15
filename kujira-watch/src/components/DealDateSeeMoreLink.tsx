@@ -1,4 +1,4 @@
-import Link from "next/link";
+import ActionButton from "./ActionButton";
 import type { Locale } from "@/lib/i18n";
 
 // /en/date/[date] は現状未実装のため、英語版ではリンクを出さない。
@@ -8,12 +8,7 @@ export default function DealDateSeeMoreLink({ date, locale = "ja" }: { date: str
 
   return (
     <div className="mt-4 text-right">
-      <Link
-        href={`/date/${date}`}
-        className="inline-block text-xs text-brand-blue transition-colors hover:text-brand-navy hover:underline"
-      >
-        この日の記事を見る ›
-      </Link>
+      <ActionButton href={`/date/${date}`}>この日の記事を見る</ActionButton>
     </div>
   );
 }

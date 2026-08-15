@@ -3,6 +3,7 @@ import Link from "next/link";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
+import FilterButtonNav from "@/components/FilterButtonNav";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
@@ -69,31 +70,21 @@ export default async function StocksIndexPage({ searchParams }: Props) {
         証券コード順に並んでいます。
       </p>
       {sectors.length > 0 && (
-        <nav aria-label="業種で絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <Link
-            href="/stocks"
-            className={
-              selectedSector === null
-                ? "font-bold text-brand-navy"
-                : "text-brand-navy/60 transition-colors hover:text-brand-navy"
-            }
-          >
-            すべて（{stocks.length}件）
-          </Link>
-          {sectors.map((sec) => (
-            <Link
-              key={sec}
-              href={`/stocks?sector=${encodeURIComponent(sec)}`}
-              className={
-                selectedSector === sec
-                  ? "font-bold text-brand-navy"
-                  : "text-brand-navy/60 transition-colors hover:text-brand-navy"
-              }
-            >
-              {sec}（{counts.get(sec)}件）
-            </Link>
-          ))}
-        </nav>
+        <FilterButtonNav
+          ariaLabel="業種で絞り込む"
+          items={[
+            {
+              href: "/stocks",
+              label: `すべて（${stocks.length}件）`,
+              selected: selectedSector === null,
+            },
+            ...sectors.map((sec) => ({
+              href: `/stocks?sector=${encodeURIComponent(sec)}`,
+              label: `${sec}（${counts.get(sec)}件）`,
+              selected: selectedSector === sec,
+            })),
+          ]}
+        />
       )}
       {visibleStocks.length === 0 ? (
         <p className="text-foreground/50">

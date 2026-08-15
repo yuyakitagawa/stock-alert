@@ -55,3 +55,12 @@ Phase 1でHeader/HeaderMenuをMUI化する際、`.MuiButtonBase-root`をRippleEf
 
 ## 完了
 Phase 0〜5すべて完了。サイト全体がMUIコンポーネントベースのMaterial Designに移行済み。
+
+## Phase 6 — ボタンUIの全画面統一（2026-08-15）
+- [x] `src/theme.ts` に `MuiButton` の既定値/スタイルを追加（`variant="outlined"` / `size="small"`、色は`globals.css`のCSS変数を参照）
+- [x] `src/components/ActionButton.tsx` 追加（内部リンク=component={Link} / 外部リンク=component="a"。Server Componentから関数propを渡せないため`"use client"`）
+- [x] `src/components/FilterButtonNav.tsx` 追加（選択中はcontained。スマホ幅は`.no-scrollbar`で横スクロール1行、sm以上は折り返し）
+- [x] 適用: DealDateSeeMoreLink / ShareButtons / CategoryFilterDetails / articles/[id]の銘柄履歴導線 / monthly/[month]の前後の月ナビ / ranking・stocks・investorsの絞り込みナビ
+- [x] ブラウザ確認: TOP・/stocks・/stocks/[code]・/ranking(選択状態)・/investors(デスクトップ/モバイル)・/monthly/[month]・記事詳細、全ルート200、tsc/eslintクリーン
+- メモ: 本文中の文脈依存リンク（/about・/faqの説明文、テーブル内の銘柄・投資家リンク、行全体がリンクのカード）はボタン化せずテキストリンクのまま。行全体リンクの内側にbuttonを置くとHTMLとして不正になるため。
+- メモ: 英語ページ（/en配下）には独立したCTAが無く（/en/date/[date]未実装のためDealDateSeeMoreLinkはnull、共有ボタンはja記事詳細のみ）、テーマ側の統一のみ適用。

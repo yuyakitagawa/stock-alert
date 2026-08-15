@@ -7,6 +7,7 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
+import FilterButtonNav from "@/components/FilterButtonNav";
 import { getFilerWinRates } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -112,31 +113,21 @@ export default async function RankingPage({ searchParams }: Props) {
         ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
       </p>
       {filers.length > 0 && (
-        <nav aria-label="カテゴリで絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <Link
-            href="/ranking"
-            className={
-              selectedCategory === null
-                ? "font-bold text-brand-navy"
-                : "text-brand-navy/60 transition-colors hover:text-brand-navy"
-            }
-          >
-            すべて（{filers.length}件）
-          </Link>
-          {activeCategories.map((c) => (
-            <Link
-              key={c}
-              href={`/ranking?category=${encodeURIComponent(c)}`}
-              className={
-                selectedCategory === c
-                  ? "font-bold text-brand-navy"
-                  : "text-brand-navy/60 transition-colors hover:text-brand-navy"
-              }
-            >
-              {c}（{counts.get(c)}件）
-            </Link>
-          ))}
-        </nav>
+        <FilterButtonNav
+          ariaLabel="カテゴリで絞り込む"
+          items={[
+            {
+              href: "/ranking",
+              label: `すべて（${filers.length}件）`,
+              selected: selectedCategory === null,
+            },
+            ...activeCategories.map((c) => ({
+              href: `/ranking?category=${encodeURIComponent(c)}`,
+              label: `${c}（${counts.get(c)}件）`,
+              selected: selectedCategory === c,
+            })),
+          ]}
+        />
       )}
       {visibleFilers.length === 0 ? (
         <p className="text-foreground/50">該当する投資家がいません。</p>

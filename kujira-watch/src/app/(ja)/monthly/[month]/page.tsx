@@ -7,6 +7,7 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import ActionButton from "@/components/ActionButton";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { formatDealAmount, formatMonth } from "@/lib/format";
@@ -265,21 +266,19 @@ export default async function MonthlyArchivePage({ params }: Props) {
         </div>
       </section>
 
-      <nav aria-label="前後の月" className="flex items-center justify-between gap-4 border-t border-rule pt-6 text-sm">
+      <nav aria-label="前後の月" className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-6">
         {olderMonth ? (
-          <Link href={`/monthly/${olderMonth.month}`} className="text-brand-blue hover:underline">
+          <ActionButton href={`/monthly/${olderMonth.month}`}>
             ‹ {formatMonth(olderMonth.month)}
-          </Link>
+          </ActionButton>
         ) : (
           <span />
         )}
-        <Link href="/monthly" className="kicker text-foreground/50 hover:text-brand-navy">
-          月別アーカイブ一覧
-        </Link>
+        <ActionButton href="/monthly">月別アーカイブ一覧</ActionButton>
         {newerMonth ? (
-          <Link href={`/monthly/${newerMonth.month}`} className="text-brand-blue hover:underline">
+          <ActionButton href={`/monthly/${newerMonth.month}`}>
             {formatMonth(newerMonth.month)} ›
-          </Link>
+          </ActionButton>
         ) : (
           <span />
         )}

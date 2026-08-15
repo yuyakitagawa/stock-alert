@@ -4,6 +4,7 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import DealTypeBadge from "@/components/DealTypeBadge";
+import FilterButtonNav from "@/components/FilterButtonNav";
 import { getAllFilers } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -67,31 +68,21 @@ export default async function InvestorsPage({ searchParams }: Props) {
         創業家の資産管理会社など）{filers.length}件です。最終開示日が新しい順に並んでいます。
       </p>
       {filers.length > 0 && (
-        <nav aria-label="カテゴリで絞り込む" className="kicker mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <Link
-            href="/investors"
-            className={
-              selectedCategory === null
-                ? "font-bold text-brand-navy"
-                : "text-brand-navy/60 transition-colors hover:text-brand-navy"
-            }
-          >
-            すべて（{filers.length}件）
-          </Link>
-          {activeCategories.map((c) => (
-            <Link
-              key={c}
-              href={`/investors?category=${encodeURIComponent(c)}`}
-              className={
-                selectedCategory === c
-                  ? "font-bold text-brand-navy"
-                  : "text-brand-navy/60 transition-colors hover:text-brand-navy"
-              }
-            >
-              {c}（{counts.get(c)}件）
-            </Link>
-          ))}
-        </nav>
+        <FilterButtonNav
+          ariaLabel="カテゴリで絞り込む"
+          items={[
+            {
+              href: "/investors",
+              label: `すべて（${filers.length}件）`,
+              selected: selectedCategory === null,
+            },
+            ...activeCategories.map((c) => ({
+              href: `/investors?category=${encodeURIComponent(c)}`,
+              label: `${c}（${counts.get(c)}件）`,
+              selected: selectedCategory === c,
+            })),
+          ]}
+        />
       )}
       {visibleFilers.length === 0 ? (
         <p className="text-foreground/50">

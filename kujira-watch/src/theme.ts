@@ -50,6 +50,41 @@ const theme = createTheme({
   typography: {
     fontFamily,
   },
+  components: {
+    // サイト全体のボタンUIをここで一元定義する（CTA・フィルター・共有ボタンが
+    // ページごとにバラバラな見た目にならないようにするため）。色は globals.css の
+    // CSSカスタムプロパティを直接参照し、Tailwind側の配色と一致させる。
+    MuiButton: {
+      defaultProps: {
+        variant: "outlined",
+        size: "small",
+        disableElevation: true,
+      },
+      styleOverrides: {
+        root: {
+          textTransform: "none",
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+          whiteSpace: "nowrap",
+        },
+        outlined: {
+          borderColor: "var(--rule)",
+          color: "var(--brand-navy)",
+          "&:hover": {
+            borderColor: "var(--brand-blue)",
+            color: "var(--brand-blue)",
+            backgroundColor: "var(--section-tint)",
+          },
+        },
+        contained: {
+          backgroundColor: "var(--brand-navy)",
+          "&:hover": {
+            backgroundColor: "var(--brand-blue-dark)",
+          },
+        },
+      },
+    },
+  },
 });
 
 export default theme;
