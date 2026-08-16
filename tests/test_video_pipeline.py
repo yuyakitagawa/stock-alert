@@ -411,6 +411,13 @@ def test_tiktok_caption_includes_stock_and_hashtags():
     assert "#EDINET" in caption
 
 
+def test_tiktok_caption_falls_back_when_filer_name_missing():
+    """filerName未設定の記事で「銘柄｜が…取得」という主語のねじれを防ぐ。"""
+    caption = tk.build_caption({**PROPS, "filerName": ""})
+    assert "大口投資家が" in caption
+    assert "｜が" not in caption
+
+
 def test_tiktok_caption_truncates_long_head():
     caption = tk.build_caption({**PROPS, "stockName": "あ" * 200})
     head = caption.split("\n")[0]

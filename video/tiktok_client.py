@@ -60,7 +60,10 @@ def _access_token() -> "str | None":
 
 def build_caption(props: dict) -> str:
     direction = "売却" if props.get("direction") == "sell" else "取得"
-    head = f"{props.get('stockName', '')}｜{props.get('filerName', '')}が推定{props.get('dealAmountOku')}億円を{direction}"
+    # filerNameは古い記事だと未設定。空のまま連結すると「銘柄｜が…取得」という
+    # 主語のねじれた文になるため（youtube_client.build_titleと同じ問題）、汎用の主語に置き換える。
+    filer = props.get("filerName") or "大口投資家"
+    head = f"{props.get('stockName', '')}｜{filer}が推定{props.get('dealAmountOku')}億円を{direction}"
     if len(head) > CAPTION_MAX_CHARS:
         head = head[: CAPTION_MAX_CHARS - 1] + "…"
     # TikTokはキャプション内のURLがリンクにならないため、プロフィール誘導の文言にする。
