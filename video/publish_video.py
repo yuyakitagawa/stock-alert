@@ -23,7 +23,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
-from video import background, build_script, render, tts  # noqa: E402
+from video import background, build_script, line_notify, render, tts  # noqa: E402
 from video import tiktok_client, youtube_client  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.expanduser("~/stock-alert"), "video", "out")
@@ -80,12 +80,18 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     ]
 
     posted = 0
-    if youtube_client.upload(video_path, props):
+    youtube_id = youtube_client.upload(video_path, props)
+    if youtube_id:
         posted += 1
-    if tiktok_client.upload(video_path, props):
+    tiktok_publish_id = tiktok_client.upload(video_path, props)
+    if tiktok_publish_id:
         posted += 1
 
     print(f"[publish_video] {posted}プラットフォームへ投稿しました（対象記事: {props.get('articleTitle')}）")
+
+    # TikTokの下書きはキャプションを運べないため、公開時に貼る文面をLINEでスマホへ送る
+    line_notify.notify(props, tiktok_client.build_caption(props),
+                       youtube_id=youtube_id, tiktok_publish_id=tiktok_publish_id)
 
     if not keep_video and posted > 0:
         os.remove(video_path)

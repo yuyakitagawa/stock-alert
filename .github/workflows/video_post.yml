@@ -109,6 +109,9 @@ jobs:
           TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
           # TikTokアプリの審査通過後に "1" を設定すると直接公開になる（既定は下書き送信）
           TIKTOK_DIRECT_POST: ${{ secrets.TIKTOK_DIRECT_POST }}
+          # TikTok下書きの公開時に貼るキャプションをスマホへ届けるLINE通知
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
           cd ~/stock-alert
           EXTRA=""

@@ -13,6 +13,7 @@ import video.build_script as bs
 import video.tiktok_client as tk
 import video.tts as tts_mod
 import video.background as bg_mod
+import video.line_notify as ln
 import video.youtube_client as yt
 
 YT_ENV = {
@@ -360,6 +361,33 @@ def test_assign_backgrounds_noop_with_empty_pool():
     scenes = [{"kind": "hook"}]
     bg_mod.assign_backgrounds(scenes, [])
     assert "backgroundVideo" not in scenes[0]
+
+
+# ---------------- LINE通知 ----------------
+
+def test_line_message_includes_caption_and_youtube_url():
+    msg = ln.build_message({"articleTitle": "テスト記事", "stockName": "A社"},
+                           "キャプション本文 #tag", youtube_id="abc123", tiktok_publish_id="p1")
+    assert "テスト記事" in msg
+    assert "https://youtube.com/shorts/abc123" in msg
+    assert "キャプション本文 #tag" in msg
+    assert "コピー用" in msg
+
+
+def test_line_message_omits_tiktok_block_when_not_uploaded():
+    msg = ln.build_message({"articleTitle": "t"}, "cap", youtube_id="abc", tiktok_publish_id=None)
+    assert "キャプション" not in msg
+    assert "youtube.com" in msg
+
+
+def test_line_notify_skips_without_credentials():
+    with mock.patch.dict(os.environ, {}, clear=True):
+        assert ln.notify({"articleTitle": "t"}, "cap", youtube_id="abc") is False
+
+
+def test_line_notify_skips_when_nothing_posted():
+    with mock.patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "t", "LINE_USER_ID": "u"}, clear=True):
+        assert ln.notify({"articleTitle": "t"}, "cap") is False
 
 
 # ---------------- YouTube ----------------
