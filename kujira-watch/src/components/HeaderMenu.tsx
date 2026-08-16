@@ -93,9 +93,10 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
   const enHref = locale === "en" ? currentPath : otherHref;
 
   return (
-    // PCでは中央寄せの本文カラムではなく、画面の本当の右端にハンバーガーを固定する
-    // (ヘッダーはposition:stickyでabsolute配置の基準になる)
-    <Box sx={{ flexShrink: 0, position: { md: "absolute" }, right: { md: 16 }, top: { md: 16 } }}>
+    // ヘッダー右端グループ(検索・訪問者数・メニュー)の一員としてフロー配置する。
+    // かつてはPCで画面右端にabsolute固定していたが、AppBarのbackdrop-filterが
+    // 包含ブロックを作るため実際にはカラム右端に落ち、訪問者数の上に重なるだけだった。
+    <Box sx={{ flexShrink: 0 }}>
       <IconButton
         aria-label={t.menuLabel}
         aria-expanded={open}

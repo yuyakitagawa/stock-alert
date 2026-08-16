@@ -260,7 +260,9 @@ export default async function ArticleDetailPage({ params }: Props) {
             rowGap: 2,
           }}
         >
-          <Box>
+          {/* 銘柄名・投資家名は折り返し不能な長い固有名詞のため、モバイルの半カラム幅では
+              1行3〜4文字の縦割れになる。この2項目だけはxsで行全体を使う。 */}
+          <Box sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>銘柄</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
               <Link
@@ -308,7 +310,7 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Box>
           )}
           {filerName && (
-            <Box>
+            <Box sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}>
               <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引企業</Typography>
               <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
                 <Link

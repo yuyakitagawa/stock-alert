@@ -1,5 +1,6 @@
 "use client";
 
+import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import Tooltip from "@mui/material/Tooltip";
 import { UI, type Locale } from "@/lib/i18n";
@@ -21,9 +22,14 @@ export function scoreToStars(score: number): number {
 export default function AttentionScoreBadge({
   score,
   locale = "ja",
+  onDark = false,
 }: {
   score?: number;
   locale?: Locale;
+  // 注目カードなどダーク地に載せる場合(DealTypeBadgeと同じ切り替え方針)。
+  // 明色地でgold文字は約2.7:1しか出ずWCAG AAを満たせないため、明色地では文字を紺、
+  // ★のみgoldのアクセントにする(スコアは数字で伝わるので★は装飾扱い)。
+  onDark?: boolean;
 }) {
   if (score == null) return null;
   const t = UI[locale];
@@ -33,12 +39,19 @@ export default function AttentionScoreBadge({
       <Chip
         size="small"
         variant="outlined"
-        label={`${t.attentionScoreLabel} ${score} ${starsLabel(stars)}`}
+        label={
+          <>
+            {`${t.attentionScoreLabel} ${score} `}
+            <Box component="span" sx={{ color: onDark ? "brand.goldBright" : "brand.gold" }}>
+              {starsLabel(stars)}
+            </Box>
+          </>
+        }
         sx={{
           height: "auto",
           borderColor: "transparent",
           bgcolor: "rgba(184, 134, 58, 0.12)",
-          color: "brand.gold",
+          color: onDark ? "brand.goldBright" : "primary.main",
           fontSize: "0.6875rem",
           fontWeight: 700,
           letterSpacing: "0.04em",

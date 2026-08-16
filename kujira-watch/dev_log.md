@@ -1,4 +1,31 @@
 
+## 2026-08-17 kujira-watch: デザインレビューP1修正（重なり・コントラスト・縦割れ）
+
+サイト全体のデザインレビュー（375px/1280px × ja/en を実機確認）で見つけた
+実害ありの3件を修正。
+
+### 修正内容
+1. **ヘッダーの訪問者数がハンバーガーメニューと重なる**（sm+幅で実測30px重複）
+   - `HeaderMenu.tsx`: md+の`position: absolute`配置を撤去しフロー配置に。
+     「画面右端に固定」が本来の意図だったが、MUI化でAppBarに付いた
+     `backdrop-filter`が包含ブロックを作るため実際はカラム右端に落ちており、
+     訪問者数の上に重なるだけで意図は機能していなかった。
+2. **クジラ注目度バッジのコントラスト不足**
+   - `AttentionScoreBadge.tsx`: gold文字×金12%ティントは明色背景で実効2.7:1
+     （WCAG AAの4.5:1未達）。明色地は文字を紺（13:1）・★のみgoldに変更。
+     `onDark` propを追加（DealTypeBadgeと同じ方針）し、ダーク地はgoldBright
+     （6.1:1）に。`FeaturedArticleCard`から`onDark`を渡す。
+3. **記事ページのファクト欄で銘柄名が縦割れ**（375pxで1行3〜4文字×4行）
+   - ja/en両方の`articles/[id]/page.tsx`: 2カラムグリッドのうち銘柄・取引企業
+     （jaのみ）の項目だけ`gridColumn: 1 / -1`でxs時に全幅化。sm+は4カラム維持。
+
+### 確認
+- 375px/1280px × ja/en をブラウザで再確認（重なり解消を座標実測、色は
+  computed styleで確認）。`tsc --noEmit`・eslintクリーン。
+- 注: `npm run build`の型チェックは別セッションのFAQ機能WIP
+  （investorFaq/stockFaq、未コミット）が型エラーで失敗する。本修正とは無関係
+  （WIPを退避した状態でビルドが通ることを確認してからpush）。
+
 ## 2026-08-15 kujira-watch: 表示速度の週次チェックを追加
 
 「定期的に遅いページを見つけて改善したい」への対応。GitHub Actions `perf_check.yml`

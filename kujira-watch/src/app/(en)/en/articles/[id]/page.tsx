@@ -174,7 +174,9 @@ export default async function EnArticleDetailPage({ params }: Props) {
             rowGap: 2,
           }}
         >
-          <Box>
+          {/* 銘柄名は折り返し不能な長い固有名詞(日本語社名)のため、モバイルの半カラム幅では
+              縦割れになる。この項目だけはxsで行全体を使う(ja版と同じ扱い)。 */}
+          <Box sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>{t.stockLabel}</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
               <Link

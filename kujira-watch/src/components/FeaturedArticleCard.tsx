@@ -85,7 +85,7 @@ export default function FeaturedArticleCard({
             </Typography>
             <DealTypeBadge dealType={article.dealType} locale={locale} onDark />
             <DealDirectionBadge tags={article.tags} locale={locale} onDark />
-            <AttentionScoreBadge score={article.attentionScore} locale={locale} />
+            <AttentionScoreBadge score={article.attentionScore} locale={locale} onDark />
             <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.6)" }}>
               {formatDate(article.dealDate, locale)}
             </Typography>
