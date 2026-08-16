@@ -98,4 +98,4 @@ X=数値取得不可（ログイン必須+公開API 429。投稿内容・頻度�
 - [x] `site.ts`に`YOUTUBE_CHANNEL_URL`を追加
 - [x] ハンバーガーメニューに「公式YouTube（1分ショート解説）」を追加
 - [x] 記事末尾FollowCtaにYouTubeボタンを追加（X導線と併記）
-- [ ] lint/build・commit・push・デプロイ確認
+- [x] lint/build・commit・push・デプロイ確認（commit 3c36b023、プッシュ90秒後に本番記事ページのYouTube CTAを確認。ローカルDNSも復旧済み）
