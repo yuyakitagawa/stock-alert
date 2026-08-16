@@ -50,5 +50,6 @@ account」に変えて提出する。まずは video.upload のみで通し、�
 
 - [x] 説明文の確定
 - [x] LINE キャプション通知の実装（審査待ちの間の運用改善。video/line_notify.py）
-- [ ] デモ動画素材の録画（ショット1,2,4 = Mac側、ショット3,5 = オーナーのスマホ）
-- [ ] 結合・提出
+- [x] デモ動画素材の録画（2026-08-16。Mac側4カットはscreencapture -v、スマホ1カットはオーナー撮影）
+- [x] 結合・テロップ・圧縮（video/out/tiktok_review_demo.mp4、2分41秒・4.1MB）
+- [ ] フォームの動画差し替え → Submit for review（オーナー操作）
