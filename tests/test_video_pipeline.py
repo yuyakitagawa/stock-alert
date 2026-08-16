@@ -67,6 +67,21 @@ def test_pick_article_returns_none_when_no_featured_overlap():
     assert bs.pick_article(articles, featured_ids={"z"}) is None
 
 
+def test_pick_targeted_takes_largest_regardless_of_featured():
+    """銘柄コード指定の手動実行では注目枠を問わず金額最大の記事を選ぶ。"""
+    articles = [
+        {"id": "a", "dealAmount": 10.0},
+        {"id": "b", "dealAmount": 80.0},
+        {"id": "c", "dealAmount": None},
+    ]
+    assert bs.pick_targeted(articles)["id"] == "b"
+
+
+def test_pick_targeted_returns_none_when_empty():
+    """指定銘柄の記事が期間内に無ければ動画を作らない。"""
+    assert bs.pick_targeted([]) is None
+
+
 # ---------------- props の組み立て ----------------
 
 def test_deal_type_label_unwraps_select_array():

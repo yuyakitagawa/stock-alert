@@ -42,10 +42,18 @@ RECENT_HOURS = 36
 # 動画1本あたりの候補プール。この中から featured との積集合を取る。
 CANDIDATE_LIMIT = 20
 
+# 銘柄コード指定（workflow_dispatchの手動実行）で遡る時間幅。通常運用の36時間より
+# 広く取り、話題になった開示を数日〜2週間後からでも動画にできるようにする。
+TARGETED_HOURS = 24 * 14
 
-def fetch_recent_articles(hours: int = RECENT_HOURS) -> list:
-    """直近hours時間にmicroCMSへ公開された記事を、金額規模の大きい順で返す。"""
+
+def fetch_recent_articles(hours: int = RECENT_HOURS, stock_code: str = "") -> list:
+    """直近hours時間にmicroCMSへ公開された記事を、金額規模の大きい順で返す。
+    stock_code指定時はその銘柄の記事だけに絞る。"""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    filters = f"publishedAt[greater_than]{since}"
+    if stock_code:
+        filters += f"[and]stockCode[equals]{stock_code}"
     try:
         resp = requests.get(
             _microcms_base_url(),
@@ -53,7 +61,7 @@ def fetch_recent_articles(hours: int = RECENT_HOURS) -> list:
             params={
                 "orders": "-dealDate,-dealAmount",
                 "limit": CANDIDATE_LIMIT,
-                "filters": f"publishedAt[greater_than]{since}",
+                "filters": filters,
                 "fields": "id,title,body,stockName,stockCode,dealType,dealDate,dealAmount,tags,filerName,attentionScore",
             },
             timeout=20,
@@ -74,6 +82,14 @@ def pick_article(articles: list, featured_ids: set) -> "dict | None":
         return None
     candidates.sort(key=lambda a: a.get("dealAmount") or 0, reverse=True)
     return candidates[0]
+
+
+def pick_targeted(articles: list) -> "dict | None":
+    """銘柄コード指定の手動実行用。注目枠は問わず、金額規模が最大の記事を1件選ぶ
+    （指定銘柄で絞り込み済みの前提。同一銘柄に複数記事がある週でも一番大きい開示を扱う）。"""
+    if not articles:
+        return None
+    return max(articles, key=lambda a: a.get("dealAmount") or 0)
 
 
 def _strip_html(html: str) -> str:
@@ -313,18 +329,26 @@ def build_price_scene(code: str) -> "dict | None":
     }
 
 
-def build(dry_run: bool = False) -> "dict | None":
-    """動画1本ぶんの props を返す。対象記事が無ければ None。"""
-    articles = fetch_recent_articles()
-    if not articles:
-        print("[build_script] 直近に新規公開された記事がありません")
-        return None
+def build(dry_run: bool = False, stock_code: str = "") -> "dict | None":
+    """動画1本ぶんの props を返す。対象記事が無ければ None。
+    stock_code指定時は「直近36h×注目枠」の通常選定を使わず、その銘柄の直近記事から選ぶ。"""
+    if stock_code:
+        articles = fetch_recent_articles(hours=TARGETED_HOURS, stock_code=stock_code)
+        article = pick_targeted(articles)
+        if article is None:
+            print(f"[build_script] 銘柄{stock_code}の記事が直近{TARGETED_HOURS // 24}日にありません")
+            return None
+    else:
+        articles = fetch_recent_articles()
+        if not articles:
+            print("[build_script] 直近に新規公開された記事がありません")
+            return None
 
-    featured_ids = get_featured_article_ids()
-    article = pick_article(articles, featured_ids)
-    if article is None:
-        print(f"[build_script] 新着{len(articles)}件のうち注目枠に入る記事が無いため動画は作りません")
-        return None
+        featured_ids = get_featured_article_ids()
+        article = pick_article(articles, featured_ids)
+        if article is None:
+            print(f"[build_script] 新着{len(articles)}件のうち注目枠に入る記事が無いため動画は作りません")
+            return None
 
     print(f"[build_script] 対象記事: {article['title']}（{article['stockName']} / id={article['id']}）")
 
@@ -361,9 +385,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="", help="props JSONの出力先パス（未指定なら標準出力）")
     p.add_argument("--dry-run", action="store_true", help="生成結果を表示するのみ")
+    p.add_argument("--stock-code", default="", help="銘柄コード指定（通常選定を使わずこの銘柄の直近記事から選ぶ）")
     args = p.parse_args()
 
-    props = build(dry_run=args.dry_run)
+    props = build(dry_run=args.dry_run, stock_code=args.stock_code)
     if props is None:
         sys.exit(1)
     if args.out:

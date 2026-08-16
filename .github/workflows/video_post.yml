@@ -11,6 +11,10 @@ on:
         description: 'mp4の書き出しまでで止める（投稿しない）'
         type: boolean
         default: false
+      stock_code:
+        description: '銘柄コード指定（通常の新着×注目枠選定を使わず、この銘柄の直近2週間の記事を動画にする）'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -107,10 +111,14 @@ jobs:
           TIKTOK_DIRECT_POST: ${{ secrets.TIKTOK_DIRECT_POST }}
         run: |
           cd ~/stock-alert
+          EXTRA=""
+          if [ -n "${{ inputs.stock_code }}" ]; then
+            EXTRA="--stock-code ${{ inputs.stock_code }}"
+          fi
           if [ "${{ inputs.render_only }}" = "true" ]; then
-            python video/publish_video.py --render-only --keep-video
+            python video/publish_video.py --render-only --keep-video $EXTRA
           else
-            python video/publish_video.py --keep-video
+            python video/publish_video.py --keep-video $EXTRA
           fi
 
       - name: 生成した動画を成果物として保存（投稿結果の目視確認用）

@@ -1024,3 +1024,15 @@ emotionのランタイムが全ページに残っている。MUIのゼロラン�
 
 検証: `npx tsc --noEmit`・eslint（変更12ファイル）クリーン、全主要ルート200、
 修正後スクリーンショットで before/after 目視確認済み。Python側パイプラインへの変更なし。
+
+## 2026-08-16: 動画パイプラインに銘柄コード指定の手動実行を追加
+オーナー依頼「太陽誘電とキオクシアのクジラの件を動画にして投稿」。通常の選定は
+「直近36h新着×注目枠」のため、8/10-8/12開示（太陽誘電×Situational Awareness LP、
+キオクシア×東芝売却）の記事は対象外になっていた。
+
+- `video/build_script.py`: `fetch_recent_articles()` に stockCode フィルタを追加。
+  `pick_targeted()`（注目枠を問わず金額最大1件）と `build(stock_code=...)` の
+  銘柄指定モード（遡り幅 TARGETED_HOURS=14日）を追加
+- `video/publish_video.py`: `--stock-code` 引数を追加
+- `.github/workflows/video_post.yml`: workflow_dispatch に `stock_code` 入力を追加
+- テスト: test_video_pipeline.py 43件（+2）、全テストpass

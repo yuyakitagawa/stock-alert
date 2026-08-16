@@ -29,8 +29,9 @@ from video import tiktok_client, youtube_client  # noqa: E402
 OUT_DIR = os.path.join(os.path.expanduser("~/stock-alert"), "video", "out")
 
 
-def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = False) -> int:
-    props = build_script.build(dry_run=dry_run)
+def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = False,
+        stock_code: str = "") -> int:
+    props = build_script.build(dry_run=dry_run, stock_code=stock_code)
     if props is None:
         print("[publish_video] 投稿対象がないため終了します")
         return 0
@@ -103,8 +104,11 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="台本生成までで止める（レンダリング・投稿なし）")
     p.add_argument("--render-only", action="store_true", help="mp4の書き出しまでで止める（投稿なし）")
     p.add_argument("--keep-video", action="store_true", help="投稿後もmp4を削除しない")
+    p.add_argument("--stock-code", default="",
+                   help="銘柄コード指定（通常の新着×注目枠選定を使わず、この銘柄の直近記事を動画にする）")
     args = p.parse_args()
-    sys.exit(run(dry_run=args.dry_run, render_only=args.render_only, keep_video=args.keep_video))
+    sys.exit(run(dry_run=args.dry_run, render_only=args.render_only, keep_video=args.keep_video,
+                 stock_code=args.stock_code))
 
 
 if __name__ == "__main__":
