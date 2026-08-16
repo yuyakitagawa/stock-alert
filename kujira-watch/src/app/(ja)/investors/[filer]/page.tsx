@@ -15,6 +15,7 @@ import { getFilerClassification, getFilerHoldings, getFilerWinRate } from "@/lib
 import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
+import WatchButton from "@/components/WatchButton";
 
 export const revalidate = 300;
 
@@ -117,6 +118,7 @@ export default async function InvestorPage({ params }: Props) {
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{displayFilerName(filerName)}</h1>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <DealTypeBadge dealType={category} />
+        <WatchButton type="investor" id={filerName} label={displayFilerName(filerName)} />
         {classification?.description && (
           <p className="text-sm text-foreground/60">{classification.description}</p>
         )}
