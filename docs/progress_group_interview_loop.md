@@ -35,7 +35,13 @@
 パイプライン実態を確認: 新着開示は `edinet_blog.yml` が平日9〜21時JSTに毎時実行、乗っかり実績は `filer_win_rate.yml` が毎週月曜朝に更新。
 - [x] TOP「今日のクジラ」カードに「新着開示は平日9時〜21時ごろに毎時自動更新」の注記を追加（TodayWhaleSummary.tsx）
 - [x] FAQ「運営・データについて」に「サイトのデータはいつ更新されますか？」を追加（faqData.tsx。README件数も502→504に是正）
-- [ ] lint/build・commit・push・デプロイ確認
+- [x] lint/build・commit・push・デプロイ確認（commit b70ff97c、Vercelデプロイ dpl_bu3YBdHX3mWvPFdVrnsYHJ92H1Lm READY。反映は https://stock-alert-lyart.vercel.app で確認）
+
+### ⚠️ 障害検知（2026-08-16 18:25 JST〜）: kujira-watch.com がドメイン停止で全面ダウン
+- whois: `Domain Status: clientHold`（レジストラ=お名前.com/GMOが2026-08-16 09:25 UTCに設定）→ DNSがNXDOMAINになり全ページ閲覧不能
+- ドメイン作成日 2026-08-02 のちょうど14日後の停止 → **ICANNのWHOIS登録者メール認証（15日期限）未完了が原因の可能性大**
+- Vercel・デプロイ・サイト自体は正常（vercel.appエイリアスでは閲覧可能）
+- **対応はオーナーのみ可能**: お名前.comの認証メールのリンククリック or 管理画面から再認証。復旧までループは待機
 
 ### サイクル3（予定）
 候補: ウォッチリスト（サイクル1課題3・リピーター層）。localStorageベースで気になる投資家・銘柄を保存→再訪導線。
