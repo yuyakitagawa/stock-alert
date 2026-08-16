@@ -54,29 +54,70 @@ def test_shares_outstanding_returns_none_after_exhausting_retries():
 
 def test_generate_article_body_parses_plain_json():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    raw = json.dumps({"body": "<p>本文</p>", "bodyEn": "<p>body</p>"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"title": "タイトル", "body": "<p>本文</p>"}
+    assert result == {"body": "<p>本文</p>", "bodyEn": "<p>body</p>"}
 
 
 def test_generate_article_body_strips_code_fence():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
+    raw = json.dumps({"body": "<p>本文</p>"})
     fenced = f"```json\n{raw}\n```"
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(fenced)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"title": "タイトル", "body": "<p>本文</p>"}
+    assert result == {"body": "<p>本文</p>"}
 
 
-def test_generate_article_body_none_on_empty_title():
+def test_generate_article_body_none_on_empty_body():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "", "body": "<p>本文</p>"})
+    raw = json.dumps({"body": ""})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         assert m.generate_article_body(fact_sheet) is None
+
+
+def test_build_article_titles_buy_and_sell_templates():
+    """タイトルは決定的テンプレ: 銘柄名（コード）・提出者・保有比率・「大量保有報告書」を必ず含む。"""
+    buy = m.build_article_titles({"stock_name": "テスト自動車", "stock_code": "7203",
+                                  "filer_name": "テストファンド", "holding_ratio": 8.5,
+                                  "direction": "buy", "ratio_change_pct": 1.2})
+    assert buy["title"] == "テスト自動車（7203）、テストファンドが保有比率8.5%に引き上げ｜大量保有報告書"
+    sell = m.build_article_titles({"stock_name": "テスト自動車", "stock_code": "7203",
+                                   "filer_name": "テストファンド", "holding_ratio": 4.98,
+                                   "direction": "sell", "ratio_change_pct": 2.0})
+    assert "保有比率4.98%に引き下げ" in sell["title"]
+    assert sell["title"].endswith("｜大量保有報告書")
+
+
+def test_build_article_titles_new_holding_uses_ratio_change_heuristic():
+    """変化幅=今回比率（過去開示なし）は「新規保有」表現になる。"""
+    new = m.build_article_titles({"stock_name": "テスト商事", "stock_code": "9999",
+                                  "filer_name": "テストファンド", "holding_ratio": 6.0,
+                                  "direction": "buy", "ratio_change_pct": 6.0})
+    assert "テストファンドが6%を新規保有" in new["title"]
+
+
+def test_build_article_titles_truncates_long_filer_name():
+    long_filer = "とても長い名前の資産運用株式会社" * 4
+    result = m.build_article_titles({"stock_name": "テスト", "stock_code": "1234",
+                                     "filer_name": long_filer, "holding_ratio": 5.0,
+                                     "direction": "buy", "ratio_change_pct": 1.0})
+    assert len(result["title"]) <= m.MAX_TITLE_LEN
+    assert "…" in result["title"]
+    assert result["title"].endswith("｜大量保有報告書")
+
+
+def test_build_article_titles_uses_english_names_when_given():
+    fs = {"stock_name": "テスト自動車", "stock_code": "7203", "filer_name": "テストファンド",
+          "holding_ratio": 8.5, "direction": "buy", "ratio_change_pct": 1.2}
+    result = m.build_article_titles(fs, stock_name_en="Test Motor", filer_name_en="Test Fund")
+    assert result["titleEn"] == "Test Fund Raises Stake in Test Motor (7203) to 8.5% | Large Shareholding Report"
+    # 英語名が無ければ日本語名のまま
+    fallback = m.build_article_titles(fs)
+    assert "テスト自動車 (7203)" in fallback["titleEn"]
 
 
 def test_classify_filer_returns_cached_master_row_without_calling_claude():
@@ -147,7 +188,7 @@ def test_build_and_publish_includes_sell_and_tags_them():
                                 {"category": "PE・メザニンファンド", "is_foreign": False, "description": ""},
                             ]), \
          mock.patch.object(m, "generate_article_body",
-                            return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
+                            return_value={"body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=4, dry_run=False)
@@ -169,6 +210,11 @@ def test_build_and_publish_includes_sell_and_tags_them():
     assert isinstance(by_code["7203"]["attentionReasons"], str)
     assert "attentionScore" not in by_code["6502"]
     assert "attentionScore" not in by_code["1234"]
+    # タイトルはテンプレ生成（ratio_change=ratioのモックなので全件「新規保有」表現になる）
+    assert by_code["7203"]["title"] == "テスト自動車（7203）、個人 太郎が8.5%を新規保有｜大量保有報告書"
+    # ratioChangePct: 買いは正、売りは負で送る
+    assert by_code["7203"]["ratioChangePct"] == 8.5
+    assert by_code["6502"]["ratioChangePct"] == -15.1
 
 
 def test_build_and_publish_skips_when_already_published():
@@ -670,19 +716,23 @@ def test_generate_article_body_always_requests_labelled_speculation():
 
 
 def test_generate_article_body_prompt_requests_english_translation():
-    """kujira-watch(/en)向けにtitleEn/bodyEnもJSONに含めるよう1回の呼び出しでプロンプトに要求する
-    （JA/ENを別々に生成すると事実がズレたりAPI呼び出しが倍になるため）。"""
+    """kujira-watch(/en)向けにbodyEnと英語タイトル用のローマ字名もJSONに含めるよう
+    1回の呼び出しでプロンプトに要求する（JA/ENを別々に生成すると事実がズレたり
+    API呼び出しが倍になるため）。冒頭アンサー文の指定もプロンプトに含める。"""
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>", "titleEn": "Title", "bodyEn": "<p>Body</p>"})
+    raw = json.dumps({"body": "<p>本文</p>", "bodyEn": "<p>Body</p>",
+                      "stockNameEn": "Test", "filerNameEn": "X Fund"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         result = m.generate_article_body(fact_sheet)
     prompt = calls[0]["messages"][0]["content"]
-    assert "titleEn" in prompt
     assert "bodyEn" in prompt
-    assert result["titleEn"] == "Title"
+    assert "stockNameEn" in prompt
+    assert "本文の1文目は、必ず次の文をそのまま使ってください" in prompt
+    assert "大量保有報告書（EDINET）で分かりました" in prompt
     assert result["bodyEn"] == "<p>Body</p>"
+    assert result["stockNameEn"] == "Test"
 
 
 def test_build_and_publish_includes_english_fields_when_generated():
@@ -699,12 +749,12 @@ def test_build_and_publish_includes_english_fields_when_generated():
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body",
-                            return_value={"title": "テストタイトル", "body": "<p>本文</p>",
-                                          "titleEn": "Test Title", "bodyEn": "<p>Body</p>"}), \
+                            return_value={"body": "<p>本文</p>", "bodyEn": "<p>Body</p>",
+                                          "stockNameEn": "Test Motor", "filerNameEn": "Taro Kojin"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
-    assert results[0]["titleEn"] == "Test Title"
+    assert results[0]["titleEn"] == "Taro Kojin Takes 8.5% Stake in Test Motor (7203) | Large Shareholding Report"
     assert results[0]["bodyEn"] == "<p>Body</p>"
 
 
@@ -911,7 +961,11 @@ if __name__ == "__main__":
     test_shares_outstanding_returns_none_after_exhausting_retries()
     test_generate_article_body_parses_plain_json()
     test_generate_article_body_strips_code_fence()
-    test_generate_article_body_none_on_empty_title()
+    test_generate_article_body_none_on_empty_body()
+    test_build_article_titles_buy_and_sell_templates()
+    test_build_article_titles_new_holding_uses_ratio_change_heuristic()
+    test_build_article_titles_truncates_long_filer_name()
+    test_build_article_titles_uses_english_names_when_given()
     test_classify_filer_returns_cached_master_row_without_calling_claude()
     test_classify_filer_asks_claude_and_persists_when_not_cached()
     test_classify_filer_falls_back_to_sonota_on_invalid_category()
@@ -967,4 +1021,4 @@ if __name__ == "__main__":
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
-    print("全テスト成功 (63件)")
+    print("全テスト成功 (68件)")

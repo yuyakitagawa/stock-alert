@@ -220,6 +220,85 @@ export async function getFilerNamesByStockAndDate(
   return resolved;
 }
 
+export type StockHoldingRow = {
+  docId: string;
+  filerName: string;
+  discDate: string;
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+  docTypeCode: string;
+};
+
+// /stocks/[code]の「保有比率の推移」テーブル用。この銘柄に提出された大量保有・変更報告書を
+// 開示日の新しい順に返す（提出者横断の時系列）。
+export async function getHoldingsByStockCode(stockCode: string): Promise<StockHoldingRow[]> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("edinet_large_holdings")
+    .select("doc_id, filer_name, disc_date, holding_ratio, holding_ratio_prior, doc_type_code")
+    .eq("issuer_code", stockCode)
+    .order("disc_date", { ascending: false })
+    .limit(100);
+  return (data ?? [])
+    .filter((r) => r.filer_name)
+    .map((r) => ({
+      docId: r.doc_id,
+      filerName: r.filer_name,
+      discDate: r.disc_date,
+      holdingRatio: r.holding_ratio,
+      holdingRatioPrior: r.holding_ratio_prior,
+      docTypeCode: r.doc_type_code,
+    }));
+}
+
+// 記事詳細のファクトボックス用。銘柄コード×開示日×提出者名でEDINET開示そのものを1件引き、
+// 保有比率・直前の保有比率を返す（CMSの記事には保有比率フィールドが無いため）。
+// 同一キーで複数行ある場合（同日の訂正等）は保有比率が取れている行を優先する。
+export async function getHoldingSnapshot(
+  stockCode: string,
+  discDate: string,
+  filerName: string
+): Promise<{ holdingRatio: number | null; holdingRatioPrior: number | null } | null> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("edinet_large_holdings")
+    .select("holding_ratio, holding_ratio_prior")
+    .eq("issuer_code", stockCode)
+    .eq("disc_date", discDate)
+    .eq("filer_name", filerName)
+    .order("holding_ratio", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { holdingRatio: data.holding_ratio, holdingRatioPrior: data.holding_ratio_prior };
+}
+
+// /investors/[filer]用。filer_win_rateから当該投資家1件の実績を返す。
+// 実績が未集計（買い開示が無い・結果確定前）の投資家はnull。ページ表示を止めないよう
+// 取得失敗もnullに落とす。
+export async function getFilerWinRate(filerName: string): Promise<FilerWinRate | null> {
+  try {
+    const supabase = getSupabaseServerClient();
+    const { data } = await supabase
+      .from("filer_win_rate")
+      .select("filer_name, category, n, total_return_oku, hold_days, updated_at")
+      .eq("filer_name", filerName)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      filerName: data.filer_name,
+      category: data.category as DealType,
+      n: data.n,
+      totalReturnOku: data.total_return_oku,
+      holdDays: data.hold_days,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.error(`[getFilerWinRate] filer=${filerName} 取得失敗`, error);
+    return null;
+  }
+}
+
 // /ranking用。tools/filer_win_rate.pyが週次で再計算するfiler_win_rateテーブルを
 // トータルリターン(total_return_oku)の降順で返す。
 // /rankingもsearchParams(category)を読むためdynamic renderingになり、ページ側の

@@ -7,16 +7,18 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import AttentionScorePanel from "@/components/AttentionScorePanel";
+import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
-import DealTypeBadge from "@/components/DealTypeBadge";
 import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
+import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
-import { excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
 import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
-import { getFilerNamesByStockAndDate, getFilersByStockCode } from "@/lib/investors";
+import { getFilerNamesByStockAndDate, getFilersByStockCode, getFilerWinRate, getHoldingSnapshot } from "@/lib/investors";
+import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
@@ -130,6 +132,25 @@ export default async function ArticleDetailPage({ params }: Props) {
   const filerName =
     article.filerName ?? filerByKey.get(`${article.stockCode}|${dealDateOnly}`);
 
+  // ファクトボックス用: 保有比率はCMSに無いため、提出者が特定できた記事のみEDINET開示から引く。
+  // 乗っかり実績(filer_win_rate)も同じ条件で並行取得する（未集計の投資家はnull）。
+  const [snapshot, filerWinRate] = filerName
+    ? await Promise.all([
+        getHoldingSnapshot(article.stockCode, dealDateOnly, filerName),
+        getFilerWinRate(filerName),
+      ])
+    : [null, null];
+  const holdingRatio = snapshot?.holdingRatio ?? null;
+  // 前回比はCMSのratioChangePct（2026-08-15以降の記事）を優先し、
+  // 無ければEDINET開示の直前保有割合との差から補う。
+  const ratioChange =
+    article.ratioChangePct ??
+    (holdingRatio !== null && snapshot?.holdingRatioPrior != null
+      ? Math.round((holdingRatio - snapshot.holdingRatioPrior) * 100) / 100
+      : null);
+  const formatRatio = (value: number) =>
+    value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+
   const linkedBody = linkifyFilerNames(article.body, filers.map((f) => f.filerName));
 
   const articleJsonLd = {
@@ -208,9 +229,10 @@ export default async function ArticleDetailPage({ params }: Props) {
       )}
       <div className="p-6 sm:p-10">
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <DealTypeBadge dealType={article.dealType} />
-          <DealDirectionBadge tags={article.tags} />
+          {/* 分類はリンク付きChip(CategoryBadge)へ一本化。ドット版(DealTypeBadge)を併記すると
+              同一ラベルが二重表示になっていた。 */}
           <CategoryBadge dealType={article.dealType} />
+          <DealDirectionBadge tags={article.tags} />
         </div>
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.title}
@@ -261,6 +283,30 @@ export default async function ArticleDetailPage({ params }: Props) {
               {formatDealAmount(article.dealAmount)}
             </Typography>
           </Box>
+          {holdingRatio !== null && (
+            <Box>
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>保有比率</Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
+                {formatRatio(holdingRatio)}%
+                {snapshot?.holdingRatioPrior != null && (
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                    （前回 {formatRatio(snapshot.holdingRatioPrior)}%）
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
+          )}
+          {ratioChange !== null && ratioChange !== 0 && (
+            <Box>
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>前回比</Typography>
+              <Typography
+                component="dd"
+                sx={{ m: 0, mt: 0.5, fontWeight: 500, color: ratioChange > 0 ? "success.main" : "error.main" }}
+              >
+                {ratioChange > 0 ? "＋" : "−"}{formatRatio(Math.abs(ratioChange))}pt
+              </Typography>
+            </Box>
+          )}
           {filerName && (
             <Box>
               <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引企業</Typography>
@@ -269,8 +315,13 @@ export default async function ArticleDetailPage({ params }: Props) {
                   href={`/investors/${encodeURIComponent(filerName)}`}
                   className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
                 >
-                  {filerName}
+                  {displayFilerName(filerName)}
                 </Link>
+                {filerWinRate && (
+                  <span className="mt-1 block">
+                    <FilerTrackRecordChip winRate={filerWinRate} />
+                  </span>
+                )}
               </Typography>
             </Box>
           )}
@@ -290,19 +341,51 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Box>
           )}
         </Box>
+        <p className="-mt-2 mb-6 text-xs leading-relaxed text-foreground/40">
+          ※
+          取引日はEDINETで報告書が開示された日です。大量保有報告書は報告義務の発生（実際の売買等）から提出まで法令上最大5営業日のずれがあるため、実際の取引はこれより前に行われている場合があります。本記事は公開情報にもとづく解説であり、特定銘柄の売買を推奨する投資助言ではありません。詳しくは
+          <Link href="/about" className="text-brand-blue hover:underline">
+            免責事項
+          </Link>
+          をご覧ください。
+        </p>
         <AttentionScorePanel score={article.attentionScore} reasons={article.attentionReasons} />
+        <PriceAfterDisclosure stockCode={article.stockCode} dealDate={article.dealDate} />
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
         />
+        <div className="mt-8 rounded border border-rule bg-section-tint px-4 py-3 text-xs leading-relaxed text-foreground/60">
+          <p className="m-0">
+            情報源: 金融庁EDINETの大量保有報告書等（提出日: {formatDate(article.dealDate)}）
+            {article.sourceUrl && (
+              <>
+                {" ・ "}
+                <a
+                  href={article.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-blue hover:underline"
+                >
+                  元の開示を見る
+                </a>
+              </>
+            )}
+          </p>
+          <p className="m-0 mt-1">
+            記事公開: {formatDate(article.publishedAt ?? article.createdAt)}
+            {" ・ "}金額は発行済株式数と株価からの概算です。本記事は投資助言を目的としたものではありません。
+          </p>
+        </div>
         {tags && tags.length > 0 && (
-          <div className="mt-8 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
+          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
             {tags.map((tag) => (
               <span key={tag}>#{tag}</span>
             ))}
           </div>
         )}
         <ShareButtons url={url} title={article.title} />
+        <FollowCta />
         {relatedStockArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
             <h2 className="mb-4 text-lg font-bold text-brand-navy">
@@ -324,13 +407,30 @@ export default async function ArticleDetailPage({ params }: Props) {
                 href={`/investors/${encodeURIComponent(filerName)}`}
                 className="font-bold text-brand-blue hover:underline"
               >
-                {filerName}
+                {displayFilerName(filerName)}
               </Link>
+              {filerWinRate && (
+                <>
+                  {" "}
+                  <FilerTrackRecordChip winRate={filerWinRate} />
+                </>
+              )}
               のページでは、この投資家がEDINETに提出した大量保有報告書をもとに、
               保有銘柄と保有比率の推移を横断して確認できます。
             </p>
           </div>
         )}
+        <div className="mt-10 border-t border-rule pt-6">
+          <h2 className="mb-2 text-lg font-bold text-brand-navy">関連ランキング</h2>
+          <nav aria-label="関連ランキング" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
+            <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
+            <Link href="/ranking/filings" className="text-brand-blue hover:underline">報告書件数ランキング</Link>
+            <Link href={`/date/${dealDateOnly}`} className="text-brand-blue hover:underline">
+              {formatDate(article.dealDate)}の全開示
+            </Link>
+          </nav>
+        </div>
         {relatedArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
             <h2 className="mb-5 text-lg font-bold text-brand-navy">

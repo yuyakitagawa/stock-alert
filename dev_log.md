@@ -1,5 +1,42 @@
 # Dev Log
 
+## 2026-08-15 ショート動画v2: ナレーション付き・TikTok運用の定石を反映した全面改修
+
+```
+背景: 初版は「文字が順に出てくるだけ」で動画である必然性が無かった（オーナー評:
+面白くない）。TikTokで再生される動画の定石に沿って全面的に作り直した。
+
+台本の変更（video/build_script.py）:
+- hook/bullets/closing の3要素 → 7シーン構成（hook→company→deal→filer→change→outlook→cta）
+- 各シーンは narration（読み上げ文50〜90字）と caption（字幕26字以内）の対
+- 「記事をほぼ読む」密度にするため、記事本文に加えSupabaseキャッシュ済みの
+  事業内容(get_company_description)と投資家プロフィール(get_filer_profile)も
+  プロンプトへ渡す（どちらもpublish_blog_articles.pyが生成済みの事実。新規の情報源は足さない）
+- ナレーションの切り詰めは句点境界（_trim_narration）。文の途中切りは
+  そのまま読み上げられてしまうため（実際に「…こ…」で切れる例が出た）
+
+音声（video/tts.py）:
+- Google Cloud TTSで実装 → GCPプロジェクトに請求先が無くAPI有効化不可 → VOICEVOXへ切替
+- VOICEVOX（ずんだもん）は無料・登録不要・商用可（クレジット表記必須）で、
+  日本のTikTok/Shorts解説動画で視聴者の馴染みが最も深い
+- CIは公式Dockerイメージ voicevox/voicevox_engine:cpu-ubuntu20.04-latest をジョブ内起動
+- エンジン未接続・合成失敗時は全編無音にフォールバックして投稿は続行
+- クレジット「VOICEVOX:ずんだもん」はCTAシーン・YouTube説明文・TikTokキャプションに自動挿入
+
+映像（video/remotion/）:
+- 尺は固定20秒 → ナレーション音声の実測長で決まる可変尺（calculateMetadata）
+- 冒頭はブランド・日付の前置きを廃止し、金額を画面いっぱいに叩き込む1秒目に変更
+- 全表示をsafeArea内に（下部470px/右190pxはTikTokのUIに隠れて読めない）
+- 無音視聴者向けに caption大型字幕＋narration全文の小型字幕を常時表示
+- 上部に進行バー（完走率対策）、背景はズームドリフト＋波で常時動かす
+- 締めはブランド画面でループ再生に繋がる構成、outlookには「※ここから先は推測」ラベル
+
+検証: 実データ（アインホールディングス9627、Oasisの20.93%取得記事）で
+台本→レンダリングまで通し確認。字幕の字数制御・safeArea・全シーンの表示を目視確認。
+tests/test_video_pipeline.py を29件に更新、全216件pass。
+（ローカルにVOICEVOXエンジンが無いため音声付きの通しはCI初回実行で確認する）
+```
+
 ## 2026-08-15 自動動画投稿パイプライン（YouTube Shorts / TikTok）を新設
 
 ```
@@ -957,3 +994,33 @@ MUIを外さずに、**閉じているのが既定なのに全ページの初期
 emotionのランタイムが全ページに残っている。MUIのゼロランタイム版(Pigment CSS)へ
 移行すればMUIの見た目を保ったまま更に削れるが、全コンポーネントに影響する移行なので
 別途判断が要る。
+
+## 2026-08-15 デザインコンサルスキルの導入
+
+- `.claude/skills/design-consult/SKILL.md` を新規追加。kujira-watchサイト・アイキャッチ画像・Remotion動画のデザインレビュー/改善提案を行うデザインコンサルタントのスキル。
+- ブランドトークン（`globals.css` CSS変数 / `theme.ts` brandパレット）を唯一の色ソースとして明文化し、技術制約（和文ウェブフォント禁止・MUI Button既定値・RSC境界・プレス演出二重化禁止・ja/en両対応）を焼き込み。
+- レビュー手順は Playwright スクリーンショット（375px/1280px × ja/en）による目視必須。報告は P1/P2/P3 の優先度付きフォーマット。
+- Think Small 原則: 大規模リデザインは提案せず、既存デザインシステム内での調整に限定。実装はユーザー依頼時のみ。
+- モデル・パイプラインのコード変更なし（ドキュメント/スキルのみ。バックテスト対象外）。
+
+## 2026-08-15 kujira-watch: デザインコンサルレビューと改善（design-consultスキル初回実行）
+
+外部ネットワーク遮断環境のため、本番Supabaseの実データ抜粋＋microCMS/PostgREST互換モックで
+ローカル再現し、Playwrightで375px/1280px × ja/en 全主要ページを目視監査（モックはscratchpadのみ、
+コミット対象外）。レビュー詳細は `kujira-watch/docs/progress_design_consult.md`。
+
+### P1（可読性の実害）
+- 注目カード: アイキャッチ焼き込みテキストとカード文字の二重表示 → 画像opacity 0.5＋スクリム強化
+- 注目カード上の分類/売りバッジがダーク地で沈む → `onDark` プロパティ追加（文字白・色はドットのみ）
+- モバイルヘッダーで「クジラウォッチ」が3行折返し → ロゴnowrap＋訪問者数カウンターをsm以上のみに
+- 記事詳細で分類バッジが二重（DealTypeBadge＋CategoryBadge同一ラベル）→ リンク付きChipへ一本化(ja/en)
+
+### P2（一貫性・洗練）
+- /rankingの「+107,900.0億円」→ 1兆円以上は兆円へ繰り上げ（`formatAmountParts`、/weeklyタイルと共用）
+- EDINET全角英数名（ＢＣＰＥ　Ｐａｎｇｅａ…）→ 表示専用 `displayFilerName()`（href/DB照合は原文維持）を
+  ranking/investors一覧・詳細/trending/記事メタに適用
+- /weekly金額タイルの数字折返し → 数字+単位分離＋レスポンシブfontSizeで左タイルと構造統一
+- 投資家一覧の行レイアウト揺れ → 名前/メタの2行構造に統一
+
+検証: `npx tsc --noEmit`・eslint（変更12ファイル）クリーン、全主要ルート200、
+修正後スクリーンショットで before/after 目視確認済み。Python側パイプラインへの変更なし。

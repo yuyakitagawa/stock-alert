@@ -12,7 +12,16 @@ import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { getFilersByStockCode } from "@/lib/investors";
+import { docTypeLabel, getFilersByStockCode, getFilerWinRates, getHoldingsByStockCode } from "@/lib/investors";
+import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
+import { formatDate } from "@/lib/format";
+import RatioTransition from "@/components/RatioTransition";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
@@ -57,11 +66,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers] = await Promise.all([
+  const [{ contents }, companyInfo, filers, holdings, winRates] = await Promise.all([
     getArticlesByStockCode(code),
     getCompanyInfo(code),
     getFilersByStockCode(code),
+    getHoldingsByStockCode(code),
+    getFilerWinRates(),
   ]);
+  const winRateByFiler = new Map(winRates.map((w) => [w.filerName, w]));
 
   if (contents.length === 0) {
     notFound();
@@ -120,18 +132,64 @@ export default async function StockPage({ params }: Props) {
             大量保有報告書の提出投資家
           </Typography>
           <List disablePadding dense>
-            {filers.map((filer) => (
-              <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1 }}>
-                <Link
-                  href={`/investors/${encodeURIComponent(filer.filerName)}`}
-                  className="text-brand-blue hover:underline"
-                >
-                  {filer.filerName}
-                </Link>
-                <DealTypeBadge dealType={filer.category} />
-              </ListItem>
-            ))}
+            {filers.map((filer) => {
+              const winRate = winRateByFiler.get(filer.filerName);
+              return (
+                <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1, flexWrap: "wrap" }}>
+                  <Link
+                    href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                    className="text-brand-blue hover:underline"
+                  >
+                    {filer.filerName}
+                  </Link>
+                  <DealTypeBadge dealType={filer.category} />
+                  {winRate && <FilerTrackRecordChip winRate={winRate} />}
+                </ListItem>
+              );
+            })}
           </List>
+        </Box>
+      )}
+      {holdings.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: "primary.main" }}>
+            保有比率の推移（EDINET開示ベース）
+          </Typography>
+          <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
+            <Table size="small" sx={{ minWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {holdings.map((h) => (
+                  <TableRow key={h.docId}>
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                      {formatDate(h.discDate)}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/investors/${encodeURIComponent(h.filerName)}`}
+                        className="text-brand-blue hover:underline"
+                      >
+                        {h.filerName}
+                      </Link>
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                      {docTypeLabel(h.docTypeCode)}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
+                      <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Box>
       )}
       <div className="mb-6">

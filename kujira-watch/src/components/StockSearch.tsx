@@ -9,9 +9,15 @@ import SearchIcon from "@mui/icons-material/Search";
 import type { StockSearchResult } from "@/lib/microcms";
 import { UI, type Locale } from "@/lib/i18n";
 
-// 企業名・証券コードで検索し、選択(またはEnter)で /stocks/[code] に遷移する。
+// 企業名・証券コード・投資家名で検索し、選択(またはEnter)で /stocks/[code] または
+// /investors/[filer] に遷移する。
 // レスポンスを都度撃たないよう、入力停止から300ms待ってからAPIを叩く。
 const DEBOUNCE_MS = 300;
+
+// 検索結果の1件。銘柄と投資家(EDINET提出者)を同じドロップダウンにグループ表示する。
+export type SearchOption =
+  | { type: "stock"; stockCode: string; stockName: string }
+  | { type: "investor"; filerName: string };
 
 // パネル(Autocomplete/TextField/CircularProgress)は虫眼鏡をタップするまで表示されない。
 // MUIの中でも重い部類なので、初期JSから外して開いたときに読み込む。
@@ -23,7 +29,7 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<StockSearchResult[]>([]);
+  const [results, setResults] = useState<SearchOption[]>([]);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -59,18 +65,35 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
     const timer = setTimeout(() => {
       setLoading(true);
       fetch(`/api/stocks/search?q=${encodeURIComponent(trimmedQuery)}`)
-        .then((res) => (res.ok ? res.json() : { results: [] }))
-        .then((data) => setResults(data.results ?? []))
+        .then((res) => (res.ok ? res.json() : { results: [], investors: [] }))
+        .then((data) => {
+          const stocks: SearchOption[] = ((data.results ?? []) as StockSearchResult[]).map(
+            (r) => ({ type: "stock", ...r })
+          );
+          // 英語版には投資家ページ(/investors)が無いため、投資家の結果は日本語版のみ表示する。
+          const investors: SearchOption[] =
+            locale === "en"
+              ? []
+              : ((data.investors ?? []) as { filerName: string }[]).map((i) => ({
+                  type: "investor",
+                  filerName: i.filerName,
+                }));
+          setResults([...stocks, ...investors]);
+        })
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [trimmedQuery]);
+  }, [trimmedQuery, locale]);
 
-  const goToStock = (stockCode: string) => {
+  const goTo = (option: SearchOption) => {
     close();
-    router.push(locale === "en" ? `/en/stocks/${stockCode}` : `/stocks/${stockCode}`);
+    if (option.type === "stock") {
+      router.push(locale === "en" ? `/en/stocks/${option.stockCode}` : `/stocks/${option.stockCode}`);
+    } else {
+      router.push(`/investors/${encodeURIComponent(option.filerName)}`);
+    }
   };
 
   return (
@@ -101,7 +124,7 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
             loading={loading}
             locale={locale}
             onQueryChange={setQuery}
-            onSelect={goToStock}
+            onSelect={goTo}
           />
         </Box>
       )}

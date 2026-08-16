@@ -4,8 +4,8 @@ import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import { getFilerWinRates } from "@/lib/investors";
-import { formatDate } from "@/lib/format";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
+import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 
@@ -20,11 +20,6 @@ const description =
   "EDINET大量保有報告書で買い増しを開示した投資家について、その回の推定取得金額をもとに" +
   "63営業日(3ヶ月)後までの株価騰落から損益を推定し、投資家別に合算したランキング。" +
   "過去の実績が良い投資家を参考にできます。";
-
-function formatOku(value: number): string {
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}億円`;
-}
 
 export const metadata: Metadata = {
   title,
@@ -105,9 +100,15 @@ export default async function RankingPage({ searchParams }: Props) {
         ※自己申告・訂正報告書・保有比率51%超・売却方向の開示、発行済株式数が取得できない開示は除外し、
         開示からまだ{holdDays}営業日経っていないものは結果未確定として集計から外しています。
       </p>
-      <p className="mb-6 text-xs text-foreground/40">
+      <p className="mb-4 text-xs text-foreground/40">
         ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
       </p>
+      <nav aria-label="他のランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
+        <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
+        <Link href="/ranking/filings" className="text-brand-blue hover:underline">報告書件数ランキング</Link>
+        <Link href="/ranking/activist" className="text-brand-blue hover:underline">アクティビストが動いた銘柄</Link>
+      </nav>
       {filers.length > 0 && (
         <FilterButtonNav
           ariaLabel="カテゴリで絞り込む"
@@ -174,7 +175,7 @@ export default async function RankingPage({ searchParams }: Props) {
                   className="font-medium text-brand-blue hover:underline"
                   style={{ overflowWrap: "anywhere" }}
                 >
-                  {f.filerName}
+                  {displayFilerName(f.filerName)}
                 </Link>
                 <Box sx={{ mt: 0.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
                   <DealTypeBadge dealType={f.category} />
@@ -192,7 +193,7 @@ export default async function RankingPage({ searchParams }: Props) {
                   color: f.totalReturnOku >= 0 ? "success.main" : "error.main",
                 }}
               >
-                {formatOku(f.totalReturnOku)}
+                {formatSignedOku(f.totalReturnOku)}
               </Box>
             </Box>
           ))}

@@ -23,7 +23,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
-from video import build_script, render  # noqa: E402
+from video import background, build_script, render, tts  # noqa: E402
 from video import tiktok_client, youtube_client  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.expanduser("~/stock-alert"), "video", "out")
@@ -43,7 +43,24 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_path = os.path.join(OUT_DIR, f"short_{props.get('stockCode', 'x')}_{stamp}.mp4")
 
-    if not render.render(props, video_path):
+    # 音声・背景動画などレンダリングに添える素材の置き場（Remotionのpublic/へ一時コピーされる）
+    assets_dir = os.path.join(OUT_DIR, f"assets_{stamp}")
+
+    # ナレーション合成。失敗したら全編無音のまま続行する（音声のために投稿を止めない）。
+    has_audio = tts.narrate_sections(props["scenes"], assets_dir)
+    if has_audio:
+        print(f"[publish_video] ナレーション {len(props['scenes'])}本を合成しました")
+    else:
+        print("[publish_video] ナレーション無し（無音）で続行します")
+
+    # 背景の自然映像（Pexels）。取得できなければグラデーション背景で続行する。
+    bg = background.fetch(assets_dir)
+    if bg is not None:
+        props["backgroundVideo"] = bg["filename"]
+        props["backgroundVideoDurationSec"] = bg["durationSec"]
+
+    if not render.render(props, video_path,
+                         assets_dir=assets_dir if (has_audio or bg) else None):
         print("[publish_video] レンダリングに失敗したため投稿を中止します")
         return 1
 

@@ -61,7 +61,7 @@ export default function FeaturedArticleCard({
               fill
               priority
               className="featured-media"
-              style={{ objectFit: "cover", opacity: 0.7, transition: "transform 0.3s" }}
+              style={{ objectFit: "cover", opacity: 0.5, transition: "transform 0.3s" }}
               sizes="100vw"
             />
             <Box
@@ -70,7 +70,10 @@ export default function FeaturedArticleCard({
                 inset: 0,
                 // primary.main(#16213a)に合わせた固定値。sxでのtheme callbackはRSC境界を越えて
                 // 関数を渡せないため使えない（Server ComponentからClient Componentへのprops）。
-                background: "linear-gradient(to top, #16213a, rgba(22, 33, 58, 0.6) 60%, transparent)",
+                // アイキャッチには白太字の事実テキストが焼き込まれているため、カード側の
+                // タイトル・抜粋が重なる下半分は不透明に近いスクリムで覆い、二重表示を防ぐ。
+                background:
+                  "linear-gradient(to top, #16213a 30%, rgba(22, 33, 58, 0.88) 62%, rgba(22, 33, 58, 0.35))",
               }}
             />
           </Box>
@@ -80,8 +83,8 @@ export default function FeaturedArticleCard({
             <Typography variant="overline" sx={{ color: "brand.goldBright" }}>
               {t.featuredRankLabels[rank] ?? t.featuredFallback}
             </Typography>
-            <DealTypeBadge dealType={article.dealType} locale={locale} />
-            <DealDirectionBadge tags={article.tags} locale={locale} />
+            <DealTypeBadge dealType={article.dealType} locale={locale} onDark />
+            <DealDirectionBadge tags={article.tags} locale={locale} onDark />
             <AttentionScoreBadge score={article.attentionScore} locale={locale} />
             <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.6)" }}>
               {formatDate(article.dealDate, locale)}
