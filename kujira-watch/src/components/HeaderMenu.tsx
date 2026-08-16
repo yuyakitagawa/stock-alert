@@ -10,7 +10,7 @@ import type { MenuLink } from "./HeaderMenuDrawer";
 import { DEAL_TYPE_EN, EN_SLUG_TO_DEAL_TYPE } from "@/lib/dealTypeInfo";
 import type { DealType } from "@/types/article";
 import { UI, type Locale } from "@/lib/i18n";
-import { X_PROFILE_URL, X_SCREEN_NAME } from "@/lib/site";
+import { X_PROFILE_URL, X_SCREEN_NAME, YOUTUBE_CHANNEL_URL } from "@/lib/site";
 
 // ドロワー本体(Drawer/List/Divider/…)は開くまで要らない。MUI DrawerはModal/Portal/
 // Backdrop/Slide一式を引き連れており、閉じているのが既定なのに全ページの初期JSへ
@@ -84,6 +84,7 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
           { href: "/faq", label: "よくある質問" },
           { href: "/feed.xml", label: "RSSフィード" },
           { href: X_PROFILE_URL, label: `公式X（@${X_SCREEN_NAME}）`, external: true },
+          { href: YOUTUBE_CHANNEL_URL, label: "公式YouTube（1分ショート解説）", external: true },
         ];
 
   const currentPath = pathname ?? (locale === "en" ? "/en" : "/");

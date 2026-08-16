@@ -23,3 +23,7 @@ export const X_SCREEN_NAME = "kujira_watch";
 export const X_PROFILE_URL = `https://x.com/${X_SCREEN_NAME}`;
 // フォローintent。プロフィールへの素のリンクよりワンタップ少なくフォローできる。
 export const X_FOLLOW_URL = `https://x.com/intent/follow?screen_name=${X_SCREEN_NAME}`;
+
+// 公式YouTubeチャンネル（1分ショート動画。video/publish_video.pyが平日投稿）。
+// チャンネル側からサイトへはリンク済みだが、サイト側からの導線もここで持つ。
+export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@dosankoure";
