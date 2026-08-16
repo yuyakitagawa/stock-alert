@@ -20,7 +20,7 @@ Usage:
 import sys, os, csv, json, argparse, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.edinet import scan_large_holdings, verify_api, _api_key
+from lib.edinet import scan_large_holdings, verify_api, _api_key, disclosure_kind_label
 from lib.db import get_edinet_large_holdings_recent
 
 
@@ -173,9 +173,9 @@ def main():
         else:
             print(f"EDINET 大量保有報告書をスキャン中（直近{args.days}日）...")
             recs = scan_large_holdings(days_back=args.days, persist=True)
-        n350 = sum(1 for r in recs if r["doc_type_code"] == "350")
-        n360 = sum(1 for r in recs if r["doc_type_code"] == "360")
-        print(f"  取得: 大量保有報告書{n350}件 / 変更報告書{n360}件（計{len(recs)}件）")
+        kinds = [disclosure_kind_label(r.get("doc_description"), r["doc_type_code"]) for r in recs]
+        print(f"  取得: 新規{kinds.count('新規')}件 / 変更{kinds.count('変更')}件"
+              f" / 訂正{kinds.count('訂正')}件（計{len(recs)}件）")
 
     cands = load_candidate_codes(args.candidates)
     name_map = load_name_map()
@@ -212,7 +212,7 @@ def main():
             "code": issuer,
             "name": issuer_name,
             "filer_name": filer,
-            "doc_type": "大量保有" if h.get("doc_type_code") == "350" else "変更",
+            "doc_type": disclosure_kind_label(desc, h.get("doc_type_code", "")),
             "disc_date": h.get("disc_date", ""),
             "holding_ratio": ratio,
             "pbr": cand.get("pbr", ""),

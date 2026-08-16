@@ -42,6 +42,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib.db import get_edinet_large_holdings_recent
+from lib.edinet import disclosure_doc_label, disclosure_kind_label
 from lib.utils import get_price_at_date
 from lib.attention_score import compute_attention_score
 from tools.scan_large_holdings import is_sell_disclosure
@@ -55,8 +56,6 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-
-DOC_TYPE_LABELS = {"350": "大量保有報告書", "360": "変更報告書（保有比率の変更）"}
 
 # EDINET大量保有報告書の提出者分類。edinet_filer_classification（tools/backtest系の
 # 投資家分類マスター）と1対1で対応する13分類。自社株買い/ETFフローはこのデータ源では
@@ -974,7 +973,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "stock_name": name,
             "stock_code": code,
             "filer_name": filer_name,
-            "doc_type_label": DOC_TYPE_LABELS.get(h.get("doc_type_code", ""), "大量保有関連報告書"),
+            "doc_type_label": disclosure_doc_label(h.get("doc_description"), h.get("doc_type_code", "")),
             "holding_ratio": h["holding_ratio"],
             "disc_date": disc_date,
             "deal_amount_oku": deal_amount,
@@ -1031,7 +1030,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
 
         if is_sell:
             badge_label = "📉 売却"
-        elif h.get("doc_type_code") == "350":
+        elif disclosure_kind_label(h.get("doc_description"), h.get("doc_type_code", "")) == "新規":
             badge_label = "📈 新規取得"
         else:
             badge_label = "📈 買い増し"
