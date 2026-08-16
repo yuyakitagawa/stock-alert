@@ -304,8 +304,8 @@ def test_assign_backgrounds_avoids_consecutive_repeat():
     """プールが2本以上あれば、隣り合うシーンに同じ背景を割り当てない。"""
     scenes = [{"kind": k} for k in ("hook", "company", "deal", "filer", "change", "outlook", "chart", "cta")]
     pool = [
-        {"filename": "bg_0.mp4", "durationSec": 10.0},
-        {"filename": "bg_1.mp4", "durationSec": 12.0},
+        {"filename": "bg_0.mp4", "durationSec": 10.0, "people": False},
+        {"filename": "bg_1.mp4", "durationSec": 12.0, "people": False},
     ]
     bg_mod.assign_backgrounds(scenes, pool)
     names = [s["backgroundVideo"] for s in scenes]
@@ -313,10 +313,31 @@ def test_assign_backgrounds_avoids_consecutive_repeat():
     assert all(s["backgroundVideoDurationSec"] > 0 for s in scenes)
 
 
+def test_assign_backgrounds_first_scene_prefers_people():
+    """先頭シーン（hook）にはプール内の人物素材を優先して割り当てる。"""
+    scenes = [{"kind": k} for k in ("hook", "company", "deal")]
+    pool = [
+        {"filename": "bg_0.mp4", "durationSec": 10.0, "people": False},
+        {"filename": "bg_1.mp4", "durationSec": 12.0, "people": False},
+        {"filename": "bg_2.mp4", "durationSec": 9.0, "people": True},
+    ]
+    for _ in range(10):  # ランダム性があるため繰り返して常に人物になることを確認
+        bg_mod.assign_backgrounds(scenes, pool)
+        assert scenes[0]["backgroundVideo"] == "bg_2.mp4"
+
+
+def test_assign_backgrounds_first_scene_falls_back_without_people():
+    """プールに人物素材が無ければ先頭シーンも通常の割当になる。"""
+    scenes = [{"kind": "hook"}]
+    pool = [{"filename": "bg_0.mp4", "durationSec": 10.0, "people": False}]
+    bg_mod.assign_backgrounds(scenes, pool)
+    assert scenes[0]["backgroundVideo"] == "bg_0.mp4"
+
+
 def test_assign_backgrounds_single_video_reused():
     """プールが1本しか無ければ全シーンで使い回す。"""
     scenes = [{"kind": "hook"}, {"kind": "cta"}]
-    bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0}])
+    bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0, "people": False}])
     assert [s["backgroundVideo"] for s in scenes] == ["bg_0.mp4", "bg_0.mp4"]
 
 

@@ -34,10 +34,11 @@ export const Background: React.FC<{
             style={{width: '100%', height: '100%', objectFit: 'cover'}}
           />
         </Loop>
-        {/* 文字の可読性を確保する暗幕。ブランドの紺に寄せたトーンで上下を締める */}
+        {/* 文字の可読性を確保する暗幕。ブランドの紺に寄せたトーンで上下を締める。
+            明るい実写素材（人物・空など）でも金色の文字が沈まない濃さにしている */}
         <AbsoluteFill
           style={{
-            background: `linear-gradient(180deg, rgba(13,21,38,0.78) 0%, rgba(13,21,38,0.55) 40%, rgba(13,21,38,0.62) 70%, rgba(13,21,38,0.85) 100%)`,
+            background: `linear-gradient(180deg, rgba(13,21,38,0.84) 0%, rgba(13,21,38,0.68) 40%, rgba(13,21,38,0.72) 70%, rgba(13,21,38,0.88) 100%)`,
           }}
         />
       </AbsoluteFill>
