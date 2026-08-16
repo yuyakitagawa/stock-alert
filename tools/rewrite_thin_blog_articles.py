@@ -41,8 +41,9 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from tools.reclassify_blog_articles import fetch_all_articles
+from lib.edinet import disclosure_doc_label
 from web.publish_blog_articles import (
-    MICROCMS_DOMAIN, MICROCMS_KEY, DOC_TYPE_LABELS,
+    MICROCMS_DOMAIN, MICROCMS_KEY,
     classify_filer, get_company_description, get_pit_ranking_snapshot, dp_level_label,
     ratio_change_pct, generate_article_body, update_article, MicroCMSPermissionError,
 )
@@ -66,7 +67,7 @@ def visible_text_len(body_html: str) -> int:
 def find_filer_names(code: str, disc_date: str) -> set:
     rows = sb.select(
         "edinet_large_holdings",
-        f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name,doc_type_code,holding_ratio",
+        f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name,doc_type_code,doc_description,holding_ratio",
     )
     return rows
 
@@ -142,7 +143,7 @@ def main():
             "stock_name": name,
             "stock_code": code,
             "filer_name": filer_name,
-            "doc_type_label": DOC_TYPE_LABELS.get(row.get("doc_type_code", ""), "大量保有関連報告書"),
+            "doc_type_label": disclosure_doc_label(row.get("doc_description"), row.get("doc_type_code", "")),
             "holding_ratio": row["holding_ratio"],
             "disc_date": disc_date,
             "deal_amount_oku": a.get("dealAmount"),

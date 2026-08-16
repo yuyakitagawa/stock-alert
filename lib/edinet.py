@@ -224,6 +224,29 @@ def fetch_holding_ratio(doc_id: str) -> "float | None":
     return fetch_xbrl_details(doc_id).get("holding_ratio")
 
 
+# 報告書種別はdoc_type_codeだけでは判別できない（350は新規・変更の両方を含み、360は訂正）。
+# doc_descriptionの接頭辞で判定し、descriptionが無い行のみdoc_type_codeにフォールバックする。
+# kujira-watch/src/lib/disclosures.ts の disclosureKindLabel() と同一ロジック。
+_DOC_LABEL_BY_KIND = {"新規": "大量保有報告書", "変更": "変更報告書", "訂正": "訂正報告書"}
+
+
+def disclosure_kind_label(doc_description: "str | None", doc_type_code: str) -> str:
+    """報告書種別を「新規」「変更」「訂正」のいずれかで返す。"""
+    desc = doc_description or ""
+    if desc.startswith("訂正"):
+        return "訂正"
+    if desc.startswith("変更報告書"):
+        return "変更"
+    if desc.startswith("大量保有報告書"):
+        return "新規"
+    return "訂正" if str(doc_type_code) == "360" else "新規"
+
+
+def disclosure_doc_label(doc_description: "str | None", doc_type_code: str) -> str:
+    """報告書種別の正式名称（大量保有報告書/変更報告書/訂正報告書）を返す。"""
+    return _DOC_LABEL_BY_KIND[disclosure_kind_label(doc_description, doc_type_code)]
+
+
 def extract_large_holdings(results: list, disc_date: str) -> list:
     """documents.json の results から大量保有報告書（350/360）のみ抽出して整形。
 
