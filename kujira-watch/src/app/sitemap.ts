@@ -4,6 +4,7 @@ import { getAllFilers } from "@/lib/investors";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPES } from "@/types/article";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
+import { FAQ_CATEGORIES } from "@/lib/faqData";
 
 // microCMSの一時的な障害時にビルド自体が失敗しないよう、ビルド時の事前生成を行わず
 // リクエスト時に生成する（データ取得自体は60秒のfetchキャッシュが効く）。
@@ -95,6 +96,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/en`, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
     { url: `${SITE_URL}/weekly`, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/disclosures`, changeFrequency: "daily", priority: 0.9 },
+    { url: `${SITE_URL}/activists`, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/monthly`, changeFrequency: "daily", priority: 0.7 },
     { url: `${SITE_URL}/trending`, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/about`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
@@ -102,6 +104,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/privacy`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
     { url: `${SITE_URL}/en/privacy`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
     { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.6 },
+    // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
+    // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
+    ...FAQ_CATEGORIES.map((category) => ({
+      url: `${SITE_URL}/faq/${category.id}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
+    })),
     { url: `${SITE_URL}/investors`, changeFrequency: "daily", priority: 0.6 },
     { url: `${SITE_URL}/ranking`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/ranking/buys`, changeFrequency: "daily", priority: 0.7 },

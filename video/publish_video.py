@@ -53,14 +53,13 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     else:
         print("[publish_video] ナレーション無し（無音）で続行します")
 
-    # 背景の自然映像（Pexels）。取得できなければグラデーション背景で続行する。
-    bg = background.fetch(assets_dir)
-    if bg is not None:
-        props["backgroundVideo"] = bg["filename"]
-        props["backgroundVideoDurationSec"] = bg["durationSec"]
+    # 背景映像（Pexels、自然＋人物のプールからシーンごとにランダム割当）。
+    # 取得できなければグラデーション背景で続行する。
+    pool = background.fetch_pool(assets_dir)
+    background.assign_backgrounds(props["scenes"], pool)
 
     if not render.render(props, video_path,
-                         assets_dir=assets_dir if (has_audio or bg) else None):
+                         assets_dir=assets_dir if (has_audio or pool) else None):
         print("[publish_video] レンダリングに失敗したため投稿を中止します")
         return 1
 

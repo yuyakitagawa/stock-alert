@@ -295,9 +295,56 @@ def test_pick_video_file_returns_none_when_no_portrait():
     assert bg_mod.pick_video_file(videos) is None
 
 
-def test_background_fetch_skips_without_api_key(tmp_path):
+def test_background_fetch_pool_skips_without_api_key(tmp_path):
     with mock.patch.dict(os.environ, {}, clear=True):
-        assert bg_mod.fetch(str(tmp_path)) is None
+        assert bg_mod.fetch_pool(str(tmp_path)) == []
+
+
+def test_assign_backgrounds_avoids_consecutive_repeat():
+    """プールが2本以上あれば、隣り合うシーンに同じ背景を割り当てない。"""
+    scenes = [{"kind": k} for k in ("hook", "company", "deal", "filer", "change", "outlook", "chart", "cta")]
+    pool = [
+        {"filename": "bg_0.mp4", "durationSec": 10.0, "people": False},
+        {"filename": "bg_1.mp4", "durationSec": 12.0, "people": False},
+    ]
+    bg_mod.assign_backgrounds(scenes, pool)
+    names = [s["backgroundVideo"] for s in scenes]
+    assert all(names[i] != names[i + 1] for i in range(len(names) - 1))
+    assert all(s["backgroundVideoDurationSec"] > 0 for s in scenes)
+
+
+def test_assign_backgrounds_first_scene_prefers_people():
+    """先頭シーン（hook）にはプール内の人物素材を優先して割り当てる。"""
+    scenes = [{"kind": k} for k in ("hook", "company", "deal")]
+    pool = [
+        {"filename": "bg_0.mp4", "durationSec": 10.0, "people": False},
+        {"filename": "bg_1.mp4", "durationSec": 12.0, "people": False},
+        {"filename": "bg_2.mp4", "durationSec": 9.0, "people": True},
+    ]
+    for _ in range(10):  # ランダム性があるため繰り返して常に人物になることを確認
+        bg_mod.assign_backgrounds(scenes, pool)
+        assert scenes[0]["backgroundVideo"] == "bg_2.mp4"
+
+
+def test_assign_backgrounds_first_scene_falls_back_without_people():
+    """プールに人物素材が無ければ先頭シーンも通常の割当になる。"""
+    scenes = [{"kind": "hook"}]
+    pool = [{"filename": "bg_0.mp4", "durationSec": 10.0, "people": False}]
+    bg_mod.assign_backgrounds(scenes, pool)
+    assert scenes[0]["backgroundVideo"] == "bg_0.mp4"
+
+
+def test_assign_backgrounds_single_video_reused():
+    """プールが1本しか無ければ全シーンで使い回す。"""
+    scenes = [{"kind": "hook"}, {"kind": "cta"}]
+    bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0, "people": False}])
+    assert [s["backgroundVideo"] for s in scenes] == ["bg_0.mp4", "bg_0.mp4"]
+
+
+def test_assign_backgrounds_noop_with_empty_pool():
+    scenes = [{"kind": "hook"}]
+    bg_mod.assign_backgrounds(scenes, [])
+    assert "backgroundVideo" not in scenes[0]
 
 
 # ---------------- YouTube ----------------
@@ -308,6 +355,13 @@ def test_youtube_title_includes_stock_and_amount():
     assert "40.1億円" in title
     assert "売却" in title
     assert "#Shorts" in title
+
+
+def test_youtube_title_falls_back_when_filer_name_missing():
+    """filerName未設定の記事で「【銘柄】が…取得」という主語のねじれを防ぐ。"""
+    title = yt.build_title({**PROPS, "filerName": ""})
+    assert "大口投資家が" in title
+    assert "】が" not in title
 
 
 def test_youtube_title_truncated_but_keeps_shorts_tag():

@@ -41,6 +41,7 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
           { href: "/weekly", label: "今週のまとめ" },
           { href: "/trending", label: "急増ランキング" },
           { href: "/ranking", label: "投資家勝率ランキング" },
+          { href: "/activists", label: "アクティビスト保有" },
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },
           // 月別アーカイブは回遊の起点というより過去分の入口なので一番右に置く。
@@ -75,7 +76,23 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
               href={homeHref}
               sx={{ display: "flex", alignItems: "center", gap: 1.25, textDecoration: "none" }}
             >
-              <Box component="span" aria-hidden sx={{ fontSize: "1.25rem", lineHeight: 1 }}>
+              {/* ファビコン(icon.tsx)と同じ「紺丸＋クジラ」のロゴマークに揃える。 */}
+              <Box
+                component="span"
+                aria-hidden
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 32,
+                  height: 32,
+                  flexShrink: 0,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  fontSize: "1.25rem",
+                  lineHeight: 1,
+                }}
+              >
                 🐋
               </Box>
               <Box component="span" sx={{ lineHeight: 1.2 }}>

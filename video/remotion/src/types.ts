@@ -21,6 +21,10 @@ export type Scene = {
   durationSec?: number;
   /** kind="chart" のみ: 直近3ヶ月の終値（古い順） */
   closes?: number[];
+  /** このシーンの背景動画（public/配下）。シーンごとに切り替えてカット感を出す */
+  backgroundVideo?: string;
+  /** 背景動画の長さ（秒）。ループ再生の区切りに使う */
+  backgroundVideoDurationSec?: number;
 };
 
 export type ShortProps = {

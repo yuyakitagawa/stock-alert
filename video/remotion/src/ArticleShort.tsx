@@ -23,12 +23,20 @@ export const ArticleShort: React.FC<ShortProps> = (props) => {
 
   return (
     <AbsoluteFill>
+      {/* 全編共通のフォールバック背景（シーン別の背景動画が無い区間で見える） */}
       <Background
         videoFile={props.backgroundVideo}
         videoDurationSec={props.backgroundVideoDurationSec}
       />
       {sequences.map(({scene, from, durationInFrames, key}, i) => (
         <Sequence key={key} from={from} durationInFrames={durationInFrames}>
+          {/* シーンごとに背景を切り替え、セリフの区切りでカットが変わる感覚を作る */}
+          {scene.backgroundVideo ? (
+            <Background
+              videoFile={scene.backgroundVideo}
+              videoDurationSec={scene.backgroundVideoDurationSec}
+            />
+          ) : null}
           {scene.audio ? <Audio src={staticFile(scene.audio)} /> : null}
           <SceneView scene={scene} props={props} sceneIndex={i} />
         </Sequence>

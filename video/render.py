@@ -46,18 +46,26 @@ def _stage_assets(props: dict, assets_dir: "str | None") -> list:
             print(f"  ⚠ 音声ファイルが見つかりません: {src}（このシーンは無音になります）")
             scene.pop("audio", None)
 
-    bg = props.get("backgroundVideo")
-    if bg:
+    # 背景動画: 全編共通（トップレベル）とシーン別の両方に対応する
+    bg_names = {props.get("backgroundVideo")} | {
+        s.get("backgroundVideo") for s in props.get("scenes", [])
+    }
+    for bg in sorted(n for n in bg_names if n):
         src = os.path.join(assets_dir, bg)
         if os.path.exists(src):
             dst = os.path.join(PUBLIC_DIR, bg)
             shutil.copyfile(src, dst)
             staged.append(dst)
-        else:
-            # 背景が無ければグラデーション背景にフォールバック
-            print(f"  ⚠ 背景動画が見つかりません: {src}（グラデーション背景を使います）")
+            continue
+        # 見つからない背景はグラデーションにフォールバック
+        print(f"  ⚠ 背景動画が見つかりません: {src}（グラデーション背景を使います）")
+        if props.get("backgroundVideo") == bg:
             props.pop("backgroundVideo", None)
             props.pop("backgroundVideoDurationSec", None)
+        for s in props.get("scenes", []):
+            if s.get("backgroundVideo") == bg:
+                s.pop("backgroundVideo", None)
+                s.pop("backgroundVideoDurationSec", None)
     return staged
 
 

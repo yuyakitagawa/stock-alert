@@ -194,6 +194,11 @@ export default async function RankingSlugPage({ params }: Props) {
         <Link href="/ranking" className="text-brand-blue hover:underline">
           投資家別 3ヶ月勝率ランキング
         </Link>
+        {slug === "activist" && (
+          <Link href="/activists" className="text-brand-blue hover:underline">
+            アクティビストの現在の保有銘柄一覧
+          </Link>
+        )}
       </nav>
       {rows.length === 0 ? (
         <p className="text-foreground/50">直近{RANKING_DAYS}日に該当する開示がありません。</p>

@@ -56,7 +56,10 @@ def _access_token() -> "str | None":
 def build_title(props: dict) -> str:
     direction = "売却" if props.get("direction") == "sell" else "取得"
     suffix = " #Shorts"
-    title = f"【{props.get('stockName', '')}】{props.get('filerName', '')}が推定{props.get('dealAmountOku')}億円を{direction}{suffix}"
+    # filerNameは古い記事だと未設定。空のまま連結すると「【銘柄】が…取得」という
+    # 主語のねじれた文になるため（実際に初回投稿で発生）、汎用の主語に置き換える。
+    filer = props.get("filerName") or "大口投資家"
+    title = f"【{props.get('stockName', '')}】{filer}が推定{props.get('dealAmountOku')}億円を{direction}{suffix}"
     if len(title) > TITLE_MAX_CHARS:
         # 切り詰めても Shorts 判定用のタグは必ず残す（末尾の「…」ぶんも差し引く）
         head_limit = TITLE_MAX_CHARS - len(suffix) - 1
