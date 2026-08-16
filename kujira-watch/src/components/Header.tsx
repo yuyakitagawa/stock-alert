@@ -76,7 +76,23 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
               href={homeHref}
               sx={{ display: "flex", alignItems: "center", gap: 1.25, textDecoration: "none" }}
             >
-              <Box component="span" aria-hidden sx={{ fontSize: "1.25rem", lineHeight: 1 }}>
+              {/* ファビコン(icon.tsx)と同じ「紺丸＋クジラ」のロゴマークに揃える。 */}
+              <Box
+                component="span"
+                aria-hidden
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 32,
+                  height: 32,
+                  flexShrink: 0,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  fontSize: "1.25rem",
+                  lineHeight: 1,
+                }}
+              >
                 🐋
               </Box>
               <Box component="span" sx={{ lineHeight: 1.2 }}>
