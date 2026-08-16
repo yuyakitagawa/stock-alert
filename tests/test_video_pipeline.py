@@ -295,9 +295,35 @@ def test_pick_video_file_returns_none_when_no_portrait():
     assert bg_mod.pick_video_file(videos) is None
 
 
-def test_background_fetch_skips_without_api_key(tmp_path):
+def test_background_fetch_pool_skips_without_api_key(tmp_path):
     with mock.patch.dict(os.environ, {}, clear=True):
-        assert bg_mod.fetch(str(tmp_path)) is None
+        assert bg_mod.fetch_pool(str(tmp_path)) == []
+
+
+def test_assign_backgrounds_avoids_consecutive_repeat():
+    """プールが2本以上あれば、隣り合うシーンに同じ背景を割り当てない。"""
+    scenes = [{"kind": k} for k in ("hook", "company", "deal", "filer", "change", "outlook", "chart", "cta")]
+    pool = [
+        {"filename": "bg_0.mp4", "durationSec": 10.0},
+        {"filename": "bg_1.mp4", "durationSec": 12.0},
+    ]
+    bg_mod.assign_backgrounds(scenes, pool)
+    names = [s["backgroundVideo"] for s in scenes]
+    assert all(names[i] != names[i + 1] for i in range(len(names) - 1))
+    assert all(s["backgroundVideoDurationSec"] > 0 for s in scenes)
+
+
+def test_assign_backgrounds_single_video_reused():
+    """プールが1本しか無ければ全シーンで使い回す。"""
+    scenes = [{"kind": "hook"}, {"kind": "cta"}]
+    bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0}])
+    assert [s["backgroundVideo"] for s in scenes] == ["bg_0.mp4", "bg_0.mp4"]
+
+
+def test_assign_backgrounds_noop_with_empty_pool():
+    scenes = [{"kind": "hook"}]
+    bg_mod.assign_backgrounds(scenes, [])
+    assert "backgroundVideo" not in scenes[0]
 
 
 # ---------------- YouTube ----------------
