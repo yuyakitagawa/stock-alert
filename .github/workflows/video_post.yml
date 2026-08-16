@@ -2,9 +2,10 @@ name: Short Video Post
 
 on:
   schedule:
-    # 平日 21:30 JST（UTC 12:30）に1日1回。edinet_blog.yml（毎時 9:00-21:00 JST）が
-    # その日の記事を出し切ったあとに走らせ、当日の一番大きい開示を動画にする。
-    - cron: '30 12 * * 1-5'
+    # 平日 19:30 JST（UTC 10:30）に1日1回。EDINETの提出は18時以降ゼロ（実データ確認済み）で
+    # edinet_blog.yml（毎時 9:00-19:00 JST）が19:00の便で当日の記事とX日次サマリーを出し切った
+    # あとに走らせ、当日の一番大きい開示を動画にする。YouTubeの夜プライム帯（19〜22時）の頭に乗せる。
+    - cron: '30 10 * * 1-5'
   workflow_dispatch:
     inputs:
       render_only:

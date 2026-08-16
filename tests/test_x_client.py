@@ -251,7 +251,7 @@ def test_build_daily_summary_text_uses_total_count_when_truncated():
 
 
 def test_post_daily_summary_only_fires_at_final_run_hour():
-    """21時JST(12時UTC)の最終便以外の時間帯では投稿しない（1日1回の重複ガード）。"""
+    """19時JST(10時UTC)の最終便以外の時間帯では投稿しない（1日1回の重複ガード）。"""
     from datetime import datetime, timezone
 
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
@@ -267,8 +267,8 @@ def test_post_daily_summary_posts_at_final_run_hour():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=(articles, 1)), \
          mock.patch.object(m, "post_tweet", return_value=True) as tweet_mock:
-        # 12時UTC＝21時JSTなのでJST日付は当日
-        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc))
+        # 10時UTC＝19時JSTなのでJST日付は当日
+        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 10, 30, tzinfo=timezone.utc))
     assert ok is True
     posted_text = tweet_mock.call_args.args[0]
     assert "8/15" in posted_text

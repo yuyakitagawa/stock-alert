@@ -107,9 +107,10 @@ def post_tweet(text: str, media_id: "str | None" = None) -> bool:
         return False
 
 
-# 日次サマリー「本日のクジラ」を投稿するUTC時（12時UTC=21時JST、edinet_blog.ymlの最終便）。
+# 日次サマリー「本日のクジラ」を投稿するUTC時（10時UTC=19時JST、edinet_blog.ymlの最終便）。
+# EDINETの提出は18時以降ゼロ（実データ確認済み）のため19時で当日分は確定している。
 # 毎時バッチのうちこの1回だけ投稿することで、外部ストレージ無しで1日1回の重複ガードにする。
-DAILY_SUMMARY_UTC_HOUR = 12
+DAILY_SUMMARY_UTC_HOUR = 10
 
 
 def _summary_line(article: dict, sign: str) -> str:
@@ -180,7 +181,7 @@ def fetch_articles_by_deal_date(date_str: str) -> "tuple[list, int]":
 
 
 def post_daily_summary(now_utc=None, force: bool = False) -> bool:
-    """「本日のクジラ」日次サマリーを1日1回(21時JST=12時UTCの最終便のみ)Xへ投稿する。
+    """「本日のクジラ」日次サマリーを1日1回(19時JST=10時UTCの最終便のみ)Xへ投稿する。
     forceで時刻ガードを無視できる（手動実行用）。該当時刻以外・0件・認証未設定はFalse。"""
     from datetime import datetime, timedelta, timezone
 

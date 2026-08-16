@@ -2,10 +2,11 @@ name: EDINET Blog Hourly
 
 on:
   schedule:
-    # 平日 9:00-21:00 JST（UTC 0:00-12:00）に毎時実行。株価更新パイプライン(daily_alert.yml)とは
-    # 完全に独立。EDINETの新規開示はこの時間帯にしか出ないため、深夜・早朝は回さない
-    # （回してもコストはほぼゼロ増だが、EDINET APIへの空振りアクセスを避けるため）。
-    - cron: '0 0-12 * * 1-5'
+    # 平日 9:00-19:00 JST（UTC 0:00-10:00）に毎時実行。株価更新パイプライン(daily_alert.yml)とは
+    # 完全に独立。EDINETの提出は全期間の実データで18時以降ゼロ（17時台も17:15の受付終了まで、
+    # edinet_large_holdings.submit_dateで確認。2026-08-17）のため、18時の便で当日分が出揃う。
+    # 19時の便は取りこぼしの保険＋X日次サマリー（x_client.DAILY_SUMMARY_UTC_HOUR=10）の投稿便。
+    - cron: '0 0-10 * * 1-5'
   workflow_dispatch:       # 手動実行ボタン
 
 permissions:

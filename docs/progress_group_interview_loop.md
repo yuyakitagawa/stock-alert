@@ -106,4 +106,13 @@ X=数値取得不可（ログイン必須+公開API 429。投稿内容・頻度�
 - [x] 3. YouTube説明文のCTA強化: 登録リンク（`?sub_confirmation=1`）とサイトTOPリンク（UTM付き）を追加
 - [x] テスト: test_x_client.py 29件・test_video_pipeline.py 48件 全通過
 - オーナー側も4（YouTubeハンドル変更）・5（Xプロフィール整備）完了。新ハンドル **@kujira-watch** を確認し、`site.ts` と `youtube_client.py` の定数を更新
-- [x] commit・push・デプロイ確認（commit fcfdcc84、プッシュ90秒後に本番記事ページの新ハンドルリンクを確認。Python側は次回の各ワークフロー実行＝月曜9時台のX投稿・21:30の動画投稿が本番初運用）
+- [x] commit・push・デプロイ確認（commit fcfdcc84、プッシュ90秒後に本番記事ページの新ハンドルリンクを確認）
+
+#### SNS投稿時刻の前倒し（2026-08-17、オーナー指示「遅くない？→やって。Xも」）
+実データ根拠: `edinet_large_holdings.submit_date` 全期間で**18時以降の提出はゼロ**（17時台も17:15の受付終了まで）。
+- [x] edinet_blog.yml: 毎時実行を 9:00-21:00 → **9:00-19:00 JST** に短縮（19-21時の空振り2便を削減）
+- [x] X日次サマリー「本日のクジラ」: 21:00 → **19:00 JST**（`DAILY_SUMMARY_UTC_HOUR` 12→10）
+- [x] video_post.yml: 21:30 → **19:30 JST**（サマリーの30分後、YouTube夜プライム帯の頭）
+- [x] サイト表記も同期: TOP「毎時自動更新」注記とFAQの更新時間を9時〜19時に修正、README（ルート）も更新
+- [x] test_x_client 29件通過
+- **オーナー側TODO**: Xのbio・固定ポストに「21時」と書いていたら「19時」へ修正
