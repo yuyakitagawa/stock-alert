@@ -94,9 +94,18 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - [x] outlookシーンの中央ビジュアル（🔭「この買いが意味するもの」）を削除（オーナー指摘）
 - [x] テスト35件・全230件pass。実データ（アインHD）で音声・チャート込み89秒のmp4を確認
 
-## 次にやること（オーナー作業）
-1. 上表の Secrets を GitHub に登録する（`video/youtube_auth.py` / `video/tiktok_auth.py` を
-   ローカルで1回ずつ実行してリフレッシュトークンを取得）
-2. Actions から `Short Video Post` を「render_only=true」で手動実行し、
-   アーティファクトの mp4（音声含む）を目視確認する
-3. 問題なければ render_only なしで手動実行し、初回の実投稿を確認する
+## 投稿フロー構築（2026-08-16）
+- [x] YouTube Data API v3 をサービスアカウント経由で有効化（課金不要だった）
+- [x] オーナーがOAuthクライアント（デスクトップ）作成・テストユーザー登録 → youtube_auth.py で
+      リフレッシュトークン取得 → .env と GitHub Secrets（gh secret set）に登録・動作確認済み
+- [x] チャンネル開設・体裁（バナー/アイコン/透かし/説明文。バナーと透かしはPILで生成して提供）
+- [x] **初投稿完了**: https://youtube.com/shorts/MqCMZqa91t4 （アインHD/Oasis記事。
+      日曜で36h窓に対象が無かったため72hに広げた1回きりのローカル実行。タイトルの
+      filerName欠落によるねじれはオーナーがStudioで手動修正、コードにはフォールバック追加）
+- [ ] TikTok: アプリ作成待ち（Client Key/Secret が来たら tiktok_auth.py で認可→Secrets登録）
+
+## ⚠️ 既知の問題
+- **Anthropic APIキーが月間支出上限に到達**（2026-09-01 0:00 UTC復活）。台本生成・ブログ記事
+  生成が全て失敗するため、上限を引き上げるまで平日の自動投稿は空振りする。オーナーが
+  リロード（自動チャージ）を設定したが、2026-08-16 13時時点ではまだ同エラーが返る
+  （月間spend limitはリロードとは別設定の可能性。console.anthropic.com → Settings → Limits を確認）

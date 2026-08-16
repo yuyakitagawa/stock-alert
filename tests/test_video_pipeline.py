@@ -357,6 +357,13 @@ def test_youtube_title_includes_stock_and_amount():
     assert "#Shorts" in title
 
 
+def test_youtube_title_falls_back_when_filer_name_missing():
+    """filerName未設定の記事で「【銘柄】が…取得」という主語のねじれを防ぐ。"""
+    title = yt.build_title({**PROPS, "filerName": ""})
+    assert "大口投資家が" in title
+    assert "】が" not in title
+
+
 def test_youtube_title_truncated_but_keeps_shorts_tag():
     props = {**PROPS, "stockName": "あ" * 60, "filerName": "い" * 60}
     title = yt.build_title(props)
