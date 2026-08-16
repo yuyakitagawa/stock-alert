@@ -28,7 +28,7 @@ from config import BASE_DIR
 from core.screener import get_tse_stock_list
 from core.rank_stocks import passes_buy_filter, MIN_LIQUIDITY_M, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument("--start", default="2026-01-01")

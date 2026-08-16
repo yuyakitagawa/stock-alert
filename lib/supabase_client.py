@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+# GitHub Secrets等に混入した前後の空白でホスト名解決が壊れるため必ずstripする
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
 
 _BATCH_SIZE = 500
 _TIMEOUT = 30
