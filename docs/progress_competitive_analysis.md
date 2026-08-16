@@ -54,5 +54,9 @@ Supabase `edinet_large_holdings` に全開示19,799件（2025-06-18〜、doc_id�
       「変更報告書」と誤表示（`doc_type_code` 350は新規・変更両方、360は訂正だった）。
       `/investors/[filer]`・`/stocks/[code]`をdoc_description判定の`disclosureDocLabel`に差し替え。
       Python側（web/publish_blog_articles.py等）の同根バグは別タスクとしてチップ化済み
-- [ ] コミット & push
-- [ ] 本番デプロイREADY確認 + https://kujira-watch.com/disclosures のHTTP 200確認
+- [x] コミット & push（4f9807da。並行セッションのmain更新をrebaseで取り込み済み）
+- [x] 本番デプロイ確認: https://kujira-watch.com/disclosures がHTTP 200、
+      件数（すべて19,799/新規2,743/変更13,927/訂正3,129）・EDINET PDFリンク・
+      ?type=correction フィルタの動作を本番で確認（2026-08-16）
+
+**→ 作業完了。次の改善候補（未着手）: アクティビスト現在保有の横断一覧、月別トレンドグラフ。**
