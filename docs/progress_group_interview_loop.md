@@ -106,4 +106,4 @@ X=数値取得不可（ログイン必須+公開API 429。投稿内容・頻度�
 - [x] 3. YouTube説明文のCTA強化: 登録リンク（`?sub_confirmation=1`）とサイトTOPリンク（UTM付き）を追加
 - [x] テスト: test_x_client.py 29件・test_video_pipeline.py 48件 全通過
 - オーナー側も4（YouTubeハンドル変更）・5（Xプロフィール整備）完了。新ハンドル **@kujira-watch** を確認し、`site.ts` と `youtube_client.py` の定数を更新
-- [ ] commit・push・デプロイ確認（フロントのみ。Python側は次回の各ワークフロー実行が本番検証）
+- [x] commit・push・デプロイ確認（commit fcfdcc84、プッシュ90秒後に本番記事ページの新ハンドルリンクを確認。Python側は次回の各ワークフロー実行＝月曜9時台のX投稿・21:30の動画投稿が本番初運用）
