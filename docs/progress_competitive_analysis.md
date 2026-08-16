@@ -69,4 +69,11 @@ Supabase `edinet_large_holdings` に全開示19,799件（2025-06-18〜、doc_id�
 - [x] tsc / lint / build / next startでの実データ表示確認
 - [x] コミット & push、本番 https://kujira-watch.com/activists のHTTP 200確認
 
-**→ 残る改善候補（未着手）: 月別トレンドグラフ（/trendingの拡張）。**
+## 第3弾: 月別開示件数トレンドグラフ（2026-08-16 続き）
+
+- [x] `/trending`に「月別の開示件数トレンド」棒グラフを追加（青山乃木坂のトレンドグラフに対応）。
+      インラインSVG自前描画・単一系列ネイビー1色・当月は薄色で集計中表示・
+      `<details>`の表で全数値も閲覧可（`MonthlyDisclosureTrend.tsx`＋`getMonthlyDisclosureCounts()`）
+- [x] README更新・build・実表示確認・コミット & push・本番確認
+
+**→ 競合分析で採用した3項目（開示速報・アクティビスト保有一覧・月別トレンドグラフ）すべて完了。**

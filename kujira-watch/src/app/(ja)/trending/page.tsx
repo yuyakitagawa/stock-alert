@@ -9,6 +9,8 @@ import TableRow from "@mui/material/TableRow";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getHoldingsInRange } from "@/lib/investors";
+import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
+import MonthlyDisclosureTrend from "@/components/MonthlyDisclosureTrend";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { buildTrendingFilers, buildTrendingIssuers, type TrendingEntry } from "@/lib/trendingStats";
 import AdUnit from "@/components/AdUnit";
@@ -94,9 +96,10 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, stocksWithArticles] = await Promise.all([
+  const [rows, stocksWithArticles, monthlyCounts] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
-    getAllStocksForIndex(),
+    getAllStocksForIndex().catch(() => []),
+    getMonthlyDisclosureCounts().catch(() => []),
   ]);
 
   const trendingIssuers = buildTrendingIssuers(rows, currentFrom, RANKING_COUNT);
@@ -196,7 +199,20 @@ export default async function TrendingPage() {
         )}
       </section>
 
+      {monthlyCounts.length >= 2 && (
+        <section className="mb-10">
+          <h2 className="mb-2 text-lg font-bold text-brand-navy">月別の開示件数トレンド</h2>
+          <p className="mb-2 text-sm text-foreground/60">
+            市場全体で大口投資家の動き（開示）が増えているのか減っているのかを月単位で見られます。
+          </p>
+          <MonthlyDisclosureTrend counts={monthlyCounts} />
+        </section>
+      )}
+
       <nav className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
+        <Link href="/disclosures" className="text-brand-blue hover:underline">
+          開示速報で個別の開示を見る ›
+        </Link>
         <Link href="/weekly" className="text-brand-blue hover:underline">
           今週の動きを見る ›
         </Link>
