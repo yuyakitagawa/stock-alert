@@ -49,6 +49,10 @@ export default function TodayWhaleSummary({
         <Typography variant="overline" sx={{ display: "block", mt: 1, color: "brand.blue" }}>
           この日の開示をすべて見る ›
         </Typography>
+        {/* デイトレ層向けの鮮度表示: 何時に今日の開示が載るのかをTOPで明示する（edinet_blog.ymlの毎時実行に対応） */}
+        <Typography variant="caption" sx={{ display: "block", mt: 0.5, color: "text.secondary" }}>
+          新着開示は平日9時〜21時ごろに毎時自動更新
+        </Typography>
       </CardActionArea>
     </Card>
   );
