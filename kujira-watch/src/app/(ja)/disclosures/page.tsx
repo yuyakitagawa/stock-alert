@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import FilterButtonNav from "@/components/FilterButtonNav";
+import ListFallback from "@/components/ListFallback";
 import RatioTransition from "@/components/RatioTransition";
 import { formatDate } from "@/lib/format";
 import { getAllStocksForIndex } from "@/lib/microcms";
@@ -80,7 +82,36 @@ function groupByDiscDate(rows: DisclosureRow[]): { discDate: string; rows: Discl
   return groups;
 }
 
+// 見出しまでのシェルを先に流し、開示の件数集計とページ取得を待つ部分だけを後から流す。
+// `searchParams`をここで初めてawaitすることで、ページ本体は待たずに返せる。
 export default async function DisclosuresPage({ searchParams }: Props) {
+  return (
+    <div>
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+        <Link href="/" className="hover:text-brand-blue">トップ</Link>
+        {" / "}
+        <span className="text-foreground/70">{title}</span>
+      </nav>
+
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <Suspense fallback={<ListFallback rows={12} />}>
+        <DisclosuresBody searchParams={searchParams} />
+      </Suspense>
+
+      <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
+        <Link href="/trending" className="text-brand-blue hover:underline">
+          開示が急増した銘柄・投資家を見る ›
+        </Link>
+        <Link href="/weekly" className="text-brand-blue hover:underline">
+          今週の動きまとめを見る ›
+        </Link>
+      </nav>
+      <AdUnit placement="bottom" />
+    </div>
+  );
+}
+
+async function DisclosuresBody({ searchParams }: Props) {
   const { type, page } = await searchParams;
   const selectedType = parseTypeFilter(type);
 
@@ -112,18 +143,11 @@ export default async function DisclosuresPage({ searchParams }: Props) {
   };
 
   return (
-    <div>
+    <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
-        <Link href="/" className="hover:text-brand-blue">トップ</Link>
-        {" / "}
-        <span className="text-foreground/70">{title}</span>
-      </nav>
-
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
       <p className="mb-4 text-sm leading-relaxed text-foreground/70">
         EDINETに提出された大量保有報告書（5%ルール）・変更報告書の全{counts.all.toLocaleString()}件を、
         提出日の新しい順に一覧しています（{SITE_NAME}が日次で取得。解説記事になっていない開示も
@@ -261,16 +285,6 @@ export default async function DisclosuresPage({ searchParams }: Props) {
           )}
         </nav>
       )}
-
-      <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
-        <Link href="/trending" className="text-brand-blue hover:underline">
-          開示が急増した銘柄・投資家を見る ›
-        </Link>
-        <Link href="/weekly" className="text-brand-blue hover:underline">
-          今週の動きまとめを見る ›
-        </Link>
-      </nav>
-      <AdUnit placement="bottom" />
-    </div>
+    </>
   );
 }

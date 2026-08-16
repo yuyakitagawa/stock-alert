@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import FilterButtonNav from "@/components/FilterButtonNav";
+import ListFallback from "@/components/ListFallback";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
@@ -27,24 +29,9 @@ type Props = {
   searchParams: Promise<{ sector?: string }>;
 };
 
+// 見出しまでのシェルを先に流し、銘柄一覧の取得待ちだけを後から流すためのSuspense境界。
+// `searchParams`をここで初めてawaitすることで、ページ本体は待たずに返せる。
 export default async function StocksIndexPage({ searchParams }: Props) {
-  const [{ sector }, stocks, sectorByCode] = await Promise.all([
-    searchParams,
-    getAllStocksForIndex(),
-    getAllSectorsByCode(),
-  ]);
-
-  const counts = new Map<string, number>();
-  for (const s of stocks) {
-    const sec = sectorByCode.get(s.stockCode);
-    if (sec) counts.set(sec, (counts.get(sec) ?? 0) + 1);
-  }
-  const sectors = Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, "ja"));
-  const selectedSector = sector && counts.has(sector) ? sector : null;
-  const visibleStocks = selectedSector
-    ? stocks.filter((s) => sectorByCode.get(s.stockCode) === selectedSector)
-    : stocks;
-
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -66,6 +53,34 @@ export default async function StocksIndexPage({ searchParams }: Props) {
         <span className="text-foreground/70">銘柄一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">銘柄一覧</h1>
+      <Suspense fallback={<ListFallback rows={12} />}>
+        <StocksBody searchParams={searchParams} />
+      </Suspense>
+      <AdUnit placement="bottom" />
+    </div>
+  );
+}
+
+async function StocksBody({ searchParams }: Props) {
+  const [{ sector }, stocks, sectorByCode] = await Promise.all([
+    searchParams,
+    getAllStocksForIndex(),
+    getAllSectorsByCode(),
+  ]);
+
+  const counts = new Map<string, number>();
+  for (const s of stocks) {
+    const sec = sectorByCode.get(s.stockCode);
+    if (sec) counts.set(sec, (counts.get(sec) ?? 0) + 1);
+  }
+  const sectors = Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, "ja"));
+  const selectedSector = sector && counts.has(sector) ? sector : null;
+  const visibleStocks = selectedSector
+    ? stocks.filter((s) => sectorByCode.get(s.stockCode) === selectedSector)
+    : stocks;
+
+  return (
+    <>
       <p className="mb-4 text-sm text-foreground/50">
         {SITE_NAME}が大量保有・自社株買いの動きを追跡している銘柄{stocks.length}件です。
         証券コード順に並んでいます。
@@ -114,7 +129,6 @@ export default async function StocksIndexPage({ searchParams }: Props) {
           ))}
         </List>
       )}
-      <AdUnit placement="bottom" />
-    </div>
+    </>
   );
 }
