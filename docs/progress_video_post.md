@@ -102,7 +102,14 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - [x] **初投稿完了**: https://youtube.com/shorts/MqCMZqa91t4 （アインHD/Oasis記事。
       日曜で36h窓に対象が無かったため72hに広げた1回きりのローカル実行。タイトルの
       filerName欠落によるねじれはオーナーがStudioで手動修正、コードにはフォールバック追加）
-- [ ] TikTok: アプリ作成待ち（Client Key/Secret が来たら tiktok_auth.py で認可→Secrets登録）
+- [x] TikTok: アプリ作成・Sandbox認可完了（2026-08-16）。URLプロパティ検証用に
+      /terms ページと検証ファイル配信ルートを新設。Sandbox の Client Key/Secret +
+      リフレッシュトークン（365日有効）を .env / GitHub Secrets に登録、トークン更新フロー確認済み。
+      現在は未審査のため inbox（下書き）投稿のみ。**審査提出時に必要なもの**: 説明文（作成済み・
+      フォームに入力済み）と Sandbox 投稿フローのデモ動画（未作成。仮動画でSaveを通した状態なので
+      Submit for review は押さないこと）。審査通過後に TIKTOK_DIRECT_POST=1 で直接公開へ
+- [x] ドメイン障害対応（2026-08-16）: kujira-watch.com が clientHold（ICANN メール認証未完了）で
+      全世界NXDOMAINになっていたのを発見、オーナーが認証して復旧
 
 ## 銘柄コード指定の手動実行（2026-08-16 オーナー依頼「太陽誘電とキオクシアのクジラを動画に」）
 - [x] `build_script.py` に銘柄指定モード追加（stockCodeフィルタ＋直近14日から金額最大1件、注目枠不問）。
