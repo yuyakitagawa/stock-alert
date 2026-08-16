@@ -14,7 +14,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { getPreviousPeriodArticles, getRecentArticles } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
-import { formatDate, formatDealAmount } from "@/lib/format";
+import { formatAmountParts, formatDate, formatDealAmount } from "@/lib/format";
 import { buildWeeklySummary } from "@/lib/weeklyStats";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import AdUnit from "@/components/AdUnit";
@@ -129,7 +129,10 @@ export default async function WeeklyDigestPage() {
             <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
               <Card variant="outlined" sx={{ borderLeft: 4, borderLeftColor: "brand.gold", bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
                 <Typography variant="overline" sx={{ color: "text.secondary" }}>開示件数</Typography>
-                <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
+                <Typography
+                  variant="h4"
+                  sx={{ mt: 0.5, fontWeight: 700, color: "primary.main", fontSize: { xs: "1.75rem", sm: "2.125rem" } }}
+                >
                   {summary.totalCount}
                   <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>件</Typography>
                 </Typography>
@@ -139,8 +142,23 @@ export default async function WeeklyDigestPage() {
               </Card>
               <Card variant="outlined" sx={{ borderLeft: 4, borderLeftColor: "brand.gold", bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
                 <Typography variant="overline" sx={{ color: "text.secondary" }}>推定取引金額</Typography>
-                <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
-                  {formatDealAmount(summary.totalAmount)}
+                {/* 「4,083億円」をh4一体で出すと375pxのタイル幅で折り返して高さが揃わない。
+                    開示件数タイルと同じ「数字+単位」構造に統一し、1兆円以上は兆円へ繰り上げる。 */}
+                <Typography
+                  variant="h4"
+                  sx={{
+                    mt: 0.5,
+                    fontWeight: 700,
+                    color: "primary.main",
+                    // 375pxのタイル幅でも「数字+単位」が1行に収まるサイズ（左の件数タイルと揃える）。
+                    fontSize: { xs: "1.75rem", sm: "2.125rem" },
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatAmountParts(summary.totalAmount).value}
+                  <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>
+                    {formatAmountParts(summary.totalAmount).unit}
+                  </Typography>
                 </Typography>
                 <Typography variant="caption" sx={{ mt: 0.5, display: "block", color: "text.secondary" }}>
                   先週比{" "}

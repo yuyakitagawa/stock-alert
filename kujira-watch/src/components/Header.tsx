@@ -86,6 +86,8 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
                     fontWeight: 700,
                     letterSpacing: "-0.01em",
                     color: "primary.main",
+                    // サイト名はブランドの顔なので絶対に折り返させない（375pxで3行に折れていた）。
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {locale === "en" ? SITE_NAME_EN : SITE_NAME}
@@ -103,7 +105,10 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
             </Box>
             <Box sx={{ display: "flex", flexShrink: 0, alignItems: "center", gap: 1 }}>
               <StockSearch locale={locale} />
-              <VisitCounter locale={locale} />
+              {/* モバイルではロゴの横幅を優先し、訪問者数はsm以上でのみ表示する。 */}
+              <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center" }}>
+                <VisitCounter locale={locale} />
+              </Box>
               <HeaderMenu locale={locale} />
             </Box>
           </Box>

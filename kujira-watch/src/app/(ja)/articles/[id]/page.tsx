@@ -10,13 +10,12 @@ import AttentionScorePanel from "@/components/AttentionScorePanel";
 import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
-import DealTypeBadge from "@/components/DealTypeBadge";
 import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
-import { excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
 import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getFilerWinRate, getHoldingSnapshot } from "@/lib/investors";
 import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
@@ -230,9 +229,10 @@ export default async function ArticleDetailPage({ params }: Props) {
       )}
       <div className="p-6 sm:p-10">
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <DealTypeBadge dealType={article.dealType} />
-          <DealDirectionBadge tags={article.tags} />
+          {/* 分類はリンク付きChip(CategoryBadge)へ一本化。ドット版(DealTypeBadge)を併記すると
+              同一ラベルが二重表示になっていた。 */}
           <CategoryBadge dealType={article.dealType} />
+          <DealDirectionBadge tags={article.tags} />
         </div>
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.title}
@@ -315,7 +315,7 @@ export default async function ArticleDetailPage({ params }: Props) {
                   href={`/investors/${encodeURIComponent(filerName)}`}
                   className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
                 >
-                  {filerName}
+                  {displayFilerName(filerName)}
                 </Link>
                 {filerWinRate && (
                   <span className="mt-1 block">
@@ -407,7 +407,7 @@ export default async function ArticleDetailPage({ params }: Props) {
                 href={`/investors/${encodeURIComponent(filerName)}`}
                 className="font-bold text-brand-blue hover:underline"
               >
-                {filerName}
+                {displayFilerName(filerName)}
               </Link>
               {filerWinRate && (
                 <>

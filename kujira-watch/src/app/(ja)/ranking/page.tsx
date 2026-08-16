@@ -4,7 +4,7 @@ import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import { getFilerWinRates } from "@/lib/investors";
-import { formatDate, formatSignedOku } from "@/lib/format";
+import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -175,7 +175,7 @@ export default async function RankingPage({ searchParams }: Props) {
                   className="font-medium text-brand-blue hover:underline"
                   style={{ overflowWrap: "anywhere" }}
                 >
-                  {f.filerName}
+                  {displayFilerName(f.filerName)}
                 </Link>
                 <Box sx={{ mt: 0.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
                   <DealTypeBadge dealType={f.category} />

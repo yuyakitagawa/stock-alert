@@ -7,7 +7,6 @@ import Typography from "@mui/material/Typography";
 import AttentionScorePanel from "@/components/AttentionScorePanel";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
-import DealTypeBadge from "@/components/DealTypeBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
@@ -144,9 +143,10 @@ export default async function EnArticleDetailPage({ params }: Props) {
       )}
       <div className="p-6 sm:p-10">
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <DealTypeBadge dealType={article.dealType} locale="en" />
-          <DealDirectionBadge tags={article.tags} locale="en" />
+          {/* 分類はリンク付きChip(CategoryBadge)へ一本化。ドット版(DealTypeBadge)を併記すると
+              同一ラベルが二重表示になっていた(ja版と同じ修正)。 */}
           <CategoryBadge dealType={article.dealType} locale="en" />
+          <DealDirectionBadge tags={article.tags} locale="en" />
         </div>
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.titleEn}
