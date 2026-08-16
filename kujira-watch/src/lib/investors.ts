@@ -17,6 +17,7 @@ export type FilerHolding = {
   holdingRatioPrior: number | null;
   discDate: string;
   docTypeCode: string;
+  docDescription: string | null;
 };
 
 export type FilerClassification = {
@@ -42,16 +43,6 @@ export type FilerWinRate = {
   updatedAt: string;
 };
 
-// web/publish_blog_articles.py の DOC_TYPE_LABELS と対応。
-const DOC_TYPE_LABELS: Record<string, string> = {
-  "350": "大量保有報告書",
-  "360": "変更報告書（保有比率の変更）",
-};
-
-export function docTypeLabel(code: string): string {
-  return DOC_TYPE_LABELS[code] ?? "大量保有関連報告書";
-}
-
 export async function getFilerClassification(
   filerName: string
 ): Promise<FilerClassification | null> {
@@ -74,7 +65,7 @@ export async function getFilerHoldings(filerName: string): Promise<FilerHolding[
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
-    .select("doc_id, issuer_code, issuer_name, holding_ratio, holding_ratio_prior, disc_date, doc_type_code")
+    .select("doc_id, issuer_code, issuer_name, holding_ratio, holding_ratio_prior, disc_date, doc_type_code, doc_description")
     .eq("filer_name", filerName)
     .order("disc_date", { ascending: false })
     .limit(200);
@@ -87,6 +78,7 @@ export async function getFilerHoldings(filerName: string): Promise<FilerHolding[
     holdingRatioPrior: r.holding_ratio_prior,
     discDate: r.disc_date,
     docTypeCode: r.doc_type_code,
+    docDescription: r.doc_description,
   }));
 }
 
@@ -227,6 +219,7 @@ export type StockHoldingRow = {
   holdingRatio: number | null;
   holdingRatioPrior: number | null;
   docTypeCode: string;
+  docDescription: string | null;
 };
 
 // /stocks/[code]の「保有比率の推移」テーブル用。この銘柄に提出された大量保有・変更報告書を
@@ -235,7 +228,7 @@ export async function getHoldingsByStockCode(stockCode: string): Promise<StockHo
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
-    .select("doc_id, filer_name, disc_date, holding_ratio, holding_ratio_prior, doc_type_code")
+    .select("doc_id, filer_name, disc_date, holding_ratio, holding_ratio_prior, doc_type_code, doc_description")
     .eq("issuer_code", stockCode)
     .order("disc_date", { ascending: false })
     .limit(100);
@@ -248,6 +241,7 @@ export async function getHoldingsByStockCode(stockCode: string): Promise<StockHo
       holdingRatio: r.holding_ratio,
       holdingRatioPrior: r.holding_ratio_prior,
       docTypeCode: r.doc_type_code,
+      docDescription: r.doc_description,
     }));
 }
 

@@ -12,7 +12,8 @@ import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { docTypeLabel, getFilersByStockCode, getFilerWinRates, getHoldingsByStockCode } from "@/lib/investors";
+import { disclosureDocLabel } from "@/lib/disclosures";
+import { getFilersByStockCode, getFilerWinRates, getHoldingsByStockCode } from "@/lib/investors";
 import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
 import { formatDate } from "@/lib/format";
 import RatioTransition from "@/components/RatioTransition";
@@ -180,7 +181,7 @@ export default async function StockPage({ params }: Props) {
                       </Link>
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                      {docTypeLabel(h.docTypeCode)}
+                      {disclosureDocLabel(h)}
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                       <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
