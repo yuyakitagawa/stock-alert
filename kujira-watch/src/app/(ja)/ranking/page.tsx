@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
+import ListFallback from "@/components/ListFallback";
 import { getFilerWinRates } from "@/lib/investors";
 import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
@@ -32,7 +34,39 @@ type Props = {
   searchParams: Promise<{ category?: string }>;
 };
 
+// 見出しまでのシェルを先に流し、集計待ちの一覧だけを後から流すためのSuspense境界。
+// `searchParams`をここで初めてawaitすることで、ページ本体は待たずに返せる。
 export default async function RankingPage({ searchParams }: Props) {
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: title, item: `${SITE_URL}/ranking` },
+    ],
+  };
+
+  return (
+    <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+        <Link href="/" className="hover:text-brand-blue">トップ</Link>
+        {" / "}
+        <span className="text-foreground/70">{title}</span>
+      </nav>
+      <h1 className="mb-1 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <Suspense fallback={<ListFallback rows={12} />}>
+        <RankingBody searchParams={searchParams} />
+      </Suspense>
+      <AdUnit placement="bottom" />
+    </div>
+  );
+}
+
+async function RankingBody({ searchParams }: Props) {
   const { category } = await searchParams;
   const filers = await getFilerWinRates(MIN_N);
 
@@ -50,15 +84,6 @@ export default async function RankingPage({ searchParams }: Props) {
   const updatedAt = filers[0]?.updatedAt;
   const holdDays = filers[0]?.holdDays ?? 63;
 
-  const breadcrumbJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: title, item: `${SITE_URL}/ranking` },
-    ],
-  };
-
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
@@ -72,21 +97,11 @@ export default async function RankingPage({ searchParams }: Props) {
   };
 
   return (
-    <div>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
-      />
+    <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
-        <Link href="/" className="hover:text-brand-blue">トップ</Link>
-        {" / "}
-        <span className="text-foreground/70">{title}</span>
-      </nav>
-      <h1 className="mb-1 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
       {updatedAt && (
         <p className="kicker mb-3 text-brand-blue">最終更新: {formatDate(updatedAt)}</p>
       )}
@@ -199,7 +214,6 @@ export default async function RankingPage({ searchParams }: Props) {
           ))}
         </Box>
       )}
-      <AdUnit placement="bottom" />
-    </div>
+    </>
   );
 }

@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import DealTypeLabel from "@/components/DealTypeLabel";
 import FilterButtonNav from "@/components/FilterButtonNav";
+import ListFallback from "@/components/ListFallback";
 import { getAllFilers } from "@/lib/investors";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -48,24 +50,9 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   };
 }
 
+// 見出しまでのシェルを先に流し、2,900件の集計待ちの一覧だけを後から流すためのSuspense境界。
+// `searchParams`をここで初めてawaitすることで、ページ本体は待たずに返せる。
 export default async function InvestorsPage({ searchParams }: Props) {
-  const { category, page } = await searchParams;
-  const filers = await getAllFilers();
-
-  const counts = new Map<DealType, number>();
-  for (const filer of filers) {
-    counts.set(filer.category, (counts.get(filer.category) ?? 0) + 1);
-  }
-  const activeCategories = DEAL_TYPES.filter((c) => (counts.get(c) ?? 0) > 0);
-  const selectedCategory =
-    category && DEAL_TYPES.includes(category as DealType) ? (category as DealType) : null;
-  const matchedFilers = selectedCategory
-    ? filers.filter((f) => f.category === selectedCategory)
-    : filers;
-  const totalPages = Math.max(1, Math.ceil(matchedFilers.length / PER_PAGE));
-  const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
-  const visibleFilers = matchedFilers.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
-
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -87,6 +74,34 @@ export default async function InvestorsPage({ searchParams }: Props) {
         <span className="text-foreground/70">投資家一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">投資家一覧</h1>
+      <Suspense fallback={<ListFallback rows={12} />}>
+        <InvestorsBody searchParams={searchParams} />
+      </Suspense>
+      <AdUnit placement="bottom" />
+    </div>
+  );
+}
+
+async function InvestorsBody({ searchParams }: Props) {
+  const { category, page } = await searchParams;
+  const filers = await getAllFilers();
+
+  const counts = new Map<DealType, number>();
+  for (const filer of filers) {
+    counts.set(filer.category, (counts.get(filer.category) ?? 0) + 1);
+  }
+  const activeCategories = DEAL_TYPES.filter((c) => (counts.get(c) ?? 0) > 0);
+  const selectedCategory =
+    category && DEAL_TYPES.includes(category as DealType) ? (category as DealType) : null;
+  const matchedFilers = selectedCategory
+    ? filers.filter((f) => f.category === selectedCategory)
+    : filers;
+  const totalPages = Math.max(1, Math.ceil(matchedFilers.length / PER_PAGE));
+  const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
+  const visibleFilers = matchedFilers.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
+
+  return (
+    <>
       <p className="mb-4 text-sm text-foreground/50">
         {SITE_NAME}がEDINET大量保有報告書から追跡している投資家（機関投資家・アクティビストファンド・
         創業家の資産管理会社など）{filers.length}件です。最終開示日が新しい順に並んでいます
@@ -158,7 +173,6 @@ export default async function InvestorsPage({ searchParams }: Props) {
           )}
         </nav>
       )}
-      <AdUnit placement="bottom" />
-    </div>
+    </>
   );
 }
