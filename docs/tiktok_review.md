@@ -52,4 +52,9 @@ account」に変えて提出する。まずは video.upload のみで通し、�
 - [x] LINE キャプション通知の実装（審査待ちの間の運用改善。video/line_notify.py）
 - [x] デモ動画素材の録画（2026-08-16。Mac側4カットはscreencapture -v、スマホ1カットはオーナー撮影）
 - [x] 結合・テロップ・圧縮（video/out/tiktok_review_demo.mp4、2分41秒・4.1MB）
-- [ ] フォームの動画差し替え → Submit for review（オーナー操作）
+- [x] 本体アプリ（Production）側にも Products（Login Kit + Content Posting API）と
+      Scopes（video.upload）を追加（審査は本体構成に対して行われるため。Sandboxとは別設定）
+- [x] **審査提出完了（2026-08-16）** — ステータス「in review」。結果待ち（通常数日〜2週間、
+      混雑時はさらに遅延の告知あり）。結果は Developer Portal の History / Review comments に届く
+- [ ] 承認後: `gh secret set TIKTOK_DIRECT_POST --body 1` で直接公開へ切替（本体側の
+      Client Key/Secret への差し替えと再認可も必要になる場合がある — 承認時に確認）
