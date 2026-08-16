@@ -16,6 +16,8 @@ import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 import WatchButton from "@/components/WatchButton";
+import FaqAccordionList from "@/components/FaqAccordionList";
+import { buildInvestorFaqItems } from "@/lib/investorFaq";
 
 export const revalidate = 300;
 
@@ -98,6 +100,20 @@ export default async function InvestorPage({ params }: Props) {
     })),
   };
 
+  const faqItems = buildInvestorFaqItems(filerName, majorHoldings, recentBuys);
+  const faqJsonLd =
+    faqItems.length > 0
+      ? {
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: faqItems.map((faq) => ({
+            "@type": "Question",
+            name: faq.question,
+            acceptedAnswer: { "@type": "Answer", text: faq.answer },
+          })),
+        }
+      : null;
+
   return (
     <div>
       <script
@@ -108,6 +124,12 @@ export default async function InvestorPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
+      {faqJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      )}
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
@@ -249,6 +271,12 @@ export default async function InvestorPage({ params }: Props) {
         <p className="mt-6 text-xs text-foreground/40">
           {DEAL_TYPE_DESCRIPTIONS[category]}
         </p>
+      )}
+      {faqItems.length > 0 && (
+        <div className="mt-8 border-t border-rule pt-4">
+          <h2 className="mb-2 text-lg font-bold text-brand-navy">よくある質問</h2>
+          <FaqAccordionList faqs={faqItems} />
+        </div>
       )}
       <AdUnit placement="bottom" />
     </div>

@@ -28,3 +28,8 @@ export const X_FOLLOW_URL = `https://x.com/intent/follow?screen_name=${X_SCREEN_
 // チャンネル側からサイトへはリンク済みだが、サイト側からの導線もここで持つ。
 // ハンドル変更時は video/youtube_client.py の CHANNEL_URL も対で更新すること。
 export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@kujira-watch";
+
+// 読者向けLINE公式アカウントの友だち追加URL（lin.ee/…）。アカウント未開設のため
+// 通常は未設定で、未設定の間はLINE導線を一切表示しない。開設したらVercelの環境変数
+// NEXT_PUBLIC_LINE_ADD_FRIEND_URL にURLを入れるだけでFollowCtaにボタンが出る。
+export const LINE_ADD_FRIEND_URL = process.env.NEXT_PUBLIC_LINE_ADD_FRIEND_URL || "";

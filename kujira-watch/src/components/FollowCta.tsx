@@ -1,7 +1,7 @@
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
-import { X_FOLLOW_URL, X_SCREEN_NAME, YOUTUBE_CHANNEL_URL } from "@/lib/site";
+import { LINE_ADD_FRIEND_URL, X_FOLLOW_URL, X_SCREEN_NAME, YOUTUBE_CHANNEL_URL } from "@/lib/site";
 
 // 記事末尾のXフォロー導線。検索から一度来た読者に、再訪のきっかけとして
 // Xタイムラインを持ってもらうのが目的。ShareButtonsと同じ理由で、SDKや
@@ -31,6 +31,27 @@ export default function FollowCta() {
         その日いちばん大きい開示は、YouTubeの1分ショート動画でも解説しています。
       </Typography>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
+        {/* LINEはフォローよりも通知の到達率が高い最優先チャネルのため、URLが設定
+            されている場合は先頭に置く（LINE公式アカウント開設までは非表示）。
+            #06C755はLINEのブランドガイドライン指定色。 */}
+        {LINE_ADD_FRIEND_URL && (
+          <Button
+            component="a"
+            href={LINE_ADD_FRIEND_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="contained"
+            size="medium"
+            sx={{
+              bgcolor: "#06C755",
+              color: "#fff",
+              px: 3,
+              "&:hover": { bgcolor: "#05b34c" },
+            }}
+          >
+            LINEで通知を受け取る
+          </Button>
+        )}
         <Button
           component="a"
           href={X_FOLLOW_URL}

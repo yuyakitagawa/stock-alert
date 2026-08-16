@@ -28,6 +28,8 @@ import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
 import WatchButton from "@/components/WatchButton";
+import FaqAccordionList from "@/components/FaqAccordionList";
+import { buildStockFaqItems } from "@/lib/stockFaq";
 
 // 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次で更新するため、
 // microCMS記事(revalidate:60)とずれない範囲で定期的に再取得する。
@@ -47,7 +49,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (contents.length === 0) return {};
 
   const stockName = contents[0].stockName;
-  const title = `${stockName}（${code}）`;
+  // 「◯◯ 大量保有」「◯◯ 大株主」の検索意図を狙う（growth_ideas #801-802）。
+  const title = `${stockName}（${code}）の大量保有・大株主の動き`;
   const dealSummaryText = formatStockDealSummary(buildStockDealSummary(contents), stockName, code);
   const description = companyInfo?.description
     ? `${companyInfo.description.replace(/。+$/, "")}。${dealSummaryText}`
@@ -106,6 +109,17 @@ export default async function StockPage({ params }: Props) {
     })),
   };
 
+  const faqItems = buildStockFaqItems(stockName, code, filers, holdings);
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqItems.map((faq) => ({
+      "@type": "Question",
+      name: faq.question,
+      acceptedAnswer: { "@type": "Answer", text: faq.answer },
+    })),
+  };
+
   return (
     <div>
       <script
@@ -115,6 +129,10 @@ export default async function StockPage({ params }: Props) {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
@@ -214,6 +232,10 @@ export default async function StockPage({ params }: Props) {
           <DealDateSeeMoreLink date={group.date} />
         </div>
       ))}
+      <div className="mb-8 border-t border-rule pt-4">
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">よくある質問</h2>
+        <FaqAccordionList faqs={faqItems} />
+      </div>
       <AdUnit placement="bottom" />
     </div>
   );
