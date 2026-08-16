@@ -104,6 +104,17 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
       filerName欠落によるねじれはオーナーがStudioで手動修正、コードにはフォールバック追加）
 - [ ] TikTok: アプリ作成待ち（Client Key/Secret が来たら tiktok_auth.py で認可→Secrets登録）
 
+## 銘柄コード指定の手動実行（2026-08-16 オーナー依頼「太陽誘電とキオクシアのクジラを動画に」）
+- [x] `build_script.py` に銘柄指定モード追加（stockCodeフィルタ＋直近14日から金額最大1件、注目枠不問）。
+      `publish_video.py --stock-code` / workflow_dispatch の `stock_code` 入力から使う。PR #269
+- [ ] オーナー作業: PR #269 をマージ（またはブランチのまま）、Actions → Short Video Post →
+      Run workflow をブランチ `claude/taiyo-kioxia-whale-video-6ghxmm`（マージ後はmain）で
+      `stock_code=6976`（太陽誘電×Situational Awareness LP）と `stock_code=285A`
+      （キオクシア×東芝売却）の2回実行。※このセッションのGitHub権限では
+      workflow_dispatch を叩けず（403）、代替のpush起動も権限判定でブロックされたため手動依頼
+- [ ] 実行前に Anthropic API の月間spend limit解消を確認（下記「既知の問題」参照。
+      上限中は台本生成が失敗し「投稿対象がない」で終わる）
+
 ## ⚠️ 既知の問題
 - **Anthropic APIキーが月間支出上限に到達**（2026-09-01 0:00 UTC復活）。台本生成・ブログ記事
   生成が全て失敗するため、上限を引き上げるまで平日の自動投稿は空振りする。オーナーが
