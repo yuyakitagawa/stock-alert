@@ -37,6 +37,7 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
         ]
       : [
           { href: "/", label: "TOP" },
+          { href: "/disclosures", label: "開示速報" },
           { href: "/weekly", label: "今週のまとめ" },
           { href: "/trending", label: "急増ランキング" },
           { href: "/ranking", label: "投資家勝率ランキング" },

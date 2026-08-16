@@ -10,7 +10,8 @@ import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import RatioTransition from "@/components/RatioTransition";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
-import { docTypeLabel, getFilerClassification, getFilerHoldings, getFilerWinRate } from "@/lib/investors";
+import { disclosureDocLabel } from "@/lib/disclosures";
+import { getFilerClassification, getFilerHoldings, getFilerWinRate } from "@/lib/investors";
 import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
@@ -232,7 +233,7 @@ export default async function InvestorPage({ params }: Props) {
                   </Link>
                 </TableCell>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                  {docTypeLabel(h.docTypeCode)}
+                  {disclosureDocLabel(h)}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
