@@ -20,6 +20,9 @@ import requests
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 SITE_URL = "https://kujira-watch.com"
+# 説明文の登録導線用。?sub_confirmation=1 で登録確認ダイアログ付きで開く。
+# ハンドルを変更したらここも更新すること（kujira-watch側 src/lib/site.ts と対）。
+CHANNEL_URL = "https://www.youtube.com/@kujira-watch"
 
 # YouTube のタイトル上限は100字。日本語でも文字数カウントは同じ。
 TITLE_MAX_CHARS = 90
@@ -85,7 +88,10 @@ def build_description(props: dict) -> str:
         f"{hook}\n\n"
         f"{points}\n\n"
         f"▼記事で詳しく読む\n{url}\n\n"
-        f"EDINETの大量保有報告書から、大口投資家（クジラ）の売買を毎日追いかけています。\n\n"
+        f"▼チャンネル登録で、毎日の大口売買を1分でチェック\n{CHANNEL_URL}?sub_confirmation=1\n\n"
+        f"EDINETの大量保有報告書から、大口投資家（クジラ）の売買を毎日追いかけています。\n"
+        f"その日の全開示・投資家別の履歴はサイトで:\n"
+        f"{SITE_URL}?utm_source=youtube&utm_medium=social&utm_campaign=auto_video\n\n"
         f"音声: VOICEVOX:ずんだもん\n"
         f"※本動画は公開情報の要約であり、投資勧誘・投資助言ではありません。投資判断はご自身の責任でお願いします。\n\n"
         f"#Shorts #EDINET #大量保有報告書 #日本株 #{props.get('stockName', '')}"

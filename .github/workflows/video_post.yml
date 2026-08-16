@@ -47,7 +47,7 @@ jobs:
 
       - name: Install Python dependencies
         # pandas/numpy は株価チャートシーン（lib.utils.get_prices）が使う
-        run: pip install requests anthropic python-dotenv pandas numpy
+        run: pip install requests anthropic python-dotenv pandas numpy requests-oauthlib
 
       - name: Install Noto Sans CJK (動画内の日本語フォント)
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk

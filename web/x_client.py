@@ -17,6 +17,7 @@ X Developer Portalで「Read and Write」権限のAppを作成し、以下4つ�
 いずれか未設定の場合は投稿をスキップする（他のステップには影響しない）。
 """
 import os
+import re
 
 import requests
 from requests_oauthlib import OAuth1
@@ -44,15 +45,28 @@ def _auth() -> "OAuth1 | None":
     return OAuth1(key, key_secret, token, token_secret)
 
 
-def build_tweet_text(title: str, deal_amount_oku: float, is_sell: bool, article_id: str) -> str:
+def _stock_hashtag(stock_name: str) -> str:
+    """銘柄名をハッシュタグにする。Xのハッシュタグは「・」「（）」等の記号や空白で
+    切れてしまうため、記号類を取り除いた連続文字列にする。空になったら付けない。"""
+    cleaned = re.sub(r"\W+", "", stock_name or "")
+    return f"#{cleaned}" if cleaned else ""
+
+
+def build_tweet_text(title: str, deal_amount_oku: float, is_sell: bool, article_id: str,
+                     stock_name: str = "") -> str:
     """記事タイトル・金額規模からツイート本文を組み立てる。URLはX側でt.co短縮されるため
-    文字数上限の計算には含めない。GA4で流入経路をXの自動投稿と識別できるようUTMを付与する。"""
+    文字数上限の計算には含めない。GA4で流入経路をXの自動投稿と識別できるようUTMを付与する。
+    銘柄名タグは、銘柄名でX検索する層のタイムラインに載せるために付ける。"""
     direction = "売却" if is_sell else "取得"
     body = f"{title}\n推定{direction}金額: {deal_amount_oku}億円"
     if len(body) > TWEET_BODY_MAX_CHARS:
         body = body[: TWEET_BODY_MAX_CHARS - 1] + "…"
     url = f"{SITE_URL}/articles/{article_id}?utm_source=x&utm_medium=social&utm_campaign=auto_post"
-    return f"{body}\n{url}\n#EDINET #大量保有報告書"
+    tags = "#EDINET #大量保有報告書"
+    stock_tag = _stock_hashtag(stock_name)
+    if stock_tag:
+        tags += f" {stock_tag}"
+    return f"{body}\n{url}\n{tags}"
 
 
 def upload_media(image_bytes: bytes) -> "str | None":
@@ -124,7 +138,17 @@ def build_daily_summary_text(articles: list, date_str: str, total_count: "int | 
     if sells:
         lines += ["🔴 最大売却", _summary_line(sells[0], "-"), ""]
     url = f"{SITE_URL}/date/{date_str}?utm_source=x&utm_medium=social&utm_campaign=daily_summary"
-    lines += [f"↓ 今日の全{count}件", url, "#EDINET #大量保有報告書"]
+    # 最大買い増し・最大売却として取り上げた銘柄のタグを付ける（銘柄名検索からの流入用）。
+    stock_tags = " ".join(
+        dict.fromkeys(
+            tag
+            for group in (buys, sells)
+            if group
+            if (tag := _stock_hashtag(group[0].get("stockName") or ""))
+        )
+    )
+    tag_line = "#EDINET #大量保有報告書" + (f" {stock_tags}" if stock_tags else "")
+    lines += [f"↓ 今日の全{count}件", url, tag_line]
     return "\n".join(lines)
 
 
@@ -195,7 +219,8 @@ def post_top_articles(published: list, featured_ids: set, top_n: int = TWEETS_PE
     posted = 0
     for article in candidates[:top_n]:
         is_sell = "売り" in (article.get("tags") or "")
-        text = build_tweet_text(article["title"], article["dealAmount"], is_sell, article["id"])
+        text = build_tweet_text(article["title"], article["dealAmount"], is_sell, article["id"],
+                                stock_name=article.get("stockName") or "")
 
         media_id = None
         image_bytes = generate_price_chart_image(article["stockCode"], article["stockName"])
@@ -206,3 +231,29 @@ def post_top_articles(published: list, featured_ids: set, top_n: int = TWEETS_PE
             print(f"  🐦 X投稿: {article['title']}" + ("（チャート付き）" if media_id else ""))
             posted += 1
     return posted
+
+
+def build_video_tweet_text(props: dict, youtube_id: str) -> str:
+    """YouTube Shorts公開時のクロス投稿本文。propsはvideo/build_script.pyのbuild()が
+    返す動画props（stockName / filerName / direction / dealAmountOku）。"""
+    direction = "売却" if props.get("direction") == "sell" else "取得"
+    # 動画タイトル(youtube_client.build_title)と同じく、提出者名が無い記事は汎用の主語にする
+    filer = props.get("filerName") or "大口投資家"
+    stock = props.get("stockName") or ""
+    body = f"🎬 1分解説｜{stock}を{filer}が推定{props.get('dealAmountOku')}億円{direction}"
+    if len(body) > TWEET_BODY_MAX_CHARS:
+        body = body[: TWEET_BODY_MAX_CHARS - 1] + "…"
+    url = f"https://youtube.com/shorts/{youtube_id}"
+    tags = "#Shorts #大量保有報告書"
+    stock_tag = _stock_hashtag(stock)
+    if stock_tag:
+        tags += f" {stock_tag}"
+    return f"{body}\n{url}\n{tags}"
+
+
+def post_video_tweet(props: dict, youtube_id: str) -> bool:
+    """動画公開のXクロス投稿。X認証未設定ならスキップ（動画投稿自体は止めない）。"""
+    if _auth() is None:
+        print("[x_client] X_API_KEY等が未設定のため動画クロス投稿をスキップします")
+        return False
+    return post_tweet(build_video_tweet_text(props, youtube_id))

@@ -83,6 +83,15 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     youtube_id = youtube_client.upload(video_path, props)
     if youtube_id:
         posted += 1
+        # 動画公開をXへもクロス投稿する（X未認証・失敗でも動画投稿の成否には影響させない）。
+        # requests_oauthlib未導入の環境でも動画パイプラインが落ちないよう遅延importにする。
+        try:
+            from web import x_client
+
+            if x_client.post_video_tweet(props, youtube_id):
+                print("  🐦 動画リンクをXへクロス投稿しました")
+        except Exception as e:
+            print(f"  ⚠ Xクロス投稿に失敗しましたが動画投稿は完了しています: {e}")
     tiktok_publish_id = tiktok_client.upload(video_path, props)
     if tiktok_publish_id:
         posted += 1

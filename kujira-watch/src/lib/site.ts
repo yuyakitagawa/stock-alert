@@ -26,4 +26,5 @@ export const X_FOLLOW_URL = `https://x.com/intent/follow?screen_name=${X_SCREEN_
 
 // 公式YouTubeチャンネル（1分ショート動画。video/publish_video.pyが平日投稿）。
 // チャンネル側からサイトへはリンク済みだが、サイト側からの導線もここで持つ。
-export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@dosankoure";
+// ハンドル変更時は video/youtube_client.py の CHANNEL_URL も対で更新すること。
+export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@kujira-watch";

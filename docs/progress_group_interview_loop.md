@@ -99,3 +99,11 @@ X=数値取得不可（ログイン必須+公開API 429。投稿内容・頻度�
 - [x] ハンバーガーメニューに「公式YouTube（1分ショート解説）」を追加
 - [x] 記事末尾FollowCtaにYouTubeボタンを追加（X導線と併記）
 - [x] lint/build・commit・push・デプロイ確認（commit 3c36b023、プッシュ90秒後に本番記事ページのYouTube CTAを確認。ローカルDNSも復旧済み）
+
+#### SNS改善 第2弾（2026-08-17未明、オーナー指示「1-3やっておいて」）
+- [x] 1. 動画公開時のXクロス投稿: `x_client.post_video_tweet()` を新設し `publish_video.py` がYouTube成功後に呼ぶ（遅延import・失敗しても動画投稿は成立）。`video_post.yml` のpip installに `requests-oauthlib` を追加
+- [x] 2. Xポストに銘柄タグ: `_stock_hashtag()`（記号除去）を記事投稿・日次サマリー・動画クロス投稿の3系統に追加
+- [x] 3. YouTube説明文のCTA強化: 登録リンク（`?sub_confirmation=1`）とサイトTOPリンク（UTM付き）を追加
+- [x] テスト: test_x_client.py 29件・test_video_pipeline.py 48件 全通過
+- オーナー側も4（YouTubeハンドル変更）・5（Xプロフィール整備）完了。新ハンドル **@kujira-watch** を確認し、`site.ts` と `youtube_client.py` の定数を更新
+- [ ] commit・push・デプロイ確認（フロントのみ。Python側は次回の各ワークフロー実行が本番検証）

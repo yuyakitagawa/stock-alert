@@ -32,6 +32,18 @@ def test_build_tweet_text_sell_direction_label():
     assert "推定売却金額: 30.0億円" in text
 
 
+def test_build_tweet_text_appends_sanitized_stock_hashtag():
+    text = m.build_tweet_text("タイトル", 10.0, is_sell=False, article_id="id1",
+                              stock_name="シンプレクス・アセット（8151）")
+    # 「・」「（）」はハッシュタグを切ってしまうため除去される
+    assert text.endswith("#EDINET #大量保有報告書 #シンプレクスアセット8151")
+
+
+def test_build_tweet_text_omits_stock_hashtag_when_name_empty():
+    text = m.build_tweet_text("タイトル", 10.0, is_sell=False, article_id="id1")
+    assert text.endswith("#EDINET #大量保有報告書")
+
+
 def test_build_tweet_text_truncates_long_title():
     long_title = "あ" * 200
     text = m.build_tweet_text(long_title, 10.0, is_sell=False, article_id="id1")
@@ -193,6 +205,39 @@ def test_build_daily_summary_text_includes_count_total_and_extremes():
     assert "大型売り -30.0億円（売りファンド）" in text
     assert f"{m.SITE_URL}/date/2026-08-15" in text
     assert "utm_campaign=daily_summary" in text
+    # 取り上げた最大買い増し・最大売却の銘柄タグが付く
+    assert text.endswith("#EDINET #大量保有報告書 #大型買い #大型売り")
+
+
+def test_build_video_tweet_text_includes_shorts_url_and_stock_tag():
+    props = {"stockName": "東陽テクニカ", "filerName": "テストファンド",
+             "direction": "sell", "dealAmountOku": 40.1}
+    text = m.build_video_tweet_text(props, "abc123XYZ00")
+    assert "🎬 1分解説｜東陽テクニカをテストファンドが推定40.1億円売却" in text
+    assert "https://youtube.com/shorts/abc123XYZ00" in text
+    assert text.endswith("#Shorts #大量保有報告書 #東陽テクニカ")
+
+
+def test_build_video_tweet_text_uses_generic_subject_without_filer():
+    props = {"stockName": "テスト社", "filerName": "", "direction": "buy", "dealAmountOku": 5.0}
+    text = m.build_video_tweet_text(props, "vid")
+    assert "テスト社を大口投資家が推定5.0億円取得" in text
+
+
+def test_post_video_tweet_skips_without_auth():
+    with mock.patch.dict(os.environ, {}, clear=True), \
+         mock.patch.object(m, "post_tweet") as tweet_mock:
+        assert m.post_video_tweet({"stockName": "A"}, "vid") is False
+        tweet_mock.assert_not_called()
+
+
+def test_post_video_tweet_posts_when_authed():
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m, "post_tweet", return_value=True) as tweet_mock:
+        assert m.post_video_tweet(
+            {"stockName": "A", "filerName": "F", "direction": "buy", "dealAmountOku": 1.0}, "vid"
+        ) is True
+    assert "youtube.com/shorts/vid" in tweet_mock.call_args.args[0]
 
 
 def test_build_daily_summary_text_none_when_no_articles():
