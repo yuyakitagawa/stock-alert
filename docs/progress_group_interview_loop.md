@@ -121,4 +121,4 @@ X=数値取得不可（ログイン必須+公開API 429。投稿内容・頻度�
 - [x] `web/x_weekly_trending.py`: /trending（trendingStats.ts）の30日比較集計をPython移植し、急増銘柄トップ3＋投資家トップ2をX投稿。280単位制限に収まるよう行を自動削減、`--dry-run`対応
 - [x] `x_weekly_post.yml`: 日曜19:00 JSTに週1回（平日投稿が無い週末の枠）
 - [x] テスト9件（tests/test_x_weekly_trending.py）＋実データdry-runで本文確認
-- [ ] commit・push（初回本番投稿は次の日曜19:00）
+- [x] commit・push（commit 602d45c4。初回本番投稿は次の日曜19:00）
