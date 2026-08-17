@@ -229,6 +229,62 @@ def test_build_and_publish_skips_when_already_published():
     assert results == []
 
 
+def _already_published_response(contents):
+    resp = mock.MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"contents": contents}
+    return resp
+
+
+def test_already_published_true_when_filer_and_ratio_change_match():
+    # 株価キャッシュ更新でdealAmountが大きくズレても、提出者名＋比率変化幅が一致すれば重複と判定する
+    # （2026-08-17の17件重複投稿の再発防止）
+    contents = [{"id": "a", "dealDate": "2026-08-17T00:00:00.000Z", "dealAmount": 19.6,
+                 "filerName": "テスト運用", "ratioChangePct": 2.5}]
+    with mock.patch.object(m.requests, "get", return_value=_already_published_response(contents)):
+        assert m.already_published("2492", "2026-08-17", 18.2, "テスト運用", 2.5) is True
+
+
+def test_already_published_false_for_different_filer_same_day():
+    contents = [{"id": "a", "dealDate": "2026-08-17T00:00:00.000Z", "dealAmount": 20.8,
+                 "filerName": "提出者A", "ratioChangePct": 3.0}]
+    with mock.patch.object(m.requests, "get", return_value=_already_published_response(contents)):
+        assert m.already_published("6237", "2026-08-17", 20.8, "提出者B", 3.0) is False
+
+
+def test_already_published_false_for_same_filer_different_ratio_change():
+    # 同一提出者が同日に別々の報告書を出すケース（実例: 2936 2025-08-13の橋本舜2件）は別イベント
+    contents = [{"id": "a", "dealDate": "2025-08-13T00:00:00.000Z", "dealAmount": 90.9,
+                 "filerName": "橋本 舜", "ratioChangePct": 34.62}]
+    with mock.patch.object(m.requests, "get", return_value=_already_published_response(contents)):
+        assert m.already_published("2936", "2025-08-13", 84.7, "橋本 舜", 32.23) is False
+
+
+def test_already_published_falls_back_to_deal_amount_for_legacy_articles():
+    # filerName未保存の旧記事は従来通りdealAmount±0.05億円で突き合わせる
+    contents = [{"id": "a", "dealDate": "2026-07-20T00:00:00.000Z", "dealAmount": 10.0,
+                 "filerName": None, "ratioChangePct": None}]
+    with mock.patch.object(m.requests, "get", return_value=_already_published_response(contents)):
+        assert m.already_published("7203", "2026-07-20", 10.02, "個人 太郎", 5.0) is True
+        assert m.already_published("7203", "2026-07-20", 11.5, "個人 太郎", 5.0) is False
+
+
+def test_build_and_publish_passes_dedup_keys_to_already_published():
+    holdings = [{"issuer_code": "6502", "name": "テスト電機", "filer_name": "売却 花子",
+                 "holding_ratio": 4.9, "holding_ratio_prior": 20.0, "disc_date": "2026-07-21",
+                 "doc_type_code": "350", "doc_description": "変更報告書"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "ratio_change_pct", return_value=15.1), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "already_published", return_value=True) as ap:
+        results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
+    assert results == []
+    # 売り方向はratioChangePctを負値で保存するため、突き合わせも負値で行う
+    ap.assert_called_once_with("6502", "2026-07-21", 30.0, "売却 花子", -15.1)
+
+
 def test_build_and_publish_skips_when_amount_unestimable():
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
@@ -983,6 +1039,11 @@ if __name__ == "__main__":
     test_build_and_publish_includes_pit_context_in_fact_sheet()
     test_build_and_publish_includes_sell_and_tags_them()
     test_build_and_publish_skips_when_already_published()
+    test_already_published_true_when_filer_and_ratio_change_match()
+    test_already_published_false_for_different_filer_same_day()
+    test_already_published_false_for_same_filer_different_ratio_change()
+    test_already_published_falls_back_to_deal_amount_for_legacy_articles()
+    test_build_and_publish_passes_dedup_keys_to_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
@@ -1021,4 +1082,4 @@ if __name__ == "__main__":
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
-    print("全テスト成功 (68件)")
+    print("全テスト成功 (73件)")

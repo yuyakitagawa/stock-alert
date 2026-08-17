@@ -1036,3 +1036,21 @@ emotionのランタイムが全ページに残っている。MUIのゼロラン�
 - `video/publish_video.py`: `--stock-code` 引数を追加
 - `.github/workflows/video_post.yml`: workflow_dispatch に `stock_code` 入力を追加
 - テスト: test_video_pipeline.py 43件（+2）、全テストpass
+
+## 2026-08-17: ブログ重複投稿事故の対応（重複判定キーをdealAmountからfilerName+ratioChangePctへ）
+edinet_blog.yml 17:48 JSTの便が、それ以前の便で投稿済みの記事17件をほぼ全て再投稿し、
+トップページの記事が軒並み2件ずつ並ぶ事故。原因は `already_published()` の突き合わせキー
+「銘柄コード＋開示日＋dealAmount±0.05億円」のうちdealAmountが株価からの都度概算のため、
+直前(16:54-17:45)に走ったdaily_alert.ymlが株価キャッシュを当日終値で更新した瞬間に
+全銘柄で推定金額がズレ（例: インフォマート19.6→18.2億円）、重複判定が全滅したこと。
+
+- `already_published()`: 突き合わせを 銘柄コード＋開示日＋`filerName`＋`ratioChangePct` に変更
+  （いずれも開示データから決まる決定的な値）。同一提出者が同日に複数報告書を出す実例
+  （2936 2025-08-13 橋本舜2件）があるためratioChangePct一致まで確認。filerName未保存の
+  旧記事(2026-08-16以前)のみ従来のdealAmountフォールバック
+- `build_and_publish()`: is_sell判定を重複チェック前に移動し、microCMS保存値と同じ
+  符号付き`signed_change`（売りは負）で突き合わせ
+- 重複記事の削除: 同一タイトルの重複10組をAPIで削除試行→現行APIキーはDELETE不可
+  （`DELETE is forbidden`、マネジメントAPIも403）のためmicroCMS管理画面での手動削除が必要。
+  タイトルの比率が異なる同日ペア（ベースフード/fantasista）は実在する別報告のため残す
+- テスト: test_publish_blog_articles.py 73件（+5）、全pass

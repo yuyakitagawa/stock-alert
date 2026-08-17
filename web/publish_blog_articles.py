@@ -452,17 +452,29 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
     return {a["id"] for a in contents[:count]}
 
 
-def already_published(stock_code: str, disc_date: str, deal_amount: "float | None" = None) -> bool:
-    """同一銘柄・同一開示日・同一金額規模の記事が既にmicroCMSにあればTrue（重複投稿防止）。
-    同一銘柄・同日に複数提出者の開示が別々にある場合があり（実運用で発生: 2026-08-14、
-    402Aの2025-08-20にグローバル・ブレインと31VENTURESの2件が同日開示）、日付だけの
-    突き合わせだと2件目を別イベントと認識できず誤って重複扱いしてしまう。dealAmountも
-    突き合わせて別イベントとして区別する（filerNameはmicroCMS未実装のため使えない）。"""
+def already_published(stock_code: str, disc_date: str, deal_amount: "float | None" = None,
+                      filer_name: str = "", ratio_change: "float | None" = None) -> bool:
+    """同一開示の記事が既にmicroCMSにあればTrue（重複投稿防止）。
+    突き合わせキーは 銘柄コード＋開示日＋提出者名＋比率変化幅(ratioChangePct)。
+    いずれも開示データから決まる値なので、何度再実行しても同じ開示は同じキーになる。
+
+    dealAmountでの突き合わせは、推定金額が株価から都度概算されるため株価キャッシュ更新を
+    またぐと全銘柄で±0.05億円を超えてズレ、既報の開示が全て別イベント扱いになる
+    （実害: 2026-08-17、daily_alert.ymlの株価更新直後の便で17件が重複投稿）。
+    filerName未保存の旧記事（2026-08-16以前）へのフォールバックとしてのみ残す。
+
+    同一銘柄・同日・同一提出者の複数開示も実在する（実例: 2936 2025-08-13に橋本舜が
+    9:50と10:07に別々の変更報告書を提出）ため、提出者一致だけでは重複と断定せず
+    ratioChangePctの一致まで確認して別イベントを区別する。"""
     try:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
-            params={"filters": f"stockCode[equals]{stock_code}", "fields": "id,dealDate,dealAmount", "limit": 20},
+            params={
+                "filters": f"stockCode[equals]{stock_code}",
+                "fields": "id,dealDate,dealAmount,filerName,ratioChangePct",
+                "limit": 50,
+            },
             timeout=15,
         )
         if resp.status_code != 200:
@@ -471,6 +483,15 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
         for c in contents:
             if str(c.get("dealDate", ""))[:10] != disc_date:
                 continue
+            if filer_name and c.get("filerName"):
+                if c["filerName"] != filer_name:
+                    continue
+                if ratio_change is None or c.get("ratioChangePct") is None:
+                    return True
+                if abs(c["ratioChangePct"] - ratio_change) < 0.01:
+                    return True
+                continue
+            # 旧記事フォールバック: filerNameが無い記事は金額規模で突き合わせる
             if deal_amount is None or c.get("dealAmount") is None:
                 return True
             if abs(c["dealAmount"] - deal_amount) < 0.05:
@@ -954,13 +975,16 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 金額を概算できないためスキップ")
             continue
 
-        if already_published(code, disc_date, deal_amount):
-            continue
-
         is_sell = is_sell_disclosure(
             h.get("doc_description") or "", h.get("holding_ratio"), h.get("holding_ratio_prior")
         )
         direction = "sell" if is_sell else "buy"
+        # 保有比率の変化幅(ポイント)。売りは負値で持たせ、フロントのファクトボックスで±表示する。
+        # microCMSのratioChangePctと同じ値なので重複判定の突き合わせキーにも使う
+        signed_change = round(-change if is_sell else change, 2)
+
+        if already_published(code, disc_date, deal_amount, filer_name, signed_change):
+            continue
 
         snapshot = get_pit_ranking_snapshot(code, disc_date)
         context_close = snapshot.get("close") if snapshot else None
@@ -1005,8 +1029,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "dealType": deal_type,
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
-            # 保有比率の変化幅(ポイント)。売りは負値で持たせ、フロントのファクトボックスで±表示する
-            "ratioChangePct": round(-change if is_sell else change, 2),
+            "ratioChangePct": signed_change,
             "tags": tags,
             "filerName": filer_name,
         }
