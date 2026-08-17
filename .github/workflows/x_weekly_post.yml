@@ -1,0 +1,53 @@
+name: X Weekly Trending Post
+
+on:
+  schedule:
+    # 日曜 19:00 JST（UTC 10:00）に週1回。平日の記事投稿（9-19時）・日次サマリー（19時）が
+    # 無い週末のタイムラインを埋める枠。集計は/trendingと同じ「直近30日 vs その前30日」なので
+    # 曜日依存のデータ締め切りは無く、日曜の夜プライム帯に合わせている。
+    - cron: '0 10 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '本文の生成・表示のみで投稿しない'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv requests-oauthlib
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "X_API_KEY=${{ secrets.X_API_KEY }}" >> ~/stock-alert/.env
+          echo "X_API_KEY_SECRET=${{ secrets.X_API_KEY_SECRET }}" >> ~/stock-alert/.env
+          echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
+          echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
+
+      - name: Post weekly trending
+        run: |
+          cd ~/stock-alert
+          python web/x_weekly_trending.py ${{ inputs.dry_run && '--dry-run' || '' }}

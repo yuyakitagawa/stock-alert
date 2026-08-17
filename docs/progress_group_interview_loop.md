@@ -116,3 +116,9 @@ X=数値取得不可（ログイン必須+公開API 429。投稿内容・頻度�
 - [x] サイト表記も同期: TOP「毎時自動更新」注記とFAQの更新時間を9時〜19時に修正、README（ルート）も更新
 - [x] test_x_client 29件通過
 - **オーナー側TODO**: Xのbio・固定ポストに「21時」と書いていたら「19時」へ修正
+
+#### 週次X投稿（2026-08-18、オーナー指示「/trendingのデータを使いたい」）
+- [x] `web/x_weekly_trending.py`: /trending（trendingStats.ts）の30日比較集計をPython移植し、急増銘柄トップ3＋投資家トップ2をX投稿。280単位制限に収まるよう行を自動削減、`--dry-run`対応
+- [x] `x_weekly_post.yml`: 日曜19:00 JSTに週1回（平日投稿が無い週末の枠）
+- [x] テスト9件（tests/test_x_weekly_trending.py）＋実データdry-runで本文確認
+- [ ] commit・push（初回本番投稿は次の日曜19:00）
