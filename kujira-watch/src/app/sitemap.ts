@@ -32,43 +32,40 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
   const lastModified = maxUpdatedAt(articles.map((a) => a.updatedAt));
   return [
-    { url: SITE_URL, lastModified, changeFrequency: "daily", priority: 1 },
-    { url: `${SITE_URL}/en`, lastModified, changeFrequency: "daily", priority: 1 },
-    { url: `${SITE_URL}/weekly`, lastModified, changeFrequency: "daily", priority: 0.9 },
-    { url: `${SITE_URL}/disclosures`, lastModified, changeFrequency: "daily", priority: 0.9 },
-    { url: `${SITE_URL}/activists`, lastModified, changeFrequency: "daily", priority: 0.8 },
-    { url: `${SITE_URL}/monthly`, lastModified, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/trending`, lastModified, changeFrequency: "daily", priority: 0.8 },
-    { url: `${SITE_URL}/about`, lastModified, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${SITE_URL}/en/about`, lastModified, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${SITE_URL}/en/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${SITE_URL}/faq`, lastModified, changeFrequency: "monthly", priority: 0.6 },
+    { url: SITE_URL, lastModified, priority: 1 },
+    { url: `${SITE_URL}/en`, lastModified, priority: 1 },
+    { url: `${SITE_URL}/weekly`, lastModified, priority: 0.9 },
+    { url: `${SITE_URL}/disclosures`, lastModified, priority: 0.9 },
+    { url: `${SITE_URL}/activists`, lastModified, priority: 0.8 },
+    { url: `${SITE_URL}/monthly`, lastModified, priority: 0.7 },
+    { url: `${SITE_URL}/trending`, lastModified, priority: 0.8 },
+    { url: `${SITE_URL}/about`, lastModified, priority: 0.3 },
+    { url: `${SITE_URL}/en/about`, lastModified, priority: 0.3 },
+    { url: `${SITE_URL}/privacy`, lastModified, priority: 0.3 },
+    { url: `${SITE_URL}/en/privacy`, lastModified, priority: 0.3 },
+    { url: `${SITE_URL}/faq`, lastModified, priority: 0.6 },
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
     ...FAQ_CATEGORIES.map((category) => ({
       url: `${SITE_URL}/faq/${category.id}`,
       lastModified,
-      changeFrequency: "monthly" as const,
       priority: 0.5,
     })),
-    { url: `${SITE_URL}/investors`, lastModified, changeFrequency: "daily", priority: 0.6 },
-    { url: `${SITE_URL}/ranking`, lastModified, changeFrequency: "weekly", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/buys`, lastModified, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/sells`, lastModified, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/filings`, lastModified, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/activist`, lastModified, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/stocks`, lastModified, changeFrequency: "daily", priority: 0.6 },
+    { url: `${SITE_URL}/investors`, lastModified, priority: 0.6 },
+    { url: `${SITE_URL}/ranking`, lastModified, priority: 0.7 },
+    { url: `${SITE_URL}/ranking/buys`, lastModified, priority: 0.7 },
+    { url: `${SITE_URL}/ranking/sells`, lastModified, priority: 0.7 },
+    { url: `${SITE_URL}/ranking/filings`, lastModified, priority: 0.7 },
+    { url: `${SITE_URL}/ranking/activist`, lastModified, priority: 0.7 },
+    { url: `${SITE_URL}/stocks`, lastModified, priority: 0.6 },
     ...CATEGORIES.map((category) => ({
       url: `${SITE_URL}/category/${encodeURIComponent(category)}`,
       lastModified,
-      changeFrequency: "daily" as const,
       priority: 0.5,
     })),
     ...DEAL_TYPES.map((dealType) => ({
       url: `${SITE_URL}/en/category/${DEAL_TYPE_EN[dealType].slug}`,
       lastModified,
-      changeFrequency: "daily" as const,
       priority: 0.5,
     })),
   ];
@@ -101,13 +98,11 @@ async function stockEntries(): Promise<MetadataRoute.Sitemap> {
     ...[...latestByStock.entries()].map(([code, lastModified]) => ({
       url: `${SITE_URL}/stocks/${code}`,
       lastModified,
-      changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
     ...[...latestByEnStock.entries()].map(([code, lastModified]) => ({
       url: `${SITE_URL}/en/stocks/${code}`,
       lastModified,
-      changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
   ];
@@ -122,13 +117,11 @@ async function dateEntries(): Promise<MetadataRoute.Sitemap> {
     ...[...latestByMonth.entries()].map(([month, lastModified]) => ({
       url: `${SITE_URL}/monthly/${month}`,
       lastModified,
-      changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
     ...[...latestByDate.entries()].map(([date, lastModified]) => ({
       url: `${SITE_URL}/date/${date}`,
       lastModified,
-      changeFrequency: "monthly" as const,
       priority: 0.5,
     })),
   ];
@@ -139,20 +132,18 @@ async function investorEntries(): Promise<MetadataRoute.Sitemap> {
   return filers.map((filer) => ({
     url: `${SITE_URL}/investors/${encodeURIComponent(filer.filerName)}`,
     lastModified: filer.latestDiscDate,
-    changeFrequency: "weekly",
     priority: 0.5,
   }));
 }
 
 // 日英の相互参照(hreflang)は各ページのHTML <head>で宣言済みのため、サイトマップ側には
-// 載せない（Googleはどちらか一方の方法で足りる）。全子サイトマップの記述形式を
-// loc/lastmod/changefreq/priorityの4行に統一するための判断。
+// 載せない（Googleはどちらか一方の方法で足りる）。changefreqはGoogleが公式に「無視する」と
+// 明言している値なので出さない。全子サイトマップはloc/lastmod/priorityの統一形式。
 async function articleEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
   return articles.map((article) => ({
     url: `${SITE_URL}/articles/${article.id}`,
     lastModified: article.updatedAt,
-    changeFrequency: "monthly",
     priority: 0.7,
   }));
 }
@@ -162,7 +153,6 @@ async function enArticleEntries(): Promise<MetadataRoute.Sitemap> {
   return translatedArticles.map((article) => ({
     url: `${SITE_URL}/en/articles/${article.id}`,
     lastModified: article.updatedAt,
-    changeFrequency: "monthly",
     priority: 0.7,
   }));
 }
