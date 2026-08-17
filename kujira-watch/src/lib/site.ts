@@ -18,6 +18,13 @@ export const SITE_NAME_EN = "Big Investor Watch";
 export const SITE_DESCRIPTION_EN =
   "A blog tracking Japanese-market \"whales\" — institutional investors, insiders, and buybacks — based on EDINET large-shareholding filings.";
 
+// generateSitemapsで分割した子サイトマップのID一覧。/sitemap/<id>.xml のURLになる。
+// app/sitemap.ts（子の生成）と app/sitemap.xml/route.ts（sitemapindex）の両方から参照する。
+// app/sitemap.tsから直接exportしないのは、metadata routeのnamed exportは
+// Next.jsのローダーがroute configとして再exportしてしまうため。
+export const SITEMAP_IDS = ["pages", "stocks", "dates", "investors", "articles", "articles-en"] as const;
+export type SitemapId = (typeof SITEMAP_IDS)[number];
+
 // 公式Xアカウント。フォロー導線（記事末尾CTA・フッター）で使用する。
 export const X_SCREEN_NAME = "kujira_watch";
 export const X_PROFILE_URL = `https://x.com/${X_SCREEN_NAME}`;
