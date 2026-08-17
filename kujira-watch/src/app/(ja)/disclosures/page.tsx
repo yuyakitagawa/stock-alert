@@ -15,7 +15,7 @@ import {
   type DisclosureRow,
   type DisclosureTypeFilter,
 } from "@/lib/disclosures";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
 const title = "大量保有報告書の開示速報";
@@ -149,12 +149,14 @@ async function DisclosuresBody({ searchParams }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <p className="mb-4 text-sm leading-relaxed text-foreground/70">
-        EDINETに提出された大量保有報告書（5%ルール）・変更報告書の全{counts.all.toLocaleString()}件を、
-        提出日の新しい順に一覧しています（{SITE_NAME}が日次で取得。解説記事になっていない開示も
-        すべて含みます）。保有比率の「前回 → 今回」と増減、新規・変更・訂正の種別、
-        EDINETの原文PDFへのリンクつきです。開示は報告義務発生日（保有比率が5%を超えた日など）から
-        最大5営業日遅れて提出される点にご注意ください。
+        EDINETに提出された取引を提出日の新しい順に一覧しています。
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}
+        <br />
+        ※開示は最大5営業日遅れて提出される点にご注意ください。詳しくは
+        <Link href="/faq/usage" className="text-brand-blue hover:underline">
+          よくある質問
+        </Link>
+        をご覧ください。
       </p>
 
       <FilterButtonNav
