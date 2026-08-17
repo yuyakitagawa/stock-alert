@@ -12,9 +12,12 @@ export function GET(): Response {
   const body = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`,
-    ...SITEMAP_IDS.map(
-      (id) => `<sitemap><loc>${SITE_URL}/sitemap/${id}.xml</loc></sitemap>`
-    ),
+    // 子サイトマップ（urlset）と同じ1タグ1行の記述形式に揃える。
+    ...SITEMAP_IDS.flatMap((id) => [
+      `<sitemap>`,
+      `<loc>${SITE_URL}/sitemap/${id}.xml</loc>`,
+      `</sitemap>`,
+    ]),
     `</sitemapindex>`,
   ].join("\n");
   return new Response(body, {

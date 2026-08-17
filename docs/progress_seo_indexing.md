@@ -59,3 +59,4 @@
   2. 2026-08-15の投資家全件掲載修正（PostgREST 1000行上限回避）でURL数が1,713→6,196に急増。壊れてはいないが「インデックス未登録」件数は今後増えて見える（母数増のため異常ではない）。
 - [x] 対応（2026-08-18）: `/sitemap.xml`をsitemapindex化し、`generateSitemaps`で6分割（pages/stocks/dates/investors/articles/articles-en）。データ取得は`unstable_cache`1時間で応答高速化。`app/sitemap.xml/route.ts`はmetadata予約名と衝突するため実体は`sitemap-index.xml`+rewrite。ローカル検証で合計6,196URL（分割前と一致）・未知ID404・hreflang出力を確認。
 - GSC側の追加作業は不要（/sitemap.xmlのURLは不変のため再送信不要。Googleはsitemapindexを自動で辿る）。
+- 形式の変遷（同日内）: 一度「従来の単一urlset形式が良い」で分割を撤回→最終的に「sitemapindex形式で良い。ただしインデックスも子と同じ1タグ1行のXML記述にする」で確定。sitemapindexのエントリを`<sitemap>`/`<loc>`/`</sitemap>`各行分割に整形して再デプロイ。
