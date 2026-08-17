@@ -32,17 +32,17 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
   const lastModified = maxUpdatedAt(articles.map((a) => a.updatedAt));
   return [
-    { url: SITE_URL, lastModified, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
-    { url: `${SITE_URL}/en`, lastModified, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
+    { url: SITE_URL, lastModified, changeFrequency: "daily", priority: 1 },
+    { url: `${SITE_URL}/en`, lastModified, changeFrequency: "daily", priority: 1 },
     { url: `${SITE_URL}/weekly`, lastModified, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/disclosures`, lastModified, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/activists`, lastModified, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/monthly`, lastModified, changeFrequency: "daily", priority: 0.7 },
     { url: `${SITE_URL}/trending`, lastModified, changeFrequency: "daily", priority: 0.8 },
-    { url: `${SITE_URL}/about`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
-    { url: `${SITE_URL}/en/about`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
-    { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
-    { url: `${SITE_URL}/en/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
+    { url: `${SITE_URL}/about`, lastModified, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE_URL}/en/about`, lastModified, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE_URL}/en/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/faq`, lastModified, changeFrequency: "monthly", priority: 0.6 },
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
@@ -144,24 +144,17 @@ async function investorEntries(): Promise<MetadataRoute.Sitemap> {
   }));
 }
 
+// 日英の相互参照(hreflang)は各ページのHTML <head>で宣言済みのため、サイトマップ側には
+// 載せない（Googleはどちらか一方の方法で足りる）。全子サイトマップの記述形式を
+// loc/lastmod/changefreq/priorityの4行に統一するための判断。
 async function articleEntries(): Promise<MetadataRoute.Sitemap> {
-  const [articles, translatedArticles] = await Promise.all([
-    getAllArticlesForSitemap(),
-    getTranslatedArticlesForSitemap(),
-  ]);
-  const translatedIds = new Set(translatedArticles.map((a) => a.id));
-  return articles.map((article) => {
-    const hasEn = translatedIds.has(article.id);
-    return {
-      url: `${SITE_URL}/articles/${article.id}`,
-      lastModified: article.updatedAt,
-      changeFrequency: "monthly",
-      priority: 0.7,
-      ...(hasEn
-        ? { alternates: { languages: { ja: `${SITE_URL}/articles/${article.id}`, en: `${SITE_URL}/en/articles/${article.id}` } } }
-        : {}),
-    };
-  });
+  const articles = await getAllArticlesForSitemap();
+  return articles.map((article) => ({
+    url: `${SITE_URL}/articles/${article.id}`,
+    lastModified: article.updatedAt,
+    changeFrequency: "monthly",
+    priority: 0.7,
+  }));
 }
 
 async function enArticleEntries(): Promise<MetadataRoute.Sitemap> {
@@ -171,7 +164,6 @@ async function enArticleEntries(): Promise<MetadataRoute.Sitemap> {
     lastModified: article.updatedAt,
     changeFrequency: "monthly",
     priority: 0.7,
-    alternates: { languages: { ja: `${SITE_URL}/articles/${article.id}`, en: `${SITE_URL}/en/articles/${article.id}` } },
   }));
 }
 
