@@ -1,5 +1,9 @@
 import type { MetadataRoute } from "next";
-import { getAllArticlesForSitemap, getTranslatedArticlesForSitemap } from "@/lib/microcms";
+import {
+  getAboutUpdatedAtForSitemap,
+  getAllArticlesForSitemap,
+  getTranslatedArticlesForSitemap,
+} from "@/lib/microcms";
 import { getAllFilers } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPES } from "@/types/article";
@@ -26,44 +30,57 @@ function maxUpdatedAt(updatedAts: string[]): string | undefined {
   return latest;
 }
 
-// 固定ページ・カテゴリ・FAQ・ランキングなど。ページ自体の更新日時は追跡していないため、
-// <lastmod>にはサイト全体の最新記事更新日時を入れる（ハブページは新着記事で内容が変わるため）。
+// 固定ページ・カテゴリ・FAQ・ランキングなど。<lastmod>は「そのページの内容が実際に変わる
+// データ源」から厳密に取る（不正確なlastmodはGoogleに信用されなくなるため）:
+// - 記事一覧系ハブ: 表示対象の記事群の最新updatedAt（日本語ハブ=全記事、/en系=英訳記事）
+// - カテゴリ: そのカテゴリの記事の最新updatedAt
+// - EDINET開示系（/disclosures・/activists・/investors）: 最新開示日
+// - /about: microCMSのaboutオブジェクトの実updatedAt
+// - 静的コンテンツ（/privacy・/en/about・/en/privacy・FAQ）: 更新日を追跡できないため省略
 async function pageEntries(): Promise<MetadataRoute.Sitemap> {
-  const articles = await getAllArticlesForSitemap();
-  const lastModified = maxUpdatedAt(articles.map((a) => a.updatedAt));
+  const [articles, translatedArticles, filers, aboutUpdatedAt] = await Promise.all([
+    getAllArticlesForSitemap(),
+    getTranslatedArticlesForSitemap(),
+    getAllFilers(),
+    getAboutUpdatedAtForSitemap(),
+  ]);
+  const latestArticle = maxUpdatedAt(articles.map((a) => a.updatedAt));
+  const latestEnArticle = maxUpdatedAt(translatedArticles.map((a) => a.updatedAt));
+  const latestDisclosure = maxUpdatedAt(filers.map((f) => f.latestDiscDate));
+  const latestByCategory = latestUpdatedAtBy(articles, (a) => a.dealType);
+  const latestByEnCategory = latestUpdatedAtBy(translatedArticles, (a) => a.dealType);
   return [
-    { url: SITE_URL, lastModified },
-    { url: `${SITE_URL}/en`, lastModified },
-    { url: `${SITE_URL}/weekly`, lastModified },
-    { url: `${SITE_URL}/disclosures`, lastModified },
-    { url: `${SITE_URL}/activists`, lastModified },
-    { url: `${SITE_URL}/monthly`, lastModified },
-    { url: `${SITE_URL}/trending`, lastModified },
-    { url: `${SITE_URL}/about`, lastModified },
-    { url: `${SITE_URL}/en/about`, lastModified },
-    { url: `${SITE_URL}/privacy`, lastModified },
-    { url: `${SITE_URL}/en/privacy`, lastModified },
-    { url: `${SITE_URL}/faq`, lastModified },
+    { url: SITE_URL, lastModified: latestArticle },
+    { url: `${SITE_URL}/en`, lastModified: latestEnArticle },
+    { url: `${SITE_URL}/weekly`, lastModified: latestArticle },
+    { url: `${SITE_URL}/disclosures`, lastModified: latestDisclosure },
+    { url: `${SITE_URL}/activists`, lastModified: latestDisclosure },
+    { url: `${SITE_URL}/monthly`, lastModified: latestArticle },
+    { url: `${SITE_URL}/trending`, lastModified: latestArticle },
+    { url: `${SITE_URL}/about`, lastModified: aboutUpdatedAt },
+    { url: `${SITE_URL}/en/about` },
+    { url: `${SITE_URL}/privacy` },
+    { url: `${SITE_URL}/en/privacy` },
+    { url: `${SITE_URL}/faq` },
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
     ...FAQ_CATEGORIES.map((category) => ({
       url: `${SITE_URL}/faq/${category.id}`,
-      lastModified,
     })),
-    { url: `${SITE_URL}/investors`, lastModified },
-    { url: `${SITE_URL}/ranking`, lastModified },
-    { url: `${SITE_URL}/ranking/buys`, lastModified },
-    { url: `${SITE_URL}/ranking/sells`, lastModified },
-    { url: `${SITE_URL}/ranking/filings`, lastModified },
-    { url: `${SITE_URL}/ranking/activist`, lastModified },
-    { url: `${SITE_URL}/stocks`, lastModified },
+    { url: `${SITE_URL}/investors`, lastModified: latestDisclosure },
+    { url: `${SITE_URL}/ranking`, lastModified: latestArticle },
+    { url: `${SITE_URL}/ranking/buys`, lastModified: latestArticle },
+    { url: `${SITE_URL}/ranking/sells`, lastModified: latestArticle },
+    { url: `${SITE_URL}/ranking/filings`, lastModified: latestArticle },
+    { url: `${SITE_URL}/ranking/activist`, lastModified: latestArticle },
+    { url: `${SITE_URL}/stocks`, lastModified: latestArticle },
     ...CATEGORIES.map((category) => ({
       url: `${SITE_URL}/category/${encodeURIComponent(category)}`,
-      lastModified,
+      lastModified: latestByCategory.get(category),
     })),
     ...DEAL_TYPES.map((dealType) => ({
       url: `${SITE_URL}/en/category/${DEAL_TYPE_EN[dealType].slug}`,
-      lastModified,
+      lastModified: latestByEnCategory.get(dealType),
     })),
   ];
 }

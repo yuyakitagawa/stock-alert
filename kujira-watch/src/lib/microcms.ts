@@ -315,23 +315,33 @@ export async function searchStocks(keyword: string): Promise<StockSearchResult[]
 
 // サイトマップ用の軽量な記事参照。sitemapはforce-dynamicで毎リクエスト実行されるため、
 // microCMS全件ページングを毎回行わないようunstable_cacheで1時間持つ。
-export type SitemapArticleRef = { id: string; updatedAt: string; stockCode: string; dealDate: string };
+// dealTypeはカテゴリページの<lastmod>（カテゴリ内の記事の最新updatedAt）算出に使う。
+export type SitemapArticleRef = {
+  id: string;
+  updatedAt: string;
+  stockCode: string;
+  dealDate: string;
+  dealType: DealType;
+};
 
 export const getAllArticlesForSitemap = unstable_cache(
   async (): Promise<SitemapArticleRef[]> => {
-    const contents = await client.getAllContents<Pick<Article, "stockCode" | "dealDate">>({
+    const contents = await client.getAllContents<
+      Pick<Article, "stockCode" | "dealDate" | "dealType">
+    >({
       endpoint: "articles",
       queries: {
-        fields: "id,updatedAt,stockCode,dealDate",
+        fields: "id,updatedAt,stockCode,dealDate,dealType",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
     });
-    return contents.map(({ id, updatedAt, stockCode, dealDate }) => ({
+    return contents.map(normalizeDealType).map(({ id, updatedAt, stockCode, dealDate, dealType }) => ({
       id,
       updatedAt,
       stockCode,
       dealDate,
+      dealType,
     }));
   },
   ["sitemap-articles"],
@@ -384,19 +394,35 @@ export async function getAboutPage() {
 export const getTranslatedArticlesForSitemap = unstable_cache(
   async (): Promise<Omit<SitemapArticleRef, "dealDate">[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "titleEn" | "bodyEn">
+      Pick<Article, "stockCode" | "dealType" | "titleEn" | "bodyEn">
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,updatedAt,stockCode,titleEn,bodyEn",
+        fields: "id,updatedAt,stockCode,dealType,titleEn,bodyEn",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
     });
     return contents
       .filter((a) => a.titleEn && a.bodyEn)
-      .map(({ id, updatedAt, stockCode }) => ({ id, updatedAt, stockCode }));
+      .map(normalizeDealType)
+      .map(({ id, updatedAt, stockCode, dealType }) => ({ id, updatedAt, stockCode, dealType }));
   },
   ["sitemap-translated-articles"],
+  { revalidate: 3600 }
+);
+
+// /aboutの<lastmod>用。microCMSのaboutオブジェクト自体の更新日時だけを取る
+// （本文フィールドは不要なのでupdatedAtのみ要求）。
+export const getAboutUpdatedAtForSitemap = unstable_cache(
+  async (): Promise<string | undefined> => {
+    const about = await client.getObject<{ updatedAt?: string }>({
+      endpoint: "about",
+      queries: { fields: "updatedAt" },
+      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+    });
+    return about.updatedAt;
+  },
+  ["sitemap-about-updated-at"],
   { revalidate: 3600 }
 );
