@@ -57,5 +57,5 @@
 - 調査中に判明した実問題2つ:
   1. sitemap.xml の応答が毎回9〜11秒（1回は20秒タイムアウト）。原因は`getTranslatedArticlesForSitemap`が英語本文bodyEn全文を毎リクエスト全件取得していたこと。
   2. 2026-08-15の投資家全件掲載修正（PostgREST 1000行上限回避）でURL数が1,713→6,196に急増。壊れてはいないが「インデックス未登録」件数は今後増えて見える（母数増のため異常ではない）。
-- [x] 対応（2026-08-18）: `/sitemap.xml`をsitemapindex化し、`generateSitemaps`で6分割（pages/stocks/dates/investors/articles/articles-en）。データ取得は`unstable_cache`1時間で応答高速化。`app/sitemap.xml/route.ts`はmetadata予約名と衝突するため実体は`sitemap-index.xml`+rewrite。ローカル検証で合計6,196URL（分割前と一致）・未知ID404・hreflang出力を確認。
-- GSC側の追加作業は不要（/sitemap.xmlのURLは不変のため再送信不要。Googleはsitemapindexを自動で辿る）。
+- [x] 対応（2026-08-18）: sitemap用データ取得を`unstable_cache`1時間（必要フィールドのみ）に変更して応答を1秒台に高速化。一度sitemapindex+6分割も実装したが、ユーザーの意向（従来と同じ1ファイルのurlset形式が良い）で分割は同日撤回し、`/sitemap.xml`は従来どおり全URLを1ファイルで返す形式に戻した（キャッシュ化のみ残る）。
+- GSC側の追加作業は不要（/sitemap.xmlのURL・形式とも従来どおり）。
