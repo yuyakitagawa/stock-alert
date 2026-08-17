@@ -16,46 +16,78 @@ export function generateSitemaps(): { id: SitemapId }[] {
   return SITEMAP_IDS.map((id) => ({ id }));
 }
 
-// 固定ページ・カテゴリ・FAQ・ランキングなど、データ取得なしで列挙できるページ群。
-function pageEntries(): MetadataRoute.Sitemap {
+// 記事更新日時(ISO文字列)の最大値。全エントリに<lastmod>を出すための共通ヘルパー
+// （同一形式のISO文字列同士なので文字列比較で新しい方が選べる）。
+function maxUpdatedAt(updatedAts: string[]): string | undefined {
+  let latest: string | undefined;
+  for (const u of updatedAts) {
+    if (u && (!latest || u > latest)) latest = u;
+  }
+  return latest;
+}
+
+// 固定ページ・カテゴリ・FAQ・ランキングなど。ページ自体の更新日時は追跡していないため、
+// <lastmod>にはサイト全体の最新記事更新日時を入れる（ハブページは新着記事で内容が変わるため）。
+async function pageEntries(): Promise<MetadataRoute.Sitemap> {
+  const articles = await getAllArticlesForSitemap();
+  const lastModified = maxUpdatedAt(articles.map((a) => a.updatedAt));
   return [
-    { url: SITE_URL, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
-    { url: `${SITE_URL}/en`, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
-    { url: `${SITE_URL}/weekly`, changeFrequency: "daily", priority: 0.9 },
-    { url: `${SITE_URL}/disclosures`, changeFrequency: "daily", priority: 0.9 },
-    { url: `${SITE_URL}/activists`, changeFrequency: "daily", priority: 0.8 },
-    { url: `${SITE_URL}/monthly`, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/trending`, changeFrequency: "daily", priority: 0.8 },
-    { url: `${SITE_URL}/about`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
-    { url: `${SITE_URL}/en/about`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
-    { url: `${SITE_URL}/privacy`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
-    { url: `${SITE_URL}/en/privacy`, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
-    { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.6 },
+    { url: SITE_URL, lastModified, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
+    { url: `${SITE_URL}/en`, lastModified, changeFrequency: "daily", priority: 1, alternates: { languages: { ja: SITE_URL, en: `${SITE_URL}/en` } } },
+    { url: `${SITE_URL}/weekly`, lastModified, changeFrequency: "daily", priority: 0.9 },
+    { url: `${SITE_URL}/disclosures`, lastModified, changeFrequency: "daily", priority: 0.9 },
+    { url: `${SITE_URL}/activists`, lastModified, changeFrequency: "daily", priority: 0.8 },
+    { url: `${SITE_URL}/monthly`, lastModified, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/trending`, lastModified, changeFrequency: "daily", priority: 0.8 },
+    { url: `${SITE_URL}/about`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
+    { url: `${SITE_URL}/en/about`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` } } },
+    { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
+    { url: `${SITE_URL}/en/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3, alternates: { languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` } } },
+    { url: `${SITE_URL}/faq`, lastModified, changeFrequency: "monthly", priority: 0.6 },
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
     ...FAQ_CATEGORIES.map((category) => ({
       url: `${SITE_URL}/faq/${category.id}`,
+      lastModified,
       changeFrequency: "monthly" as const,
       priority: 0.5,
     })),
-    { url: `${SITE_URL}/investors`, changeFrequency: "daily", priority: 0.6 },
-    { url: `${SITE_URL}/ranking`, changeFrequency: "weekly", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/buys`, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/sells`, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/filings`, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/ranking/activist`, changeFrequency: "daily", priority: 0.7 },
-    { url: `${SITE_URL}/stocks`, changeFrequency: "daily", priority: 0.6 },
+    { url: `${SITE_URL}/investors`, lastModified, changeFrequency: "daily", priority: 0.6 },
+    { url: `${SITE_URL}/ranking`, lastModified, changeFrequency: "weekly", priority: 0.7 },
+    { url: `${SITE_URL}/ranking/buys`, lastModified, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/ranking/sells`, lastModified, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/ranking/filings`, lastModified, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/ranking/activist`, lastModified, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/stocks`, lastModified, changeFrequency: "daily", priority: 0.6 },
     ...CATEGORIES.map((category) => ({
       url: `${SITE_URL}/category/${encodeURIComponent(category)}`,
+      lastModified,
       changeFrequency: "daily" as const,
       priority: 0.5,
     })),
     ...DEAL_TYPES.map((dealType) => ({
       url: `${SITE_URL}/en/category/${DEAL_TYPE_EN[dealType].slug}`,
+      lastModified,
       changeFrequency: "daily" as const,
       priority: 0.5,
     })),
   ];
+}
+
+// キー（銘柄コード・取引日など）ごとの記事の最新updatedAt。
+// 銘柄・日別・月別ページの<lastmod>に使う。
+function latestUpdatedAtBy<T extends { updatedAt: string }>(
+  items: T[],
+  keyOf: (item: T) => string
+): Map<string, string> {
+  const latest = new Map<string, string>();
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!key) continue;
+    const prev = latest.get(key);
+    if (!prev || item.updatedAt > prev) latest.set(key, item.updatedAt);
+  }
+  return latest;
 }
 
 async function stockEntries(): Promise<MetadataRoute.Sitemap> {
@@ -63,18 +95,18 @@ async function stockEntries(): Promise<MetadataRoute.Sitemap> {
     getAllArticlesForSitemap(),
     getTranslatedArticlesForSitemap(),
   ]);
-  const stockCodes = [...new Set(articles.map((article) => article.stockCode).filter(Boolean))];
-  const enStockCodes = [
-    ...new Set(translatedArticles.map((article) => article.stockCode).filter(Boolean)),
-  ];
+  const latestByStock = latestUpdatedAtBy(articles, (a) => a.stockCode);
+  const latestByEnStock = latestUpdatedAtBy(translatedArticles, (a) => a.stockCode);
   return [
-    ...stockCodes.map((code) => ({
+    ...[...latestByStock.entries()].map(([code, lastModified]) => ({
       url: `${SITE_URL}/stocks/${code}`,
+      lastModified,
       changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
-    ...enStockCodes.map((code) => ({
+    ...[...latestByEnStock.entries()].map(([code, lastModified]) => ({
       url: `${SITE_URL}/en/stocks/${code}`,
+      lastModified,
       changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
@@ -83,19 +115,19 @@ async function stockEntries(): Promise<MetadataRoute.Sitemap> {
 
 async function dateEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
-  const dealDates = [
-    ...new Set(articles.map((article) => article.dealDate.slice(0, 10)).filter(Boolean)),
-  ];
+  const latestByDate = latestUpdatedAtBy(articles, (a) => a.dealDate.slice(0, 10));
+  const latestByMonth = latestUpdatedAtBy(articles, (a) => a.dealDate.slice(0, 7));
   // 月別アーカイブ。取引日別ページの親ハブなので、日別ページより優先度を高くする。
-  const months = [...new Set(dealDates.map((date) => date.slice(0, 7)))];
   return [
-    ...months.map((month) => ({
+    ...[...latestByMonth.entries()].map(([month, lastModified]) => ({
       url: `${SITE_URL}/monthly/${month}`,
+      lastModified,
       changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
-    ...dealDates.map((date) => ({
+    ...[...latestByDate.entries()].map(([date, lastModified]) => ({
       url: `${SITE_URL}/date/${date}`,
+      lastModified,
       changeFrequency: "monthly" as const,
       priority: 0.5,
     })),
