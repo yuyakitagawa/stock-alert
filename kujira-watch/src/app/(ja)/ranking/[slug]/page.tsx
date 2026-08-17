@@ -7,6 +7,7 @@ import { getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
+import RankingTabNav from "@/components/RankingTabNav";
 
 // ランキングの元データ（記事）は毎時更新なので1時間キャッシュで十分。
 export const revalidate = 3600;
@@ -146,7 +147,7 @@ export default async function RankingSlugPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "投資家リターン", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "投資家ランキング", item: `${SITE_URL}/ranking` },
       { "@type": "ListItem", position: 3, name: ranking.title, item: `${SITE_URL}/ranking/${slug}` },
     ],
   };
@@ -176,27 +177,25 @@ export default async function RankingSlugPage({ params }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking" className="hover:text-brand-blue">ランキング</Link>
+        <Link href="/ranking" className="hover:text-brand-blue">投資家ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{ranking.title}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{ranking.title}</h1>
+      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">{ranking.title}</h1>
+      <RankingTabNav current={`/ranking/${slug}`} />
       <p className="mb-2 text-sm text-foreground/50">{ranking.description}</p>
       <p className="mb-6 text-xs text-foreground/40">
         ※{ranking.note} 出典はEDINET大量保有報告書。投資助言ではありません。
       </p>
-      <nav aria-label="他のランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        {SLUGS.filter((s) => s !== slug).map((s) => (
-          <Link key={s} href={`/ranking/${s}`} className="text-brand-blue hover:underline">
-            {RANKINGS[s].title.replace(`（直近${RANKING_DAYS}日）`, "")}
+      <nav aria-label="関連ランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {slug !== "activist" && (
+          <Link href="/ranking/activist" className="text-brand-blue hover:underline">
+            アクティビストが動いた銘柄
           </Link>
-        ))}
-        <Link href="/ranking" className="text-brand-blue hover:underline">
-          投資家別 3ヶ月勝率ランキング
-        </Link>
+        )}
         {slug === "activist" && (
           <Link href="/activists" className="text-brand-blue hover:underline">
-            アクティビストの現在の保有銘柄一覧
+            アクティビストの動き
           </Link>
         )}
       </nav>

@@ -38,8 +38,8 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
       : [
           { href: "/", label: "TOP" },
           { href: "/disclosures", label: "開示速報" },
-          { href: "/trending", label: "急増銘柄・投資家" },
-          { href: "/ranking", label: "投資家リターン" },
+          { href: "/trending", label: "急増銘柄" },
+          { href: "/ranking", label: "投資家ランキング" },
           { href: "/weekly", label: "今週のまとめ" },
           { href: "/activists", label: "アクティビスト保有銘柄" },
           { href: "/investors", label: "投資家一覧" },

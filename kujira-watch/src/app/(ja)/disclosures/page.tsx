@@ -100,7 +100,7 @@ export default async function DisclosuresPage({ searchParams }: Props) {
 
       <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
         <Link href="/trending" className="text-brand-blue hover:underline">
-          開示が急増した銘柄・投資家を見る ›
+          開示が急増した銘柄を見る ›
         </Link>
         <Link href="/weekly" className="text-brand-blue hover:underline">
           今週の動きまとめを見る ›

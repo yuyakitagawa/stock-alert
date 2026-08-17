@@ -6,6 +6,7 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
 import { getFilerWinRates } from "@/lib/investors";
+import RankingTabNav from "@/components/RankingTabNav";
 import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
@@ -17,11 +18,11 @@ export const revalidate = 3600;
 // 「参考にできる」ランキングとして出すには信頼性が低すぎるため。
 const MIN_N = 5;
 
-const title = "投資家別 3ヶ月勝率ランキング";
+const title = "投資家ランキング";
 const description =
-  "EDINET大量保有報告書で買い増しを開示した投資家について、その回の推定取得金額をもとに" +
-  "63営業日(3ヶ月)後までの株価騰落から損益を推定し、投資家別に合算したランキング。" +
-  "過去の実績が良い投資家を参考にできます。";
+  "大口投資家（クジラ）のランキング。EDINET大量保有報告書の開示をもとに、" +
+  "3ヶ月リターン・買い増し・売却・報告書件数・開示急増の各ランキングをタブで切り替えて見られます。" +
+  "このページは買い増し開示の推定取得金額を63営業日(3ヶ月)後までの株価騰落で評価した3ヶ月リターンランキングです。";
 
 export const metadata: Metadata = {
   title,
@@ -57,7 +58,9 @@ export default async function RankingPage({ searchParams }: Props) {
         {" / "}
         <span className="text-foreground/70">{title}</span>
       </nav>
-      <h1 className="mb-1 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+      <RankingTabNav current="/ranking" />
+      <h2 className="mb-1 text-lg font-bold text-brand-navy">3ヶ月リターンランキング</h2>
       <Suspense fallback={<ListFallback rows={12} />}>
         <RankingBody searchParams={searchParams} />
       </Suspense>
@@ -87,7 +90,7 @@ async function RankingBody({ searchParams }: Props) {
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    name: title,
+    name: "投資家別 3ヶ月リターンランキング",
     itemListElement: visibleFilers.slice(0, 100).map((f, index) => ({
       "@type": "ListItem",
       position: index + 1,
@@ -118,10 +121,7 @@ async function RankingBody({ searchParams }: Props) {
       <p className="mb-4 text-xs text-foreground/40">
         ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
       </p>
-      <nav aria-label="他のランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
-        <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
-        <Link href="/ranking/filings" className="text-brand-blue hover:underline">報告書件数ランキング</Link>
+      <nav aria-label="関連ランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
         <Link href="/ranking/activist" className="text-brand-blue hover:underline">アクティビストが動いた銘柄</Link>
       </nav>
       {filers.length > 0 && (
