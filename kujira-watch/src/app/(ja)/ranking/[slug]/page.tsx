@@ -146,7 +146,7 @@ export default async function RankingSlugPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "投資家勝率ランキング", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "投資家リターン", item: `${SITE_URL}/ranking` },
       { "@type": "ListItem", position: 3, name: ranking.title, item: `${SITE_URL}/ranking/${slug}` },
     ],
   };
