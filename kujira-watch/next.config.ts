@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
         hostname: "images.microcms-assets.io",
       },
     ],
+    // 最適化済み画像のCDNキャッシュTTL(既定4時間)。microCMSは画像を差し替えると
+    // URL自体が変わる(実質immutable)ため、31日まで延ばして再最適化コストを削る。
+    minimumCacheTTL: 2678400,
   },
 };
 
