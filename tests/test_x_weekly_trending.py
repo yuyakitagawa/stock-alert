@@ -82,6 +82,14 @@ def test_build_weekly_trending_text_none_when_no_issuers():
     assert m.build_weekly_trending_text([], []) is None
 
 
+def test_clean_name_normalizes_fullwidth_and_strips_corporate_suffix():
+    # 全角英字は半角へ（Xのカウント2単位→1単位）、法人格は除去、空白は1つに畳む
+    assert m._clean_name("ＮＩＰＰＯＮ　ＡＣＴＩＶＥ　ＶＡＬＵＥ") == "NIPPON ACTIVE VALUE"
+    assert m._clean_name("玉井商船　株式会社") == "玉井商船"
+    assert m._clean_name("シンプレクス・アセット・マネジメント株式会社") == "シンプレクス・アセット・マネジメント"
+    assert m._clean_name("（株）テスト") == "テスト"
+
+
 def test_build_weekly_trending_text_truncates_long_labels():
     issuers = [{"key": "1111", "label": "とても長い正式名称のホールディングス株式会社（1111）", "delta": 2}]
     text = m.build_weekly_trending_text(issuers, [])

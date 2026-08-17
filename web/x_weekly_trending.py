@@ -16,7 +16,8 @@ import argparse
 import os
 import re
 import sys
-from datetime import date, timedelta
+import unicodedata
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
@@ -85,9 +86,13 @@ def build_trending(rows: list, current_from: str, key_of, label_of, limit: int) 
 
 
 def _clean_name(name: str) -> str:
-    """EDINET正式名称から「株式会社」等の法人格・空白を落として表示用に短くする。
-    280単位制限下では法人格の4〜5文字が投資家セクション1行ぶんに相当するため。"""
-    return re.sub(r"株式会社|（株）|\(株\)|\s+|　+", "", name or "")
+    """EDINET正式名称を表示用に短くする。全角英数（ＮＩＰＰＯＮ等）はNFKCで半角へ寄せ
+    （Xのカウントも全角2単位→半角1単位になり文字数の節約になる）、「株式会社」等の
+    法人格を落とし、空白は1つに畳む。280単位制限下では法人格の4〜5文字が
+    投資家セクション1行ぶんに相当するため。"""
+    text = unicodedata.normalize("NFKC", name or "")
+    text = re.sub(r"株式会社|\(株\)", "", text)  # NFKCで（株）→(株)に寄っている
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _label(text: str) -> str:
@@ -137,7 +142,9 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
 
 
 def run(dry_run: bool = False) -> int:
-    today = date.today()
+    # CIランナーはUTCで動くため、date.today()だと集計窓がJST基準から1日ずれる。
+    # サイトの/trendingや投稿文言（「直近30日」）と揃えるためJSTの今日を使う。
+    today = (datetime.now(timezone.utc) + timedelta(hours=9)).date()
     current_from = (today - timedelta(days=WINDOW_DAYS - 1)).isoformat()
     range_from = (today - timedelta(days=WINDOW_DAYS * 2 - 1)).isoformat()
     range_to = today.isoformat()
