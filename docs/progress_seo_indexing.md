@@ -50,3 +50,12 @@
   - 事故と復旧: 動作確認のため`5f2o0ulbo`にPATCHで一時テスト文字列を書き込んでしまい、直後に元の本文へ復元済み（実害なし、公開サイトに一時的にテスト文言が出た可能性は数分未満）。
 - [x] ユーザー判断（2026-08-14）: 残り95件は**そのまま放置**。今後生成される新規記事だけ改善プロンプト（650〜900字・保有比率変化幅つき）の恩恵を受ければよく、既存104件の追加バックフィルは行わない。`tools/rewrite_thin_blog_articles.py`は将来気が変わった場合のために残置（`--ids`で個別指定して再開可能）。
 - [x] 本タスクはここで区切り。対応後の検証は[[feedback_seo_indexing_wait]]の通りインデックス反映確認は数日〜数週間待つ前提（急かさない）。
+
+## 2026-08-18 追記: GSC検証失敗通知とsitemap分割
+
+- GSC「インデックス登録エラーを完全に修正できませんでした」通知を調査。対象URL（/stocks/・/en/stocks/・/date/・/investors/）は全て200・index,follow・canonical正常で、技術的エラーなし。Googleの品質判断による未登録であり、検証失敗自体は実害なし（再検証も不要）。
+- 調査中に判明した実問題2つ:
+  1. sitemap.xml の応答が毎回9〜11秒（1回は20秒タイムアウト）。原因は`getTranslatedArticlesForSitemap`が英語本文bodyEn全文を毎リクエスト全件取得していたこと。
+  2. 2026-08-15の投資家全件掲載修正（PostgREST 1000行上限回避）でURL数が1,713→6,196に急増。壊れてはいないが「インデックス未登録」件数は今後増えて見える（母数増のため異常ではない）。
+- [x] 対応（2026-08-18）: `/sitemap.xml`をsitemapindex化し、`generateSitemaps`で6分割（pages/stocks/dates/investors/articles/articles-en）。データ取得は`unstable_cache`1時間で応答高速化。`app/sitemap.xml/route.ts`はmetadata予約名と衝突するため実体は`sitemap-index.xml`+rewrite。ローカル検証で合計6,196URL（分割前と一致）・未知ID404・hreflang出力を確認。
+- GSC側の追加作業は不要（/sitemap.xmlのURLは不変のため再送信不要。Googleはsitemapindexを自動で辿る）。

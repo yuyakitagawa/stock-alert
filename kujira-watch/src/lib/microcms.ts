@@ -313,19 +313,30 @@ export async function searchStocks(keyword: string): Promise<StockSearchResult[]
   return Array.from(seen, ([stockCode, stockName]) => ({ stockCode, stockName })).slice(0, 20);
 }
 
-export async function getAllArticlesForSitemap() {
-  const contents = await client.getAllContents<
-    Pick<Article, "dealType" | "stockCode" | "dealDate">
-  >({
-    endpoint: "articles",
-    queries: {
-      fields: "id,updatedAt,publishedAt,dealType,stockCode,dealDate",
-      orders: "-publishedAt",
-    },
-    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-  });
-  return contents.map(normalizeDealType);
-}
+// サイトマップ用の軽量な記事参照。sitemapはforce-dynamicで毎リクエスト実行されるため、
+// microCMS全件ページングを毎回行わないようunstable_cacheで1時間持つ。
+export type SitemapArticleRef = { id: string; updatedAt: string; stockCode: string; dealDate: string };
+
+export const getAllArticlesForSitemap = unstable_cache(
+  async (): Promise<SitemapArticleRef[]> => {
+    const contents = await client.getAllContents<Pick<Article, "stockCode" | "dealDate">>({
+      endpoint: "articles",
+      queries: {
+        fields: "id,updatedAt,stockCode,dealDate",
+        orders: "-publishedAt",
+      },
+      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+    });
+    return contents.map(({ id, updatedAt, stockCode, dealDate }) => ({
+      id,
+      updatedAt,
+      stockCode,
+      dealDate,
+    }));
+  },
+  ["sitemap-articles"],
+  { revalidate: 3600 }
+);
 
 export type StockSummary = { stockCode: string; stockName: string; articleCount: number; latestDealDate: string };
 
@@ -368,16 +379,24 @@ export async function getAboutPage() {
 
 // EN側サイトマップ用。titleEn/bodyEn両方がある記事のみ（日英混在ページを出さないため）。
 // titleEn[exists]true フィルタが機能しないため、全件取得してクライアント側で絞り込む。
-export async function getTranslatedArticlesForSitemap() {
-  const contents = await client.getAllContents<
-    Pick<Article, "dealType" | "stockCode" | "titleEn" | "bodyEn">
-  >({
-    endpoint: "articles",
-    queries: {
-      fields: "id,updatedAt,publishedAt,dealType,stockCode,titleEn,bodyEn",
-      orders: "-publishedAt",
-    },
-    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-  });
-  return contents.map(normalizeDealType).filter((a) => a.titleEn && a.bodyEn);
-}
+// bodyEn全文を含む重い取得（実測でsitemap応答9秒超の主因）なので、存在判定に使った後は
+// 捨てて軽量な参照だけをunstable_cacheに1時間載せる。
+export const getTranslatedArticlesForSitemap = unstable_cache(
+  async (): Promise<Omit<SitemapArticleRef, "dealDate">[]> => {
+    const contents = await client.getAllContents<
+      Pick<Article, "stockCode" | "titleEn" | "bodyEn">
+    >({
+      endpoint: "articles",
+      queries: {
+        fields: "id,updatedAt,stockCode,titleEn,bodyEn",
+        orders: "-publishedAt",
+      },
+      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+    });
+    return contents
+      .filter((a) => a.titleEn && a.bodyEn)
+      .map(({ id, updatedAt, stockCode }) => ({ id, updatedAt, stockCode }));
+  },
+  ["sitemap-translated-articles"],
+  { revalidate: 3600 }
+);
