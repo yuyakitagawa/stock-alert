@@ -9,6 +9,9 @@ import {
 import {accentFor, brand, fontFamily, safeArea} from '../theme';
 import type {Scene, ShortProps} from '../types';
 
+// 暗幕を薄くした分（2026-08-17）、映像の明部でも文字が読めるよう強めの影を共通で使う
+const TEXT_SHADOW = '0 2px 14px rgba(0,0,0,0.75), 0 0 4px rgba(0,0,0,0.5)';
+
 /**
  * 1シーンの見た目。kind ごとに中央のビジュアルを切り替え、下段に字幕を大きく出す。
  *
@@ -85,7 +88,7 @@ const Ticker: React.FC<{props: ShortProps; show: boolean}> = ({props, show}) => 
       }}
     >
       <span style={{fontSize: 40}}>🐋</span>
-      <span style={{fontSize: 38, fontWeight: 900, color: '#ffffff'}}>
+      <span style={{fontSize: 38, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
         {props.stockName}
       </span>
       <span style={{fontSize: 30, fontWeight: 700, color: brand.cream, opacity: 0.6}}>
@@ -221,6 +224,7 @@ const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accen
           fontSize: 64,
           fontWeight: 900,
           color: '#ffffff',
+          textShadow: TEXT_SHADOW,
           opacity: interpolate(frame, [6, 12], [0, 1], {
             extrapolateLeft: 'clamp',
             extrapolateRight: 'clamp',
@@ -247,6 +251,7 @@ const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accen
           fontSize: 72,
           fontWeight: 900,
           color: '#ffffff',
+          textShadow: TEXT_SHADOW,
           opacity: interpolate(frame, [10, 16], [0, 1], {
             extrapolateLeft: 'clamp',
             extrapolateRight: 'clamp',
@@ -262,7 +267,7 @@ const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accen
 const CompanyVisual: React.FC<{props: ShortProps}> = ({props}) => (
   <Card>
     <Label text="どんな会社？" color={brand.goldBright} />
-    <div style={{fontSize: 88, fontWeight: 900, color: '#ffffff', lineHeight: 1.2}}>
+    <div style={{fontSize: 88, fontWeight: 900, color: '#ffffff', lineHeight: 1.2, textShadow: TEXT_SHADOW}}>
       {props.stockName}
     </div>
     <div style={{fontSize: 42, color: brand.cream, opacity: 0.65, marginTop: 8}}>
@@ -297,7 +302,7 @@ const FilerVisual: React.FC<{props: ShortProps; accent: string}> = ({props, acce
   <Card>
     <Label text="買い手は誰？" color={accent} />
     {props.filerName ? (
-      <div style={{fontSize: 58, fontWeight: 900, color: '#ffffff', lineHeight: 1.3}}>
+      <div style={{fontSize: 58, fontWeight: 900, color: '#ffffff', lineHeight: 1.3, textShadow: TEXT_SHADOW}}>
         {props.filerName}
       </div>
     ) : null}
@@ -412,10 +417,10 @@ const ChartVisual: React.FC<{scene: Scene; props: ShortProps; accent: string}> =
         <circle cx={headX} cy={headY} r={13} fill={lineColor} />
       </svg>
       <div style={{display: 'flex', justifyContent: 'center', gap: 30, alignItems: 'baseline'}}>
-        <span style={{fontSize: 62, fontWeight: 900, color: '#ffffff'}}>
+        <span style={{fontSize: 62, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
           {latest.toLocaleString('ja-JP', {maximumFractionDigits: 0})}円
         </span>
-        <span style={{fontSize: 52, fontWeight: 900, color: lineColor}}>
+        <span style={{fontSize: 52, fontWeight: 900, color: lineColor, textShadow: TEXT_SHADOW}}>
           {up ? '+' : ''}
           {changePct.toFixed(1)}%
         </span>

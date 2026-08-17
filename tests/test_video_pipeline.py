@@ -224,6 +224,25 @@ def test_trim_narration_falls_back_when_no_period():
 
 # ---------------- ナレーション（VOICEVOX） ----------------
 
+def test_duration_seconds_reads_wav_exactly(tmp_path):
+    """WAVの長さはwaveモジュールで正確に読む。ffprobe不在のCIで文字数概算に落ちて
+    全シーンの音声が尻切れになった実障害（2026-08-17）の再発防止。"""
+    import struct, wave as wave_mod
+    path = str(tmp_path / "t.wav")
+    with wave_mod.open(path, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)
+        w.writeframes(struct.pack("<h", 0) * 60000)  # 2.5秒ぶんの無音
+    assert abs(tts_mod.duration_seconds(path, text="あ" * 90) - 2.5) < 0.001
+
+
+def test_duration_seconds_falls_back_to_estimate_for_broken_file(tmp_path):
+    path = str(tmp_path / "broken.wav")
+    open(path, "wb").write(b"not a wav")
+    with mock.patch("shutil.which", return_value=None):
+        est = tts_mod.duration_seconds(path, text="あ" * 75)
+    assert est == 10.0  # 75 / 7.5
+
+
 def test_narrate_sections_skips_when_engine_unavailable(tmp_path):
     """VOICEVOXエンジンに繋がらない場合は無音扱い（動画は止めない）。"""
     with mock.patch.object(tts_mod, "engine_available", return_value=False):
@@ -320,8 +339,8 @@ def test_assign_backgrounds_avoids_consecutive_repeat():
     """プールが2本以上あれば、隣り合うシーンに同じ背景を割り当てない。"""
     scenes = [{"kind": k} for k in ("hook", "company", "deal", "filer", "change", "outlook", "chart", "cta")]
     pool = [
-        {"filename": "bg_0.mp4", "durationSec": 10.0, "people": False},
-        {"filename": "bg_1.mp4", "durationSec": 12.0, "people": False},
+        {"filename": "bg_0.mp4", "durationSec": 10.0},
+        {"filename": "bg_1.mp4", "durationSec": 12.0},
     ]
     bg_mod.assign_backgrounds(scenes, pool)
     names = [s["backgroundVideo"] for s in scenes]
@@ -329,31 +348,11 @@ def test_assign_backgrounds_avoids_consecutive_repeat():
     assert all(s["backgroundVideoDurationSec"] > 0 for s in scenes)
 
 
-def test_assign_backgrounds_first_scene_prefers_people():
-    """先頭シーン（hook）にはプール内の人物素材を優先して割り当てる。"""
-    scenes = [{"kind": k} for k in ("hook", "company", "deal")]
-    pool = [
-        {"filename": "bg_0.mp4", "durationSec": 10.0, "people": False},
-        {"filename": "bg_1.mp4", "durationSec": 12.0, "people": False},
-        {"filename": "bg_2.mp4", "durationSec": 9.0, "people": True},
-    ]
-    for _ in range(10):  # ランダム性があるため繰り返して常に人物になることを確認
-        bg_mod.assign_backgrounds(scenes, pool)
-        assert scenes[0]["backgroundVideo"] == "bg_2.mp4"
-
-
-def test_assign_backgrounds_first_scene_falls_back_without_people():
-    """プールに人物素材が無ければ先頭シーンも通常の割当になる。"""
-    scenes = [{"kind": "hook"}]
-    pool = [{"filename": "bg_0.mp4", "durationSec": 10.0, "people": False}]
-    bg_mod.assign_backgrounds(scenes, pool)
-    assert scenes[0]["backgroundVideo"] == "bg_0.mp4"
-
 
 def test_assign_backgrounds_single_video_reused():
     """プールが1本しか無ければ全シーンで使い回す。"""
     scenes = [{"kind": "hook"}, {"kind": "cta"}]
-    bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0, "people": False}])
+    bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0}])
     assert [s["backgroundVideo"] for s in scenes] == ["bg_0.mp4", "bg_0.mp4"]
 
 
@@ -433,17 +432,25 @@ def test_youtube_upload_skipped_without_credentials():
 
 # ---------------- TikTok ----------------
 
-def test_tiktok_caption_includes_stock_and_hashtags():
+def test_tiktok_caption_includes_deal_details():
+    """定型の誘導文ではなく取引詳細（比率・開示日・要点）で構成する（2026-08-17指示）。"""
     caption = tk.build_caption(PROPS)
     assert "東陽テクニカ" in caption
-    assert "#EDINET" in caption
+    assert "8151" in caption
+    assert "保有比率8.77%" in caption
+    assert "8/14開示" in caption
+    assert "#東陽テクニカ" in caption
+    # 廃止した定型文が混ざっていないこと
+    assert "プロフィール" not in caption
+    assert "VOICEVOX" not in caption
+    # 台本の要点が箇条書きで入ること（company/change/outlook/chartから最大3つ）
+    assert "・電子計測の専業" in caption
 
 
 def test_tiktok_caption_falls_back_when_filer_name_missing():
-    """filerName未設定の記事で「銘柄｜が…取得」という主語のねじれを防ぐ。"""
+    """filerName未設定の記事でも主語が欠けない（「大口投資家」に置換される）。"""
     caption = tk.build_caption({**PROPS, "filerName": ""})
     assert "大口投資家が" in caption
-    assert "｜が" not in caption
 
 
 def test_tiktok_caption_truncates_long_head():

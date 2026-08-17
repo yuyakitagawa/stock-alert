@@ -91,7 +91,18 @@ def synthesize(text: str, out_path: str) -> bool:
 
 def duration_seconds(audio_path: str, text: str = "") -> float:
     """WAVの長さ（秒）。シーンの尺をナレーションに合わせるために使う。
-    ffprobe が無い環境では読み上げ文字数からの概算にフォールバックする。"""
+
+    VOICEVOXの出力は標準PCM WAVなので、Python標準のwaveモジュールで正確に読める
+    （GitHubランナーにffprobeが無く文字数概算にフォールバックした結果、全シーンで
+    音声が尻切れになった実障害への対策。2026-08-17）。waveで読めない場合のみ
+    ffprobe→文字数概算の順にフォールバックする。"""
+    try:
+        import wave
+
+        with wave.open(audio_path, "rb") as w:
+            return w.getnframes() / w.getframerate()
+    except Exception:
+        pass
     if shutil.which("ffprobe"):
         try:
             result = subprocess.run(

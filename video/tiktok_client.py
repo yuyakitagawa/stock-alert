@@ -59,19 +59,49 @@ def _access_token() -> "str | None":
 
 
 def build_caption(props: dict) -> str:
+    """公開時に貼るキャプション。定型の誘導文ではなく取引の詳細で埋める
+    （2026-08-17オーナー指示。VOICEVOXクレジットは動画内の締め画面にあるため
+    キャプションには入れない）。"""
     direction = "売却" if props.get("direction") == "sell" else "取得"
     # filerNameは古い記事だと未設定。空のまま連結すると「銘柄｜が…取得」という
     # 主語のねじれた文になるため（youtube_client.build_titleと同じ問題）、汎用の主語に置き換える。
     filer = props.get("filerName") or "大口投資家"
-    head = f"{props.get('stockName', '')}｜{filer}が推定{props.get('dealAmountOku')}億円を{direction}"
+    stock = props.get("stockName", "")
+    code = props.get("stockCode", "")
+    head = f"【{stock}（{code}）】{filer}が推定{props.get('dealAmountOku')}億円を{direction}"
     if len(head) > CAPTION_MAX_CHARS:
         head = head[: CAPTION_MAX_CHARS - 1] + "…"
-    # TikTokはキャプション内のURLがリンクにならないため、プロフィール誘導の文言にする。
-    # VOICEVOXのクレジット表記は利用規約上の必須事項。
-    return (
-        f"{head}\n詳しくはプロフィールのリンク（kujira-watch.com）から\n"
-        f"音声: VOICEVOX:ずんだもん\n#日本株 #株式投資 #EDINET #大量保有報告書"
-    )
+
+    lines = [head]
+
+    # 2行目: 保有比率・開示日・投資家分類という取引のファクト
+    facts = []
+    ratio = props.get("holdingRatio")
+    if ratio:
+        facts.append(f"保有比率{ratio}%")
+    disc = props.get("discDate") or ""
+    if len(disc) == 10:  # YYYY-MM-DD
+        facts.append(f"{int(disc[5:7])}/{int(disc[8:10])}開示")
+    label = props.get("dealTypeLabel")
+    if label and label != "大量保有報告書":
+        facts.append(label)
+    if facts:
+        lines.append("・".join(facts) + "の大量保有報告書")
+
+    # 3行目以降: 台本の要点字幕から詳細を最大3つ（hookとctaは除く）
+    detail_kinds = ("company", "change", "outlook", "chart")
+    details = [
+        s["caption"] for s in props.get("scenes", [])
+        if s.get("kind") in detail_kinds and s.get("caption")
+    ][:3]
+    if details:
+        lines.append("")
+        lines.extend(f"・{d}" for d in details)
+
+    stock_tag = f" #{stock}" if stock else ""
+    lines.append("")
+    lines.append(f"#日本株 #株式投資 #EDINET #大量保有報告書{stock_tag}")
+    return "\n".join(lines)
 
 
 def _upload_bytes(upload_url: str, video_path: str) -> bool:
