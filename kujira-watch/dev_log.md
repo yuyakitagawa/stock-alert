@@ -1,4 +1,36 @@
 
+## 2026-08-17 kujira-watch: XカードのOGP画像が出ない不具合を修正（サムネなし）
+
+公式X（@kujira_watch）の投稿でリンクカードのサムネイルが表示されない
+（グレーのプレースホルダになる）との報告。調査の結果、全ページの`<head>`に
+`og:image`/`twitter:image`メタタグ自体が出力されていなかった。
+
+### 原因
+`opengraph-image.tsx`を`src/app/`直下に置いていたが、このプロジェクトは
+ページがすべて`(ja)`/`(en)`のルートグループ（それぞれルートレイアウトを持つ）
+配下にあるため、appルート直下のOGP画像がどのページにも紐付かなかった
+（Next.js 16.2.11で確認。`/opengraph-image`のルート自体は200で画像を返すが、
+メタタグが注入されない）。`icon.tsx`（ファビコン）はルート直下でも全ページに
+効くため気付きにくい。ローカルのdevサーバで`/privacy`等の`<head>`を確認して再現。
+
+### 修正
+- `src/app/opengraph-image.tsx` → `src/app/(ja)/opengraph-image.tsx` に移動
+  （内容は従来どおり：🐋＋日本語サイト名＋説明文、1200x630）。
+- `src/app/(en)/en/opengraph-image.tsx` を新規追加（英語版。`SITE_NAME_EN`/
+  `SITE_DESCRIPTION_EN`を使用。従来は英語ページにOGP画像の仕組み自体がなかった）。
+
+### 確認
+- devサーバ実測: `/`・`/privacy`に`og:image`/`twitter:image`（ja画像）、
+  `/en/about`にen画像のメタタグが出力され、両画像URLとも200/image/pngを返す。
+- 記事ページの`generateMetadata`が設定するアイキャッチ（`openGraph.images`）は
+  ルートグループのファイルベース画像より優先されることをテストページで実測確認
+  （アイキャッチ付き記事のカードは従来どおりアイキャッチが出る）。
+- `tsc --noEmit`・eslint（変更ファイル）クリーン。`npm run build`はコンパイル・
+  型チェックまで通過（その先のページデータ収集はmicroCMS実キーが無い環境のため
+  403で失敗。本修正とは無関係）。
+- デプロイ後はX Card Validator等でカード再取得（Xはカードをキャッシュするため
+  反映に時間がかかる場合がある）。
+
 ## 2026-08-17 kujira-watch: デザインレビューP1修正（重なり・コントラスト・縦割れ）
 
 サイト全体のデザインレビュー（375px/1280px × ja/en を実機確認）で見つけた
