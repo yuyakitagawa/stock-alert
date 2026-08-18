@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import Box from "@mui/material/Box";
 import { formatDate, formatDealAmount } from "@/lib/format";
 import { getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
@@ -202,77 +201,50 @@ export default async function RankingSlugPage({ params }: Props) {
       {rows.length === 0 ? (
         <p className="text-foreground/50">直近{RANKING_DAYS}日に該当する開示がありません。</p>
       ) : (
-        <Box>
+        // /rankingと同じ「1行目=順位＋銘柄名（全幅）／2行目=メタ・金額（右端）」の1件1カード。
+        // 銘柄・提出者・解説記事と別々のリンクが3つあるためカード全体はリンクにしない。
+        <ul className="card-grid card-grid-wide">
           {rows.map((row, index) => (
-            <Box
-              key={row.key}
-              sx={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 1.25,
-                py: 1.25,
-                borderTop: 1,
-                borderColor: "divider",
-              }}
-            >
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  width: 22,
-                  fontWeight: 700,
-                  color: "text.disabled",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {index + 1}
-              </Box>
-              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <li key={row.key} className="card">
+              <span className="flex items-baseline gap-2">
+                <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
+                  {index + 1}
+                </span>
                 <Link
                   href={`/stocks/${row.stockCode}`}
-                  className="font-medium text-brand-blue hover:underline"
-                  style={{ overflowWrap: "anywhere" }}
+                  className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
                 >
                   {row.stockName}（{row.stockCode}）
                 </Link>
-                <Box sx={{ mt: 0.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, fontSize: "0.75rem", color: "text.secondary" }}>
-                  {slug === "filings" && row.count !== undefined ? (
-                    <Box component="span" sx={{ fontWeight: 600 }}>{row.count}件の開示</Box>
-                  ) : (
-                    <Box component="span">{row.sell ? "📉 売却" : "📈 買い増し・新規"}</Box>
-                  )}
-                  {row.filerName && (
-                    <Link
-                      href={`/investors/${encodeURIComponent(row.filerName)}`}
-                      className="text-brand-blue hover:underline"
-                    >
-                      {row.filerName}
-                    </Link>
-                  )}
-                  <Box component="span">{formatDate(row.dealDate)}</Box>
-                  <Link href={`/articles/${row.articleId}`} className="text-brand-blue hover:underline">
-                    解説記事
-                  </Link>
-                </Box>
-              </Box>
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  whiteSpace: "nowrap",
-                  fontWeight: 600,
-                  fontVariantNumeric: "tabular-nums",
-                  color: "primary.main",
-                }}
-              >
-                {formatDealAmount(row.amount)}
-                {slug === "filings" && (
-                  <Box component="span" sx={{ ml: 0.5, fontSize: "0.6875rem", fontWeight: 400, color: "text.disabled" }}>
-                    合計
-                  </Box>
+              </span>
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-foreground/60">
+                {slug === "filings" && row.count !== undefined ? (
+                  <span className="font-semibold">{row.count}件の開示</span>
+                ) : (
+                  <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
                 )}
-              </Box>
-            </Box>
+                {row.filerName && (
+                  <Link
+                    href={`/investors/${encodeURIComponent(row.filerName)}`}
+                    className="text-brand-blue hover:underline"
+                  >
+                    {row.filerName}
+                  </Link>
+                )}
+                <span>{formatDate(row.dealDate)}</span>
+                <Link href={`/articles/${row.articleId}`} className="text-brand-blue hover:underline">
+                  解説記事
+                </Link>
+                <span className="ml-auto whitespace-nowrap text-sm font-semibold tabular-nums text-brand-navy">
+                  {formatDealAmount(row.amount)}
+                  {slug === "filings" && (
+                    <span className="kicker ml-1 font-normal text-foreground/40">合計</span>
+                  )}
+                </span>
+              </span>
+            </li>
           ))}
-        </Box>
+        </ul>
       )}
       <AdUnit placement="bottom" />
     </div>

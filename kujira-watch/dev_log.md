@@ -21,7 +21,7 @@ TOPだけが他ページに無い大きさを2つ持っていた。
    - h2セクション見出しを ja/en 18ファイル・61箇所で `text-lg`(18px) → `text-xl`(20px)。
      TOPだけ`text-xl`、他ページは`text-lg`という2系統になっていたためTOP側に寄せた。
      `text-lg`の使用箇所は全て`text-lg font-bold text-brand-navy`のh2で、他用途への巻き込みは無い。
-2. **カードUI**（`/disclosures` `/trending` `/ranking` `/activists` `/investors` `/stocks` `/monthly`）
+2. **カードUI**（`/disclosures` `/trending` `/ranking` `/ranking/[slug]` `/activists` `/investors` `/stocks` `/monthly`）
    - `src/app/globals.css`の`@layer components`に`.card`/`.card-grid`/`.card-grid-wide`を新設。
      **MUI CardやTailwindユーティリティの羅列は使わない**: `/faq`では可視HTMLの75%が
      コンテンツではなくマークアップ（`Mui〜`クラスの出現14,160回）だった前例がある。
@@ -35,6 +35,7 @@ TOPだけが他ページに無い大きさを2つ持っていた。
    - `/ranking`は「1行目=順位＋投資家名（全幅）／2行目=分類・件数・リターン（右端）」の2段。
      リターンを名前と同じ行に置くと、長い投資家名が細く4行に折り返されていた。
      表の見出し行（順位・投資家／トータルの推計リターン）はカード2列と対応しないため凡例1行に変更。
+   - `/ranking/[slug]`（buys/sells/filings/activist）も同じ2段カードに。上位30件固定でページ送りは無い。
 3. **ページ送り**
    - `/stocks`（596件を1ページに全件描画していた）に`?page=`を新設。100件/ページ。
    - `/ranking`（131件）に`?page=`を新設。順位はページをまたいで通し番号（`rankOffset`）にし、
