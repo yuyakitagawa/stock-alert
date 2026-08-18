@@ -2,6 +2,10 @@ import { excerptFromHtml } from "@/lib/format";
 import { getArticleList } from "@/lib/microcms";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 
+// RSSはISR化: CDNが5分キャッシュ(s-maxage=300)し、期限切れ後は裏で再生成する。
+// RSSリーダーの定期巡回が毎回microCMSまで到達するのを防ぐ。
+export const revalidate = 300;
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")

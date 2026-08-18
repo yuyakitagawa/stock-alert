@@ -40,5 +40,14 @@ export async function GET(request: NextRequest) {
     .slice(0, MAX_INVESTOR_RESULTS)
     .map(({ filerName, category }) => ({ filerName, category }));
 
-  return NextResponse.json({ results, investors });
+  return NextResponse.json(
+    { results, investors },
+    {
+      headers: {
+        // 検索結果はqごとにCDNキャッシュ。銘柄・投資家の増減は記事投稿時のみ（最短で毎時）
+        // なので5分キャッシュ+1時間のstale許容で十分新しい。
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600",
+      },
+    },
+  );
 }
