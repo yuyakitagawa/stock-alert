@@ -10,7 +10,7 @@ import TableRow from "@mui/material/TableRow";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import RatioTransition from "@/components/RatioTransition";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
-import { disclosureDocLabel } from "@/lib/disclosures";
+import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
 import { getFilerClassification, getFilerHoldings } from "@/lib/investors";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
@@ -213,13 +213,14 @@ export default async function InvestorPage({ params }: Props) {
         </p>
       </div>
       <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-        <Table size="small" sx={{ minWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+        <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { borderColor: "divider" } }}>
           <TableHead>
             <TableRow>
               <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>銘柄</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+              <TableCell sx={{ color: "text.disabled" }}>原文</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -238,6 +239,18 @@ export default async function InvestorPage({ params }: Props) {
                 </TableCell>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                </TableCell>
+                {/* 一次ソース（EDINETの原文PDF）への直リンク。以前は/disclosuresだけが
+                    持っていたが、同ページ廃止にあたり銘柄・投資家ページへ移した。 */}
+                <TableCell sx={{ whiteSpace: "nowrap" }}>
+                  <a
+                    href={edinetPdfUrl(h.docId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-brand-blue hover:underline"
+                  >
+                    PDF ↗
+                  </a>
                 </TableCell>
               </TableRow>
             ))}

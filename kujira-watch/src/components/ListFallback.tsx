@@ -1,6 +1,6 @@
 // 一覧ページの<Suspense>フォールバック。
 //
-// /ranking・/investors・/stocks・/disclosures は `searchParams` を読むため
+// /ranking・/investors・/stocks は `searchParams` を読むため
 // リクエストごとの動的レンダリングになり、一覧の描画が終わるまで最初の1バイトも
 // 返せていなかった（本番実測でTTFB 0.43〜0.51s。静的ページは0.18〜0.20s）。
 // データ取得部分をSuspenseに入れて、見出しまでのシェルを先に流すようにしたときの

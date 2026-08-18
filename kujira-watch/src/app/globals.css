@@ -79,7 +79,7 @@ body {
   /* カードは同じ行の中で高さを揃える。カードがli直下のリンクになっている一覧では、
      liはグリッドに引き伸ばされてもリンク自身は内容分の高さしか持たず、名前や分類ラベルの
      折り返し行数の違いでカードの下端がガタつくため。liそのものが.cardの一覧
-     （/disclosures・/activists・/ranking/[slug]）はグリッドアイテムとして自動で揃うので除外する。 */
+     （/activists・/ranking/[slug]）はグリッドアイテムとして自動で揃うので除外する。 */
   .card-grid > li:not(.card) {
     display: flex;
   }

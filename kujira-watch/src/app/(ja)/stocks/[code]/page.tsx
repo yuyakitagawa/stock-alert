@@ -12,7 +12,7 @@ import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { disclosureDocLabel } from "@/lib/disclosures";
+import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
 import { getFilersByStockCode, getHoldingsByStockCode } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import RatioTransition from "@/components/RatioTransition";
@@ -180,13 +180,14 @@ export default async function StockPage({ params }: Props) {
             保有比率の推移（EDINET開示ベース）
           </Typography>
           <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-            <Table size="small" sx={{ minWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+            <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { borderColor: "divider" } }}>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>原文</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -208,6 +209,18 @@ export default async function StockPage({ params }: Props) {
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                       <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                    </TableCell>
+                    {/* 一次ソース（EDINETの原文PDF）への直リンク。以前は/disclosuresだけが
+                        持っていたが、同ページ廃止にあたり銘柄・投資家ページへ移した。 */}
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      <a
+                        href={edinetPdfUrl(h.docId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand-blue hover:underline"
+                      >
+                        PDF ↗
+                      </a>
                     </TableCell>
                   </TableRow>
                 ))}

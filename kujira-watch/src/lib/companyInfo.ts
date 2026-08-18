@@ -47,7 +47,7 @@ export async function getAllSectorsByCode(): Promise<Map<string, string>> {
 
 // 上場銘柄コードの全件セット。/stocks/[code] は解説記事が無くても
 // 銘柄マスターに載っていれば開示履歴＋会社情報で成立するため、
-// 一覧系ページ（/disclosures・/trending・/activists）が銘柄をリンクにしてよいかの
+// 一覧系ページ（/trending・/activists）が銘柄をリンクにしてよいかの
 // 判定に使う（マスターに無い＝上場廃止等のコードだけテキストのまま出し、404リンクを作らない）。
 const getAllListedCodeList = unstable_cache(
   async (): Promise<string[]> => {

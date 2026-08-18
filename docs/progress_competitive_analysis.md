@@ -58,6 +58,13 @@ Supabase `edinet_large_holdings` に全開示19,799件（2025-06-18〜、doc_id�
 - [x] 本番デプロイ確認: https://kujira-watch.com/disclosures がHTTP 200、
       件数（すべて19,799/新規2,743/変更13,927/訂正3,129）・EDINET PDFリンク・
       ?type=correction フィルタの動作を本番で確認（2026-08-16）
+- [x] **2026-08-18に `/disclosures` は廃止**（この施策は取り下げ）。TOPの記事一覧と役割が重複して
+      いたため。実測では2026-08-18の開示40件に対し記事25件が完全な部分集合＝同じイベントを2画面で
+      見せているだけだった。速報性の差も無い（EDINET取込`scan_large_holdings.py`と記事投稿
+      `publish_blog_articles.py`は`edinet_blog.yml`の同一実行の連続ステップ）。sitemapに載るのは
+      1URLのみでページング約200ページはインデックス対象外のため、SEO資産としての実体も無かった。
+      唯一この施策固有の価値だったEDINET原文PDFリンクは`/stocks/[code]`・`/investors/[filer]`の
+      開示履歴表へ移設。旧URLは301せず404（流入実績が無いため手当ての価値も無いとオーナー判断）
 
 ## 第2弾: アクティビスト保有銘柄一覧（2026-08-16 続き）
 
