@@ -321,6 +321,28 @@ def test_recent_holdings_name_falls_back_to_edinet_issuer_name():
     assert names["7205"] == "日野自動車"  # マップ収載済みはそのまま
 
 
+def test_recent_holdings_keeps_material_correction_but_drops_minor_one():
+    """訂正報告書は原則ノイズだが、届出比率が大きく動く訂正（既報の保有比率自体が誤り
+    だった開示）は残す（実例: 2026-08-18、太陽誘電6976が15.22%→4.41%、株価-11.5%）。"""
+    from unittest import mock
+    import web.market_timing_alert as m
+    rows = [
+        {"issuer_code": "6976", "issuer_name": "太陽誘電株式会社", "filer_name": "Situational Awareness LP",
+         "doc_description": "訂正報告書（大量保有報告書・変更報告書）",
+         "holding_ratio": 4.41, "holding_ratio_prior": 15.22},
+        {"issuer_code": "1234", "issuer_name": "軽微訂正株式会社", "filer_name": "X",
+         "doc_description": "訂正報告書（大量保有報告書・変更報告書）",
+         "holding_ratio": 15.0, "holding_ratio_prior": 15.2},
+        {"issuer_code": "5678", "issuer_name": "自己申告株式会社", "filer_name": "自己申告株式会社",
+         "doc_description": "変更報告書", "holding_ratio": 8.0, "holding_ratio_prior": 6.0},
+    ]
+    with mock.patch("lib.db.get_edinet_large_holdings_recent", return_value=rows), \
+         mock.patch("tools.scan_large_holdings.load_name_map", return_value={}):
+        out = m.get_recent_large_holdings(days=3)
+    codes = {r["issuer_code"] for r in out}
+    assert codes == {"6976"}
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
@@ -350,4 +372,5 @@ if __name__ == "__main__":
     test_build_filer_watch_section_formats_filer_and_target()
     test_build_filer_watch_section_shows_sell_direction_from_ratio_decrease()
     test_recent_holdings_name_falls_back_to_edinet_issuer_name()
-    print("OK: test_market_timing_alert (27 tests)")
+    test_recent_holdings_keeps_material_correction_but_drops_minor_one()
+    print("OK: test_market_timing_alert (28 tests)")

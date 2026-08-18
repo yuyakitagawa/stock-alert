@@ -123,9 +123,11 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
     """直近days日のEDINET大量保有・変更報告書を取得し、自己申告（提出者≒対象企業）・
     過半数超（51%以上、スクイーズアウト対象で上値が見込めない）・訂正報告書（既存開示の
     事後修正で実際の持分変動ではない）を除外して返す。
-    譲渡/売却（sell）は「大口の動向」として買いと同様に見たいので除外しない。"""
+    譲渡/売却（sell）は「大口の動向」として買いと同様に見たいので除外しない。
+    訂正報告書のうち届出比率が大きく動くもの（is_material_correction）は、既報の保有比率
+    自体が誤りだったという情報で市場も反応するため除外しない。"""
     from lib.db import get_edinet_large_holdings_recent
-    from tools.scan_large_holdings import is_noise_match, load_name_map
+    from tools.scan_large_holdings import is_material_correction, is_noise_match, load_name_map
 
     name_map = load_name_map()
     rows = get_edinet_large_holdings_recent(days=days)
@@ -140,7 +142,11 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
             r.get("filer_name", ""), name, r.get("doc_description") or "",
             r.get("holding_ratio"), r.get("holding_ratio_prior"),
         )
-        if reason in ("self_filing", "majority", "correction"):
+        if reason == "correction" and is_material_correction(
+            r.get("doc_description") or "", r.get("holding_ratio"), r.get("holding_ratio_prior"),
+        ):
+            pass
+        elif reason in ("self_filing", "majority", "correction"):
             continue
         out.append({**r, "name": name})
     return out

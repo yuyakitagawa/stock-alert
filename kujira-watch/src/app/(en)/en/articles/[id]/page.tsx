@@ -8,7 +8,7 @@ import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
-import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
+import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
 import { getArticleDetail, getArticleList } from "@/lib/microcms";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
@@ -195,7 +195,7 @@ export default async function EnArticleDetailPage({ params }: Props) {
           <Box>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>{t.dealSizeLabel}</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
-              {formatDealAmount(article.dealAmount, "en")}
+              {formatDealAmountOrCorrection(article, "en")}
             </Typography>
           </Box>
           {article.sourceUrl && (

@@ -33,6 +33,7 @@ import re
 import sys
 import json
 import argparse
+from collections import Counter
 from datetime import date
 
 import requests
@@ -44,7 +45,7 @@ import lib.supabase_client as sb
 from lib.db import get_edinet_large_holdings_recent
 from lib.edinet import disclosure_doc_label, disclosure_kind_label
 from lib.utils import get_price_at_date
-from tools.scan_large_holdings import is_sell_disclosure
+from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
 load_dotenv()
@@ -449,7 +450,8 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
 
 
 def already_published(stock_code: str, disc_date: str, deal_amount: "float | None" = None,
-                      filer_name: str = "", ratio_change: "float | None" = None) -> bool:
+                      filer_name: str = "", ratio_change: "float | None" = None,
+                      unique_filing: bool = False) -> bool:
     """同一開示の記事が既にmicroCMSにあればTrue（重複投稿防止）。
     突き合わせキーは 銘柄コード＋開示日＋提出者名＋比率変化幅(ratioChangePct)。
     いずれも開示データから決まる値なので、何度再実行しても同じ開示は同じキーになる。
@@ -461,7 +463,12 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
 
     同一銘柄・同日・同一提出者の複数開示も実在する（実例: 2936 2025-08-13に橋本舜が
     9:50と10:07に別々の変更報告書を提出）ため、提出者一致だけでは重複と断定せず
-    ratioChangePctの一致まで確認して別イベントを区別する。"""
+    ratioChangePctの一致まで確認して別イベントを区別する。
+
+    ただしその日その提出者の開示が1件しか無い場合（unique_filing=True）は、比率変化幅が
+    一致しなくても同一開示とみなす。変化幅の算出ロジックを変えると既報記事のキーとずれ、
+    同じ開示がもう一度投稿されてしまうため（cleanup_duplicate_blog_articles.pyも
+    ratioChangePctまで一致した重複しか回収しない）。"""
     try:
         resp = requests.get(
             _microcms_base_url(),
@@ -482,6 +489,8 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
             if filer_name and c.get("filerName"):
                 if c["filerName"] != filer_name:
                     continue
+                if unique_filing:
+                    return True
                 if ratio_change is None or c.get("ratioChangePct") is None:
                     return True
                 if abs(c["ratioChangePct"] - ratio_change) < 0.01:
@@ -518,9 +527,18 @@ def shares_outstanding(code: str) -> "float | None":
     return None
 
 
-def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date: str) -> float:
-    """同一銘柄・同一提出者の過去開示から直近の比率を探し、変化幅(%)を返す。
-    過去開示が無ければ、今回の比率をそのまま新規取得分として扱う。"""
+def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date: str,
+                     prior_ratio: "float | None" = None) -> float:
+    """今回開示の保有比率が前回からどれだけ動いたか（変化幅、%ポイント）を返す。
+
+    EDINET開示自体が持つ直前保有割合(prior_ratio)があればそれを使う。DB蓄積分の履歴から
+    前回比率を再導出すると、履歴に同じ比率の行が残っている場合や履歴が無い全売却
+    （比率0%）で変化幅が0と算出され、記事化されずに落ちる（実例: 2026-08-17、三菱商事の
+    ＴＯＹＯ ＴＩＲＥ 20%→0%「短期大量譲渡」が「金額を概算できない」として不投稿）。
+    prior_ratioが無い開示のみ、従来通り過去開示から直近の比率を探す（それも無ければ
+    今回の比率をそのまま新規取得分として扱う）。"""
+    if prior_ratio is not None:
+        return abs(current_ratio - prior_ratio)
     history = get_edinet_large_holdings_recent(days=400, codes=[code])
     past = [
         h for h in history
@@ -535,13 +553,37 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
     return abs(current_ratio - prev_ratio)
 
 
+def close_price_from_yfinance(code: str, target_date: date) -> "float | None":
+    """yahoo_price_cacheに無い銘柄の終値をyfinanceから直接取る（target_date以前の直近終値）。
+
+    価格キャッシュはスクリーニング対象ユニバースしか埋めておらず、新規上場銘柄や
+    ユニバース外の銘柄はEDINET開示が出ても株価が引けない（実例: 2026-08-18、
+    アイ・グリッド・ソリューションズ603A・ビート・ホールディングス9399・デンタス6174が
+    「金額を概算できない」として不投稿）。発行済株式数は既にyfinanceから取っているので、
+    株価も同じ経路でフォールバックする。"""
+    import yfinance as yf
+    try:
+        hist = yf.Ticker(f"{code}.T").history(period="1mo")
+        if hist is None or hist.empty:
+            return None
+        closes = [
+            (idx.date() if hasattr(idx, "date") else idx, float(row))
+            for idx, row in zip(hist.index, hist["Close"])
+        ]
+        past = [c for d, c in closes if d <= target_date]
+        return past[-1] if past else closes[0][1]
+    except Exception:
+        return None
+
+
 def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> "float | None":
     """推定取得金額（億円） = 比率変化(%) × 発行済株式数 × 株価 ÷ 100 ÷ 1億。
     株式数・株価のいずれかが取得できなければ None（呼び出し側でスキップする）。"""
     if ratio_change <= 0:
         return None
     shares = shares_outstanding(code)
-    price = get_price_at_date(code, date.fromisoformat(disc_date))
+    target = date.fromisoformat(disc_date)
+    price = get_price_at_date(code, target) or close_price_from_yfinance(code, target)
     if not shares or not price:
         return None
     amount_yen = shares * price * (ratio_change / 100)
@@ -693,7 +735,17 @@ def format_ratio(ratio: float) -> str:
 
 
 def is_new_holding(fact_sheet: dict) -> bool:
-    """実質的な新規保有か（直近400日に同一提出者の過去開示が無く、変化幅=今回比率になるケース）。"""
+    """実質的な新規保有か。
+
+    開示の直前保有割合(prior_ratio)が分かる場合はそれが0のときだけ新規とする。変化幅と
+    今回比率の比較だけで判定すると、全売却（比率0%・変化幅=前回比率）が「0%を新規保有」に
+    化ける。prior_ratioが無い開示のみ、直近400日に同一提出者の過去開示が無く変化幅=今回比率に
+    なるケースを新規とみなす従来のヒューリスティックにフォールバックする。"""
+    if fact_sheet.get("is_correction"):
+        return False
+    prior = fact_sheet.get("prior_ratio")
+    if prior is not None:
+        return prior == 0 and fact_sheet["holding_ratio"] > 0
     change = fact_sheet.get("ratio_change_pct")
     return change is not None and change >= fact_sheet["holding_ratio"]
 
@@ -715,8 +767,11 @@ def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_e
     filer_en = filer_name_en or filer
     ratio = format_ratio(fact_sheet["holding_ratio"])
     is_sell = fact_sheet.get("direction") == "sell"
+    is_correction = bool(fact_sheet.get("is_correction"))
 
     def ja_title(filer_name: str) -> str:
+        if is_correction:
+            return f"{name}（{code}）、{filer_name}が保有比率を{ratio}%に訂正｜訂正報告書"
         if is_new_holding(fact_sheet):
             action = f"{filer_name}が{ratio}%を新規保有"
         else:
@@ -729,7 +784,12 @@ def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_e
         keep = max(4, len(filer) - excess - 1)
         title = ja_title(filer[:keep] + "…")
 
-    if is_new_holding(fact_sheet):
+    if is_correction:
+        title_en = (
+            f"{filer_en} Corrects Reported Stake in {name_en} ({code}) to {ratio}% "
+            "| Amended Large Shareholding Report"
+        )
+    elif is_new_holding(fact_sheet):
         title_en = f"{filer_en} Takes {ratio}% Stake in {name_en} ({code}) | Large Shareholding Report"
     elif is_sell:
         title_en = f"{filer_en} Cuts Stake in {name_en} ({code}) to {ratio}% | Large Shareholding Report"
@@ -755,7 +815,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
         return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     is_sell = fact_sheet.get("direction") == "sell"
-    deal_verb = "売却" if is_sell else "取得"
+    is_correction = bool(fact_sheet.get("is_correction"))
+    deal_verb = "訂正" if is_correction else ("売却" if is_sell else "取得")
     deal_amount_label = fact_sheet.get("deal_amount_label") or (
         "推定売却金額" if is_sell else "推定取得金額"
     )
@@ -763,7 +824,9 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     context_dp_level = fact_sheet.get("context_dp_level")
     if context_close is not None and context_dp_level is not None:
         context_line = f"- 開示日時点の株価: {context_close:,.0f}円 / 弊社モデルの下落リスク水準: {context_dp_level}\n"
-        if is_sell:
+        if is_correction:
+            risk_hint = "既報の保有比率を前提に取引していた市場参加者にとって何を意味するか、といった観点も交えつつ、"
+        elif is_sell:
             risk_hint = "下落リスクが高まる局面でのリスク回避的な売却か、値上がり後の利益確定売りか、といった観点も交えつつ、"
         else:
             risk_hint = "下落リスクが低い局面での買い増しか、リスクが高い局面での打診買いか、といった観点も交えつつ、"
@@ -776,7 +839,13 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     company_description_line = f"- {fact_sheet['stock_name']}の事業内容: {company_description}\n" if company_description else ""
     ratio_change_pct = fact_sheet.get("ratio_change_pct")
     is_new = is_new_holding(fact_sheet)
-    if ratio_change_pct is not None:
+    prior_ratio = fact_sheet.get("prior_ratio")
+    if is_correction:
+        change_line = (
+            f"- 変化: 訂正前に届け出ていた保有比率{prior_ratio}%を{fact_sheet['holding_ratio']}%へ訂正した"
+            f"（{ratio_change_pct:.2f}ポイントの{'下方' if is_sell else '上方'}修正）\n"
+        )
+    elif ratio_change_pct is not None:
         if is_new:
             change_line = "- 変化: 直近400日以内に同一提出者による当銘柄の開示が確認できず、今回が実質的な新規保有（または大幅な保有再開）とみられる\n"
         else:
@@ -784,7 +853,13 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     else:
         change_line = ""
     ratio_str = format_ratio(fact_sheet["holding_ratio"])
-    if is_new:
+    if is_correction:
+        answer_sentence = (
+            f"{fact_sheet['stock_name']}（{fact_sheet['stock_code']}）について、{fact_sheet['filer_name']}が"
+            f"これまで届け出ていた保有比率{format_ratio(prior_ratio)}%を{ratio_str}%に訂正したことが"
+            "訂正報告書（EDINET）で分かりました。"
+        )
+    elif is_new:
         answer_sentence = (
             f"{fact_sheet['stock_name']}（{fact_sheet['stock_code']}）について、{fact_sheet['filer_name']}が"
             f"同社株式の{ratio_str}%を保有していることが大量保有報告書（EDINET）で分かりました。"
@@ -794,12 +869,32 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
             f"{fact_sheet['stock_name']}（{fact_sheet['stock_code']}）について、{fact_sheet['filer_name']}が"
             f"保有比率を{ratio_str}%まで{'引き下げ' if is_sell else '引き上げ'}たことが大量保有報告書（EDINET）で分かりました。"
         )
+    # 訂正報告書は「既報の数字が誤っていた」という開示であり、今回売買があったとは限らない。
+    # 推定金額も出さない（売買を伴わない訂正に金額を付けると、実在しない取引を報じることになる）。
+    if is_correction:
+        nature_instruction = (
+            "この開示は、既に届け出ていた保有比率を事後に訂正する訂正報告書です。"
+            "今回新たに株式が売買されたことを意味するとは限らないため、売買・取得・売却があったと"
+            "断定して書かないでください（「届け出ていた保有比率が訂正された」という書き方をすること）。\n"
+            "訂正の理由・原因はこの開示からは分からないため、推測で理由を書かないでください。\n"
+        )
+        amount_fact_line = f"- 訂正前の届出比率: {prior_ratio}%\n"
+        speculation_scope = (
+            "推測してよいのは、この訂正が市場や投資家にとって持つ意味だけです。"
+            "訂正が起きた原因・理由（ポジション調整、計算誤り等）の推測は書かないでください。"
+        )
+    else:
+        nature_instruction = (
+            f"この取引は保有比率が{'減少した売却（譲渡等を含む）' if is_sell else '増加した取得（買い増し・新規取得）'}です。\n"
+            f"金額が概算であることは見出しの「{deal_amount_label}」表記のみで十分伝わるため、本文中で改めて\n"
+            f"「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。\n"
+        )
+        amount_fact_line = f"- {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）\n"
+        speculation_scope = ""
+
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
 投資家向けの解説記事を書いてください。事実にない金額・意図・背景は絶対に創作しないでください。
-この取引は保有比率が{"減少した売却（譲渡等を含む）" if is_sell else "増加した取得（買い増し・新規取得）"}です。
-金額が概算であることは見出しの「{deal_amount_label}」表記のみで十分伝わるため、本文中で改めて
-「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。
-大量保有報告書制度そのものの一般的な説明（5%ルールの趣旨、市場透明性・投資家保護目的など）や、
+{nature_instruction}大量保有報告書制度そのものの一般的な説明（5%ルールの趣旨、市場透明性・投資家保護目的など）や、
 「今後の動向を注視する必要がある」といった、この取引固有ではない定型的な結びの文も書かないでください。
 
 事実:
@@ -808,8 +903,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 報告書種別: {fact_sheet['doc_type_label']}
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
-- {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）
-{filer_description_line}{company_description_line}{context_line}{change_line}
+{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}
 本文の1文目は、必ず次の文をそのまま使ってください（検索してきた読者への直答として最初に置く）:
 「{answer_sentence}」
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
@@ -821,7 +915,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 伝わるよう、1文で自然に触れてください。
 
 最後に1文だけ、{risk_hint}この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
-加えてください。ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
+加えてください。{speculation_scope}ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
 分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
 事実として存在しない具体的な計画やコメントの引用は創作しないでください。
@@ -1019,6 +1113,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if h.get("issuer_code") and h.get("holding_ratio") is not None
     ]
     candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
+    # 同一銘柄・同一開示日・同一提出者の開示が何件あるか（重複判定の緩和条件に使う）
+    filing_counts = Counter(
+        (str(h["issuer_code"]), h["disc_date"], h.get("filer_name", "")) for h in candidates
+    )
 
     published = []
     for h in candidates:
@@ -1029,11 +1127,20 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         filer_name = h.get("filer_name", "")
         name = h.get("name") or code
 
-        change = ratio_change_pct(code, filer_name, h["holding_ratio"], disc_date)
-        deal_amount = estimate_deal_amount_oku(code, change, disc_date)
-        if deal_amount is None:
-            print(f"  ⏭ {name}({code}): 金額を概算できないためスキップ")
+        prior_ratio = h.get("holding_ratio_prior")
+        is_correction = is_correction_report(h.get("doc_description") or "")
+        change = ratio_change_pct(code, filer_name, h["holding_ratio"], disc_date, prior_ratio)
+        if change <= 0:
+            print(f"  ⏭ {name}({code}): 前回開示から保有比率が変わっていないためスキップ")
             continue
+        if is_correction:
+            # 訂正は売買を伴わないため推定金額を出さない（記事化の可否は比率変化幅で判断する）
+            deal_amount = 0.0
+        else:
+            deal_amount = estimate_deal_amount_oku(code, change, disc_date)
+            if deal_amount is None:
+                print(f"  ⏭ {name}({code}): 株価または発行済株式数を取得できず金額を概算できないためスキップ")
+                continue
 
         is_sell = is_sell_disclosure(
             h.get("doc_description") or "", h.get("holding_ratio"), h.get("holding_ratio_prior")
@@ -1048,7 +1155,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
             continue
 
-        if already_published(code, disc_date, deal_amount, filer_name, signed_change):
+        unique_filing = filing_counts[(code, disc_date, filer_name)] == 1
+        if already_published(code, disc_date, deal_amount, filer_name, signed_change, unique_filing):
             continue
 
         snapshot = get_pit_ranking_snapshot(code, disc_date)
@@ -1073,6 +1181,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "filer_description": filer_info.get("description") or "",
             "company_description": company_description,
             "ratio_change_pct": change,
+            "prior_ratio": prior_ratio,
+            "is_correction": is_correction,
         }
         article = generate_article_body_checked(fact_sheet)
         if article is None:
@@ -1085,7 +1195,14 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         )
 
         deal_type = filer_info["category"]
-        tags = "EDINET,自動生成,売り" if is_sell else "EDINET,自動生成"
+        # 訂正記事はフロント側（isCorrectionArticle）で金額の代わりに「訂正」と表示するため、
+        # tagsで方向（売り）とは別に区別できるようにする（microCMSのスキーマ変更を避ける方針）。
+        tag_list = ["EDINET", "自動生成"]
+        if is_correction:
+            tag_list.append("訂正")
+        if is_sell:
+            tag_list.append("売り")
+        tags = ",".join(tag_list)
         payload = {
             "title": titles["title"],
             "body": article["body"],
@@ -1102,13 +1219,16 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             payload["titleEn"] = titles["titleEn"]
             payload["bodyEn"] = article["bodyEn"]
 
-        direction_mark = "📉売り" if is_sell else "📈買い"
+        direction_mark = "📝訂正" if is_correction else ("📉売り" if is_sell else "📈買い")
+        amount_mark = f"{signed_change:+.2f}pt" if is_correction else f"推定{deal_amount}億円"
         if dry_run:
-            print(f"  [dry-run] {direction_mark} {name}({code}) {disc_date} 推定{deal_amount}億円\n    title: {payload['title']}")
+            print(f"  [dry-run] {direction_mark} {name}({code}) {disc_date} {amount_mark}\n    title: {payload['title']}")
             published.append({**payload, "id": None})
             continue
 
-        if is_sell:
+        if is_correction:
+            badge_label = "📝 訂正"
+        elif is_sell:
             badge_label = "📉 売却"
         elif disclosure_kind_label(h.get("doc_description"), h.get("doc_type_code", "")) == "新規":
             badge_label = "📈 新規取得"
@@ -1134,7 +1254,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ✖ 権限エラーのため以降の候補もスキップして終了します: {e}")
             break
         if content_id:
-            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} 推定{deal_amount}億円 → id={content_id}")
+            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} → id={content_id}")
             published.append({**payload, "id": content_id})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")

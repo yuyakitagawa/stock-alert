@@ -13,7 +13,7 @@ import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
-import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmountOrCorrection, linkifyFilerNames } from "@/lib/format";
 import {
   getAllArticlesForSitemap,
   getArticleDetail,
@@ -71,7 +71,7 @@ function RelatedArticleLinks({ articles }: { articles: ArticleContent[] }) {
               {related.title}
             </Typography>
             <Typography component="span" variant="caption" sx={{ flexShrink: 0, color: "text.disabled" }}>
-              {formatDate(related.dealDate)}・{formatDealAmount(related.dealAmount)}
+              {formatDate(related.dealDate)}・{formatDealAmountOrCorrection(related)}
             </Typography>
           </Link>
         </ListItem>
@@ -306,7 +306,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           <Box>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>金額規模</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
-              {formatDealAmount(article.dealAmount)}
+              {formatDealAmountOrCorrection(article)}
             </Typography>
           </Box>
           {holdingRatio !== null && (

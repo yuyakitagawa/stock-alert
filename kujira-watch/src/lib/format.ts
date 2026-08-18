@@ -93,6 +93,22 @@ export function isSellArticle(tags?: string): boolean {
   return (tags ?? "").split(",").map((tag) => tag.trim()).includes("売り");
 }
 
+// 訂正報告書（既に届け出た保有比率の事後訂正）の記事かどうか。
+export function isCorrectionArticle(tags?: string): boolean {
+  return (tags ?? "").split(",").map((tag) => tag.trim()).includes("訂正");
+}
+
+// 訂正報告書の記事は売買を伴わないため推定金額を持たない（web/publish_blog_articles.pyが
+// dealAmount=0で投稿する）。金額の代わりに「訂正」と表示し、0億円の取引があったように
+// 見せない。集計値（週次・月次の合計）は0が加算されるだけなので影響しない。
+export function formatDealAmountOrCorrection(
+  article: { dealAmount: number; tags?: string },
+  locale: Locale = "ja"
+): string {
+  if (isCorrectionArticle(article.tags)) return locale === "en" ? "Correction" : "訂正";
+  return formatDealAmount(article.dealAmount, locale);
+}
+
 // DBの正式名（例:「シンフォニー・フィナンシャル・パートナーズ（シンガポール）ピーティーイー・
 // リミテッド」）は法人格・所在地の注記が括弧書きで付くことが多いが、AI生成本文は読みやすさの
 // ため括弧より前の通称だけで書くことがある。完全一致が無ければこの通称でも試す。

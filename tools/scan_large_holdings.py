@@ -61,6 +61,29 @@ def is_correction_report(doc_description: str) -> bool:
     return "訂正" in (doc_description or "")
 
 
+# 訂正報告書のうち、届出済みの保有比率がこのポイント数以上動くものは「事後の帳尻合わせ」では
+# 済まない。既報の保有比率そのものが誤りだったという情報であり、市場はこれに反応する。
+MATERIAL_CORRECTION_DELTA_PT = 3.0
+
+
+def is_material_correction(
+    doc_description: str,
+    holding_ratio: "float | None" = None,
+    holding_ratio_prior: "float | None" = None,
+) -> bool:
+    """訂正報告書のうち、届出比率が MATERIAL_CORRECTION_DELTA_PT 以上動くものかどうか。
+
+    訂正報告書を一律ノイズ扱いすると、既報の保有比率が大幅に誤っていたという開示を
+    取りこぼす（実例: 2026-08-18、太陽誘電6976でSituational Awareness LPが15.22%→4.41%に
+    訂正。株価は-11.5%で反応したが、既報の「16.61%で大株主化」記事だけがサイトに残った）。
+    比率が取得できない訂正報告書は判定できないため従来通りノイズ扱いにする。"""
+    if not is_correction_report(doc_description):
+        return False
+    if holding_ratio is None or holding_ratio_prior is None:
+        return False
+    return abs(holding_ratio - holding_ratio_prior) >= MATERIAL_CORRECTION_DELTA_PT
+
+
 # これ以上は株式併合等によるスクイーズアウト（完全子会社化）の対象になりうる水準で、
 # 上値が買取価格に収斂し伸びしろが無いとみなして除外する
 MAJORITY_HOLDING_THRESHOLD = 51

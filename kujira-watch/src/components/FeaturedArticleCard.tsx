@@ -8,7 +8,7 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent } from "@/types/article";
-import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
+import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
 import { UI, type Locale } from "@/lib/i18n";
 import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
@@ -93,8 +93,8 @@ export default function FeaturedArticleCard({
           </Typography>
           <Typography variant="body2" sx={{ mt: 1.5, color: "rgba(255,255,255,0.8)" }}>
             {locale === "en"
-              ? `${article.stockName} (${article.stockCode}) · ${formatDealAmount(article.dealAmount, locale)}`
-              : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmount(article.dealAmount, locale)}`}
+              ? `${article.stockName} (${article.stockCode}) · ${formatDealAmountOrCorrection(article, locale)}`
+              : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmountOrCorrection(article, locale)}`}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1.5, maxWidth: 640, color: "rgba(255,255,255,0.7)" }}>
             {excerptFromHtml(body, 90)}

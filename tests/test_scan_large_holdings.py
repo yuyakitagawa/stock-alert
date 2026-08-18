@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.scan_large_holdings import (
     is_sell_disclosure, is_individual_filer, is_noise_match, is_correction_report,
+    is_material_correction,
 )
 
 
@@ -82,6 +83,19 @@ def test_noise_match_detects_majority_holding():
     assert is_noise_match("○○ファンド", "三菱商事", "大量保有報告書", 50.9) is None
 
 
+def test_material_correction_detected_by_large_ratio_move():
+    """訂正報告書でも届出比率が3pt以上動くものは実質的な情報として扱う
+    （実例: 2026-08-18、太陽誘電6976が15.22%→4.41%）。"""
+    assert is_material_correction("訂正報告書（大量保有報告書・変更報告書）", 4.41, 15.22) is True
+    assert is_material_correction("訂正報告書（大量保有報告書・変更報告書）", 8.13, 5.13) is True
+
+
+def test_material_correction_false_for_small_or_non_correction():
+    assert is_material_correction("訂正報告書（大量保有報告書・変更報告書）", 15.0, 15.2) is False
+    assert is_material_correction("変更報告書", 4.41, 15.22) is False
+    assert is_material_correction("訂正報告書（大量保有報告書・変更報告書）", 4.41, None) is False
+
+
 if __name__ == "__main__":
     test_sell_keywords_detected()
     test_sell_detected_by_ratio_decrease_even_without_keyword()
@@ -94,4 +108,6 @@ if __name__ == "__main__":
     test_noise_match_detects_correction_report()
     test_noise_match_detects_majority_holding()
     test_noise_match_detects_sell_by_ratio_decrease()
-    print("OK: test_scan_large_holdings (11 tests)")
+    test_material_correction_detected_by_large_ratio_move()
+    test_material_correction_false_for_small_or_non_correction()
+    print("OK: test_scan_large_holdings (13 tests)")

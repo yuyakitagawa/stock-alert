@@ -9,7 +9,7 @@ import CardMedia from "@mui/material/CardMedia";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent } from "@/types/article";
-import { formatDate, formatDealAmount } from "@/lib/format";
+import { formatDate, formatDealAmountOrCorrection } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
 import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
@@ -64,8 +64,8 @@ export default function ArticleCard({
           </Typography>
           <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
             {locale === "en"
-              ? `${article.stockName} (${article.stockCode}) · ${formatDealAmount(article.dealAmount, locale)}`
-              : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmount(article.dealAmount, locale)}`}
+              ? `${article.stockName} (${article.stockCode}) · ${formatDealAmountOrCorrection(article, locale)}`
+              : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmountOrCorrection(article, locale)}`}
           </Typography>
         </CardContent>
       </CardActionArea>
