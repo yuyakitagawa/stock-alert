@@ -134,19 +134,20 @@ async function InvestorsBody({ searchParams }: Props) {
            投資家名が長く2列だと折り返しが増えるため card-grid-wide（2列相当）を使う。 */
         <ul className="card-grid card-grid-wide">
           {visibleFilers.map((filer) => (
-            /* 1行目=名前 / 2行目=分類+開示メタ の2行構造。flex-wrap任せだと名前の長さで
-               分類ラベルの位置がカードごとに揺れて一覧が読みにくかった。 */
+            /* 1行目=名前 / 2行目=分類 / 3行目=開示メタ の3行固定。同じ行に流すと
+               「創業家の資産管理会社」のような長い分類でだけ折り返しが起きて、
+               カードの高さと各行の位置がカードごとにずれていた。 */
             <li key={filer.filerName}>
               <Link
                 href={`/investors/${encodeURIComponent(filer.filerName)}`}
                 className="card font-medium text-brand-blue"
               >
                 {displayFilerName(filer.filerName)}
-                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-normal">
+                <span className="mt-1 block font-normal">
                   <DealTypeLabel dealType={filer.category} />
-                  <span className="text-xs text-foreground/50">
-                    保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
-                  </span>
+                </span>
+                <span className="block text-xs font-normal text-foreground/50">
+                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
                 </span>
               </Link>
             </li>

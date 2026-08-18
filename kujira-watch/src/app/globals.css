@@ -76,6 +76,18 @@ body {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
   }
 
+  /* カードは同じ行の中で高さを揃える。カードがli直下のリンクになっている一覧では、
+     liはグリッドに引き伸ばされてもリンク自身は内容分の高さしか持たず、名前や分類ラベルの
+     折り返し行数の違いでカードの下端がガタつくため。liそのものが.cardの一覧
+     （/disclosures・/activists・/ranking/[slug]）はグリッドアイテムとして自動で揃うので除外する。 */
+  .card-grid > li:not(.card) {
+    display: flex;
+  }
+
+  .card-grid > li:not(.card) > .card {
+    flex-grow: 1;
+  }
+
   /* 1件あたりの情報量が多く、14rem では折り返しが増えてしまう一覧用（2列相当）。 */
   .card-grid-wide {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
