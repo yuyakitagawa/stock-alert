@@ -16,7 +16,7 @@ import video.background as bg_mod
 import video.line_notify as ln
 import video.youtube_client as yt
 import video.render as render_mod
-import video.se as se_mod
+import video.audio_gen as audio_gen
 import video.post_text as pt
 
 TK_ENV = {
@@ -493,25 +493,47 @@ def test_assign_backgrounds_noop_with_empty_pool():
     assert "backgroundVideo" not in scenes[0]
 
 
-# ---------------- 効果音（自前生成） ----------------
+# ---------------- 効果音・BGM（自前生成） ----------------
 
 def test_ensure_sound_effects_writes_playable_wavs(tmp_path):
-    """SEは外部素材を持たずnumpyで合成する（毎日の全自動運用でライセンス確認が要らない）。"""
+    """効果音とBGMは外部素材を持たずnumpyで合成する（毎日の全自動運用でライセンス確認が要らない）。"""
     import wave as wave_mod
-    assert se_mod.ensure_sound_effects(str(tmp_path))
-    for name in se_mod.SE_FILENAMES:
+    assert audio_gen.ensure_sound_effects(str(tmp_path))
+    for name in audio_gen.GENERATED_AUDIO:
         with wave_mod.open(str(tmp_path / name)) as w:
             assert w.getnchannels() == 1
-            assert w.getframerate() == se_mod.SAMPLE_RATE
+            assert w.getframerate() == audio_gen.SAMPLE_RATE
             assert w.getnframes() > 0
+
+
+def test_bgm_loops_without_a_click(tmp_path):
+    """BGMは12秒でループする。末尾と先頭の段差が普通のサンプル間差分より大きいと
+    ループのたびにプチッと鳴るため、段差が通常の範囲に収まっていることを確かめる。"""
+    import numpy as np
+    import wave as wave_mod
+
+    audio_gen.ensure_sound_effects(str(tmp_path))
+    with wave_mod.open(str(tmp_path / "bgm.wav")) as w:
+        assert w.getnframes() == int(audio_gen.SAMPLE_RATE * audio_gen.BGM_LOOP_SEC)
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32767
+    loop_step = abs(x[0] - x[-1])
+    typical_step = float(np.percentile(np.abs(np.diff(x)), 99))
+    assert loop_step <= typical_step * 3
+
+
+def test_bgm_leaves_headroom():
+    """クリップするとナレーションの上で歪む。ピークに余裕を持たせる。"""
+    import numpy as np
+
+    assert float(np.max(np.abs(audio_gen._bgm()))) <= 0.6
 
 
 def test_ensure_sound_effects_is_deterministic(tmp_path):
     """同じ波形が毎回できること（差分レビューでSEの変更に気づけるように）。"""
     a, b = tmp_path / "a", tmp_path / "b"
-    se_mod.ensure_sound_effects(str(a))
-    se_mod.ensure_sound_effects(str(b))
-    for name in se_mod.SE_FILENAMES:
+    audio_gen.ensure_sound_effects(str(a))
+    audio_gen.ensure_sound_effects(str(b))
+    for name in audio_gen.GENERATED_AUDIO:
         assert (a / name).read_bytes() == (b / name).read_bytes()
 
 

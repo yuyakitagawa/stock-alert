@@ -1,5 +1,5 @@
 import React from 'react';
-import {AbsoluteFill, Audio, Sequence, staticFile, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useVideoConfig} from 'remotion';
 import {Background} from './Background';
 import {SceneView} from './scenes/SceneView';
 import {sceneDurationSec, type ShortProps} from './types';
@@ -9,7 +9,7 @@ import {sceneDurationSec, type ShortProps} from './types';
  * 読み上げ文字数からの見積もり）で決まる。総フレーム数は Root.tsx の
  * calculateMetadata が同じ計算で算出する。
  *
- * 効果音（props.sfx）は render.py が numpy で生成して public/ に置いたときだけ鳴らす。
+ * 効果音とBGM（props.sfx）は render.py が numpy で生成して public/ に置いたときだけ鳴らす。
  * 素材を外部から取ってこないので、毎日の全自動運用でライセンス確認が要らない。
  */
 export const ArticleShort: React.FC<ShortProps> = (props) => {
@@ -28,6 +28,23 @@ export const ArticleShort: React.FC<ShortProps> = (props) => {
       {/* 数字を読ませるシーンはブランドのグラデーション背景。company / filer だけ
           Pexelsの実写がシーン別に上書きされる */}
       <Background />
+      {/* 全編に敷くBGM（12秒のループ）。ナレーションを邪魔しない音量にし、
+          絶対値ではなくナレーションとの比だけ見る（最終段の loudnorm が全体を-14 LUFSに揃える）。
+          loopVolumeCurveBehavior="extend" でループしても音量カーブは動画全体の時間軸で効く */}
+      {props.sfx ? (
+        <Audio
+          src={staticFile('bgm.wav')}
+          loop
+          loopVolumeCurveBehavior="extend"
+          volume={(f) =>
+            0.09 *
+            interpolate(f, [0, 20, cursor - 14, cursor], [0, 1, 1, 0], {
+              extrapolateLeft: 'clamp',
+              extrapolateRight: 'clamp',
+            })
+          }
+        />
+      ) : null}
       {sequences.map(({scene, from, durationInFrames, key}, i) => (
         <Sequence key={key} from={from} durationInFrames={durationInFrames}>
           {scene.backgroundVideo ? (

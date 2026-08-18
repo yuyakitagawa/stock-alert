@@ -18,7 +18,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from video import se  # noqa: E402
+from video import audio_gen  # noqa: E402
 
 # YouTube / TikTok の音量基準。両プラットフォームとも -14 LUFS 前後に正規化して再生し、
 # これより大きい動画は下げるが、小さい動画は上げてくれない。VOICEVOXの生成音声は
@@ -184,10 +184,10 @@ def render(props: dict, out_path: str, assets_dir: "str | None" = None) -> bool:
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     staged = _stage_assets(render_props, assets_dir)
 
-    # 効果音は毎回その場で生成する（外部素材を持たないのでライセンス確認が要らない）
-    render_props["sfx"] = se.ensure_sound_effects(PUBLIC_DIR)
+    # 効果音とBGMは毎回その場で生成する（外部素材を持たないのでライセンス確認が要らない）
+    render_props["sfx"] = audio_gen.ensure_sound_effects(PUBLIC_DIR)
     if render_props["sfx"]:
-        staged += [os.path.join(PUBLIC_DIR, name) for name in se.SE_FILENAMES]
+        staged += [os.path.join(PUBLIC_DIR, name) for name in audio_gen.GENERATED_AUDIO]
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(render_props, f, ensure_ascii=False)
