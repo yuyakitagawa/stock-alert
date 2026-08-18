@@ -24,10 +24,11 @@ export default function FollowCta() {
       }}
     >
       <Typography sx={{ fontSize: { xs: "1.125rem", sm: "1.25rem" }, fontWeight: 800, lineHeight: 1.4 }}>
-        🐋 次の大口売買を見逃さない
+        🐋 大きな動きだけ、毎日ひろう
       </Typography>
       <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.85)" }}>
-        新着記事や大口投資家の動きは、公式X（@{X_SCREEN_NAME}）で毎日お知らせしています。
+        公式X（@{X_SCREEN_NAME}）では、金額の大きい大量保有報告を中心に1日数件と、
+        19時にその日の全件まとめを投稿しています。
       </Typography>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
         {/* LINEはフォローよりも通知の到達率が高い最優先チャネルのため、URLが設定
