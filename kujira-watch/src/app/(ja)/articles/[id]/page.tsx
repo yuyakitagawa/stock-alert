@@ -17,8 +17,7 @@ import ShareButtons from "@/components/ShareButtons";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
 import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
-import { getFilerNamesByStockAndDate, getFilersByStockCode, getFilerWinRate, getHoldingSnapshot } from "@/lib/investors";
-import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
+import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingSnapshot } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
@@ -133,13 +132,9 @@ export default async function ArticleDetailPage({ params }: Props) {
     article.filerName ?? filerByKey.get(`${article.stockCode}|${dealDateOnly}`);
 
   // ファクトボックス用: 保有比率はCMSに無いため、提出者が特定できた記事のみEDINET開示から引く。
-  // 乗っかり実績(filer_win_rate)も同じ条件で並行取得する（未集計の投資家はnull）。
-  const [snapshot, filerWinRate] = filerName
-    ? await Promise.all([
-        getHoldingSnapshot(article.stockCode, dealDateOnly, filerName),
-        getFilerWinRate(filerName),
-      ])
-    : [null, null];
+  const snapshot = filerName
+    ? await getHoldingSnapshot(article.stockCode, dealDateOnly, filerName)
+    : null;
   const holdingRatio = snapshot?.holdingRatio ?? null;
   // 前回比はCMSのratioChangePct（2026-08-15以降の記事）を優先し、
   // 無ければEDINET開示の直前保有割合との差から補う。
@@ -321,11 +316,6 @@ export default async function ArticleDetailPage({ params }: Props) {
                 >
                   {displayFilerName(filerName)}
                 </Link>
-                {filerWinRate && (
-                  <span className="mt-1 block">
-                    <FilerTrackRecordChip winRate={filerWinRate} />
-                  </span>
-                )}
               </Typography>
             </Box>
           )}
@@ -413,12 +403,6 @@ export default async function ArticleDetailPage({ params }: Props) {
               >
                 {displayFilerName(filerName)}
               </Link>
-              {filerWinRate && (
-                <>
-                  {" "}
-                  <FilerTrackRecordChip winRate={filerWinRate} />
-                </>
-              )}
               のページでは、この投資家がEDINETに提出した大量保有報告書をもとに、
               保有銘柄と保有比率の推移を横断して確認できます。
             </p>

@@ -146,7 +146,7 @@ export default async function RankingSlugPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "投資家ランキング", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "投資家ランキング", item: `${SITE_URL}/ranking/buys` },
       { "@type": "ListItem", position: 3, name: ranking.title, item: `${SITE_URL}/ranking/${slug}` },
     ],
   };
@@ -176,7 +176,7 @@ export default async function RankingSlugPage({ params }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking" className="hover:text-brand-blue">投資家ランキング</Link>
+        <Link href="/ranking/buys" className="hover:text-brand-blue">投資家ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{ranking.title}</span>
       </nav>

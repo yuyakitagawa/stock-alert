@@ -6,6 +6,13 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/sitemap.xml", destination: "/sitemap-index.xml" }];
   },
+  // /ranking は「3ヶ月リターンランキング」だったが、推定損益の算出が誤っていたため
+  // 2026-08-18に廃止（tools/filer_win_rate.py・filer_win_rateテーブルごと削除）。
+  // GSC登録済み・ヘッダー/フッターから貼られていたURLなので、404にせず
+  // タブの先頭になった買い増しランキングへ恒久リダイレクトする。
+  async redirects() {
+    return [{ source: "/ranking", destination: "/ranking/buys", permanent: true }];
+  },
   images: {
     remotePatterns: [
       {

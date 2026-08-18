@@ -1,10 +1,9 @@
 import FilterButtonNav from "./FilterButtonNav";
 
-// 投資家ランキング（/ranking・/ranking/[slug]・/ranking/trending）共通のタブ切り替え。
+// 投資家ランキング（/ranking/[slug]・/ranking/trending）共通のタブ切り替え。
 // アクティビストランキング（/ranking/activist）はタブには含めず、各ページ下部の
 // 関連リンクから遷移する（タブは投資家軸のランキングに絞る）。
 const TABS = [
-  { href: "/ranking", label: "3ヶ月リターンランキング" },
   { href: "/ranking/buys", label: "買い増しランキング" },
   { href: "/ranking/sells", label: "売却ランキング" },
   { href: "/ranking/filings", label: "報告書件数ランキング" },

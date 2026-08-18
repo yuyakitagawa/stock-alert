@@ -11,8 +11,8 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import RatioTransition from "@/components/RatioTransition";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { disclosureDocLabel } from "@/lib/disclosures";
-import { getFilerClassification, getFilerHoldings, getFilerWinRate } from "@/lib/investors";
-import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
+import { getFilerClassification, getFilerHoldings } from "@/lib/investors";
+import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 import FaqAccordionList from "@/components/FaqAccordionList";
@@ -46,10 +46,9 @@ export default async function InvestorPage({ params }: Props) {
   const { filer } = await params;
   const filerName = decodeURIComponent(filer);
 
-  const [holdings, classification, winRate] = await Promise.all([
+  const [holdings, classification] = await Promise.all([
     getFilerHoldings(filerName),
     getFilerClassification(filerName),
-    getFilerWinRate(filerName),
   ]);
 
   if (holdings.length === 0) {
@@ -148,26 +147,6 @@ export default async function InvestorPage({ params }: Props) {
           <h2 className="mb-2 text-sm font-bold text-brand-navy">{displayFilerName(filerName)}について</h2>
           <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/70">
             {classification.profile}
-          </p>
-        </div>
-      )}
-      {winRate && (
-        <div className="mb-8 border-t border-rule pt-4">
-          <h2 className="mb-2 text-sm font-bold text-brand-navy">乗っかりリターン実績（推定）</h2>
-          <p
-            className={`text-2xl font-bold ${
-              winRate.totalReturnOku >= 0 ? "text-emerald-700" : "text-rose-700"
-            }`}
-          >
-            {formatSignedOku(winRate.totalReturnOku)}
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-foreground/50">
-            {filerName}の買い増し開示{winRate.n}回について、開示ごとの推定取得金額（保有比率の変化幅×発行済株式数×株価）を
-            {winRate.holdDays}営業日（約3ヶ月）後まで保有した場合の推定損益の合計。終値ベースの参考値で、将来の成績を保証するものではありません（
-            {formatDate(winRate.updatedAt)}時点）。
-            <Link href="/ranking" className="text-brand-blue hover:underline">
-              投資家別ランキングを見る
-            </Link>
           </p>
         </div>
       )}

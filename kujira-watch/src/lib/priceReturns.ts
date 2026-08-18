@@ -3,7 +3,6 @@ import { getSupabaseServerClient } from "./supabase";
 // 記事ページの「開示後の株価推移」用。yahoo_price_cache（トレーディングシステム側が
 // 日次更新している終値キャッシュ）から、開示日(dealDate)を基準にした
 // 基準終値・+1ヶ月(21営業日)・+3ヶ月(63営業日)・直近の終値を返す。
-// /rankingのfiler_win_rate（63営業日保有の推定損益）と期間感覚を揃えている。
 
 export type PriceSnapshot = { date: string; close: number };
 
