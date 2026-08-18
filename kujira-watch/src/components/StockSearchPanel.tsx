@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Box from "@mui/material/Box";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
@@ -18,6 +19,7 @@ export default function StockSearchPanel({
   locale,
   onQueryChange,
   onSelect,
+  onReady,
 }: {
   query: string;
   results: SearchOption[];
@@ -25,8 +27,14 @@ export default function StockSearchPanel({
   locale: Locale;
   onQueryChange: (value: string) => void;
   onSelect: (option: SearchOption) => void;
+  // 読み込み完了の合図。呼び出し側は平常時の素のinputをこのタイミングで引っ込める。
+  onReady?: () => void;
 }) {
   const t = UI[locale];
+
+  useEffect(() => {
+    onReady?.();
+  }, [onReady]);
   const trimmedQuery = query.trim();
 
   return (
@@ -35,6 +43,8 @@ export default function StockSearchPanel({
       disablePortal
       disableCloseOnSelect={false}
       filterOptions={(x) => x}
+      // 平常時の素のinputで打ち始めた文字を引き継ぐため、入力値は呼び出し側のstateで持つ。
+      inputValue={query}
       options={trimmedQuery ? results : []}
       loading={loading}
       groupBy={(option) =>
@@ -45,7 +55,11 @@ export default function StockSearchPanel({
       }
       noOptionsText={trimmedQuery ? t.searchNoResults(query) : t.searchPlaceholder}
       loadingText={t.searchLoading}
-      onInputChange={(_, value) => onQueryChange(value)}
+      // マウント直後にMUIがreason="reset"で空文字を流してくるため、素のinputから
+      // 引き継いだ入力が消えないよう、ユーザー操作由来の変更だけを拾う。
+      onInputChange={(_, value, reason) => {
+        if (reason === "input" || reason === "clear") onQueryChange(value);
+      }}
       onChange={(_, value) => {
         if (value) onSelect(value);
       }}

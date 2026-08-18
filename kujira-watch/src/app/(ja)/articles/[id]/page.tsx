@@ -413,7 +413,6 @@ export default async function ArticleDetailPage({ params }: Props) {
           <nav aria-label="関連ランキング" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
             <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
-            <Link href="/ranking/filings" className="text-brand-blue hover:underline">報告書件数ランキング</Link>
             <Link href={`/date/${dealDateOnly}`} className="text-brand-blue hover:underline">
               {formatDate(article.dealDate)}の全開示
             </Link>

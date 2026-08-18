@@ -20,7 +20,7 @@ export function mainNavLinks(locale: Locale): NavLink[] {
   return [
     { href: "/", label: "TOP" },
     { href: "/trending", label: "急増銘柄" },
-    { href: "/ranking/buys", label: "投資家ランキング" },
+    { href: "/ranking/buys", label: "月間ランキング" },
     { href: "/weekly", label: "週次トレンド" },
     { href: "/activists", label: "アクティビストの動き" },
     { href: "/investors", label: "投資家一覧" },

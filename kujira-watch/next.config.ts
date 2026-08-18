@@ -6,12 +6,18 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/sitemap.xml", destination: "/sitemap-index.xml" }];
   },
-  // /ranking は「3ヶ月リターンランキング」だったが、推定損益の算出が誤っていたため
-  // 2026-08-18に廃止（tools/filer_win_rate.py・filer_win_rateテーブルごと削除）。
-  // GSC登録済み・ヘッダー/フッターから貼られていたURLなので、404にせず
-  // タブの先頭になった買い増しランキングへ恒久リダイレクトする。
+  // 廃止したランキングURLの後始末。どちらもGSC登録済み・ヘッダー/フッターから
+  // 貼られていたURLなので404にはせず、内容が最も近いページへ恒久リダイレクトする。
+  // - /ranking（3ヶ月リターンランキング）: 推定損益の算出が誤っていたため2026-08-18に廃止
+  //   （tools/filer_win_rate.py・filer_win_rateテーブルごと削除）。タブの先頭になった
+  //   買い増しランキングへ。
+  // - /ranking/filings（報告書件数ランキング）: 2026-08-18に廃止。開示件数を投資家別に
+  //   数えるだけで/ranking/trending（前30日比の増加件数）と重複していたため、そちらへ。
   async redirects() {
-    return [{ source: "/ranking", destination: "/ranking/buys", permanent: true }];
+    return [
+      { source: "/ranking", destination: "/ranking/buys", permanent: true },
+      { source: "/ranking/filings", destination: "/ranking/trending", permanent: true },
+    ];
   },
   images: {
     remotePatterns: [
