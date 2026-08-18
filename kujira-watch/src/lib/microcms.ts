@@ -1,6 +1,7 @@
 import { createClient } from "microcms-js-sdk";
 import { unstable_cache } from "next/cache";
 import type { AboutPage, Article, ArticleContent, DealType } from "@/types/article";
+import { displayText } from "./format";
 
 const serviceDomain = process.env.MICROCMS_SERVICE_DOMAIN;
 const apiKey = process.env.MICROCMS_API_KEY;
@@ -19,10 +20,16 @@ export const REVALIDATE_SECONDS = 60;
 
 // dealType は microCMS 側で複数選択(配列)設定になっている記事が混在するため、
 // 配列で返ってきた場合は先頭要素に正規化する（単一選択の記事はそのまま通す）。
+// あわせてタイトルの全角英数字（EDINETの提出者名がＯａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…の形で
+// 登録されており、そこから組み立てたタイトルも全角のまま）を半角へ寄せる。一覧・見出し・
+// metadata・共有テキストのどこで見ても同じ表記になるよう、受け取った時点で1か所で行う
+// （本文HTMLはlinkifyFilerNamesがDB上の正式表記と突合するため変換しない）。
 function normalizeDealType<T extends { dealType: unknown }>(article: T): T {
+  const withTitle = article as T & { title?: unknown };
   return {
     ...article,
     dealType: Array.isArray(article.dealType) ? article.dealType[0] : article.dealType,
+    ...(typeof withTitle.title === "string" ? { title: displayText(withTitle.title) } : {}),
   };
 }
 

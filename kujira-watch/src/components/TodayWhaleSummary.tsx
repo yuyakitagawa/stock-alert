@@ -17,12 +17,14 @@ export default function TodayWhaleSummary({
   amount,
   buyCount,
   sellCount,
+  disclosuresFixed,
 }: {
   date: string;
   count: number;
   amount: number;
   buyCount: number;
   sellCount: number;
+  disclosuresFixed: boolean;
 }) {
   const dateOnly = date.slice(0, 10);
   return (
@@ -52,7 +54,9 @@ export default function TodayWhaleSummary({
         </Typography>
         {/* デイトレ層向けの鮮度表示: 何時に今日の開示が載るのかをTOPで明示する（edinet_blog.ymlの毎時実行に対応） */}
         <Typography variant="caption" sx={{ display: "block", mt: 0.5, color: "text.secondary" }}>
-          新着開示は平日9時〜19時ごろに毎時自動更新
+          {disclosuresFixed
+            ? "この日の開示は確定（EDINETの受付は17時15分で終了）"
+            : "受付中。新着開示は平日9時〜19時ごろに毎時自動更新"}
         </Typography>
       </CardActionArea>
     </Card>

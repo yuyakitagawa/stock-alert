@@ -4,6 +4,7 @@ import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TodayWhaleSummary from "@/components/TodayWhaleSummary";
 import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
 import { isSellArticle } from "@/lib/format";
+import { areDisclosuresFixed } from "@/lib/jst";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 // クローラーが最初のHTML(SSR)だけで辿れるリンク数を増やすため、初回取得件数を
@@ -60,6 +61,7 @@ export default async function HomePage() {
               amount={latestDayArticles.reduce((sum, a) => sum + a.dealAmount, 0)}
               buyCount={latestDayArticles.length - latestDaySellCount}
               sellCount={latestDaySellCount}
+              disclosuresFixed={areDisclosuresFixed(latestDealDate)}
             />
           )}
           {featuredArticles.length > 0 && (

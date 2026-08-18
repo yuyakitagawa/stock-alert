@@ -20,6 +20,11 @@ const MOVES_WINDOW_DAYS = 30;
 const MOVES_DISPLAY_LIMIT = 20;
 // アクティビスト注目銘柄の初期表示件数。残りは「もっと見る」で開く。
 const ATTENTION_DISPLAY_LIMIT = 10;
+// 「もっと見る」で開く分もHTMLには載っている（CSSで隠しているだけ）ため、30日分を全部
+// 描画するとページのHTMLが500KB近くになりモバイル回線で重い。HTMLに載せる件数自体を
+// ここで打ち切る（打ち切った件数は画面にも明記して、全件があるように見せない）。
+const ATTENTION_RENDER_LIMIT = 30;
+const MOVES_RENDER_LIMIT = 60;
 
 const url = `${SITE_URL}/activists`;
 const title = "アクティビストの動き";
@@ -103,7 +108,11 @@ export default async function ActivistsPage() {
     row.buys.push(move);
     byIssuer.set(move.issuerCode, row);
   }
-  const attentionStocks = [...byIssuer.values()].sort((a, b) => b.totalDelta - a.totalDelta);
+  const attentionStocksAll = [...byIssuer.values()].sort((a, b) => b.totalDelta - a.totalDelta);
+  const attentionStocks = attentionStocksAll.slice(0, ATTENTION_RENDER_LIMIT);
+  const attentionOmitted = attentionStocksAll.length - attentionStocks.length;
+  const movesShown = recentMoves.slice(0, MOVES_RENDER_LIMIT);
+  const movesOmitted = recentMoves.length - movesShown.length;
 
   const attentionItem = (row: AttentionRow, index: number) => (
     <li
@@ -174,6 +183,7 @@ export default async function ActivistsPage() {
               よくある質問
             </Link>
             をご覧ください。
+            {attentionOmitted > 0 && `（増加幅の大きい上位${ATTENTION_RENDER_LIMIT}銘柄を表示。ほか${attentionOmitted}銘柄は各銘柄ページでご確認ください）`}
           </p>
           <ShowMoreList
             className="card-grid card-grid-wide"
@@ -190,6 +200,7 @@ export default async function ActivistsPage() {
         <p className="mb-4 text-sm text-foreground/60">
           アクティビストが直近{MOVES_WINDOW_DAYS}日に提出した大量保有・変更報告書を新しい順に
           一覧しています。保有比率が増えた開示は買い増し、減った開示は売却方向の動きです。
+          {movesOmitted > 0 && `（新しい順に${MOVES_RENDER_LIMIT}件まで表示。ほか${movesOmitted}件は各投資家ページでご確認ください）`}
         </p>
         {recentMoves.length === 0 ? (
           <p className="text-sm text-foreground/60">
@@ -198,10 +209,10 @@ export default async function ActivistsPage() {
         ) : (
           <ShowMoreList
             className="card-grid card-grid-wide"
-            restCount={recentMoves.length - MOVES_DISPLAY_LIMIT}
+            restCount={movesShown.length - MOVES_DISPLAY_LIMIT}
             unit="件"
           >
-            {recentMoves.map(moveItem)}
+            {movesShown.map(moveItem)}
           </ShowMoreList>
         )}
       </section>

@@ -1,5 +1,55 @@
 # Dev Log
 
+## 2026-08-19 個人投資家1000人コンサルの12施策を実装（記事データの誤り是正が最優先）
+
+```
+docs/consult_1000_investors_20260819.md（仮想個人投資家1000人・10セグメントのコンサル）で
+出した改善点を優先度順に12件、すべて実装した。事前監査で見つかった「記事の数字そのものが
+違う」問題が1〜4位を占めたため、まずそこから直した。
+
+1. 記事化の前提を守る（web/publish_blog_articles.py）
+   EDINETはメタデータ公開とXBRL本文の可用性にラグがあり、提出直後の便では
+   holding_ratio_prior が取れないことがある。その状態で記事化すると
+   ratio_change_pct() が「今回比率の全量＝新規取得」とみなし、
+     - タイトルが「X%を新規保有」（実際は変更報告書）
+     - 推定金額が比率全量ぶんに膨らむ（セイコーグループ8050: 実際-0.15ptを-10.57pt・966.1億円）
+   という誤りが公開されたまま残っていた。直近14日の照合可能56件中13件=23%が該当。
+   → should_wait_for_prior_ratio() で、変更報告書かつ前回比率が未取得の開示は
+     その便では記事化せず次の便へ持ち越す（PRIOR_RATIO_WAIT_DAYS=2を過ぎたら
+     XBRLの書式差とみなして従来どおり履歴からの再導出で記事化。取りこぼしは作らない）。
+
+2. 既存記事の是正（tools/fix_misreported_blog_articles.py 新規）
+   EDINET開示を正として ratioChangePct・dealAmount・タイトル・tags・本文を作り直し
+   microCMSへPATCH。対象は(a)ratioChangePctが実データとズレている記事、
+   (b)前回比率>0なのにタイトルが「新規保有」の記事。是正後に is_worth_publishing() を
+   割る記事は --delete 指定時のみバックアップを取って削除する。
+
+3. 表示の正を1つに（kujira-watch/src/app/(ja)/articles/[id]/page.tsx）
+   ファクトボックスの「前回比」はEDINET開示の（今回比率−直前保有割合）を優先し、
+   CMSのratioChangePctはフォールバックへ降格。同じ画面に
+   「保有比率10.57%（前回10.72%）」と「前回比−10.57pt」が並ぶ矛盾を解消。
+
+4. 株価表記の一本化（disclosure_close_price()）
+   本文へ渡す株価を gen_rankings（開示日に当日行が無ければ数日前を拾う）から
+   開示日終値＝推定金額の概算に使うのと同じ値へ変更。サイトの「基準終値」とも同源になった。
+   金額欄には「（概算）」を添える。
+
+5〜12. フロント側（kujira-watch）
+   5. 保有比率の推移グラフ（HoldingRatioChart.tsx、同一投資家×銘柄の開示を折れ線で）
+   6. RSS/X導線（FollowUpdatesCta.tsx＋/investors/[filer]/feed.xml・/stocks/[code]/feed.xml。
+      ウォッチリストは2026-08-18に削除済みでオーナー判断により復活させない方針のため、
+      再訪の受け皿はRSSと公式Xの2つにする）
+   7. /activists の軽量化（HTMLに載せる件数の上限を注目銘柄30件・直近の動き60件に。
+      ShowMoreListは隠しているだけで全件HTMLに含めるため約500KBあった）
+   8. 記事末尾の「自動生成」タグを非表示、「※推測:」段落を「編集部の見立て」枠へ切り出し
+   9. TOPの開示サマリーに「この日の開示は確定」/「受付中」（src/lib/jst.ts）
+   10. タイトルの全角英数を表示時に半角へ正規化（microcms.tsのnormalizeDealType内で1か所）
+   11. 開示後の株価推移で未到来の地点に「開示から21営業日後に表示」
+   12. /en/investors（Top Whales）を新設し、英語版ヘッダーとサイトマップから参照
+
+テスト: tests/test_publish_blog_articles.py 95件（+4）
+```
+
 ## 2026-08-19 X投稿の全面改修（インフルエンサー1000人コンサルの収束10施策）
 
 ```
