@@ -252,3 +252,32 @@ HTML全体 1,570 KB (raw) / 235 KB (gzip)
 | `/faq/terms` | - | 22 KB |
 
 TTFBも 0.35s → 0.04s。
+
+## 2026-08-17 kujira-watch: CDNキャッシュの明示活用（API・RSS・画像）
+
+CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で効いている部分」だけでなく
+明示的に設計した。座学メモは `docs/cdn_study.md`（一般論→自サイトの実例の対応表つき）。
+
+### 現状整理
+- ページはISR（`export const revalidate`）で既にCDNキャッシュ済み
+  （ISRはCDN的には `s-maxage={revalidate} + stale-while-revalidate` として配信される）
+- 一方Route HandlerはNext.js 15以降デフォルト非キャッシュで、
+  `/api/articles`（無限スクロール）・`/api/stocks/search`（ヘッダー検索）・
+  `/api/watchlist-latest`・`/feed.xml` は毎リクエストがオリジン
+  （Vercel関数→microCMS/Supabase）まで到達していた
+
+### 対応
+1. APIルート3本に `Cache-Control: public, s-maxage=N, stale-while-revalidate=M` を付与
+   - `/api/articles`: 60/300（記事ページのISR 60sと同鮮度）
+   - `/api/stocks/search`: 300/3600（検索対象の増減は記事投稿時のみ＝最短毎時）
+   - `/api/watchlist-latest`: 300/600（開示スキャンが毎時なので5分で十分）
+   - `/api/counter` はPOST＋副作用ありのため対象外（キャッシュしない設計判断も記録）
+2. `/feed.xml` を `export const revalidate = 300` でISR化（RSSリーダーの定期巡回対策）
+3. `next.config.ts` の `images.minimumCacheTTL` を既定4時間→31日
+   （microCMSは画像差し替えでURLが変わる＝実質immutableなので安全）
+
+### 検証
+- `tsc --noEmit`・`eslint` パス。`next build` はコンパイル・型検査を通過
+  （ページデータ収集はmicroCMSキー未設定の環境のため実行不可）
+- デプロイ後は `x-vercel-cache` ヘッダー（MISS→HIT→STALE）で実測する
+  （手順は `docs/cdn_study.md` §5）

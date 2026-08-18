@@ -13,5 +13,14 @@ export async function GET(request: NextRequest) {
   const translatedOnly = searchParams.get("translatedOnly") === "1";
 
   const { contents, totalCount } = await getArticleList({ offset, dealType, translatedOnly });
-  return NextResponse.json({ contents, totalCount });
+  return NextResponse.json(
+    { contents, totalCount },
+    {
+      headers: {
+        // CDN(Vercel Edge)にクエリ文字列ごとキャッシュさせる。記事ページのISR(60s)と同じ鮮度。
+        // s-maxage=CDN側TTL、stale-while-revalidate=期限切れ後も古い応答を返しつつ裏で再取得する猶予。
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      },
+    },
+  );
 }

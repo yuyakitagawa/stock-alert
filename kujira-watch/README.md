@@ -15,7 +15,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - Tailwind CSS v4（ページレイアウト・グリッド・`@tailwindcss/typography`でのリッチテキスト本文装飾を担当。コンポーネント単位のスタイルはMUI側）。一覧のカードUIは`src/app/globals.css`の`@layer components`に`.card`/`.card-grid`/`.card-grid-wide`として定義する（索引ページは1ページに100件以上並ぶため、ユーティリティクラスの羅列やMUI Cardではclass属性だけでHTMLが肥大化する。`@layer components`に入れるのは、レイヤー無しで書くとTailwindのユーティリティより優先されて`flex`等での上書きが効かなくなるため）
 - microCMS（`microcms-js-sdk`）
 - Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を、`/ranking`と記事・銘柄ページの「乗っかり実績」チップ（`FilerTrackRecordChip`）が`filer_win_rate`テーブルを参照）
-- Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）
+- Vercel想定（ISR: `revalidate = 60`、`@vercel/analytics`でアクセス計測、`@vercel/speed-insights`でCore Web Vitals計測）。CDN（Vercel Edge Network）のキャッシュはページのISRに加え、APIルート（`/api/articles`・`/api/stocks/search`・`/api/watchlist-latest`に`Cache-Control: s-maxage + stale-while-revalidate`）・`/feed.xml`（`revalidate = 300`でISR化）・画像最適化（`images.minimumCacheTTL` 31日）でも明示的に効かせている。設計の考え方と動作確認方法は `docs/cdn_study.md` を参照
 
 ## セットアップ
 
