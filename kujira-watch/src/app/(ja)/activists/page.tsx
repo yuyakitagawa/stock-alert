@@ -3,28 +3,36 @@ import Link from "next/link";
 import {
   ACTIVIST_HOLDING_MIN_RATIO,
   getActivistHoldingsSummary,
+  getActivistRecentMoves,
 } from "@/lib/activists";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import RatioTransition from "@/components/RatioTransition";
 import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 3600;
 
+// 「直近の動き」の集計期間（/ranking/activist・/trendingと同じ30日）。
+const MOVES_WINDOW_DAYS = 30;
+// 30日分は150件超になり保有一覧が埋もれるため、表示は最新50件に絞る。
+const MOVES_DISPLAY_LIMIT = 50;
+
 const url = `${SITE_URL}/activists`;
-const title = "アクティビストの保有銘柄一覧";
+const title = "アクティビストの動き";
 
 export const metadata: Metadata = {
   title,
   description:
-    "アクティビスト（物言う株主）がEDINET大量保有報告書で開示している現在の保有銘柄をファンド別に一覧。複数のアクティビストが同時に保有する銘柄、保有比率、最終開示日つきで毎日更新しています。",
+    "アクティビスト（物言う株主）のEDINET大量保有報告書による直近の動き（買い増し・売却）と、現在の保有銘柄をファンド別に一覧。複数のアクティビストが同時に保有する銘柄、保有比率、最終開示日つきで毎日更新しています。",
   alternates: { canonical: url },
   openGraph: { title, url },
 };
 
 export default async function ActivistsPage() {
-  const [summary, stocksWithArticles] = await Promise.all([
+  const [summary, recentMoves, stocksWithArticles] = await Promise.all([
     getActivistHoldingsSummary(),
+    getActivistRecentMoves(MOVES_WINDOW_DAYS).catch(() => []),
     getAllStocksForIndex().catch(() => []),
   ]);
 
@@ -84,15 +92,59 @@ export default async function ActivistsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          {SITE_NAME}が投資家分類「アクティビスト」（物言う株主）と判定した提出者について、
-          EDINET大量保有報告書の銘柄ごとの最新開示を「現在の保有」として集計した一覧です。
+          {SITE_NAME}が投資家分類「アクティビスト」（物言う株主）と判定した提出者の、
+          EDINET大量保有報告書による直近の動き（買い増し・売却）と現在の保有銘柄です。
           現在{summary.funds.length}ファンドが{summary.stockCount}銘柄（のべ{summary.holdingCount}件）を
-          保有しています。最新開示の保有比率が{ACTIVIST_HOLDING_MIN_RATIO}%未満に下がった銘柄は
-          報告義務の対象外となりその後の売買が開示されないため、一覧から除外しています。
-          開示は義務発生日から最大5営業日遅れる点、その後の売買が反映されていない可能性がある点に
-          ご注意ください。
+          保有しています。
+          ※開示は最大5営業日遅れて提出される点にご注意ください。
         </p>
       </div>
+
+      <section className="mb-10">
+        <h2 className="mb-2 text-lg font-bold text-brand-navy">
+          直近{MOVES_WINDOW_DAYS}日の動き
+        </h2>
+        <p className="mb-4 text-sm text-foreground/60">
+          アクティビストが提出した大量保有・変更報告書を新しい順に一覧しています。
+          保有比率が増えた開示は買い増し、減った開示は売却方向の動きです。
+        </p>
+        {recentMoves.length === 0 ? (
+          <p className="text-sm text-foreground/60">
+            直近{MOVES_WINDOW_DAYS}日にアクティビストの開示はありません。
+          </p>
+        ) : (
+          <ul className="border-t border-rule">
+            {recentMoves.slice(0, MOVES_DISPLAY_LIMIT).map((move) => (
+              <li
+                key={move.docId}
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-rule py-2.5 text-sm"
+              >
+                <span className="kicker whitespace-nowrap text-foreground/50">
+                  {formatDate(move.discDate)}
+                </span>
+                <Link
+                  href={`/investors/${encodeURIComponent(move.filerName)}`}
+                  className="text-brand-blue hover:underline"
+                >
+                  {displayFilerName(move.filerName)}
+                </Link>
+                <span className="font-medium">{stockLabel(move.issuerName, move.issuerCode)}</span>
+                <span className="text-foreground/70">
+                  <RatioTransition ratio={move.holdingRatio} prior={move.holdingRatioPrior} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {recentMoves.length > MOVES_DISPLAY_LIMIT && (
+          <p className="mt-2 text-xs text-foreground/50">
+            ※直近{MOVES_WINDOW_DAYS}日の全{recentMoves.length}件のうち最新{MOVES_DISPLAY_LIMIT}件を
+            表示しています。すべての開示は
+            <Link href="/disclosures" className="text-brand-blue hover:underline">開示速報</Link>
+            でご覧いただけます。
+          </p>
+        )}
+      </section>
 
       {summary.multiHolderStocks.length > 0 && (
         <section className="mb-10">
@@ -134,8 +186,10 @@ export default async function ActivistsPage() {
       <section className="mb-10">
         <h2 className="mb-2 text-lg font-bold text-brand-navy">ファンド別の保有銘柄</h2>
         <p className="mb-4 text-sm text-foreground/60">
-          保有銘柄数の多い順です。ファンド名をクリックすると保有比率の推移や乗っかりリターン実績を
-          確認できます。
+          銘柄ごとの最新開示を「現在の保有」として集計し、保有銘柄数の多い順に並べています。
+          最新開示の保有比率が{ACTIVIST_HOLDING_MIN_RATIO}%未満に下がった銘柄は報告義務の対象外となり
+          その後の売買が開示されないため、一覧から除外しています。ファンド名をクリックすると
+          保有比率の推移や乗っかりリターン実績を確認できます。
         </p>
         <ul className="border-t border-rule">
           {summary.funds.map((fund) => (

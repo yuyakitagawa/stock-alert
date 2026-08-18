@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
-// /activists（アクティビスト保有銘柄一覧）用。投資家分類が「アクティビスト」の提出者について、
+// /activists（アクティビストの動き）用。投資家分類が「アクティビスト」の提出者について、
 // 銘柄ごとの最新開示を「現在の保有」とみなして横断集計する。競合（アクティビストメディア等）の
 // 「アクティビスト保有一覧」に対応するページの裏側。
 
@@ -138,5 +138,64 @@ export const getActivistHoldingsSummary = unstable_cache(
     };
   },
   ["activist-holdings-summary"],
+  { revalidate: 3600 }
+);
+
+export type ActivistMove = {
+  docId: string;
+  filerName: string;
+  issuerCode: string;
+  issuerName: string;
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+  discDate: string;
+};
+
+// /activists「直近の動き」用。直近days日にアクティビストが提出した開示を新しい順に返す。
+// アクティビストの30日分は数十件規模なのでチャンクごとのページングは不要。
+export const getActivistRecentMoves = unstable_cache(
+  async (days: number): Promise<ActivistMove[]> => {
+    const supabase = getSupabaseServerClient();
+
+    const { data: activists } = await supabase
+      .from("edinet_filer_classification")
+      .select("filer_name")
+      .eq("category", "アクティビスト");
+    const filerNames = (activists ?? []).map((r) => r.filer_name).filter(Boolean);
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - (days - 1));
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
+
+    const moves: ActivistMove[] = [];
+    for (let i = 0; i < filerNames.length; i += FILER_CHUNK_SIZE) {
+      const chunk = filerNames.slice(i, i + FILER_CHUNK_SIZE);
+      const { data } = await supabase
+        .from("edinet_large_holdings")
+        .select("doc_id, filer_name, issuer_code, issuer_name, holding_ratio, holding_ratio_prior, disc_date")
+        .in("filer_name", chunk)
+        .gte("disc_date", cutoffDate)
+        .order("disc_date", { ascending: false })
+        .order("doc_id", { ascending: false });
+      for (const row of data ?? []) {
+        if (!row.issuer_code || !row.disc_date) continue;
+        moves.push({
+          docId: row.doc_id,
+          filerName: row.filer_name,
+          issuerCode: row.issuer_code,
+          issuerName: row.issuer_name ?? row.issuer_code,
+          holdingRatio: row.holding_ratio,
+          holdingRatioPrior: row.holding_ratio_prior,
+          discDate: row.disc_date,
+        });
+      }
+    }
+    return moves.sort((a, b) =>
+      a.discDate !== b.discDate
+        ? b.discDate.localeCompare(a.discDate)
+        : b.docId.localeCompare(a.docId)
+    );
+  },
+  ["activist-recent-moves"],
   { revalidate: 3600 }
 );

@@ -41,7 +41,7 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
           { href: "/trending", label: "急増銘柄" },
           { href: "/ranking", label: "投資家ランキング" },
           { href: "/weekly", label: "週次トレンド" },
-          { href: "/activists", label: "アクティビスト保有銘柄" },
+          { href: "/activists", label: "アクティビストの動き" },
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },
           // 月別アーカイブは回遊の起点というより過去分の入口なので一番右に置く。
