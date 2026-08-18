@@ -19,16 +19,14 @@ import pandas as pd
 import numpy as np
 import time
 import os
-import glob
 import requests as _requests
 from datetime import datetime, timedelta, date as _date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, calc_rsi, extract_features, add_cs_rank_features, get_fundamentals, IsotonicCalibrated, HEADERS, SEQ_DAYS, recommend_from_scores, classify_market_regime, get_market_index_df_cached
+from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_fundamentals, recommend_from_scores, classify_market_regime, get_market_index_df_cached
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
 
-TOP_SHOW = 10
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
 BULL_SMA_PERIOD  = 20     # 強気判定に使うSMA期間（日）
 BETA_MIN_BULL    = 0.4    # 強気相場時の最低β（日経との連動性）
@@ -323,7 +321,6 @@ def main():
     total = len(codes)
 
     def fetch_one(code, _macro=_live_macro, _jpy=_live_jpy):
-        from lib.utils import _days_to_nearest_event
         from datetime import date as _date
         prices = get_prices(code, days=400)
         with lock:

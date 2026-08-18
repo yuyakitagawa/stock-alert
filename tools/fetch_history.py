@@ -24,13 +24,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta, date
 
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
 
-from lib.db import save_price_cache, get_price_cache_coverage, init_db
+from lib.db import save_price_cache, get_price_cache_coverage
 
 BATCH_SIZE = 100
 
@@ -112,7 +111,6 @@ def main():
     args = _parse_args()
     target_days = args.years * 365
 
-    init_db()
     codes = get_all_codes()
     if not codes:
         print("ERROR: 銘柄コードが取得できません。先に screener.py を実行してください。")

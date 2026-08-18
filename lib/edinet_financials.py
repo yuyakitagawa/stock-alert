@@ -13,7 +13,7 @@ docTypeCode:
 """
 import re
 from datetime import date, timedelta
-from lib.edinet import _api_key, _fetch_xbrl_text, fetch_documents_list, _normalize_sec_code
+from lib.edinet import _fetch_xbrl_text, fetch_documents_list, _normalize_sec_code
 
 _FIN_DOC_TYPES = {"120", "130", "140"}
 

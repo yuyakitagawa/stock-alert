@@ -12,10 +12,6 @@ _BASE_DIR = os.getenv("STOCK_ALERT_HOME", _PROJECT_DIR)
 DB_PATH = os.path.join(_BASE_DIR, "stock_alert.db")
 
 
-def init_db():
-    pass
-
-
 # ── 移行後の共通ヘルパー（旧・直接sqlite3呼び出しの置換用） ──────────────
 
 def get_latest_ranking_date():
@@ -45,13 +41,6 @@ def get_price_cache_codes():
     """yahoo_price_cache に存在する銘柄コード一覧（重複なし）。"""
     rows = sb.select("yahoo_price_cache", "select=code")
     return sorted({r["code"] for r in rows})
-
-
-def get_jquants_disc_dates():
-    """jquants_fin_summary の disc_date 一覧（重複なし）。"""
-    rows = sb.select("jquants_fin_summary", "select=disc_date")
-    return {r["disc_date"] for r in rows}
-
 
 
 def get_all_yutai():
@@ -115,16 +104,6 @@ def get_all_sectors():
     return {r["code"]: r["sector"] for r in rows if r.get("sector")}
 
 
-def save_all_sectors(sector_map):
-    today_str = date.today().isoformat()
-    sb_rows = [{
-        "code": code,
-        "sector": sector,
-        "fetched_date": today_str,
-    } for code, sector in sector_map.items()]
-    sb.upsert("jpx_stock_list", sb_rows, on_conflict="code")
-
-
 def count_null_names() -> int:
     """jpx_stock_list で name が NULL の行数を返す。"""
     rows = sb.select("jpx_stock_list", "name=is.null&select=code")
@@ -173,17 +152,6 @@ def get_price_cache(code, start_date_str, end_date_str):
     vols = [r["volume"] for r in rows]
     idx = [_date.fromisoformat(d) for d in dates]
     return pd.DataFrame({"Close": closes, "Volume": vols}, index=idx)
-
-
-def get_price_raw(code, min_rows=0):
-    """yahoo_price_cacheから全期間の(date, close, volume)リストを返す。"""
-    rows = sb.select(
-        "yahoo_price_cache",
-        f"code=eq.{code}&order=date.asc&select=date,close,volume"
-    )
-    if min_rows and len(rows) < min_rows:
-        return None
-    return [(r["date"], r["close"], r["volume"]) for r in rows]
 
 
 _local_prices_cache = None

@@ -17,11 +17,6 @@ import video.line_notify as ln
 import video.youtube_client as yt
 import video.render as render_mod
 
-YT_ENV = {
-    "YOUTUBE_CLIENT_ID": "cid",
-    "YOUTUBE_CLIENT_SECRET": "csec",
-    "YOUTUBE_REFRESH_TOKEN": "rtok",
-}
 TK_ENV = {
     "TIKTOK_CLIENT_KEY": "ckey",
     "TIKTOK_CLIENT_SECRET": "csec",

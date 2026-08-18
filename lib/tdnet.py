@@ -14,7 +14,6 @@ API: https://webapi.yanoshin.jp/webapi/tdnet/list/{cond}.json
     - 期間指定          → "recent" / "today" / "yesterday"
     - 日付範囲          → "20260601-20260627"
 """
-import re
 import time
 import requests
 from datetime import date, timedelta
@@ -147,17 +146,3 @@ def _persist(records: list[dict]) -> None:
         print(f"[tdnet] DB保存: {len(records)}件 → ext_tdnet_disclosures")
     except Exception as e:
         print(f"[tdnet] DB保存失敗: {e}")
-
-
-def get_recent_disclosures(code: str, n: int = 5) -> list[dict]:
-    """指定銘柄の直近の適時開示を ext_tdnet_disclosures から取得（LINE Bot用）。
-    DB未保存・取得失敗時は []。"""
-    try:
-        import lib.supabase_client as sb
-        return sb.select(
-            "ext_tdnet_disclosures",
-            f"code=eq.{code}&order=disclosed_at.desc&select=disclosed_at,title,category,doc_url",
-            limit=n,
-        )
-    except Exception:
-        return []

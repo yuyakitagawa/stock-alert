@@ -32,9 +32,6 @@ DEFAULT_SPEAKER = 3
 # 標準速度だとショート動画では間延びするため、やや速める。
 DEFAULT_SPEED = 1.15
 
-# クレジット表記（VOICEVOX利用規約で必須）。話者を変えたらここも合わせること。
-CREDIT = "VOICEVOX:ずんだもん"
-
 # ffprobe が無い環境でのフォールバック用。日本語の読み上げ速度の実測概算（文字/秒）。
 CHARS_PER_SECOND = 7.5
 

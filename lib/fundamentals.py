@@ -11,7 +11,6 @@ point-in-time（先読みバイアスなし）のファンダメンタルを再�
 """
 import calendar
 from datetime import datetime, timedelta, date as _date_type
-from lib.utils import _days_to_nearest_event
 
 _YUTAI_MONTH = None   # {code: record_month or None}
 
@@ -275,7 +274,6 @@ def pit_fundamental_features(code, target_date, price, rows=None):
 
     返り値: fundamentals dict（extract_features()のfd引数と互換）
     """
-    import math
     fd = get_pit_fundamentals(code, target_date, rows=rows)
     m = target_date.month
     result = {"month": m}

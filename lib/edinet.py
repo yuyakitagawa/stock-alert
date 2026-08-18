@@ -219,11 +219,6 @@ def fetch_xbrl_details(doc_id: str) -> dict:
     return result
 
 
-def fetch_holding_ratio(doc_id: str) -> "float | None":
-    """後方互換: XBRL本文から保有割合(%)のみ返す。"""
-    return fetch_xbrl_details(doc_id).get("holding_ratio")
-
-
 # 報告書種別はdoc_type_codeだけでは判別できない（350は新規・変更の両方を含み、360は訂正）。
 # doc_descriptionの接頭辞で判定し、descriptionが無い行のみdoc_type_codeにフォールバックする。
 # kujira-watch/src/lib/disclosures.ts の disclosureKindLabel() と同一ロジック。
@@ -323,4 +318,3 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
         if sleep_sec:
             time.sleep(sleep_sec)
     return all_records
-

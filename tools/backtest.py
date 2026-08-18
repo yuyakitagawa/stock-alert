@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import io
 import time
-import glob
 import random
 import requests
 import numpy as np
@@ -21,7 +20,7 @@ import pandas as pd
 import joblib
 import argparse as _argparse
 from datetime import datetime, date, timedelta
-from lib.utils import get_nikkei_returns, calc_rsi, compute_seq_features, add_cs_rank_features, IsotonicCalibrated, HEADERS, SEQ_DAYS
+from lib.utils import calc_rsi, add_cs_rank_features
 
 # ── パラメータ ──────────────────────────────
 BACKTEST_DATE  = date(2026, 2, 3)    # 予測基準日（約3ヶ月前=63営業日前）
@@ -72,7 +71,6 @@ TOP_N          = _args.top_n
 DROP_MAX       = _args.drop_max
 COMPARE_MODE   = _args.compare
 NO_SCREENER    = _args.no_screener
-NIKKEI_CODE    = "^N225"
 SAMPLE_N       = 0     # 0 = 全銘柄
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DIR = os.getenv("STOCK_ALERT_HOME", PROJECT_DIR)
@@ -528,8 +526,6 @@ def run_rolling_main():
         if (i + 1) % 200 == 0:
             print(f"  {i+1}/{len(all_stocks)} 取得済み...")
         time.sleep(0.05)
-
-    from lib.utils import classify_market_regime
 
     # ① 品質フィルター（常に適用: 株価≥300円・データ十分）
     quality_filtered = {c: (h, name) for c, (h, name) in stocks_hist.items()

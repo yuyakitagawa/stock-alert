@@ -6,7 +6,7 @@ kabutan_earnings.py — kabutan.jp から業績テーブルを取得・キャッ
 
 キャッシュ: tools/_kabutan_earnings_cache.json（7日で自動更新）
 """
-import os, re, json, time
+import os, re, json
 import requests
 from datetime import date
 
@@ -159,48 +159,3 @@ def fetch_kabutan_earnings(code: str | int, use_cache: bool = True) -> list[dict
         pass
 
     return rows_out
-
-
-def format_earnings_for_prompt(rows: list[dict]) -> str:
-    """決算データを Claude プロンプト用のテキストに整形する。"""
-    if not rows:
-        return "決算データなし"
-
-    lines = ["【業績推移（百万円）】"]
-    lines.append("決算期      売上高    営業益   最終益    EPS    配当")
-
-    for row in rows[-6:]:  # 直近6期まで
-        fy    = row["fy_end"]
-        fore  = "予" if row["is_forecast"] else "  "
-        rev   = f"{int(row['revenue']):>8,}" if row["revenue"] is not None else "      N/A"
-        op    = f"{int(row['op_profit']):>7,}" if row["op_profit"] is not None else "     N/A"
-        net   = f"{int(row['net_income']):>7,}" if row["net_income"] is not None else "     N/A"
-        eps   = f"{row['eps']:>6.1f}" if row["eps"] is not None else "   N/A"
-        dps   = f"{int(row['dps']):>4}" if row["dps"] is not None else " N/A"
-        lines.append(f"{fore}{fy}  {rev}  {op}  {net}  {eps}  {dps}")
-
-    # 前期比サマリー（最新2期を比較）
-    actual = [r for r in rows if not r["is_forecast"]]
-    if len(actual) >= 2:
-        a, b = actual[-1], actual[-2]
-        parts = []
-        if a["revenue"] and b["revenue"]:
-            chg = (a["revenue"] - b["revenue"]) / abs(b["revenue"]) * 100
-            parts.append(f"売上{chg:+.1f}%")
-        if a["op_profit"] is not None and b["op_profit"] is not None and b["op_profit"] != 0:
-            chg = (a["op_profit"] - b["op_profit"]) / abs(b["op_profit"]) * 100
-            parts.append(f"営業益{chg:+.1f}%")
-        if parts:
-            lines.append(f"（前期比: {', '.join(parts)}）")
-
-    # 来期予想の傾向コメント
-    forecast = [r for r in rows if r["is_forecast"]]
-    if forecast:
-        f = forecast[-1]
-        if f["op_profit"] is not None:
-            if f["op_profit"] > 0:
-                lines.append(f"来期予想: 営業利益 {int(f['op_profit']):,}百万円（黒字転換/維持）")
-            else:
-                lines.append(f"来期予想: 営業利益 {int(f['op_profit']):,}百万円（赤字予想）")
-
-    return "\n".join(lines)

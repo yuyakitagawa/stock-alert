@@ -15,18 +15,18 @@ import argparse
 import time
 import numpy as np
 import joblib
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from lib.utils import get_prices, extract_features, add_cs_rank_features, HEADERS, recommend_from_scores, clean_recommend_label
-from lib.db import save_daily_ranking, DB_PATH, init_db
+from lib.utils import get_prices, extract_features, add_cs_rank_features, recommend_from_scores, clean_recommend_label
+from lib.db import save_daily_ranking
 import lib.supabase_client as sb
 from config import BASE_DIR
 from core.screener import get_tse_stock_list
-from core.rank_stocks import passes_buy_filter, MIN_LIQUIDITY_M, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
+from core.rank_stocks import passes_buy_filter, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 

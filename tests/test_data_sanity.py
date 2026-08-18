@@ -13,7 +13,7 @@ sys.path.insert(0, _ROOT)
 
 from lib.data_sanity import (
     check_ranking, check_price_freshness,
-    has_critical, Violation, format_violations,
+    has_critical, format_violations,
 )
 
 

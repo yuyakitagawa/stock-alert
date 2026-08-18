@@ -1,5 +1,45 @@
 # Dev Log
 
+## 2026-08-19 デッドコード除去（挙動不変のリファクタリング）
+
+```
+参照ゼロのコード（フロントエンド全面撤去・SQLite→Supabase移行・上昇モデル廃止で
+取り残された残骸）をAST走査で洗い出し、実装ごと削除した。削除166行 / 追加23行。
+
+削除した関数（全て参照ゼロ。commit 8dfd75e0 のフロント撤去等で消費側が消えていた）:
+- lib/db.py: get_jquants_disc_dates / save_all_sectors / get_price_raw
+- lib/db.py: init_db()（Supabase移行後は pass だけの空関数。呼び出し側 tools/fetch_history.py も削除）
+- lib/edinet.py: fetch_holding_ratio（fetch_xbrl_details の後方互換ラッパー）
+- lib/kabutan_earnings.py: format_earnings_for_prompt（LINE Bot用。消費側が撤去済み）
+- lib/tdnet.py: get_recent_disclosures（同上）
+
+削除した定数（参照ゼロ）:
+- config.py: HOT_MARKET_THRESHOLD / MARKET_TIMING_ENABLED / MARKET_TIMING_SMA_DAYS /
+  SCREENER_*（7個）。SCREENER_* は「screener.py/backtest.py/rf_train_v3.py と同値に保つ」
+  と書かれていたが誰も読んでおらず、実際の閾値は tools/backtest.py と core/rf_train_v3.py の
+  _SC_* が別々に持っている（＝黙って乖離しうる4重定義だった）。
+- core/screener.py: MIN_MOMENTUM / MIN_VOLATILITY / MAX_VOLATILITY / MIN_MOMENTUM_20D /
+  MIN_VOL_RATIO / MIN_RSI / MAX_RSI / MAX_FROM_HI20 / MIN_REL_STRENGTH /
+  BEAR_REL_STRENGTH / BEAR_NKK_20D
+- core/rank_stocks.py: TOP_SHOW / tools/backtest.py: NIKKEI_CODE / video/tts.py: CREDIT
+  （クレジット文字列は video/youtube_client.py と Remotion の SceneView.tsx が直書きで持つ）
+
+削除したデッドパス:
+- core/screener.py: apply_screener_v1(rel_strength_min=...) の引数と、それを組み立てる
+  is_bear 分岐。引数は関数内で一度も使われておらず、下落相場時に「相対強度閾値を5%に
+  引き上げ」と表示するだけで実際には何も変わっていなかった（誤解を招くログ）。
+
+不要import 20件超を除去（glob/time/timedelta/np/math/HEADERS/SEQ_DAYS/IsotonicCalibrated 等）。
+
+意図的に残したもの:
+- core/rf_train_v3.py の _select_features と未使用import IsotonicCalibrated
+  → CLAUDE.md「金曜(再学習日)以外は触らない」に従い次の再学習日に回す
+- web/x_weekly_trending.py の POST_MAX_WEIGHTED / URL_WEIGHTED_UNITS
+  → 一度削除したが tests/test_x_weekly_trending.py がモジュール属性経由で参照しており失敗、復元
+
+検証: pytest 321件 全passで削除前後とも同数（挙動不変のため bear BT は未実施）。
+```
+
 ## 2026-08-15 ショート動画v2: ナレーション付き・TikTok運用の定石を反映した全面改修
 
 ```

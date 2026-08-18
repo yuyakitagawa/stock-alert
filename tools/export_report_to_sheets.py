@@ -6,7 +6,6 @@ import sys, os, re, csv, glob
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
-import numpy as np
 from datetime import date, datetime
 from dotenv import load_dotenv
 

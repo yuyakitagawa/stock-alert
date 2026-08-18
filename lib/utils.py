@@ -81,7 +81,7 @@ def get_market_index_df_cached(cache_key, ticker_encoded, days=2200):
       4. DB/Yahoo両方失敗時は None
     """
     from lib.db import get_market_index_latest_date, save_market_index_data, load_market_index_data
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
 
     today = _date.today()
     latest_str = get_market_index_latest_date(cache_key)

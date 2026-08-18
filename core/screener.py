@@ -4,29 +4,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 import pandas as pd
 import numpy as np
-import time
 import io
 import os
 import argparse
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime
 from lib.utils import calc_rsi, get_sector_cached, get_prices, get_nikkei_returns, HEADERS
 
-MIN_MOMENTUM     = 8.0    # 3ヶ月モメンタム下限（5.0→8.0: 10期間BTで勝率+7pp）
-MIN_VOLATILITY   = 22.0   # 年率ボラ下限（20.0→22.0: 微改善）
-MAX_VOLATILITY   = 50.0
-MIN_MOMENTUM_20D = 0.0    # 20日モメンタム下限（-3.0→0.0: avg+1%改善）
+# 実際に apply_screener_v1() / 相場判定で使う条件のみを定義する。
+# モメンタム・ボラ・RSIの閾値は学習時スクリーニング（core/rf_train_v3.py の _SC_*）側で持つ。
 MIN_PRICE        = 300
-MIN_VOL_RATIO    = 1.0
-MIN_REL_STRENGTH = 0.0    # 3ヶ月相対強度（通常相場）日経並みでもOK
-BEAR_REL_STRENGTH = 0.05  # 3ヶ月相対強度（下落相場：日経20日 < -5%）
-MIN_RSI          = 45.0   # 売られすぎ除外（40→45: 勝率+4pp）
-MAX_RSI          = 70.0   # 買われすぎ（過熱）を除外
-BEAR_NKK_20D     = -5.0   # 下落相場判定閾値（日経20日リターン%）
 MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金 ≥ 50百万円（流動性確保）
 MAX_SECTOR_COUNT = 2      # 同セクター通過上限（3銘柄以上集まったらバブル兆候とみなしセクター全除外）
-MAX_FROM_HI20    = -8.0   # 直近20日高値からの下落率上限（急騰→急落パターン除外）
 
 # 銘柄コードの形式（従来の4桁数字 + TSEが2024年以降に発行する新形式、末尾1桁が英字の
 # コード。例: 151A）。旧 ^\d{4}$ のままだと新形式コードが銘柄リストから恒久的に漏れる。
@@ -121,7 +111,7 @@ def calc_metrics(df, nikkei_return_3m=None, nikkei_return_20d=None):
     }
 
 
-def apply_screener_v1(universe_df, rel_strength_min=MIN_REL_STRENGTH):
+def apply_screener_v1(universe_df):
     """モデルに選別を委ねる設計に変更。
     残すのは流動性・最低株価のみ（Hard Filterはrank_stocks側で適用）。
     モメンタム/RSI/ボラ条件を撤廃し「乗り遅れ株バイアス」を排除。
@@ -189,9 +179,6 @@ def main():
         print(f"  日経225: 3ヶ月{nk60:+.1f}% / 20日{nk20:+.1f}%")
     else:
         print("  日経225データ取得失敗 → 相対強度条件をスキップ")
-    is_bear = nk20 is not None and nk20 < BEAR_NKK_20D
-    if is_bear:
-        print(f"  ⚠️ 下落相場（日経20日{nk20:+.1f}%）→ 相対強度閾値を{BEAR_REL_STRENGTH*100:.0f}%に引き上げ")
     # nikkei_return を小数（fraction）に変換して calc_metrics に渡す
     nikkei_return_3m  = nk60 / 100 if nk60 is not None else None
     nikkei_return_20d = nk20 / 100 if nk20 is not None else None
@@ -269,8 +256,7 @@ def main():
     universe_df = pd.DataFrame(rows)
     date_str    = datetime.now().strftime("%Y%m%d")
 
-    rel_strength_min = BEAR_REL_STRENGTH if is_bear else MIN_REL_STRENGTH
-    filtered = apply_screener_v1(universe_df, rel_strength_min=rel_strength_min)
+    filtered = apply_screener_v1(universe_df)
     filtered, excluded_sectors = apply_sector_concentration_filter(filtered)
     if excluded_sectors:
         secs_str = " / ".join([f"{s}({n}銘柄)" for s, n in excluded_sectors])
