@@ -17,6 +17,7 @@ import os
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
@@ -36,11 +37,10 @@ METRICS_WINDOW_DAYS = 30
 
 
 def fetch_target_tweet_ids() -> list:
-    rows = sb.select(
-        "x_posts",
-        f"posted_at=gte.{(datetime.now(timezone.utc) - timedelta(days=METRICS_WINDOW_DAYS)).isoformat()}"
-        "&select=tweet_id&order=posted_at.desc",
-    )
+    # ISO文字列の "+00:00" はクエリ文字列上でそのまま渡すと空白に解釈されて
+    # PostgRESTが400を返すため、値をURLエンコードしてから渡す。
+    since = quote((datetime.now(timezone.utc) - timedelta(days=METRICS_WINDOW_DAYS)).isoformat(), safe="")
+    rows = sb.select("x_posts", f"posted_at=gte.{since}&select=tweet_id&order=posted_at.desc")
     return [r["tweet_id"] for r in rows if r.get("tweet_id")]
 
 

@@ -519,6 +519,20 @@ def test_fetch_returns_skips_series_starting_long_after_disclosure():
         assert fu.fetch_returns(["1111"], "2026-05-20") == {}
 
 
+# ------------------------------------------------------------------ メトリクス収集（web/x_metrics）
+
+def test_fetch_target_tweet_ids_url_encodes_the_timestamp():
+    """ISO文字列の"+00:00"を生でクエリに載せると空白と解釈されPostgRESTが400を返す。"""
+    import web.x_metrics as xm
+
+    captured = {}
+    with mock.patch.object(xm.sb, "select",
+                           side_effect=lambda table, query: captured.update(q=query) or []):
+        xm.fetch_target_tweet_ids()
+    assert "+00:00" not in captured["q"]
+    assert "%2B00%3A00" in captured["q"]
+
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-q"]))

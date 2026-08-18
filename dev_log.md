@@ -47,7 +47,7 @@ docs/x_post_improvement_1000.md（仮想インフルエンサー1000人・10パ�
 10. 運用ルールを docs/x_operation_rules.md に文書化（週2回の手動会話枠・禁止表現・
     訂正の扱い・A/Bの回し方）。コードで担保できない部分。
 
-テスト: tests/test_x_client.py を49件に刷新（旧35件）。全体 368件パス。
+テスト: tests/test_x_client.py を50件に刷新（旧35件）。全体 369件パス。
 ```
 
 
