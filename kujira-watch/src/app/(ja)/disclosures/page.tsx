@@ -98,14 +98,6 @@ export default async function DisclosuresPage({ searchParams }: Props) {
         <DisclosuresBody searchParams={searchParams} />
       </Suspense>
 
-      <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
-        <Link href="/trending" className="text-brand-blue hover:underline">
-          開示が急増した銘柄を見る ›
-        </Link>
-        <Link href="/weekly" className="text-brand-blue hover:underline">
-          週次トレンドを見る ›
-        </Link>
-      </nav>
       <AdUnit placement="bottom" />
     </div>
   );

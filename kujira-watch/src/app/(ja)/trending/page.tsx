@@ -146,20 +146,6 @@ export default async function TrendingPage() {
         </section>
       )}
 
-      <nav className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
-        <Link href="/ranking/trending" className="text-brand-blue hover:underline">
-          開示が急増した投資家を見る ›
-        </Link>
-        <Link href="/disclosures" className="text-brand-blue hover:underline">
-          開示速報で個別の開示を見る ›
-        </Link>
-        <Link href="/weekly" className="text-brand-blue hover:underline">
-          週次トレンドを見る ›
-        </Link>
-        <Link href="/monthly" className="text-brand-blue hover:underline">
-          月別アーカイブで過去の動きを見る ›
-        </Link>
-      </nav>
       <AdUnit placement="bottom" />
     </div>
   );

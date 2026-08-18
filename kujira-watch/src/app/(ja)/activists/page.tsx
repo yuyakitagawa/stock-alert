@@ -218,17 +218,6 @@ export default async function ActivistsPage() {
         )}
       </section>
 
-      <nav className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
-        <Link href="/ranking/activist" className="text-brand-blue hover:underline">
-          直近30日にアクティビストが動いた銘柄を見る ›
-        </Link>
-        <Link href="/disclosures" className="text-brand-blue hover:underline">
-          開示速報で最新の動きを見る ›
-        </Link>
-        <Link href="/investors?category=アクティビスト" className="text-brand-blue hover:underline">
-          アクティビスト一覧を見る ›
-        </Link>
-      </nav>
       <AdUnit placement="bottom" />
     </div>
   );

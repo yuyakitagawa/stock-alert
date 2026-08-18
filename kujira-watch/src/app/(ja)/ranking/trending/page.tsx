@@ -107,14 +107,6 @@ export default async function TrendingInvestorsRankingPage() {
           hrefOf={(entry) => `/investors/${encodeURIComponent(entry.key)}`}
         />
       )}
-      <nav className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-6 text-sm">
-        <Link href="/trending" className="text-brand-blue hover:underline">
-          開示が急増した銘柄を見る ›
-        </Link>
-        <Link href="/disclosures" className="text-brand-blue hover:underline">
-          開示速報で個別の開示を見る ›
-        </Link>
-      </nav>
       <AdUnit placement="bottom" />
     </div>
   );
