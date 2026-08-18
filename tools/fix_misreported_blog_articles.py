@@ -138,6 +138,11 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
         deal_amount = estimate_deal_amount_oku(
             str(article["stockCode"]), change, (article.get("dealDate") or "")[:10]
         )
+        # 上場廃止・コード変更などでyfinanceが株価を返さない銘柄は再概算できない。
+        # 変化幅が元から正しい記事（誤っていたのはタイトルだけ）なら、既存の推定金額は
+        # その変化幅で計算されたものなのでそのまま使い、タイトルだけ直す。
+        if deal_amount is None and not field_mismatch and article.get("dealAmount") is not None:
+            deal_amount = article["dealAmount"]
     return {
         "row": row,
         "holding_ratio": ratio,
@@ -230,6 +235,12 @@ def main():
     for a, fix, filer_name in targets:
         code = str(a["stockCode"])
         name = a.get("stockName") or code
+        if fix["change"] == 0:
+            print(f"  🗑 {a['id']}: {name}({code}) 前回開示から保有比率が動いていない"
+                  f"（{fix['holding_ratio']}% → {fix['holding_ratio']}%）— 売買を伴わない開示")
+            to_delete.append(a)
+            continue
+
         if fix["deal_amount"] is None:
             print(f"  ⚠ {a['id']}: {name}({code}) 株価・株式数が取れず金額を再概算できないためスキップ")
             failed.append(a["id"])
