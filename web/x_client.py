@@ -78,6 +78,41 @@ def build_tweet_text(title: str, deal_amount_oku: float, is_sell: bool, article_
     return f"{body}\n{url}\n{tags}"
 
 
+# OAuth 1.0aのアクセストークンは「発行された時点」のスコープを保持する。App権限をRead onlyから
+# Read and Writeに変えても、変更前に発行したトークンは読み取り専用のままで、投稿は403
+# `You are not permitted to perform this action.` になる（2026-08-18の日次便で発生）。
+# v1.1のレスポンスヘッダ x-access-level がトークンの実権限（read / read-write）を返すので、
+# これで「Portalの設定」ではなく「実際に使っているトークン」の権限を確認する。
+VERIFY_CREDENTIALS_URL = "https://api.twitter.com/1.1/account/verify_credentials.json"
+
+
+def verify_auth() -> dict:
+    """アクセストークンの実権限を確認する。{ok, access_level, screen_name, reason} を返す。"""
+    auth = _auth()
+    if auth is None:
+        return {"ok": False, "access_level": "", "screen_name": "", "reason": "X_API_KEY等が未設定"}
+    try:
+        resp = requests.get(VERIFY_CREDENTIALS_URL, auth=auth, timeout=20)
+    except Exception as e:
+        return {"ok": False, "access_level": "", "screen_name": "", "reason": f"通信例外: {e}"}
+    access_level = resp.headers.get("x-access-level", "")
+    if resp.status_code != 200:
+        return {"ok": False, "access_level": access_level, "screen_name": "",
+                "reason": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+    screen_name = ""
+    try:
+        screen_name = resp.json().get("screen_name", "")
+    except Exception:
+        pass
+    if "write" not in access_level:
+        return {"ok": False, "access_level": access_level, "screen_name": screen_name,
+                "reason": "トークンが読み取り専用。X Developer PortalでApp権限をRead and Writeに"
+                          "した上で、アクセストークンを再発行して X_ACCESS_TOKEN / "
+                          "X_ACCESS_TOKEN_SECRET を更新してください（権限変更前に発行した"
+                          "トークンは読み取り専用のままです）"}
+    return {"ok": True, "access_level": access_level, "screen_name": screen_name, "reason": ""}
+
+
 def upload_media(image_bytes: bytes) -> "str | None":
     """画像(PNG)をv1.1 media/uploadへアップロードし、post_tweetのmedia_idに使う
     media_id_stringを返す。失敗時はNone（呼び出し側は画像無しで投稿を続行する）。"""
@@ -109,6 +144,11 @@ def post_tweet(text: str, media_id: "str | None" = None) -> bool:
         resp = requests.post(API_URL, auth=auth, json=payload, timeout=20)
         if resp.status_code not in (200, 201):
             print(f"  ⚠ X投稿失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            # 401/403は設定不備が原因なので、ログだけ見て原因が分かるよう実権限を添える
+            if resp.status_code in (401, 403):
+                v = verify_auth()
+                print(f"    → トークンの実権限: {v['access_level'] or '不明'}"
+                      + (f" / {v['reason']}" if v["reason"] else ""))
             return False
         return True
     except Exception as e:
@@ -279,3 +319,18 @@ def post_video_tweet(props: dict, youtube_id: str) -> bool:
         print("[x_client] X_API_KEY等が未設定のため動画クロス投稿をスキップします")
         return False
     return post_tweet(build_video_tweet_text(props, youtube_id))
+
+
+if __name__ == "__main__":
+    # 手動確認用: python -m web.x_client --verify（アクセストークンの実権限を表示する）
+    import sys
+
+    if "--verify" in sys.argv:
+        result = verify_auth()
+        mark = "✅" if result["ok"] else "❌"
+        print(f"{mark} X認証: access_level={result['access_level'] or '不明'} "
+              f"account={result['screen_name'] or '-'}")
+        if result["reason"]:
+            print(f"   {result['reason']}")
+        sys.exit(0 if result["ok"] else 1)
+    print("使い方: python -m web.x_client --verify")

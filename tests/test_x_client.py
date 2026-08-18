@@ -332,3 +332,38 @@ def test_build_tweet_text_uses_ratio_change_for_correction():
                               ratio_change_pt=-10.81, is_correction=True)
     assert "届出保有比率の訂正: -10.81pt" in text
     assert "推定売却金額" not in text
+
+
+def _verify_response(status, headers, body=None):
+    resp = mock.MagicMock()
+    resp.status_code = status
+    resp.headers = headers
+    resp.json.return_value = body or {}
+    resp.text = ""
+    return resp
+
+
+def test_verify_auth_reports_read_only_token():
+    """App権限をRead and Writeにしても、変更前に発行したトークンは読み取り専用のまま
+    （2026-08-18の日次便が403 You are not permitted to perform this action で失敗した原因）。"""
+    resp = _verify_response(200, {"x-access-level": "read"}, {"screen_name": "kujira"})
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m.requests, "get", return_value=resp):
+        result = m.verify_auth()
+    assert result["ok"] is False
+    assert result["access_level"] == "read"
+    assert "再発行" in result["reason"]
+
+
+def test_verify_auth_ok_for_read_write_token():
+    resp = _verify_response(200, {"x-access-level": "read-write"}, {"screen_name": "kujira"})
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m.requests, "get", return_value=resp):
+        result = m.verify_auth()
+    assert result["ok"] is True
+    assert result["screen_name"] == "kujira"
+
+
+def test_verify_auth_without_credentials():
+    with mock.patch.dict(os.environ, {}, clear=True):
+        assert m.verify_auth()["ok"] is False
