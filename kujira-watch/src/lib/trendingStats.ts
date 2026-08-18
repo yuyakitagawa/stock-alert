@@ -20,7 +20,8 @@ function buildTrending(
   currentFrom: string,
   keyOf: (row: HoldingRow) => string,
   labelOf: (row: HoldingRow) => string,
-  limit: number
+  // 未指定なら全件返す（/trendingの銘柄一覧は直近30日で増えた銘柄をすべて出す）。
+  limit?: number
 ): TrendingEntry[] {
   const entries = new Map<string, { label: string; count: number; prevCount: number }>();
   for (const row of rows) {
@@ -47,7 +48,7 @@ function buildTrending(
     .slice(0, limit);
 }
 
-export function buildTrendingIssuers(rows: HoldingRow[], currentFrom: string, limit: number) {
+export function buildTrendingIssuers(rows: HoldingRow[], currentFrom: string, limit?: number) {
   // EDINETの企業名は同じ銘柄でも表記が揺れる（「玉井商船株式会社」/「玉井商船　株式会社」）ため、
   // 集計キーは証券コード、表示は最初に現れた表記＋コードにする。
   return buildTrending(

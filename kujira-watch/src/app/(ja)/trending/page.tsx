@@ -15,9 +15,6 @@ export const revalidate = 300;
 // 比較期間。週次(7日)だと開示の少ない週に振り回され、暦月だと月初は「数日 vs 1か月」の
 // 比較になってしまうため、常に同じ長さで比べられる30日固定にする。
 const WINDOW_DAYS = 30;
-// 上位10件では「急増している銘柄を一覧したい」需要に足りないため、
-// 増加+1件の銘柄まで概ね収まる件数まで広げる（1ページで読み切れる上限として50件）。
-const RANKING_COUNT = 50;
 
 const url = `${SITE_URL}/trending`;
 const title = "取引が急増した銘柄";
@@ -46,7 +43,8 @@ export default async function TrendingPage() {
     getMonthlyDisclosureCounts().catch(() => []),
   ]);
 
-  const trendingIssuers = buildTrendingIssuers(rows, currentFrom, RANKING_COUNT);
+  // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す。
+  const trendingIssuers = buildTrendingIssuers(rows, currentFrom);
 
   // 社名と証券コードだけでは何の会社か分からないため、事業内容を1行添える。
   // 事業内容(jpx_stock_list.description)は未生成の銘柄があるので、その場合は業種で代替する。
