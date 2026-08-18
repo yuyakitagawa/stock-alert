@@ -69,7 +69,8 @@ export default async function HomePage() {
               ))}
             </div>
           )}
-          <h2 className="mb-4 text-xl font-bold text-brand-navy">今日の取引</h2>
+          {/* 一覧は最新の開示日ぶんとは限らない（土日は数日前が最新）ため「今日」と言い切らない。 */}
+          <h2 className="mb-4 text-xl font-bold text-brand-navy">新着の取引</h2>
           <CategoryFilterDetails />
           <InfiniteArticleList
             initialArticles={contents}

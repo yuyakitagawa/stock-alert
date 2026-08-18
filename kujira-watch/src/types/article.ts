@@ -69,12 +69,6 @@ export type Article = {
   // 保有比率の変化幅（ポイント）。買いは正・売りは負。2026-08-15にスキーマ追加した
   // フィールドのため、それ以前の記事には無い。記事詳細のファクトボックス「前回比」に使う。
   ratioChangePct?: number;
-  // クジラ注目度(0-100)。lib/attention_score.py(スコアカード方式、買い開示の実績
-  // 63営業日後リターンで較正)が算出。売り方向の記事・生成タイミングが古い記事には無い。
-  attentionScore?: number;
-  // 注目度スコアの根拠(カンマ区切り、tagsと同じ運用)。例:
-  // "推定取引規模45.0億円の大口取引,保有比率2.50%とまだ小さい段階での取得"
-  attentionReasons?: string;
 };
 
 export type ArticleContent = Article & MicroCMSListContent;

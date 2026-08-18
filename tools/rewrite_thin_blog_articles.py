@@ -45,7 +45,7 @@ from lib.edinet import disclosure_doc_label
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY,
     classify_filer, get_company_description, get_pit_ranking_snapshot, dp_level_label,
-    ratio_change_pct, generate_article_body, update_article, MicroCMSPermissionError,
+    ratio_change_pct, generate_article_body_checked, update_article, MicroCMSPermissionError,
 )
 
 load_dotenv()
@@ -155,7 +155,7 @@ def main():
             "company_description": company_description,
             "ratio_change_pct": change,
         }
-        generated = generate_article_body(fact_sheet)
+        generated = generate_article_body_checked(fact_sheet)
         if generated is None:
             skipped_gen_failed.append(a["id"])
             continue

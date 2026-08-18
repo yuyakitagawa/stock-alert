@@ -139,16 +139,13 @@ export async function getArticleList(params: {
 export const FEATURED_POOL_SIZE = 20;
 export const FEATURED_COUNT = 3;
 
-// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得。
-// プール全体を金額だけで並べ替えると、投稿数が少ない日に数日前の大型取引が「注目」を
-// 占有し続けてしまうため、取得時の並び替えはしない）の中から、クジラ注目度
-// (attentionScore、lib/attention_score.pyが実績63営業日後リターンで較正)が高い順に
-// 先頭FEATURED_COUNT件を選ぶ。スコア未算出（売り記事・旧記事）はattentionScoreを
-// 最低値扱いにし、同点はdealAmountで比較する。
+// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得）
+// から、推定取引金額が大きい順に先頭FEATURED_COUNT件を選ぶ。
+// プールの取得を日付優先にしているのは、金額だけで並べ替えると投稿数が少ない日に
+// 数日前の大型取引が「注目」を占有し続けてしまうため。
+// web/publish_blog_articles.pyのget_featured_article_ids()と同じロジック。
 function pickFeatured(pool: ArticleContent[], count: number): ArticleContent[] {
-  return [...pool]
-    .sort((a, b) => (b.attentionScore ?? -1) - (a.attentionScore ?? -1) || b.dealAmount - a.dealAmount)
-    .slice(0, count);
+  return [...pool].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
 }
 
 export async function getFeaturedArticles(
@@ -333,31 +330,35 @@ export async function searchStocks(keyword: string): Promise<StockSearchResult[]
 // dealTypeはカテゴリページの<lastmod>（カテゴリ内の記事の最新updatedAt）算出に使う。
 export type SitemapArticleRef = {
   id: string;
-  updatedAt: string;
   stockCode: string;
   dealDate: string;
   dealType: DealType;
+  dealAmount: number;
+  ratioChangePct?: number;
 };
 
 export const getAllArticlesForSitemap = unstable_cache(
   async (): Promise<SitemapArticleRef[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "dealDate" | "dealType">
+      Pick<Article, "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct">
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,updatedAt,stockCode,dealDate,dealType",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
     });
-    return contents.map(normalizeDealType).map(({ id, updatedAt, stockCode, dealDate, dealType }) => ({
-      id,
-      updatedAt,
-      stockCode,
-      dealDate,
-      dealType,
-    }));
+    return contents
+      .map(normalizeDealType)
+      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct }) => ({
+        id,
+        stockCode,
+        dealDate,
+        dealType,
+        dealAmount,
+        ratioChangePct,
+      }));
   },
   ["sitemap-articles"],
   { revalidate: 3600 }
@@ -407,13 +408,16 @@ export async function getAboutPage() {
 // bodyEn全文を含む重い取得（実測でsitemap応答9秒超の主因）なので、存在判定に使った後は
 // 捨てて軽量な参照だけをunstable_cacheに1時間載せる。
 export const getTranslatedArticlesForSitemap = unstable_cache(
-  async (): Promise<Omit<SitemapArticleRef, "dealDate">[]> => {
+  async (): Promise<SitemapArticleRef[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "dealType" | "titleEn" | "bodyEn">
+      Pick<
+        Article,
+        "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "titleEn" | "bodyEn"
+      >
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,updatedAt,stockCode,dealType,titleEn,bodyEn",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,titleEn,bodyEn",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
@@ -421,7 +425,14 @@ export const getTranslatedArticlesForSitemap = unstable_cache(
     return contents
       .filter((a) => a.titleEn && a.bodyEn)
       .map(normalizeDealType)
-      .map(({ id, updatedAt, stockCode, dealType }) => ({ id, updatedAt, stockCode, dealType }));
+      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct }) => ({
+        id,
+        stockCode,
+        dealDate,
+        dealType,
+        dealAmount,
+        ratioChangePct,
+      }));
   },
   ["sitemap-translated-articles"],
   { revalidate: 3600 }

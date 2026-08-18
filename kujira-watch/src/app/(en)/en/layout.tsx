@@ -36,7 +36,8 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: `${SITE_NAME_EN} | Tracking Japan's Market "Whales" from Large-Holding Filings`,
-    template: `${SITE_NAME_EN} | %s`,
+    // ja版と同じ理由で固有名を先頭にする。
+    template: `%s | ${SITE_NAME_EN}`,
   },
   description: SITE_DESCRIPTION_EN,
   alternates: {

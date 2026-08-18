@@ -1056,7 +1056,7 @@ edinet_blog.yml 17:48 JSTの便が、それ以前の便で投稿済みの記事1
 - `tools/cleanup_duplicate_blog_articles.py` 新規: すり抜けた重複を自動回収する。
   同一銘柄・開示日・提出者・比率変化幅（＝`already_published()`と同じキー）の記事が
   複数あれば先発1件を残して後発を削除。edinet_blog.ymlの投稿ステップ後に毎時 --delete で実行
-  （現行APIキーはDELETE不可のため、キー権限の付与までは削除失敗ログのみ出る）
+  （2026-08-18にAPIキーへDELETE権限を付与済み。全909記事を走査して残存重複0件を確認）
 - テスト: test_publish_blog_articles.py 73件（+5）、test_cleanup_duplicate_blog_articles.py 4件（新規）、全pass
 
 ## 2026-08-17 kujira-watchページ数増加の予算計算（docs/page_count_budget.md）

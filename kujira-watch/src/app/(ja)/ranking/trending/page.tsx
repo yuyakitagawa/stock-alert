@@ -47,7 +47,7 @@ export default async function TrendingInvestorsRankingPage() {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking/buys` },
       { "@type": "ListItem", position: 3, name: title, item: url },
     ],
   };
@@ -77,7 +77,7 @@ export default async function TrendingInvestorsRankingPage() {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking" className="hover:text-brand-blue">月間ランキング</Link>
+        <Link href="/ranking/buys" className="hover:text-brand-blue">月間ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{title}</span>
       </nav>

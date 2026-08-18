@@ -37,7 +37,6 @@ TARGET_PATHS = [
     "/ranking",
     "/investors",
     "/stocks",
-    "/disclosures",
     "/activists",
     "/weekly",
     "/monthly",

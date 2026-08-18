@@ -12,8 +12,8 @@ on:
         description: 'mp4の書き出しまでで止める（投稿しない）'
         type: boolean
         default: false
-      stock_code:
-        description: '銘柄コード指定（通常の新着×注目枠選定を使わず、この銘柄の直近2週間の記事を動画にする）'
+      article_id:
+        description: '記事ID指定（記事URL https://kujira-watch.com/articles/xxxx の xxxx。通常の新着×注目枠選定を使わず、この記事を動画にする）'
         type: string
         default: ''
 
@@ -116,8 +116,8 @@ jobs:
         run: |
           cd ~/stock-alert
           EXTRA=""
-          if [ -n "${{ inputs.stock_code }}" ]; then
-            EXTRA="--stock-code ${{ inputs.stock_code }}"
+          if [ -n "${{ inputs.article_id }}" ]; then
+            EXTRA="--article-id ${{ inputs.article_id }}"
           fi
           if [ "${{ inputs.render_only }}" = "true" ]; then
             python video/publish_video.py --render-only --keep-video $EXTRA

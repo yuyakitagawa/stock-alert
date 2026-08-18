@@ -7,7 +7,7 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import { formatDate, formatDealAmount } from "@/lib/format";
 
-// TOPの冒頭に置く「今日のクジラ」サマリー。見出しは常に「今日の注目取引」で固定だが、
+// TOPの冒頭に置く最新開示サマリー。以前は見出しを「今日の注目取引」で固定していたが、
 // 実際の最新開示が何日付なのか・その日に何件いくら動いたのかは記事カードを読むまで
 // 分からなかった。開示日と件数・金額を最初に大きく出すことで、毎日更新されている
 // ことが一目で分かるようにする（Discover・リピーター向けの鮮度表示）。

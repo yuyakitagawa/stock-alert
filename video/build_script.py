@@ -42,18 +42,17 @@ RECENT_HOURS = 36
 # 動画1本あたりの候補プール。この中から featured との積集合を取る。
 CANDIDATE_LIMIT = 20
 
-# 銘柄コード指定（workflow_dispatchの手動実行）で遡る時間幅。通常運用の36時間より
-# 広く取り、話題になった開示を数日〜2週間後からでも動画にできるようにする。
-TARGETED_HOURS = 24 * 14
+# 台本の組み立てに必要な記事フィールド（一覧取得・ID指定取得で共通）。
+ARTICLE_FIELDS = "id,title,body,stockName,stockCode,dealType,dealDate,dealAmount,tags,filerName"
+
+# 記事URL（https://kujira-watch.com/articles/xxxx）から記事IDを取り出す。
+ARTICLE_URL_RE = re.compile(r"/articles/([A-Za-z0-9_-]+)")
 
 
-def fetch_recent_articles(hours: int = RECENT_HOURS, stock_code: str = "") -> list:
-    """直近hours時間にmicroCMSへ公開された記事を、金額規模の大きい順で返す。
-    stock_code指定時はその銘柄の記事だけに絞る。"""
+def fetch_recent_articles(hours: int = RECENT_HOURS) -> list:
+    """直近hours時間にmicroCMSへ公開された記事を、金額規模の大きい順で返す。"""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     filters = f"publishedAt[greater_than]{since}"
-    if stock_code:
-        filters += f"[and]stockCode[equals]{stock_code}"
     try:
         resp = requests.get(
             _microcms_base_url(),
@@ -62,7 +61,7 @@ def fetch_recent_articles(hours: int = RECENT_HOURS, stock_code: str = "") -> li
                 "orders": "-dealDate,-dealAmount",
                 "limit": CANDIDATE_LIMIT,
                 "filters": filters,
-                "fields": "id,title,body,stockName,stockCode,dealType,dealDate,dealAmount,tags,filerName,attentionScore",
+                "fields": ARTICLE_FIELDS,
             },
             timeout=20,
         )
@@ -84,12 +83,33 @@ def pick_article(articles: list, featured_ids: set) -> "dict | None":
     return candidates[0]
 
 
-def pick_targeted(articles: list) -> "dict | None":
-    """銘柄コード指定の手動実行用。注目枠は問わず、金額規模が最大の記事を1件選ぶ
-    （指定銘柄で絞り込み済みの前提。同一銘柄に複数記事がある週でも一番大きい開示を扱う）。"""
-    if not articles:
+def parse_article_id(value: str) -> str:
+    """記事IDを正規化する。記事URLを丸ごと渡してもID部分だけを取り出す
+    （オーナーがブラウザからURLをコピペして手動実行できるようにするため）。"""
+    value = (value or "").strip()
+    m = ARTICLE_URL_RE.search(value)
+    if m:
+        return m.group(1)
+    return value.strip("/")
+
+
+def fetch_article_by_id(article_id: str) -> "dict | None":
+    """記事ID指定で1件取得する。公開時刻も注目枠も問わないので、
+    気に入った記事を後からいつでも動画にできる。"""
+    try:
+        resp = requests.get(
+            f"{_microcms_base_url()}/{article_id}",
+            headers=_microcms_headers(),
+            params={"fields": ARTICLE_FIELDS},
+            timeout=20,
+        )
+        if resp.status_code != 200:
+            print(f"  ⚠ 記事{article_id}の取得失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        return resp.json()
+    except Exception as e:
+        print(f"  ⚠ 記事取得例外: {e}")
         return None
-    return max(articles, key=lambda a: a.get("dealAmount") or 0)
 
 
 def _strip_html(html: str) -> str:
@@ -334,14 +354,14 @@ def build_price_scene(code: str) -> "dict | None":
     }
 
 
-def build(dry_run: bool = False, stock_code: str = "") -> "dict | None":
+def build(dry_run: bool = False, article_id: str = "") -> "dict | None":
     """動画1本ぶんの props を返す。対象記事が無ければ None。
-    stock_code指定時は「直近36h×注目枠」の通常選定を使わず、その銘柄の直近記事から選ぶ。"""
-    if stock_code:
-        articles = fetch_recent_articles(hours=TARGETED_HOURS, stock_code=stock_code)
-        article = pick_targeted(articles)
+    article_id指定時は「直近36h×注目枠」の通常選定を使わず、その記事をそのまま動画にする。"""
+    if article_id:
+        article_id = parse_article_id(article_id)
+        article = fetch_article_by_id(article_id)
         if article is None:
-            print(f"[build_script] 銘柄{stock_code}の記事が直近{TARGETED_HOURS // 24}日にありません")
+            print(f"[build_script] 記事{article_id}が見つかりません")
             return None
     else:
         articles = fetch_recent_articles()
@@ -390,10 +410,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="", help="props JSONの出力先パス（未指定なら標準出力）")
     p.add_argument("--dry-run", action="store_true", help="生成結果を表示するのみ")
-    p.add_argument("--stock-code", default="", help="銘柄コード指定（通常選定を使わずこの銘柄の直近記事から選ぶ）")
+    p.add_argument("--article-id", default="",
+                   help="記事ID指定（通常選定を使わずこの記事を動画にする。記事URLを丸ごと渡してもよい）")
     args = p.parse_args()
 
-    props = build(dry_run=args.dry_run, stock_code=args.stock_code)
+    props = build(dry_run=args.dry_run, article_id=args.article_id)
     if props is None:
         sys.exit(1)
     if args.out:

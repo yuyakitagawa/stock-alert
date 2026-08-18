@@ -187,7 +187,7 @@ def test_build_and_publish_includes_sell_and_tags_them():
                                 {"category": "国内アセットマネジメント", "is_foreign": False, "description": ""},
                                 {"category": "PE・メザニンファンド", "is_foreign": False, "description": ""},
                             ]), \
-         mock.patch.object(m, "generate_article_body",
+         mock.patch.object(m, "generate_article_body_checked",
                             return_value={"body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
@@ -203,13 +203,6 @@ def test_build_and_publish_includes_sell_and_tags_them():
     assert by_code["9999"]["tags"] == "EDINET,自動生成"
     assert results[0]["dealDate"] == "2026-07-20T00:00:00.000Z"
     assert results[0]["dealAmount"] == 12.3
-    # クジラ注目度は買い方向のみ付与（スコアカードが買い開示の実績のみで較正済みのため）
-    assert "attentionScore" in by_code["7203"]
-    assert "attentionScore" in by_code["9999"]
-    assert 0 <= by_code["7203"]["attentionScore"] <= 100
-    assert isinstance(by_code["7203"]["attentionReasons"], str)
-    assert "attentionScore" not in by_code["6502"]
-    assert "attentionScore" not in by_code["1234"]
     # タイトルはテンプレ生成（ratio_change=ratioのモックなので全件「新規保有」表現になる）
     assert by_code["7203"]["title"] == "テスト自動車（7203）、個人 太郎が8.5%を新規保有｜大量保有報告書"
     # ratioChangePct: 買いは正、売りは負で送る
@@ -299,36 +292,21 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
-def test_get_featured_article_ids_picks_top_attention_score():
+def test_get_featured_article_ids_picks_top_deal_amount():
     """kujira-watch側getFeaturedArticles()と同じロジック: プール（microCMS側で
-    -dealDate,-dealAmount順に取得済み）の中からクジラ注目度attentionScoreが
-    高い順に先頭count件を採用する。attentionScore未算出(None)はプール内最下位扱い。"""
+    -dealDate,-dealAmount順に取得済み）の中から推定取引金額が大きい順に先頭count件を採用する。"""
     pool = [
-        {"id": "today-big", "dealAmount": 50, "attentionScore": 20},
-        {"id": "today-small", "dealAmount": 1, "attentionScore": 90},
-        {"id": "older-huge", "dealAmount": 999, "attentionScore": None},
-        {"id": "older-medium", "dealAmount": 30, "attentionScore": 60},
+        {"id": "today-big", "dealAmount": 50},
+        {"id": "today-small", "dealAmount": 1},
+        {"id": "older-huge", "dealAmount": 999},
+        {"id": "older-medium", "dealAmount": 30},
     ]
     resp = _FakeResponse(200, "", {"contents": pool})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch("requests.get", return_value=resp):
         ids = m.get_featured_article_ids(pool_size=20, count=2)
-    assert ids == {"today-small", "older-medium"}
-
-
-def test_get_featured_article_ids_ties_broken_by_deal_amount():
-    """attentionScoreが同点(未算出同士含む)の場合はdealAmountで比較する。"""
-    pool = [
-        {"id": "small", "dealAmount": 1, "attentionScore": None},
-        {"id": "huge", "dealAmount": 999, "attentionScore": None},
-    ]
-    resp = _FakeResponse(200, "", {"contents": pool})
-    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
-         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
-         mock.patch("requests.get", return_value=resp):
-        ids = m.get_featured_article_ids(pool_size=20, count=1)
-    assert ids == {"huge"}
+    assert ids == {"older-huge", "today-big"}
 
 
 def test_get_featured_article_ids_returns_empty_set_on_http_error():
@@ -542,7 +520,7 @@ def test_build_and_publish_includes_eyecatch_when_available():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
-         mock.patch.object(m, "generate_article_body",
+         mock.patch.object(m, "generate_article_body_checked",
                             return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_eyecatch_for_article",
                             return_value={"url": "https://images.microcms-assets.io/x.png"}) as eyecatch_mock, \
@@ -572,7 +550,7 @@ def test_build_and_publish_skips_eyecatch_on_dry_run():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
-         mock.patch.object(m, "generate_article_body",
+         mock.patch.object(m, "generate_article_body_checked",
                             return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_eyecatch_for_article") as eyecatch_mock:
         m.build_and_publish(days=3, max_articles=3, dry_run=True)
@@ -605,7 +583,7 @@ def test_build_and_publish_stops_early_on_permission_error():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "その他", "is_foreign": False, "description": ""}), \
-         mock.patch.object(m, "generate_article_body", side_effect=_track_generate), \
+         mock.patch.object(m, "generate_article_body_checked", side_effect=_track_generate), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
          mock.patch.object(m, "publish_article",
                             side_effect=m.MicroCMSPermissionError("HTTP 400: forbidden")):
@@ -808,7 +786,7 @@ def test_build_and_publish_includes_english_fields_when_generated():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
-         mock.patch.object(m, "generate_article_body",
+         mock.patch.object(m, "generate_article_body_checked",
                             return_value={"body": "<p>本文</p>", "bodyEn": "<p>Body</p>",
                                           "stockNameEn": "Test Motor", "filerNameEn": "Taro Kojin"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
@@ -831,7 +809,7 @@ def test_build_and_publish_omits_english_fields_when_not_generated():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
-         mock.patch.object(m, "generate_article_body",
+         mock.patch.object(m, "generate_article_body_checked",
                             return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
@@ -920,6 +898,63 @@ def test_get_company_description_returns_empty_without_api_key_when_not_cached()
          mock.patch.object(m.sb, "select_one", return_value=None):
         assert m.get_company_description("9439", "エム・エイチ・グループ") == ""
 
+
+
+def test_is_worth_publishing_accepts_large_amount():
+    # 金額が基準以上なら比率変化が小さくても記事にする
+    assert m.is_worth_publishing(3.0, 0.02) is True
+
+
+def test_is_worth_publishing_accepts_large_ratio_change():
+    # 金額が小さくても保有方針が動いた開示は記事にする（売りの負値も絶対値で判定）
+    assert m.is_worth_publishing(0.5, -1.2) is True
+
+
+def test_is_worth_publishing_rejects_trivial_disclosure():
+    # 保有比率0.04%・推定0億円のような実質ニュース価値の無い変更報告書は落とす
+    assert m.is_worth_publishing(0.0, 0.01) is False
+
+
+def test_body_char_count_excludes_tags_and_whitespace():
+    assert m.body_char_count("<p>大量保有</p>\n<p>報告書</p>") == 7
+
+
+def test_generate_article_body_checked_retries_when_body_too_short():
+    short = {"body": "<p>" + "あ" * 100 + "</p>"}
+    long = {"body": "<p>" + "い" * 700 + "</p>"}
+    with mock.patch.object(m, "generate_article_body", side_effect=[short, long]) as gen:
+        result = m.generate_article_body_checked({})
+    assert gen.call_count == 2
+    assert result is long
+
+
+def test_generate_article_body_checked_keeps_longer_of_two_attempts():
+    first = {"body": "<p>" + "あ" * 500 + "</p>"}
+    second = {"body": "<p>" + "い" * 300 + "</p>"}
+    with mock.patch.object(m, "generate_article_body", side_effect=[first, second]):
+        assert m.generate_article_body_checked({}) is first
+
+
+def test_generate_article_body_checked_no_retry_when_long_enough():
+    ok = {"body": "<p>" + "あ" * 700 + "</p>"}
+    with mock.patch.object(m, "generate_article_body", side_effect=[ok]) as gen:
+        assert m.generate_article_body_checked({}) is ok
+    assert gen.call_count == 1
+
+
+def test_build_and_publish_skips_disclosure_below_threshold(capsys=None):
+    holdings = [{
+        "issuer_code": "1234", "name": "テスト社", "filer_name": "野村證券株式会社",
+        "holding_ratio": 0.04, "holding_ratio_prior": 0.03, "disc_date": "2026-08-07",
+        "doc_description": "変更報告書", "doc_type_code": "350",
+    }]
+    with mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "ratio_change_pct", return_value=0.01), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=0.0), \
+         mock.patch.object(m, "generate_article_body_checked") as gen:
+        result = m.build_and_publish(dry_run=True)
+    assert result == []
+    gen.assert_not_called()
 
 def test_get_filer_profile_returns_cached_without_calling_claude():
     cached = {"profile": "1990年代設立の国内独立系運用会社。"}
@@ -1135,12 +1170,19 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    test_get_featured_article_ids_picks_top_attention_score()
-    test_get_featured_article_ids_ties_broken_by_deal_amount()
+    test_get_featured_article_ids_picks_top_deal_amount()
     test_get_featured_article_ids_returns_empty_set_on_http_error()
     test_get_featured_article_ids_returns_empty_set_on_exception()
     test_get_filer_profile_returns_cached_without_calling_claude()
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
-    print("全テスト成功 (75件)")
+    test_is_worth_publishing_accepts_large_amount()
+    test_is_worth_publishing_accepts_large_ratio_change()
+    test_is_worth_publishing_rejects_trivial_disclosure()
+    test_body_char_count_excludes_tags_and_whitespace()
+    test_generate_article_body_checked_retries_when_body_too_short()
+    test_generate_article_body_checked_keeps_longer_of_two_attempts()
+    test_generate_article_body_checked_no_retry_when_long_enough()
+    test_build_and_publish_skips_disclosure_below_threshold()
+    print("全テスト成功 (83件)")

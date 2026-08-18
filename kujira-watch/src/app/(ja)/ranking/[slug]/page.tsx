@@ -92,7 +92,7 @@ export default async function RankingSlugPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking/buys` },
       { "@type": "ListItem", position: 3, name: ranking.title, item: `${SITE_URL}/ranking/${slug}` },
     ],
   };
@@ -131,12 +131,12 @@ export default async function RankingSlugPage({ params }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking" className="hover:text-brand-blue">月間ランキング</Link>
+        <Link href="/ranking/buys" className="hover:text-brand-blue">月間ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{ranking.title}</span>
       </nav>
       {/* タブ切替時に見出しの高さ・位置が変わらないよう、h1は全ランキング共通にして
-          個別のランキング名はタブ直下のh2に置く（/ranking・/ranking/trendingと同じ構成）。 */}
+          個別のランキング名はタブ直下のh2に置く（/ranking/trendingと同じ構成）。 */}
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">月間ランキング</h1>
       <RankingTabNav current={`/ranking/${slug}`} />
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
@@ -156,7 +156,7 @@ export default async function RankingSlugPage({ params }: Props) {
       {rowCount === 0 ? (
         <p className="text-foreground/50">直近{RANKING_DAYS}日に該当する開示がありません。</p>
       ) : ranking.axis === "filer" ? (
-        // /rankingと同じ「1行目=順位＋投資家名（全幅）／2行目=メタ・金額（右端）」の1件1カード。
+        // 「1行目=順位＋投資家名（全幅）／2行目=メタ・金額（右端）」の1件1カード。
         // 投資家・代表銘柄・解説記事と別々のリンクが3つあるためカード全体はリンクにしない。
         <>
           <p className="kicker mb-2 text-foreground/40">

@@ -60,3 +60,48 @@
 - [x] 対応（2026-08-18）: `/sitemap.xml`をsitemapindex化し、`generateSitemaps`で6分割（pages/stocks/dates/investors/articles/articles-en）。データ取得は`unstable_cache`1時間で応答高速化。`app/sitemap.xml/route.ts`はmetadata予約名と衝突するため実体は`sitemap-index.xml`+rewrite。ローカル検証で合計6,196URL（分割前と一致）・未知ID404・hreflang出力を確認。
 - GSC側の追加作業は不要（/sitemap.xmlのURLは不変のため再送信不要。Googleはsitemapindexを自動で辿る）。
 - 形式の変遷（同日内）: 一度「従来の単一urlset形式が良い」で分割を撤回→最終的に「sitemapindex形式で良い。ただしインデックスも子と同じ1タグ1行のXML記述にする」で確定。sitemapindexのエントリを`<sitemap>`/`<loc>`/`</sitemap>`各行分割に整形して再デプロイ。
+
+## 2026-08-18 追記2: 「検出 - インデックス未登録」の再調査と対策実装
+
+ユーザーからGSCのスクリーンショット（/articles/配下10件が「検出 - インデックス未登録」）を受けて再調査。
+
+### 実測した現状（全911記事をmicroCMS APIから取得して計測）
+| 項目 | 実測値 |
+|---|---|
+| sitemap総URL | 6,196（8/14は1,713 → 4日で3.6倍） |
+| 記事数 | 911（8/14は359。8/16だけで416本作成） |
+| 本文の実文字数 | 中央値445字・最大648字・**911本すべて800字未満**（プロンプトの指示は650〜900字） |
+| 推定取得金額1億円未満の記事 | 78本（0億円が6本） |
+| 開示1件だけの投資家ページ | 2,950件中995件 |
+| 記事のTTFB | 1.8〜2.8秒（`revalidate = 60`でクローラーがほぼ毎回再生成に当たる） |
+| 全記事のupdatedAt | 8/14〜8/18に集中（attentionScore削除等の一括バッチで書き換わりlastmodが無意味化） |
+
+サンプル4URLはいずれもHTTP 200・`index, follow`・canonical正常・sitemap収録済みで技術的エラーは無し。
+原因は「URLの急増＋テンプレートの低品質判定によるクロール枠の枯渇」と判断。
+
+### 実装した対策（2026-08-18）
+- [x] **lastmodを取引日(EDINET開示日)基準に統一** — `src/app/sitemap.ts`の記事・銘柄・日別・月別・
+      カテゴリ・ハブの`<lastmod>`を`updatedAt`から`dealDate`へ変更。記事ページのJSON-LD
+      `datePublished`/`dateModified`とOGP`publishedTime`/`modifiedTime`も`dealDate`に一本化し、
+      一括バッチで日付が動かないようにした（ja/en両方）。
+- [x] **記事化の足切り** — `lib/articleIndexability.ts`（表示側）と`web/publish_blog_articles.py`の
+      `is_worth_publishing()`（生成側）に「推定金額3億円以上 **または** 保有比率の変化1pt以上」を実装。
+      しきい値は両者で必ず揃える（ずれると「sitemapに載っているのにnoindex」になる）。
+      既存記事もこの条件で描画時に`noindex, follow`＋sitemap除外（記事URL 911→782）。
+      生成側の足切りはClaude呼び出しの前に置いたのでAPI費用も減る。
+- [x] **薄い投資家ページをsitemapから除外** — 開示1件だけの投資家を除外（2,950→1,952）。
+      ページ自体は残し、内部リンクからは辿れる。
+- [x] **本文の文字数を実測して不足なら再生成** — `generate_article_body_checked()`を追加
+      （下限650字、1回だけ再生成、2回目も不足なら長い方を採用）。指示だけでは守られていなかったため。
+- [x] **記事ページの定型文を削減** — 「分類の説明文」「提出期限5営業日のズレ＋免責の長文(約150字)」
+      「出典ボックスの免責の重複」「投資家ブロックの定型説明」を削除・圧縮し、`/faq/basics`と`/about`への
+      リンクに寄せた。可視文字数 2,279字 → 1,957字（定型文の割合を約320字ぶん削減）。
+- [x] **revalidateを60秒→86400秒** — 記事本文は公開後ほぼ不変。TTFB悪化の主因を解消。
+- [x] **titleテンプレートを「記事名｜サイト名」に反転** — 全記事の`<title>`が同じ11文字で始まる状態を解消（ja/en）。
+
+### 未対応（判断待ち・API制限待ち）
+- 英語版911本の扱い（機械翻訳の全記事横展開を続けるか、価値の高い記事に絞るか）はユーザー判断待ち。
+- 既存記事の本文リライト（450字→650字以上）は`ANTHROPIC_API_KEY`が2026-09-01まで停止中のため実行不可。
+  復帰後に`tools/rewrite_thin_blog_articles.py`で実行する。
+- 同一銘柄の連投記事の統合（402Aに17本、8783に10本など12銘柄）は既存URLの整理を伴うため未着手。
+- `kujira-watch/README.md`への反映は、並行セッションが同ファイルを編集中のため保留。

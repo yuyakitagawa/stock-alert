@@ -1,14 +1,5 @@
 import type { Locale } from "@/lib/i18n";
 
-// 投資家別の推定損益(filer_win_rate.total_return_oku)の表示用。/rankingと
-// /investors/[filer]で同じ表記（符号つき・小数1桁・億円）を使う。
-export function formatSignedOku(value: number): string {
-  const sign = value >= 0 ? "+" : "";
-  // 「+107,900.0億円」は桁が読み取れないため、1兆円(1万億円)以上は兆円へ繰り上げる。
-  const { value: amount, unit } = formatAmountParts(value, 1);
-  return `${sign}${amount}${unit}`;
-}
-
 export function formatDate(dateString: string, locale: Locale = "ja"): string {
   const date = new Date(dateString);
   if (locale === "en") {
@@ -49,7 +40,7 @@ export function formatDealAmount(amount: number, locale: Locale = "ja"): string 
 }
 
 // 億円単位の金額を表示用に「数字」と「単位」へ分ける。1兆円(1万億円)以上は兆円へ繰り上げ、
-// 「+107,900.0億円」のような桁読みできない表記を避ける（/ranking・/weeklyの集計値用。
+// 「+107,900.0億円」のような桁読みできない表記を避ける（/weeklyの集計値用。
 // 記事単体のdealAmountは兆に届かないためformatDealAmountのまま）。
 export function formatAmountParts(
   amountOku: number,

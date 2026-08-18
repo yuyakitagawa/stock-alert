@@ -12,9 +12,8 @@ import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { disclosureDocLabel } from "@/lib/disclosures";
-import { getFilersByStockCode, getFilerWinRates, getHoldingsByStockCode } from "@/lib/investors";
-import FilerTrackRecordChip from "@/components/FilerTrackRecordChip";
+import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
+import { getFilersByStockCode, getHoldingsByStockCode } from "@/lib/investors";
 import { formatDate } from "@/lib/format";
 import RatioTransition from "@/components/RatioTransition";
 import Table from "@mui/material/Table";
@@ -77,14 +76,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers, holdings, winRates] = await Promise.all([
+  const [{ contents }, companyInfo, filers, holdings] = await Promise.all([
     getArticlesByStockCode(code),
     getCompanyInfo(code),
     getFilersByStockCode(code),
     getHoldingsByStockCode(code),
-    getFilerWinRates(),
   ]);
-  const winRateByFiler = new Map(winRates.map((w) => [w.filerName, w]));
 
   // 解説記事が無くてもEDINET開示・会社情報があれば銘柄ページとして成立させる
   // （記事化は保有比率上位から順に行うため、開示はあるが記事が無い銘柄が大半を占める）。
@@ -163,21 +160,17 @@ export default async function StockPage({ params }: Props) {
             大量保有報告書の提出投資家
           </Typography>
           <List disablePadding dense>
-            {filers.map((filer) => {
-              const winRate = winRateByFiler.get(filer.filerName);
-              return (
-                <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1, flexWrap: "wrap" }}>
-                  <Link
-                    href={`/investors/${encodeURIComponent(filer.filerName)}`}
-                    className="text-brand-blue hover:underline"
-                  >
-                    {filer.filerName}
-                  </Link>
-                  <DealTypeBadge dealType={filer.category} />
-                  {winRate && <FilerTrackRecordChip winRate={winRate} />}
-                </ListItem>
-              );
-            })}
+            {filers.map((filer) => (
+              <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1, flexWrap: "wrap" }}>
+                <Link
+                  href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                  className="text-brand-blue hover:underline"
+                >
+                  {filer.filerName}
+                </Link>
+                <DealTypeBadge dealType={filer.category} />
+              </ListItem>
+            ))}
           </List>
         </Box>
       )}
@@ -187,13 +180,14 @@ export default async function StockPage({ params }: Props) {
             保有比率の推移（EDINET開示ベース）
           </Typography>
           <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-            <Table size="small" sx={{ minWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+            <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { borderColor: "divider" } }}>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>投資家</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
                   <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+                  <TableCell sx={{ color: "text.disabled" }}>原文</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -215,6 +209,18 @@ export default async function StockPage({ params }: Props) {
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                       <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                    </TableCell>
+                    {/* 一次ソース（EDINETの原文PDF）への直リンク。以前は/disclosuresだけが
+                        持っていたが、同ページ廃止にあたり銘柄・投資家ページへ移した。 */}
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      <a
+                        href={edinetPdfUrl(h.docId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand-blue hover:underline"
+                      >
+                        PDF ↗
+                      </a>
                     </TableCell>
                   </TableRow>
                 ))}
