@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Box from "@mui/material/Box";
@@ -28,6 +28,9 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
   const t = UI[locale];
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // Autocompleteは遅延読み込みなので、読み込み終わるまでの数十msは平常時の素のinputを
+  // 出したままにする。先に消すと、その間のキー入力が行き場を失って落ちる。
+  const [panelReady, setPanelReady] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,9 +38,14 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
 
   const close = () => {
     setOpen(false);
+    setPanelReady(false);
     setQuery("");
     setResults([]);
   };
+
+  // パネル(Autocomplete)がマウントされた合図。autoFocusで入力欄のフォーカスも
+  // そちらへ移るので、このタイミングで素のinputを引っ込める。
+  const handlePanelReady = useCallback(() => setPanelReady(true), []);
 
   useEffect(() => {
     if (!open) return;
@@ -98,22 +106,68 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
 
   return (
     <Box ref={containerRef} sx={{ position: "relative", flexShrink: 0 }}>
+      {/* モバイルはヘッダーの横幅をロゴに使いたいので虫眼鏡のまま。
+          PC(md以上)は常時表示の検索窓にする。 */}
       <IconButton
         aria-label={t.searchAria}
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         size="small"
-        sx={{ color: "primary.main" }}
+        sx={{ display: { md: "none" }, color: "primary.main" }}
       >
         <SearchIcon fontSize="small" />
       </IconButton>
+
+      {/* PCの平常時は素のinput。フォーカスした時点でAutocomplete(StockSearchPanel)を
+          読み込んで差し替えるので、全ページの初期JSにMUIのAutocompleteを積まずに済む
+          （検索窓を常時表示しても初期JSは今までと同じ）。 */}
+      {!(open && panelReady) && (
+        <Box
+          sx={{
+            display: { xs: "none", md: "flex" },
+            alignItems: "center",
+            gap: 0.75,
+            width: 220,
+            px: 1,
+            py: 0.5,
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            bgcolor: "background.paper",
+          }}
+        >
+          <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+          <Box
+            component="input"
+            type="search"
+            aria-label={t.searchAria}
+            placeholder={t.searchPlaceholder}
+            value={query}
+            onFocus={() => setOpen(true)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              setQuery(event.target.value);
+              setOpen(true);
+            }}
+            sx={{
+              width: "100%",
+              border: 0,
+              outline: 0,
+              bgcolor: "transparent",
+              color: "text.primary",
+              fontFamily: "inherit",
+              fontSize: "0.8125rem",
+            }}
+          />
+        </Box>
+      )}
 
       {open && (
         <Box
           sx={{
             position: "absolute",
             right: 0,
-            top: 44,
+            // モバイルは虫眼鏡の下に落とす。PCは平常時の検索窓と同じ位置に重ねる。
+            top: { xs: 44, md: 0 },
             zIndex: (theme) => theme.zIndex.appBar + 1,
             width: { xs: 288, sm: 320 },
           }}
@@ -125,6 +179,7 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
             locale={locale}
             onQueryChange={setQuery}
             onSelect={goTo}
+            onReady={handlePanelReady}
           />
         </Box>
       )}
