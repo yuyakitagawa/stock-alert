@@ -27,7 +27,6 @@ import { getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
-import WatchButton from "@/components/WatchButton";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildStockFaqItems } from "@/lib/stockFaq";
 
@@ -139,12 +138,9 @@ export default async function StockPage({ params }: Props) {
         {" / "}
         <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
-      <div className={`flex flex-wrap items-center gap-3 ${companyInfo?.description ? "mb-2" : "mb-6"}`}>
-        <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">
-          {stockName}（{code}）
-        </h1>
-        <WatchButton type="stock" id={code} label={`${stockName}（${code}）`} />
-      </div>
+      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${companyInfo?.description ? "mb-2" : "mb-6"}`}>
+        {stockName}（{code}）
+      </h1>
       {companyInfo?.description && (
         <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>
       )}

@@ -267,45 +267,6 @@ export async function getHoldingSnapshot(
   return { holdingRatio: data.holding_ratio, holdingRatioPrior: data.holding_ratio_prior };
 }
 
-// /watchlist用。ウォッチ中の銘柄・投資家それぞれの最新開示日をまとめて返す。
-// localStorageの内容はサーバーで読めないため、クライアントから/api/watchlist-latest経由で
-// 呼ばれる。件数はAPI側で上限を掛けたうえで、銘柄・投資家それぞれ1クエリで取り切る。
-export async function getLatestDiscDates(
-  stockCodes: string[],
-  filerNames: string[]
-): Promise<{ stocks: Record<string, string>; investors: Record<string, string> }> {
-  const supabase = getSupabaseServerClient();
-  const [stockRows, filerRows] = await Promise.all([
-    stockCodes.length > 0
-      ? supabase
-          .from("edinet_large_holdings")
-          .select("issuer_code, disc_date")
-          .in("issuer_code", stockCodes)
-          .order("disc_date", { ascending: false })
-          .limit(PAGE_SIZE)
-          .then(({ data }) => data ?? [])
-      : Promise.resolve([]),
-    filerNames.length > 0
-      ? supabase
-          .from("edinet_filer_summary")
-          .select("filer_name, latest_disc_date")
-          .in("filer_name", filerNames)
-          .then(({ data }) => data ?? [])
-      : Promise.resolve([]),
-  ]);
-
-  // disc_date降順で並んでいるため、issuer_codeごとに最初に出現した行が最新開示。
-  const stocks: Record<string, string> = {};
-  for (const row of stockRows) {
-    if (!(row.issuer_code in stocks)) stocks[row.issuer_code] = row.disc_date;
-  }
-  const investors: Record<string, string> = {};
-  for (const row of filerRows) {
-    investors[row.filer_name] = row.latest_disc_date;
-  }
-  return { stocks, investors };
-}
-
 // /investors/[filer]用。filer_win_rateから当該投資家1件の実績を返す。
 // 実績が未集計（買い開示が無い・結果確定前）の投資家はnull。ページ表示を止めないよう
 // 取得失敗もnullに落とす。

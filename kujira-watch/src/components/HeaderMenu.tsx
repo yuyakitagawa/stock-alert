@@ -78,7 +78,6 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
           { href: "/ranking", label: "投資家ランキング" },
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },
-          { href: "/watchlist", label: "ウォッチリスト" },
           { href: "/about", label: "このサイトについて" },
           { href: "/privacy", label: t.privacyMenuLabel },
           { href: "/faq", label: "よくある質問" },
