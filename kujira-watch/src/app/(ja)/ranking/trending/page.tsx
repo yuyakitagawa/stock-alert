@@ -12,7 +12,8 @@ export const revalidate = 300;
 
 // /trendingの銘柄ランキングと同じ期間比較（30日 vs その前30日）。
 const WINDOW_DAYS = 30;
-const RANKING_COUNT = 10;
+// 専用ページなので/trending（10件）より多く出す。
+const RANKING_COUNT = 30;
 
 const url = `${SITE_URL}/ranking/trending`;
 const title = "開示急増投資家ランキング";

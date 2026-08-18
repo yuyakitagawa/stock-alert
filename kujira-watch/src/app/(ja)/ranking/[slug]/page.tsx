@@ -190,18 +190,15 @@ export default async function RankingSlugPage({ params }: Props) {
       <p className="mb-6 text-xs text-foreground/40">
         ※{ranking.note} 出典はEDINET大量保有報告書。投資助言ではありません。
       </p>
-      <nav aria-label="関連ランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        {slug !== "activist" && (
-          <Link href="/ranking/activist" className="text-brand-blue hover:underline">
-            アクティビストが動いた銘柄
-          </Link>
-        )}
-        {slug === "activist" && (
+      {/* アクティビストランキングだけは/activists（アクティビストの動き）と対の関係にあるため
+          相互リンクを置く。他のタブページには無関係なリンクを並べない。 */}
+      {slug === "activist" && (
+        <nav aria-label="関連ページ" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <Link href="/activists" className="text-brand-blue hover:underline">
             アクティビストの動き
           </Link>
-        )}
-      </nav>
+        </nav>
+      )}
       {rows.length === 0 ? (
         <p className="text-foreground/50">直近{RANKING_DAYS}日に該当する開示がありません。</p>
       ) : (

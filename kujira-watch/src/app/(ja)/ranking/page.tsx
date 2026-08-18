@@ -109,21 +109,14 @@ async function RankingBody({ searchParams }: Props) {
         <p className="kicker mb-3 text-brand-blue">最終更新: {formatDate(updatedAt)}</p>
       )}
       <p className="mb-4 text-sm text-foreground/50">
-        投資家がEDINET大量保有報告書で保有比率を増やした（買い増し・新規取得）ことを開示するたびに、
-        その回の推定取得金額（発行済株式数×株価×保有比率の変化幅）が{holdDays}営業日（約3ヶ月）後まで
-        の株価騰落でいくら増減したかを推定し、投資家ごとに全開示分を合算したランキングです。
-        過去の実績が良い投資家を参考にできます。投資助言ではありません。
+        買い増しを開示した投資家を、開示ごとの推定取得金額が{holdDays}営業日（約3ヶ月）後までに
+        いくら増減したかの合算で順位づけしています。過去の実績が良い投資家を参考にできます。
+        投資助言ではありません。詳しい算出方法・除外条件は
+        <Link href="/faq/usage" className="text-brand-blue hover:underline">
+          よくある質問
+        </Link>
+        をご覧ください。
       </p>
-      <p className="mb-2 text-xs text-foreground/40">
-        ※自己申告・訂正報告書・保有比率51%超・売却方向の開示、発行済株式数が取得できない開示は除外し、
-        開示からまだ{holdDays}営業日経っていないものは結果未確定として集計から外しています。
-      </p>
-      <p className="mb-4 text-xs text-foreground/40">
-        ※開示件数（n）が少ない投資家はブレが大きいため、{MIN_N}件未満の投資家は掲載していません。
-      </p>
-      <nav aria-label="関連ランキング" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        <Link href="/ranking/activist" className="text-brand-blue hover:underline">アクティビストが動いた銘柄</Link>
-      </nav>
       {filers.length > 0 && (
         <FilterButtonNav
           ariaLabel="カテゴリで絞り込む"
