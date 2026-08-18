@@ -9,6 +9,7 @@ import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
 import AdUnit from "@/components/AdUnit";
+import ShowMoreList from "@/components/ShowMoreList";
 import { getAllListedCodes } from "@/lib/companyInfo";
 
 export const revalidate = 3600;
@@ -53,8 +54,11 @@ export default async function ActivistsPage() {
       </span>
     );
 
-  const moveItem = (move: ActivistMove) => (
-    <li key={move.docId} className="card text-sm">
+  const moveItem = (move: ActivistMove, index: number) => (
+    <li
+      key={move.docId}
+      className={`card text-sm${index >= MOVES_DISPLAY_LIMIT ? " show-more-extra" : ""}`}
+    >
       <span className="kicker block text-foreground/50">{formatDate(move.discDate)}</span>
       <span className="mt-1 block font-medium">{stockLabel(move.issuerName, move.issuerCode)}</span>
       <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-foreground/70">
@@ -101,8 +105,11 @@ export default async function ActivistsPage() {
   }
   const attentionStocks = [...byIssuer.values()].sort((a, b) => b.totalDelta - a.totalDelta);
 
-  const attentionItem = (row: AttentionRow) => (
-    <li key={row.issuerCode} className="card text-sm">
+  const attentionItem = (row: AttentionRow, index: number) => (
+    <li
+      key={row.issuerCode}
+      className={`card text-sm${index >= ATTENTION_DISPLAY_LIMIT ? " show-more-extra" : ""}`}
+    >
       <span className="font-medium">{stockLabel(row.issuerName, row.issuerCode)}</span>
       <span className="ml-2 whitespace-nowrap text-xs font-bold text-gain">▲{row.totalDelta}pt買い入れ</span>
       {row.multiHolder && (
@@ -168,19 +175,13 @@ export default async function ActivistsPage() {
             </Link>
             をご覧ください。
           </p>
-          <ul className="card-grid card-grid-wide">
-            {attentionStocks.slice(0, ATTENTION_DISPLAY_LIMIT).map(attentionItem)}
-          </ul>
-          {attentionStocks.length > ATTENTION_DISPLAY_LIMIT && (
-            <details className="mt-3">
-              <summary className="cursor-pointer text-sm text-brand-blue hover:underline">
-                もっと見る（残り{attentionStocks.length - ATTENTION_DISPLAY_LIMIT}銘柄）
-              </summary>
-              <ul className="card-grid card-grid-wide mt-2">
-                {attentionStocks.slice(ATTENTION_DISPLAY_LIMIT).map(attentionItem)}
-              </ul>
-            </details>
-          )}
+          <ShowMoreList
+            className="card-grid card-grid-wide"
+            restCount={attentionStocks.length - ATTENTION_DISPLAY_LIMIT}
+            unit="銘柄"
+          >
+            {attentionStocks.map(attentionItem)}
+          </ShowMoreList>
         </section>
       )}
 
@@ -195,21 +196,13 @@ export default async function ActivistsPage() {
             直近{MOVES_WINDOW_DAYS}日にアクティビストの開示はありません。
           </p>
         ) : (
-          <>
-            <ul className="card-grid card-grid-wide">
-              {recentMoves.slice(0, MOVES_DISPLAY_LIMIT).map(moveItem)}
-            </ul>
-            {recentMoves.length > MOVES_DISPLAY_LIMIT && (
-              <details className="mt-3">
-                <summary className="cursor-pointer text-sm text-brand-blue hover:underline">
-                  もっと見る（残り{recentMoves.length - MOVES_DISPLAY_LIMIT}件）
-                </summary>
-                <ul className="card-grid card-grid-wide mt-2">
-                  {recentMoves.slice(MOVES_DISPLAY_LIMIT).map(moveItem)}
-                </ul>
-              </details>
-            )}
-          </>
+          <ShowMoreList
+            className="card-grid card-grid-wide"
+            restCount={recentMoves.length - MOVES_DISPLAY_LIMIT}
+            unit="件"
+          >
+            {recentMoves.map(moveItem)}
+          </ShowMoreList>
         )}
       </section>
 
