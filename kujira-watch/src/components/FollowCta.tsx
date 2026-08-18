@@ -27,8 +27,8 @@ export default function FollowCta() {
         🐋 大きな動きだけ、毎日ひろう
       </Typography>
       <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.85)" }}>
-        公式X（@{X_SCREEN_NAME}）では、金額の大きい大量保有報告を中心に1日数件と、
-        19時にその日の全件まとめを投稿しています。
+        大口投資家の動きは、公式X（@{X_SCREEN_NAME}）でも毎日お知らせしています。
+        また、YouTubeの1分ショート動画でも解説しています。
       </Typography>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
         {/* LINEはフォローよりも通知の到達率が高い最優先チャネルのため、URLが設定
