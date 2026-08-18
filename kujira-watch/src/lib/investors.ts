@@ -66,14 +66,28 @@ export const getFilerClassification = unstable_cache(getFilerClassificationUncac
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });
 
+// 呼び出し元(/investors/[filer])は戻り値0件をそのまま notFound() に繋いでいる。
+// ここでSupabaseの読み取りエラーを握りつぶして[]を返すと、一時的な障害が「存在しない投資家」として
+// 404ページに焼き付き、ISRキャッシュに残ったままGooglebotに配信される（実測: 2026-08-19時点で
+// 主要投資家ページの大半が初回アクセス404・2回目以降200という状態になっていた）。
+// 取得失敗は必ず例外にして、Nextに「生成失敗」として扱わせる（直前の正常なキャッシュが使われる）。
 async function getFilerHoldingsUncached(filerName: string): Promise<FilerHolding[]> {
   const supabase = getSupabaseServerClient();
-  const { data } = await supabase
-    .from("edinet_large_holdings")
-    .select("doc_id, issuer_code, issuer_name, holding_ratio, holding_ratio_prior, disc_date, doc_type_code, doc_description")
-    .eq("filer_name", filerName)
-    .order("disc_date", { ascending: false })
-    .limit(200);
+  const query = () =>
+    supabase
+      .from("edinet_large_holdings")
+      .select("doc_id, issuer_code, issuer_name, holding_ratio, holding_ratio_prior, disc_date, doc_type_code, doc_description")
+      .eq("filer_name", filerName)
+      .order("disc_date", { ascending: false })
+      .limit(200);
+
+  // ビルド時は100ページ分の事前生成が同時にSupabaseを叩くため、一過性の失敗で例外にすると
+  // デプロイ全体が落ちる。1度だけ再試行し、それでも駄目なときだけ投げる。
+  let { data, error } = await query();
+  if (error) ({ data, error } = await query());
+  if (error) {
+    throw new Error(`getFilerHoldings failed for ${filerName}: ${error.message}`);
+  }
 
   return (data ?? []).map((r) => ({
     docId: r.doc_id,
