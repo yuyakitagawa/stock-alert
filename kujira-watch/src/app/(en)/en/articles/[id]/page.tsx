@@ -229,7 +229,7 @@ export default async function EnArticleDetailPage({ params }: Props) {
         )}
         {relatedArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-5 text-lg font-bold text-brand-navy">
+            <h2 className="mb-5 text-xl font-bold text-brand-navy">
               {t.relatedArticlesHeading(dealTypeInfo?.label)}
             </h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

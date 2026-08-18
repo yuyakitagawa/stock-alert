@@ -1,35 +1,23 @@
-"use client";
-
 import Link from "next/link";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { formatDealAmount, formatMonth } from "@/lib/format";
 import type { MonthSummary } from "@/lib/microcms";
 
+// 月アーカイブのカード一覧。件数が十数件と少なく、1件ずつが独立した入口になるため
+// グリッドで並べる（MUIのList/ListItemButtonは使わない。素のa.cardで十分かつ軽い）。
 export default function MonthList({ months }: { months: MonthSummary[] }) {
   return (
-    <List disablePadding sx={{ borderTop: 1, borderBottom: 1, borderColor: "divider" }}>
+    <ul className="card-grid">
       {months.map((m) => (
-        <ListItemButton
-          key={m.month}
-          component={Link}
-          href={`/monthly/${m.month}`}
-          divider
-          sx={{ py: 2, px: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 2 }}
-        >
-          <Box>
-            <Typography sx={{ fontWeight: 700, color: "primary.main" }}>{formatMonth(m.month)}</Typography>
-            <Typography variant="body2" sx={{ mt: 0.25, color: "text.secondary" }}>
+        <li key={m.month}>
+          <Link href={`/monthly/${m.month}`} className="card">
+            <span className="block font-bold text-brand-navy">{formatMonth(m.month)}</span>
+            <span className="mt-1 block text-sm text-foreground/60">
               {m.count}件・{formatDealAmount(m.amount)}
-            </Typography>
-          </Box>
-          <Typography variant="overline" sx={{ flexShrink: 0, color: "brand.blue" }}>
-            この月のまとめを見る ›
-          </Typography>
-        </ListItemButton>
+            </span>
+            <span className="kicker mt-2 block text-brand-blue">この月のまとめを見る ›</span>
+          </Link>
+        </li>
       ))}
-    </List>
+    </ul>
   );
 }

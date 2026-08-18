@@ -84,7 +84,7 @@ export default async function TrendingInvestorsRankingPage() {
       {/* タブ切替時に見出しの高さ・位置が変わらないよう、h1は全ランキング共通（/rankingと同じ構成）。 */}
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
       <RankingTabNav current="/ranking/trending" />
-      <h2 className="mb-1 text-lg font-bold text-brand-navy">{title}</h2>
+      <h2 className="mb-1 text-xl font-bold text-brand-navy">{title}</h2>
       <p className="mb-2 text-sm text-foreground/50">
         直近{WINDOW_DAYS}日間（{formatDate(currentFrom)}〜{formatDate(rangeTo)}）にEDINETへ提出された
         大量保有報告書・変更報告書の件数を投資家別に集計し、その前の{WINDOW_DAYS}日間と比べて

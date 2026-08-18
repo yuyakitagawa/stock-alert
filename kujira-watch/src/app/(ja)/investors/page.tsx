@@ -129,25 +129,26 @@ async function InvestorsBody({ searchParams }: Props) {
           {filers.length === 0 ? "投資家データがまだありません。" : "該当する投資家がいません。"}
         </p>
       ) : (
-        /* 600件以上を一度に並べるため、行はMUIコンポーネント（ListItem/Typography/Chip）ではなく
-           素のul/liにしている。MUI版はHTMLが1.5MBまで膨らみTTFBが約1.9秒だった。 */
-        <ul className="border-t border-rule">
+        /* 600件以上を一度に並べるため、カードはMUIコンポーネント（Card/Typography/Chip）ではなく
+           素のa.cardにしている。MUI版はHTMLが1.5MBまで膨らみTTFBが約1.9秒だった。
+           投資家名が長く2列だと折り返しが増えるため card-grid-wide（2列相当）を使う。 */
+        <ul className="card-grid card-grid-wide">
           {visibleFilers.map((filer) => (
             /* 1行目=名前 / 2行目=分類+開示メタ の2行構造。flex-wrap任せだと名前の長さで
-               分類ラベルの位置が行ごとに揺れて一覧が読みにくかった。 */
-            <li key={filer.filerName} className="border-b border-rule py-3">
+               分類ラベルの位置がカードごとに揺れて一覧が読みにくかった。 */
+            <li key={filer.filerName}>
               <Link
                 href={`/investors/${encodeURIComponent(filer.filerName)}`}
-                className="font-medium text-brand-blue hover:underline"
+                className="card font-medium text-brand-blue"
               >
                 {displayFilerName(filer.filerName)}
-              </Link>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <DealTypeLabel dealType={filer.category} />
-                <span className="text-xs text-foreground/50">
-                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-normal">
+                  <DealTypeLabel dealType={filer.category} />
+                  <span className="text-xs text-foreground/50">
+                    保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                  </span>
                 </span>
-              </div>
+              </Link>
             </li>
           ))}
         </ul>

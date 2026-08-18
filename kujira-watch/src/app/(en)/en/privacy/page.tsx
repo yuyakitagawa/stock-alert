@@ -28,7 +28,7 @@ export default function EnPrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Advertising</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Advertising</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           This site uses Google AdSense, a third-party advertising service. Google and its partners
           use cookies to serve ads based on a visitor&apos;s prior visits to this site and other
@@ -67,7 +67,7 @@ export default function EnPrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Analytics</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Analytics</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           This site uses the following tools to understand how it is being read. None of them
           collect personally identifying information such as names, email addresses, or phone
@@ -102,7 +102,7 @@ export default function EnPrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Disabling cookies</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Disabling cookies</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           You can disable or delete cookies at any time in your browser settings. Some features of
           this site may not work correctly if you do.
@@ -110,7 +110,7 @@ export default function EnPrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Personal information</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Personal information</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           This site has no sign-up, contact form, or comment feature, and does not collect personal
           information directly from visitors. The operator does not use the information gathered by
@@ -119,7 +119,7 @@ export default function EnPrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Disclaimer</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Disclaimer</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           For the site&apos;s disclaimer, data sources, and operator information, see{" "}
           <Link href="/en/about" className="text-brand-blue hover:underline">
@@ -131,7 +131,7 @@ export default function EnPrivacyPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Changes to this policy</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Changes to this policy</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           This policy may be revised without notice as laws change or as the tools used by this site
           change. Questions can be sent to{" "}

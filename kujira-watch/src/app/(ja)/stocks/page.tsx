@@ -1,9 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import List from "@mui/material/List";
-import ListItem from "@mui/material/ListItem";
-import Typography from "@mui/material/Typography";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
 import { getAllStocksForIndex } from "@/lib/microcms";
@@ -18,16 +15,38 @@ const title = "銘柄一覧";
 const description =
   "EDINET大量保有報告書（5%ルール）・自社株買いなど、大口投資家の動きが開示された銘柄の一覧。銘柄別に保有・取引の履歴を確認できます。";
 
-export const metadata: Metadata = {
-  title,
-  description,
-  alternates: { canonical: `${SITE_URL}/stocks` },
-  openGraph: { title, description, url: `${SITE_URL}/stocks` },
-};
+// 1ページあたりの表示件数。3列グリッドで約33行になり、ページ送りせずに
+// 端まで見渡せる上限としてこの値にしている（/disclosuresのDISCLOSURES_PER_PAGEと同値）。
+const PER_PAGE = 100;
 
 type Props = {
-  searchParams: Promise<{ sector?: string }>;
+  searchParams: Promise<{ sector?: string; page?: string }>;
 };
+
+function buildHref(sector: string | null, page: number): string {
+  const params = new URLSearchParams();
+  if (sector) params.set("sector", sector);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/stocks?${query}` : "/stocks";
+}
+
+// ページ送りのURLは自分自身をcanonicalにする（1ページ目に集約すると2ページ目以降の
+// 内容がインデックスされないため。/investorsと同じ規律）。
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  const { sector, page } = await searchParams;
+  const pageNumber = Number(page) > 1 ? Number(page) : 1;
+  const selected = sector ?? null;
+  const canonical = `${SITE_URL}${buildHref(selected, pageNumber)}`;
+  const suffix = [selected, pageNumber > 1 ? `${pageNumber}ページ目` : null].filter(Boolean).join("・");
+
+  return {
+    title: suffix ? `${title}（${suffix}）` : title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical },
+  };
+}
 
 // 見出しまでのシェルを先に流し、銘柄一覧の取得待ちだけを後から流すためのSuspense境界。
 // `searchParams`をここで初めてawaitすることで、ページ本体は待たずに返せる。
@@ -62,7 +81,7 @@ export default async function StocksIndexPage({ searchParams }: Props) {
 }
 
 async function StocksBody({ searchParams }: Props) {
-  const [{ sector }, stocks, sectorByCode] = await Promise.all([
+  const [{ sector, page }, stocks, sectorByCode] = await Promise.all([
     searchParams,
     getAllStocksForIndex(),
     getAllSectorsByCode(),
@@ -75,27 +94,31 @@ async function StocksBody({ searchParams }: Props) {
   }
   const sectors = Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, "ja"));
   const selectedSector = sector && counts.has(sector) ? sector : null;
-  const visibleStocks = selectedSector
+  const matchedStocks = selectedSector
     ? stocks.filter((s) => sectorByCode.get(s.stockCode) === selectedSector)
     : stocks;
+  const totalPages = Math.max(1, Math.ceil(matchedStocks.length / PER_PAGE));
+  const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
+  const visibleStocks = matchedStocks.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
 
   return (
     <>
       <p className="mb-4 text-sm text-foreground/50">
         {SITE_NAME}が大量保有・自社株買いの動きを追跡している銘柄{stocks.length}件です。
-        証券コード順に並んでいます。
+        証券コード順に並んでいます
+        {totalPages > 1 && `（${currentPage}/${totalPages}ページ、${matchedStocks.length}件中${visibleStocks.length}件を表示）`}。
       </p>
       {sectors.length > 0 && (
         <FilterButtonNav
           ariaLabel="業種で絞り込む"
           items={[
             {
-              href: "/stocks",
+              href: buildHref(null, 1),
               label: `すべて（${stocks.length}件）`,
               selected: selectedSector === null,
             },
             ...sectors.map((sec) => ({
-              href: `/stocks?sector=${encodeURIComponent(sec)}`,
+              href: buildHref(sec, 1),
               label: `${sec}（${counts.get(sec)}件）`,
               selected: selectedSector === sec,
             })),
@@ -107,27 +130,47 @@ async function StocksBody({ searchParams }: Props) {
           {stocks.length === 0 ? "銘柄データがまだありません。" : "該当する銘柄がありません。"}
         </p>
       ) : (
-        <List disablePadding sx={{ borderTop: 1, borderColor: "divider" }}>
+        /* 全銘柄（数百件）を並べるため、カードはグリッドで多列化する。
+           1列のままカード化すると縦の総量が行リストの約3倍になり索引として使えない。 */
+        <ul className="card-grid">
           {visibleStocks.map((stock) => (
-            <ListItem
-              key={stock.stockCode}
-              disableGutters
-              sx={{ py: 1.5, borderBottom: 1, borderColor: "divider", flexWrap: "wrap", columnGap: 1.5, rowGap: 0.5 }}
-            >
-              <Link href={`/stocks/${stock.stockCode}`} className="font-medium text-brand-blue hover:underline">
-                {stock.stockName}（{stock.stockCode}）
+            <li key={stock.stockCode}>
+              <Link href={`/stocks/${stock.stockCode}`} className="card">
+                <span className="block font-medium text-brand-blue">
+                  {stock.stockName}（{stock.stockCode}）
+                </span>
+                <span className="mt-1 block text-xs text-foreground/50">
+                  {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
+                  記事{stock.articleCount}件
+                </span>
+                <span className="block text-xs text-foreground/50">
+                  最終開示{formatDate(stock.latestDealDate)}
+                </span>
               </Link>
-              {sectorByCode.get(stock.stockCode) && (
-                <Typography variant="caption" sx={{ color: "text.disabled" }}>
-                  {sectorByCode.get(stock.stockCode)}
-                </Typography>
-              )}
-              <Typography variant="caption" sx={{ color: "text.disabled" }}>
-                記事{stock.articleCount}件・最終開示{formatDate(stock.latestDealDate)}
-              </Typography>
-            </ListItem>
+            </li>
           ))}
-        </List>
+        </ul>
+      )}
+      {totalPages > 1 && (
+        <nav aria-label="ページ送り" className="mt-6 flex items-center justify-between gap-4 text-sm">
+          {currentPage > 1 ? (
+            <Link href={buildHref(selectedSector, currentPage - 1)} className="text-brand-blue hover:underline">
+              ‹ 前の{PER_PAGE}件
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="kicker text-foreground/50">
+            {currentPage} / {totalPages}
+          </span>
+          {currentPage < totalPages ? (
+            <Link href={buildHref(selectedSector, currentPage + 1)} className="text-brand-blue hover:underline">
+              次の{PER_PAGE}件 ›
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
       )}
     </>
   );

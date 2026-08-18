@@ -250,7 +250,7 @@ export default async function WeeklyDigestPage() {
 
       {weeklyCounts.length >= 2 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">週別の開示件数トレンド</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">週別の開示件数トレンド</h2>
           <p className="mb-2 text-sm text-foreground/60">
             大口投資家の動き（EDINET開示）が週単位で増えているのか減っているのかを確認できます。
           </p>
@@ -272,7 +272,7 @@ export default async function WeeklyDigestPage() {
 
       {amountRows.length >= 2 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">週別の売買金額トレンド</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">週別の売買金額トレンド</h2>
           <p className="mb-2 text-sm text-foreground/60">
             解説記事化した開示の推定金額を週ごとに買い・売りへ分けた推移です。
             差し引きがプラスの週は買い越し、マイナスの週は売り越しです。
@@ -329,7 +329,7 @@ export default async function WeeklyDigestPage() {
 
       {contents.length > 0 && (
         <section className="mb-10 border-y border-rule py-6">
-          <h2 className="text-lg font-bold text-brand-navy">直近7日間のポイント</h2>
+          <h2 className="text-xl font-bold text-brand-navy">直近7日間のポイント</h2>
           <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
             <Card variant="outlined" sx={{ bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
               <Typography variant="overline" sx={{ color: "text.secondary" }}>買い</Typography>
@@ -388,7 +388,7 @@ export default async function WeeklyDigestPage() {
 
       {featured.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">注目の取引</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">注目の取引</h2>
           {summary.topStocks.length > 0 && (
             <p className="mb-4 text-sm leading-relaxed text-foreground/70">
               個別銘柄では
@@ -414,7 +414,7 @@ export default async function WeeklyDigestPage() {
 
       {contents.length > 0 && (
         <section>
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">日別の記事一覧</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">日別の記事一覧</h2>
           <DailyDigestList
             days={last7Dates.map((date) => {
               const group = dateGroupMap.get(date);

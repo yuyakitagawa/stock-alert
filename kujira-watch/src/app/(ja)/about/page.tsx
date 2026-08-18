@@ -30,7 +30,7 @@ export default async function AboutPage() {
       <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{about.heroTitle}</h1>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Xで最新情報をチェック</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Xで最新情報をチェック</h2>
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">
           新着記事や注目の大量保有報告書の速報は
           <a
@@ -46,7 +46,7 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家とは</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">大口投資家とは</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           株式や各種金融市場において、市場価格を動かすほどの巨大な資金を運用する投資主体です。
         </p>
@@ -78,7 +78,7 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家の動きを追う意味</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">大口投資家の動きを追う意味</h2>
         <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>
             <strong className="text-brand-navy">資金の流れ（トレンド）の把握</strong>:
@@ -93,7 +93,7 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">大口投資家の動きとは</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">大口投資家の動きとは</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           「大口投資家の動き」とは、機関投資家・アクティビストファンド・創業家の資産管理会社・
           自社株買いなど、相場を動かすほどの資金力を持つ投資主体（クジラ）が、上場企業の株式を
@@ -113,7 +113,7 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">このサイトについて</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">このサイトについて</h2>
         <div
           className="prose prose-sm max-w-none text-foreground/70"
           dangerouslySetInnerHTML={{ __html: about.profileBody }}
@@ -121,7 +121,7 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">データソースと更新方法</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">データソースと更新方法</h2>
         <div
           className="prose prose-sm max-w-none text-foreground/70"
           dangerouslySetInnerHTML={{ __html: about.dataSources }}
@@ -135,7 +135,7 @@ export default async function AboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">情報源について（EDINET）</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">情報源について（EDINET）</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトが扱う大量保有報告書などの開示情報は、金融庁が運営する電子開示システム
           「EDINET（Electronic Disclosure for Investors&apos; NETwork）」の公開情報を一次情報源としています。
@@ -181,7 +181,7 @@ export default async function AboutPage() {
       </section>
 
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">投資家分類（用語集）</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">投資家分類（用語集）</h2>
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">
           記事に付いているバッジは、大量保有報告書の提出者を以下のいずれかに分類したものです。
         </p>
@@ -201,7 +201,7 @@ export default async function AboutPage() {
 
       {about.faq && (
         <section className="mb-6">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">よくある質問</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>
           <div
             className="prose prose-sm max-w-none text-foreground/70"
             dangerouslySetInnerHTML={{ __html: about.faq }}
@@ -210,7 +210,7 @@ export default async function AboutPage() {
       )}
 
       <section>
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">免責事項</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">免責事項</h2>
         <div
           className="prose prose-sm max-w-none text-foreground/70"
           dangerouslySetInnerHTML={{ __html: about.disclaimer }}

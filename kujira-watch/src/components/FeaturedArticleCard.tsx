@@ -90,7 +90,7 @@ export default function FeaturedArticleCard({
               {formatDate(article.dealDate, locale)}
             </Typography>
           </Stack>
-          <Typography variant="h4" component="h2" sx={{ fontWeight: 700, lineHeight: 1.3, fontSize: { xs: "1.5rem", sm: "1.875rem" } }}>
+          <Typography variant="h4" component="h2" sx={{ fontWeight: 700, lineHeight: 1.3, fontSize: { xs: "1.25rem", sm: "1.5rem" } }}>
             {title}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1.5, color: "rgba(255,255,255,0.8)" }}>

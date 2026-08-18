@@ -15,7 +15,6 @@ import { getFilerClassification, getFilerHoldings, getFilerWinRate } from "@/lib
 import { displayFilerName, formatDate, formatSignedOku } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
-import WatchButton from "@/components/WatchButton";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildInvestorFaqItems } from "@/lib/investorFaq";
 
@@ -140,7 +139,6 @@ export default async function InvestorPage({ params }: Props) {
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{displayFilerName(filerName)}</h1>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <DealTypeBadge dealType={category} />
-        <WatchButton type="investor" id={filerName} label={displayFilerName(filerName)} />
         {classification?.description && (
           <p className="text-sm text-foreground/60">{classification.description}</p>
         )}
@@ -229,7 +227,7 @@ export default async function InvestorPage({ params }: Props) {
         </div>
       )}
       <div className="mb-6 border-t border-rule pt-4">
-        <h2 className="text-lg font-bold text-brand-navy">最近の取引</h2>
+        <h2 className="text-xl font-bold text-brand-navy">最近の取引</h2>
         <p className="mt-1 text-sm text-foreground/50">
           EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
           {holdings.length}件まとめています。個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
@@ -274,7 +272,7 @@ export default async function InvestorPage({ params }: Props) {
       )}
       {faqItems.length > 0 && (
         <div className="mt-8 border-t border-rule pt-4">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">よくある質問</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>
           <FaqAccordionList faqs={faqItems} />
         </div>
       )}

@@ -77,7 +77,7 @@ export default function FaqPage() {
               />
               {faqs.length}件
             </Typography>
-            <h2 className="mb-3 text-lg font-bold text-brand-navy">
+            <h2 className="mb-3 text-xl font-bold text-brand-navy">
               <Link href={`/faq/${category.id}`} className="hover:text-brand-blue hover:underline">
                 {category.label}
               </Link>

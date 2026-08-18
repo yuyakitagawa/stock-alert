@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import Box from "@mui/material/Box";
 import DealTypeBadge from "@/components/DealTypeBadge";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
@@ -24,16 +23,37 @@ const description =
   "3ヶ月リターン・買い増し・売却・報告書件数・開示急増の各ランキングをタブで切り替えて見られます。" +
   "このページは買い増し開示の推定取得金額を63営業日(3ヶ月)後までの株価騰落で評価した3ヶ月リターンランキングです。";
 
-export const metadata: Metadata = {
-  title,
-  description,
-  alternates: { canonical: `${SITE_URL}/ranking` },
-  openGraph: { title, description, url: `${SITE_URL}/ranking` },
-};
+// 1ページあたりの表示件数（/stocks・/disclosuresと同値）。
+const PER_PAGE = 100;
 
 type Props = {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; page?: string }>;
 };
+
+function buildHref(category: string | null, page: number): string {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/ranking?${query}` : "/ranking";
+}
+
+// ページ送りのURLは自分自身をcanonicalにする（1ページ目に集約すると2ページ目以降の
+// 内容がインデックスされないため。/investors・/stocksと同じ規律）。
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  const { category, page } = await searchParams;
+  const pageNumber = Number(page) > 1 ? Number(page) : 1;
+  const selected = category && DEAL_TYPES.includes(category as DealType) ? category : null;
+  const canonical = `${SITE_URL}${buildHref(selected, pageNumber)}`;
+  const suffix = [selected, pageNumber > 1 ? `${pageNumber}ページ目` : null].filter(Boolean).join("・");
+
+  return {
+    title: suffix ? `${title}（${suffix}）` : title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical },
+  };
+}
 
 // 見出しまでのシェルを先に流し、集計待ちの一覧だけを後から流すためのSuspense境界。
 // `searchParams`をここで初めてawaitすることで、ページ本体は待たずに返せる。
@@ -60,7 +80,7 @@ export default async function RankingPage({ searchParams }: Props) {
       </nav>
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
       <RankingTabNav current="/ranking" />
-      <h2 className="mb-1 text-lg font-bold text-brand-navy">3ヶ月リターンランキング</h2>
+      <h2 className="mb-1 text-xl font-bold text-brand-navy">3ヶ月リターンランキング</h2>
       <Suspense fallback={<ListFallback rows={12} />}>
         <RankingBody searchParams={searchParams} />
       </Suspense>
@@ -70,7 +90,7 @@ export default async function RankingPage({ searchParams }: Props) {
 }
 
 async function RankingBody({ searchParams }: Props) {
-  const { category } = await searchParams;
+  const { category, page } = await searchParams;
   const filers = await getFilerWinRates(MIN_N);
 
   const counts = new Map<DealType, number>();
@@ -80,9 +100,14 @@ async function RankingBody({ searchParams }: Props) {
   const activeCategories = DEAL_TYPES.filter((c) => (counts.get(c) ?? 0) > 0);
   const selectedCategory =
     category && DEAL_TYPES.includes(category as DealType) ? (category as DealType) : null;
-  const visibleFilers = selectedCategory
+  const matchedFilers = selectedCategory
     ? filers.filter((f) => f.category === selectedCategory)
     : filers;
+  const totalPages = Math.max(1, Math.ceil(matchedFilers.length / PER_PAGE));
+  const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
+  // 順位はページをまたいで通し番号にする（2ページ目が再び1位から始まらないように）。
+  const rankOffset = (currentPage - 1) * PER_PAGE;
+  const visibleFilers = matchedFilers.slice(rankOffset, rankOffset + PER_PAGE);
 
   const updatedAt = filers[0]?.updatedAt;
   const holdDays = filers[0]?.holdDays ?? 63;
@@ -91,9 +116,9 @@ async function RankingBody({ searchParams }: Props) {
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: "投資家別 3ヶ月リターンランキング",
-    itemListElement: visibleFilers.slice(0, 100).map((f, index) => ({
+    itemListElement: visibleFilers.map((f, index) => ({
       "@type": "ListItem",
-      position: index + 1,
+      position: rankOffset + index + 1,
       name: f.filerName,
       url: `${SITE_URL}/investors/${encodeURIComponent(f.filerName)}`,
     })),
@@ -120,14 +145,15 @@ async function RankingBody({ searchParams }: Props) {
       {filers.length > 0 && (
         <FilterButtonNav
           ariaLabel="カテゴリで絞り込む"
+          collapsible
           items={[
             {
-              href: "/ranking",
+              href: buildHref(null, 1),
               label: `すべて（${filers.length}件）`,
               selected: selectedCategory === null,
             },
             ...activeCategories.map((c) => ({
-              href: `/ranking?category=${encodeURIComponent(c)}`,
+              href: buildHref(c, 1),
               label: `${c}（${counts.get(c)}件）`,
               selected: selectedCategory === c,
             })),
@@ -138,74 +164,60 @@ async function RankingBody({ searchParams }: Props) {
         <p className="text-foreground/50">該当する投資家がいません。</p>
       ) : (
         // 5列テーブルは狭い画面で投資家名が1文字ずつ折り返されて読めないため、
-        // 全画面幅で1件1行のリスト表示にする（分類は名前の下にバッジで添える）。
-        <Box>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 1,
-              pb: 0.75,
-              fontSize: "0.6875rem",
-              letterSpacing: "0.08em",
-              color: "text.disabled",
-            }}
-          >
-            <span>順位・投資家</span>
-            <span>トータルの推計リターン</span>
-          </Box>
-          {visibleFilers.map((f, index) => (
-            <Box
-              key={f.filerName}
-              sx={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 1.25,
-                py: 1.25,
-                borderTop: 1,
-                borderColor: "divider",
-              }}
-            >
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  width: 22,
-                  fontWeight: 700,
-                  color: "text.disabled",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {index + 1}
-              </Box>
-              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                <Link
-                  href={`/investors/${encodeURIComponent(f.filerName)}`}
-                  className="font-medium text-brand-blue hover:underline"
-                  style={{ overflowWrap: "anywhere" }}
-                >
-                  {displayFilerName(f.filerName)}
+        // 1件1カードにする（分類は名前の下にバッジで添える）。
+        <>
+          <p className="kicker mb-2 text-foreground/40">
+            順位・投資家 ／ 分類・件数・トータルの推計リターン
+          </p>
+          <ul className="card-grid card-grid-wide">
+            {visibleFilers.map((f, index) => (
+              <li key={f.filerName}>
+                <Link href={`/investors/${encodeURIComponent(f.filerName)}`} className="card">
+                  <span className="flex items-baseline gap-2">
+                    <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
+                      {rankOffset + index + 1}
+                    </span>
+                    <span className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere]">
+                      {displayFilerName(f.filerName)}
+                    </span>
+                  </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-7">
+                    <DealTypeBadge dealType={f.category} />
+                    <span className="text-xs text-foreground/60">{f.n}件</span>
+                    <span
+                      className={`ml-auto whitespace-nowrap font-semibold tabular-nums ${
+                        f.totalReturnOku >= 0 ? "text-gain" : "text-loss"
+                      }`}
+                    >
+                      {formatSignedOku(f.totalReturnOku)}
+                    </span>
+                  </span>
                 </Link>
-                <Box sx={{ mt: 0.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-                  <DealTypeBadge dealType={f.category} />
-                  <Box component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-                    {f.n}件
-                  </Box>
-                </Box>
-              </Box>
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  whiteSpace: "nowrap",
-                  fontWeight: 600,
-                  fontVariantNumeric: "tabular-nums",
-                  color: f.totalReturnOku >= 0 ? "success.main" : "error.main",
-                }}
-              >
-                {formatSignedOku(f.totalReturnOku)}
-              </Box>
-            </Box>
-          ))}
-        </Box>
+              </li>
+            ))}
+          </ul>
+          {totalPages > 1 && (
+            <nav aria-label="ページ送り" className="mt-6 flex items-center justify-between gap-4 text-sm">
+              {currentPage > 1 ? (
+                <Link href={buildHref(selectedCategory, currentPage - 1)} className="text-brand-blue hover:underline">
+                  ‹ 前の{PER_PAGE}件
+                </Link>
+              ) : (
+                <span />
+              )}
+              <span className="kicker text-foreground/50">
+                {currentPage} / {totalPages}
+              </span>
+              {currentPage < totalPages ? (
+                <Link href={buildHref(selectedCategory, currentPage + 1)} className="text-brand-blue hover:underline">
+                  次の{PER_PAGE}件 ›
+                </Link>
+              ) : (
+                <span />
+              )}
+            </nav>
+          )}
+        </>
       )}
     </>
   );

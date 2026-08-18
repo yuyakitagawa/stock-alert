@@ -390,7 +390,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         <FollowCta />
         {relatedStockArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-4 text-lg font-bold text-brand-navy">
+            <h2 className="mb-4 text-xl font-bold text-brand-navy">
               {article.stockName}（{article.stockCode}）の他の記事
             </h2>
             <RelatedArticleLinks articles={relatedStockArticles} />
@@ -403,7 +403,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         )}
         {filerName && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-2 text-lg font-bold text-brand-navy">この取引をした投資家</h2>
+            <h2 className="mb-2 text-xl font-bold text-brand-navy">この取引をした投資家</h2>
             <p className="text-sm leading-relaxed text-foreground/70">
               <Link
                 href={`/investors/${encodeURIComponent(filerName)}`}
@@ -423,7 +423,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           </div>
         )}
         <div className="mt-10 border-t border-rule pt-6">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">関連ランキング</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">関連ランキング</h2>
           <nav aria-label="関連ランキング" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <Link href="/ranking/buys" className="text-brand-blue hover:underline">買い増しランキング</Link>
             <Link href="/ranking/sells" className="text-brand-blue hover:underline">売却ランキング</Link>
@@ -435,7 +435,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         </div>
         {relatedArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-5 text-lg font-bold text-brand-navy">
+            <h2 className="mb-5 text-xl font-bold text-brand-navy">
               関連記事（{category}）
             </h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

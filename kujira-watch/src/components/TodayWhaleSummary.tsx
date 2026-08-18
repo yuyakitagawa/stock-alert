@@ -36,11 +36,11 @@ export default function TodayWhaleSummary({
           {formatDate(date)}の大口取引
         </Typography>
         <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 1.5, rowGap: 0.5 }}>
-          <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1, color: "primary.main" }}>
+          <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1.1, fontSize: { xs: "1.5rem", sm: "1.75rem" }, color: "primary.main" }}>
             {count}
           </Typography>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>件の開示</Typography>
-          <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1, color: "primary.main" }}>
+          <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1.1, fontSize: { xs: "1.5rem", sm: "1.75rem" }, color: "primary.main" }}>
             {formatDealAmount(amount)}
           </Typography>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>

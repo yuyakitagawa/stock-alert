@@ -25,7 +25,7 @@ export default function EnAboutPage() {
       <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{t.aboutTitle}</h1>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutWhoHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutWhoHeading}</h2>
         <p className="text-sm leading-relaxed text-foreground/70">{t.aboutWhoIntro}</p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
           {t.aboutWhoItems.map((item) => (
@@ -44,7 +44,7 @@ export default function EnAboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutWhyHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutWhyHeading}</h2>
         <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-foreground/70">
           {t.aboutWhyItems.map((item) => (
             <li key={item.term}>
@@ -55,21 +55,21 @@ export default function EnAboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutWhatHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutWhatHeading}</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           {`"Big-investor moves" refers to when and how much of a listed company's shares were bought or sold by an entity with market-moving capital (a "whale") — institutional investors, activist funds, founder-family holding companies, or share buybacks. In Japan, investors who acquire 5% or more of a company's shares must file a large-shareholding report with EDINET (the Financial Services Agency's disclosure system) — the so-called "5% rule" — and must re-file a change report if their holding ratio moves by 1 percentage point or more. This site tracks that public information daily and organizes it by stock and investor category.`}
         </p>
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutSiteHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutSiteHeading}</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           {`${SITE_NAME_EN}${t.aboutSiteBody}`}
         </p>
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutDataHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutDataHeading}</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
           {t.aboutDataItems.map((item) => (
             <li key={item}>{item}</li>
@@ -78,7 +78,7 @@ export default function EnAboutPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutSourceHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutSourceHeading}</h2>
         <p className="text-sm leading-relaxed text-foreground/70">{t.aboutSourceIntro}</p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
           <li>
@@ -107,7 +107,7 @@ export default function EnAboutPage() {
       </section>
 
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutGlossaryHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutGlossaryHeading}</h2>
         <p className="mb-3 text-sm leading-relaxed text-foreground/70">{t.aboutGlossaryIntro}</p>
         <Box component="dl" sx={{ m: 0, display: "flex", flexDirection: "column", gap: 1.5 }}>
           {DEAL_TYPES.map((dealType) => (
@@ -124,7 +124,7 @@ export default function EnAboutPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">{t.aboutDisclaimerHeading}</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">{t.aboutDisclaimerHeading}</h2>
         <p className="text-sm leading-relaxed text-foreground/70">{t.aboutDisclaimerBody}</p>
       </section>
       <AdUnit placement="bottom" locale="en" />

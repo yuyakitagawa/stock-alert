@@ -54,21 +54,16 @@ export default async function ActivistsPage() {
     );
 
   const moveItem = (move: ActivistMove) => (
-    <li
-      key={move.docId}
-      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-rule py-2.5 text-sm"
-    >
-      <span className="kicker whitespace-nowrap text-foreground/50">
-        {formatDate(move.discDate)}
-      </span>
-      <Link
-        href={`/investors/${encodeURIComponent(move.filerName)}`}
-        className="text-brand-blue hover:underline"
-      >
-        {displayFilerName(move.filerName)}
-      </Link>
-      <span className="font-medium">{stockLabel(move.issuerName, move.issuerCode)}</span>
-      <span className="text-foreground/70">
+    <li key={move.docId} className="card text-sm">
+      <span className="kicker block text-foreground/50">{formatDate(move.discDate)}</span>
+      <span className="mt-1 block font-medium">{stockLabel(move.issuerName, move.issuerCode)}</span>
+      <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-foreground/70">
+        <Link
+          href={`/investors/${encodeURIComponent(move.filerName)}`}
+          className="text-brand-blue hover:underline"
+        >
+          {displayFilerName(move.filerName)}
+        </Link>
         <RatioTransition ratio={move.holdingRatio} prior={move.holdingRatioPrior} />
       </span>
     </li>
@@ -107,9 +102,9 @@ export default async function ActivistsPage() {
   const attentionStocks = [...byIssuer.values()].sort((a, b) => b.totalDelta - a.totalDelta);
 
   const attentionItem = (row: AttentionRow) => (
-    <li key={row.issuerCode} className="border-b border-rule py-3 text-sm">
+    <li key={row.issuerCode} className="card text-sm">
       <span className="font-medium">{stockLabel(row.issuerName, row.issuerCode)}</span>
-      <span className="ml-2 text-xs font-bold text-emerald-700">▲{row.totalDelta}pt買い入れ</span>
+      <span className="ml-2 whitespace-nowrap text-xs font-bold text-gain">▲{row.totalDelta}pt買い入れ</span>
       {row.multiHolder && (
         <span className="kicker ml-2 whitespace-nowrap text-brand-gold">複数ファンド保有</span>
       )}
@@ -164,7 +159,7 @@ export default async function ActivistsPage() {
 
       {attentionStocks.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">アクティビスト注目銘柄</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">アクティビスト注目銘柄</h2>
           <p className="mb-4 text-sm text-foreground/60">
             直近{MOVES_WINDOW_DAYS}日にアクティビストが保有比率を増やした（買い入れた）銘柄を、
             増加幅の合計が大きい順に表示しています。詳しくは
@@ -173,7 +168,7 @@ export default async function ActivistsPage() {
             </Link>
             をご覧ください。
           </p>
-          <ul className="border-t border-rule">
+          <ul className="card-grid card-grid-wide">
             {attentionStocks.slice(0, ATTENTION_DISPLAY_LIMIT).map(attentionItem)}
           </ul>
           {attentionStocks.length > ATTENTION_DISPLAY_LIMIT && (
@@ -181,7 +176,7 @@ export default async function ActivistsPage() {
               <summary className="cursor-pointer text-sm text-brand-blue hover:underline">
                 もっと見る（残り{attentionStocks.length - ATTENTION_DISPLAY_LIMIT}銘柄）
               </summary>
-              <ul className="mt-2 border-t border-rule">
+              <ul className="card-grid card-grid-wide mt-2">
                 {attentionStocks.slice(ATTENTION_DISPLAY_LIMIT).map(attentionItem)}
               </ul>
             </details>
@@ -190,7 +185,7 @@ export default async function ActivistsPage() {
       )}
 
       <section className="mb-10">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">直近のアクティビストの動き</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">直近のアクティビストの動き</h2>
         <p className="mb-4 text-sm text-foreground/60">
           アクティビストが直近{MOVES_WINDOW_DAYS}日に提出した大量保有・変更報告書を新しい順に
           一覧しています。保有比率が増えた開示は買い増し、減った開示は売却方向の動きです。
@@ -201,7 +196,7 @@ export default async function ActivistsPage() {
           </p>
         ) : (
           <>
-            <ul className="border-t border-rule">
+            <ul className="card-grid card-grid-wide">
               {recentMoves.slice(0, MOVES_DISPLAY_LIMIT).map(moveItem)}
             </ul>
             {recentMoves.length > MOVES_DISPLAY_LIMIT && (
@@ -209,7 +204,7 @@ export default async function ActivistsPage() {
                 <summary className="cursor-pointer text-sm text-brand-blue hover:underline">
                   もっと見る（残り{recentMoves.length - MOVES_DISPLAY_LIMIT}件）
                 </summary>
-                <ul className="mt-2 border-t border-rule">
+                <ul className="card-grid card-grid-wide mt-2">
                   {recentMoves.slice(MOVES_DISPLAY_LIMIT).map(moveItem)}
                 </ul>
               </details>

@@ -126,7 +126,7 @@ export default async function TrendingPage() {
 
       {monthlyCounts.length >= 2 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">月別の開示件数トレンド</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">月別の開示件数トレンド</h2>
           <p className="mb-2 text-sm text-foreground/60">
             市場全体で大口投資家の動き（開示）が増えているのか減っているのかを月単位で見られます。
           </p>

@@ -1,15 +1,11 @@
 import Link from "next/link";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import { displayFilerName } from "@/lib/format";
 import type { TrendingEntry } from "@/lib/trendingStats";
 
-// 期間比較（直近N日 vs 前N日）の増加件数ランキング表。
+// 期間比較（直近N日 vs 前N日）の増加件数ランキング。
 // /trending（銘柄）と/ranking/trending（投資家）で共用する。
+// 表だと375pxで横スクロールが必要（minWidth 420px）だったため、1件=1カードにして
+// 数値をカード内に折り返す。見出し行が無くなるぶん、各数値にラベルを付けている。
 export default function TrendingTable({
   entries,
   headLabel,
@@ -22,45 +18,41 @@ export default function TrendingTable({
   hrefOf: (entry: TrendingEntry) => string | null;
 }) {
   return (
-    <TableContainer>
-      <Table size="small" sx={{ minWidth: 420, "& .MuiTableCell-root": { borderColor: "divider" } }}>
-        <TableHead>
-          <TableRow>
-            <TableCell sx={{ color: "text.secondary" }}>{headLabel}</TableCell>
-            <TableCell align="right" sx={{ color: "text.secondary" }}>直近{windowDays}日</TableCell>
-            <TableCell align="right" sx={{ color: "text.secondary" }}>前{windowDays}日</TableCell>
-            <TableCell align="right" sx={{ color: "text.secondary" }}>増加</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {entries.map((entry) => {
-            const href = hrefOf(entry);
-            return (
-              <TableRow key={entry.key}>
-                <TableCell>
-                  {href ? (
-                    <Link href={href} className="text-brand-blue hover:underline">
-                      {displayFilerName(entry.label)}
-                    </Link>
-                  ) : (
-                    <span className="text-foreground/80">{displayFilerName(entry.label)}</span>
-                  )}
-                  {entry.isNew && (
-                    <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>
-                  )}
-                </TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
-                  {entry.count}件
-                </TableCell>
-                <TableCell align="right" sx={{ color: "text.disabled" }}>
-                  {entry.prevCount}件
-                </TableCell>
-                <TableCell align="right" sx={{ color: "text.secondary" }}>+{entry.delta}件</TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <>
+      <p className="kicker mb-2 text-foreground/50">{headLabel}</p>
+      <ul className="card-grid card-grid-wide">
+        {entries.map((entry) => {
+          const href = hrefOf(entry);
+          const label = (
+            <>
+              {displayFilerName(entry.label)}
+              {entry.isNew && <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>}
+            </>
+          );
+          const body = (
+            <span className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-normal text-foreground/50">
+              <span className="text-sm font-bold text-brand-navy">直近{windowDays}日 {entry.count}件</span>
+              <span className="text-xs">前{windowDays}日 {entry.prevCount}件</span>
+              <span className="text-xs text-brand-gold">増加 +{entry.delta}件</span>
+            </span>
+          );
+          return (
+            <li key={entry.key}>
+              {href ? (
+                <Link href={href} className="card font-medium text-brand-blue">
+                  {label}
+                  {body}
+                </Link>
+              ) : (
+                <span className="card font-medium text-foreground/80">
+                  {label}
+                  {body}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

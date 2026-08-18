@@ -182,14 +182,15 @@ async function DisclosuresBody({ searchParams }: Props) {
       ) : (
         groups.map((group) => (
           <section key={group.discDate} className="mb-8">
-            <h2 className="mb-1 border-b border-rule pb-1 text-lg font-bold text-brand-navy">
+            <h2 className="mb-1 border-b border-rule pb-1 text-xl font-bold text-brand-navy">
               {formatDate(group.discDate)}提出
               <span className="ml-2 text-xs font-normal text-foreground/50">
                 {group.rows.length}件
               </span>
             </h2>
-            {/* 1ページ100件を並べるため、行はMUIではなく素のul/li（/investorsの教訓）。 */}
-            <ul>
+            {/* 1ページ100件を並べるため、カードはMUIではなく素のul/li+.card（/investorsの教訓）。
+                1件に銘柄・提出者・PDFと別々のリンクが3つあるためカード全体はリンクにできない。 */}
+            <ul className="card-grid card-grid-wide">
               {group.rows.map((row) => {
                 const kind = disclosureKindLabel(row);
                 const stockHref = codesWithArticles.has(row.issuerCode)
@@ -197,22 +198,22 @@ async function DisclosuresBody({ searchParams }: Props) {
                   : null;
                 const time = submitTime(row.submitDate);
                 return (
-                  <li
-                    key={row.docId}
-                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-rule py-2.5 text-sm"
-                  >
-                    <span
-                      className={`kicker whitespace-nowrap ${
-                        kind === "新規"
-                          ? "text-brand-gold"
-                          : kind === "訂正"
-                            ? "text-foreground/40"
-                            : "text-foreground/50"
-                      }`}
-                    >
-                      {kind}
-                    </span>
-                    <span className="font-medium">
+                  <li key={row.docId} className="card text-sm">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span
+                        className={`kicker whitespace-nowrap ${
+                          kind === "新規"
+                            ? "text-brand-gold"
+                            : kind === "訂正"
+                              ? "text-foreground/40"
+                              : "text-foreground/50"
+                        }`}
+                      >
+                        {kind}
+                      </span>
+                      {time && <span className="text-xs text-foreground/50">{time}</span>}
+                    </div>
+                    <div className="mt-1 font-medium">
                       {stockHref ? (
                         <Link href={stockHref} className="text-brand-blue hover:underline">
                           {row.issuerName}（{row.issuerCode}）
@@ -222,28 +223,29 @@ async function DisclosuresBody({ searchParams }: Props) {
                           {row.issuerName}（{row.issuerCode}）
                         </span>
                       )}
-                    </span>
-                    <RatioTransition ratio={row.holdingRatio} prior={row.holdingRatioPrior} />
-                    <span className="text-foreground/60">
-                      提出者:{" "}
-                      <Link
-                        href={`/investors/${encodeURIComponent(row.filerName)}`}
-                        className="text-brand-blue hover:underline"
-                      >
-                        {row.filerName}
-                      </Link>
-                    </span>
-                    <span className="ml-auto flex items-baseline gap-x-3 text-xs text-foreground/50">
-                      {time && <span>{time}</span>}
+                    </div>
+                    <div className="mt-1">
+                      <RatioTransition ratio={row.holdingRatio} prior={row.holdingRatioPrior} />
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-foreground/60">
+                      <span>
+                        提出者:{" "}
+                        <Link
+                          href={`/investors/${encodeURIComponent(row.filerName)}`}
+                          className="text-brand-blue hover:underline"
+                        >
+                          {row.filerName}
+                        </Link>
+                      </span>
                       <a
                         href={edinetPdfUrl(row.docId)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="whitespace-nowrap text-brand-blue hover:underline"
+                        className="whitespace-nowrap text-xs text-brand-blue hover:underline"
                       >
                         原文PDF ↗
                       </a>
-                    </span>
+                    </div>
                   </li>
                 );
               })}

@@ -166,7 +166,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
 
       {topFilers.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">この月に動いた投資家</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">この月に動いた投資家</h2>
           <p className="mb-4 text-sm text-foreground/60">
             開示された取引の推定金額が大きい順（{label}分の合算）。同じ銘柄・同じ日に複数の
             投資家が開示していて提出者を一意に特定できない取引は集計に含めていません
@@ -206,7 +206,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
 
       {topStocks.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-2 text-lg font-bold text-brand-navy">この月に狙われた銘柄</h2>
+          <h2 className="mb-2 text-xl font-bold text-brand-navy">この月に狙われた銘柄</h2>
           <p className="mb-4 text-sm text-foreground/60">
             大口投資家の開示が集まった銘柄を推定金額の大きい順に並べています。
           </p>
@@ -241,7 +241,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
 
       {featured.length > 0 && (
         <section className="mb-10">
-          <h2 className="mb-4 text-lg font-bold text-brand-navy">{label}の注目取引</h2>
+          <h2 className="mb-4 text-xl font-bold text-brand-navy">{label}の注目取引</h2>
           <div className="space-y-4">
             {featured.map((article, i) => (
               <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
@@ -251,7 +251,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
       )}
 
       <section className="mb-10">
-        <h2 className="mb-4 text-lg font-bold text-brand-navy">日別の記事一覧</h2>
+        <h2 className="mb-4 text-xl font-bold text-brand-navy">日別の記事一覧</h2>
         <div className="divide-y divide-rule border-y border-rule">
           {dateGroups.map((group) => {
             const dayAmount = group.articles.reduce((sum, a) => sum + a.dealAmount, 0);

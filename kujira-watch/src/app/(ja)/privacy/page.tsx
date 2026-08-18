@@ -28,7 +28,7 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">広告配信について</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">広告配信について</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトは、第三者配信の広告サービス「Google
           AdSense」を利用しています。Googleを含む第三者配信事業者は、Cookieを使用して、閲覧者の
@@ -67,7 +67,7 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">アクセス解析について</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">アクセス解析について</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトは、閲覧状況の把握のために以下のツール・仕組みを利用しています。いずれも
           氏名・メールアドレス・電話番号といった個人を特定できる情報は取得しません。
@@ -101,7 +101,7 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">Cookieの無効化</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">Cookieの無効化</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           Cookieはブラウザの設定からいつでも無効化・削除できます。ただし無効化した場合、
           本サイトの一部機能が正しく動作しないことがあります。
@@ -109,7 +109,7 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">個人情報の取り扱い</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">個人情報の取り扱い</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトには会員登録・お問い合わせフォーム・コメント機能がなく、閲覧者から氏名・
           メールアドレス等の個人情報を直接取得することはありません。上記の解析・広告配信で
@@ -118,7 +118,7 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">免責事項</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">免責事項</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトの内容に関する免責事項、データソース、運営者情報については
           <Link href="/about" className="text-brand-blue hover:underline">
@@ -130,7 +130,7 @@ export default function PrivacyPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-lg font-bold text-brand-navy">改定について</h2>
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">改定について</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本ポリシーの内容は、法令の変更や利用ツールの追加・変更に応じて予告なく改定することが
           あります。ご質問は
