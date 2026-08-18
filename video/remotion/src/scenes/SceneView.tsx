@@ -112,7 +112,6 @@ const Header: React.FC<{props: ShortProps; kind: Scene['kind']}> = ({props, kind
     <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
       {showTicker ? (
         <div style={{display: 'flex', alignItems: 'center', gap: 16, height: 60}}>
-          <span style={{fontSize: 38}}>🐋</span>
           <span
             style={{fontSize: 36, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}
           >
@@ -642,9 +641,10 @@ const CtaVisual: React.FC<{
 
   return (
     <div style={{textAlign: 'center', transform: `scale(${interpolate(enter, [0, 1], [0.9, 1])})`}}>
-      <div style={{fontSize: 110}}>🐋</div>
-      <div style={{fontSize: 74, fontWeight: 900, color: '#ffffff', marginTop: 8, textShadow: TEXT_SHADOW}}>
-        クジラウォッチ
+      {/* サイトの名乗りは kujira-watch/src/lib/site.ts の SITE_NAME に合わせる。
+          「クジラウォッチ」という名前では運営していないので動画側で勝手に名乗らない */}
+      <div style={{fontSize: 64, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
+        大口投資家の監視ブログ
       </div>
       <div
         style={{
@@ -659,9 +659,6 @@ const CtaVisual: React.FC<{
         }}
       >
         kujira-watch.com
-      </div>
-      <div style={{fontSize: 40, fontWeight: 900, color: '#ffffff', marginTop: 20, textShadow: TEXT_SHADOW}}>
-        「クジラウォッチ」で検索
       </div>
       {/* VOICEVOX利用規約で必須のクレジット表記（音声が無い回も出て害はない） */}
       <div style={{fontSize: 22, color: brand.cream, opacity: 0.5, marginTop: 20}}>

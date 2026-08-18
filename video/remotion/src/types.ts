@@ -108,8 +108,8 @@ export const defaultShortProps: ShortProps = {
     },
     {
       kind: 'cta',
-      caption: 'クジラウォッチで検索',
-      narration: '続きはクジラウォッチで検索してください。',
+      caption: '続きはブログで公開中',
+      narration: '続きは大口投資家の監視ブログで。',
     },
   ],
 };
