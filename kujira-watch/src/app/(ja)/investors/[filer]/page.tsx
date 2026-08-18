@@ -26,6 +26,14 @@ export const revalidate = 300;
 // 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
 const PRERENDERED_FILERS = 100;
 
+// 事前生成は .next/server/app/investors/<URLエンコード済みの提出者名>/ を実際に掘るため、
+// エンコード後がファイル名の上限(255バイト)に触れる提出者はビルドが ENAMETOOLONG で
+// 落ち、デプロイ全体が失敗する（実例: 2026-08-18、全角表記の「Ｆｉｄｅｌｉｔｙ　Ｍａｎａｇｅｍｅｎｔ　＆　
+// Ｒｅｓｅａｒｃｈ　Ｃｏｍｐａｎｙ　ＬＬＣ」は1文字あたり9バイトに膨らみ240字超になる）。
+// 拡張子(.segments/.rsc/.meta等)の余白を見て余裕を持たせ、超える提出者は事前生成の対象から
+// 外す（ルート自体はISRのままなので、当該ページは初回アクセス時に生成される）。
+const MAX_PRERENDER_SEGMENT_LEN = 200;
+
 export async function generateStaticParams() {
   // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で
   // デプロイ全体を落とさないため）。空でもルートはISR扱いのままになる。
@@ -34,8 +42,9 @@ export async function generateStaticParams() {
     return filers
       .slice()
       .sort((a, b) => b.holdingCount - a.holdingCount)
-      .slice(0, PRERENDERED_FILERS)
-      .map((filer) => ({ filer: encodeURIComponent(filer.filerName) }));
+      .map((filer) => ({ filer: encodeURIComponent(filer.filerName) }))
+      .filter(({ filer }) => filer.length <= MAX_PRERENDER_SEGMENT_LEN)
+      .slice(0, PRERENDERED_FILERS);
   } catch {
     return [];
   }
