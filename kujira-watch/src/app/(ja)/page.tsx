@@ -47,7 +47,8 @@ export default async function HomePage() {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
         />
       )}
-      <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">今日の注目取引</h1>
+      {/* 「今日の〜」は日付をまたいで見ると実態とずれるため使わない（日付は直下のサマリーに出る）。 */}
+      <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">注目の取引</h1>
       {contents.length === 0 ? (
         <p className="text-foreground/50">記事がまだありません。</p>
       ) : (

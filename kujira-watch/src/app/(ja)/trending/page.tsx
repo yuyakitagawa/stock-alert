@@ -93,13 +93,15 @@ export default async function TrendingPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          直近{WINDOW_DAYS}日間にEDINETへ提出された大量保有報告書・変更報告書の件数を、
-          その前の{WINDOW_DAYS}日間と比べたランキングです。市場の注目銘柄がわかります
-          （注目投資家は
+          大口投資家の取引（大量保有報告書の提出）が最近増えている銘柄のランキングです。
+          直近{WINDOW_DAYS}日間の件数がその前の{WINDOW_DAYS}日間からどれだけ増えたかで順位づけしており、
+          いま市場で注目が集まっている銘柄がわかります。
+          <br />
+          投資家版は
           <Link href="/ranking/trending" className="text-brand-blue hover:underline">
             開示急増投資家ランキング
           </Link>
-          へ）。詳しくは
+          へ。詳しい見方は
           <Link href="/faq/usage" className="text-brand-blue hover:underline">
             よくある質問
           </Link>
