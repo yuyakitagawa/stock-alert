@@ -13,17 +13,21 @@ import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
-import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
 import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingSnapshot } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { isIndexableArticle } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 
 // Route segment config requires a literal value (cannot import from lib/microcms).
-export const revalidate = 60;
+// 記事本文は公開後ほぼ変わらない（変わるのは株価チャート等の子コンポーネント側）。
+// 60秒だとクローラーのアクセスがほぼ毎回キャッシュ切れに当たって再生成となり、
+// 実測TTFBが1.8〜2.8秒まで悪化していたため1日に延ばす。記事をリライトした場合は
+// 最大1日反映が遅れるが、リライト自体が稀なので許容する。
+export const revalidate = 86400;
 
 // 「同じ銘柄」「同じ投資家」の関連リンクの表示件数。カード表示の関連記事（同じ分類）と
 // 違って一行リンクで並べるため、多すぎない範囲で回遊先を増やす。
@@ -70,6 +74,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: article.title,
     description,
+    // 金額も保有比率の変化も小さい開示（例: 保有比率0.04%・推定額0億円の変更報告書）は
+    // 検索意図を満たさず、テンプレート全体の評価を下げるためインデックスさせない。
+    // followは残すので、この記事から銘柄・投資家ページへのリンクはクロールされる。
+    ...(isIndexableArticle(article) ? {} : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
       ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/articles/${id}` } } : {}),
@@ -79,8 +87,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       url,
       title: article.title,
       description,
-      publishedTime: article.publishedAt,
-      modifiedTime: article.updatedAt,
+      // 記事が外に出す日付は「EDINET開示日(dealDate)」に一本化する。microCMSのupdatedAtは
+      // 分類の付け替えやフィールド削除などの一括バッチでも動いてしまい、「全記事が昨日更新」に
+      // なって更新日の信号として死ぬ。publishedAtも過去分の一括生成（バックフィル）で
+      // 生成日に寄るため、記事が扱う事実の日付とずれる。sitemapの<lastmod>も同じ基準。
+      publishedTime: article.dealDate,
+      modifiedTime: article.dealDate,
       ...(article.eyecatch ? { images: [article.eyecatch.url] } : {}),
     },
     twitter: {
@@ -152,8 +164,10 @@ export default async function ArticleDetailPage({ params }: Props) {
     "@type": "Article",
     headline: article.title,
     url,
-    datePublished: article.publishedAt ?? article.createdAt,
-    dateModified: article.updatedAt,
+    // 日付はEDINET開示日に一本化（generateMetadataのpublishedTimeの注記を参照）。
+    // 画面に出している「開示日」とも一致させ、構造化データと可視コンテンツをずらさない。
+    datePublished: article.dealDate,
+    dateModified: article.dealDate,
     inLanguage: "ja",
     mainEntityOfPage: { "@type": "WebPage", "@id": url },
     about: {
@@ -233,14 +247,6 @@ export default async function ArticleDetailPage({ params }: Props) {
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.title}
         </h1>
-        {article.dealType && (
-          <p className="mb-6 text-xs text-foreground/50">
-            {DEAL_TYPE_DESCRIPTIONS[article.dealType]}{" "}
-            <Link href="/about#dealtype-glossary" className="text-brand-blue hover:underline">
-              分類の一覧を見る
-            </Link>
-          </p>
-        )}
         <Box
           component="dl"
           sx={{
@@ -334,13 +340,19 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Box>
           )}
         </Box>
-        <p className="-mt-2 mb-6 text-xs leading-relaxed text-foreground/40">
-          ※
-          取引日はEDINETで報告書が開示された日です。大量保有報告書は報告義務の発生（実際の売買等）から提出まで法令上最大5営業日のずれがあるため、実際の取引はこれより前に行われている場合があります。本記事は公開情報にもとづく解説であり、特定銘柄の売買を推奨する投資助言ではありません。詳しくは
-          <Link href="/about" className="text-brand-blue hover:underline">
-            免責事項
+        {/* 全記事で同一の説明文（提出期限のズレ・免責・分類の定義）はここに書かず、
+            FAQと/aboutへのリンクに寄せる。同じ定型文が全記事の本文比率を押し上げると
+            「他ページと内容が酷似」と判定されるため（GSCのクロール済み-未登録の主因）。 */}
+        <p className="-mt-2 mb-6 text-xs text-foreground/40">
+          ※ 取引日はEDINETの開示日です（
+          <Link href="/faq/basics" className="text-brand-blue hover:underline">
+            実際の売買とのずれ
           </Link>
-          をご覧ください。
+          ・
+          <Link href="/about" className="text-brand-blue hover:underline">
+            免責
+          </Link>
+          ）
         </p>
         <PriceAfterDisclosure stockCode={article.stockCode} dealDate={article.dealDate} />
         <div
@@ -364,10 +376,7 @@ export default async function ArticleDetailPage({ params }: Props) {
               </>
             )}
           </p>
-          <p className="m-0 mt-1">
-            記事公開: {formatDate(article.publishedAt ?? article.createdAt)}
-            {" ・ "}金額は発行済株式数と株価からの概算です。本記事は投資助言を目的としたものではありません。
-          </p>
+          <p className="m-0 mt-1">金額は発行済株式数と株価からの概算です。</p>
         </div>
         {tags && tags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
@@ -394,16 +403,9 @@ export default async function ArticleDetailPage({ params }: Props) {
         {filerName && (
           <div className="mt-10 border-t border-rule pt-6">
             <h2 className="mb-2 text-xl font-bold text-brand-navy">この取引をした投資家</h2>
-            <p className="text-sm leading-relaxed text-foreground/70">
-              <Link
-                href={`/investors/${encodeURIComponent(filerName)}`}
-                className="font-bold text-brand-blue hover:underline"
-              >
-                {displayFilerName(filerName)}
-              </Link>
-              のページでは、この投資家がEDINETに提出した大量保有報告書をもとに、
-              保有銘柄と保有比率の推移を横断して確認できます。
-            </p>
+            <ActionButton href={`/investors/${encodeURIComponent(filerName)}`}>
+              {displayFilerName(filerName)}の保有銘柄・比率推移を見る
+            </ActionButton>
           </div>
         )}
         <div className="mt-10 border-t border-rule pt-6">

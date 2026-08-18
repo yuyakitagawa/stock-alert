@@ -330,31 +330,35 @@ export async function searchStocks(keyword: string): Promise<StockSearchResult[]
 // dealTypeはカテゴリページの<lastmod>（カテゴリ内の記事の最新updatedAt）算出に使う。
 export type SitemapArticleRef = {
   id: string;
-  updatedAt: string;
   stockCode: string;
   dealDate: string;
   dealType: DealType;
+  dealAmount: number;
+  ratioChangePct?: number;
 };
 
 export const getAllArticlesForSitemap = unstable_cache(
   async (): Promise<SitemapArticleRef[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "dealDate" | "dealType">
+      Pick<Article, "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct">
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,updatedAt,stockCode,dealDate,dealType",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
     });
-    return contents.map(normalizeDealType).map(({ id, updatedAt, stockCode, dealDate, dealType }) => ({
-      id,
-      updatedAt,
-      stockCode,
-      dealDate,
-      dealType,
-    }));
+    return contents
+      .map(normalizeDealType)
+      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct }) => ({
+        id,
+        stockCode,
+        dealDate,
+        dealType,
+        dealAmount,
+        ratioChangePct,
+      }));
   },
   ["sitemap-articles"],
   { revalidate: 3600 }
@@ -404,13 +408,16 @@ export async function getAboutPage() {
 // bodyEn全文を含む重い取得（実測でsitemap応答9秒超の主因）なので、存在判定に使った後は
 // 捨てて軽量な参照だけをunstable_cacheに1時間載せる。
 export const getTranslatedArticlesForSitemap = unstable_cache(
-  async (): Promise<Omit<SitemapArticleRef, "dealDate">[]> => {
+  async (): Promise<SitemapArticleRef[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "dealType" | "titleEn" | "bodyEn">
+      Pick<
+        Article,
+        "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "titleEn" | "bodyEn"
+      >
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,updatedAt,stockCode,dealType,titleEn,bodyEn",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,titleEn,bodyEn",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
@@ -418,7 +425,14 @@ export const getTranslatedArticlesForSitemap = unstable_cache(
     return contents
       .filter((a) => a.titleEn && a.bodyEn)
       .map(normalizeDealType)
-      .map(({ id, updatedAt, stockCode, dealType }) => ({ id, updatedAt, stockCode, dealType }));
+      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct }) => ({
+        id,
+        stockCode,
+        dealDate,
+        dealType,
+        dealAmount,
+        ratioChangePct,
+      }));
   },
   ["sitemap-translated-articles"],
   { revalidate: 3600 }

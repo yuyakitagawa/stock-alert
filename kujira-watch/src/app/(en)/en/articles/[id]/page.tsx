@@ -12,9 +12,12 @@ import { excerptFromHtml, formatDate, formatDealAmount } from "@/lib/format";
 import { getArticleDetail, getArticleList } from "@/lib/microcms";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
+import { isIndexableArticle } from "@/lib/articleIndexability";
 import AdUnit from "@/components/AdUnit";
 
-export const revalidate = 60;
+// ja版と同じ理由でISRの保持を1日にする（記事本文は公開後ほぼ変わらず、60秒だと
+// クローラーのアクセスがほぼ毎回再生成に当たってTTFBが落ちる）。
+export const revalidate = 86400;
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -31,14 +34,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: article.titleEn,
     description,
+    // 低価値な開示はja版と同じ基準でnoindex（判定はlib/articleIndexability.tsに集約）。
+    ...(isIndexableArticle(article) ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: url, languages: { ja: `${SITE_URL}/articles/${id}`, en: url } },
     openGraph: {
       type: "article",
       url,
       title: article.titleEn,
       description,
-      publishedTime: article.publishedAt,
-      modifiedTime: article.updatedAt,
+      // 日付はEDINET開示日に一本化（ja版のgenerateMetadataの注記を参照）。
+      publishedTime: article.dealDate,
+      modifiedTime: article.dealDate,
       ...(article.eyecatch ? { images: [article.eyecatch.url] } : {}),
     },
     twitter: {
@@ -83,8 +89,8 @@ export default async function EnArticleDetailPage({ params }: Props) {
     "@type": "Article",
     headline: article.titleEn,
     url,
-    datePublished: article.publishedAt ?? article.createdAt,
-    dateModified: article.updatedAt,
+    datePublished: article.dealDate,
+    dateModified: article.dealDate,
     inLanguage: "en",
     mainEntityOfPage: { "@type": "WebPage", "@id": url },
     about: {
@@ -152,14 +158,6 @@ export default async function EnArticleDetailPage({ params }: Props) {
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
           {article.titleEn}
         </h1>
-        {article.dealType && (
-          <p className="mb-6 text-xs text-foreground/50">
-            {dealTypeInfo?.description}{" "}
-            <Link href="/en/about#dealtype-glossary" className="text-brand-blue hover:underline">
-              {t.viewClassificationList}
-            </Link>
-          </p>
-        )}
         <Box
           component="dl"
           sx={{

@@ -34,9 +34,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: `${SITE_NAME}｜大量保有報告書から読む大口投資家の動き`,
-    // サイト名を先頭にする（記事タイトルが長いとブラウザタブで末尾が切れ、
-    // サイト名が末尾だと何のサイトか分からなくなるため）。
-    template: `${SITE_NAME}｜%s`,
+    // 固有名（記事タイトル）を先頭にする。全記事の<title>が同じ11文字で始まっていると
+    // 検索結果でどれも同じ見出しに見え、Googleにもタイトルを書き換えられやすい。
+    // ブラウザタブでサイト名が切れる不利はあるが、検索結果での識別を優先する。
+    template: `%s｜${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   alternates: {

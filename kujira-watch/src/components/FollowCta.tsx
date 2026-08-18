@@ -28,7 +28,6 @@ export default function FollowCta() {
       </Typography>
       <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.85)" }}>
         新着記事や大口投資家の動きは、公式X（@{X_SCREEN_NAME}）で毎日お知らせしています。
-        その日いちばん大きい開示は、YouTubeの1分ショート動画でも解説しています。
       </Typography>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
         {/* LINEはフォローよりも通知の到達率が高い最優先チャネルのため、URLが設定

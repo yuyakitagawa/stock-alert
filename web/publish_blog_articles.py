@@ -856,6 +856,33 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
         return None
 
 
+# プロンプトでは650〜900字を指示しているが、実測では中央値445字・全911本が800字未満と
+# 指示がまったく守られていなかった（2026-08-18に公開済み記事を全件計測して判明）。
+# 指示するだけでは効かないので、生成後に実測して不足なら書き直させる。
+MIN_BODY_CHARS = 650
+
+
+def body_char_count(html: str) -> int:
+    """HTMLタグと空白を除いた本文の実文字数（日本語なので文字数がそのまま分量になる）。"""
+    return len(re.sub(r"\s+", "", re.sub(r"<[^>]+>", "", html or "")))
+
+
+def generate_article_body_checked(fact_sheet: dict) -> "dict | None":
+    """generate_article_body()の結果が短すぎたら1回だけ再生成する。
+    2回目も不足していたら、より長い方を採用する（記事を落とすよりは公開する）。"""
+    first = generate_article_body(fact_sheet)
+    if first is None:
+        return None
+    first_len = body_char_count(first.get("body", ""))
+    if first_len >= MIN_BODY_CHARS:
+        return first
+    print(f"    ↻ 本文{first_len}字（下限{MIN_BODY_CHARS}字）のため再生成")
+    second = generate_article_body(fact_sheet)
+    if second is None:
+        return first
+    return second if body_char_count(second.get("body", "")) > first_len else first
+
+
 class MicroCMSPermissionError(Exception):
     """APIキーの権限不足など、リトライしても直らない投稿エラー。"""
 
@@ -963,6 +990,23 @@ def update_article(content_id: str, payload: dict) -> bool:
         return False
 
 
+# 記事化の足切り。EDINETの変更報告書には「保有比率0.04%・推定取得額0億円」のような
+# 実質ニュース価値の無い開示が大量に含まれ、これを記事化するとGoogleに /articles/
+# テンプレート全体を低品質と判断され、新規記事がクロールすらされなくなる
+# （2026-08-18のGSC「検出 - インデックス未登録」の主因）。
+# 表示側の判定は kujira-watch/src/lib/articleIndexability.ts にあり、しきい値は必ず揃えること
+# （ずれると「サイトマップに載っているのにnoindex」という矛盾した指示をGoogleに送る）。
+MIN_DEAL_AMOUNT_OKU = 3.0
+MIN_RATIO_CHANGE_PT = 1.0
+
+
+def is_worth_publishing(deal_amount_oku: float, ratio_change_pt: float) -> bool:
+    """推定金額か保有比率の変化幅のどちらかが基準を超える開示だけを記事にする。"""
+    if deal_amount_oku >= MIN_DEAL_AMOUNT_OKU:
+        return True
+    return abs(ratio_change_pt) >= MIN_RATIO_CHANGE_PT
+
+
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
                        dry_run: bool = False) -> list:
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):
@@ -999,6 +1043,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         # microCMSのratioChangePctと同じ値なので重複判定の突き合わせキーにも使う
         signed_change = round(-change if is_sell else change, 2)
 
+        # 足切りはClaude呼び出し（事業内容・本文生成）より前に置く。API費用も同時に減る。
+        if not is_worth_publishing(deal_amount, signed_change):
+            print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
+            continue
+
         if already_published(code, disc_date, deal_amount, filer_name, signed_change):
             continue
 
@@ -1025,7 +1074,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "company_description": company_description,
             "ratio_change_pct": change,
         }
-        article = generate_article_body(fact_sheet)
+        article = generate_article_body_checked(fact_sheet)
         if article is None:
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
             continue
