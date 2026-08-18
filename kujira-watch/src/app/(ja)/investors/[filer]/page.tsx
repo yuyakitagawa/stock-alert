@@ -42,8 +42,14 @@ export async function generateStaticParams() {
     return filers
       .slice()
       .sort((a, b) => b.holdingCount - a.holdingCount)
-      .map((filer) => ({ filer: encodeURIComponent(filer.filerName) }))
-      .filter(({ filer }) => filer.length <= MAX_PRERENDER_SEGMENT_LEN)
+      // paramsは「素の提出者名」を返す。Next.jsが自身でURLエンコードしてパスを組み立てるため、
+      // ここでencodeURIComponent()すると二重エンコードになり、ページ側の
+      // decodeURIComponent(filer)が元の名前ではなく1段だけ戻した"%E9%87%8E..."を返す。
+      // その名前でSupabaseを引くと0件になり、notFound()が静的な404として焼き付いていた
+      // （2026-08-19まで主要投資家100ページが初回アクセス404・2回目200という状態だった実際の原因）。
+      .map((filer) => ({ filer: filer.filerName }))
+      // ファイル名長の判定はディスクに書かれるURLエンコード後の長さで行う。
+      .filter(({ filer }) => encodeURIComponent(filer).length <= MAX_PRERENDER_SEGMENT_LEN)
       .slice(0, PRERENDERED_FILERS);
   } catch {
     return [];

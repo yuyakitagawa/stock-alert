@@ -219,3 +219,37 @@ ENAMETOOLONGとなり本番ビルドが3回失敗した（並行セッション�
 - 新規記事は常にグループ内の最新になるため、生成側（`web/publish_blog_articles.py`）の変更は不要。
 - テスト: `tests/test_backfill_article_filer_name.py`（6件）追加、Pythonテスト全件成功、
   `npx tsc --noEmit`/`npx eslint src`成功。
+
+## 2026-08-19 追記3: 投資家ページ404の真因は二重エンコードだった（追記1の対策は不発）
+
+追記1で入れた「Supabaseのerrorを握りつぶさない」対策をデプロイ後に再測定したところ、
+主要投資家78件のうち **68件がまだ初回404** で、状況は改善していなかった。仮説（一過性の
+読み取り失敗）が誤りだったので、本番ではなくローカルの`npm run build`で再現させて特定した。
+
+### 再現と特定
+- `npm run build` 後の `.next/server/app/investors/*.meta` を見ると **100件中100件が`"status": 404`**。
+  ビルド時点で404が焼かれていることを確認（本番だけの問題ではなかった）。
+- `getFilerHoldingsUncached()`と`InvestorPage`にログを仕込んで再ビルドした結果:
+
+  ```
+  [DEBUG] page param="%25E9%2587%258E%25E6%259D%2591..."  decoded="%E9%87%8E%E6%9D%91..."
+  [DEBUG] getFilerHoldings name="%E9%87%8E%E6%9D%91..." rows=0
+  ```
+
+- 原因は `generateStaticParams()` が `{ filer: encodeURIComponent(filer.filerName) }` を
+  返していたこと。**Next.jsはparamsの値を自分でURLエンコードしてパスを組み立てる**ため、
+  ここでエンコードすると二重エンコードになる。ページ側の`decodeURIComponent(filer)`は
+  1段だけ戻すので、提出者名ではなく`"%E9%87%8E..."`という文字列でSupabaseを引き、
+  0件 → `notFound()` → 静的な404として焼き付いていた。
+- 事前生成の対象外（＝リクエスト時に生成される）投資家ページが常に200だったのは、
+  実リクエストのparamは1段エンコードで`decodeURIComponent`が正しく効くため。
+  「事前生成された100件だけが404」という観測と完全に一致する。
+- 同じ`generateStaticParams`でも`/category/[category]`は素の日本語カテゴリ名を返していて
+  正常だった。**paramsには素の値を返すのが正しい**。
+
+- [x] 対策: `.map((filer) => ({ filer: filer.filerName }))` に修正。ファイル名長の判定
+      （`MAX_PRERENDER_SEGMENT_LEN`、過去にENAMETOOLONGでビルドが落ちた対策）だけは
+      ディスクに書かれる形に合わせて`encodeURIComponent(filer).length`で行う。
+      ローカルビルドで **100件中404が0件** になることを確認。
+- 追記1の「errorを握りつぶさない」変更自体は残す（真因ではなかったが、本物の読み取り失敗が
+  静かに404として焼かれるのを防ぐ保険として有効）。ただし**あれ単体では何も直っていなかった**。
