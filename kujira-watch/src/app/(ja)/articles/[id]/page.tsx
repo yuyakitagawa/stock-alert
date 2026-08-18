@@ -206,14 +206,16 @@ export default async function ArticleDetailPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="border-b border-rule px-6 py-3 text-xs text-foreground/50">
-        <Link href="/" className="hover:text-brand-blue">トップ</Link>
-        {" / "}
-        <Link href={`/date/${dealDateOnly}`} className="hover:text-brand-blue">
+      {/* 記事タイトルは長く、そのまま置くとパンくずが3行になり本文到達前のノイズに
+          なるため1行ellipsisで切る。SEO用のBreadcrumbList(JSON-LD)はフルタイトルのまま。 */}
+      <nav aria-label="パンくずリスト" className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-foreground/50">
+        <Link href="/" className="flex-none hover:text-brand-blue">トップ</Link>
+        <span aria-hidden>/</span>
+        <Link href={`/date/${dealDateOnly}`} className="flex-none hover:text-brand-blue">
           {formatDate(article.dealDate)}
         </Link>
-        {" / "}
-        <span className="text-foreground/70">{article.title}</span>
+        <span aria-hidden>/</span>
+        <span className="min-w-0 truncate text-foreground/70">{article.title}</span>
       </nav>
       {article.eyecatch && (
         <div className="relative aspect-video w-full bg-section-tint">

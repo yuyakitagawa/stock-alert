@@ -124,10 +124,12 @@ export default async function EnArticleDetailPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label={t.breadcrumbAria} className="border-b border-rule px-6 py-3 text-xs text-foreground/50">
-        <Link href="/en" className="hover:text-brand-blue">{t.top}</Link>
-        {" / "}
-        <span className="text-foreground/70">{article.titleEn}</span>
+      {/* タイトルが長いとパンくずが複数行になるため1行ellipsisで切る(ja版と同じ)。
+          SEO用のBreadcrumbList(JSON-LD)はフルタイトルのまま。 */}
+      <nav aria-label={t.breadcrumbAria} className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-foreground/50">
+        <Link href="/en" className="flex-none hover:text-brand-blue">{t.top}</Link>
+        <span aria-hidden>/</span>
+        <span className="min-w-0 truncate text-foreground/70">{article.titleEn}</span>
       </nav>
       {article.eyecatch && (
         <div className="relative aspect-video w-full bg-section-tint">

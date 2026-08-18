@@ -18,16 +18,13 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
   const max = Math.max(...closes);
   const range = max - min || 1;
 
+  const toX = (i: number) =>
+    (i / (history.length - 1)) * (CHART_WIDTH - CHART_PADDING * 2) + CHART_PADDING;
+  const toY = (close: number) =>
+    CHART_HEIGHT - CHART_PADDING - ((close - min) / range) * (CHART_HEIGHT - CHART_PADDING * 2);
+
   const points = history
-    .map((point, i) => {
-      const x =
-        (i / (history.length - 1)) * (CHART_WIDTH - CHART_PADDING * 2) + CHART_PADDING;
-      const y =
-        CHART_HEIGHT -
-        CHART_PADDING -
-        ((point.close - min) / range) * (CHART_HEIGHT - CHART_PADDING * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
+    .map((point, i) => `${toX(i).toFixed(1)},${toY(point.close).toFixed(1)}`)
     .join(" ");
 
   const first = history[0];
@@ -36,6 +33,13 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
 
   return (
     <Box sx={{ mb: 2 }}>
+      {/* 線だけだと水準感が読めないため、期間高値・安値をキャプションと点線ガイドで示す。
+          文字はSVG内に置くとpreserveAspectRatio="none"の伸縮で歪むため、HTML側に出す。 */}
+      <Typography variant="caption" sx={{ display: "block", textAlign: "right", color: "text.disabled" }}>
+        {locale === "en"
+          ? `High ¥${max.toLocaleString(localeCode)} / Low ¥${min.toLocaleString(localeCode)}`
+          : `期間高値 ${max.toLocaleString(localeCode)}円 ・ 安値 ${min.toLocaleString(localeCode)}円`}
+      </Typography>
       <Box
         component="svg"
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
@@ -49,7 +53,26 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
           last.close.toLocaleString(localeCode)
         )}
       >
+        <line
+          x1={CHART_PADDING}
+          x2={CHART_WIDTH - CHART_PADDING}
+          y1={toY(max)}
+          y2={toY(max)}
+          stroke="var(--rule)"
+          strokeWidth="1"
+          strokeDasharray="4 4"
+        />
+        <line
+          x1={CHART_PADDING}
+          x2={CHART_WIDTH - CHART_PADDING}
+          y1={toY(min)}
+          y2={toY(min)}
+          stroke="var(--rule)"
+          strokeWidth="1"
+          strokeDasharray="4 4"
+        />
         <polyline points={points} fill="none" stroke="var(--color-brand-blue)" strokeWidth="2" />
+        <circle cx={toX(history.length - 1)} cy={toY(last.close)} r="3.5" fill="var(--color-brand-blue)" />
       </Box>
       <Box sx={{ mt: 0.5, display: "flex", justifyContent: "space-between" }}>
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
