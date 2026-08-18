@@ -22,7 +22,7 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import { getArticlesByStockCode } from "@/lib/microcms";
+import { getAllArticlesForSitemap, getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
@@ -32,6 +32,28 @@ import { buildStockFaqItems } from "@/lib/stockFaq";
 // 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次で更新するため、
 // microCMS記事(revalidate:60)とずれない範囲で定期的に再取得する。
 export const revalidate = 300;
+
+// generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
+// 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。
+// 一部でも事前生成しておくとルート全体がISR扱いになり、事前生成していないパラメータも
+// 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
+const PRERENDERED_STOCKS = 100;
+
+export async function generateStaticParams() {
+  // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で
+  // デプロイ全体を落とさないため）。空でもルートはISR扱いのままになる。
+  try {
+    const articles = await getAllArticlesForSitemap();
+    const codes: string[] = [];
+    for (const article of articles) {
+      if (article.stockCode && !codes.includes(article.stockCode)) codes.push(article.stockCode);
+      if (codes.length >= PRERENDERED_STOCKS) break;
+    }
+    return codes.map((code) => ({ code }));
+  } catch {
+    return [];
+  }
+}
 
 type Props = {
   params: Promise<{ code: string }>;

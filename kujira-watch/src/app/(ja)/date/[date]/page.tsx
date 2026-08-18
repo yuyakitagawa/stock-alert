@@ -4,12 +4,36 @@ import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate, formatMonth } from "@/lib/format";
-import { getArticlesByDealDate } from "@/lib/microcms";
+import { getAllArticlesForSitemap, getArticlesByDealDate } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
 // YYYY-MM-DD形式のみ受け付ける（それ以外はmicroCMSへの無駄な問い合わせをせず404にする）。
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+
+// generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
+// 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。
+// 一部でも事前生成しておくとルート全体がISR扱いになり、事前生成していないパラメータも
+// 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
+const PRERENDERED_DATES = 60;
+
+export async function generateStaticParams() {
+  // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で
+  // デプロイ全体を落とさないため）。空でもルートはISR扱いのままになる。
+  try {
+    const articles = await getAllArticlesForSitemap();
+    const dates: string[] = [];
+    for (const article of articles) {
+      const date = article.dealDate.slice(0, 10);
+      if (!dates.includes(date)) dates.push(date);
+      if (dates.length >= PRERENDERED_DATES) break;
+    }
+    return dates.map((date) => ({ date }));
+  } catch {
+    return [];
+  }
+}
 
 type Props = {
   params: Promise<{ date: string }>;

@@ -41,8 +41,14 @@ export const revalidate = 86400;
 const PRERENDERED_ARTICLES = 200;
 
 export async function generateStaticParams() {
-  const articles = await getAllArticlesForSitemap();
-  return articles.slice(0, PRERENDERED_ARTICLES).map((article) => ({ id: article.id }));
+  // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で
+  // デプロイ全体を落とさないため）。空でもルートはISR扱いのままになる。
+  try {
+    const articles = await getAllArticlesForSitemap();
+    return articles.slice(0, PRERENDERED_ARTICLES).map((article) => ({ id: article.id }));
+  } catch {
+    return [];
+  }
 }
 
 // 「同じ銘柄」「同じ投資家」の関連リンクの表示件数。カード表示の関連記事（同じ分類）と
