@@ -29,6 +29,8 @@ MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 # 1回の実行(1日1回)あたりの投稿上限（安全上限。実際にはfeatured_idsとの積集合が
 # 3件を超えることは無い想定だが、念のためのキャップとして残す）。
 TWEETS_PER_RUN = 3
+# 1回の実行でXへ投稿する訂正記事の上限（訂正は稀だが、出た回は他の記事より先に流す）
+CORRECTIONS_PER_RUN = 1
 
 # 無料/Basicプランのポスト上限(280字)に対する安全マージン。全角文字はX側の重み付けで
 # 実質2字分として扱われるため、タイトルが長い場合の切り詰め基準を保守的に設定する。
@@ -53,12 +55,19 @@ def _stock_hashtag(stock_name: str) -> str:
 
 
 def build_tweet_text(title: str, deal_amount_oku: float, is_sell: bool, article_id: str,
-                     stock_name: str = "") -> str:
+                     stock_name: str = "", ratio_change_pt: "float | None" = None,
+                     is_correction: bool = False) -> str:
     """記事タイトル・金額規模からツイート本文を組み立てる。URLはX側でt.co短縮されるため
     文字数上限の計算には含めない。GA4で流入経路をXの自動投稿と識別できるようUTMを付与する。
-    銘柄名タグは、銘柄名でX検索する層のタイムラインに載せるために付ける。"""
-    direction = "売却" if is_sell else "取得"
-    body = f"{title}\n推定{direction}金額: {deal_amount_oku}億円"
+    銘柄名タグは、銘柄名でX検索する層のタイムラインに載せるために付ける。
+    訂正報告書の記事は売買を伴わず推定金額を持たない（dealAmount=0）ため、金額ではなく
+    届出比率の修正幅を2行目に出す。"""
+    if is_correction:
+        pt = ratio_change_pt or 0
+        body = f"{title}\n届出保有比率の訂正: {pt:+.2f}pt"
+    else:
+        direction = "売却" if is_sell else "取得"
+        body = f"{title}\n推定{direction}金額: {deal_amount_oku}億円"
     if len(body) > TWEET_BODY_MAX_CHARS:
         body = body[: TWEET_BODY_MAX_CHARS - 1] + "…"
     url = f"{SITE_URL}/articles/{article_id}?utm_source=x&utm_medium=social&utm_campaign=auto_post"
@@ -214,14 +223,26 @@ def post_top_articles(published: list, featured_ids: set, top_n: int = TWEETS_PE
 
     from web.publish_blog_articles import generate_price_chart_image
 
-    candidates = [a for a in published if a.get("id") and a["id"] in featured_ids]
-    candidates.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
+    featured = [a for a in published if a.get("id") and a["id"] in featured_ids]
+    featured.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
+    # 訂正記事はdealAmount=0のため「注目」枠(dealAmount上位)には決して入らないが、既に公開済みの
+    # 記事の前提を覆す開示なので投稿しないわけにいかない（実例: 2026-08-18、太陽誘電6976の
+    # 15.22%→4.41%訂正で株価-11.5%。既報の「16.61%で大株主化」だけがXに流れたまま残った）。
+    # 修正幅の大きい順に1件だけ先頭に置き、残り枠を通常の「注目」記事で埋める。
+    corrections = [
+        a for a in published
+        if a.get("id") and "訂正" in (a.get("tags") or "") and a["id"] not in featured_ids
+    ]
+    corrections.sort(key=lambda a: abs(a.get("ratioChangePct") or 0), reverse=True)
+    candidates = corrections[:CORRECTIONS_PER_RUN] + featured
 
     posted = 0
     for article in candidates[:top_n]:
         is_sell = "売り" in (article.get("tags") or "")
         text = build_tweet_text(article["title"], article["dealAmount"], is_sell, article["id"],
-                                stock_name=article.get("stockName") or "")
+                                stock_name=article.get("stockName") or "",
+                                ratio_change_pt=article.get("ratioChangePct"),
+                                is_correction="訂正" in (article.get("tags") or ""))
 
         media_id = None
         image_bytes = generate_price_chart_image(article["stockCode"], article["stockName"])

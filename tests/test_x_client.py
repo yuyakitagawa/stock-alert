@@ -288,3 +288,47 @@ def test_post_daily_summary_skips_when_no_articles():
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_post_top_articles_includes_correction_even_when_not_featured():
+    """訂正記事はdealAmount=0で「注目」枠に入らないが、既報の前提を覆す開示なので投稿する
+    （実例: 2026-08-18、太陽誘電6976の15.22%→4.41%訂正）。金額ではなく修正幅を出す。"""
+    published = [
+        {"id": "c1", "title": "太陽誘電（6976）、保有比率を4.41%に訂正", "dealAmount": 0.0,
+         "tags": "EDINET,自動生成,訂正,売り", "ratioChangePct": -10.81,
+         "stockCode": "6976", "stockName": "太陽誘電"},
+    ]
+    posted_texts = []
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
+         mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
+        posted = m.post_top_articles(published, featured_ids=set(), top_n=3)
+
+    assert posted == 1
+    assert "届出保有比率の訂正: -10.81pt" in posted_texts[0]
+    assert "億円" not in posted_texts[0].split("\n")[1]
+
+
+def test_post_top_articles_puts_correction_before_featured_articles():
+    published = [
+        {"id": "f1", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
+         "stockCode": "2222", "stockName": "大きい会社"},
+        {"id": "c1", "title": "訂正記事", "dealAmount": 0.0, "tags": "EDINET,自動生成,訂正",
+         "ratioChangePct": -10.81, "stockCode": "6976", "stockName": "太陽誘電"},
+    ]
+    posted_texts = []
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
+         mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
+        posted = m.post_top_articles(published, featured_ids={"f1"}, top_n=2)
+
+    assert posted == 2
+    assert "訂正記事" in posted_texts[0]
+    assert "大きい取引" in posted_texts[1]
+
+
+def test_build_tweet_text_uses_ratio_change_for_correction():
+    text = m.build_tweet_text("訂正タイトル", 0.0, True, "abc", stock_name="太陽誘電",
+                              ratio_change_pt=-10.81, is_correction=True)
+    assert "届出保有比率の訂正: -10.81pt" in text
+    assert "推定売却金額" not in text
