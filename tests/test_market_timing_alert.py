@@ -301,6 +301,26 @@ def test_build_filer_watch_section_shows_sell_direction_from_ratio_decrease():
     assert "📉売り" in msg
 
 
+def test_recent_holdings_name_falls_back_to_edinet_issuer_name():
+    """code_name_map未収載の新規上場銘柄はEDINET開示のissuer_name（法人格除去）で補う
+    （実例: 2026-08、新規上場543A ARCHIONの記事銘柄名がコードのまま公開された）。"""
+    from unittest import mock
+    import web.market_timing_alert as m
+    rows = [
+        {"issuer_code": "543A", "issuer_name": "ARCHION株式会社", "filer_name": "トヨタ自動車株式会社",
+         "doc_description": "", "holding_ratio": 27.1, "holding_ratio_prior": None},
+        {"issuer_code": "7205", "issuer_name": "日野自動車株式会社", "filer_name": "X",
+         "doc_description": "", "holding_ratio": 6.0, "holding_ratio_prior": 5.0},
+    ]
+    with mock.patch("lib.db.get_edinet_large_holdings_recent", return_value=rows), \
+         mock.patch("tools.scan_large_holdings.load_name_map", return_value={"7205": "日野自動車"}), \
+         mock.patch("tools.scan_large_holdings.is_noise_match", return_value=""):
+        out = m.get_recent_large_holdings(days=30)
+    names = {r["issuer_code"]: r["name"] for r in out}
+    assert names["543A"] == "ARCHION"  # マップ未収載→issuer_nameから株式会社を除去
+    assert names["7205"] == "日野自動車"  # マップ収載済みはそのまま
+
+
 if __name__ == "__main__":
     test_empty_holdings_returns_empty_string()
     test_formats_entries_with_name_and_ratio()
@@ -329,4 +349,5 @@ if __name__ == "__main__":
     test_build_filer_watch_section_empty_returns_empty_string()
     test_build_filer_watch_section_formats_filer_and_target()
     test_build_filer_watch_section_shows_sell_direction_from_ratio_decrease()
-    print("OK: test_market_timing_alert (26 tests)")
+    test_recent_holdings_name_falls_back_to_edinet_issuer_name()
+    print("OK: test_market_timing_alert (27 tests)")

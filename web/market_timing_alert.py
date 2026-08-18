@@ -132,7 +132,10 @@ def get_recent_large_holdings(days: int = LARGE_HOLDINGS_DAYS) -> list[dict]:
     out = []
     for r in rows:
         code = r.get("issuer_code")
-        name = name_map.get(code, "")
+        # code_name_map.json(J-Quants全銘柄マップ)は新規上場銘柄が載るまでラグがあるため、
+        # 無ければEDINET開示のissuer_name（法人格を除去）で補う（実例: 2026-08、新規上場の
+        # 543A ARCHIONが載っておらず記事の銘柄名がコードのまま公開された）。
+        name = name_map.get(code, "") or (r.get("issuer_name") or "").replace("株式会社", "").strip()
         reason = is_noise_match(
             r.get("filer_name", ""), name, r.get("doc_description") or "",
             r.get("holding_ratio"), r.get("holding_ratio_prior"),
