@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatDate, formatMonth } from "@/lib/format";
+import { formatMonth } from "@/lib/format";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getHoldingsInRange } from "@/lib/investors";
 import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
 import DisclosureTrendChart from "@/components/DisclosureTrendChart";
 import TrendingTable from "@/components/TrendingTable";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_URL } from "@/lib/site";
 import { buildTrendingIssuers } from "@/lib/trendingStats";
 import AdUnit from "@/components/AdUnit";
 
@@ -18,7 +18,7 @@ const WINDOW_DAYS = 30;
 const RANKING_COUNT = 10;
 
 const url = `${SITE_URL}/trending`;
-const title = "クジラが急増した銘柄";
+const title = "取引が急増した銘柄";
 
 export const metadata: Metadata = {
   title,
@@ -93,13 +93,17 @@ export default async function TrendingPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          {SITE_NAME}が集計した、直近{WINDOW_DAYS}日間（{formatDate(currentFrom)}〜
-          {formatDate(rangeTo)}）にEDINETへ提出された大量保有報告書・変更報告書の件数を、
-          その前の{WINDOW_DAYS}日間と比べたランキングです。増加件数の多い順に並べています。
-          複数の大口投資家が短期間に集まっている銘柄ほど上位に来ます。
-          「NEW」は前の{WINDOW_DAYS}日間には開示が無く、この期間に初めて動きが出た銘柄です。
-          件数は開示の回数であり、金額の大きさとは別の指標である点にご注意ください
-          （金額規模は各銘柄のページで個別の記事としてご覧いただけます）。
+          直近{WINDOW_DAYS}日間にEDINETへ提出された大量保有報告書・変更報告書の件数を、
+          その前の{WINDOW_DAYS}日間と比べたランキングです。市場の注目銘柄がわかります
+          （注目投資家は
+          <Link href="/ranking/trending" className="text-brand-blue hover:underline">
+            開示急増投資家ランキング
+          </Link>
+          へ）。詳しくは
+          <Link href="/faq/usage" className="text-brand-blue hover:underline">
+            よくある質問
+          </Link>
+          をご覧ください。
         </p>
       </div>
 
