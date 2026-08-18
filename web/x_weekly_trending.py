@@ -1,8 +1,9 @@
 """
 web/x_weekly_trending.py
 
-週次「クジラ急増ランキング」のX自動投稿（x_weekly_post.yml、日曜19:00 JST）。
+週次「クジラ急増ランキング」のX自動投稿（x_weekend_post.yml、土曜18:00 JST）。
 平日の記事投稿・日次サマリーが無い週末のタイムラインを埋め、/trending への導線を作る。
+日曜18:00の「今週のアクティビストの動き」（x_weekly_activists.py）と対になる週末2本立て。
 
 集計ロジックは kujira-watch の /trending ページ（src/lib/trendingStats.ts）のPython移植で、
 直近期間とその前の同じ長さの期間の大量保有・変更報告書の開示件数を Supabase
@@ -17,7 +18,6 @@ import argparse
 import os
 import re
 import sys
-import unicodedata
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
@@ -27,7 +27,16 @@ from dotenv import load_dotenv
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
-from web.x_client import SITE_URL, _stock_hashtag, post_tweet  # noqa: E402
+from web.x_client import SITE_URL, post_tweet  # noqa: E402
+from web.x_post_format import (  # noqa: E402
+    POST_MAX_WEIGHTED,
+    URL_WEIGHTED_UNITS,
+    clean_name,
+    fits,
+    hashtag,
+    label,
+    weighted_len,
+)
 
 # 比較窓。/trendingページは30日窓だが、週次投稿で30日窓を使うと隣り合う日曜の投稿で
 # データが23日分重複してほぼ同じランキングが並んでしまうため、投稿は「直近7日 vs その前7日」
@@ -38,16 +47,12 @@ WINDOW_DAYS = 7
 ISSUER_LIMIT = 3
 FILER_LIMIT = 2
 
-# ラベルの表示上限。EDINETの正式名称は長い（「〇〇ホールディングス株式会社」等）ため
-# 行が2行に折り返して読みにくくなる前に切り詰める。銘柄は末尾に証券コード（+6字）が付き、
-# 投資家は半角の海外ファンド名（Xのカウントは半角1単位）が多いため、投資家側を長めに取る。
-LABEL_MAX_CHARS = 14
-FILER_LABEL_MAX_CHARS = 24
-
-# Xの投稿上限は280単位（全角=2単位、URLは一律23単位）。URL・改行・絵文字の
-# 揺らぎを考慮した安全マージンとして、この単位数以下に収める。
-POST_MAX_WEIGHTED = 270
-URL_WEIGHTED_UNITS = 23
+# ラベルの表示上限（Xのカウント単位。全角=2・半角=1）。EDINETの正式名称は長い
+# （「〇〇ホールディングス株式会社」等）ため、行が2行に折り返す前に切り詰める。
+# 銘柄は末尾に証券コード（+12単位）が付き、投資家は半角の海外ファンド名が多いため
+# 投資家側を長めに取る。
+LABEL_MAX_UNITS = 28
+FILER_LABEL_MAX_UNITS = 48
 
 
 def fetch_holdings(range_from: str, range_to: str) -> list:
@@ -90,26 +95,6 @@ def build_trending(rows: list, current_from: str, key_of, label_of, limit: int) 
     return result[:limit]
 
 
-def _clean_name(name: str) -> str:
-    """EDINET正式名称を表示用に短くする。全角英数（ＮＩＰＰＯＮ等）はNFKCで半角へ寄せ
-    （Xのカウントも全角2単位→半角1単位になり文字数の節約になる）、「株式会社」等の
-    法人格を落とし、空白は1つに畳む。280単位制限下では法人格の4〜5文字が
-    投資家セクション1行ぶんに相当するため。"""
-    text = unicodedata.normalize("NFKC", name or "")
-    text = re.sub(r"株式会社|\(株\)", "", text)  # NFKCで（株）→(株)に寄っている
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _label(text: str, limit: int = LABEL_MAX_CHARS) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def weighted_len(text: str) -> int:
-    """Xの文字数カウントの近似。ASCII=1単位・それ以外（全角・絵文字）=2単位。
-    URLは呼び出し側で23単位として別途加算する。"""
-    return sum(1 if ord(c) < 128 else 2 for c in text)
-
-
 def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
     """投稿本文を組み立てる。急増銘柄が1件も無い週はNone（投稿しない）。
     280単位制限に収まらない場合は投資家→銘柄の順で末尾の行から落とす。"""
@@ -121,13 +106,13 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
     def render(issuer_n: int, filer_n: int) -> str:
         lines = ["🐋 今週クジラの出没が急増（前週比）", "", "📈 銘柄"]
         for i, e in enumerate(issuers[:issuer_n], 1):
-            lines.append(f"{i}. {_label(e['label'])} +{e['delta']}件")
+            lines.append(f"{i}. {label(e['label'], LABEL_MAX_UNITS)} +{e['delta']}件")
         if filers[:filer_n]:
             lines += ["", "👤 投資家"]
             for i, e in enumerate(filers[:filer_n], 1):
-                lines.append(f"{i}. {_label(e['label'], FILER_LABEL_MAX_CHARS)} +{e['delta']}件")
+                lines.append(f"{i}. {label(e['label'], FILER_LABEL_MAX_UNITS)} +{e['delta']}件")
         # ハッシュタグは銘柄名のみ（証券コード付きの「#〇〇1234」は検索で使われないため外す）
-        top_tag = _stock_hashtag(re.sub(r"（[0-9A-Z]+）$", "", issuers[0]["label"]))
+        top_tag = hashtag(re.sub(r"（[0-9A-Z]+）$", "", issuers[0]["label"]))
         tag_line = "#大量保有報告書" + (f" {top_tag}" if top_tag else "")
         lines += ["", "↓ 全ランキング", url, tag_line]
         return "\n".join(lines)
@@ -141,7 +126,7 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
         (1, 0),
     ]:
         text = render(issuer_n, filer_n)
-        if weighted_len(text.replace(url, "")) + URL_WEIGHTED_UNITS <= POST_MAX_WEIGHTED:
+        if fits(text, url):
             return text
     return text  # 銘柄1件でも超える場合はそのまま出す（ラベル切り詰め済みで実際には起きない想定）
 
@@ -162,13 +147,13 @@ def run(dry_run: bool = False) -> int:
     issuers = build_trending(
         rows, current_from,
         key_of=lambda r: r["issuer_code"],
-        label_of=lambda r: f"{_clean_name(r.get('issuer_name')) or r['issuer_code']}（{r['issuer_code']}）",
+        label_of=lambda r: f"{clean_name(r.get('issuer_name')) or r['issuer_code']}（{r['issuer_code']}）",
         limit=ISSUER_LIMIT,
     )
     filers = build_trending(
         rows, current_from,
         key_of=lambda r: r["filer_name"],
-        label_of=lambda r: _clean_name(r["filer_name"]) or r["filer_name"],
+        label_of=lambda r: clean_name(r["filer_name"]) or r["filer_name"],
         limit=FILER_LIMIT,
     )
 

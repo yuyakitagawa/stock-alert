@@ -84,10 +84,13 @@ def test_build_weekly_trending_text_none_when_no_issuers():
 
 def test_clean_name_normalizes_fullwidth_and_strips_corporate_suffix():
     # 全角英字は半角へ（Xのカウント2単位→1単位）、法人格は除去、空白は1つに畳む
-    assert m._clean_name("ＮＩＰＰＯＮ　ＡＣＴＩＶＥ　ＶＡＬＵＥ") == "NIPPON ACTIVE VALUE"
-    assert m._clean_name("玉井商船　株式会社") == "玉井商船"
-    assert m._clean_name("シンプレクス・アセット・マネジメント株式会社") == "シンプレクス・アセット・マネジメント"
-    assert m._clean_name("（株）テスト") == "テスト"
+    assert m.clean_name("ＮＩＰＰＯＮ　ＡＣＴＩＶＥ　ＶＡＬＵＥ") == "NIPPON ACTIVE VALUE"
+    assert m.clean_name("玉井商船　株式会社") == "玉井商船"
+    assert m.clean_name("シンプレクス・アセット・マネジメント株式会社") == "シンプレクス・アセット・マネジメント"
+    assert m.clean_name("（株）テスト") == "テスト"
+    # 英文の法人格は末尾のものだけ落とし、社名の一部（Capital/Management）は残す
+    assert m.clean_name("Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ　Ｃｏｍｐａｎｙ　Ｌｔｄ．") == "Oasis Management"
+    assert m.clean_name("Sand Grove Capital Management LLP") == "Sand Grove Capital Management"
 
 
 def test_build_weekly_trending_text_truncates_long_labels():

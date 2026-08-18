@@ -1,13 +1,18 @@
-name: X Weekly Trending Post
+name: X Weekend Post
 
 on:
   schedule:
-    # 日曜 19:00 JST（UTC 10:00）に週1回。平日の記事投稿（9-19時）・日次サマリー（19時）が
-    # 無い週末のタイムラインを埋める枠。集計は/trendingと同じ「直近30日 vs その前30日」なので
-    # 曜日依存のデータ締め切りは無く、日曜の夜プライム帯に合わせている。
-    - cron: '0 10 * * 0'
+    # 土曜 18:00 JST（UTC 09:00）: 急増ランキング（前週比、web/x_weekly_trending.py）
+    - cron: '0 9 * * 6'
+    # 日曜 18:00 JST（UTC 09:00）: 今週のアクティビストの動き（web/x_weekly_activists.py）
+    - cron: '0 9 * * 0'
   workflow_dispatch:
     inputs:
+      target:
+        description: 'どちらを投稿するか'
+        type: choice
+        options: [trending, activists]
+        default: trending
       dry_run:
         description: '本文の生成・表示のみで投稿しない'
         type: boolean
@@ -47,7 +52,16 @@ jobs:
           echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
 
-      - name: Post weekly trending
+      # scheduleイベントでは inputs.* が空、workflow_dispatchでは github.event.schedule が空になるため、
+      # この2条件のORで「土曜の定期実行 or 手動でtrending指定」を表現できる。
+      - name: Post weekly trending (土曜)
+        if: github.event.schedule == '0 9 * * 6' || inputs.target == 'trending'
         run: |
           cd ~/stock-alert
           python web/x_weekly_trending.py ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Post weekly activists (日曜)
+        if: github.event.schedule == '0 9 * * 0' || inputs.target == 'activists'
+        run: |
+          cd ~/stock-alert
+          python web/x_weekly_activists.py ${{ inputs.dry_run && '--dry-run' || '' }}
