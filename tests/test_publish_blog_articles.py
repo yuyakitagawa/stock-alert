@@ -903,6 +903,18 @@ def test_get_company_description_uses_web_search_and_parses_trailing_json():
     assert captured["tools"][0]["name"] == "web_search"
 
 
+def test_get_company_description_tolerates_raw_newlines_in_json():
+    """説明文の途中に生の改行が入ったJSONでも落ちずに1行へ正規化して取れること
+    （strict=Falseでないと "Invalid control character" で全滅する。2026-08-18に8件発生）。"""
+    raw = '{"description": "美容院チェーンを\n展開する企業"}'
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.get_company_description("9439", "エム・エイチ・グループ")
+    assert result == "美容院チェーンを 展開する企業"
+
+
 def test_get_company_description_returns_empty_without_api_key_when_not_cached():
     with mock.patch.object(m, "ANTHROPIC_API_KEY", ""), \
          mock.patch.object(m.sb, "select_one", return_value=None):
@@ -1117,6 +1129,7 @@ if __name__ == "__main__":
     test_get_company_description_returns_cached_without_calling_claude()
     test_get_company_description_asks_claude_and_persists_when_not_cached()
     test_get_company_description_uses_web_search_and_parses_trailing_json()
+    test_get_company_description_tolerates_raw_newlines_in_json()
     test_get_company_description_returns_empty_without_api_key_when_not_cached()
     test_upload_price_chart_returns_url_on_success()
     test_build_price_chart_for_article_none_when_generation_fails()
@@ -1130,4 +1143,4 @@ if __name__ == "__main__":
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
-    print("全テスト成功 (74件)")
+    print("全テスト成功 (75件)")

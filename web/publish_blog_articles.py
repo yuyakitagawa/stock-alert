@@ -595,8 +595,11 @@ def get_company_description(code: str, name: str) -> str:
         # web_search使用時は検索結果ブロックとテキストブロックが交互に並ぶため、
         # 全テキストを連結して末尾のJSONだけを取り出す。
         text = "\n".join(b.text for b in resp.content if b.type == "text")
-        matches = re.findall(r'\{[^{}]*"description"[^{}]*\}', text)
-        description = json.loads(matches[-1]).get("description", "") if matches else ""
+        matches = re.findall(r'\{[^{}]*"description"[^{}]*\}', text, re.DOTALL)
+        # 説明文の途中に生の改行が入ったJSONを返すことがあり、strict=Falseでないと
+        # "Invalid control character" で丸ごと落ちる（2026-08-18のバックフィルで8件発生）。
+        description = json.loads(matches[-1], strict=False).get("description", "") if matches else ""
+        description = " ".join(description.split())
         description = description or ""
     except Exception as e:
         print(f"    ⚠ 事業内容取得に失敗: {e}")
