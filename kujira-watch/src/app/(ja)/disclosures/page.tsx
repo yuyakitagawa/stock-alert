@@ -142,7 +142,6 @@ async function DisclosuresBody({ searchParams }: Props) {
       />
       <p className="mb-4 text-sm leading-relaxed text-foreground/70">
         EDINETに提出された取引を提出日の新しい順に一覧しています。
-        {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}
         <br />
         ※開示は最大5営業日遅れて提出される点にご注意ください。詳しくは
         <Link href="/faq/usage" className="text-brand-blue hover:underline">
