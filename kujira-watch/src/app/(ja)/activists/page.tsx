@@ -6,10 +6,10 @@ import {
   type ActivistMove,
 } from "@/lib/activists";
 import { displayFilerName, formatDate } from "@/lib/format";
-import { getAllStocksForIndex } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
 import AdUnit from "@/components/AdUnit";
+import { getAllListedCodes } from "@/lib/companyInfo";
 
 export const revalidate = 3600;
 
@@ -32,18 +32,18 @@ export const metadata: Metadata = {
 };
 
 export default async function ActivistsPage() {
-  const [summary, recentMoves, stocksWithArticles] = await Promise.all([
+  const [summary, recentMoves, listedCodes] = await Promise.all([
     getActivistHoldingsSummary(),
     getActivistRecentMoves(MOVES_WINDOW_DAYS).catch(() => []),
-    getAllStocksForIndex().catch(() => []),
+    getAllListedCodes().catch(() => new Set<string>()),
   ]);
 
-  // 銘柄ページ(/stocks/[code])は記事がある銘柄にしか存在しないため、
-  // 記事の無い銘柄はリンクにせずテキストのまま出す（/trendingと同じ規律）。
-  const codesWithArticles = new Set(stocksWithArticles.map((s) => s.stockCode));
+  // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
+  // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
+  // リンクにせずテキストのまま出す（404へのリンクを作らない。/trendingと同じ規律）。
 
   const stockLabel = (issuerName: string, issuerCode: string) =>
-    codesWithArticles.has(issuerCode) ? (
+    listedCodes.has(issuerCode) ? (
       <Link href={`/stocks/${issuerCode}`} className="text-brand-blue hover:underline">
         {issuerName}（{issuerCode}）
       </Link>

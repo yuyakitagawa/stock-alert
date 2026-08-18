@@ -5,7 +5,6 @@ import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
 import RatioTransition from "@/components/RatioTransition";
 import { formatDate } from "@/lib/format";
-import { getAllStocksForIndex } from "@/lib/microcms";
 import {
   DISCLOSURES_PER_PAGE,
   disclosureKindLabel,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/disclosures";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
+import { getAllListedCodes } from "@/lib/companyInfo";
 
 const title = "大量保有報告書の開示速報";
 const description =
@@ -113,14 +113,14 @@ async function DisclosuresBody({ searchParams }: Props) {
   const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
 
   // 銘柄リンクの解決に失敗しても開示一覧自体は表示する（リンク無しに退化するだけ）。
-  const [rows, stocksWithArticles] = await Promise.all([
+  const [rows, listedCodes] = await Promise.all([
     getDisclosuresPage(currentPage, selectedType),
-    getAllStocksForIndex().catch(() => []),
+    getAllListedCodes().catch(() => new Set<string>()),
   ]);
 
-  // 銘柄ページ(/stocks/[code])は記事がある銘柄にしか存在しないため、
-  // 記事の無い銘柄はリンクにせずテキストのまま出す（/trendingと同じ規律）。
-  const codesWithArticles = new Set(stocksWithArticles.map((s) => s.stockCode));
+  // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
+  // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
+  // リンクにせずテキストのまま出す（404へのリンクを作らない。/trendingと同じ規律）。
 
   const groups = groupByDiscDate(rows);
   const url = `${SITE_URL}${buildHref(selectedType, currentPage)}`;
@@ -193,7 +193,7 @@ async function DisclosuresBody({ searchParams }: Props) {
             <ul className="card-grid card-grid-wide">
               {group.rows.map((row) => {
                 const kind = disclosureKindLabel(row);
-                const stockHref = codesWithArticles.has(row.issuerCode)
+                const stockHref = listedCodes.has(row.issuerCode)
                   ? `/stocks/${row.issuerCode}`
                   : null;
                 const time = submitTime(row.submitDate);

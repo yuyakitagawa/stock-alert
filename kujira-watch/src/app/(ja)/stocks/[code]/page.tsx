@@ -45,12 +45,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     getArticlesByStockCode(code, { translatedOnly: true }),
     getCompanyInfo(code),
   ]);
-  if (contents.length === 0) return {};
+  const stockName = contents[0]?.stockName ?? companyInfo?.name;
+  if (!stockName) return {};
 
-  const stockName = contents[0].stockName;
   // 「◯◯ 大量保有」「◯◯ 大株主」の検索意図を狙う（growth_ideas #801-802）。
   const title = `${stockName}（${code}）の大量保有・大株主の動き`;
-  const dealSummaryText = formatStockDealSummary(buildStockDealSummary(contents), stockName, code);
+  const dealSummaryText =
+    contents.length > 0
+      ? formatStockDealSummary(buildStockDealSummary(contents), stockName, code)
+      : `${stockName}（${code}）の大量保有報告書（EDINET）の提出履歴と会社情報。`;
   const description = companyInfo?.description
     ? `${companyInfo.description.replace(/。+$/, "")}。${dealSummaryText}`
     : dealSummaryText;
@@ -60,6 +63,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
+    // 解説記事が1本も無い銘柄は開示テーブルと会社情報だけの薄いページになるため、
+    // 検索エンジンには載せない（サイト全体の品質評価を落とさないための保険）。
+    // 記事が生成されればそのままindex対象に戻る。
+    ...(contents.length === 0 ? { robots: { index: false, follow: true } } : {}),
     alternates: {
       canonical: url,
       ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/stocks/${code}` } } : {}),
@@ -79,11 +86,14 @@ export default async function StockPage({ params }: Props) {
   ]);
   const winRateByFiler = new Map(winRates.map((w) => [w.filerName, w]));
 
-  if (contents.length === 0) {
+  // 解説記事が無くてもEDINET開示・会社情報があれば銘柄ページとして成立させる
+  // （記事化は保有比率上位から順に行うため、開示はあるが記事が無い銘柄が大半を占める）。
+  // 上場銘柄マスターにも開示にも無いコードだけ404にする。
+  const stockName = contents[0]?.stockName ?? companyInfo?.name;
+  if (!stockName) {
     notFound();
   }
 
-  const stockName = contents[0].stockName;
   const url = `${SITE_URL}/stocks/${code}`;
   const dealSummary = buildStockDealSummary(contents);
 
@@ -125,10 +135,12 @@ export default async function StockPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
-      />
+      {contents.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+        />
+      )}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
@@ -211,23 +223,27 @@ export default async function StockPage({ params }: Props) {
           </TableContainer>
         </Box>
       )}
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
-        <p className="mt-1 text-sm text-foreground/80">
-          {formatStockDealSummary(dealSummary, stockName, code)}
-        </p>
-      </div>
-      {groupArticlesByDealDate(contents).map((group) => (
-        <div key={group.date} className="mb-8">
-          <DealDateHeading label={group.label} />
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {group.articles.map((article) => (
-              <ArticleCard key={article.id} article={article} />
-            ))}
+      {contents.length > 0 && (
+        <>
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
+            <p className="mt-1 text-sm text-foreground/80">
+              {formatStockDealSummary(dealSummary, stockName, code)}
+            </p>
           </div>
-          <DealDateSeeMoreLink date={group.date} />
-        </div>
-      ))}
+          {groupArticlesByDealDate(contents).map((group) => (
+            <div key={group.date} className="mb-8">
+              <DealDateHeading label={group.label} />
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {group.articles.map((article) => (
+                  <ArticleCard key={article.id} article={article} />
+                ))}
+              </div>
+              <DealDateSeeMoreLink date={group.date} />
+            </div>
+          ))}
+        </>
+      )}
       <div className="mb-8 border-t border-rule pt-4">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>
         <FaqAccordionList faqs={faqItems} />
