@@ -4,9 +4,10 @@ web/x_weekly_trending.py
 週次「クジラ急増ランキング」のX自動投稿（x_weekly_post.yml、日曜19:00 JST）。
 平日の記事投稿・日次サマリーが無い週末のタイムラインを埋め、/trending への導線を作る。
 
-集計は kujira-watch の /trending ページ（src/lib/trendingStats.ts）のPython移植:
-直近30日と、その前30日の大量保有・変更報告書の開示件数を Supabase
+集計ロジックは kujira-watch の /trending ページ（src/lib/trendingStats.ts）のPython移植で、
+直近期間とその前の同じ長さの期間の大量保有・変更報告書の開示件数を Supabase
 `edinet_large_holdings` から数え、増加件数（delta）の多い順に銘柄・投資家を出す。
+比較窓だけは /trending の30日ではなく7日（前週比）にしている（WINDOW_DAYSのコメント参照）。
 開示データには推定取引金額が無いため、比較の軸は金額ではなく開示件数（/trendingと同じ理由）。
 
 Xの文字数は全角2単位換算の280単位制限があるため、本文を組んだあと
@@ -28,16 +29,20 @@ load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 from lib import supabase_client as sb  # noqa: E402
 from web.x_client import SITE_URL, _stock_hashtag, post_tweet  # noqa: E402
 
-# /trending（kujira-watch/src/app/(ja)/trending/page.tsx）と同じ30日固定窓。
-WINDOW_DAYS = 30
+# 比較窓。/trendingページは30日窓だが、週次投稿で30日窓を使うと隣り合う日曜の投稿で
+# データが23日分重複してほぼ同じランキングが並んでしまうため、投稿は「直近7日 vs その前7日」
+# の前週比にする（毎週内容が入れ替わる。実データ確認: 7日窓でも上位は+12件等の見栄えが出る）。
+WINDOW_DAYS = 7
 
 # 投稿に載せる件数。文字数制限が厳しいため銘柄3・投資家2に絞る（全量は/trendingで見せる）。
 ISSUER_LIMIT = 3
 FILER_LIMIT = 2
 
 # ラベルの表示上限。EDINETの正式名称は長い（「〇〇ホールディングス株式会社」等）ため
-# 行が2行に折り返して読みにくくなる前に切り詰める。
+# 行が2行に折り返して読みにくくなる前に切り詰める。銘柄は末尾に証券コード（+6字）が付き、
+# 投資家は半角の海外ファンド名（Xのカウントは半角1単位）が多いため、投資家側を長めに取る。
 LABEL_MAX_CHARS = 14
+FILER_LABEL_MAX_CHARS = 24
 
 # Xの投稿上限は280単位（全角=2単位、URLは一律23単位）。URL・改行・絵文字の
 # 揺らぎを考慮した安全マージンとして、この単位数以下に収める。
@@ -95,8 +100,8 @@ def _clean_name(name: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _label(text: str) -> str:
-    return text if len(text) <= LABEL_MAX_CHARS else text[: LABEL_MAX_CHARS - 1] + "…"
+def _label(text: str, limit: int = LABEL_MAX_CHARS) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def weighted_len(text: str) -> int:
@@ -114,13 +119,13 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
     url = f"{SITE_URL}/trending?utm_source=x&utm_medium=social&utm_campaign=weekly_trending"
 
     def render(issuer_n: int, filer_n: int) -> str:
-        lines = [f"🐋 クジラ出没が急増中（直近{WINDOW_DAYS}日）", "", "📈 銘柄"]
+        lines = ["🐋 今週クジラの出没が急増（前週比）", "", "📈 銘柄"]
         for i, e in enumerate(issuers[:issuer_n], 1):
             lines.append(f"{i}. {_label(e['label'])} +{e['delta']}件")
         if filers[:filer_n]:
             lines += ["", "👤 投資家"]
             for i, e in enumerate(filers[:filer_n], 1):
-                lines.append(f"{i}. {_label(e['label'])} +{e['delta']}件")
+                lines.append(f"{i}. {_label(e['label'], FILER_LABEL_MAX_CHARS)} +{e['delta']}件")
         # ハッシュタグは銘柄名のみ（証券コード付きの「#〇〇1234」は検索で使われないため外す）
         top_tag = _stock_hashtag(re.sub(r"（[0-9A-Z]+）$", "", issuers[0]["label"]))
         tag_line = "#大量保有報告書" + (f" {top_tag}" if top_tag else "")

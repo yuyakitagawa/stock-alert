@@ -69,7 +69,7 @@ def test_build_weekly_trending_text_includes_entries_url_and_tags():
     ]
     filers = [{"key": "F1", "label": "テスト投資組合", "delta": 4}]
     text = m.build_weekly_trending_text(issuers, filers)
-    assert "🐋 クジラ出没が急増中（直近30日）" in text
+    assert "🐋 今週クジラの出没が急増（前週比）" in text
     assert "1. 玉井商船（1111） +5件" in text
     assert "1. テスト投資組合 +4件" in text
     assert f"{m.SITE_URL}/trending?utm_source=x" in text
