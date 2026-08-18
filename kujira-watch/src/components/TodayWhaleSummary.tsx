@@ -31,8 +31,9 @@ export default function TodayWhaleSummary({
       sx={{ mb: 4, borderTop: 2, borderBottom: 2, borderLeft: 0, borderRight: 0, borderColor: "primary.main", borderRadius: 0 }}
     >
       <CardActionArea component={Link} href={`/date/${dateOnly}`} sx={{ py: 2, px: { xs: 0, sm: 0 } }}>
+        {/* 「今日の〜」だと日付をまたいで見たときに実態とずれるため、データの開示日を主語にする。 */}
         <Typography variant="overline" sx={{ color: "brand.blue" }}>
-          今日の大口取引・{formatDate(date)}
+          {formatDate(date)}の大口取引
         </Typography>
         <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 1.5, rowGap: 0.5 }}>
           <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1, color: "primary.main" }}>
