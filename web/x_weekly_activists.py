@@ -26,7 +26,7 @@ load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
 from lib.edinet import disclosure_kind_label  # noqa: E402
-from web.x_client import SITE_URL, post_tweet  # noqa: E402
+from web.x_client import SITE_URL, post_tweet, upload_media  # noqa: E402
 from web.x_post_format import clean_name, fits, label  # noqa: E402
 
 WINDOW_DAYS = 7
@@ -141,7 +141,7 @@ def build_activist_text(moves: list) -> "str | None":
             "",
             f"今週の動き{len(moves)}件・{fund_count}ファンド",
             url,
-            "#アクティビスト",
+            "#日本株 #アクティビスト",
         ]
         return "\n".join(lines)
 
@@ -150,6 +150,28 @@ def build_activist_text(moves: list) -> "str | None":
         if fits(text, url):
             return text
     return text
+
+
+def build_activist_media(moves: list) -> list:
+    """今週の動きの一覧カードを作ってアップロードする（施策4。失敗時は空リスト＝画像なし）。"""
+    from web.x_card_image import build_list_card
+
+    ordered = sorted(moves, key=lambda m: -abs(m["delta"]))[:5]
+    rows = [
+        (f"{m['stock']}（{m['code']}）",
+         f"{m['delta']:+.2f}pt", "buy" if m["delta"] > 0 else "sell")
+        for m in ordered
+    ]
+    card = build_list_card("今週のアクティビストの動き",
+                           f"{len(moves)}件・{len({m['filer'] for m in moves})}ファンド",
+                           rows, "全一覧は kujira-watch.com/activists")
+    if not card:
+        return []
+    alt = "今週のアクティビストによる保有比率の変化。" + "。".join(
+        f"{left} {right}" for left, right, _ in rows
+    )
+    media_id = upload_media(card, alt_text=alt)
+    return [media_id] if media_id else []
 
 
 def run(dry_run: bool = False) -> int:
@@ -174,7 +196,7 @@ def run(dry_run: bool = False) -> int:
         print(text)
         return 0
 
-    if post_tweet(text):
+    if post_tweet(text, media_ids=build_activist_media(moves), kind="weekly_activists"):
         print("[x_weekly_activists] 🐦 今週のアクティビストの動きを投稿しました")
         return 0
     print("[x_weekly_activists] 投稿に失敗しました")

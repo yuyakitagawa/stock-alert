@@ -90,7 +90,7 @@ def test_build_activist_text_shows_buys_sells_and_summary():
     assert "・カシオ計算機(6952) 5.0→4.0% 3D Investment" in text
     assert "今週の動き2件・2ファンド" in text
     assert f"{m.SITE_URL}/activists?utm_source=x" in text
-    assert text.endswith("#アクティビスト")
+    assert text.endswith("#日本株 #アクティビスト")
 
 
 def test_build_activist_text_none_when_no_moves():
@@ -123,7 +123,9 @@ def test_run_posts_and_skips_appropriately():
          mock.patch.object(m, "build_moves", return_value=[
              {"filer": "F", "stock": "テスト工業", "code": "1111",
               "start": 5.0, "end": 9.0, "delta": 4.0, "is_new": False}]), \
-         mock.patch.object(m, "post_tweet", side_effect=lambda t: posted.append(t) or True):
+         mock.patch.object(m, "build_activist_media", return_value=[]), \
+         mock.patch.object(m, "post_tweet",
+                           side_effect=lambda t, **kw: posted.append(t) or "1"):
         assert m.run(dry_run=False) == 0
     assert len(posted) == 1 and "テスト工業(1111)" in posted[0]
 

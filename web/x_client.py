@@ -5,10 +5,20 @@ publish_blog_articles.py が投稿した新着記事のうち、ホームペー�
 上位3件）に入っている記事だけをX(Twitter)へ自動投稿する。サイトで目立っていない
 小粒な開示が「その日一番大きい」というだけでXに投稿される事態を避けるため、
 「その日新規公開した記事」×「現在サイトで注目表示されている記事」の積集合を対象にする
-（該当が無い地味な日は0件のこともある）。株価チャート画像
-（publish_blog_articles.generate_price_chart_image、記事本文埋め込みと同じもの）を
-添付し、テキストのみの投稿よりタイムライン上で目立つようにする（画像生成に
-失敗した場合は画像無しでテキストのみ投稿する）。
+（該当が無い地味な日は0件のこともある）。訂正報告書だけは既報の前提を覆すため
+「注目」枠に関係なく全件投稿する。
+
+投稿の型は docs/x_post_improvement_1000.md（インフルエンサー1000人コンサル）の
+収束10施策に沿う:
+- 1行目は記事タイトルの流用ではなく「誰が・どの銘柄を・どうした」のフック
+- 銘柄は `社名(証券コード)` を素で本文に書く（株クラはこの表記で検索する）。
+  ハッシュタグは母数のある `#日本株 #大量保有報告書` の2つだけ
+- 添付画像の1枚目は保有比率と金額を大きく出す数字カード（x_card_image）、
+  2枚目が株価チャート。両方にalt（代替テキスト）を付ける
+- URLは本文ではなく自己リプライに置く（本文中の外部リンクはリーチが落ちるため）。
+  X_LINK_IN_REPLY=0 で従来どおり本文に入れるA/Bに戻せる
+- 投稿したtweet_idはSupabaseの`x_posts`に記録し、web/x_metrics.pyが日次で
+  インプレッション等を追記する（どの型が伸びたかを検証できるようにするため）
 
 認証はOAuth 1.0a User Context（X API v2 POST /2/tweetsの投稿、および画像アップロード用の
 v1.1 media/uploadエンドポイントの両方に必須）。
@@ -17,24 +27,44 @@ X Developer Portalで「Read and Write」権限のAppを作成し、以下4つ�
 いずれか未設定の場合は投稿をスキップする（他のステップには影響しない）。
 """
 import os
-import re
+from datetime import datetime, timedelta, timezone
 
 import requests
 from requests_oauthlib import OAuth1
 
+from web.x_post_format import clean_name, fits, label, weighted_len
+
 SITE_URL = "https://kujira-watch.com"
 API_URL = "https://api.x.com/2/tweets"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
+MEDIA_METADATA_URL = "https://api.twitter.com/1.1/media/metadata/create.json"
 
-# 1回の実行(1日1回)あたりの投稿上限（安全上限。実際にはfeatured_idsとの積集合が
-# 3件を超えることは無い想定だが、念のためのキャップとして残す）。
-TWEETS_PER_RUN = 3
-# 1回の実行でXへ投稿する訂正記事の上限（訂正は稀だが、出た回は他の記事より先に流す）
-CORRECTIONS_PER_RUN = 1
+# 1回の実行（＝毎時バッチ1回）で投稿する通常記事の上限。以前は3件で、同一時刻に
+# 同じ型の投稿が3連続でタイムラインに並んでいた（ミュートの引き金になる）。
+# 毎時バッチなので1件ずつでも大きい順に自然と分散する。
+ARTICLES_PER_RUN = 1
 
-# 無料/Basicプランのポスト上限(280字)に対する安全マージン。全角文字はX側の重み付けで
-# 実質2字分として扱われるため、タイトルが長い場合の切り詰め基準を保守的に設定する。
-TWEET_BODY_MAX_CHARS = 120
+# 投稿してよいJSTの時間帯（この外では自動投稿しない）。手動実行やCIの遅延で
+# 深夜に投稿が飛ぶのを防ぐ。
+POST_HOURS_JST = range(8, 23)
+
+# 日次サマリー「本日のクジラ」を投稿するUTC時（12時UTC=21時JST）。
+# 19時JSTは帰宅時間帯でタイムラインが薄いため21時に移した（edinet_blog.ymlの最終便）。
+# 毎時バッチのうちこの1回だけ投稿することで、外部ストレージ無しで1日1回の重複ガードにする。
+DAILY_SUMMARY_UTC_HOUR = 12
+
+# ハッシュタグ。#EDINET は検索母数が小さく、記号を除いた `#社名` は実際には検索されない
+# （株クラは「社名 コード」で検索する）ため、母数のある2つだけに絞り本文側にコードを書く。
+TAGS = "#日本株 #大量保有報告書"
+
+# 1行目に載せる社名・ファンド名の表示上限（Xのカウント単位。全角=2・半角=1）。
+STOCK_LABEL_MAX_UNITS = 26
+FILER_LABEL_MAX_UNITS = 26
+
+
+def link_in_reply() -> bool:
+    """URLを自己リプライに置くか（既定）。X_LINK_IN_REPLY=0 で本文に戻す（A/B用）。"""
+    return os.getenv("X_LINK_IN_REPLY", "1") != "0"
 
 
 def _auth() -> "OAuth1 | None":
@@ -45,37 +75,6 @@ def _auth() -> "OAuth1 | None":
     if not all([key, key_secret, token, token_secret]):
         return None
     return OAuth1(key, key_secret, token, token_secret)
-
-
-def _stock_hashtag(stock_name: str) -> str:
-    """銘柄名をハッシュタグにする。Xのハッシュタグは「・」「（）」等の記号や空白で
-    切れてしまうため、記号類を取り除いた連続文字列にする。空になったら付けない。"""
-    cleaned = re.sub(r"\W+", "", stock_name or "")
-    return f"#{cleaned}" if cleaned else ""
-
-
-def build_tweet_text(title: str, deal_amount_oku: float, is_sell: bool, article_id: str,
-                     stock_name: str = "", ratio_change_pt: "float | None" = None,
-                     is_correction: bool = False) -> str:
-    """記事タイトル・金額規模からツイート本文を組み立てる。URLはX側でt.co短縮されるため
-    文字数上限の計算には含めない。GA4で流入経路をXの自動投稿と識別できるようUTMを付与する。
-    銘柄名タグは、銘柄名でX検索する層のタイムラインに載せるために付ける。
-    訂正報告書の記事は売買を伴わず推定金額を持たない（dealAmount=0）ため、金額ではなく
-    届出比率の修正幅を2行目に出す。"""
-    if is_correction:
-        pt = ratio_change_pt or 0
-        body = f"{title}\n届出保有比率の訂正: {pt:+.2f}pt"
-    else:
-        direction = "売却" if is_sell else "取得"
-        body = f"{title}\n推定{direction}金額: {deal_amount_oku}億円"
-    if len(body) > TWEET_BODY_MAX_CHARS:
-        body = body[: TWEET_BODY_MAX_CHARS - 1] + "…"
-    url = f"{SITE_URL}/articles/{article_id}?utm_source=x&utm_medium=social&utm_campaign=auto_post"
-    tags = "#EDINET #大量保有報告書"
-    stock_tag = _stock_hashtag(stock_name)
-    if stock_tag:
-        tags += f" {stock_tag}"
-    return f"{body}\n{url}\n{tags}"
 
 
 # OAuth 1.0aのアクセストークンは「発行された時点」のスコープを保持する。App権限をRead onlyから
@@ -113,33 +112,99 @@ def verify_auth() -> dict:
     return {"ok": True, "access_level": access_level, "screen_name": screen_name, "reason": ""}
 
 
-def upload_media(image_bytes: bytes) -> "str | None":
-    """画像(PNG)をv1.1 media/uploadへアップロードし、post_tweetのmedia_idに使う
-    media_id_stringを返す。失敗時はNone（呼び出し側は画像無しで投稿を続行する）。"""
+# ---------------------------------------------------------------- 投稿ログ
+
+def log_post(tweet_id: str, kind: str, body: str, **fields) -> None:
+    """投稿をSupabaseの`x_posts`に記録する。どの型が伸びたかを後から検証するための土台で、
+    これが無いとフォーマット変更の効果を判定できない（施策1）。記録の失敗で投稿自体を
+    止めたくないため、例外は握りつぶす。"""
+    try:
+        from lib import supabase_client as sb
+
+        if not sb.is_configured():
+            return
+        row = {
+            "tweet_id": tweet_id,
+            "posted_at": datetime.now(timezone.utc).isoformat(),
+            "kind": kind,
+            "body": body,
+            "body_weighted_len": weighted_len(body),
+            "variant": fields.get("variant") or ("link_in_reply" if link_in_reply() else "link_in_body"),
+            "has_media": bool(fields.get("has_media")),
+            "link_in_reply": bool(fields.get("link_in_reply", link_in_reply())),
+            "stock_code": fields.get("stock_code") or None,
+            "article_id": fields.get("article_id") or None,
+            "reply_to_tweet_id": fields.get("reply_to") or None,
+        }
+        sb.upsert("x_posts", [row], on_conflict="tweet_id")
+    except Exception as e:
+        print(f"  ⚠ x_postsへの記録に失敗（投稿は成功）: {e}")
+
+
+def find_prior_tweet(stock_code: str) -> "str | None":
+    """同じ銘柄について直近に投稿したtweet_id。訂正報告書を既報のスレッドに
+    ぶら下げるために使う（施策7）。見つからなければNone。"""
+    if not stock_code:
+        return None
+    try:
+        from lib import supabase_client as sb
+
+        row = sb.select_one(
+            "x_posts",
+            f"stock_code=eq.{stock_code}&kind=in.(article,correction)"
+            "&order=posted_at.desc&select=tweet_id",
+        )
+        return (row or {}).get("tweet_id")
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------- 投稿API
+
+def upload_media(image_bytes: bytes, alt_text: str = "") -> "str | None":
+    """画像(PNG)をv1.1 media/uploadへアップロードし、post_tweetのmedia_idsに使う
+    media_id_stringを返す。alt_textを渡すと代替テキストも設定する（画像内の数字が
+    読み上げ環境に伝わらない問題への対応。施策4）。失敗時はNone。"""
     auth = _auth()
     if auth is None:
         return None
     try:
         resp = requests.post(
             MEDIA_UPLOAD_URL, auth=auth,
-            files={"media": ("chart.png", image_bytes, "image/png")}, timeout=30,
+            files={"media": ("card.png", image_bytes, "image/png")}, timeout=30,
         )
         if not resp.ok:
             print(f"  ⚠ X画像アップロード失敗 HTTP {resp.status_code}: {resp.text[:200]}")
             return None
-        return resp.json().get("media_id_string")
+        media_id = resp.json().get("media_id_string")
     except Exception as e:
         print(f"  ⚠ X画像アップロード例外: {e}")
         return None
 
+    if media_id and alt_text:
+        try:
+            # alt設定の失敗は投稿を止めない（画像自体は既に上がっている）
+            requests.post(
+                MEDIA_METADATA_URL, auth=auth, timeout=20,
+                json={"media_id": media_id, "alt_text": {"text": alt_text[:1000]}},
+            )
+        except Exception as e:
+            print(f"  ⚠ alt設定に失敗（画像は添付されます）: {e}")
+    return media_id
 
-def post_tweet(text: str, media_id: "str | None" = None) -> bool:
+
+def post_tweet(text: str, media_ids: "list | None" = None, reply_to: "str | None" = None,
+               kind: str = "other", **log_fields) -> "str | None":
+    """投稿し、成功したらtweet_idを返す（失敗時None）。tweet_idはx_postsに記録する。
+    以前はboolを返していたが、それだとどの投稿が伸びたかを後から追えなかった（施策1）。"""
     auth = _auth()
     if auth is None:
-        return False
+        return None
     payload: dict = {"text": text}
-    if media_id:
-        payload["media"] = {"media_ids": [media_id]}
+    if media_ids:
+        payload["media"] = {"media_ids": list(media_ids)}
+    if reply_to:
+        payload["reply"] = {"in_reply_to_tweet_id": reply_to}
     try:
         resp = requests.post(API_URL, auth=auth, json=payload, timeout=20)
         if resp.status_code not in (200, 201):
@@ -149,17 +214,164 @@ def post_tweet(text: str, media_id: "str | None" = None) -> bool:
                 v = verify_auth()
                 print(f"    → トークンの実権限: {v['access_level'] or '不明'}"
                       + (f" / {v['reason']}" if v["reason"] else ""))
-            return False
-        return True
+            return None
+        tweet_id = (resp.json().get("data") or {}).get("id") or ""
     except Exception as e:
         print(f"  ⚠ X投稿例外: {e}")
-        return False
+        return None
+
+    if tweet_id:
+        log_post(tweet_id, kind, text, has_media=bool(media_ids), reply_to=reply_to, **log_fields)
+    return tweet_id or None
 
 
-# 日次サマリー「本日のクジラ」を投稿するUTC時（10時UTC=19時JST、edinet_blog.ymlの最終便）。
-# EDINETの提出は18時以降ゼロ（実データ確認済み）のため19時で当日分は確定している。
-# 毎時バッチのうちこの1回だけ投稿することで、外部ストレージ無しで1日1回の重複ガードにする。
-DAILY_SUMMARY_UTC_HOUR = 10
+def publish(body: str, link_line: str = "", media_ids: "list | None" = None,
+            kind: str = "other", reply_to: "str | None" = None, **log_fields) -> "str | None":
+    """本文とリンクを投稿する。既定ではリンクを親投稿に含めず自己リプライに置く（施策3）。
+    戻り値は親投稿のtweet_id。"""
+    if link_in_reply() and link_line:
+        parent = post_tweet(body, media_ids=media_ids, reply_to=reply_to, kind=kind, **log_fields)
+        if parent:
+            post_tweet(f"↓ 詳細・出典\n{link_line}", reply_to=parent, kind=f"{kind}_link",
+                       stock_code=log_fields.get("stock_code"),
+                       article_id=log_fields.get("article_id"))
+        return parent
+    text = f"{body}\n{link_line}" if link_line else body
+    return post_tweet(text, media_ids=media_ids, reply_to=reply_to, kind=kind, **log_fields)
+
+
+# ---------------------------------------------------------------- 本文の組み立て
+
+def _format_oku(amount_oku: "float | None") -> str:
+    """金額を読みやすい丸めにする。「推定取得金額: 120.5億円」のような機械的な表記より
+    「約120億円」のほうが1行目から視線が滑らない（施策2）。"""
+    v = float(amount_oku or 0)
+    if v >= 10000:
+        return f"約{v / 10000:.1f}兆円"
+    if v >= 10:
+        return f"約{v:,.0f}億円"
+    if v > 0:
+        return f"約{v:.1f}億円"
+    return ""
+
+
+def _ratio_phrase(ratio: "float | None", prior: "float | None", change_pt: "float | None") -> str:
+    """保有比率の変化。前後が分かるときは `3.21%→5.02%`、分からないときはpt差だけ出す。"""
+    if ratio is not None and prior is not None:
+        return f"保有比率 {prior:.2f}%→{ratio:.2f}%"
+    if ratio is not None:
+        return f"保有比率 {ratio:.2f}%"
+    if change_pt is not None:
+        return f"保有比率 {change_pt:+.2f}pt"
+    return ""
+
+
+def article_facts(article: dict) -> dict:
+    """記事dictから投稿・画像・altで共通して使う事実を取り出す。"""
+    tags = article.get("tags") or ""
+    ratio = article.get("holdingRatio")
+    change = article.get("ratioChangePct")
+    prior = None
+    if ratio is not None and change is not None:
+        prior = round(float(ratio) - float(change), 2)
+    is_correction = "訂正" in tags
+    is_sell = "売り" in tags
+    if is_correction:
+        badge, kind = "訂正", "correction"
+    elif is_sell:
+        badge, kind = "売却", "sell"
+    elif prior is not None and prior <= 0.01:
+        badge, kind = "新規取得", "buy"
+    else:
+        badge, kind = "買い増し", "buy"
+    return {
+        "stock_name": clean_name(article.get("stockName") or ""),
+        "stock_code": article.get("stockCode") or "",
+        "filer_name": clean_name(article.get("filerName") or "") or "大口投資家",
+        "ratio": None if ratio is None else float(ratio),
+        "prior": prior,
+        "change_pt": None if change is None else float(change),
+        "amount_label": "" if is_correction else _format_oku(article.get("dealAmount")),
+        "badge": badge,
+        "kind": kind,
+        "is_correction": is_correction,
+    }
+
+
+def build_tweet_text(article: dict, insight: str = "", link_url: str = "") -> str:
+    """記事1件分の投稿本文。1行目は「誰が・どの銘柄を・どうした」のフックにし、
+    2行目に金額と保有比率の変化を置く（施策2）。insightは提出者の文脈1行（施策9）で、
+    文字数に収まらなければ落とす。link_urlを渡すと本文にURLを含める（A/Bのlink_in_body側）。"""
+    f = article_facts(article)
+    stock = label(f["stock_name"], STOCK_LABEL_MAX_UNITS)
+    stock_label = f"{stock}({f['stock_code']})" if f["stock_code"] else stock
+    filer = label(f["filer_name"], FILER_LABEL_MAX_UNITS)
+
+    if f["is_correction"]:
+        head = f"⚠️ 訂正｜{filer}が{stock_label}の届出保有比率を訂正"
+        second = _ratio_phrase(f["ratio"], f["prior"], f["change_pt"])
+        if f["change_pt"] is not None:
+            second = f"{second}（{f['change_pt']:+.2f}pt）" if second else f"{f['change_pt']:+.2f}pt"
+    else:
+        mark = "🔴" if f["kind"] == "sell" else "🟢"
+        verb = {"売却": "を売却", "新規取得": "を新規取得", "買い増し": "を買い増し"}[f["badge"]]
+        head = f"{mark} {filer}が{stock_label}{verb}"
+        parts = [p for p in (f["amount_label"], _ratio_phrase(f["ratio"], f["prior"], f["change_pt"])) if p]
+        second = "・".join(parts)
+
+    def assemble(with_insight: bool, with_link: bool) -> str:
+        lines = [head]
+        if second:
+            lines.append(second)
+        if with_insight and insight:
+            lines.append(insight)
+        if with_link and link_url:
+            lines.append(link_url)
+        lines.append(TAGS)
+        return "\n".join(lines)
+
+    want_link = bool(link_url)
+    for with_insight in (True, False):
+        text = assemble(with_insight, want_link)
+        if fits(text, link_url) if want_link else weighted_len(text) <= 270:
+            return text
+    return assemble(False, want_link)
+
+
+def build_article_alt(article: dict) -> str:
+    """数字カード画像の代替テキスト（施策4）。画像でしか出ていない数字を文章で持たせる。"""
+    f = article_facts(article)
+    stock = f"{f['stock_name']}（{f['stock_code']}）" if f["stock_code"] else f["stock_name"]
+    ratio = _ratio_phrase(f["ratio"], f["prior"], f["change_pt"]) or "保有比率の記載なし"
+    amount = f"、推定{f['amount_label']}" if f["amount_label"] else ""
+    return f"{f['badge']}。{f['filer_name']}が{stock}。{ratio}{amount}。出典はEDINET提出書類。"
+
+
+def build_article_media(article: dict) -> list:
+    """記事投稿の添付画像を作ってアップロードする。1枚目=数字カード、2枚目=株価チャート。
+    どちらも失敗しうるので、取れたものだけをmedia_idsとして返す。"""
+    from web.publish_blog_articles import generate_price_chart_image
+    from web.x_card_image import build_deal_card
+
+    f = article_facts(article)
+    media_ids = []
+    date_label = (article.get("dealDate") or "")[:10].replace("-", "/")
+    card = build_deal_card(
+        f["stock_name"], f["stock_code"], f["filer_name"], f["badge"],
+        f["ratio"], f["prior"], f["amount_label"] or "―", date_label, kind=f["kind"],
+    )
+    if card:
+        media_id = upload_media(card, alt_text=build_article_alt(article))
+        if media_id:
+            media_ids.append(media_id)
+    chart = generate_price_chart_image(article.get("stockCode") or "", f["stock_name"])
+    if chart:
+        media_id = upload_media(
+            chart, alt_text=f"{f['stock_name']}（{f['stock_code']}）の直近3ヶ月の終値推移チャート。",
+        )
+        if media_id:
+            media_ids.append(media_id)
+    return media_ids
 
 
 def _summary_line(article: dict, sign: str) -> str:
@@ -169,11 +381,12 @@ def _summary_line(article: dict, sign: str) -> str:
     return f"{article['stockName']} {sign}{article['dealAmount']}億円{filer_part}"
 
 
-def build_daily_summary_text(articles: list, date_str: str, total_count: "int | None" = None) -> "str | None":
+def build_daily_summary_text(articles: list, date_str: str, total_count: "int | None" = None,
+                             link_url: str = "") -> "str | None":
     """その日(dealDate)の記事一覧から「本日のクジラ」日次サマリー本文を組み立てる。
     0件の日はNone（投稿しない）。articlesはmicroCMSのdealAmount降順取得を前提とする。
     total_countはmicroCMSのtotalCount（100件超の日にarticlesが先頭100件に切れていても
-    件数表示を正確にするため）。"""
+    件数表示を正確にするため）。link_urlを渡した場合のみ本文にURLを入れる（A/B用）。"""
     if not articles:
         return None
     count = total_count if total_count is not None else len(articles)
@@ -187,19 +400,59 @@ def build_daily_summary_text(articles: list, date_str: str, total_count: "int | 
         lines += ["🟢 最大買い増し", _summary_line(buys[0], "+"), ""]
     if sells:
         lines += ["🔴 最大売却", _summary_line(sells[0], "-"), ""]
-    url = f"{SITE_URL}/date/{date_str}?utm_source=x&utm_medium=social&utm_campaign=daily_summary"
-    # 最大買い増し・最大売却として取り上げた銘柄のタグを付ける（銘柄名検索からの流入用）。
-    stock_tags = " ".join(
-        dict.fromkeys(
-            tag
-            for group in (buys, sells)
-            if group
-            if (tag := _stock_hashtag(group[0].get("stockName") or ""))
-        )
-    )
-    tag_line = "#EDINET #大量保有報告書" + (f" {stock_tags}" if stock_tags else "")
-    lines += [f"↓ 今日の全{count}件", url, tag_line]
+    if link_url:
+        lines += [f"↓ 今日の全{count}件", link_url]
+    lines.append(TAGS)
     return "\n".join(lines)
+
+
+def build_daily_summary_media(articles: list, date_str: str, total_count: int) -> list:
+    """日次サマリーの一覧カード。これまでテキストのみで、画像が無い投稿はタイムラインで
+    埋もれていた（施策4）。"""
+    from web.x_card_image import build_list_card
+
+    month_day = f"{int(date_str[5:7])}/{int(date_str[8:10])}"
+    total_oku = round(sum(a.get("dealAmount") or 0 for a in articles), 1)
+    rows = []
+    for a in articles[:5]:
+        is_sell = "売り" in (a.get("tags") or "")
+        code = a.get("stockCode") or ""
+        left = f"{a.get('stockName') or ''}（{code}）" if code else (a.get("stockName") or "")
+        rows.append((left, f"{'-' if is_sell else '+'}{a.get('dealAmount') or 0}億円",
+                     "sell" if is_sell else "buy"))
+    card = build_list_card(
+        f"本日のクジラ｜{month_day}の大量保有報告書",
+        f"{total_count}件・合計{total_oku}億円",
+        rows,
+        f"全{total_count}件は kujira-watch.com/date/{date_str}",
+    )
+    if not card:
+        return []
+    alt = (f"{month_day}の大量保有報告書は{total_count}件、合計約{total_oku}億円。"
+           + "。".join(f"{left} {right}" for left, right, _ in rows))
+    media_id = upload_media(card, alt_text=alt)
+    return [media_id] if media_id else []
+
+
+def build_video_tweet_text(props: dict, youtube_id: str) -> str:
+    """YouTube Shorts公開時のクロス投稿本文。propsはvideo/build_script.pyのbuild()が
+    返す動画props（stockName / filerName / direction / dealAmountOku）。"""
+    direction = "売却" if props.get("direction") == "sell" else "取得"
+    # 動画タイトル(youtube_client.build_title)と同じく、提出者名が無い記事は汎用の主語にする
+    filer = clean_name(props.get("filerName") or "") or "大口投資家"
+    stock = clean_name(props.get("stockName") or "")
+    body = (f"🎬 1分解説｜{label(filer, FILER_LABEL_MAX_UNITS)}が"
+            f"{label(stock, STOCK_LABEL_MAX_UNITS)}を{_format_oku(props.get('dealAmountOku'))}{direction}")
+    url = f"https://youtube.com/shorts/{youtube_id}"
+    return f"{body}\n{url}\n#Shorts {TAGS}"
+
+
+# ---------------------------------------------------------------- 投稿の実行
+
+def within_posting_hours(now_utc=None) -> bool:
+    """自動投稿してよい時間帯（JST 8〜22時）か。深夜の自動投稿を防ぐ（施策5）。"""
+    now = now_utc or datetime.now(timezone.utc)
+    return (now + timedelta(hours=9)).hour in POST_HOURS_JST
 
 
 def fetch_articles_by_deal_date(date_str: str) -> "tuple[list, int]":
@@ -230,10 +483,8 @@ def fetch_articles_by_deal_date(date_str: str) -> "tuple[list, int]":
 
 
 def post_daily_summary(now_utc=None, force: bool = False) -> bool:
-    """「本日のクジラ」日次サマリーを1日1回(19時JST=10時UTCの最終便のみ)Xへ投稿する。
+    """「本日のクジラ」日次サマリーを1日1回(21時JST=12時UTCの最終便のみ)Xへ投稿する。
     forceで時刻ガードを無視できる（手動実行用）。該当時刻以外・0件・認証未設定はFalse。"""
-    from datetime import datetime, timedelta, timezone
-
     if _auth() is None:
         return False
     now = now_utc or datetime.now(timezone.utc)
@@ -241,76 +492,69 @@ def post_daily_summary(now_utc=None, force: bool = False) -> bool:
         return False
     today_jst = (now + timedelta(hours=9)).strftime("%Y-%m-%d")
     articles, total_count = fetch_articles_by_deal_date(today_jst)
-    text = build_daily_summary_text(articles, today_jst, total_count)
+    url = f"{SITE_URL}/date/{today_jst}?utm_source=x&utm_medium=social&utm_campaign=daily_summary"
+    text = build_daily_summary_text(articles, today_jst, total_count,
+                                    link_url="" if link_in_reply() else url)
     if text is None:
         print("  [x_client] 本日の開示記事が無いため日次サマリーをスキップします")
         return False
-    if post_tweet(text):
+    media_ids = build_daily_summary_media(articles, today_jst, total_count)
+    tweet_id = publish(text, link_line=f"↓ 今日の全{total_count}件\n{url}" if link_in_reply() else "",
+                       media_ids=media_ids, kind="daily")
+    if tweet_id:
         print(f"  🐦 X日次サマリー投稿: {today_jst} 全{total_count}件")
         return True
     return False
 
 
-def post_top_articles(published: list, featured_ids: set, top_n: int = TWEETS_PER_RUN) -> int:
+def post_top_articles(published: list, featured_ids: set, top_n: int = ARTICLES_PER_RUN,
+                      now_utc=None) -> int:
     """publish_blog_articles.build_and_publish()が返すpublishedリスト（今日新規公開した
-    記事）のうち、featured_ids（publish_blog_articles.get_featured_article_ids()、
-    現在ホームページで「注目」表示されている記事id）にも含まれるものだけを、
-    金額規模(dealAmount)が大きい順にXへ投稿する。積集合が無ければ0件（dry-run記事や
-    featured_idsに入らない小粒な開示は対象外）。X認証情報が未設定の場合も0を返す。"""
+    記事）のうち、featured_ids（現在ホームページで「注目」表示されている記事id）にも
+    含まれるものを金額規模順に最大top_n件、加えて訂正報告書の記事を全件Xへ投稿する。
+
+    訂正記事はdealAmount=0のため「注目」枠(dealAmount上位)には決して入らないが、既に公開済みの
+    記事の前提を覆す開示なので件数制限を設けない（実例: 2026-08-18、太陽誘電6976の
+    15.22%→4.41%訂正で株価-11.5%。既報の「16.61%で大株主化」だけがXに流れたまま残った）。
+    同じ銘柄で過去に投稿していれば、その投稿への自己リプライとしてぶら下げる（施策7）。"""
     if _auth() is None:
         print("[x_client] X_API_KEY等が未設定のため投稿をスキップします")
         return 0
+    if not within_posting_hours(now_utc):
+        print("[x_client] 投稿時間帯(JST 8〜22時)外のため投稿をスキップします")
+        return 0
 
-    from web.publish_blog_articles import generate_price_chart_image
+    from web.x_insight import build_insight_line, fetch_filer_context
 
-    featured = [a for a in published if a.get("id") and a["id"] in featured_ids]
+    featured = [a for a in published if a.get("id") and a["id"] in featured_ids
+                and "訂正" not in (a.get("tags") or "")]
     featured.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
-    # 訂正記事はdealAmount=0のため「注目」枠(dealAmount上位)には決して入らないが、既に公開済みの
-    # 記事の前提を覆す開示なので投稿しないわけにいかない（実例: 2026-08-18、太陽誘電6976の
-    # 15.22%→4.41%訂正で株価-11.5%。既報の「16.61%で大株主化」だけがXに流れたまま残った）。
-    # 修正幅の大きい順に1件だけ先頭に置き、残り枠を通常の「注目」記事で埋める。
-    corrections = [
-        a for a in published
-        if a.get("id") and "訂正" in (a.get("tags") or "") and a["id"] not in featured_ids
-    ]
+    corrections = [a for a in published if a.get("id") and "訂正" in (a.get("tags") or "")]
     corrections.sort(key=lambda a: abs(a.get("ratioChangePct") or 0), reverse=True)
-    candidates = corrections[:CORRECTIONS_PER_RUN] + featured
+    candidates = corrections + featured[:top_n]
 
     posted = 0
-    for article in candidates[:top_n]:
-        is_sell = "売り" in (article.get("tags") or "")
-        text = build_tweet_text(article["title"], article["dealAmount"], is_sell, article["id"],
-                                stock_name=article.get("stockName") or "",
-                                ratio_change_pt=article.get("ratioChangePct"),
-                                is_correction="訂正" in (article.get("tags") or ""))
+    for article in candidates:
+        is_correction = "訂正" in (article.get("tags") or "")
+        context = fetch_filer_context(article.get("filerName") or "", article.get("stockCode") or "")
+        insight = build_insight_line(clean_name(article.get("stockName") or ""), context)
+        url = (f"{SITE_URL}/articles/{article['id']}"
+               "?utm_source=x&utm_medium=social&utm_campaign=auto_post")
+        text = build_tweet_text(article, insight=insight,
+                                link_url="" if link_in_reply() else url)
+        media_ids = build_article_media(article)
+        reply_to = find_prior_tweet(article.get("stockCode") or "") if is_correction else None
 
-        media_id = None
-        image_bytes = generate_price_chart_image(article["stockCode"], article["stockName"])
-        if image_bytes:
-            media_id = upload_media(image_bytes)
-
-        if post_tweet(text, media_id):
-            print(f"  🐦 X投稿: {article['title']}" + ("（チャート付き）" if media_id else ""))
+        tweet_id = publish(text, link_line=url if link_in_reply() else "", media_ids=media_ids,
+                           kind="correction" if is_correction else "article",
+                           reply_to=reply_to,
+                           stock_code=article.get("stockCode"), article_id=article.get("id"))
+        if tweet_id:
+            print(f"  🐦 X投稿: {text.splitlines()[0]}"
+                  + (f"（画像{len(media_ids)}枚）" if media_ids else "")
+                  + ("（既報へのリプ）" if reply_to else ""))
             posted += 1
     return posted
-
-
-def build_video_tweet_text(props: dict, youtube_id: str) -> str:
-    """YouTube Shorts公開時のクロス投稿本文。propsはvideo/build_script.pyのbuild()が
-    返す動画props（stockName / filerName / direction / dealAmountOku）。"""
-    direction = "売却" if props.get("direction") == "sell" else "取得"
-    # 動画タイトル(youtube_client.build_title)と同じく、提出者名が無い記事は汎用の主語にする
-    filer = props.get("filerName") or "大口投資家"
-    stock = props.get("stockName") or ""
-    body = f"🎬 1分解説｜{stock}を{filer}が推定{props.get('dealAmountOku')}億円{direction}"
-    if len(body) > TWEET_BODY_MAX_CHARS:
-        body = body[: TWEET_BODY_MAX_CHARS - 1] + "…"
-    url = f"https://youtube.com/shorts/{youtube_id}"
-    tags = "#Shorts #大量保有報告書"
-    stock_tag = _stock_hashtag(stock)
-    if stock_tag:
-        tags += f" {stock_tag}"
-    return f"{body}\n{url}\n{tags}"
 
 
 def post_video_tweet(props: dict, youtube_id: str) -> bool:
@@ -318,7 +562,7 @@ def post_video_tweet(props: dict, youtube_id: str) -> bool:
     if _auth() is None:
         print("[x_client] X_API_KEY等が未設定のため動画クロス投稿をスキップします")
         return False
-    return post_tweet(build_video_tweet_text(props, youtube_id))
+    return post_tweet(build_video_tweet_text(props, youtube_id), kind="video") is not None
 
 
 if __name__ == "__main__":

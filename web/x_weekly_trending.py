@@ -16,7 +16,6 @@ Xの文字数は全角2単位換算の280単位制限があるため、本文を
 """
 import argparse
 import os
-import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -27,13 +26,12 @@ from dotenv import load_dotenv
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
-from web.x_client import SITE_URL, post_tweet  # noqa: E402
+from web.x_client import SITE_URL, TAGS, post_tweet, upload_media  # noqa: E402
 from web.x_post_format import (  # noqa: E402
     POST_MAX_WEIGHTED,
     URL_WEIGHTED_UNITS,
     clean_name,
     fits,
-    hashtag,
     label,
     weighted_len,
 )
@@ -111,10 +109,9 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
             lines += ["", "👤 投資家"]
             for i, e in enumerate(filers[:filer_n], 1):
                 lines.append(f"{i}. {label(e['label'], FILER_LABEL_MAX_UNITS)} +{e['delta']}件")
-        # ハッシュタグは銘柄名のみ（証券コード付きの「#〇〇1234」は検索で使われないため外す）
-        top_tag = hashtag(re.sub(r"（[0-9A-Z]+）$", "", issuers[0]["label"]))
-        tag_line = "#大量保有報告書" + (f" {top_tag}" if top_tag else "")
-        lines += ["", "↓ 全ランキング", url, tag_line]
+        # ハッシュタグは母数のある2つだけ（`#社名` は実際には検索されないため付けない。
+        # 銘柄は本文のランキング行に `社名（コード）` として素で載っている）
+        lines += ["", "↓ 全ランキング", url, TAGS]
         return "\n".join(lines)
 
     # 収まるまで行を減らす（最低でも銘柄1件は残す）。
@@ -129,6 +126,23 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
         if fits(text, url):
             return text
     return text  # 銘柄1件でも超える場合はそのまま出す（ラベル切り詰め済みで実際には起きない想定）
+
+
+def build_trending_media(issuers: list, filers: list) -> list:
+    """ランキングの一覧カードを作ってアップロードする（施策4。失敗時は空リスト＝画像なし）。"""
+    from web.x_card_image import build_list_card
+
+    rows = [(e["label"], f"+{e['delta']}件", "buy") for e in issuers[:3]]
+    rows += [(f"👤 {e['label']}", f"+{e['delta']}件", "none") for e in filers[:2]]
+    card = build_list_card("大口投資家の取引急増ランキング", "前週比（直近7日 vs その前7日）",
+                           rows, "全ランキングは kujira-watch.com/trending")
+    if not card:
+        return []
+    alt = "大量保有報告書の提出が前週比で増えた銘柄と投資家のランキング。" + "。".join(
+        f"{left} {right}" for left, right, _ in rows
+    )
+    media_id = upload_media(card, alt_text=alt)
+    return [media_id] if media_id else []
 
 
 def run(dry_run: bool = False) -> int:
@@ -167,7 +181,7 @@ def run(dry_run: bool = False) -> int:
         print(text)
         return 0
 
-    if post_tweet(text):
+    if post_tweet(text, media_ids=build_trending_media(issuers, filers), kind="weekly_trending"):
         print("[x_weekly_trending] 🐦 週次急増ランキングを投稿しました")
         return 0
     print("[x_weekly_trending] 投稿に失敗しました")

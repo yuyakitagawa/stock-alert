@@ -1221,9 +1221,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
 
         direction_mark = "📝訂正" if is_correction else ("📉売り" if is_sell else "📈買い")
         amount_mark = f"{signed_change:+.2f}pt" if is_correction else f"推定{deal_amount}億円"
+        # holdingRatioはX投稿の1行目（「〇%まで買い増し」）と数字カード画像で使う。
+        # microCMSのスキーマは変えたくないので、送信するpayloadではなく戻り値にだけ足す。
         if dry_run:
             print(f"  [dry-run] {direction_mark} {name}({code}) {disc_date} {amount_mark}\n    title: {payload['title']}")
-            published.append({**payload, "id": None})
+            published.append({**payload, "id": None, "holdingRatio": h["holding_ratio"]})
             continue
 
         if is_correction:
@@ -1255,7 +1257,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             break
         if content_id:
             print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} → id={content_id}")
-            published.append({**payload, "id": content_id})
+            published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
 

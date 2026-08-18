@@ -74,7 +74,8 @@ def test_build_weekly_trending_text_includes_entries_url_and_tags():
     assert "1. テスト投資組合 +4件" in text
     assert f"{m.SITE_URL}/trending?utm_source=x" in text
     # ハッシュタグは銘柄名のみ（証券コードは付けない）
-    assert "#大量保有報告書 #玉井商船" in text
+    # ハッシュタグは母数のある2つだけ（`#社名` は検索されないため付けない）
+    assert text.endswith("#日本株 #大量保有報告書")
     assert "#玉井商船1111" not in text
 
 
@@ -116,7 +117,9 @@ def test_run_posts_text_built_from_fetched_rows():
     rows = [_row("1111", "A社", "F1", recent[0]), _row("1111", "A社", "F2", recent[1])]
     posted = []
     with mock.patch.object(m, "fetch_holdings", return_value=rows), \
-         mock.patch.object(m, "post_tweet", side_effect=lambda t: posted.append(t) or True):
+         mock.patch.object(m, "build_trending_media", return_value=[]), \
+         mock.patch.object(m, "post_tweet",
+                           side_effect=lambda t, **kw: posted.append(t) or "1"):
         assert m.run(dry_run=False) == 0
     assert len(posted) == 1
     assert "A社（1111）" in posted[0]
