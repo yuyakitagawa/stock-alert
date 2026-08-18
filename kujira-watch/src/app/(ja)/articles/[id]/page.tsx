@@ -14,7 +14,12 @@ import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
 import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, linkifyFilerNames } from "@/lib/format";
-import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
+import {
+  getAllArticlesForSitemap,
+  getArticleDetail,
+  getArticleList,
+  getArticlesByStockCode,
+} from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingSnapshot } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { isIndexableArticle } from "@/lib/articleIndexability";
@@ -28,6 +33,17 @@ import AdUnit from "@/components/AdUnit";
 // 実測TTFBが1.8〜2.8秒まで悪化していたため1日に延ばす。記事をリライトした場合は
 // 最大1日反映が遅れるが、リライト自体が稀なので許容する。
 export const revalidate = 86400;
+
+// 直近の記事はビルド時に静的生成する。Next 16では generateStaticParams の無い動的セグメントは
+// リクエストごとのSSR（実測: x-vercel-cache: MISS / cache-control: no-store）になり、
+// クローラーが同じURLを取りに来るたびにサーバー実行になる。新着記事ほどクロールされる頻度が
+// 高いので、直近分だけ事前生成してCDNから即返す（それ以前の記事は従来どおり都度レンダリング）。
+const PRERENDERED_ARTICLES = 200;
+
+export async function generateStaticParams() {
+  const articles = await getAllArticlesForSitemap();
+  return articles.slice(0, PRERENDERED_ARTICLES).map((article) => ({ id: article.id }));
+}
 
 // 「同じ銘柄」「同じ投資家」の関連リンクの表示件数。カード表示の関連記事（同じ分類）と
 // 違って一行リンクで並べるため、多すぎない範囲で回遊先を増やす。
