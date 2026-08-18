@@ -129,6 +129,15 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
       ffmpeg不在・測定失敗時は元のmp4のまま続行する（音量のために投稿を止めない）。
 - [x] 実データ（8/18のエムスリー動画）で -25.15 → -14.2 LUFS を確認。テスト54件pass。
 
+## TikTok分割アップロード（2026-08-18 オーナー指摘「gitactionsだとtiktokには来ない」）
+- [x] 8/18 22:14の太陽誘電便で **TikTokだけ投稿されず**（YouTubeは成功: taYdcHPdlSg）。
+      原因は `HTTP 400 invalid_params: The chunk size is invalid`。Content Posting APIは
+      **64MB未満のファイルしか1チャンクで送れない**が、この動画は背景素材が重く85MBあり、
+      それまでの40〜49MBの動画では偶然通っていた。
+- [x] `video/tiktok_client._chunk_plan()` を追加し、64MB以上は10MB単位に分割して
+      `chunk_size`/`total_chunk_count` を申告、`_upload_bytes()` が Content-Range 付きで
+      チャンクごとにPUTする（端数は最終チャンクに載せる）。64MB未満は従来どおり丸ごと1回。
+
 ## 状態（2026-08-18）
 - Anthropic APIの使用量上限は解消済み。8/17の定時便でYouTube投稿成功
   （電通総研×Oasis: https://youtube.com/shorts/-_-Z4m_6HFU ）。

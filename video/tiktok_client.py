@@ -30,6 +30,29 @@ SITE_URL = "https://kujira-watch.com"
 # TikTokのキャプション上限は2200字だが、表示上は冒頭しか読まれないため短く保つ。
 CAPTION_MAX_CHARS = 150
 
+# アップロードのチャンク制約（Content Posting API）。1チャンクで丸ごと送れるのは
+# 64MB未満のファイルだけで、それ以上を1チャンクで init すると
+# 「The chunk size is invalid」で400になる（2026-08-18: 85MBの動画で実際に失敗し、
+# YouTubeには上がったのにTikTokだけ来ない状態になった）。
+CHUNK_MIN_BYTES = 5 * 1024 * 1024
+CHUNK_MAX_BYTES = 64 * 1024 * 1024
+MAX_CHUNK_COUNT = 1000
+# 分割時の1チャンク。5MB以上64MB以下ならどの値でもよく、リトライ単位が大きくなりすぎない10MBを採る。
+DEFAULT_CHUNK_BYTES = 10 * 1024 * 1024
+
+
+def _chunk_plan(size: int) -> "tuple[int, int]":
+    """(chunk_size, total_chunk_count) を返す。
+    64MB未満は丸ごと1チャンク。それ以上は10MB単位に割り、割り切れない端数は最終チャンクへ
+    まとめて載せる（TikTokは total_chunk_count = video_size // chunk_size を期待する）。"""
+    if size < CHUNK_MAX_BYTES:
+        return size, 1
+    chunk = DEFAULT_CHUNK_BYTES
+    if size // chunk > MAX_CHUNK_COUNT:
+        # 10GB超。チャンク数の上限に収まるようチャンクを大きくする
+        chunk = max(CHUNK_MIN_BYTES, min(CHUNK_MAX_BYTES, -(-size // MAX_CHUNK_COUNT)))
+    return chunk, size // chunk
+
 
 def _access_token() -> "str | None":
     client_key = os.getenv("TIKTOK_CLIENT_KEY")
@@ -104,23 +127,30 @@ def build_caption(props: dict) -> str:
     return "\n".join(lines)
 
 
-def _upload_bytes(upload_url: str, video_path: str) -> bool:
+def _upload_bytes(upload_url: str, video_path: str, chunk_size: int, total_chunks: int) -> bool:
+    """init で申告したチャンク割りのとおりに PUT する。1チャンクなら丸ごと1回。"""
     size = os.path.getsize(video_path)
     try:
         with open(video_path, "rb") as f:
-            resp = requests.put(
-                upload_url,
-                headers={
-                    "Content-Type": "video/mp4",
-                    "Content-Length": str(size),
-                    "Content-Range": f"bytes 0-{size - 1}/{size}",
-                },
-                data=f,
-                timeout=600,
-            )
-        if not resp.ok:
-            print(f"  ⚠ TikTok動画転送失敗 HTTP {resp.status_code}: {resp.text[:300]}")
-            return False
+            for i in range(total_chunks):
+                start = i * chunk_size
+                # 端数は最終チャンクにまとめて載せる（init の申告と一致させる）
+                end = size - 1 if i == total_chunks - 1 else start + chunk_size - 1
+                f.seek(start)
+                data = f.read(end - start + 1)
+                resp = requests.put(
+                    upload_url,
+                    headers={
+                        "Content-Type": "video/mp4",
+                        "Content-Length": str(len(data)),
+                        "Content-Range": f"bytes {start}-{end}/{size}",
+                    },
+                    data=data,
+                    timeout=600,
+                )
+                if not resp.ok:
+                    print(f"  ⚠ TikTok動画転送失敗 HTTP {resp.status_code}: {resp.text[:300]}")
+                    return False
         return True
     except Exception as e:
         print(f"  ⚠ TikTok動画転送例外: {e}")
@@ -156,12 +186,12 @@ def upload(video_path: str, props: dict) -> "str | None":
         return None
 
     size = os.path.getsize(video_path)
+    chunk_size, total_chunks = _chunk_plan(size)
     source_info = {
         "source": "FILE_UPLOAD",
         "video_size": size,
-        # 64MB未満は1チャンクで送れる。この動画は20秒・数MBなので常に1チャンク。
-        "chunk_size": size,
-        "total_chunk_count": 1,
+        "chunk_size": chunk_size,
+        "total_chunk_count": total_chunks,
     }
 
     direct = os.getenv("TIKTOK_DIRECT_POST") == "1"
@@ -208,7 +238,7 @@ def upload(video_path: str, props: dict) -> "str | None":
         print(f"  ⚠ TikTokアップロード開始例外: {e}")
         return None
 
-    if not _upload_bytes(upload_url, video_path):
+    if not _upload_bytes(upload_url, video_path, chunk_size, total_chunks):
         return None
 
     if direct:

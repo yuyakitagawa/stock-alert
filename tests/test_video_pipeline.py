@@ -511,6 +511,41 @@ def test_tiktok_direct_post_falls_back_to_self_only_when_public_not_allowed(tmp_
     assert sent["payload"]["post_info"]["privacy_level"] == "SELF_ONLY"
 
 
+def test_tiktok_chunk_plan_sends_small_file_in_one_chunk():
+    """64MB未満は丸ごと1チャンク（従来どおり）。"""
+    assert tk._chunk_plan(40 * 1024 * 1024) == (40 * 1024 * 1024, 1)
+
+
+def test_tiktok_chunk_plan_splits_file_over_64mb():
+    """64MB以上を1チャンクで申告するとinitが400（chunk size is invalid）になるため分割する。
+    2026-08-18に85MBの動画で実際に失敗し、TikTokだけ投稿されなかった。"""
+    size = 85 * 1024 * 1024
+    chunk, total = tk._chunk_plan(size)
+    assert tk.CHUNK_MIN_BYTES <= chunk <= tk.CHUNK_MAX_BYTES
+    assert total == size // chunk
+    assert total > 1
+
+
+def test_tiktok_upload_bytes_covers_whole_file_across_chunks(tmp_path):
+    """分割送信でも Content-Range が先頭から末尾まで隙間なく並び、端数は最終チャンクに載る。"""
+    video = tmp_path / "v.mp4"
+    size = 25
+    video.write_bytes(b"x" * size)
+    ranges = []
+    lengths = []
+
+    def fake_put(url, **kwargs):
+        ranges.append(kwargs["headers"]["Content-Range"])
+        lengths.append(len(kwargs["data"]))
+        return mock.Mock(ok=True)
+
+    with mock.patch("requests.put", side_effect=fake_put):
+        assert tk._upload_bytes("https://up", str(video), 10, 2) is True
+
+    assert ranges == [f"bytes 0-9/{size}", f"bytes 10-{size - 1}/{size}"]
+    assert sum(lengths) == size
+
+
 # ---------------- 音量正規化（配信基準 -14 LUFS） ----------------
 
 LOUDNORM_JSON = """
