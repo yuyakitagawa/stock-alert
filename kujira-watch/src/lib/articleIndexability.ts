@@ -25,6 +25,68 @@ export function isIndexableArticle(article: ArticleIndexabilityInput): boolean {
   return Math.abs(article.ratioChangePct ?? 0) >= INDEXABLE_MIN_RATIO_CHANGE_PT;
 }
 
+// ---------------------------------------------------------------------------
+// カニバリゼーション対策: 同一「銘柄 × 提出者」で最新の開示1本だけをインデックス対象にする。
+// ---------------------------------------------------------------------------
+//
+// EDINETは同じ提出者が同じ銘柄について変更報告書を何度も出す（実測2026-08-19:
+// 直近3か月で5件以上の開示がある提出者が165件、同一銘柄に最大39件の開示）。
+// これを全部インデックスさせると「提出者名」「銘柄名＋大株主」という同一クエリに
+// 自サイトの記事が何本も並び、内部リンクも評価も分散してどれも順位が上がらない
+// （同日のGSC実測: 上位クエリ8件すべて提出者名、掲載順位9.3〜24.5）。
+//
+// 保有比率は最新の開示が最も正確なので、各グループで最新1本だけを残す。過去の開示は
+// /stocks/[code] の「保有比率の推移」と /investors/[filer] から辿れるため情報は失われない
+// （ページは残し、noindex,followでリンクだけ生かす）。
+
+export type SupersedableArticle = ArticleIndexabilityInput & {
+  id: string;
+  stockCode?: string | null;
+  filerName?: string | null;
+  dealDate?: string | null;
+};
+
+// 開示日 → 推定金額 → ID の順で全順序を作る。サイトマップ（全記事）と記事詳細ページ
+// （同一銘柄の記事）では入力の並び順が違うため、順序に依存しない比較で勝者を決める。
+function comparePreference(a: SupersedableArticle, b: SupersedableArticle): number {
+  const dateA = a.dealDate ?? "";
+  const dateB = b.dealDate ?? "";
+  if (dateA !== dateB) return dateA > dateB ? 1 : -1;
+  const amountA = a.dealAmount ?? 0;
+  const amountB = b.dealAmount ?? 0;
+  if (amountA !== amountB) return amountA > amountB ? 1 : -1;
+  return a.id < b.id ? 1 : -1;
+}
+
+/**
+ * 同一「銘柄 × 提出者」で最新以外の記事IDを返す。
+ *
+ * 判定対象は isIndexableArticle() を通った記事だけにする。足切り済みの記事を「最新」として
+ * 採用すると、グループ内で唯一価値のある記事まで巻き添えでnoindexになる。
+ *
+ * 呼び出し側はグループの全メンバーを含むリストを渡すこと（記事詳細ページは
+ * getArticlesByStockCode()＝同一銘柄・最大100件、サイトマップは全記事）。
+ * 同一銘柄の記事が100件を超えない限り両者の判定は一致する。
+ */
+export function supersededArticleIds(articles: SupersedableArticle[]): Set<string> {
+  const winnerByGroup = new Map<string, SupersedableArticle>();
+  const superseded = new Set<string>();
+  for (const article of articles) {
+    if (!article.stockCode || !article.filerName) continue;
+    if (!isIndexableArticle(article)) continue;
+    const key = `${article.stockCode}\u0000${article.filerName}`;
+    const current = winnerByGroup.get(key);
+    if (!current) {
+      winnerByGroup.set(key, article);
+      continue;
+    }
+    const articleWins = comparePreference(article, current) > 0;
+    winnerByGroup.set(key, articleWins ? article : current);
+    superseded.add(articleWins ? current.id : article.id);
+  }
+  return superseded;
+}
+
 // 英語版(/en)の対象判定。日本語版より明確に厳しくする。
 //
 // GSCの実測（2026-08-18・直近3か月・ページ`/en/`）は 表示33回・クリック0・平均掲載順位23.3で、

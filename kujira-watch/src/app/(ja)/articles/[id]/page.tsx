@@ -22,7 +22,7 @@ import {
 } from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingSnapshot } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
-import { isIndexableArticle, isIndexableEnArticle } from "@/lib/articleIndexability";
+import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -80,6 +80,14 @@ function RelatedArticleLinks({ articles }: { articles: ArticleContent[] }) {
   );
 }
 
+// 同一銘柄の記事一覧（最大100件）で判定する。サイトマップ側は全記事で同じ関数を通しており、
+// 1銘柄あたりの記事が100件を超えない限り両者の判定は一致する（超えた場合はindex側に倒れる）。
+async function isSupersededArticle(id: string, stockCode: string | undefined): Promise<boolean> {
+  if (!stockCode) return false;
+  const { contents } = await getArticlesByStockCode(stockCode);
+  return supersededArticleIds(contents).has(id);
+}
+
 type Props = {
   params: Promise<{ id: string }>;
 };
@@ -91,17 +99,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const description = `${article.stockName}(${article.stockCode})の${article.dealType}を解説。${excerptFromHtml(article.body)}`;
   const url = `${SITE_URL}/articles/${id}`;
+  // 同一「銘柄×提出者」の記事は最新1本だけをindexする（カニバリゼーション対策。
+  // 詳細はlib/articleIndexability.tsのsupersededArticleIds()を参照）。
+  const superseded = await isSupersededArticle(id, article.stockCode);
+  const indexable = isIndexableArticle(article) && !superseded;
   // 英語版がnoindexの記事にhreflangを張るとnoindexページを代替言語として宣言することになるため、
   // 英語版を出す基準を満たす記事だけ相互参照する。
-  const hasEn = Boolean(article.titleEn && article.bodyEn) && isIndexableEnArticle(article);
+  const hasEn = Boolean(article.titleEn && article.bodyEn) && isIndexableEnArticle(article) && !superseded;
 
   return {
     title: article.title,
     description,
-    // 金額も保有比率の変化も小さい開示（例: 保有比率0.04%・推定額0億円の変更報告書）は
-    // 検索意図を満たさず、テンプレート全体の評価を下げるためインデックスさせない。
+    // 金額も保有比率の変化も小さい開示（例: 保有比率0.04%・推定額0億円の変更報告書）と、
+    // 同一「銘柄×提出者」で最新に置き換わった記事は、検索意図を満たさず
+    // テンプレート全体の評価を下げるためインデックスさせない。
     // followは残すので、この記事から銘柄・投資家ページへのリンクはクロールされる。
-    ...(isIndexableArticle(article) ? {} : { robots: { index: false, follow: true } }),
+    ...(indexable ? {} : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
       ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/articles/${id}` } } : {}),

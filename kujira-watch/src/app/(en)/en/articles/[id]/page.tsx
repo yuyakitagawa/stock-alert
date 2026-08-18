@@ -9,15 +9,23 @@ import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
-import { getArticleDetail, getArticleList } from "@/lib/microcms";
+import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
-import { isIndexableEnArticle } from "@/lib/articleIndexability";
+import { isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import AdUnit from "@/components/AdUnit";
 
 // ja版と同じ理由でISRの保持を1日にする（記事本文は公開後ほぼ変わらず、60秒だと
 // クローラーのアクセスがほぼ毎回再生成に当たってTTFBが落ちる）。
 export const revalidate = 86400;
+
+// ja版と同じカニバリ判定（同一「銘柄×提出者」で最新1本だけをindex）。判定を揃えないと
+// ja側がnoindexなのにen側がindexという食い違いが出る。
+async function isSupersededArticle(id: string, stockCode: string | undefined): Promise<boolean> {
+  if (!stockCode) return false;
+  const { contents } = await getArticlesByStockCode(stockCode);
+  return supersededArticleIds(contents).has(id);
+}
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -30,12 +38,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const description = `${article.stockName}(${article.stockCode}) — ${DEAL_TYPE_EN[article.dealType].label}. ${excerptFromHtml(article.bodyEn)}`;
   const url = `${SITE_URL}/en/articles/${id}`;
+  const superseded = await isSupersededArticle(id, article.stockCode);
 
   return {
     title: article.titleEn,
     description,
     // 英語版はja版より厳しい基準でnoindex（判定はlib/articleIndexability.tsに集約）。
-    ...(isIndexableEnArticle(article) ? {} : { robots: { index: false, follow: true } }),
+    ...(isIndexableEnArticle(article) && !superseded ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: url, languages: { ja: `${SITE_URL}/articles/${id}`, en: url } },
     openGraph: {
       type: "article",

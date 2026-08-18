@@ -69,8 +69,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const stockName = contents[0]?.stockName ?? companyInfo?.name;
   if (!stockName) return {};
 
-  // 「◯◯ 大量保有」「◯◯ 大株主」の検索意図を狙う（growth_ideas #801-802）。
-  const title = `${stockName}（${code}）の大量保有・大株主の動き`;
+  // GSC実測(2026-08-19)の上位クエリは提出者名ばかりで、銘柄側のクエリを1件も取れていなかった
+  // （唯一の銘柄系クエリが「newmo 株主」で掲載順位10.2）。検索されるのは「銘柄名 大株主」
+  // 「銘柄名 株主構成」の形なので、タイトルとH1をその語に揃える。「の動き」のような
+  // 検索されない語を削り、社名が長い銘柄でもキーワードが省略されない位置に置く。
+  // 「大量保有報告書」はdescriptionとページ本文側に残す。
+  const title = `${stockName}（${code}）の大株主・株主構成`;
   const dealSummaryText =
     contents.length > 0
       ? formatStockDealSummary(buildStockDealSummary(contents), stockName, code)
@@ -170,7 +174,7 @@ export default async function StockPage({ params }: Props) {
         <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
       <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${companyInfo?.description ? "mb-2" : "mb-6"}`}>
-        {stockName}（{code}）
+        {stockName}（{code}）の大株主・株主構成
       </h1>
       {companyInfo?.description && (
         <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>

@@ -6,7 +6,7 @@ import {
 } from "@/lib/microcms";
 import { getAllFilers } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
-import { isIndexableArticle, isIndexableEnArticle } from "@/lib/articleIndexability";
+import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { CATEGORIES, DEAL_TYPES } from "@/types/article";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
@@ -157,19 +157,32 @@ async function investorEntries(): Promise<MetadataRoute.Sitemap> {
 // 「無視する」と明言している値なので出さない。全子サイトマップはloc/lastmodの統一形式。
 async function articleEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
-  return articles.filter(isIndexableArticle).map((article) => ({
-    url: `${SITE_URL}/articles/${article.id}`,
-    lastModified: article.dealDate,
-  }));
+  // 同一「銘柄×提出者」で最新の1本以外はnoindexにしているため、サイトマップからも外す
+  // （載せたままだと「サイトマップに載っているのにnoindex」を送ることになる）。
+  const superseded = supersededArticleIds(articles);
+  return articles
+    .filter((article) => isIndexableArticle(article) && !superseded.has(article.id))
+    .map((article) => ({
+      url: `${SITE_URL}/articles/${article.id}`,
+      lastModified: article.dealDate,
+    }));
 }
 
 async function enArticleEntries(): Promise<MetadataRoute.Sitemap> {
-  const translatedArticles = await getTranslatedArticlesForSitemap();
+  // カニバリ判定は全記事（英訳の有無に関わらず）で行う。英訳済みの記事だけでグループを
+  // 作ると、記事詳細ページ側（同一銘柄の全記事で判定）と結果がずれる。
+  const [translatedArticles, allArticles] = await Promise.all([
+    getTranslatedArticlesForSitemap(),
+    getAllArticlesForSitemap(),
+  ]);
+  const superseded = supersededArticleIds(allArticles);
   // 英語版は日本語版より厳しい基準（lib/articleIndexability.tsの注記を参照）。
-  return translatedArticles.filter(isIndexableEnArticle).map((article) => ({
-    url: `${SITE_URL}/en/articles/${article.id}`,
-    lastModified: article.dealDate,
-  }));
+  return translatedArticles
+    .filter((article) => isIndexableEnArticle(article) && !superseded.has(article.id))
+    .map((article) => ({
+      url: `${SITE_URL}/en/articles/${article.id}`,
+      lastModified: article.dealDate,
+    }));
 }
 
 export default async function sitemap(props: {

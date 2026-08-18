@@ -335,29 +335,32 @@ export type SitemapArticleRef = {
   dealType: DealType;
   dealAmount: number;
   ratioChangePct?: number;
+  // 同一「銘柄×提出者」の記事を1本に絞る判定(supersededArticleIds)に使う。
+  filerName?: string;
 };
 
 export const getAllArticlesForSitemap = unstable_cache(
   async (): Promise<SitemapArticleRef[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct">
+      Pick<Article, "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "filerName">
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
     });
     return contents
       .map(normalizeDealType)
-      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct }) => ({
+      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct, filerName }) => ({
         id,
         stockCode,
         dealDate,
         dealType,
         dealAmount,
         ratioChangePct,
+        filerName,
       }));
   },
   ["sitemap-articles"],
@@ -412,12 +415,19 @@ export const getTranslatedArticlesForSitemap = unstable_cache(
     const contents = await client.getAllContents<
       Pick<
         Article,
-        "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "titleEn" | "bodyEn"
+        | "stockCode"
+        | "dealDate"
+        | "dealType"
+        | "dealAmount"
+        | "ratioChangePct"
+        | "filerName"
+        | "titleEn"
+        | "bodyEn"
       >
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,titleEn,bodyEn",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,titleEn,bodyEn",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
@@ -425,13 +435,14 @@ export const getTranslatedArticlesForSitemap = unstable_cache(
     return contents
       .filter((a) => a.titleEn && a.bodyEn)
       .map(normalizeDealType)
-      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct }) => ({
+      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct, filerName }) => ({
         id,
         stockCode,
         dealDate,
         dealType,
         dealAmount,
         ratioChangePct,
+        filerName,
       }));
   },
   ["sitemap-translated-articles"],
