@@ -1,43 +1,83 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { displayFilerName } from "@/lib/format";
 import type { TrendingEntry } from "@/lib/trendingStats";
+
+// 表示に必要なものはサーバー側で解決して渡す。hrefやnoteを関数propsで受け取ると
+// クライアントコンポーネントの境界を越えられないため。
+export type TrendingItem = TrendingEntry & {
+  href: string | null;
+  // 社名だけでは何の会社か分からないため、銘柄一覧では事業内容(無ければ業種)を1行添える。
+  note?: string | null;
+};
+
+// 初回に描画する件数と、スクロールで追加する単位。
+// SSRされるのは初回分だけなので、この値がクローラーから見える件数の下限になる。
+const INITIAL_COUNT = 30;
+const STEP = 30;
 
 // 期間比較（直近N日 vs 前N日）の増加件数ランキング。
 // /trending（銘柄）と/ranking/trending（投資家）で共用する。
 // 表だと375pxで横スクロールが必要（minWidth 420px）だったため、1件=1カードにして
 // 数値をカード内に折り返す。見出し行が無くなるぶん、各数値にラベルを付けている。
+// 件数制限を外して全件出すようにしたところ/trendingが466件・HTML 1.08MB（gzip 106KB）に
+// なり、perf_check.ymlの閾値100KBを超えたため、下端まで来たら30件ずつ足すオートページャーにする。
+// 全件を一度に描画しないだけで、データ自体は最初から手元にあるので追加取得は発生しない。
 export default function TrendingTable({
-  entries,
+  items,
   headLabel,
   windowDays,
-  hrefOf,
-  noteOf,
 }: {
-  entries: TrendingEntry[];
+  items: TrendingItem[];
   headLabel: string;
   windowDays: number;
-  hrefOf: (entry: TrendingEntry) => string | null;
-  // 社名だけでは何の会社か分からないため、銘柄一覧では事業内容(無ければ業種)を1行添える。
-  noteOf?: (entry: TrendingEntry) => string | null;
 }) {
+  const [shown, setShown] = useState(INITIAL_COUNT);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const hasMore = shown < items.length;
+
+  const showMore = useCallback(() => {
+    setShown((prev) => Math.min(prev + STEP, items.length));
+  }, [items.length]);
+
+  // 画面下端のsentinelが見えたら次の30件を描画する（ページネーションの代わり）。
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) showMore();
+      },
+      { rootMargin: "600px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, showMore]);
+
   return (
     <>
-      <p className="kicker mb-2 text-foreground/50">{headLabel}</p>
+      <p className="kicker mb-2 text-foreground/50">
+        {headLabel}
+        <span className="ml-2 font-normal normal-case tracking-normal">
+          {items.length}件中{Math.min(shown, items.length)}件
+        </span>
+      </p>
       <ul className="card-grid card-grid-wide">
-        {entries.map((entry) => {
-          const href = hrefOf(entry);
+        {items.slice(0, shown).map((entry) => {
           const label = (
             <span className="block">
               {displayFilerName(entry.label)}
               {entry.isNew && <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>}
             </span>
           );
-          const note = noteOf?.(entry);
           const body = (
             <>
-              {note && (
+              {entry.note && (
                 <span className="mt-1 block text-xs font-normal leading-relaxed text-foreground/60">
-                  {note}
+                  {entry.note}
                 </span>
               )}
               <span className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-0.5 pt-1.5 font-normal text-foreground/50">
@@ -49,8 +89,8 @@ export default function TrendingTable({
           );
           return (
             <li key={entry.key}>
-              {href ? (
-                <Link href={href} className="card flex h-full flex-col font-medium text-brand-blue">
+              {entry.href ? (
+                <Link href={entry.href} className="card flex h-full flex-col font-medium text-brand-blue">
                   {label}
                   {body}
                 </Link>
@@ -64,6 +104,20 @@ export default function TrendingTable({
           );
         })}
       </ul>
+      {hasMore && (
+        // sentinelは「見えたら自動で足す」ためのものだが、IntersectionObserverが働かない
+        // 環境（バックグラウンドタブ・一部の埋め込みビューなど）でも先に進めるよう、
+        // 同じ要素を押せるボタンにしておく。通常はスクロールだけで自動的に足される。
+        <div ref={sentinelRef} className="py-6 text-center">
+          <button
+            type="button"
+            onClick={showMore}
+            className="text-sm text-brand-blue hover:underline"
+          >
+            もっと見る（残り{items.length - shown}件）
+          </button>
+        </div>
+      )}
     </>
   );
 }

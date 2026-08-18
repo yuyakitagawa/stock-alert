@@ -1,3 +1,36 @@
+## 2026-08-18 kujira-watch: /trendingをオートページャー化（HTML 1.08MB → 225KB）
+
+オーナー指示「/trendingはオートページャーにして」への対応。
+別セッションが急増銘柄の件数制限を外して全件表示にした結果、480件が一度に描画され
+HTMLが1.08MB(gzip 106KB)まで膨らみ、perf_check.ymlの閾値100KBを超えていた。
+
+### 実装
+`TrendingTable`を`"use client"`にし、初回30件だけ描画して下端のsentinelが見えたら
+30件ずつ増やす。TOPの`InfiniteArticleList`と同じIntersectionObserver方式（rootMargin 600px）。
+
+`/api/articles`のような追加取得は作っていない。集計結果（480件）はサーバー側で
+すでに全件手元にあり、重いのはデータではなくカードのマークアップだったため
+（480件で1.08MB＝1件あたり約2.3KB）、描画する件数だけを絞れば足りる。
+
+- `hrefOf`/`noteOf`の関数propsは廃止し、`items: TrendingItem[]`（href・noteを解決済み）
+  で受け取る。クライアントコンポーネントの境界を関数は越えられないため。
+- ItemList構造化データは初回SSR分の30件のみに揃える（追加分はクライアント描画で
+  クロール時点のHTMLには無いため。TOPのItemListと同じ規律）。
+- sentinelは同時に「もっと見る（残りN件）」ボタンにしてある。IntersectionObserverが
+  働かない環境（バックグラウンドタブ等）でも先に進めるようにするため。
+
+### 確認
+| ページ | 変更前 | 変更後 |
+|---|---|---|
+| /trending | 1,079KB raw / 106KB gzip / カード480枚 | **225KB raw / 46KB gzip / SSRカード30枚** |
+| /ranking/trending | 125KB raw / 16KB gzip | 106KB raw / 16KB gzip |
+
+ページ送りの状態遷移は実ブラウザで確認（30件→60件、ラベル「480件中60件」・
+残り件数の更新まで）。IntersectionObserverの発火自体は、検証に使うプレビューペインが
+`document.visibilityState = "hidden"`のため確認できていない（この環境ではObserverの
+コールバックが配送されない）。実装はTOPで本番稼働中の`InfiniteArticleList`と同じ。
+`tsc --noEmit`・eslintクリーン、`npm run build`成功。
+
 ## 2026-08-18 kujira-watch: デザインレビューP2（パンくず・チャート・分類バッジ）
 
 デザインレビューの優先度2（一貫性・洗練）の3件を実装。P1は2026-08-17に対応済み。

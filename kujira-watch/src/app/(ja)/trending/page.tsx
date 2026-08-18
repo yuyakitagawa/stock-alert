@@ -16,6 +16,10 @@ export const revalidate = 300;
 // 比較になってしまうため、常に同じ長さで比べられる30日固定にする。
 const WINDOW_DAYS = 30;
 
+// 構造化データに載せる件数。オートページャーで追加描画される分はクライアント側の
+// 処理なので、クロール時点でサーバーが返すHTML（TrendingTableのINITIAL_COUNT）に合わせる。
+const JSON_LD_COUNT = 30;
+
 const url = `${SITE_URL}/trending`;
 const title = "取引が急増した銘柄";
 
@@ -58,6 +62,14 @@ export default async function TrendingPage() {
   // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
   // リンクにせずテキストのまま出す（404へのリンクを作らない）。
 
+  // href・noteはサーバー側で解決してから渡す（TrendingTableはクライアント
+  // コンポーネントなので関数propsを境界を越えて渡せない）。
+  const trendingItems = trendingIssuers.map((entry) => ({
+    ...entry,
+    href: listedCodes.has(entry.key) ? `/stocks/${entry.key}` : null,
+    note: noteOf(entry.key),
+  }));
+
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -72,8 +84,9 @@ export default async function TrendingPage() {
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: `大量保有報告書の開示が増えた銘柄（直近${WINDOW_DAYS}日）`,
-    itemListElement: trendingIssuers
-      .filter((entry) => listedCodes.has(entry.key))
+    itemListElement: trendingItems
+      .slice(0, JSON_LD_COUNT)
+      .filter((entry) => entry.href !== null)
       .map((entry, index) => ({
         "@type": "ListItem",
         position: index + 1,
@@ -123,13 +136,7 @@ export default async function TrendingPage() {
             直近{WINDOW_DAYS}日間で前期間より開示が増えた銘柄はありません。
           </p>
         ) : (
-          <TrendingTable
-            entries={trendingIssuers}
-            headLabel="銘柄"
-            windowDays={WINDOW_DAYS}
-            hrefOf={(entry) => (listedCodes.has(entry.key) ? `/stocks/${entry.key}` : null)}
-            noteOf={(entry) => noteOf(entry.key)}
-          />
+          <TrendingTable items={trendingItems} headLabel="銘柄" windowDays={WINDOW_DAYS} />
         )}
       </section>
 

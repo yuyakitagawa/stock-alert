@@ -101,10 +101,12 @@ export default async function TrendingInvestorsRankingPage() {
         </p>
       ) : (
         <TrendingTable
-          entries={trendingFilers}
+          items={trendingFilers.map((entry) => ({
+            ...entry,
+            href: `/investors/${encodeURIComponent(entry.key)}`,
+          }))}
           headLabel="投資家"
           windowDays={WINDOW_DAYS}
-          hrefOf={(entry) => `/investors/${encodeURIComponent(entry.key)}`}
         />
       )}
       <AdUnit placement="bottom" />
