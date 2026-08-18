@@ -11,12 +11,14 @@ kujira-watch.com の /stocks/[code] ページが「クロール済み-インデ�
 （tools/rewrite_thin_blog_articles.pyと同じ方針）。
 
 対象: edinet_large_holdings に提出実績があり（=/stocks/[code]ページが存在する）、
-jpx_stock_list.description が未設定の銘柄。
+jpx_stock_list.description が未設定の銘柄。--recent-days で直近に開示があった銘柄だけに
+絞れる（/trendingは直近30日の開示から出すため、全銘柄を回さずカバーできる）。
 
 Usage:
   python3 tools/backfill_company_descriptions.py --dry-run           # 対象件数の確認のみ
   python3 tools/backfill_company_descriptions.py --dry-run --limit 5
   python3 tools/backfill_company_descriptions.py                     # 実行
+  python3 tools/backfill_company_descriptions.py --recent-days 90    # 直近90日に開示があった銘柄のみ
   python3 tools/backfill_company_descriptions.py --limit 500         # 件数を区切って分割実行
   python3 tools/backfill_company_descriptions.py --codes 7203,9984   # 銘柄コード指定
 """
@@ -24,6 +26,7 @@ import os
 import sys
 import time
 import argparse
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
@@ -34,9 +37,14 @@ from web.publish_blog_articles import ANTHROPIC_API_KEY, get_company_description
 load_dotenv()
 
 
-def stock_codes_with_pages() -> list:
-    """/stocks/[code]ページが存在する銘柄コード一覧（edinet_large_holdingsに提出実績がある銘柄）。"""
-    rows = sb.select("edinet_large_holdings", "select=issuer_code")
+def stock_codes_with_pages(recent_days: "int | None" = None) -> list:
+    """/stocks/[code]ページが存在する銘柄コード一覧（edinet_large_holdingsに提出実績がある銘柄）。
+    recent_daysを渡すと、その日数以内に開示があった銘柄だけに絞る。"""
+    query = "select=issuer_code"
+    if recent_days is not None:
+        since = (date.today() - timedelta(days=recent_days - 1)).isoformat()
+        query += f"&disc_date=gte.{since}"
+    rows = sb.select("edinet_large_holdings", query)
     return sorted({r["issuer_code"] for r in rows if r.get("issuer_code")})
 
 
@@ -45,6 +53,7 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="生成せず対象件数・銘柄名の表示のみ")
     p.add_argument("--limit", type=int, default=None, help="処理件数の上限（動作確認・分割実行用）")
     p.add_argument("--codes", type=str, default=None, help="対象銘柄コードをカンマ区切りで明示指定（未設定判定を無視して強制対象にする）")
+    p.add_argument("--recent-days", type=int, default=None, help="直近N日以内に開示があった銘柄だけを対象にする")
     args = p.parse_args()
 
     if not args.dry_run and not ANTHROPIC_API_KEY:
@@ -57,8 +66,9 @@ def main():
     if args.codes:
         codes = [c.strip() for c in args.codes.split(",") if c.strip()]
     else:
-        all_codes = stock_codes_with_pages()
-        print(f"/stocks/[code]ページが存在する銘柄: {len(all_codes)}件")
+        all_codes = stock_codes_with_pages(args.recent_days)
+        scope = f"（直近{args.recent_days}日の開示）" if args.recent_days else ""
+        print(f"/stocks/[code]ページが存在する銘柄{scope}: {len(all_codes)}件")
         codes = [c for c in all_codes if not (meta_by_code.get(c, {}).get("description") or "")]
     print(f"description未設定: {len(codes)}件\n")
 

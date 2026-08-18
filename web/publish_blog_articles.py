@@ -18,7 +18,7 @@ microCMS管理画面で修正する運用）。
 
 記事生成: Claude（ANTHROPIC_API_KEY）に与えた事実のみから title/body を生成させる
           （事実にない金額・意図の創作を禁止するプロンプト）。対象企業の事業内容
-          （get_company_description、一般知識ベースでjpx_stock_list.descriptionにキャッシュ）が
+          （get_company_description、web検索で確認しjpx_stock_list.descriptionにキャッシュ）が
           わかれば冒頭紹介と保有比率の規模感に織り込む。本文末尾には「※推測:」ラベル付きの
           推測文を必ず1文加えさせる（事実と明確に区別し、存在しない具体的計画等は創作させない）。
 
@@ -554,9 +554,11 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
 
 def get_company_description(code: str, name: str) -> str:
     """対象企業の事業内容を1文程度で返す。jpx_stock_list.descriptionにキャッシュがあれば
-    それを使い、無ければClaudeの一般知識で生成してキャッシュする（classify_filerと同じ方針。
-    Web検索確認済みの投資家分類マスターと異なり事業内容は検証手段が無いため、
-    プロンプト側で「不明なら空文字」と念押しし、断定できない場合に創作させない）。"""
+    それを使い、無ければClaudeのweb_searchで会社概要を確認して生成しキャッシュする。
+    ※一般知識だけで書かせると中小型株の約2/3が「不明（空文字）」になり
+    （2026-08-15のバックフィルで生成1,134件に対し不明1,507件）、
+    /trendingや/stocks/[code]で事業内容が出ない銘柄が大量に残るため、
+    web検索で裏取りさせる。創作を防ぐガード（不明なら空文字）はそのまま維持する。"""
     cached = sb.select_one("jpx_stock_list", f"code=eq.{code}&select=description")
     if cached and cached.get("description"):
         return cached["description"]
@@ -566,21 +568,36 @@ def get_company_description(code: str, name: str) -> str:
     if not ANTHROPIC_API_KEY:
         return ""
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    prompt = f"""日本の上場企業「{name}」（証券コード{code}）の主な事業内容を、一般知識の範囲で
-1文（40字程度）で簡潔に説明してください。確信が持てない場合は空文字を返してください。
+    prompt = f"""日本の上場企業「{name}」（証券コード{code}）の事業内容を調べ、
+会社四季報の【特色】欄と同程度の密度で説明してください。web_searchで会社概要
+（会社公式サイト・IR資料など）を確認してから答えること。
 
-出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください:
+書き方:
+- 2〜3文、90〜130字程度。
+- 主力事業と、それが売上のどのくらいを占めるか（分かる場合のみ）。
+- 主力製品・サービス・ブランドの具体名。
+- 特徴（国内シェア・主要販売先・展開地域・設立や上場の経緯など、裏が取れたものだけ）。
+- 検索で裏が取れなかった事柄は書かない。数値・シェア・順位を推測で書くことは禁止。
+- 株価や投資判断には触れない。
+
+検索しても事業内容が特定できない場合のみ空文字を返してください。
+
+最後に、他のテキストを含まずJSONのみを出力してください:
 {{"description": "事業内容の説明、または空文字"}}
 """
     try:
         resp = client.messages.create(
-            model=CLAUDE_MODEL, max_tokens=200, messages=[{"role": "user", "content": prompt}],
+            model=CLAUDE_MODEL,
+            max_tokens=2000,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+            messages=[{"role": "user", "content": prompt}],
         )
-        text = resp.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            text = text[4:] if text.lower().startswith("json") else text
-        description = json.loads(text).get("description", "") or ""
+        # web_search使用時は検索結果ブロックとテキストブロックが交互に並ぶため、
+        # 全テキストを連結して末尾のJSONだけを取り出す。
+        text = "\n".join(b.text for b in resp.content if b.type == "text")
+        matches = re.findall(r'\{[^{}]*"description"[^{}]*\}', text)
+        description = json.loads(matches[-1]).get("description", "") if matches else ""
+        description = description or ""
     except Exception as e:
         print(f"    ⚠ 事業内容取得に失敗: {e}")
         description = ""

@@ -644,6 +644,10 @@ def _capturing_client(text):
     calls = []
 
     class _Block:
+        # web_search併用時はcontentに検索結果ブロックも混ざるため、本番側はtypeで
+        # テキストブロックだけを拾う。ダミーもtypeを持たせる。
+        type = "text"
+
         def __init__(self, text):
             self.text = text
 
@@ -860,6 +864,45 @@ def test_get_company_description_asks_claude_and_persists_when_not_cached():
     assert saved_rows[0]["description"] == "美容院チェーンを展開する企業"
 
 
+def test_get_company_description_uses_web_search_and_parses_trailing_json():
+    """web_searchツールを渡し、検索結果ブロックが混ざったcontentからも末尾のJSONを取れること
+    （一般知識のみでは中小型株の大半が空文字になるため、web検索での裏取りを必須にしている）。"""
+    class _SearchBlock:
+        type = "web_search_tool_result"
+
+    class _TextBlock:
+        type = "text"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Resp:
+        content = [
+            _TextBlock("会社概要を検索します。"),
+            _SearchBlock(),
+            _TextBlock('調査の結果は以下の通りです。\n{"description": "美容院チェーンを展開する企業"}'),
+        ]
+
+    captured = {}
+
+    class _Messages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return _Resp()
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.messages = _Messages()
+
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", _Client):
+        result = m.get_company_description("9439", "エム・エイチ・グループ")
+    assert result == "美容院チェーンを展開する企業"
+    assert captured["tools"][0]["name"] == "web_search"
+
+
 def test_get_company_description_returns_empty_without_api_key_when_not_cached():
     with mock.patch.object(m, "ANTHROPIC_API_KEY", ""), \
          mock.patch.object(m.sb, "select_one", return_value=None):
@@ -987,6 +1030,10 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
 
 def _fake_client(text):
     class _Block:
+        # web_search併用時はcontentに検索結果ブロックも混ざるため、本番側はtypeで
+        # テキストブロックだけを拾う。ダミーもtypeを持たせる。
+        type = "text"
+
         def __init__(self, text):
             self.text = text
 
@@ -1069,6 +1116,7 @@ if __name__ == "__main__":
     test_generate_article_body_always_requests_labelled_speculation()
     test_get_company_description_returns_cached_without_calling_claude()
     test_get_company_description_asks_claude_and_persists_when_not_cached()
+    test_get_company_description_uses_web_search_and_parses_trailing_json()
     test_get_company_description_returns_empty_without_api_key_when_not_cached()
     test_upload_price_chart_returns_url_on_success()
     test_build_price_chart_for_article_none_when_generation_fails()
@@ -1082,4 +1130,4 @@ if __name__ == "__main__":
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
-    print("全テスト成功 (73件)")
+    print("全テスト成功 (74件)")

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { formatMonth } from "@/lib/format";
-import { getAllStocksForIndex } from "@/lib/microcms";
 import { getHoldingsInRange } from "@/lib/investors";
+import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
 import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
 import DisclosureTrendChart from "@/components/DisclosureTrendChart";
 import TrendingTable from "@/components/TrendingTable";
@@ -15,7 +15,9 @@ export const revalidate = 300;
 // 比較期間。週次(7日)だと開示の少ない週に振り回され、暦月だと月初は「数日 vs 1か月」の
 // 比較になってしまうため、常に同じ長さで比べられる30日固定にする。
 const WINDOW_DAYS = 30;
-const RANKING_COUNT = 10;
+// 上位10件では「急増している銘柄を一覧したい」需要に足りないため、
+// 増加+1件の銘柄まで概ね収まる件数まで広げる（1ページで読み切れる上限として50件）。
+const RANKING_COUNT = 50;
 
 const url = `${SITE_URL}/trending`;
 const title = "取引が急増した銘柄";
@@ -38,17 +40,25 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, stocksWithArticles, monthlyCounts] = await Promise.all([
+  const [rows, listedCodes, monthlyCounts] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
-    getAllStocksForIndex().catch(() => []),
+    getAllListedCodes().catch(() => new Set<string>()),
     getMonthlyDisclosureCounts().catch(() => []),
   ]);
 
   const trendingIssuers = buildTrendingIssuers(rows, currentFrom, RANKING_COUNT);
 
-  // 銘柄ページ(/stocks/[code])は記事がある銘柄にしか存在しないため、
-  // 記事の無い銘柄はリンクにせずテキストのまま出す（404へのリンクを作らない）。
-  const codesWithArticles = new Set(stocksWithArticles.map((s) => s.stockCode));
+  // 社名と証券コードだけでは何の会社か分からないため、事業内容を1行添える。
+  // 事業内容(jpx_stock_list.description)は未生成の銘柄があるので、その場合は業種で代替する。
+  const briefs = await getCompanyBriefs(trendingIssuers.map((entry) => entry.key));
+  const noteOf = (code: string): string | null => {
+    const brief = briefs.get(code);
+    return brief?.description ?? brief?.sector ?? null;
+  };
+
+  // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
+  // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
+  // リンクにせずテキストのまま出す（404へのリンクを作らない）。
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -59,13 +69,13 @@ export default async function TrendingPage() {
     ],
   };
 
-  // 可視コンテンツと合わせ、実際にリンクしている銘柄（記事がある銘柄）のみItemList化する。
+  // 可視コンテンツと合わせ、実際にリンクしている銘柄のみItemList化する。
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: `大量保有報告書の開示が増えた銘柄（直近${WINDOW_DAYS}日）`,
     itemListElement: trendingIssuers
-      .filter((entry) => codesWithArticles.has(entry.key))
+      .filter((entry) => listedCodes.has(entry.key))
       .map((entry, index) => ({
         "@type": "ListItem",
         position: index + 1,
@@ -119,7 +129,8 @@ export default async function TrendingPage() {
             entries={trendingIssuers}
             headLabel="銘柄"
             windowDays={WINDOW_DAYS}
-            hrefOf={(entry) => (codesWithArticles.has(entry.key) ? `/stocks/${entry.key}` : null)}
+            hrefOf={(entry) => (listedCodes.has(entry.key) ? `/stocks/${entry.key}` : null)}
+            noteOf={(entry) => noteOf(entry.key)}
           />
         )}
       </section>
