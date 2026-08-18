@@ -17,7 +17,7 @@ export const revalidate = 3600;
 // 「参考にできる」ランキングとして出すには信頼性が低すぎるため。
 const MIN_N = 5;
 
-const title = "投資家ランキング";
+const title = "月間ランキング";
 const description =
   "大口投資家のランキング。EDINET大量保有報告書の開示をもとに、" +
   "3ヶ月リターン・買い増し・売却・報告書件数・開示急増の各ランキングをタブで切り替えて見られます。" +

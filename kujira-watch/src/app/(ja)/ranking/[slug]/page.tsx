@@ -20,7 +20,7 @@ export const revalidate = 3600;
 const RANKING_DAYS = 30;
 const RANKING_SIZE = 30;
 
-// 集計の軸。buys/sells/filingsは「投資家ランキング」タブの一員なので投資家別に集計する
+// 集計の軸。buys/sells/filingsは「月間ランキング」タブの一員なので投資家別に集計する
 // （銘柄別の同種ランキングは/trendingや各銘柄ページの役割）。activistはタブに含めない
 // 「アクティビストが動いた銘柄」なので銘柄別のまま。
 type RankingAxis = "filer" | "stock";
@@ -100,7 +100,7 @@ export default async function RankingSlugPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "投資家ランキング", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking` },
       { "@type": "ListItem", position: 3, name: ranking.title, item: `${SITE_URL}/ranking/${slug}` },
     ],
   };
@@ -139,13 +139,13 @@ export default async function RankingSlugPage({ params }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking" className="hover:text-brand-blue">投資家ランキング</Link>
+        <Link href="/ranking" className="hover:text-brand-blue">月間ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{ranking.title}</span>
       </nav>
       {/* タブ切替時に見出しの高さ・位置が変わらないよう、h1は全ランキング共通にして
           個別のランキング名はタブ直下のh2に置く（/ranking・/ranking/trendingと同じ構成）。 */}
-      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
+      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">月間ランキング</h1>
       <RankingTabNav current={`/ranking/${slug}`} />
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
       <p className="mb-2 text-sm text-foreground/50">{ranking.description}</p>

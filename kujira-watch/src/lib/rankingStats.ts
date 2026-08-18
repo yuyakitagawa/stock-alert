@@ -1,7 +1,7 @@
 import type { ArticleContent, DealType } from "@/types/article";
 
 // /ranking/[slug]の集計。記事(microCMS)1件＝EDINET大量保有報告書1件の開示として扱う。
-// 「投資家ランキング」のタブ（買い増し・売却・報告書件数）は投資家別に積み上げる。
+// 「月間ランキング」のタブ（買い増し・売却・報告書件数）は投資家別に積み上げる。
 // 銘柄別に並べると同じタブ内で軸が銘柄に変わってしまい、ランキングの意味が変わるため。
 export type RankingSlug = "buys" | "sells" | "filings" | "activist";
 

@@ -16,7 +16,7 @@ const JA_GROUPS: FooterGroup[] = [
       { href: "/", label: "TOP" },
       { href: "/disclosures", label: "開示速報" },
       { href: "/trending", label: "急増銘柄" },
-      { href: "/ranking", label: "投資家ランキング" },
+      { href: "/ranking", label: "月間ランキング" },
       { href: "/weekly", label: "週次トレンド" },
       { href: "/activists", label: "アクティビストの動き" },
     ],

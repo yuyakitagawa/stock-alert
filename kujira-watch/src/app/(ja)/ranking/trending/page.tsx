@@ -47,7 +47,7 @@ export default async function TrendingInvestorsRankingPage() {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "投資家ランキング", item: `${SITE_URL}/ranking` },
+      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking` },
       { "@type": "ListItem", position: 3, name: title, item: url },
     ],
   };
@@ -77,12 +77,12 @@ export default async function TrendingInvestorsRankingPage() {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking" className="hover:text-brand-blue">投資家ランキング</Link>
+        <Link href="/ranking" className="hover:text-brand-blue">月間ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{title}</span>
       </nav>
       {/* タブ切替時に見出しの高さ・位置が変わらないよう、h1は全ランキング共通（/rankingと同じ構成）。 */}
-      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
+      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">月間ランキング</h1>
       <RankingTabNav current="/ranking/trending" />
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{title}</h2>
       <p className="mb-2 text-sm text-foreground/50">
