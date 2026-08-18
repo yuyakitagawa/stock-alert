@@ -74,7 +74,7 @@ export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
         ]
       : [
           { href: "/", label: "TOP" },
-          { href: "/weekly", label: "今週のまとめ" },
+          { href: "/weekly", label: "週次トレンド" },
           { href: "/ranking", label: "投資家ランキング" },
           { href: "/investors", label: "投資家一覧" },
           { href: "/stocks", label: "銘柄一覧" },

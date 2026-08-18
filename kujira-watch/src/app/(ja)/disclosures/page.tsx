@@ -103,7 +103,7 @@ export default async function DisclosuresPage({ searchParams }: Props) {
           開示が急増した銘柄を見る ›
         </Link>
         <Link href="/weekly" className="text-brand-blue hover:underline">
-          今週の動きまとめを見る ›
+          週次トレンドを見る ›
         </Link>
       </nav>
       <AdUnit placement="bottom" />

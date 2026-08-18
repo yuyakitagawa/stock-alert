@@ -152,6 +152,45 @@ export const getMonthlyDisclosureCounts = unstable_cache(
   { revalidate: 3600 }
 );
 
+export type WeeklyDisclosureCount = {
+  weekStart: string; // 月曜日 (YYYY-MM-DD)
+  count: number;
+  isPartial: boolean; // 今週（まだ集計途中）
+};
+
+// /weeklyの「週別の開示件数トレンド」用。月曜始まりの暦週で直近weeks週分を数える。
+export const getWeeklyDisclosureCounts = unstable_cache(
+  async (weeks: number): Promise<WeeklyDisclosureCount[]> => {
+    const supabase = getSupabaseServerClient();
+    // 今週の月曜日（UTC基準。disc_dateは日付文字列なので日単位のズレのみ許容）。
+    const monday = new Date();
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+    const weekStarts: string[] = [];
+    for (let i = weeks - 1; i >= 0; i--) {
+      const d = new Date(monday);
+      d.setUTCDate(d.getUTCDate() - i * 7);
+      weekStarts.push(d.toISOString().slice(0, 10));
+    }
+    const currentWeekStart = weekStarts[weekStarts.length - 1];
+
+    const counts = await Promise.all(
+      weekStarts.map(async (weekStart) => {
+        const next = new Date(`${weekStart}T00:00:00Z`);
+        next.setUTCDate(next.getUTCDate() + 7);
+        const { count } = await supabase
+          .from("edinet_large_holdings")
+          .select("doc_id", { count: "exact", head: true })
+          .gte("disc_date", weekStart)
+          .lt("disc_date", next.toISOString().slice(0, 10));
+        return { weekStart, count: count ?? 0, isPartial: weekStart === currentWeekStart };
+      })
+    );
+    return counts;
+  },
+  ["weekly-disclosure-counts"],
+  { revalidate: 3600 }
+);
+
 export type DisclosureCounts = {
   all: number;
   new: number;

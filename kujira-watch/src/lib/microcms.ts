@@ -33,7 +33,7 @@ const MAX_PAGE_SIZE = 100;
 // microCMS公式SDKのgetAllContentsはページ間に1秒の固定スリープが入る仕様で、
 // 数百件の全件取得に数秒かかる。全件走査が必要な集計（銘柄一覧・月別アーカイブ）では
 // 1ページ目のtotalCountから残りのoffsetを割り出し、並列に取得して待ち時間を潰す。
-async function fetchAllPagesParallel<T>(queries: { fields: string; orders: string }): Promise<T[]> {
+async function fetchAllPagesParallel<T>(queries: { fields: string; orders: string; filters?: string }): Promise<T[]> {
   const requestInit = { next: { revalidate: REVALIDATE_SECONDS } };
   const first = await client.getList<T>({
     endpoint: "articles",
@@ -223,6 +223,21 @@ export async function getRecentArticles(days: number) {
 
   const contents = await fetchAllArticlesByFilter(`dealDate[greater_than]${cutoffDate}`);
   return { contents };
+}
+
+export type ArticleDigest = Pick<Article, "dealDate" | "dealAmount" | "tags">;
+
+// /weeklyの週次トレンド用。直近days暦日の記事を集計に必要な3フィールドだけで取得する
+// （全フィールドだと本文込みで数百件が重くなるため）。
+export async function getRecentArticleDigests(days: number): Promise<ArticleDigest[]> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+  return fetchAllPagesParallel<ArticleDigest>({
+    fields: "dealDate,dealAmount,tags",
+    orders: "-dealDate",
+    filters: `dealDate[greater_than]${cutoffDate}`,
+  });
 }
 
 // /weeklyの「先週比」用。getRecentArticles(days)が取得する直近days暦日の直前・

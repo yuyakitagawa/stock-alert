@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMonth } from "@/lib/format";
 import { getAllStocksForIndex } from "@/lib/microcms";
 import { getHoldingsInRange } from "@/lib/investors";
 import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
-import MonthlyDisclosureTrend from "@/components/MonthlyDisclosureTrend";
+import DisclosureTrendChart from "@/components/DisclosureTrendChart";
 import TrendingTable from "@/components/TrendingTable";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { buildTrendingIssuers } from "@/lib/trendingStats";
@@ -124,7 +124,19 @@ export default async function TrendingPage() {
           <p className="mb-2 text-sm text-foreground/60">
             市場全体で大口投資家の動き（開示）が増えているのか減っているのかを月単位で見られます。
           </p>
-          <MonthlyDisclosureTrend counts={monthlyCounts} />
+          <DisclosureTrendChart
+            bars={monthlyCounts.map((c) => ({
+              key: c.month,
+              axisLabel: c.month.slice(2).replace("-", "/"),
+              tableLabel: formatMonth(c.month),
+              count: c.count,
+              isPartial: c.isPartial,
+            }))}
+            ariaLabel="月別のEDINET大量保有報告書 開示件数の棒グラフ"
+            caption="EDINETに提出された大量保有・変更・訂正報告書の月別件数。"
+            periodHeadLabel="月"
+            partialNote="薄い棒は当月（集計中）です。"
+          />
         </section>
       )}
 
@@ -136,7 +148,7 @@ export default async function TrendingPage() {
           開示速報で個別の開示を見る ›
         </Link>
         <Link href="/weekly" className="text-brand-blue hover:underline">
-          今週の動きを見る ›
+          週次トレンドを見る ›
         </Link>
         <Link href="/monthly" className="text-brand-blue hover:underline">
           月別アーカイブで過去の動きを見る ›
