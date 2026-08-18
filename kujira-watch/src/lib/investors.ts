@@ -1,10 +1,20 @@
 import { unstable_cache } from "next/cache";
+
+// EDINET開示(Supabase)の読み取りは全てunstable_cacheに載せる。
+// supabase-jsのfetchはキャッシュ指定が無く、Next.js 15以降のfetchは既定でno-storeのため、
+// 素で呼ぶとそのページ全体が動的レンダリング扱いになる（実測: /articles/* も /stocks/* も
+// x-vercel-cache: MISS・cache-control: no-store で毎回サーバー実行、TTFB約2秒）。
+// クローラーは同じURLを何度も取りに来るので、これがそのままクロール速度の上限になっていた。
+// EDINET開示は日次更新なので1時間のキャッシュで十分。
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type { DealType } from "@/types/article";
 
 // PostgRESTは1リクエストあたり既定1000行で打ち切り、しかも返る行の順序も保証されない
 // （実測: 開示60日間で2,906行、投資家一覧で2,938行）。全件必要なクエリは並び順を固定した
 // うえでこの単位でページングして取り切る。
+// Supabase読み取りのキャッシュ保持時間。EDINET開示は日次更新なので1時間で十分。
+const SUPABASE_REVALIDATE_SECONDS = 3600;
+
 const PAGE_SIZE = 1000;
 // 暴走防止の上限（20ページ＝2万行）。
 const MAX_PAGES = 20;
@@ -34,7 +44,7 @@ export type FilerSummary = {
   latestDiscDate: string;
 };
 
-export async function getFilerClassification(
+async function getFilerClassificationUncached(
   filerName: string
 ): Promise<FilerClassification | null> {
   const supabase = getSupabaseServerClient();
@@ -52,7 +62,11 @@ export async function getFilerClassification(
   };
 }
 
-export async function getFilerHoldings(filerName: string): Promise<FilerHolding[]> {
+export const getFilerClassification = unstable_cache(getFilerClassificationUncached, ["getFilerClassification"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
+
+async function getFilerHoldingsUncached(filerName: string): Promise<FilerHolding[]> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
@@ -72,6 +86,10 @@ export async function getFilerHoldings(filerName: string): Promise<FilerHolding[
     docDescription: r.doc_description,
   }));
 }
+
+export const getFilerHoldings = unstable_cache(getFilerHoldingsUncached, ["getFilerHoldings"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
 
 // /investors（一覧）とサイトマップ用。edinet_filer_summary(Supabaseビュー)は
 // filer_name単位で1行に集計済みだが、投資家は2,938件あり（2026-08-15時点）
@@ -111,7 +129,7 @@ export const getAllFilers = unstable_cache(
 
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
 // 投資家一覧（名称+分類）を返す。
-export async function getFilersByStockCode(
+async function getFilersByStockCodeUncached(
   stockCode: string
 ): Promise<{ filerName: string; category: DealType }[]> {
   const supabase = getSupabaseServerClient();
@@ -139,6 +157,10 @@ export async function getFilersByStockCode(
     .sort((a, b) => a.filerName.localeCompare(b.filerName, "ja"));
 }
 
+export const getFilersByStockCode = unstable_cache(getFilersByStockCodeUncached, ["getFilersByStockCode"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
+
 export type HoldingRow = {
   issuerCode: string;
   issuerName: string;
@@ -147,7 +169,7 @@ export type HoldingRow = {
 };
 
 // 期間内の大量保有・変更報告書を全件返す（/trendingの期間比較と、提出者名の突合で共用）。
-export async function getHoldingsInRange(from: string, to: string): Promise<HoldingRow[]> {
+async function getHoldingsInRangeUncached(from: string, to: string): Promise<HoldingRow[]> {
   const supabase = getSupabaseServerClient();
   const rows: HoldingRow[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
@@ -174,6 +196,10 @@ export async function getHoldingsInRange(from: string, to: string): Promise<Hold
   }
   return rows;
 }
+
+export const getHoldingsInRange = unstable_cache(getHoldingsInRangeUncached, ["getHoldingsInRange"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
 
 // microCMSの`articles`スキーマには提出者名(filerName)フィールドが存在せず、
 // web/publish_blog_articles.py がpayloadに載せている値はAPI側で黙って捨てられている
@@ -215,7 +241,7 @@ export type StockHoldingRow = {
 
 // /stocks/[code]の「保有比率の推移」テーブル用。この銘柄に提出された大量保有・変更報告書を
 // 開示日の新しい順に返す（提出者横断の時系列）。
-export async function getHoldingsByStockCode(stockCode: string): Promise<StockHoldingRow[]> {
+async function getHoldingsByStockCodeUncached(stockCode: string): Promise<StockHoldingRow[]> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
@@ -236,10 +262,14 @@ export async function getHoldingsByStockCode(stockCode: string): Promise<StockHo
     }));
 }
 
+export const getHoldingsByStockCode = unstable_cache(getHoldingsByStockCodeUncached, ["getHoldingsByStockCode"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
+
 // 記事詳細のファクトボックス用。銘柄コード×開示日×提出者名でEDINET開示そのものを1件引き、
 // 保有比率・直前の保有比率を返す（CMSの記事には保有比率フィールドが無いため）。
 // 同一キーで複数行ある場合（同日の訂正等）は保有比率が取れている行を優先する。
-export async function getHoldingSnapshot(
+async function getHoldingSnapshotUncached(
   stockCode: string,
   discDate: string,
   filerName: string
@@ -257,4 +287,8 @@ export async function getHoldingSnapshot(
   if (!data) return null;
   return { holdingRatio: data.holding_ratio, holdingRatioPrior: data.holding_ratio_prior };
 }
+
+export const getHoldingSnapshot = unstable_cache(getHoldingSnapshotUncached, ["getHoldingSnapshot"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
 

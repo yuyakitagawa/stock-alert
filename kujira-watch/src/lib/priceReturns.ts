@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "./supabase";
 
 // 記事ページの「開示後の株価推移」用。yahoo_price_cache（トレーディングシステム側が
@@ -27,7 +28,7 @@ function daysBetween(from: string, to: string): number {
 
 // 記事本体(microCMS)の表示を止めたくないため、取得失敗はnullで握りつぶし
 // あくまで付加情報として扱う（getCompanyInfoと同じ方針）。
-export async function getPriceAfterDisclosure(
+async function getPriceAfterDisclosureUncached(
   stockCode: string,
   dealDate: string
 ): Promise<PriceAfterDisclosureData | null> {
@@ -61,3 +62,11 @@ export async function getPriceAfterDisclosure(
     return null;
   }
 }
+
+// 記事ページの「開示後の株価推移」。素のsupabase-js呼び出しは既定でno-storeのfetchになり、
+// 記事ページ全体が動的レンダリングに落ちるためunstable_cacheに載せる（lib/investors.tsの注記参照）。
+export const getPriceAfterDisclosure = unstable_cache(
+  getPriceAfterDisclosureUncached,
+  ["getPriceAfterDisclosure"],
+  { revalidate: 3600 }
+);
