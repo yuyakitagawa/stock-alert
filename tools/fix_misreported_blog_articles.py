@@ -75,13 +75,20 @@ def fetch_disclosures(codes: list) -> dict:
     rows = []
     for i in range(0, len(codes), 100):
         chunk = ",".join(codes[i:i + 100])
+        # order=doc_id は必須。PostgRESTのlimit/offsetページングはORDER BYが無いと
+        # ページ間で行が重複・欠落しうる（同じ開示が2行に見えると「一意に特定できない」
+        # としてスキップされ、実行ごとに対象件数が変わる。2026-08-19に実測）。
         rows += sb.select(
             "edinet_large_holdings",
-            f"issuer_code=in.({chunk})&select=issuer_code,disc_date,filer_name,holding_ratio,"
-            "holding_ratio_prior,doc_type_code,doc_description",
+            f"issuer_code=in.({chunk})&order=doc_id&select=doc_id,issuer_code,disc_date,filer_name,"
+            "holding_ratio,holding_ratio_prior,doc_type_code,doc_description",
         )
+    seen_docs = set()
     out = {}
     for r in rows:
+        if r.get("doc_id") in seen_docs:
+            continue
+        seen_docs.add(r.get("doc_id"))
         key = (str(r.get("issuer_code")), r.get("disc_date"), normalize_filer(r.get("filer_name")))
         out.setdefault(key, []).append(r)
     return out
