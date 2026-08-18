@@ -1,7 +1,7 @@
 """
 web/x_weekly_trending.py
 
-週次「クジラ急増ランキング」のX自動投稿（x_weekend_post.yml、土曜18:00 JST）。
+週次「大口投資家の取引急増ランキング」のX自動投稿（x_weekend_post.yml、土曜18:00 JST）。
 平日の記事投稿・日次サマリーが無い週末のタイムラインを埋め、/trending への導線を作る。
 日曜18:00の「今週のアクティビストの動き」（x_weekly_activists.py）と対になる週末2本立て。
 
@@ -104,7 +104,7 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
     url = f"{SITE_URL}/trending?utm_source=x&utm_medium=social&utm_campaign=weekly_trending"
 
     def render(issuer_n: int, filer_n: int) -> str:
-        lines = ["🐋 今週クジラの出没が急増（前週比）", "", "📈 銘柄"]
+        lines = ["🐋 大口投資家の取引急増ランキング（前週比）", "", "📈 銘柄"]
         for i, e in enumerate(issuers[:issuer_n], 1):
             lines.append(f"{i}. {label(e['label'], LABEL_MAX_UNITS)} +{e['delta']}件")
         if filers[:filer_n]:

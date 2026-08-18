@@ -1,4 +1,4 @@
-"""週次「クジラ急増ランキング」X投稿（web/x_weekly_trending）のロジックのユニットテスト。
+"""週次「大口投資家の取引急増ランキング」X投稿（web/x_weekly_trending）のロジックのユニットテスト。
 集計はkujira-watch側 /trending（src/lib/trendingStats.ts）のPython移植なので、
 同じ入力に対して同じ順位・deltaになることを検証する。ネットワークは全てモック。
 
@@ -69,7 +69,7 @@ def test_build_weekly_trending_text_includes_entries_url_and_tags():
     ]
     filers = [{"key": "F1", "label": "テスト投資組合", "delta": 4}]
     text = m.build_weekly_trending_text(issuers, filers)
-    assert "🐋 今週クジラの出没が急増（前週比）" in text
+    assert "🐋 大口投資家の取引急増ランキング（前週比）" in text
     assert "1. 玉井商船（1111） +5件" in text
     assert "1. テスト投資組合 +4件" in text
     assert f"{m.SITE_URL}/trending?utm_source=x" in text
