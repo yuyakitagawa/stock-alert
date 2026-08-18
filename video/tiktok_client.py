@@ -20,6 +20,8 @@ import os
 
 import requests
 
+from video.post_text import SITE_HOST, SITE_NAME, hashtag
+
 API_BASE = "https://open.tiktokapis.com/v2"
 TOKEN_URL = f"{API_BASE}/oauth/token/"
 INBOX_INIT_URL = f"{API_BASE}/post/publish/inbox/video/init/"
@@ -84,7 +86,10 @@ def _access_token() -> "str | None":
 def build_caption(props: dict) -> str:
     """公開時に貼るキャプション。定型の誘導文ではなく取引の詳細で埋める
     （2026-08-17オーナー指示。VOICEVOXクレジットは動画内の締め画面にあるため
-    キャプションには入れない）。"""
+    キャプションには入れない）。
+
+    TikTokのキャプションはリンクを押せないので、サイトへの導線はURLの文字列で置く。
+    以前は導線が1行も無く、TikTokからの流入が構造的に発生しない状態だった（2026-08-19）。"""
     direction = "売却" if props.get("direction") == "sell" else "取得"
     # filerNameは古い記事だと未設定。空のまま連結すると「銘柄｜が…取得」という
     # 主語のねじれた文になるため（youtube_client.build_titleと同じ問題）、汎用の主語に置き換える。
@@ -121,9 +126,15 @@ def build_caption(props: dict) -> str:
         lines.append("")
         lines.extend(f"・{d}" for d in details)
 
-    stock_tag = f" #{stock}" if stock else ""
+    # サイトへの導線。押せないリンクなので、スキーム無しの短い表記で見せる。
     lines.append("")
-    lines.append(f"#日本株 #株式投資 #EDINET #大量保有報告書{stock_tag}")
+    lines.append(f"詳しい分析は{SITE_NAME}で → {SITE_HOST}")
+
+    # 銘柄名に空白や「．」が入るとタグが途中で切れて残りが本文に漏れるため整形する
+    stock_tag = hashtag(stock)
+    lines.append("")
+    lines.append(" ".join(t for t in ["#日本株", "#株式投資", "#大量保有報告書",
+                                      "#EDINET", stock_tag] if t))
     return "\n".join(lines)
 
 

@@ -17,6 +17,7 @@ import video.line_notify as ln
 import video.youtube_client as yt
 import video.render as render_mod
 import video.se as se_mod
+import video.post_text as pt
 
 TK_ENV = {
     "TIKTOK_CLIENT_KEY": "ckey",
@@ -577,6 +578,41 @@ def test_youtube_description_falls_back_to_site_root_without_article_id():
     assert "/articles/" not in desc
 
 
+def test_youtube_title_includes_holding_ratio():
+    """保有比率まで入れると一覧で「何%になったのか」が分かり、クリックの理由が増える。"""
+    assert "保有比率8.77%へ" in yt.build_title(PROPS)
+
+
+def test_youtube_title_omits_ratio_when_unknown():
+    props = dict(PROPS, holdingRatio=0.0)
+    title = yt.build_title(props)
+    assert "保有比率" not in title
+    assert title.endswith(" #Shorts")
+
+
+def test_youtube_description_puts_article_url_above_the_fold():
+    """Shortsの説明文は冒頭しか畳まずに見えない。記事URLが折りたたみの下（8行目）に
+    あったため導線に到達できなかった（2026-08-19）。先頭3行以内に置くこと。"""
+    lines = yt.build_description(PROPS).split("\n")
+    url_line = next(i for i, ln in enumerate(lines) if ln.startswith("https://kujira-watch.com/articles/"))
+    assert url_line <= 2
+
+
+def test_youtube_description_names_the_site_correctly():
+    """動画側で「クジラウォッチ」と勝手に名乗った事故（2026-08-19）を投稿文でも防ぐ。"""
+    desc = yt.build_description(PROPS)
+    assert pt.SITE_NAME in desc
+    assert "クジラウォッチ" not in desc
+
+
+def test_youtube_description_leads_with_searchable_hashtags():
+    """説明文の先頭3つのハッシュタグはタイトル上部に出る枠。機能タグ(#Shorts)ではなく
+    実際に検索される語を先に置く。"""
+    tags = yt.build_description(PROPS).rstrip().split("\n")[-1].split()
+    assert tags[:2] == ["#日本株", "#大量保有報告書"]
+    assert "#Shorts" in tags and tags.index("#Shorts") >= 3
+
+
 def test_youtube_upload_skipped_without_credentials():
     with mock.patch.dict(os.environ, {}, clear=True):
         assert yt.upload("/tmp/none.mp4", PROPS) is None
@@ -610,6 +646,34 @@ def test_tiktok_caption_truncates_long_head():
     head = caption.split("\n")[0]
     assert len(head) <= tk.CAPTION_MAX_CHARS
     assert head.endswith("…")
+
+
+def test_tiktok_caption_has_site_link_text():
+    """TikTokのキャプションはリンクを押せないので、URLを文字列で置く。
+    以前は導線が1行も無く、TikTokからの流入が構造的に発生しなかった。"""
+    caption = tk.build_caption(PROPS)
+    assert pt.SITE_HOST in caption
+    assert pt.SITE_NAME in caption
+
+
+def test_post_text_hashtag_strips_unusable_characters():
+    """銘柄名の空白や「．」をそのまま「#」に続けるとタグが途中で切れて本文が漏れる
+    （例: Ｊ．フロント リテイリング）。"""
+    assert pt.hashtag("Ｊ．フロント リテイリング") == "#Ｊフロントリテイリング"
+    assert pt.hashtag("アインホールディングス") == "#アインホールディングス"
+    assert pt.hashtag("") == ""
+    assert pt.hashtag("・（）") == ""
+
+
+def test_post_text_hashtag_used_for_stock_tag():
+    caption = tk.build_caption(dict(PROPS, stockName="Ｊ．フロント リテイリング"))
+    assert "#Ｊフロントリテイリング" in caption
+    assert "#Ｊ．フロント" not in caption
+
+
+def test_article_url_falls_back_to_site_root():
+    assert pt.article_url("", "tiktok").startswith(pt.SITE_URL + "?utm_source=tiktok")
+    assert pt.article_url("abc", "youtube").startswith(pt.SITE_URL + "/articles/abc?")
 
 
 def test_tiktok_upload_skipped_without_credentials():
