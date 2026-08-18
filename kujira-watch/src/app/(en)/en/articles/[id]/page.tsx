@@ -12,7 +12,7 @@ import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib
 import { getArticleDetail, getArticleList } from "@/lib/microcms";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
-import { isIndexableArticle } from "@/lib/articleIndexability";
+import { isIndexableEnArticle } from "@/lib/articleIndexability";
 import AdUnit from "@/components/AdUnit";
 
 // ja版と同じ理由でISRの保持を1日にする（記事本文は公開後ほぼ変わらず、60秒だと
@@ -34,8 +34,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: article.titleEn,
     description,
-    // 低価値な開示はja版と同じ基準でnoindex（判定はlib/articleIndexability.tsに集約）。
-    ...(isIndexableArticle(article) ? {} : { robots: { index: false, follow: true } }),
+    // 英語版はja版より厳しい基準でnoindex（判定はlib/articleIndexability.tsに集約）。
+    ...(isIndexableEnArticle(article) ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: url, languages: { ja: `${SITE_URL}/articles/${id}`, en: url } },
     openGraph: {
       type: "article",

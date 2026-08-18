@@ -6,7 +6,7 @@ import {
 } from "@/lib/microcms";
 import { getAllFilers } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
-import { isIndexableArticle } from "@/lib/articleIndexability";
+import { isIndexableArticle, isIndexableEnArticle } from "@/lib/articleIndexability";
 import { CATEGORIES, DEAL_TYPES } from "@/types/article";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
@@ -165,7 +165,8 @@ async function articleEntries(): Promise<MetadataRoute.Sitemap> {
 
 async function enArticleEntries(): Promise<MetadataRoute.Sitemap> {
   const translatedArticles = await getTranslatedArticlesForSitemap();
-  return translatedArticles.filter(isIndexableArticle).map((article) => ({
+  // 英語版は日本語版より厳しい基準（lib/articleIndexability.tsの注記を参照）。
+  return translatedArticles.filter(isIndexableEnArticle).map((article) => ({
     url: `${SITE_URL}/en/articles/${article.id}`,
     lastModified: article.dealDate,
   }));

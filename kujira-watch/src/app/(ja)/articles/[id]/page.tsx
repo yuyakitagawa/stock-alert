@@ -22,7 +22,7 @@ import {
 } from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingSnapshot } from "@/lib/investors";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
-import { isIndexableArticle } from "@/lib/articleIndexability";
+import { isIndexableArticle, isIndexableEnArticle } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -91,7 +91,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const description = `${article.stockName}(${article.stockCode})の${article.dealType}を解説。${excerptFromHtml(article.body)}`;
   const url = `${SITE_URL}/articles/${id}`;
-  const hasEn = Boolean(article.titleEn && article.bodyEn);
+  // 英語版がnoindexの記事にhreflangを張るとnoindexページを代替言語として宣言することになるため、
+  // 英語版を出す基準を満たす記事だけ相互参照する。
+  const hasEn = Boolean(article.titleEn && article.bodyEn) && isIndexableEnArticle(article);
 
   return {
     title: article.title,
