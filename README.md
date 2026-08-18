@@ -24,7 +24,8 @@ daily_alert.ymlのランキング生成（EDINET大量保有の特徴量）か�
 
 【平日19:30 JST・1日1回】ショート動画パイプライン（video_post.yml）
 video/publish_video.py（microCMSの新着記事×注目枠から1件選定 → Claudeで縦動画の台本生成 →
-Remotionで1080x1920/20秒のmp4を書き出し → YouTube Shorts / TikTok へ投稿）。
+Remotionで1080x1920の縦動画mp4を書き出し → 音量を配信基準の-14 LUFSへ正規化 →
+YouTube Shorts / TikTok へ投稿）。
 edinet_blog.ymlがその日の記事を出し切ったあとに走らせる。Remotionのレンダリングは
 Chrome Headlessが必要で毎時回すには重いため、記事投稿とは別の1日1回のバッチにしている。
 対象記事が無い日は何も投稿しない。workflow_dispatchの`article_id`入力に記事ID

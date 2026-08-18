@@ -119,6 +119,16 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
       記事URL（https://kujira-watch.com/articles/xxxx）を丸ごと貼っても ID を抜き出す。
       公開時刻・注目枠は問わないので、いつの記事でも動画にできる。
 
+## v6改修（2026-08-18 オーナー指摘「ずんだもんの声は？」）
+- [x] 書き出したmp4の音量が **-25.2 LUFS** しか無く、YouTube/TikTokの再生基準(-14 LUFS前後)より
+      約11dB小さいため、スマホの通常音量ではナレーションがほぼ聞こえない状態だった。
+      VOICEVOXの生成音声が素で-26dB程度なのが原因（Remotion側の音量設定やプラットフォーム差ではなく、
+      YouTube/TikTokには同一のmp4を上げているので両者に違いは無い）。
+- [x] `video/render.py` に `normalize_loudness()` を追加。ffmpeg loudnorm の2パスで -14 LUFS /
+      -1.5 dBTP に揃える。映像は `-c:v copy` で再エンコードしないため画質・サイズはほぼ不変。
+      ffmpeg不在・測定失敗時は元のmp4のまま続行する（音量のために投稿を止めない）。
+- [x] 実データ（8/18のエムスリー動画）で -25.15 → -14.2 LUFS を確認。テスト54件pass。
+
 ## 状態（2026-08-18）
 - Anthropic APIの使用量上限は解消済み。8/17の定時便でYouTube投稿成功
   （電通総研×Oasis: https://youtube.com/shorts/-_-Z4m_6HFU ）。

@@ -15,6 +15,7 @@ import video.tts as tts_mod
 import video.background as bg_mod
 import video.line_notify as ln
 import video.youtube_client as yt
+import video.render as render_mod
 
 YT_ENV = {
     "YOUTUBE_CLIENT_ID": "cid",
@@ -508,6 +509,87 @@ def test_tiktok_direct_post_falls_back_to_self_only_when_public_not_allowed(tmp_
 
     assert publish_id == "p2"
     assert sent["payload"]["post_info"]["privacy_level"] == "SELF_ONLY"
+
+
+# ---------------- 音量正規化（配信基準 -14 LUFS） ----------------
+
+LOUDNORM_JSON = """
+[Parsed_loudnorm_0 @ 0x7f] 
+{
+	"input_i" : "-25.15",
+	"input_tp" : "-6.10",
+	"input_lra" : "3.70",
+	"input_thresh" : "-35.60",
+	"target_offset" : "0.20"
+}
+"""
+
+
+def test_measure_loudness_parses_ffmpeg_json():
+    """loudnormの測定値はstderr末尾のJSONに出るので、そこから読み取る。"""
+    with mock.patch("subprocess.run", return_value=mock.Mock(returncode=0, stderr=LOUDNORM_JSON)):
+        stats = render_mod._measure_loudness("dummy.mp4")
+    assert stats["input_i"] == "-25.15"
+    assert stats["input_thresh"] == "-35.60"
+
+
+def test_measure_loudness_returns_none_when_unparsable():
+    """測定できなければNoneを返し、呼び出し側は音量そのままで続行する。"""
+    with mock.patch("subprocess.run", return_value=mock.Mock(returncode=0, stderr="no json here")):
+        assert render_mod._measure_loudness("dummy.mp4") is None
+
+
+def test_normalize_loudness_skips_when_no_audio_stream():
+    """無音の動画（TTS失敗時）は正規化せずFalseを返す。"""
+    with mock.patch.object(render_mod, "_has_audio_stream", return_value=False):
+        assert render_mod.normalize_loudness("dummy.mp4") is False
+
+
+def test_normalize_loudness_passes_measured_values_to_second_pass(tmp_path):
+    """2パス目には1パス目の測定値をそのまま渡す（これが無いと目標音量に届かない）。"""
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x" * 10)
+    calls = {}
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        # 2パス目は出力ファイルを作る想定
+        pathlib_path = cmd[-1]
+        with open(pathlib_path, "wb") as f:
+            f.write(b"y" * 10)
+        return mock.Mock(returncode=0, stderr="")
+
+    with mock.patch.object(render_mod, "_has_audio_stream", return_value=True), \
+         mock.patch.object(render_mod, "_measure_loudness",
+                           return_value={"input_i": "-25.15", "input_tp": "-6.10",
+                                         "input_lra": "3.70", "input_thresh": "-35.60",
+                                         "target_offset": "0.20"}), \
+         mock.patch("subprocess.run", side_effect=fake_run):
+        assert render_mod.normalize_loudness(str(video)) is True
+
+    filt = calls["cmd"][calls["cmd"].index("-af") + 1]
+    assert "measured_I=-25.15" in filt
+    assert "measured_TP=-6.10" in filt
+    assert f"I={render_mod.TARGET_LUFS}" in filt
+    # 映像は再エンコードしない（画質を落とさないため）
+    assert "copy" in calls["cmd"]
+    assert video.read_bytes() == b"y" * 10
+
+
+def test_normalize_loudness_keeps_original_when_ffmpeg_fails(tmp_path):
+    """正規化に失敗しても元のmp4を残す（音量のために投稿を止めない）。"""
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"orig")
+
+    with mock.patch.object(render_mod, "_has_audio_stream", return_value=True), \
+         mock.patch.object(render_mod, "_measure_loudness",
+                           return_value={"input_i": "-25.0", "input_tp": "-6.0",
+                                         "input_lra": "3.0", "input_thresh": "-35.0",
+                                         "target_offset": "0.0"}), \
+         mock.patch("subprocess.run", return_value=mock.Mock(returncode=1, stderr="boom")):
+        assert render_mod.normalize_loudness(str(video)) is False
+
+    assert video.read_bytes() == b"orig"
 
 
 if __name__ == "__main__":
