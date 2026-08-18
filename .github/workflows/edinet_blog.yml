@@ -66,3 +66,9 @@ jobs:
       - name: ブログ記事自動生成・投稿（EDINET大口取引解説「大口投資家の監視ブログ」）
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
+
+      # 概算金額の再計算ブレ等で重複判定をすり抜けた同一開示の二重記事を自動回収する
+      # （同一銘柄・同一開示日・同一提出者の後発記事を削除。実例: 2026-08-17）
+      - name: 重複記事クリーンアップ
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/cleanup_duplicate_blog_articles.py --delete

@@ -1053,7 +1053,12 @@ edinet_blog.yml 17:48 JSTの便が、それ以前の便で投稿済みの記事1
 - 重複記事の削除: 同一タイトルの重複10組をAPIで削除試行→現行APIキーはDELETE不可
   （`DELETE is forbidden`、マネジメントAPIも403）のためmicroCMS管理画面での手動削除が必要。
   タイトルの比率が異なる同日ペア（ベースフード/fantasista）は実在する別報告のため残す
-- テスト: test_publish_blog_articles.py 73件（+5）、全pass
+- `tools/cleanup_duplicate_blog_articles.py` 新規: すり抜けた重複を自動回収する。
+  同一銘柄・開示日・提出者・比率変化幅（＝`already_published()`と同じキー）の記事が
+  複数あれば先発1件を残して後発を削除。edinet_blog.ymlの投稿ステップ後に毎時 --delete で実行
+  （現行APIキーはDELETE不可のため、キー権限の付与までは削除失敗ログのみ出る）
+- テスト: test_publish_blog_articles.py 73件（+5）、test_cleanup_duplicate_blog_articles.py 4件（新規）、全pass
+
 ## 2026-08-17 kujira-watchページ数増加の予算計算（docs/page_count_budget.md）
 
 Supabase実測（edinet_large_holdings 19,830行）から増加ペースを算出: 記事約300件/月×2(ja/en)+
