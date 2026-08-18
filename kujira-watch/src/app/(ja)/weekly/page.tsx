@@ -98,7 +98,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const { contents } = await getRecentArticles(WINDOW_DAYS);
   const title = "大口投資家の週次トレンド";
   const description =
-    `EDINET大量保有報告書をもとにした大口投資家（クジラ）の週次トレンド。直近${WINDOW_DAYS}日間の` +
+    `EDINET大量保有報告書をもとにした大口投資家の週次トレンド。直近${WINDOW_DAYS}日間の` +
     `${contents.length}件の開示まとめに加え、週ごとの開示件数・売買金額の推移を確認できます。`;
   const url = `${SITE_URL}/weekly`;
 
@@ -190,7 +190,7 @@ export default async function WeeklyDigestPage() {
         {contents.length > 0 && oldestDate && newestDate ? (
           <>
             <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-              {SITE_NAME}がEDINET大量保有報告書をもとに集計した、大口投資家（クジラ）の
+              {SITE_NAME}がEDINET大量保有報告書をもとに集計した、大口投資家の
               週ごとの動きです。直近{WINDOW_DAYS}日間（{formatDate(oldestDate)}〜
               {formatDate(newestDate)}）のサマリーと、週別の開示件数・売買金額の推移を掲載しています。
             </p>

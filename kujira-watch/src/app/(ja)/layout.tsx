@@ -32,7 +32,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME}｜大量保有報告書から読む「クジラ」の動き`,
+    default: `${SITE_NAME}｜大量保有報告書から読む大口投資家の動き`,
     // サイト名を先頭にする（記事タイトルが長いとブラウザタブで末尾が切れ、
     // サイト名が末尾だと何のサイトか分からなくなるため）。
     template: `${SITE_NAME}｜%s`,

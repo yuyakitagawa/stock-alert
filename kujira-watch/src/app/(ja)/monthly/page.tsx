@@ -14,7 +14,7 @@ const title = "月別アーカイブ";
 export const metadata: Metadata = {
   title,
   description:
-    "EDINET大量保有報告書をもとにした大口投資家（クジラ）の動きを月ごとにまとめたアーカイブ。各月の開示件数・推定取引金額から、その月に動いた投資家・銘柄をたどれます。",
+    "EDINET大量保有報告書をもとにした大口投資家の動きを月ごとにまとめたアーカイブ。各月の開示件数・推定取引金額から、その月に動いた投資家・銘柄をたどれます。",
   alternates: { canonical: url },
   openGraph: { title, url },
 };
@@ -65,7 +65,7 @@ export default async function MonthlyIndexPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">月別アーカイブ</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          {SITE_NAME}が公開した大口投資家（クジラ）の動きを月ごとにまとめています。
+          {SITE_NAME}が公開した大口投資家の動きを月ごとにまとめています。
           各月のページでは、その月に動いた投資家・銘柄のランキングと日別の一覧を確認できます。
         </p>
       </div>

@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const label = formatDate(date);
   const title = `${label}の大口投資家の動き`;
-  const description = `${label}に開示された大量保有・変更報告書をもとにした、大口投資家（クジラ）の動き。全${contents.length}件。`;
+  const description = `${label}に開示された大量保有・変更報告書をもとにした、大口投資家の動き。全${contents.length}件。`;
   const url = `${SITE_URL}/date/${date}`;
 
   return {

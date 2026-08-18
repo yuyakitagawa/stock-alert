@@ -32,7 +32,7 @@ export default function TodayWhaleSummary({
     >
       <CardActionArea component={Link} href={`/date/${dateOnly}`} sx={{ py: 2, px: { xs: 0, sm: 0 } }}>
         <Typography variant="overline" sx={{ color: "brand.blue" }}>
-          今日のクジラ・{formatDate(date)}
+          今日の大口取引・{formatDate(date)}
         </Typography>
         <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 1.5, rowGap: 0.5 }}>
           <Typography variant="h3" component="span" sx={{ fontWeight: 700, lineHeight: 1, color: "primary.main" }}>

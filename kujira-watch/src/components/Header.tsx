@@ -117,7 +117,7 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
                 >
                   {locale === "en"
                     ? "Tracking Japan's Market \"Whales\" from Large-Holding Filings"
-                    : "EDINET大量保有報告書から読む「クジラ」の動き"}
+                    : "EDINET大量保有報告書から読む大口投資家の動き"}
                 </Box>
               </Box>
             </Box>
