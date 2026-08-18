@@ -111,19 +111,17 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - [x] ドメイン障害対応（2026-08-16）: kujira-watch.com が clientHold（ICANN メール認証未完了）で
       全世界NXDOMAINになっていたのを発見、オーナーが認証して復旧
 
-## 銘柄コード指定の手動実行（2026-08-16 オーナー依頼「太陽誘電とキオクシアのクジラを動画に」）
-- [x] `build_script.py` に銘柄指定モード追加（stockCodeフィルタ＋直近14日から金額最大1件、注目枠不問）。
-      `publish_video.py --stock-code` / workflow_dispatch の `stock_code` 入力から使う。PR #269
-- [ ] オーナー作業: PR #269 をマージ（またはブランチのまま）、Actions → Short Video Post →
-      Run workflow をブランチ `claude/taiyo-kioxia-whale-video-6ghxmm`（マージ後はmain）で
-      `stock_code=6976`（太陽誘電×Situational Awareness LP）と `stock_code=285A`
-      （キオクシア×東芝売却）の2回実行。※このセッションのGitHub権限では
-      workflow_dispatch を叩けず（403）、代替のpush起動も権限判定でブロックされたため手動依頼
-- [ ] 実行前に Anthropic API の月間spend limit解消を確認（下記「既知の問題」参照。
-      上限中は台本生成が失敗し「投稿対象がない」で終わる）
+## 記事ID指定の手動実行（2026-08-18 オーナー指示「気に入った記事も自動で動画にしたい」）
+- [x] 銘柄コード指定モード（PR #269、stockCode＋直近14日で金額最大1件）を**記事ID指定に置き換え**。
+      銘柄指定だと同一銘柄に複数記事がある場合に狙った記事とは限らない問題があったため
+      （実例: 2026-08-18に `stock_code=2413` で実行したところ、意図とは別のエムスリー記事が選ばれた）。
+      `publish_video.py --article-id` / workflow_dispatch の `article_id` 入力から使う。
+      記事URL（https://kujira-watch.com/articles/xxxx）を丸ごと貼っても ID を抜き出す。
+      公開時刻・注目枠は問わないので、いつの記事でも動画にできる。
 
-## ⚠️ 既知の問題
-- **Anthropic APIキーが月間支出上限に到達**（2026-09-01 0:00 UTC復活）。台本生成・ブログ記事
-  生成が全て失敗するため、上限を引き上げるまで平日の自動投稿は空振りする。オーナーが
-  リロード（自動チャージ）を設定したが、2026-08-16 13時時点ではまだ同エラーが返る
-  （月間spend limitはリロードとは別設定の可能性。console.anthropic.com → Settings → Limits を確認）
+## 状態（2026-08-18）
+- Anthropic APIの使用量上限は解消済み。8/17の定時便でYouTube投稿成功
+  （電通総研×Oasis: https://youtube.com/shorts/-_-Z4m_6HFU ）。
+- 8/18 19:30の定時便は上限エラーで空振り（対象はエムスリー×Oasis）。その後オーナーが上限を
+  上げ、手動実行で投稿成功（ https://youtube.com/shorts/CYl84alBoYo ）。
+- TikTokは引き続き未審査のため inbox（下書き）投稿。アプリの通知から手動公開が必要。

@@ -27,9 +27,10 @@ video/publish_video.py（microCMSの新着記事×注目枠から1件選定 → 
 Remotionで1080x1920/20秒のmp4を書き出し → YouTube Shorts / TikTok へ投稿）。
 edinet_blog.ymlがその日の記事を出し切ったあとに走らせる。Remotionのレンダリングは
 Chrome Headlessが必要で毎時回すには重いため、記事投稿とは別の1日1回のバッチにしている。
-対象記事が無い日は何も投稿しない。workflow_dispatchの`stock_code`入力で銘柄コードを指定すると、
-通常の新着×注目枠選定を使わず、その銘柄の直近2週間の記事（金額最大の1件）を動画にできる
-（話題の開示を後日ピンポイントで動画化する手動実行用。`--stock-code`でローカル実行も可）。
+対象記事が無い日は何も投稿しない。workflow_dispatchの`article_id`入力に記事ID
+（記事URL `https://kujira-watch.com/articles/xxxx` の `xxxx`。URLを丸ごと貼ってもよい）を入れると、
+通常の新着×注目枠選定を使わずその記事を動画にできる（気に入った記事を後から動画化する手動実行用。
+`--article-id`でローカル実行も可）。
 
 その他ワークフロー: ci.yml（テスト）、
 keepalive.yml（Supabase keepalive）、watchdog.yml（daily_alert.yml監視）、
