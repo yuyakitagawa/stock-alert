@@ -7,6 +7,7 @@ import AdSenseScript from "@/components/AdSenseScript";
 import GaClickTracker from "@/components/GaClickTracker";
 import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import ThemeRegistry from "@/components/ThemeRegistry";
 import { SITE_DESCRIPTION_EN, SITE_NAME_EN, SITE_URL } from "@/lib/site";
 import "../../globals.css";
@@ -110,6 +111,7 @@ export default function EnRootLayout({
           <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
             {children}
           </main>
+          <Footer locale="en" />
         </ThemeRegistry>
         <AdSenseScript />
         <Analytics />

@@ -53,9 +53,9 @@ function alternatePath(pathname: string): string {
   return pathname.startsWith("/en") ? "/" : "/en";
 }
 
-// オートスクロールで記事一覧が際限なく伸びるため、ページ最下部のフッターまで
-// スクロールしてたどり着くのが実質困難になった。このサイトについて・免責事項等は
-// ヘッダー右上のハンバーガーメニューに集約し、常にアクセスできるようにする。
+// オートスクロールで記事一覧が際限なく伸びるページでは最下部のフッターまで
+// スクロールしてたどり着けないため、主要リンクはヘッダー右上のハンバーガーメニュー
+// からも常にアクセスできるようにする（フッター(Footer.tsx)とは併存させる）。
 export default function HeaderMenu({ locale = "ja" }: { locale?: Locale }) {
   const [open, setOpen] = useState(false);
   const year = new Date().getFullYear();
