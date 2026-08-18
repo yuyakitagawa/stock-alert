@@ -6,30 +6,48 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import {accentFor, brand, fontFamily, safeArea} from '../theme';
+import {
+  PLATE_BG,
+  TEXT_SHADOW,
+  accentFor,
+  brand,
+  contentWidth,
+  fontFamily,
+  safeArea,
+} from '../theme';
 import type {Scene, ShortProps} from '../types';
 
-// 暗幕を薄くした分（2026-08-17）、映像の明部でも文字が読めるよう強めの影を共通で使う
-const TEXT_SHADOW = '0 2px 14px rgba(0,0,0,0.75), 0 0 4px rgba(0,0,0,0.5)';
+/** ループ再生で頭と繋げるため、ctaの末尾この長さだけ冒頭と同じ金額組版に戻す。 */
+const LOOP_TAIL_FRAMES = 24;
 
 /**
  * 1シーンの見た目。kind ごとに中央のビジュアルを切り替え、下段に字幕を大きく出す。
  *
- * 設計方針（TikTok運用の定石に合わせる）:
- * - 無音で見る視聴者が多数派なので、ナレーションの要約字幕を常に大きく表示する
- * - 表示はすべて safeArea 内。下部はTikTokのキャプション・右端はボタン列に隠れるため
- * - カット感を出すため、シーン頭は spring で「飛び込ませる」。フェードは使わない
- *   （ゆっくりしたフェードはショート動画では「遅い」と感じられる）
+ * 設計方針（2026-08-19のインフルエンサー100人レビューを反映）:
+ * - 無音で見る視聴者が多数派なので、字幕は「26字の要約1本」を72pxで出す。
+ *   ナレーション全文の同時表示は、実機で読めないうえ音声と競合するため廃止した。
+ * - 文字の可読性は影ではなく不透明の下地（PLATE_BG）で担保する。
+ * - 表示はすべて safeArea 内。左右は対称で、画面中心と要素の中心が一致する。
+ * - カット感を出すため、シーン頭は spring で「飛び込ませる」。フェードは使わない。
+ * - シーン内でも2.6秒ごとに微小な拍（マイクロビート）を打ち、完全な静止画を作らない。
  */
 export const SceneView: React.FC<{
   scene: Scene;
   props: ShortProps;
   sceneIndex: number;
-}> = ({scene, props, sceneIndex}) => {
+  durationInFrames: number;
+}> = ({scene, props, durationInFrames}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const enter = spring({frame, fps, config: {damping: 16, stiffness: 180}});
   const accent = accentFor(props.direction);
+
+  // 2.6秒周期・0.27秒だけ1.00→1.03→1.00。静止フレームを無くすための微小な拍。
+  const beat = Math.max(0, 1 - Math.abs((frame % 78) - 4) / 4);
+
+  // ctaの末尾はループの継ぎ目。冒頭と同じ絵に戻すため字幕とヘッダを引く。
+  const inLoopTail =
+    scene.kind === 'cta' && frame >= durationInFrames - LOOP_TAIL_FRAMES;
 
   return (
     <AbsoluteFill
@@ -43,8 +61,9 @@ export const SceneView: React.FC<{
         alignItems: 'stretch',
       }}
     >
-      {/* 上段: 銘柄の常時表示（どのシーンから見始めても文脈がわかるように） */}
-      <Ticker props={props} show={scene.kind !== 'hook' && scene.kind !== 'cta'} />
+      {/* 上段: 銘柄と出典の常時表示。どのシーンから見始めても文脈と一次情報がわかる。
+          ループ末尾は冒頭と同じ絵にするため hook として描く */}
+      <Header props={props} kind={inLoopTail ? 'hook' : scene.kind} />
 
       {/* 中段: kindごとのビジュアル */}
       <div
@@ -54,69 +73,91 @@ export const SceneView: React.FC<{
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          transform: `translateY(${interpolate(enter, [0, 1], [56, 0])}px)`,
+          transform: `translateY(${interpolate(enter, [0, 1], [56, 0])}px) scale(${
+            1 + beat * 0.03
+          })`,
           opacity: interpolate(enter, [0, 0.35], [0, 1], {extrapolateRight: 'clamp'}),
         }}
       >
-        <Visual scene={scene} props={props} accent={accent} />
+        <Visual
+          scene={scene}
+          props={props}
+          accent={accent}
+          durationInFrames={durationInFrames}
+        />
       </div>
 
-      {/* 下段: 字幕（無音視聴者のための主役。ナレーションの要約＋全文） */}
-      <Caption
-        text={scene.caption}
-        narration={scene.kind === 'hook' || scene.kind === 'cta' ? '' : scene.narration}
-        accent={accent}
-        kind={scene.kind}
-      />
+      {/* 下段: 字幕（無音視聴者のための主役）と、全編出しっぱなしの免責 */}
+      <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14}}>
+        <Caption
+          text={inLoopTail ? props.scenes[0]?.caption ?? '' : scene.caption}
+          accent={accent}
+        />
+        <Disclaimer />
+      </div>
     </AbsoluteFill>
   );
 };
 
 /* ------------------------------------------------------------------ */
 
-const Ticker: React.FC<{props: ShortProps; show: boolean}> = ({props, show}) => {
-  if (!show) {
-    return <div style={{height: 64}} />;
-  }
+/**
+ * 銘柄行と出典行。出典（EDINETの書類名と提出日）を常時出すことで、
+ * 一次情報に基づく解説であることが途中から見た視聴者にも伝わる。
+ */
+const Header: React.FC<{props: ShortProps; kind: Scene['kind']}> = ({props, kind}) => {
+  // hook と cta は中央の金額が主役なので、銘柄行を出さず出典行だけ薄く残す。
+  const showTicker = kind !== 'hook' && kind !== 'cta';
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 18,
-        height: 64,
-      }}
-    >
-      <span style={{fontSize: 40}}>🐋</span>
-      <span style={{fontSize: 38, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
-        {props.stockName}
-      </span>
-      <span style={{fontSize: 30, fontWeight: 700, color: brand.cream, opacity: 0.6}}>
-        {props.stockCode}
-      </span>
-      <span
+    <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+      {showTicker ? (
+        <div style={{display: 'flex', alignItems: 'center', gap: 16, height: 60}}>
+          <span style={{fontSize: 38}}>🐋</span>
+          <span
+            style={{fontSize: 36, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}
+          >
+            {props.stockName}
+          </span>
+          <span style={{fontSize: 28, fontWeight: 700, color: brand.cream, opacity: 0.6}}>
+            {props.stockCode}
+          </span>
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontSize: 28,
+              fontWeight: 900,
+              color: brand.navyDeep,
+              background: props.direction === 'buy' ? brand.buy : brand.sell,
+              borderRadius: 999,
+              padding: '8px 22px',
+            }}
+          >
+            {props.direction === 'buy' ? '買い' : '売り'}
+          </span>
+        </div>
+      ) : (
+        <div style={{height: 60}} />
+      )}
+      <div
         style={{
-          marginLeft: 'auto',
-          fontSize: 28,
-          fontWeight: 800,
-          color: props.direction === 'buy' ? brand.buy : brand.sell,
-          background: 'rgba(255,255,255,0.08)',
-          borderRadius: 999,
-          padding: '8px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: 22,
+          fontWeight: 700,
+          color: brand.cream,
+          opacity: showTicker ? 0.62 : 0.4,
+          textShadow: TEXT_SHADOW,
         }}
       >
-        {props.direction === 'buy' ? '買い' : '売り'}
-      </span>
+        <span>EDINET 大量保有報告書 {props.discDate} 提出</span>
+        <span style={{color: brand.goldBright}}>kujira-watch.com</span>
+      </div>
     </div>
   );
 };
 
-const Caption: React.FC<{
-  text: string;
-  narration: string;
-  accent: string;
-  kind: Scene['kind'];
-}> = ({text, narration, accent, kind}) => {
+const Caption: React.FC<{text: string; accent: string}> = ({text, accent}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   // 字幕は本文より一拍遅れて入る（視線が中央→下段の順で動くように）
@@ -124,64 +165,59 @@ const Caption: React.FC<{
   if (!text) {
     return null;
   }
-  const isSpeculation = kind === 'outlook';
   return (
     <div
       style={{
         alignSelf: 'center',
         transform: `scale(${interpolate(enter, [0, 1], [0.92, 1])})`,
         opacity: interpolate(enter, [0, 0.4], [0, 1], {extrapolateRight: 'clamp'}),
-        background: 'rgba(6,10,20,0.82)',
-        border: `3px solid ${isSpeculation ? brand.blue : accent}`,
+        background: 'rgba(6,10,20,0.88)',
+        border: `3px solid ${accent}`,
         borderRadius: 20,
-        padding: '26px 38px',
-        maxWidth: 820,
+        padding: '22px 34px',
+        maxWidth: contentWidth,
       }}
     >
-      {isSpeculation ? (
-        <div style={{fontSize: 26, fontWeight: 800, color: brand.blue, marginBottom: 8}}>
-          ※ここから先は推測
-        </div>
-      ) : null}
       <div
         style={{
-          fontSize: 54,
+          fontSize: 68,
           fontWeight: 900,
-          lineHeight: 1.35,
+          lineHeight: 1.25,
           color: '#ffffff',
           textAlign: 'center',
+          textShadow: TEXT_SHADOW,
         }}
       >
         {text}
       </div>
-      {/* 無音視聴者向けのナレーション全文。シーンが10秒前後あるため、
-          26字の要約だけでは間が持たない */}
-      {narration ? (
-        <div
-          style={{
-            fontSize: 34,
-            fontWeight: 600,
-            lineHeight: 1.6,
-            color: brand.cream,
-            opacity: 0.85,
-            textAlign: 'center',
-            marginTop: 16,
-          }}
-        >
-          {narration}
-        </div>
-      ) : null}
     </div>
   );
 };
 
+/** 金融解説として全編出しておく免責。CTAだけに出しても大半の視聴者には届かない。 */
+const Disclaimer: React.FC = () => (
+  <div
+    style={{
+      fontSize: 24,
+      fontWeight: 600,
+      color: brand.cream,
+      opacity: 0.55,
+      textShadow: TEXT_SHADOW,
+      textAlign: 'center',
+    }}
+  >
+    ※公開情報の要約です。投資勧誘・投資助言ではありません
+  </div>
+);
+
 /* ------------------------------------------------------------------ */
 
-const Visual: React.FC<{scene: Scene; props: ShortProps; accent: string}> = ({
-  scene,
-  props,
-  accent,
-}) => {
+const Visual: React.FC<{
+  scene: Scene;
+  props: ShortProps;
+  accent: string;
+  durationInFrames: number;
+}> = ({scene, props, accent, durationInFrames}) => {
   switch (scene.kind) {
     case 'hook':
       return <HookVisual props={props} accent={accent} />;
@@ -193,72 +229,129 @@ const Visual: React.FC<{scene: Scene; props: ShortProps; accent: string}> = ({
       return <FilerVisual props={props} accent={accent} />;
     case 'change':
       return <ChangeVisual props={props} accent={accent} />;
-    case 'outlook':
-      // 中央ビジュアル無し。※推測ラベル付きの字幕カードだけで語らせる
-      return null;
     case 'chart':
-      return <ChartVisual scene={scene} props={props} accent={accent} />;
+      return <ChartVisual scene={scene} accent={accent} />;
     case 'cta':
-      return <CtaVisual />;
+      return <CtaVisual props={props} accent={accent} durationInFrames={durationInFrames} />;
     default:
       return null;
   }
 };
 
 /**
- * 冒頭0.5秒で金額を画面いっぱいに叩き込む。ブランドや日付の前置きは一切しない
- * （最初の1秒で離脱が決まるため、一番強い数字から入る）。
+ * 金額の一撃。冒頭とループ末尾で1pxもずれないよう、両方からこの1つを呼ぶ。
+ * 数字は白＋濃い下地で、accent色は単位だけに使う（背景の明部に金色が沈む事故の対策）。
  */
-const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accent}) => {
+const AmountSlam: React.FC<{amountOku: number; accent: string; scale: number}> = ({
+  amountOku,
+  accent,
+  scale,
+}) => (
+  <div
+    style={{
+      background: PLATE_BG,
+      borderRadius: 28,
+      padding: '10px 40px',
+      transform: `scale(${scale})`,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 210,
+        fontWeight: 900,
+        lineHeight: 1.05,
+        color: '#ffffff',
+        // 「億」と「円」の間で折り返さないこと（760pxの枠に収まらず2行になる事故の対策）
+        whiteSpace: 'nowrap',
+        textShadow: '0 10px 60px rgba(0,0,0,0.6)',
+      }}
+    >
+      {formatAmount(amountOku)}
+      <span style={{fontSize: 100, color: accent}}>億円</span>
+    </div>
+  </div>
+);
+
+/**
+ * 冒頭。0.35秒で金額を叩き込んだあと、社名→動詞→提出者→保有比率の順に
+ * 約2.7秒かけて4回情報を足す。静止したまま12秒待たせる作りをやめた（2026-08-19）。
+ */
+const HookVisual: React.FC<{
+  props: ShortProps;
+  accent: string;
+  /** ループ末尾から呼ぶとき用。演出を飛ばして完成形だけを描く */
+  revealed?: boolean;
+}> = ({props, accent, revealed = false}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const slam = spring({frame, fps, config: {damping: 11, stiffness: 240}});
-  // 言い切りの動詞だけで締める。決め台詞的な文言は付けない
-  // （興味の引きはClaudeが記事から作る字幕captionに任せる）。
+  const slam = revealed ? 1 : spring({frame, fps, config: {damping: 12, stiffness: 320}});
   const verb = props.direction === 'buy' ? '買い集めた' : '売り払った';
+  const pill = revealed ? 1 : spring({frame: frame - 40, fps, config: {damping: 14, stiffness: 220}});
+  const at = (a: number, b: number) =>
+    revealed
+      ? 1
+      : interpolate(frame, [a, b], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
 
   return (
-    <div style={{textAlign: 'center'}}>
+    <div style={{textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6}}>
       <div
         style={{
-          fontSize: 64,
+          fontSize: 60,
           fontWeight: 900,
           color: '#ffffff',
           textShadow: TEXT_SHADOW,
-          opacity: interpolate(frame, [6, 12], [0, 1], {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-          }),
+          opacity: at(6, 12),
         }}
       >
         {props.stockName}を
       </div>
-      <div
-        style={{
-          fontSize: 210,
-          fontWeight: 900,
-          lineHeight: 1.05,
-          color: accent,
-          transform: `scale(${interpolate(slam, [0, 1], [1.6, 1])})`,
-          textShadow: '0 10px 60px rgba(0,0,0,0.6)',
-        }}
-      >
-        {formatAmount(props.dealAmountOku)}
-        <span style={{fontSize: 100}}>億円</span>
-      </div>
+      <AmountSlam
+        amountOku={props.dealAmountOku}
+        accent={accent}
+        scale={interpolate(slam, [0, 1], [1.35, 1])}
+      />
       <div
         style={{
           fontSize: 72,
           fontWeight: 900,
           color: '#ffffff',
           textShadow: TEXT_SHADOW,
-          opacity: interpolate(frame, [10, 16], [0, 1], {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-          }),
+          opacity: at(20, 26),
         }}
       >
         {verb}
+      </div>
+      {/* 3拍目: 誰が買ったのか（一番引きの強い情報を下段captionから中央へ引き上げる） */}
+      <div
+        style={{
+          marginTop: 14,
+          fontSize: 44,
+          fontWeight: 900,
+          color: brand.navyDeep,
+          background: accent,
+          borderRadius: 999,
+          padding: '12px 34px',
+          transform: `translateY(${interpolate(pill, [0, 1], [48, 0])}px)`,
+          opacity: interpolate(pill, [0, 0.4], [0, 1], {extrapolateRight: 'clamp'}),
+        }}
+      >
+        {props.dealTypeLabel}
+      </div>
+      {/* 4拍目: 規模の裏付け */}
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 52,
+          fontWeight: 900,
+          color: '#ffffff',
+          textShadow: TEXT_SHADOW,
+          opacity: at(70, 80),
+        }}
+      >
+        保有比率 {props.holdingRatio.toFixed(2)}%
       </div>
     </div>
   );
@@ -267,11 +360,19 @@ const HookVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accen
 const CompanyVisual: React.FC<{props: ShortProps}> = ({props}) => (
   <Card>
     <Label text="どんな会社？" color={brand.goldBright} />
-    <div style={{fontSize: 88, fontWeight: 900, color: '#ffffff', lineHeight: 1.2, textShadow: TEXT_SHADOW}}>
-      {props.stockName}
-    </div>
-    <div style={{fontSize: 42, color: brand.cream, opacity: 0.65, marginTop: 8}}>
-      証券コード {props.stockCode}
+    <div
+      style={{
+        background: PLATE_BG,
+        borderRadius: 24,
+        padding: '26px 34px',
+      }}
+    >
+      <div style={{fontSize: 84, fontWeight: 900, color: '#ffffff', lineHeight: 1.2}}>
+        {props.stockName}
+      </div>
+      <div style={{fontSize: 40, color: brand.cream, opacity: 0.7, marginTop: 8}}>
+        証券コード {props.stockCode}
+      </div>
     </div>
   </Card>
 );
@@ -302,7 +403,17 @@ const FilerVisual: React.FC<{props: ShortProps; accent: string}> = ({props, acce
   <Card>
     <Label text="買い手は誰？" color={accent} />
     {props.filerName ? (
-      <div style={{fontSize: 58, fontWeight: 900, color: '#ffffff', lineHeight: 1.3, textShadow: TEXT_SHADOW}}>
+      <div
+        style={{
+          background: PLATE_BG,
+          borderRadius: 24,
+          padding: '26px 34px',
+          fontSize: 56,
+          fontWeight: 900,
+          color: '#ffffff',
+          lineHeight: 1.3,
+        }}
+      >
         {props.filerName}
       </div>
     ) : null}
@@ -311,7 +422,7 @@ const FilerVisual: React.FC<{props: ShortProps; accent: string}> = ({props, acce
         marginTop: 18,
         display: 'inline-block',
         fontSize: 36,
-        fontWeight: 800,
+        fontWeight: 900,
         color: brand.navyDeep,
         background: accent,
         borderRadius: 999,
@@ -323,7 +434,10 @@ const FilerVisual: React.FC<{props: ShortProps; accent: string}> = ({props, acce
   </Card>
 );
 
-/** 前回→今回の保有比率をバーの伸縮で見せる。 */
+/**
+ * 前回→今回の保有比率を2本のバーで見せる。前回が取れない回は build_script.py 側で
+ * シーンごと落とすため、ここに来る時点で prevHoldingRatio は必ずある。
+ */
 const ChangeVisual: React.FC<{props: ShortProps; accent: string}> = ({props, accent}) => {
   const frame = useCurrentFrame();
   const grow = interpolate(frame, [6, 40], [0, 1], {
@@ -331,52 +445,64 @@ const ChangeVisual: React.FC<{props: ShortProps; accent: string}> = ({props, acc
     extrapolateRight: 'clamp',
   });
   const ratio = props.holdingRatio;
-  // バーの最大幅を保有比率10%相当とする（大量保有の実務レンジでバーの差が見えるように）
-  const widthFor = (r: number) => Math.min(720, Math.max(60, (r / 10) * 720));
+  const prev = props.prevHoldingRatio ?? 0;
+  const diff = ratio - prev;
+  // バーの基準は「大きい方の1.2倍（下限10%）」。20%超の開示でも振り切れない
+  const scaleMax = Math.max(10, Math.max(ratio, prev) * 1.2);
+  const barWidth = contentWidth - 220;
+  const widthFor = (r: number) => Math.max(24, (r / scaleMax) * barWidth);
 
   return (
     <Card>
       <Label text="保有比率の推移" color={accent} />
-      <div style={{display: 'flex', flexDirection: 'column', gap: 24, marginTop: 12}}>
-        <div>
-          <div style={{fontSize: 32, color: brand.cream, opacity: 0.7, marginBottom: 8}}>
-            今回の開示
-          </div>
-          <div style={{display: 'flex', alignItems: 'center', gap: 20}}>
-            <div
-              style={{
-                height: 56,
-                width: widthFor(ratio) * grow,
-                borderRadius: 12,
-                background: accent,
-              }}
-            />
-            <span style={{fontSize: 60, fontWeight: 900, color: '#ffffff'}}>
-              {ratio.toFixed(2)}%
-            </span>
-          </div>
+      <div
+        style={{
+          background: PLATE_BG,
+          borderRadius: 24,
+          padding: '28px 30px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 24,
+        }}
+      >
+        <Bar label="前回" ratio={prev} width={widthFor(prev) * grow} color="rgba(255,255,255,0.30)" />
+        <Bar label="今回" ratio={ratio} width={widthFor(ratio) * grow} color={accent} />
+        <div style={{fontSize: 48, fontWeight: 900, color: accent, textShadow: TEXT_SHADOW}}>
+          {diff >= 0 ? '+' : '−'}
+          {Math.abs(diff).toFixed(2)}ポイント
         </div>
       </div>
     </Card>
   );
 };
 
+const Bar: React.FC<{label: string; ratio: number; width: number; color: string}> = ({
+  label,
+  ratio,
+  width,
+  color,
+}) => (
+  <div style={{display: 'flex', alignItems: 'center', gap: 18}}>
+    <span style={{fontSize: 30, fontWeight: 800, color: brand.cream, opacity: 0.75, width: 74}}>
+      {label}
+    </span>
+    <div style={{height: 48, width, borderRadius: 10, background: color}} />
+    <span style={{fontSize: 46, fontWeight: 900, color: '#ffffff'}}>{ratio.toFixed(2)}%</span>
+  </div>
+);
+
 /** 直近3ヶ月の株価推移。線が左から右へ伸びる描画で「動き」を作る。 */
-const ChartVisual: React.FC<{scene: Scene; props: ShortProps; accent: string}> = ({
-  scene,
-  props,
-  accent,
-}) => {
+const ChartVisual: React.FC<{scene: Scene; accent: string}> = ({scene, accent}) => {
   const frame = useCurrentFrame();
   const closes = scene.closes ?? [];
   if (closes.length < 2) {
     return null;
   }
 
-  const w = 800;
-  const h = 560;
-  const padX = 20;
-  const padY = 60;
+  const w = contentWidth;
+  const h = 540;
+  const padX = 70;
+  const padY = 70;
   const lo = Math.min(...closes);
   const hi = Math.max(...closes);
   const span = hi - lo || 1;
@@ -394,29 +520,97 @@ const ChartVisual: React.FC<{scene: Scene; props: ShortProps; accent: string}> =
     padY + (h - padY * 2) * (1 - (closes[i] - lo) / span),
   ];
   const points = Array.from({length: visibleCount}, (_, i) => pointAt(i));
-  const path = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const path = points
+    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(' ');
   const [headX, headY] = points[points.length - 1];
 
   const latest = closes[closes.length - 1];
   const changePct = (latest / closes[0] - 1) * 100;
   const up = changePct >= 0;
   const lineColor = up ? brand.buy : brand.sell;
+  const dates = scene.dates ?? [];
+  // 開示日が3ヶ月レンジの外（closes は直近63営業日）の回は縦線を描かない
+  const discIndex =
+    scene.discIndex !== undefined && scene.discIndex >= 0 && scene.discIndex < n
+      ? scene.discIndex
+      : null;
 
   return (
     <Card>
       <Label text="株価の推移（直近3ヶ月）" color={accent} />
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{overflow: 'visible'}}>
-        {/* 面グラデーション（描画済みの範囲だけ） */}
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+        <rect x={0} y={0} width={w} height={h} rx={24} fill={PLATE_BG} />
+        {/* 高値・安値の目盛り */}
+        <line x1={padX} y1={padY} x2={w - padX} y2={padY} stroke="#ffffff" strokeWidth={1} opacity={0.18} />
+        <line
+          x1={padX}
+          y1={h - padY}
+          x2={w - padX}
+          y2={h - padY}
+          stroke="#ffffff"
+          strokeWidth={1}
+          opacity={0.18}
+        />
+        <text x={padX} y={padY - 14} fontSize={26} fill={brand.cream} opacity={0.7}>
+          高値 {Math.round(hi).toLocaleString('ja-JP')}円
+        </text>
+        <text x={padX} y={h - padY + 36} fontSize={26} fill={brand.cream} opacity={0.7}>
+          安値 {Math.round(lo).toLocaleString('ja-JP')}円
+        </text>
+        {/* 開示日の位置 */}
+        {discIndex !== null ? (
+          <>
+            <line
+              x1={pointAt(discIndex)[0]}
+              y1={padY - 4}
+              x2={pointAt(discIndex)[0]}
+              y2={h - padY + 4}
+              stroke={brand.goldBright}
+              strokeWidth={4}
+              strokeDasharray="12 10"
+            />
+            <text
+              x={pointAt(discIndex)[0]}
+              y={padY - 44}
+              fontSize={28}
+              fontWeight={800}
+              fill={brand.goldBright}
+              textAnchor="middle"
+            >
+              開示
+            </text>
+          </>
+        ) : null}
         <path
           d={`${path} L${headX.toFixed(1)},${h - padY} L${padX},${h - padY} Z`}
           fill={lineColor}
-          opacity={0.14}
+          opacity={0.16}
         />
-        <path d={path} stroke={lineColor} strokeWidth={7} fill="none" strokeLinecap="round" />
-        {/* 先端マーカー */}
-        <circle cx={headX} cy={headY} r={13} fill={lineColor} />
+        <path d={path} stroke={lineColor} strokeWidth={10} fill="none" strokeLinecap="round" />
+        <circle cx={headX} cy={headY} r={15} fill={lineColor} />
+        {dates.length === n ? (
+          <text
+            x={w - padX}
+            y={h - 18}
+            fontSize={24}
+            fill={brand.cream}
+            opacity={0.6}
+            textAnchor="end"
+          >
+            {dates[0]} 〜 {dates[n - 1]}
+          </text>
+        ) : null}
       </svg>
-      <div style={{display: 'flex', justifyContent: 'center', gap: 30, alignItems: 'baseline'}}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 30,
+          alignItems: 'baseline',
+          marginTop: 16,
+        }}
+      >
         <span style={{fontSize: 62, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
           {latest.toLocaleString('ja-JP', {maximumFractionDigits: 0})}円
         </span>
@@ -430,17 +624,26 @@ const ChartVisual: React.FC<{scene: Scene; props: ShortProps; accent: string}> =
 };
 
 /**
- * 締め。冒頭と同じ「金額の一撃」で終わることで、ループ再生時に頭と自然に繋がる
- * （TikTokはループ回数も評価に入る）。免責は小さくsafeArea内に収める。
+ * 締め。URLの手打ちは期待せず「検索」に落とす。末尾0.8秒は冒頭と同じ金額組版に
+ * カットで戻し、ループ再生で0秒目と絵が繋がるようにする（TikTokはループ回数も評価に入る）。
  */
-const CtaVisual: React.FC = () => {
+const CtaVisual: React.FC<{
+  props: ShortProps;
+  accent: string;
+  durationInFrames: number;
+}> = ({props, accent, durationInFrames}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const enter = spring({frame, fps, config: {damping: 14, stiffness: 200}});
+
+  if (frame >= durationInFrames - LOOP_TAIL_FRAMES) {
+    return <HookVisual props={props} accent={accent} revealed />;
+  }
+
   return (
     <div style={{textAlign: 'center', transform: `scale(${interpolate(enter, [0, 1], [0.9, 1])})`}}>
       <div style={{fontSize: 110}}>🐋</div>
-      <div style={{fontSize: 74, fontWeight: 900, color: '#ffffff', marginTop: 8}}>
+      <div style={{fontSize: 74, fontWeight: 900, color: '#ffffff', marginTop: 8, textShadow: TEXT_SHADOW}}>
         クジラウォッチ
       </div>
       <div
@@ -448,7 +651,7 @@ const CtaVisual: React.FC = () => {
           display: 'inline-block',
           marginTop: 22,
           fontSize: 44,
-          fontWeight: 800,
+          fontWeight: 900,
           color: brand.navyDeep,
           background: brand.goldBright,
           borderRadius: 999,
@@ -457,11 +660,11 @@ const CtaVisual: React.FC = () => {
       >
         kujira-watch.com
       </div>
-      <div style={{fontSize: 24, color: brand.cream, opacity: 0.55, marginTop: 24}}>
-        ※公開情報の要約です。投資勧誘・投資助言ではありません
+      <div style={{fontSize: 40, fontWeight: 900, color: '#ffffff', marginTop: 20, textShadow: TEXT_SHADOW}}>
+        「クジラウォッチ」で検索
       </div>
       {/* VOICEVOX利用規約で必須のクレジット表記（音声が無い回も出て害はない） */}
-      <div style={{fontSize: 22, color: brand.cream, opacity: 0.45, marginTop: 8}}>
+      <div style={{fontSize: 22, color: brand.cream, opacity: 0.5, marginTop: 20}}>
         音声: VOICEVOX:ずんだもん
       </div>
     </div>
@@ -471,11 +674,29 @@ const CtaVisual: React.FC = () => {
 /* ------------------------------------------------------------------ */
 
 const Card: React.FC<{children: React.ReactNode}> = ({children}) => (
-  <div style={{textAlign: 'center', maxWidth: 820}}>{children}</div>
+  <div style={{textAlign: 'center', maxWidth: contentWidth}}>{children}</div>
 );
 
+/**
+ * 見出しラベル。以前は色文字だけで背景に溶けていたため、不透明の下地を敷き、
+ * アクセント色は下線に逃がした（2026-08-19）。
+ */
 const Label: React.FC<{text: string; color: string}> = ({text, color}) => (
-  <div style={{fontSize: 34, letterSpacing: 6, color, fontWeight: 800, marginBottom: 20}}>
+  <div
+    style={{
+      display: 'inline-block',
+      fontSize: 34,
+      letterSpacing: 4,
+      color: '#ffffff',
+      fontWeight: 900,
+      background: 'rgba(6,10,20,0.78)',
+      borderRadius: 999,
+      borderBottom: `4px solid ${color}`,
+      padding: '10px 26px',
+      marginBottom: 20,
+      textShadow: TEXT_SHADOW,
+    }}
+  >
     {text}
   </div>
 );
@@ -489,21 +710,27 @@ const Stat: React.FC<{
 }> = ({label, value, unit, accent, big}) => (
   <div
     style={{
-      background: 'rgba(255,255,255,0.07)',
-      border: `3px solid ${accent}`,
+      background: PLATE_BG,
+      border: `4px solid ${accent}`,
       borderRadius: 24,
       padding: big ? '30px 54px' : '22px 44px',
       textAlign: 'center',
     }}
   >
-    <div style={{fontSize: 30, color: brand.cream, opacity: 0.75, marginBottom: 8}}>{label}</div>
+    <div style={{fontSize: 30, color: brand.cream, opacity: 0.8, marginBottom: 8}}>{label}</div>
     <div style={{display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8}}>
       <span
-        style={{fontSize: big ? 132 : 88, fontWeight: 900, color: '#ffffff', lineHeight: 1}}
+        style={{
+          fontSize: big ? 132 : 88,
+          fontWeight: 900,
+          color: '#ffffff',
+          lineHeight: 1,
+          textShadow: TEXT_SHADOW,
+        }}
       >
         {value}
       </span>
-      <span style={{fontSize: big ? 52 : 40, fontWeight: 800, color: accent}}>{unit}</span>
+      <span style={{fontSize: big ? 52 : 40, fontWeight: 900, color: accent}}>{unit}</span>
     </div>
   </div>
 );

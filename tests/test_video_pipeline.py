@@ -16,6 +16,7 @@ import video.background as bg_mod
 import video.line_notify as ln
 import video.youtube_client as yt
 import video.render as render_mod
+import video.se as se_mod
 
 TK_ENV = {
     "TIKTOK_CLIENT_KEY": "ckey",
@@ -131,7 +132,7 @@ def _claude_response(text: str):
     return client
 
 
-def _script_json(caption_len: int = 10, narration_len: int = 60) -> str:
+def _script_json(caption_len: int = 10, narration_len: int = 40) -> str:
     """新形式（hook/sections/closing、各narration+caption）の正常なClaude出力を作る。"""
     import json as _json
     cap = "あ" * caption_len
@@ -199,11 +200,54 @@ def test_generate_script_returns_none_without_api_key():
 
 
 def test_generate_script_returns_none_when_sections_missing():
-    """sectionsが5件に満たない不正な出力は捨てる（不完全な動画を作らない）。"""
+    """sectionsがSECTION_SPECの件数に満たない不正な出力は捨てる（不完全な動画を作らない）。"""
     payload = '{"hook": {"narration": "a", "caption": "b"}, "sections": [], "closing": {"narration": "c", "caption": "d"}}'
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
          mock.patch("anthropic.Anthropic", return_value=_claude_response(payload)):
         assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
+
+
+def test_generate_script_rejects_narration_cut_mid_sentence():
+    """文の途中で切れた読み上げ文は作り直し、直らなければ動画を作らない。
+    切れた「…」がそのまま画面に出てVOICEVOXにも読み上げられていた実害への対策。"""
+    import json as _json
+    data = _json.loads(_script_json())
+    data["sections"][0]["narration"] = "あ" * (bs.NARRATION_MAX_CHARS + 30)  # 句点なし→…で切れる
+    payload = _json.dumps(data, ensure_ascii=False)
+    client = mock.Mock()
+    client.messages.create.return_value = mock.Mock(content=[mock.Mock(text=payload)])
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
+    assert client.messages.create.call_count == 3  # 初回 + 作り直し2回
+
+
+def test_generate_script_accepts_after_retry_fixes_broken_narration():
+    """1回目が途中で切れていても、作り直しで直れば台本として採用する。"""
+    import json as _json
+    broken = _json.loads(_script_json())
+    broken["sections"][0]["narration"] = "あ" * (bs.NARRATION_MAX_CHARS + 30)
+    client = mock.Mock()
+    client.messages.create.side_effect = [
+        mock.Mock(content=[mock.Mock(text=_json.dumps(broken, ensure_ascii=False))]),
+        mock.Mock(content=[mock.Mock(text=_script_json())]),
+    ]
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
+    assert script is not None
+    assert all(not bs.is_broken_narration(sc["narration"]) for sc in script["scenes"])
+
+
+def test_is_broken_narration_detects_truncation():
+    assert bs.is_broken_narration("保有比率を引き上げました。こ…")
+    assert bs.is_broken_narration("句点で終わらない文")
+    assert not bs.is_broken_narration("句点で終わる文です。")
+
+
+def test_script_has_no_outlook_section():
+    """outlook（推測シーン）は廃止済み。復活させるとSceneViewに描き先が無い。"""
+    assert "outlook" not in [k for k, _ in bs.SECTION_SPEC]
 
 
 def test_trim_narration_cuts_at_sentence_boundary():
@@ -278,9 +322,42 @@ def test_narrate_sections_all_or_nothing(tmp_path):
 
 # ---------------- 株価チャートシーン ----------------
 
-def _fake_prices(closes):
+def _fake_prices(closes, start="2026-05-01"):
+    """lib.utils.get_prices と同じ形（DatetimeIndex＋Close列）のダミー。
+    build_price_scene が index から日付ラベルと開示日の位置を作るため、indexも本物に寄せる。"""
     import pandas as pd
-    return pd.DataFrame({"Close": closes})
+    idx = pd.date_range(start, periods=len(closes), freq="D")
+    return pd.DataFrame({"Close": closes}, index=idx)
+
+
+def test_extract_prev_holding_ratio_takes_second_last_percentage():
+    """本文は「前回◯%→今回◯%」の順なので、末尾から2番目が前回の比率になる。"""
+    article = {"body": "<p>前回3.40%から今回5.21%へ</p>", "tags": "買い"}
+    assert bs.extract_prev_holding_ratio(article) == 3.40
+
+
+def test_extract_prev_holding_ratio_returns_none_when_direction_contradicts():
+    """買いなのに比率が減っている＝拾い方を間違えているので、前回不明として扱う
+    （誤った数字を出すくらいなら change シーンごと落とす）。"""
+    article = {"body": "<p>8.00%から5.21%へ</p>", "tags": "買い"}
+    assert bs.extract_prev_holding_ratio(article) is None
+
+
+def test_extract_prev_holding_ratio_accepts_decrease_for_sell():
+    article = {"body": "<p>8.00%から5.21%へ</p>", "tags": "売り"}
+    assert bs.extract_prev_holding_ratio(article) == 8.00
+
+
+def test_extract_prev_holding_ratio_returns_none_with_single_percentage():
+    assert bs.extract_prev_holding_ratio({"body": "<p>5.21%</p>", "tags": "買い"}) is None
+
+
+def test_build_props_includes_prev_holding_ratio():
+    article = {"stockName": "A", "stockCode": "1", "dealAmount": 10,
+               "body": "<p>3.40%から5.21%へ</p>", "tags": "買い", "dealDate": "2026-08-14"}
+    props = bs.build_props(article, {"scenes": []})
+    assert props["prevHoldingRatio"] == 3.40
+    assert props["holdingRatio"] == 5.21
 
 
 def test_build_price_scene_up_trend():
@@ -307,6 +384,31 @@ def test_build_price_scene_returns_none_without_data():
         assert bs.build_price_scene("9627") is None
 
 
+def test_build_price_scene_marks_disclosure_position():
+    """開示日がチャートの範囲内なら、その位置（discIndex）を返して縦線を引かせる。"""
+    closes = [100.0] * 63
+    with mock.patch("lib.utils.get_prices", return_value=_fake_prices(closes, start="2026-06-01")):
+        scene = bs.build_price_scene("9627", "2026-08-01")
+    assert len(scene["dates"]) == len(scene["closes"])
+    assert scene["dates"][scene["discIndex"]] == "2026-08-01"
+
+
+def test_build_price_scene_omits_disclosure_before_chart_range():
+    """開示日がチャートより前なら縦線は引かない（範囲外に線を出さない）。"""
+    closes = [100.0] * 63
+    with mock.patch("lib.utils.get_prices", return_value=_fake_prices(closes, start="2026-06-01")):
+        scene = bs.build_price_scene("9627", "2026-01-01")
+    assert "discIndex" not in scene
+
+
+def test_build_price_scene_without_disc_date_has_no_index():
+    closes = [100.0] * 63
+    with mock.patch("lib.utils.get_prices", return_value=_fake_prices(closes)):
+        scene = bs.build_price_scene("9627")
+    assert "discIndex" not in scene
+    assert len(scene["dates"]) == len(scene["closes"])
+
+
 # ---------------- 背景動画（Pexels） ----------------
 
 def test_pick_video_file_prefers_portrait_and_min_height():
@@ -324,6 +426,24 @@ def test_pick_video_file_prefers_portrait_and_min_height():
     assert picked["duration"] == 15
 
 
+def test_has_rejected_subject_matches_word_not_substring():
+    """人物クリップは弾き、地名などの部分一致（germany の man）では弾かない。"""
+    assert bg_mod.has_rejected_subject("https://www.pexels.com/video/woman-eating-sushi-12345/")
+    assert bg_mod.has_rejected_subject("https://www.pexels.com/video/a-person-walking-99/")
+    assert not bg_mod.has_rejected_subject("https://www.pexels.com/video/aerial-view-of-germany-77/")
+    assert not bg_mod.has_rejected_subject("https://www.pexels.com/video/ocean-waves-at-sunset-42/")
+
+
+def test_pick_video_file_skips_clips_with_people():
+    """自然系のクエリでもPexelsは人物クリップを返す。金融解説の画としてノイズなので使わない。"""
+    people = {"duration": 15, "url": "https://www.pexels.com/video/woman-in-a-forest-1/",
+              "video_files": [{"height": 1920, "width": 1080, "link": "people"}]}
+    nature = {"duration": 15, "url": "https://www.pexels.com/video/forest-canopy-2/",
+              "video_files": [{"height": 1920, "width": 1080, "link": "nature"}]}
+    assert bg_mod.pick_video_file([people]) is None
+    assert bg_mod.pick_video_file([people, nature])["file"]["link"] == "nature"
+
+
 def test_pick_video_file_returns_none_when_no_portrait():
     videos = [{"duration": 10, "video_files": [{"height": 720, "width": 1280, "link": "x"}]}]
     assert bg_mod.pick_video_file(videos) is None
@@ -334,31 +454,64 @@ def test_background_fetch_pool_skips_without_api_key(tmp_path):
         assert bg_mod.fetch_pool(str(tmp_path)) == []
 
 
-def test_assign_backgrounds_avoids_consecutive_repeat():
-    """プールが2本以上あれば、隣り合うシーンに同じ背景を割り当てない。"""
-    scenes = [{"kind": k} for k in ("hook", "company", "deal", "filer", "change", "outlook", "chart", "cta")]
+def test_assign_backgrounds_only_targets_text_only_scenes():
+    """実写背景は company / filer にだけ敷く。数字を読ませるシーン（hook/deal/change/chart）と
+    ctaは、実写の明部に数字が沈まないようブランドのグラデーション背景に固定する。"""
+    scenes = [{"kind": k} for k in ("hook", "company", "deal", "filer", "change", "chart", "cta")]
     pool = [
         {"filename": "bg_0.mp4", "durationSec": 10.0},
         {"filename": "bg_1.mp4", "durationSec": 12.0},
     ]
     bg_mod.assign_backgrounds(scenes, pool)
-    names = [s["backgroundVideo"] for s in scenes]
-    assert all(names[i] != names[i + 1] for i in range(len(names) - 1))
-    assert all(s["backgroundVideoDurationSec"] > 0 for s in scenes)
+    assigned = {s["kind"] for s in scenes if s.get("backgroundVideo")}
+    assert assigned == {"company", "filer"}
+    assert all(s["backgroundVideoDurationSec"] > 0 for s in scenes if s.get("backgroundVideo"))
 
+
+def test_assign_backgrounds_avoids_consecutive_repeat():
+    """プールが2本以上あれば、続けて同じ背景を割り当てない。"""
+    scenes = [{"kind": k} for k in ("company", "filer")]
+    pool = [
+        {"filename": "bg_0.mp4", "durationSec": 10.0},
+        {"filename": "bg_1.mp4", "durationSec": 12.0},
+    ]
+    bg_mod.assign_backgrounds(scenes, pool)
+    assert scenes[0]["backgroundVideo"] != scenes[1]["backgroundVideo"]
 
 
 def test_assign_backgrounds_single_video_reused():
-    """プールが1本しか無ければ全シーンで使い回す。"""
-    scenes = [{"kind": "hook"}, {"kind": "cta"}]
+    """プールが1本しか無ければ対象シーンで使い回す。"""
+    scenes = [{"kind": "company"}, {"kind": "filer"}]
     bg_mod.assign_backgrounds(scenes, [{"filename": "bg_0.mp4", "durationSec": 8.0}])
     assert [s["backgroundVideo"] for s in scenes] == ["bg_0.mp4", "bg_0.mp4"]
 
 
 def test_assign_backgrounds_noop_with_empty_pool():
-    scenes = [{"kind": "hook"}]
+    scenes = [{"kind": "company"}]
     bg_mod.assign_backgrounds(scenes, [])
     assert "backgroundVideo" not in scenes[0]
+
+
+# ---------------- 効果音（自前生成） ----------------
+
+def test_ensure_sound_effects_writes_playable_wavs(tmp_path):
+    """SEは外部素材を持たずnumpyで合成する（毎日の全自動運用でライセンス確認が要らない）。"""
+    import wave as wave_mod
+    assert se_mod.ensure_sound_effects(str(tmp_path))
+    for name in se_mod.SE_FILENAMES:
+        with wave_mod.open(str(tmp_path / name)) as w:
+            assert w.getnchannels() == 1
+            assert w.getframerate() == se_mod.SAMPLE_RATE
+            assert w.getnframes() > 0
+
+
+def test_ensure_sound_effects_is_deterministic(tmp_path):
+    """同じ波形が毎回できること（差分レビューでSEの変更に気づけるように）。"""
+    a, b = tmp_path / "a", tmp_path / "b"
+    se_mod.ensure_sound_effects(str(a))
+    se_mod.ensure_sound_effects(str(b))
+    for name in se_mod.SE_FILENAMES:
+        assert (a / name).read_bytes() == (b / name).read_bytes()
 
 
 # ---------------- LINE通知 ----------------
@@ -553,6 +706,12 @@ LOUDNORM_JSON = """
 	"target_offset" : "0.20"
 }
 """
+
+
+def test_render_rejects_props_with_truncated_narration():
+    """古いprops JSONを再レンダリングする経路でも、切れた字幕は書き出させない。"""
+    assert render_mod.has_broken_narration({"scenes": [{"narration": "途中で切れた文…"}]})
+    assert not render_mod.has_broken_narration({"scenes": [{"narration": "完結した文です。"}]})
 
 
 def test_measure_loudness_parses_ffmpeg_json():

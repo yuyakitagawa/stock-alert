@@ -130,32 +130,42 @@ def _trim_narration(text: str, limit: int) -> str:
         return text
     cut = text[:limit]
     last_period = cut.rfind("。")
-    if last_period >= 20:  # 先頭近くの句点で切ると1文も残らないため下限を設ける
+    if last_period >= 12:  # 先頭近くの句点で切ると1文も残らないため下限を設ける
         return cut[: last_period + 1]
     return _trim(text, limit)
 
 
 # 画面に出す字幕(caption)の上限。縦画面で1行に収まり、読み上げと同時に目で追える長さ。
 CAPTION_MAX_CHARS = 26
-# 1シーンの読み上げ文の上限。長すぎるとシーンが間延びして飽きられる。
-NARRATION_MAX_CHARS = 90
+# 1シーンの読み上げ文の上限。90字（約12秒）だと1シーンが持たず、総尺も89秒に膨らんでいた。
+# 55字＝約7秒に落として総尺45〜50秒を狙う（2026-08-19のインフルエンサーレビュー）。
+NARRATION_MAX_CHARS = 55
 
 # 動画の構成。kind は Remotion 側の見せ方（video/remotion/src/scenes/）に対応する。
 # 「記事の内容をほぼ読む」構成にするため、事実の羅列だけでなく銘柄と提出者の説明を挟む。
+# outlook（推測シーン）は 2026-08-19 に廃止した。中央ビジュアルが無く10.9秒を
+# 「〜の可能性があります」だけで使っており、尺の浪費と投資助言リスクを同時に抱えていたため。
 SECTION_SPEC = [
     ("company", "この会社が何をしている会社か。事業内容を初見の視聴者にわかるように"),
     ("deal", "誰がいくら分をどう動かしたのか。金額と保有比率という数字の事実"),
     ("filer", "その提出者がどんな投資家か。運用方針や性格がわかるように"),
     ("change", "前回の開示からどう変わったのか。数字の推移が持つ意味"),
-    ("outlook", "この取引が今後どんな意味を持ちうるか。記事の※推測部分に対応する"),
 ]
 
 
+def is_broken_narration(text: str) -> bool:
+    """読み上げ文が文の途中で切れているか。切り詰めの「…」がそのまま画面に出て
+    VOICEVOXにも読み上げられていた実害（2026-08-19に指摘）を検知するために使う。"""
+    text = (text or "").rstrip()
+    return "…" in text or not text.endswith(("。", "！", "？"))
+
+
 def generate_script(article: dict, company_description: str = "", filer_profile: str = "",
-                    _retry: bool = True) -> "dict | None":
+                    _retries: int = 2) -> "dict | None":
     """記事本文から縦動画用の台本を生成する。各シーンは
     `narration`（読み上げ文）と `caption`（画面に出す短い字幕）の対で構成する。
-    パース失敗時は None（呼び出し側は動画を作らない）。"""
+    パース失敗時・文が途中で切れている場合は None（呼び出し側は動画を作らない。
+    途中で切れた文を読み上げる動画を出すくらいなら、その日は投稿しない）。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
@@ -193,31 +203,31 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
 2つを作ってください。captionはnarrationの要約であって、同じ文をそのまま入れないこと。
 
 1. hook: 冒頭で指を止めさせる部分。最初の1秒で固有名詞か金額が耳に入ることが最優先。
-   - narration: 40〜60字。**冒頭15字以内に銘柄名・提出者名・金額のいずれかを必ず入れる**こと。
+   - narration: **22〜30字**。語順は〈誰が〉→〈何を〉→〈いくら〉に固定する。
      「今日は」「みなさん」「ご存知ですか」などの前置きで始めるのは禁止。
-     型の例（記事の事実に合うものを選ぶ。毎回同じ型にしない）:
-     ・「〈銘柄名〉を〈金額〉億円買った投資家がいます」
-     ・「〈提出者名〉が〈銘柄名〉を買い増しました」
-     ・「〈銘柄名〉に〈金額〉億円の大口の売りが出ました」
+     型の例（記事の事実に合うものを選ぶ）:
+     ・「香港のモノ言う株主が、調剤薬局大手を24.5億円。」
+     ・「アクティビストが〈銘柄名〉を〈金額〉億円買いました。」
    - caption: {CAPTION_MAX_CHARS}字以内。体言止めか言い切りで句点は付けない。銘柄名か金額を含める。
-2. sections: 以下の5つを**この順で**作る（kindは指定どおりの文字列にすること）。
+2. sections: 以下の4つを**この順で**作る（kindは指定どおりの文字列にすること）。
 {sections_spec}
    各セクション:
-   - narration: 50〜{NARRATION_MAX_CHARS}字。話し言葉として自然に繋がるようにし、
+   - narration: **35〜{NARRATION_MAX_CHARS}字**。話し言葉として自然に繋がるようにし、
      前のセクションと同じ言い回しを繰り返さない。数字は読み上げやすい表記にする
      （例: 「8.77%」は「8.77パーセント」）。
-   - caption: {CAPTION_MAX_CHARS}字以内。そのシーンで一番伝えたい一点だけ。
-   kind="outlook" は断定を避け「〜の可能性があります」等の推測の言い回しにすること。
+   - caption: {CAPTION_MAX_CHARS}字以内。そのシーンで一番伝えたい一点だけ。数字を1つ含める。
    補足事実が無くて書けないkindがある場合でも、記事本文から言える範囲で必ず埋めること。
 3. closing: 締め。
-   - narration: 20〜35字。サイトで続きが読めることを伝える。
+   - narration: **14〜20字**。「クジラウォッチで検索」と言い切る。URLは読み上げない
+     （英字URLは音声で聞き取れないため）。
    - caption: 12〜18字。
 
-**字数は動画のレイアウトと尺の制約なので厳守してください。**
+**すべての narration は必ず「。」で終わる完結した文にしてください。**
+文の途中で終わる出力は使えません。**字数は動画のレイアウトと尺の制約なので厳守してください。**
 
 出力はJSON形式のみとし、コードフェンスや他のテキストは含めないでください:
 {{"hook": {{"narration": "...", "caption": "..."}},
-  "sections": [{{"kind": "company", "narration": "...", "caption": "..."}}, ...5件...],
+  "sections": [{{"kind": "company", "narration": "...", "caption": "..."}}, ...4件...],
   "closing": {{"narration": "...", "caption": "..."}}}}
 """
     try:
@@ -243,13 +253,21 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
 
     too_long = [s["caption"] for s in scenes if len(s["caption"]) > CAPTION_MAX_CHARS]
     too_long += [s["narration"] for s in scenes if len(s["narration"]) > NARRATION_MAX_CHARS]
-    if too_long and _retry:
+    if too_long and _retries > 0:
         print(f"  ↻ 台本が長すぎるため作り直します（最長{max(len(t) for t in too_long)}字）")
-        return generate_script(article, company_description, filer_profile, _retry=False)
+        return generate_script(article, company_description, filer_profile, _retries - 1)
 
     for scene in scenes:
         scene["caption"] = _trim(scene["caption"], CAPTION_MAX_CHARS)
         scene["narration"] = _trim_narration(scene["narration"], NARRATION_MAX_CHARS)
+
+    broken = [s["narration"] for s in scenes if is_broken_narration(s["narration"])]
+    if broken:
+        if _retries > 0:
+            print(f"  ↻ 読み上げ文が文の途中で切れているため作り直します: {broken[0][-24:]}")
+            return generate_script(article, company_description, filer_profile, _retries - 1)
+        print(f"  ⚠ 読み上げ文が文の途中で切れたままのため動画を作りません: {broken[0][-24:]}")
+        return None
     return {"scenes": scenes}
 
 
@@ -301,6 +319,7 @@ def build_props(article: dict, script: dict) -> dict:
         "direction": "sell" if is_sell else "buy",
         "dealAmountOku": float(article.get("dealAmount") or 0),
         "holdingRatio": extract_holding_ratio(article),
+        "prevHoldingRatio": extract_prev_holding_ratio(article),
         "discDate": deal_date,
         "scenes": script["scenes"],
     }
@@ -319,11 +338,34 @@ def extract_holding_ratio(article: dict) -> float:
     return float(matches[-1])
 
 
-def build_price_scene(code: str) -> "dict | None":
+def extract_prev_holding_ratio(article: dict) -> "float | None":
+    """記事本文から前回開示の保有比率を拾う。本文は「前回◯%→今回◯%」の順で書かれるため
+    末尾から2番目の◯.◯◯%を前回とみなす。ただしこれは書式に依存した推定なので、
+    向き（買いなら増加・売りなら減少）と矛盾する場合は None を返す。
+    None の回は change シーンごと出さない（誤った数字を出すくらいならシーンを削る）。"""
+    text = _strip_html(article.get("body", ""))
+    matches = re.findall(r"(\d{1,2}\.\d{1,2})\s*%", text)
+    if len(matches) < 2:
+        return None
+    prev, current = float(matches[-2]), float(matches[-1])
+    if prev == current:
+        return None
+    is_sell = "売り" in (article.get("tags") or "")
+    if is_sell and prev < current:
+        return None
+    if not is_sell and prev > current:
+        return None
+    return prev
+
+
+def build_price_scene(code: str, disc_date: str = "") -> "dict | None":
     """直近3ヶ月の株価推移シーン（kind="chart"）を作る。データは yahoo_price_cache
     （lib.utils.get_prices、記事の埋め込みチャートと同じソース）。ナレーションは
     Claudeではなくテンプレートで組み立てる（実数値の読み上げに創作の余地を作らないため）。
-    株価が取得できない銘柄は None（チャートシーン無しで動画は成立する）。"""
+    株価が取得できない銘柄は None（チャートシーン無しで動画は成立する）。
+
+    disc_date を渡すと、その日に対応する位置（discIndex）を返し、動画側が
+    「開示はここ」の縦線を引く。チャートの範囲外なら None のままで縦線は出ない。"""
     try:
         from lib.utils import get_prices
 
@@ -331,9 +373,15 @@ def build_price_scene(code: str) -> "dict | None":
         if prices is None or len(prices) < 20:
             return None
         closes = [round(float(c), 1) for c in prices["Close"].values[-63:]]
+        dates = [str(d)[:10] for d in prices.index[-63:]]
     except Exception as e:
         print(f"  ⚠ チャート用株価取得失敗: {e}")
         return None
+
+    disc_index = None
+    if disc_date:
+        earlier = [i for i, d in enumerate(dates) if d <= disc_date]
+        disc_index = earlier[-1] if earlier else None
 
     latest = closes[-1]
     change_pct = (latest / closes[0] - 1) * 100
@@ -346,12 +394,16 @@ def build_price_scene(code: str) -> "dict | None":
     narration = (
         f"株価の推移も見てみましょう。直近の終値は{latest:,.0f}円で、{trend}となっています。"
     )
-    return {
+    scene = {
         "kind": "chart",
         "caption": caption,
         "narration": narration,
         "closes": closes,
+        "dates": dates,
     }
+    if disc_index is not None:
+        scene["discIndex"] = disc_index
+    return scene
 
 
 def build(dry_run: bool = False, article_id: str = "") -> "dict | None":
@@ -392,13 +444,22 @@ def build(dry_run: bool = False, article_id: str = "") -> "dict | None":
     if script is None:
         return None
 
-    # 株価推移シーンを outlook と cta の間に挿す（「最後に株価」というオーナー指定の位置。
-    # ctaの後だと締めの後にまた本編が来て不自然なため、締めの直前に置く）。
-    price_scene = build_price_scene(str(article.get("stockCode") or ""))
+    props = build_props(article, script)
+
+    # 前回の保有比率が本文から確定できない回は change シーンを丸ごと落とす。
+    # 比較対象の無い1本バーを「保有比率の推移」と称して見せないため。
+    if props.get("prevHoldingRatio") is None:
+        script["scenes"] = [s for s in script["scenes"] if s["kind"] != "change"]
+        print("  ↷ 前回の保有比率が特定できないため change シーンを外します")
+
+    # 株価推移シーンを締めの直前に挿す（「最後に株価」というオーナー指定の位置。
+    # ctaの後だと締めの後にまた本編が来て不自然なため）。
+    price_scene = build_price_scene(
+        str(article.get("stockCode") or ""), props.get("discDate") or ""
+    )
     if price_scene is not None:
         script["scenes"].insert(len(script["scenes"]) - 1, price_scene)
-
-    props = build_props(article, script)
+    props["scenes"] = script["scenes"]
     props["articleId"] = article["id"]
     props["articleTitle"] = article["title"]
     if dry_run:

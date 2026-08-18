@@ -11,34 +11,38 @@ import {
 import {brand} from './theme';
 
 /**
- * 全シーン共通の背景。Pexelsの自然映像（海系・縦向き）があればそれをループ再生し、
- * 文字が読めるよう暗いオーバーレイを重ねる。映像が無い日は従来のグラデーション＋波に
- * フォールバックする。いずれも「1フレームも完全静止させない」ことで、静止画
- * スライドショーに見えるのを防ぐ（TikTokでは画面が止まった瞬間にスワイプされる）。
+ * 背景。Pexelsの自然映像がある区間（company / filer の2シーンのみ）はそれをループ再生し、
+ * それ以外の「数字を読ませるシーン」はブランドのグラデーション背景に固定する
+ * （実写の明部に数字が沈む事故を構造的に無くすため。2026-08-19）。
+ * いずれも「1フレームも完全静止させない」ことで、静止画スライドショーに見えるのを防ぐ。
  */
 export const Background: React.FC<{
   videoFile?: string;
   videoDurationSec?: number;
 }> = ({videoFile, videoDurationSec}) => {
   const {fps} = useVideoConfig();
+  const frame = useCurrentFrame();
 
   if (videoFile) {
     // 素材の尺ぶんでループ。端数フレームの黒落ちを避けるため floor で切る。
     const loopFrames = Math.max(fps, Math.floor((videoDurationSec ?? 10) * fps));
     return (
       <AbsoluteFill style={{overflow: 'hidden', background: brand.navyDeep}}>
-        <Loop durationInFrames={loopFrames}>
-          <OffthreadVideo
-            src={staticFile(videoFile)}
-            muted
-            style={{width: '100%', height: '100%', objectFit: 'cover'}}
-          />
-        </Loop>
-        {/* 文字の可読性を確保する薄めの暗幕。「黒すぎる」とのオーナー指摘（2026-08-17）で
-            大幅に薄くした。可読性は字幕カード自体の濃い背景と本文のシャドウで担保する */}
+        {/* Ken Burns。シーン内フレームで進むので、シーンが変わるたび等倍に戻る */}
+        <AbsoluteFill style={{transform: `scale(${1 + frame * 0.00035})`}}>
+          <Loop durationInFrames={loopFrames}>
+            <OffthreadVideo
+              src={staticFile(videoFile)}
+              muted
+              style={{width: '100%', height: '100%', objectFit: 'cover'}}
+            />
+          </Loop>
+        </AbsoluteFill>
+        {/* 実写の上に文字を置く2シーンにだけ効く暗幕。数字シーンはグラデ背景なので
+            「黒すぎる」というオーナー指摘（2026-08-17）の対象にはならない */}
         <AbsoluteFill
           style={{
-            background: `linear-gradient(180deg, rgba(13,21,38,0.45) 0%, rgba(13,21,38,0.22) 40%, rgba(13,21,38,0.28) 70%, rgba(13,21,38,0.55) 100%)`,
+            background: `linear-gradient(180deg, rgba(13,21,38,0.62) 0%, rgba(13,21,38,0.45) 40%, rgba(13,21,38,0.50) 70%, rgba(13,21,38,0.72) 100%)`,
           }}
         />
       </AbsoluteFill>
@@ -50,8 +54,8 @@ export const Background: React.FC<{
 
 const GradientBackground: React.FC = () => {
   const frame = useCurrentFrame();
-  // 20〜60秒かけてわずかに寄る。気づかれない程度のドリフトが「映像感」を作る。
-  const zoom = 1 + frame * 0.00012;
+  // シーンの尺ぶん（数秒）でわずかに寄る。気づかれない程度のドリフトが「映像感」を作る。
+  const zoom = 1 + frame * 0.0003;
 
   return (
     <AbsoluteFill style={{overflow: 'hidden'}}>

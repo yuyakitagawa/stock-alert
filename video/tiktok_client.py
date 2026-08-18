@@ -112,7 +112,7 @@ def build_caption(props: dict) -> str:
         lines.append("・".join(facts) + "の大量保有報告書")
 
     # 3行目以降: 台本の要点字幕から詳細を最大3つ（hookとctaは除く）
-    detail_kinds = ("company", "change", "outlook", "chart")
+    detail_kinds = ("company", "filer", "change", "chart")
     details = [
         s["caption"] for s in props.get("scenes", [])
         if s.get("kind") in detail_kinds and s.get("caption")

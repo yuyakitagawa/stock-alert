@@ -16,6 +16,10 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from video import se  # noqa: E402
+
 # YouTube / TikTok の音量基準。両プラットフォームとも -14 LUFS 前後に正規化して再生し、
 # これより大きい動画は下げるが、小さい動画は上げてくれない。VOICEVOXの生成音声は
 # 素のままだと -25 LUFS 前後で、スマホの通常音量ではナレーションがほぼ聞こえないため、
@@ -156,15 +160,34 @@ def normalize_loudness(path: str) -> bool:
     return True
 
 
+def has_broken_narration(props: dict) -> bool:
+    """読み上げ文が文の途中で切れたまま残っていないか。build_script.py 側でも同じ検査を
+    しているが、古い props JSON をそのままレンダリングする経路（手動実行・再実行）でも
+    切れた字幕が投稿されないよう、書き出し直前にもう一度見る。"""
+    for scene in props.get("scenes", []):
+        if "…" in (scene.get("narration") or ""):
+            return True
+    return False
+
+
 def render(props: dict, out_path: str, assets_dir: "str | None" = None) -> bool:
     """props で mp4 を書き出す。成功したら True。"""
     if not os.path.isdir(os.path.join(REMOTION_DIR, "node_modules")):
         print("[render] node_modules がありません。video/remotion で npm ci を実行してください")
         return False
 
+    if has_broken_narration(props):
+        print("[render] 読み上げ文が文の途中で切れています。台本を作り直してください")
+        return False
+
     render_props = {k: v for k, v in props.items() if k not in NON_PROP_KEYS}
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     staged = _stage_assets(render_props, assets_dir)
+
+    # 効果音は毎回その場で生成する（外部素材を持たないのでライセンス確認が要らない）
+    render_props["sfx"] = se.ensure_sound_effects(PUBLIC_DIR)
+    if render_props["sfx"]:
+        staged += [os.path.join(PUBLIC_DIR, name) for name in se.SE_FILENAMES]
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(render_props, f, ensure_ascii=False)
