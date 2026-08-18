@@ -19,7 +19,7 @@ const description =
 // 投資家は約2,900件あり、全件を1ページに並べるとHTMLが1.5MBを超えてTTFBが約1.9秒に
 // 悪化していた。1ページあたりの件数を絞り、クロール可能な素のリンクで前後ページを辿れるようにする
 // （各投資家ページのURLはサイトマップにも全件載せている）。
-const PER_PAGE = 200;
+const PER_PAGE = 100;
 
 type Props = {
   searchParams: Promise<{ category?: string; page?: string }>;

@@ -1,3 +1,67 @@
+## 2026-08-18 kujira-watch: 文字サイズをTOPに統一し、一覧7ページをカードUI＋ページ送りに
+
+オーナー指摘「なんかトップページだけ文字が大きい？」→「やや小さいぐらいで良い」
+→「他のページもTOPにサイズ感を合わせたい」→「リスト形式の情報は全部カードUIにできる？」
+→「多い場合はページネーション」への対応。
+
+### 何が起きていたか（実測・幅1280px）
+TOPだけが他ページに無い大きさを2つ持っていた。
+- `TodayWhaleSummary`の件数・金額が **48px**（MUI `variant="h3"`の既定）。
+  サイトの他の最大値はh1の30pxで、48pxはこの1箇所だけだった。
+- `FeaturedArticleCard`のタイトルが **24/30px** で、ページのh1と同寸。
+  見出し階層が潰れたカードが3枚縦に並ぶため「上半分ぜんぶ大きい」印象になっていた。
+
+一方で通常の記事カード（見出し20px／本文14px／メタ12px）は他ページと完全に一致しており、
+スクロールすると急に普通のサイズに戻る＝上だけ浮いた状態だった。
+
+### 実装
+1. **文字サイズ**
+   - サマリー数値 48px → `{ xs: "1.5rem", sm: "1.75rem" }`(24/28px)、`lineHeight`も1→1.1。
+   - 注目カード見出し 24/30px → `{ xs: "1.25rem", sm: "1.5rem" }`(20/24px)。
+   - h2セクション見出しを ja/en 18ファイル・61箇所で `text-lg`(18px) → `text-xl`(20px)。
+     TOPだけ`text-xl`、他ページは`text-lg`という2系統になっていたためTOP側に寄せた。
+     `text-lg`の使用箇所は全て`text-lg font-bold text-brand-navy`のh2で、他用途への巻き込みは無い。
+2. **カードUI**（`/disclosures` `/trending` `/ranking` `/activists` `/investors` `/stocks` `/monthly`）
+   - `src/app/globals.css`の`@layer components`に`.card`/`.card-grid`/`.card-grid-wide`を新設。
+     **MUI CardやTailwindユーティリティの羅列は使わない**: `/faq`では可視HTMLの75%が
+     コンテンツではなくマークアップ（`Mui〜`クラスの出現14,160回）だった前例がある。
+     `@layer components`に入れるのは、レイヤー無しだとTailwindのユーティリティより優先されて
+     `flex`等での上書きが効かなくなるため。
+   - グリッドは`repeat(auto-fill, minmax(min(100%, 14rem), 1fr))`。`min()`により、
+     カード最小幅より狭い端末では自動的に1列になるのでメディアクエリを持たない。
+   - `TrendingTable`はMUI Tableをやめてカードに。`minWidth: 420px`で375px幅では
+     横スクロールが必要だったため、数値にラベルを添えてカード内で折り返す形にした。
+   - `MonthList`はMUI List＋`"use client"`をやめ、素のカードのサーバーコンポーネントに。
+   - `/ranking`は「1行目=順位＋投資家名（全幅）／2行目=分類・件数・リターン（右端）」の2段。
+     リターンを名前と同じ行に置くと、長い投資家名が細く4行に折り返されていた。
+     表の見出し行（順位・投資家／トータルの推計リターン）はカード2列と対応しないため凡例1行に変更。
+3. **ページ送り**
+   - `/stocks`（596件を1ページに全件描画していた）に`?page=`を新設。100件/ページ。
+   - `/ranking`（131件）に`?page=`を新設。順位はページをまたいで通し番号（`rankOffset`）にし、
+     ItemList構造化データの`position`も合わせる。
+   - `/investors`は既存のページ送りを200件→100件に。カード化で1件あたりの縦幅が増えたため。
+   - 3ページとも`/investors`と同じ規律: 各ページが自分自身をcanonical、絞り込みリンクは
+     ページ番号を持ち越さない、サイトマップに載せるのは1ページ目のみ。
+
+### 確認
+本番ビルド(`next start`)のHTMLをgzipして本番サイト(変更前)と比較。閾値は
+`perf_check.yml`のHTML 100KB。
+
+| ページ | 変更前 | 変更後 |
+|---|---|---|
+| /disclosures | 31KB | 31KB |
+| /trending | 14KB | 13KB |
+| /ranking | 47KB | 42KB |
+| /activists | 36KB | 36KB |
+| /investors | 36KB | 24KB |
+| /stocks | 57KB | **21KB** |
+| /monthly | 10KB | 9KB |
+
+カード化してもHTMLは増えていない（MUIを使わなかったため）。`/stocks`はページ送りで大幅減。
+`/investors`は200件→100件のページ送りで36KB→24KB。`/stocks`のページ高さは 22,110px → 4,894px。
+375px/1280pxの両方で7ページを目視確認、横スクロール無しを`scrollWidth`で実測。
+`tsc --noEmit`・eslintクリーン、`npm run build`成功。
+
 
 ## 2026-08-18 kujira-watch: ハンバーガーメニューを上部タブと同順＋見出し付きグループに再編
 
