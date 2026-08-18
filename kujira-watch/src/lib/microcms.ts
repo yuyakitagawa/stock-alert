@@ -139,16 +139,13 @@ export async function getArticleList(params: {
 export const FEATURED_POOL_SIZE = 20;
 export const FEATURED_COUNT = 3;
 
-// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得。
-// プール全体を金額だけで並べ替えると、投稿数が少ない日に数日前の大型取引が「注目」を
-// 占有し続けてしまうため、取得時の並び替えはしない）の中から、クジラ注目度
-// (attentionScore、lib/attention_score.pyが実績63営業日後リターンで較正)が高い順に
-// 先頭FEATURED_COUNT件を選ぶ。スコア未算出（売り記事・旧記事）はattentionScoreを
-// 最低値扱いにし、同点はdealAmountで比較する。
+// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得）
+// から、推定取引金額が大きい順に先頭FEATURED_COUNT件を選ぶ。
+// プールの取得を日付優先にしているのは、金額だけで並べ替えると投稿数が少ない日に
+// 数日前の大型取引が「注目」を占有し続けてしまうため。
+// web/publish_blog_articles.pyのget_featured_article_ids()と同じロジック。
 function pickFeatured(pool: ArticleContent[], count: number): ArticleContent[] {
-  return [...pool]
-    .sort((a, b) => (b.attentionScore ?? -1) - (a.attentionScore ?? -1) || b.dealAmount - a.dealAmount)
-    .slice(0, count);
+  return [...pool].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
 }
 
 export async function getFeaturedArticles(

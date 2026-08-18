@@ -62,7 +62,7 @@ def fetch_recent_articles(hours: int = RECENT_HOURS, stock_code: str = "") -> li
                 "orders": "-dealDate,-dealAmount",
                 "limit": CANDIDATE_LIMIT,
                 "filters": filters,
-                "fields": "id,title,body,stockName,stockCode,dealType,dealDate,dealAmount,tags,filerName,attentionScore",
+                "fields": "id,title,body,stockName,stockCode,dealType,dealDate,dealAmount,tags,filerName",
             },
             timeout=20,
         )

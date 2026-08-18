@@ -60,8 +60,6 @@ npm run dev
 | eyecatch | アイキャッチ画像 | 画像 | △ |
 | filerName | 取引企業（提出者名） | テキスト | △（2026-08-15にスキーマ作成済み。下記の注意書きを参照） |
 | ratioChangePct | 保有比率の変化幅（ポイント、売りは負値） | 数値 | △（2026-08-15追加。記事詳細のファクトボックス「前回比」に使用） |
-| attentionScore | クジラ注目度（0-100） | 数値 | △（買い記事のみ。`lib/attention_score.py`が算出） |
-| attentionReasons | 注目度の理由 | テキスト（カンマ区切り、`tags`と同じ運用） | △ |
 
 > **注意（2026-08-15更新）**: `filerName` は長らくmicroCMSスキーマに存在せず（microCMSは
 > スキーマに無いフィールドを黙って捨てるため、`web/publish_blog_articles.py`が送っても
@@ -72,32 +70,6 @@ npm run dev
 > 両フィールドが管理画面で作成されたため、**以降の新規記事はCMSの値がそのまま入る**
 > （フロント側はCMSの値を優先し、値が空の既存記事のみ突合フォールバックを使う実装）。
 
-### クジラ注目度（attentionScore）
-
-サイト上の日本語表示ラベルは「注目度」（2026-08-18に「クジラ注目度」から短縮。英語は"Whale Attention Score"のまま）。
-
-「保有比率20%超」「急増」「アクティビスト」等の見た目のインパクトが強い要素は、実際の
-株価リターンとは無関係か弱い負の相関しかない（`lib/attention_score.py`のdocstring参照。
-買い開示4,232件を検証、2026-08-15）ことが判明したため、
-直感ではなく実績データで較正した「スコアカード」方式を採用している。保有比率・保有比率の
-変化幅・推定取引金額・投資家分類（13分類）をそれぞれ実績の分位ビン平均リターン（または
-縮小推定した平均リターン）に変換し、Ridge回帰の重みで線形結合、学習時の予測値分布の
-パーセンタイルへ変換して0〜100点にスケーリングする。「過去の取得回数」は検証したが有意な
-関係が見られなかったためスコアに含めない。売り方向の記事（スコアカードが買い方向の実績のみで
-較正済みのため対象外）・生成タイミングが古い記事は`attentionScore`が未設定になる。
-
-- 生成: `web/publish_blog_articles.py`の`build_and_publish()`が新規記事の投稿時に算出。
-- 遡及付与: `tools/backfill_attention_score.py`が既存記事をEDINET開示（Supabase
-  `edinet_large_holdings`）と突き合わせて一括計算・PATCH更新する（`--dry-run`で確認可）。
-- 表示: `src/components/AttentionScoreBadge.tsx`（一覧・カード用の星付きコンパクトバッジ、
-  `FeaturedArticleCard`/`ArticleCard`で使用）、`src/components/AttentionScorePanel.tsx`
-  （記事詳細ページ用の大きいスコア＋星＋理由リストのパネル。理由は日本語のみ生成するため
-  EN版ではスコア・星のみ表示）。
-- 「注目①②③」（`getFeaturedArticles()`、TOP/週次/月別で使用）は、従来の
-  「日付優先→同日内は金額降順」の2軸ソートに代えて、直近プール内でこの`attentionScore`が
-  高い順に選ぶ（未算出はプール内で最下位扱い、同点は`dealAmount`で比較）。
-  `web/publish_blog_articles.py`の`get_featured_article_ids()`（X投稿の対象記事選定）も
-  同じロジックで同期させている。
 
 ## ページ構成
 
@@ -107,7 +79,7 @@ npm run dev
 | `/weekly` | 大口投資家の週次トレンド（2026-08-18に「動きまとめ」から週次トレンド化。直近7日間の横断要約に加えて週ごとの推移を出す。「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。「週別の開示件数トレンド」（`getWeeklyDisclosureCounts()`＝EDINET開示の月曜始まり暦週13週分、`DisclosureTrendChart`共用棒グラフ）と「週別の売買金額トレンド」（`getRecentArticleDigests()`＝記事のdealDate/dealAmount/tagsのみ8週分取得し、週ごとに買い・売り・差し引きを表で表示）を挟み、「直近7日間のポイント」で買い/売りの件数・金額、投資家分類別・銘柄別の上位内訳を集計表示し（`lib/weeklyStats.ts`の`buildWeeklySummary()`）、金額規模が大きい上位3件を「注目の取引」としてヒーロー枠で見せ、残りは取引日ごとに件数・金額つきで`/date/[date]`へのリンクに集約する。全記事をカード表示していた旧構成は縦に長すぎるため廃止。ヘッダーから常時リンク） |
 | `/disclosures` | 大量保有報告書の開示速報。EDINETに提出された大量保有・変更報告書の**全件**（記事化されていない開示も含む。Supabase `edinet_large_holdings`直参照、`src/lib/disclosures.ts`）を提出日ごとにグループ化して新しい順にカード一覧（`.card-grid-wide`＝2列相当）。各カードに種別キッカー（`doc_description`の接頭辞で新規/変更/訂正を判定。`doc_type_code`は350が新規・変更の両方、360が訂正で、種別の区別には使えない）・保有比率の前回→今回（`RatioTransition`共用）・提出者（`/investors/[filer]`へリンク）・提出時刻・EDINET原文PDFへの直リンク（`https://disclosure2dl.edinet-fsa.go.jp/searchdocument/pdf/{doc_id}.pdf`）を表示（銘柄・提出者・PDFと別々のリンクが3つあるためカード全体はリンクにしない）。銘柄は上場銘柄マスター（`jpx_stock_list`）に載っているコードを`/stocks/[code]`へリンク（`getAllListedCodes()`。解説記事の有無は問わない。マスターに無いコード＝上場廃止等だけテキストのまま。`/trending`と同じ規律）。`?type=`（new/change/correction）の種別フィルタ＋`?page=`で100件ずつのページ送り（クロール可能な素のリンク、各ページ自身がcanonical）。ページ冒頭の説明文は1行＋5営業日遅れの注記のみに絞り、データの取得方法・表示項目などの補足は`/faq/usage`のQ&A（開示速報ページでは何が見られますか？）へ移してリンクで誘導（2026-08-18）。競合（IRBANK・M&A Online等）が持つ「全開示の速報一覧」に対する後発対応で、記事化された一部の開示しか見えなかったギャップを埋める（分析は`docs/progress_competitive_analysis.md`）。データ取得は`unstable_cache`で(page, type)ごとに5分キャッシュ。ヘッダーから常時リンク |
 | `/activists` | アクティビストの動き（2026-08-18に「保有銘柄一覧」から改名・再構成）。「アクティビスト注目銘柄」（直近30日にアクティビストが保有比率を増やした＝買い入れた銘柄を、増加幅(pt)の銘柄別合算が大きい順に初期10件＋`<details>`の「もっと見る」。前回比率が無い開示は新規保有として今回比率ぶんを増加扱い。2ファンド以上が同時5%以上保有中の銘柄には「複数ファンド保有」バッジ。定義の解説は`/faq/usage`のQ&Aへ）→「直近のアクティビストの動き」（`getActivistRecentMoves()`＝開示を新しい順に初期20件＋「もっと見る」、`RatioTransition`の前回→今回つき）の2段構成（どちらも`.card-grid-wide`のカード一覧）。以前あった「ファンド別の保有銘柄」セクションは削除し、各投資家ページ（`/investors/[filer]`）の「主な保有銘柄」に集約（ファンド一覧のItemList構造化データも削除）。保有集計は`src/lib/activists.ts`の`getActivistHoldingsSummary()`（複数ファンド保有バッジの判定に使用。提出者名を15件ずつ`.in()`分割で問い合わせ、(提出者×銘柄)の最新行を採用）。銘柄は上場銘柄マスターに載っているコードをリンク（`getAllListedCodes()`。`/trending`と同じ規律）。提出者名は表示のみ`displayFilerName()`で半角へ寄せ、hrefは原文のまま。`unstable_cache`で1時間キャッシュ、ヘッダーから常時リンク |
-| `/articles/[id]` | 記事詳細。銘柄｜取引日｜金額規模｜保有比率（提出者が特定できた記事のみ`getHoldingSnapshot()`でEDINET開示から取得、直前の保有割合があれば「（前回 X%）」を併記）｜前回比（CMSの`ratioChangePct`を優先、無ければEDINET開示の直前保有割合との差。±pt表示で買いは緑・売りは赤）｜取引企業（`/investors/[filer]`への内部リンク。CMSの`filerName`が空の旧記事はEDINET開示との突合で解決する。上記スキーマの注意書きを参照。突合できない場合は列自体を出さない）のdl（ファクトボックス）を表示し、直下に開示ラグ（報告義務発生から提出まで最大5営業日）と投資助言ではない旨の定型注記を置く。クジラ注目度パネルの下には「開示後の株価推移」（`src/components/PriceAfterDisclosure.tsx`＋`src/lib/priceReturns.ts`。Supabase `yahoo_price_cache`から開示日の基準終値・+1ヶ月(21営業日)・+3ヶ月(63営業日)・直近の騰落率を表示。株価データが無い銘柄では非表示）を置く。本文の下には出典ブロック（情報源=EDINET・提出日・記事公開日・元の開示リンク・免責の定型文。E-E-A-T/AIO対策）、共有ボタン（`src/components/ShareButtons.tsx`、X/LINEのWeb Intentへのリンク。SDKは読み込まず`ActionButton`の外部リンクとして描画。はてブは利用実績がなく2026-08-15に削除）、Xフォロー導線（`src/components/FollowCta.tsx`、ネイビー地の反転配色バナー。フォローintent `x.com/intent/follow` への素のリンク。`NEXT_PUBLIC_LINE_ADD_FRIEND_URL`設定時はLINE友だち追加ボタンを先頭に出す）と、回遊導線として「同じ銘柄の他の記事」（`getArticlesByStockCode()`、最大3件の一行リンク＋銘柄ページへの導線）「この取引をした投資家」（投資家ページへの導線）「関連ランキング」（買い増し/売却/報告件数ランキングと当日の全開示へのnav）「関連記事（同じ分類）」（カード最大4件）を重複排除して並べる |
+| `/articles/[id]` | 記事詳細。銘柄｜取引日｜金額規模｜保有比率（提出者が特定できた記事のみ`getHoldingSnapshot()`でEDINET開示から取得、直前の保有割合があれば「（前回 X%）」を併記）｜前回比（CMSの`ratioChangePct`を優先、無ければEDINET開示の直前保有割合との差。±pt表示で買いは緑・売りは赤）｜取引企業（`/investors/[filer]`への内部リンク。CMSの`filerName`が空の旧記事はEDINET開示との突合で解決する。上記スキーマの注意書きを参照。突合できない場合は列自体を出さない）のdl（ファクトボックス）を表示し、直下に開示ラグ（報告義務発生から提出まで最大5営業日）と投資助言ではない旨の定型注記を置く。ファクトボックスの下には「開示後の株価推移」（`src/components/PriceAfterDisclosure.tsx`＋`src/lib/priceReturns.ts`。Supabase `yahoo_price_cache`から開示日の基準終値・+1ヶ月(21営業日)・+3ヶ月(63営業日)・直近の騰落率を表示。株価データが無い銘柄では非表示）を置く。本文の下には出典ブロック（情報源=EDINET・提出日・記事公開日・元の開示リンク・免責の定型文。E-E-A-T/AIO対策）、共有ボタン（`src/components/ShareButtons.tsx`、X/LINEのWeb Intentへのリンク。SDKは読み込まず`ActionButton`の外部リンクとして描画。はてブは利用実績がなく2026-08-15に削除）、Xフォロー導線（`src/components/FollowCta.tsx`、ネイビー地の反転配色バナー。フォローintent `x.com/intent/follow` への素のリンク。`NEXT_PUBLIC_LINE_ADD_FRIEND_URL`設定時はLINE友だち追加ボタンを先頭に出す）と、回遊導線として「同じ銘柄の他の記事」（`getArticlesByStockCode()`、最大3件の一行リンク＋銘柄ページへの導線）「この取引をした投資家」（投資家ページへの導線）「関連ランキング」（買い増し/売却/報告件数ランキングと当日の全開示へのnav）「関連記事（同じ分類）」（カード最大4件）を重複排除して並べる |
 | `/category/[category]` | カテゴリ別一覧（同じく初回30件サーバーレンダリング＋オートスクロール） |
 | `/stocks` | 銘柄一覧。見出し直下に業種（セクター）別の絞り込み（Supabase `jpx_stock_list.sector`から集計、`?sector=`クエリでSSRフィルタ、各業種の件数を`(N件)`で表示）を配置し、記事のある銘柄を証券コード順（辞書的に引ける順番）にカードで列挙（`lib/microcms.ts`の`getAllStocksForIndex()`＋`lib/companyInfo.ts`の`getSectorsByCode()`）。銘柄は約600件あるため`?page=`で100件ずつのページ送り（クロール可能な素の前後リンク。各ページは自分自身をcanonicalにする）。カードは`.card-grid`（3列相当）で並べる。1列のままカード化すると縦の総量が行リストの約3倍になり索引として使えないため |
 | `/stocks/[code]` | 銘柄ページ。見出し（企業名・証券コード）の直下に事業内容（あれば）を地の文で表示し（会社四季報の【特色】欄と同程度の密度＝2〜3文90〜130字。社名と証券コードだけでは何の会社か分からないため2026-08-18に1文40字から拡充）、続けて直近90営業日の株価推移グラフ・業種・終値・PER/PBR・52週レンジ位置・株主優待有無の会社情報カードを置く。その下にこの銘柄へ大量保有報告書を提出したことがある投資家を1件ずつ改行して一覧表示（`/investors/[filer]`への内部リンク）、「保有比率の推移」テーブル（`getHoldingsByStockCode()`でEDINET開示を開示日降順に最大100件、投資家リンク・種別・`RatioTransition`による前回%→今回%と▲/▼増減表示。SEO/AIO 30日計画P3、2026-08-15追加）、続いて「大量保有・自社株買い履歴」の見出しを置き、同一`stockCode`の記事を`-dealDate`順に一覧表示する（解説記事が1本も無い銘柄ではこの節ごと省略し、開示テーブル＋会社情報＋FAQのページになる。EDINET開示はあるが記事化されていない銘柄が大半（開示のある2,982銘柄に対し記事があるのは599銘柄）で、以前は記事0件で404にしていたため検索から消えていた＝2026-08-18に解消。記事0件のページは薄いページなので`robots: noindex, follow`を付け、sitemapにも載せない）。上場銘柄マスター（`jpx_stock_list`）にも記事にも無いコードだけ404。末尾に「よくある質問」（`src/lib/stockFaq.ts`の`buildStockFaqItems()`がそのページのEDINETデータから自動生成する2〜3問。可視のAccordion＋FAQPage構造化データを同一ソースから出す）。titleは「◯◯（コード）の大量保有・大株主の動き」（「銘柄名 大量保有／大株主」の検索意図対応、2026-08-17変更）。記事詳細の「銘柄」欄から内部リンクあり |

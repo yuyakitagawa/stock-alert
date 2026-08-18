@@ -44,7 +44,6 @@ import lib.supabase_client as sb
 from lib.db import get_edinet_large_holdings_recent
 from lib.edinet import disclosure_doc_label, disclosure_kind_label
 from lib.utils import get_price_at_date
-from lib.attention_score import compute_attention_score
 from tools.scan_large_holdings import is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
@@ -423,7 +422,7 @@ FEATURED_COUNT = 3
 
 def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = FEATURED_COUNT) -> set:
     """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件のプールから
-    クジラ注目度attentionScoreが高い順に先頭count件を採用、未算出はdealAmountで比較）を
+    推定取引金額dealAmountが大きい順に先頭count件を採用）を
     Python側で再現し、現在ホームページで「注目」表示されている記事のidセットを返す。
     X投稿をこれと一致させることで、サイトで目立っていない小粒な開示がXにだけ投稿される
     事態を防ぐ。取得失敗時は空集合（この場合X投稿は0件になる）。"""
@@ -434,7 +433,7 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
             params={
                 "orders": "-dealDate,-dealAmount",
                 "limit": pool_size,
-                "fields": "id,dealAmount,attentionScore",
+                "fields": "id,dealAmount",
             },
             timeout=15,
         )
@@ -445,10 +444,7 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
         print(f"  ⚠ 注目記事プール取得失敗: {e}")
         return set()
 
-    contents.sort(
-        key=lambda a: (a.get("attentionScore") if a.get("attentionScore") is not None else -1, a.get("dealAmount", 0)),
-        reverse=True,
-    )
+    contents.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
     return {a["id"] for a in contents[:count]}
 
 
@@ -1053,14 +1049,6 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "tags": tags,
             "filerName": filer_name,
         }
-        # クジラ注目度: 買い開示のみ(スコアカードは買い方向の実績で較正済みのため、
-        # 売り方向には適用しない)。
-        if not is_sell:
-            attention = compute_attention_score(
-                h["holding_ratio"], change, deal_amount, deal_type
-            )
-            payload["attentionScore"] = attention["score"]
-            payload["attentionReasons"] = ",".join(attention["reasons"])
         if article.get("bodyEn"):
             payload["titleEn"] = titles["titleEn"]
             payload["bodyEn"] = article["bodyEn"]

@@ -6,7 +6,6 @@ import Box from "@mui/material/Box";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
-import AttentionScorePanel from "@/components/AttentionScorePanel";
 import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
@@ -343,7 +342,6 @@ export default async function ArticleDetailPage({ params }: Props) {
           </Link>
           をご覧ください。
         </p>
-        <AttentionScorePanel score={article.attentionScore} reasons={article.attentionReasons} />
         <PriceAfterDisclosure stockCode={article.stockCode} dealDate={article.dealDate} />
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
