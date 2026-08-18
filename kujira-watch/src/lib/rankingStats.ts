@@ -1,9 +1,9 @@
 import type { ArticleContent, DealType } from "@/types/article";
 
 // /ranking/[slug]の集計。記事(microCMS)1件＝EDINET大量保有報告書1件の開示として扱う。
-// 「月間ランキング」のタブ（買い増し・売却・報告書件数）は投資家別に積み上げる。
+// 「月間ランキング」のタブ（買い増し・売却）は投資家別に積み上げる。
 // 銘柄別に並べると同じタブ内で軸が銘柄に変わってしまい、ランキングの意味が変わるため。
-export type RankingSlug = "buys" | "sells" | "filings" | "activist";
+export type RankingSlug = "buys" | "sells" | "activist";
 
 // 投資家別ランキングの1行。代表開示（金額が最大の開示）を銘柄・解説記事への内部リンクに使う。
 export type FilerRow = {
@@ -34,18 +34,14 @@ export function isSell(article: ArticleContent): boolean {
 }
 
 export function buildFilerRows(
-  slug: RankingSlug,
+  slug: "buys" | "sells",
   articles: ArticleContent[],
   limit: number
 ): FilerRow[] {
   // 提出者名が無い過去記事は投資家別に積めないので除外する。
   const target = articles.filter((a) => Boolean(a.filerName));
   const filtered =
-    slug === "buys"
-      ? target.filter((a) => !isSell(a))
-      : slug === "sells"
-        ? target.filter(isSell)
-        : target;
+    slug === "buys" ? target.filter((a) => !isSell(a)) : target.filter(isSell);
 
   const byFiler = new Map<
     string,
@@ -75,12 +71,8 @@ export function buildFilerRows(
       topArticleId: top.id,
       latestDealDate: latest,
     }))
-    // 件数ランキングは件数優先（同数は合計金額）、買い増し・売却は金額優先（同額は件数）。
-    .sort((x, y) =>
-      slug === "filings"
-        ? y.count - x.count || y.amount - x.amount
-        : y.amount - x.amount || y.count - x.count
-    )
+    // 金額優先（同額は開示件数の多いほうを上に）。
+    .sort((x, y) => y.amount - x.amount || y.count - x.count)
     .slice(0, limit);
 }
 

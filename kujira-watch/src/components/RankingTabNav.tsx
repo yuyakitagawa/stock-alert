@@ -7,7 +7,6 @@ const TABS = [
   { href: "/ranking", label: "3ヶ月リターンランキング" },
   { href: "/ranking/buys", label: "買い増しランキング" },
   { href: "/ranking/sells", label: "売却ランキング" },
-  { href: "/ranking/filings", label: "報告書件数ランキング" },
   { href: "/ranking/trending", label: "開示急増投資家" },
 ];
 

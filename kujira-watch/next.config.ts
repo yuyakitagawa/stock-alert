@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/sitemap.xml", destination: "/sitemap-index.xml" }];
   },
+  // /ranking/filings（報告書件数ランキング）は2026-08-18に廃止。2026-08-15公開で
+  // インデックス済みのため404にせず、内容が最も近い/ranking/trending（開示急増投資家）へ
+  // 恒久リダイレクトする。
+  async redirects() {
+    return [{ source: "/ranking/filings", destination: "/ranking/trending", permanent: true }];
+  },
   images: {
     remotePatterns: [
       {

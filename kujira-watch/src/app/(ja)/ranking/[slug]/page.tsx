@@ -20,7 +20,7 @@ export const revalidate = 3600;
 const RANKING_DAYS = 30;
 const RANKING_SIZE = 30;
 
-// 集計の軸。buys/sells/filingsは「月間ランキング」タブの一員なので投資家別に集計する
+// 集計の軸。buys/sellsは「月間ランキング」タブの一員なので投資家別に集計する
 // （銘柄別の同種ランキングは/trendingや各銘柄ページの役割）。activistはタブに含めない
 // 「アクティビストが動いた銘柄」なので銘柄別のまま。
 type RankingAxis = "filer" | "stock";
@@ -44,14 +44,6 @@ const RANKINGS: Record<
       `EDINET大量保有報告書で開示された売却（保有比率の減少）を投資家別に合計し、推定売却金額が` +
       `大きい順に並べた直近${RANKING_DAYS}日のランキング。いちばん売っている大口投資家が分かります。`,
     note: "投資家ごとの推定売却金額（発行済株式数×株価×保有比率の変化幅の概算）の合計が大きい順です。",
-  },
-  filings: {
-    axis: "filer",
-    title: `報告書件数ランキング（直近${RANKING_DAYS}日）`,
-    description:
-      `直近${RANKING_DAYS}日にEDINETへ提出された大量保有報告書・変更報告書の件数を投資家別に集計した` +
-      `ランキング。いま最も活発に動いている大口投資家が分かります。`,
-    note: "買い・売り両方向の開示を投資家ごとに数えた件数順です（同数は合計金額順）。",
   },
   activist: {
     axis: "stock",
@@ -91,7 +83,7 @@ export default async function RankingSlugPage({ params }: Props) {
 
   const { contents } = await getRecentArticles(RANKING_DAYS);
   const filerRows =
-    ranking.axis === "filer" ? buildFilerRows(slug as RankingSlug, contents, RANKING_SIZE) : [];
+    ranking.axis === "filer" ? buildFilerRows(slug as "buys" | "sells", contents, RANKING_SIZE) : [];
   const stockRows = ranking.axis === "stock" ? buildStockRows(contents, RANKING_SIZE) : [];
   const rowCount = ranking.axis === "filer" ? filerRows.length : stockRows.length;
 
