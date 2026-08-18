@@ -105,3 +105,26 @@
   復帰後に`tools/rewrite_thin_blog_articles.py`で実行する。
 - 同一銘柄の連投記事の統合（402Aに17本、8783に10本など12銘柄）は既存URLの整理を伴うため未着手。
 - `kujira-watch/README.md`への反映は、並行セッションが同ファイルを編集中のため保留。
+
+### 追加で判明した最大のボトルネック: 全ページが動的レンダリングだった（同日中に修正）
+デプロイ後にレスポンスヘッダーを測ったところ、`revalidate`を延ばしても記事ページは
+`x-vercel-cache: MISS` / `cache-control: no-store` のままで、毎リクエストがサーバー実行だった。
+原因は2つ:
+1. supabase-jsのfetchにキャッシュ指定が無く、Next.js 15以降のfetch既定(no-store)により
+   Supabaseを読むページ全体が動的扱いになっていた（microCMS側は`next: { revalidate }`済みで対象外）。
+   → `lib/investors.ts`・`lib/priceReturns.ts`の読み取りを`unstable_cache`(1時間)に載せた。
+2. Next 16では`generateStaticParams`の無い動的セグメントがISRにならずリクエスト毎のSSRになる
+   （`generateStaticParams`を持つ`/category`・`/faq`だけがPRERENDERだった）。
+   → `/articles/[id]`(直近200)・`/stocks/[code]`(上位100)・`/date/[date]`(直近60)・
+   `/investors/[filer]`(上位100)に`generateStaticParams`を追加。一部でも事前生成すると
+   ルート全体がISR扱いになり、事前生成外のパラメータも2回目以降はCDNから返る。
+
+本番実測（対策前 → 対策後）:
+| ページ | TTFB前 | TTFB後 | キャッシュ |
+|---|---|---|---|
+| /articles/[id] | 1.8〜2.8秒 | 0.17〜0.68秒 | HIT |
+| /stocks/[code] | 1.5秒 | 0.37秒 | HIT |
+| /date/[date] | 1.4秒 | 0.17秒 | HIT/PRERENDER |
+
+注意: 事前生成のパスはそのままファイル名になるため、全角の長い提出者名で
+ENAMETOOLONGとなり本番ビルドが3回失敗した（並行セッションが`MAX_PRERENDER_SEGMENT_LEN`で修正済み）。
