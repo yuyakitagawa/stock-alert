@@ -49,7 +49,7 @@ export default async function EnHomePage() {
               ))}
             </div>
           )}
-          <h2 className="mb-4 text-xl font-bold text-brand-navy">{t.todaysDealsHeading}</h2>
+          <h2 className="mb-4 text-xl font-bold text-brand-navy">{t.latestDealsHeading}</h2>
           <InfiniteArticleList
             initialArticles={contents}
             totalCount={totalCount}
