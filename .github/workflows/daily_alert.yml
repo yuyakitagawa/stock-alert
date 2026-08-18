@@ -33,7 +33,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost lightgbm \
-            gspread google-auth yfinance anthropic
+            yfinance anthropic
 
       - name: Link repo to ~/stock-alert
         run: |
@@ -42,17 +42,12 @@ jobs:
 
       - name: Create .env from secrets
         run: |
-          echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" > ~/stock-alert/.env
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
           echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "LINE_USER_ID=${{ secrets.LINE_USER_ID }}" >> ~/stock-alert/.env
-
-      - name: Create gcp_key.json from secret
-        run: |
-          echo '${{ secrets.GCP_KEY_JSON }}' > ~/stock-alert/gcp_key.json
 
       - name: Restore model cache
         id: restore_model_cache

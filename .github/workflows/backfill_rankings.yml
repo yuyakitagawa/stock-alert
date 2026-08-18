@@ -38,7 +38,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost lightgbm \
-            gspread google-auth yfinance
+            yfinance
 
       - name: Link repo to ~/stock-alert
         run: |

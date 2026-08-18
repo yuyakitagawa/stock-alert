@@ -58,7 +58,6 @@ x_weekend_post.yml（週末のX投稿2本立て。土曜18:00 JST=急増ラン�
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗は指数バックオフで自動リトライ）|
 | `lib/fundamentals.py` | point-in-time（先読みバイアスなし）ファンダメンタル再構成。`rank_stocks.py`/`rf_train_v3.py`/`backtest.py`で共用。`get_pit_fundamentals()`等は`rows`（銘柄のjquants_fin_summary全履歴）を渡すとDB問い合わせせずメモリ上でas_ofフィルタする（`rf_train_v3.py`が銘柄あたり約60サンプル日で呼ぶため、都度クエリだと数時間かかっていたのを銘柄ごと1クエリに削減）|
-| `lib/sheets_helper.py` | Googleスプレッドシート連携 |
 | `lib/data_sanity.py` | **Quality Assurance (QA)** ロール。リリースのたびにデータを検証。`check_ranking`（下落確率レンジ・予測多様性等の行レベル、rank_stocks/export_to_webで使用）＋`check_price_freshness`（複数日にまたがるclose凍結=更新漏れ検知、backfill_historyで使用）（alert-only：違反でも更新は止めずメール通知）|
 | `lib/kabutan_earnings.py` | kabutan.jpから決算業績を取得（AI解析プロンプト用）|
 | `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |

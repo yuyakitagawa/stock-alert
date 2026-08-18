@@ -30,7 +30,7 @@
 
 ## 4. Context & Workflow
 - **CI/CD**: GitHub Actions (平日 16:00 JST / 7:00 UTC、金曜に再学習).
-- **Env**: GMAIL, GCP_KEY_JSON, SPREADSHEET_ID が必須。
+- **Env**: SUPABASE_URL / SUPABASE_SERVICE_KEY / ANTHROPIC_API_KEY / EDINET_API_KEY / LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID が必須。QAアラートメールのみ GMAIL_ADDRESS / GMAIL_APP_PASSWORD を使う。
 - **Dev Cycle**: 
   1. 修正 2. `backtest.py bear` で性能確認 3. `dev_log.md` 追記 4. Commit
 - **改善マージ規律**: 改善案はシミュレーション or バックテストで効果を数値確認してからコミットせよ。平均リターン・勝率・大勝率のいずれも改善しない変更はマージ禁止。
