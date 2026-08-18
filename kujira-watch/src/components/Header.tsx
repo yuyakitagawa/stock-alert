@@ -11,8 +11,7 @@ import HeaderMenu from "./HeaderMenu";
 import StockSearch from "./StockSearch";
 import VisitCounter from "./VisitCounter";
 import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
-import { DEAL_TYPES } from "@/types/article";
-import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
+import { mainNavLinks } from "@/lib/nav";
 import type { Locale } from "@/lib/i18n";
 
 // タブが「今どのページを開いているか」を示せるよう、現在のパスと一致する
@@ -26,27 +25,7 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
   const homeHref = locale === "en" ? "/en" : "/";
   const pathname = usePathname() ?? homeHref;
 
-  const navLinks =
-    locale === "en"
-      ? [
-          { href: "/en", label: "Top" },
-          ...DEAL_TYPES.map((dealType) => ({
-            href: `/en/category/${DEAL_TYPE_EN[dealType].slug}`,
-            label: DEAL_TYPE_EN[dealType].label,
-          })),
-        ]
-      : [
-          { href: "/", label: "TOP" },
-          { href: "/disclosures", label: "開示速報" },
-          { href: "/trending", label: "急増銘柄" },
-          { href: "/ranking", label: "投資家ランキング" },
-          { href: "/weekly", label: "週次トレンド" },
-          { href: "/activists", label: "アクティビストの動き" },
-          { href: "/investors", label: "投資家一覧" },
-          { href: "/stocks", label: "銘柄一覧" },
-          // 月別アーカイブは回遊の起点というより過去分の入口なので一番右に置く。
-          { href: "/monthly", label: "月別アーカイブ" },
-        ];
+  const navLinks = mainNavLinks(locale);
 
   // MUI TabsのvalueはchildのTabのvalueと厳密一致する必要があるため、
   // サブページ(配下URL)では一致する先頭リンクのhrefを採用する。どれにも

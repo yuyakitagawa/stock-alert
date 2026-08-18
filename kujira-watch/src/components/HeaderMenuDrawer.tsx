@@ -16,6 +16,8 @@ import { UI, type Locale } from "@/lib/i18n";
 
 // external: 外部サイト（公式Xなど）へのリンク。next/linkではなく素のaで別タブに開く。
 export type MenuLink = { href: string; label: string; external?: boolean };
+// 見出し付きのリンクグループ。先頭グループは上部タブと同一内容（HeaderMenu側で構築）。
+export type MenuGroup = { heading: string; links: MenuLink[] };
 
 // ハンバーガーメニューの中身。閉じているのが既定なので、HeaderMenu側から
 // next/dynamicで遅延読み込みする。MUI Drawerは Modal/Portal/Backdrop/Slide 一式を
@@ -25,7 +27,7 @@ export default function HeaderMenuDrawer({
   open,
   onClose,
   locale,
-  siteLinks,
+  menuGroups,
   jaHref,
   enHref,
   year,
@@ -33,7 +35,7 @@ export default function HeaderMenuDrawer({
   open: boolean;
   onClose: () => void;
   locale: Locale;
-  siteLinks: MenuLink[];
+  menuGroups: MenuGroup[];
   jaHref: string;
   enHref: string;
   year: number;
@@ -81,32 +83,36 @@ export default function HeaderMenuDrawer({
             </ListItemButton>
           </List>
 
-          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
-            {locale === "en" ? "Menu" : "メニュー"}
-          </Typography>
-          <List component="nav" aria-label={locale === "en" ? "Menu" : "メニュー"} disablePadding>
-            {siteLinks.map((link) =>
-              link.external ? (
-                <ListItemButton
-                  key={link.href}
-                  component="a"
-                  href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={close}
-                  divider
-                >
-                  <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
-                  <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-                </ListItemButton>
-              ) : (
-                <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
-                  <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
-                  <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-                </ListItemButton>
-              ),
-            )}
-          </List>
+          {menuGroups.map((group) => (
+            <Box key={group.heading}>
+              <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
+                {group.heading}
+              </Typography>
+              <List component="nav" aria-label={group.heading} disablePadding>
+                {group.links.map((link) =>
+                  link.external ? (
+                    <ListItemButton
+                      key={link.href}
+                      component="a"
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={close}
+                      divider
+                    >
+                      <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                      <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+                    </ListItemButton>
+                  ) : (
+                    <ListItemButton key={link.href} component={Link} href={link.href} onClick={close} divider>
+                      <ListItemText primary={link.label} slotProps={{ primary: { sx: { color: "primary.main" } } }} />
+                      <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
+                    </ListItemButton>
+                  ),
+                )}
+              </List>
+            </Box>
+          ))}
 
           <Typography variant="caption" sx={{ display: "block", mt: 1.5, px: 2, lineHeight: 1.6, color: "text.secondary" }}>
             {locale === "en"

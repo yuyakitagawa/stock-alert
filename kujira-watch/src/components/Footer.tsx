@@ -27,6 +27,7 @@ const JA_GROUPS: FooterGroup[] = [
       { href: "/investors", label: "投資家一覧" },
       { href: "/stocks", label: "銘柄一覧" },
       { href: "/monthly", label: "月別アーカイブ" },
+      { href: "/watchlist", label: "ウォッチリスト" },
     ],
   },
   {
