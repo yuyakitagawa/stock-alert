@@ -1169,3 +1169,32 @@ Pexels素材の手動ホワイトリスト。理由は `docs/progress_video_v7_i
 サイトの名乗り・URL・UTM・ハッシュタグ整形は `video/post_text.py` に集約した。
 名乗りを各クライアントに直書きすると、動画側で「クジラウォッチ」と名乗った事故と同じことが
 投稿文でも起きるため。テストは video 75→84件、全体354件pass。
+
+### 2026-08-19: 「新規保有」誤表示の是正（変更報告書を新規保有と誤判定しない）
+
+`ratio_change_pct()` は開示に直前保有割合が無く、DBにも同一提出者の過去開示が無いとき
+「今回比率の全量が動いた」とみなしていた。**変更報告書は提出者が既に5%以上を保有している届出**なので
+これは誤りで、タイトルが「〇〇がX%を新規保有」、`ratioChangePct` と `dealAmount` が実態の数十倍という
+記事が公開されていた。誤表示は「変化幅＝今回比率」になる性質上、記事化の足切り（3億円 or 1pt）を
+必ず通過して「注目」枠・日次合計・X投稿の上位に来るため、件数の割に目立つ。
+
+実測（Supabase、直近90日）: 変更報告書3,242件のうち `holding_ratio_prior` の充填率は99.6%。
+前回比率もDB内の過去開示も無く実際に誤表示になるのは**7件（0.2%）**
+（ＦＭＲ ＬＬＣ3・古野興産1・伊藤直之1・フィデリティ投信1・ＡＰ ＰＳ ＩＶ1）。
+※ `docs/consult_10000_beginners_20260819.md` 第6章で「33件」としていたのは
+`like '%変更報告書%'` で訂正報告書（大量保有報告書・変更報告書）を巻き込んだ数え間違い。前方一致で訂正した。
+
+- `ratio_change_pct()`: 報告書種別 `doc_kind` を受け取り、前回比率も過去開示も無い変更報告書では
+  変化幅を「不明」としてNoneを返す。全量を変化幅にするのは新規の大量保有報告書のみ。
+- `is_new_holding()`: `doc_type_label` が変更報告書なら常にFalse（ヒューリスティックより種別を優先）。
+- `build_and_publish()`: 変化幅Noneの開示はスキップ（yfinanceの金額概算にも到達しない）。
+- `tools/rewrite_thin_blog_articles.py`: 前回比率と報告書種別を渡すよう修正。
+- `kujira-watch` 記事ページ: 前回比の正をEDINETスナップショット優先に変更し、CMSの`ratioChangePct`は
+  フォールバックへ降格。既存記事の「保有比率10.57%（前回10.72%）」と「前回比 −10.57pt」の矛盾表示が消える。
+- `tools/fix_new_holding_articles.py`（新規）: 公開済みの誤記事を検出してmicroCMSを訂正する。
+  前回比率が取れる開示のみ再計算してPATCHし、取れない開示は自動訂正せず一覧に出す（既定dry-run）。
+
+テスト: `tests/test_publish_blog_articles.py` 91→95件、`tests/test_fix_new_holding_articles.py` 6件を新規追加。
+全テストスイートgreen、`kujira-watch` は tsc/eslint ともエラーなし。
+
+未了: `tools/fix_new_holding_articles.py --apply` の実行（microCMS認証情報が必要なためオーナー実行）。

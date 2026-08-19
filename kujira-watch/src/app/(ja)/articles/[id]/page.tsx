@@ -184,13 +184,15 @@ export default async function ArticleDetailPage({ params }: Props) {
     ? await getHoldingSnapshot(article.stockCode, dealDateOnly, filerName)
     : null;
   const holdingRatio = snapshot?.holdingRatio ?? null;
-  // 前回比はCMSのratioChangePct（2026-08-15以降の記事）を優先し、
-  // 無ければEDINET開示の直前保有割合との差から補う。
-  const ratioChange =
-    article.ratioChangePct ??
-    (holdingRatio !== null && snapshot?.holdingRatioPrior != null
+  // 前回比は「EDINET開示の直前保有割合との差」を正とし、CMSのratioChangePctはそれが
+  // 取れないときのフォールバックに落とす。CMS側を優先すると、生成時に前回比率が取れず
+  // 「今回比率の全量」で記録された記事で、同じ画面に「保有比率10.57%（前回10.72%）」と
+  // 「前回比 −10.57pt」が並ぶ矛盾表示になる（2026-08-19の監査で確認）。
+  const ratioChangeFromEdinet =
+    holdingRatio !== null && snapshot?.holdingRatioPrior != null
       ? Math.round((holdingRatio - snapshot.holdingRatioPrior) * 100) / 100
-      : null);
+      : null;
+  const ratioChange = ratioChangeFromEdinet ?? article.ratioChangePct ?? null;
   const formatRatio = (value: number) =>
     value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 
