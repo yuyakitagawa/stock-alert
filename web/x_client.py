@@ -15,8 +15,8 @@ publish_blog_articles.py が投稿した新着記事のうち、ホームペー�
   ハッシュタグは母数のある `#日本株 #大量保有報告書` の2つだけ
 - 添付画像の1枚目は保有比率と金額を大きく出す数字カード（x_card_image）、
   2枚目が株価チャート。両方にalt（代替テキスト）を付ける
-- URLは本文ではなく自己リプライに置く（本文中の外部リンクはリーチが落ちるため）。
-  X_LINK_IN_REPLY=0 で従来どおり本文に入れるA/Bに戻せる
+- URLは本文に入れる（親投稿にURLが無いとスレッドを開かない読者にリンクが届かないため）。
+  X_LINK_IN_REPLY=1 で自己リプライ（2投稿目）へ移すA/Bに切り替えられる
 - 投稿したtweet_idはSupabaseの`x_posts`に記録し、web/x_metrics.pyが日次で
   インプレッション等を追記する（どの型が伸びたかを検証できるようにするため）
 
@@ -63,8 +63,13 @@ FILER_LABEL_MAX_UNITS = 26
 
 
 def link_in_reply() -> bool:
-    """URLを自己リプライに置くか（既定）。X_LINK_IN_REPLY=0 で本文に戻す（A/B用）。"""
-    return os.getenv("X_LINK_IN_REPLY", "1") != "0"
+    """URLを自己リプライ（2投稿目）に置くか。既定は本文に入れる。
+
+    「本文中の外部リンクはリーチが落ちる」という定説から一度は自己リプライを既定にしたが、
+    親投稿にURLが無いと、スレッドを開かない読者にはリンクが一切届かない（2026-08-19、
+    オーナー指摘）。まず本文にURLがある状態を既定とし、X_LINK_IN_REPLY=1 で自己リプライ側に
+    切り替えてA/Bを取る（どちらだったかは x_posts.variant に残る）。"""
+    return os.getenv("X_LINK_IN_REPLY", "0") == "1"
 
 
 def _auth() -> "OAuth1 | None":
@@ -227,7 +232,7 @@ def post_tweet(text: str, media_ids: "list | None" = None, reply_to: "str | None
 
 def publish(body: str, link_line: str = "", media_ids: "list | None" = None,
             kind: str = "other", reply_to: "str | None" = None, **log_fields) -> "str | None":
-    """本文とリンクを投稿する。既定ではリンクを親投稿に含めず自己リプライに置く（施策3）。
+    """本文とリンクを投稿する。X_LINK_IN_REPLY=1 のときだけリンクを自己リプライに分ける。
     戻り値は親投稿のtweet_id。"""
     if link_in_reply() and link_line:
         parent = post_tweet(body, media_ids=media_ids, reply_to=reply_to, kind=kind, **log_fields)

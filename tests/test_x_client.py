@@ -162,8 +162,8 @@ def test_post_tweet_includes_media_ids_and_reply_target():
     assert captured["reply"] == {"in_reply_to_tweet_id": "777"}
 
 
-def test_publish_puts_link_in_a_self_reply_by_default():
-    """本文中の外部リンクはリーチが落ちるため、既定ではURLを2投稿目に置く。"""
+def test_publish_puts_link_in_a_self_reply_when_ab_flag_on():
+    """X_LINK_IN_REPLY=1 のときだけURLを2投稿目に分ける（既定は本文）。"""
     calls = []
     with mock.patch.dict(os.environ, {**X_ENV, "X_LINK_IN_REPLY": "1"}, clear=True), \
          mock.patch.object(m, "post_tweet",
@@ -175,9 +175,10 @@ def test_publish_puts_link_in_a_self_reply_by_default():
     assert calls[1][1]["reply_to"] == "100"
 
 
-def test_publish_keeps_link_in_body_when_ab_flag_off():
+def test_publish_keeps_link_in_body_by_default():
+    """親投稿にURLが無いと、スレッドを開かない読者にリンクが届かないため既定は本文。"""
     calls = []
-    with mock.patch.dict(os.environ, {**X_ENV, "X_LINK_IN_REPLY": "0"}, clear=True), \
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "post_tweet",
                            side_effect=lambda text, **kw: calls.append(text) or "100"):
         m.publish("本文", link_line="https://example.com", kind="article")

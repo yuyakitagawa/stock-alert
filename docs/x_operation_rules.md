@@ -47,8 +47,8 @@ JST 8〜22時の外では自動投稿しない（`x_client.within_posting_hours`
 - 悪化した変更はコードごと戻す。結果は `dev_log.md` に残す
 
 ## 7. A/Bの切り替え方
-リンク位置は環境変数で切り替える（既定は自己リプライ）。
+リンク位置は環境変数で切り替える（既定は本文にURLを入れる）。
 ```bash
-X_LINK_IN_REPLY=0 python3 web/x_followup.py --dry-run
+X_LINK_IN_REPLY=1 python3 web/x_followup.py --dry-run
 ```
 `x_posts.variant` に `link_in_reply` / `link_in_body` が入るので、`web/x_metrics.py --report` で比較する。
