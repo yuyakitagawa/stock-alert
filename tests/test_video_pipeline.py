@@ -208,6 +208,36 @@ def test_generate_script_returns_none_when_sections_missing():
         assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
 
 
+def test_generate_script_feeds_the_problem_back_on_retry():
+    """作り直しでは「何字の文が長すぎたか」をプロンプトに足して伝える。同じ指示を
+    そのまま投げ直すと同じ長さが返り、2026-08-19に投稿0件になった。"""
+    import json as _json
+    over = _json.loads(_script_json())
+    over["sections"][0]["narration"] = "長い文です。" * 15  # 90字
+    client = mock.Mock()
+    client.messages.create.side_effect = [
+        mock.Mock(content=[mock.Mock(text=_json.dumps(over, ensure_ascii=False))]),
+        mock.Mock(content=[mock.Mock(text=_script_json())]),
+    ]
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is not None
+    retry_prompt = client.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
+    assert "前回の出力の問題" in retry_prompt
+    assert "90字" in retry_prompt
+
+
+def test_prompt_forbids_takeover_wording():
+    """0.38%の取得を「買収」と読み上げた回があった。開示内容を超える語は禁止する。"""
+    client = mock.Mock()
+    client.messages.create.return_value = mock.Mock(content=[mock.Mock(text=_script_json())])
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
+    prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "買収" in prompt and "使わないでください" in prompt
+
+
 def test_generate_script_rejects_narration_cut_mid_sentence():
     """文の途中で切れた読み上げ文は作り直し、直らなければ動画を作らない。
     切れた「…」がそのまま画面に出てVOICEVOXにも読み上げられていた実害への対策。"""
@@ -220,7 +250,7 @@ def test_generate_script_rejects_narration_cut_mid_sentence():
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
-    assert client.messages.create.call_count == 3  # 初回 + 作り直し2回
+    assert client.messages.create.call_count == 4  # 初回 + 作り直し3回
 
 
 def test_generate_script_accepts_after_retry_fixes_broken_narration():

@@ -161,11 +161,15 @@ def is_broken_narration(text: str) -> bool:
 
 
 def generate_script(article: dict, company_description: str = "", filer_profile: str = "",
-                    _retries: int = 2) -> "dict | None":
+                    _retries: int = 3, _feedback: str = "") -> "dict | None":
     """記事本文から縦動画用の台本を生成する。各シーンは
     `narration`（読み上げ文）と `caption`（画面に出す短い字幕）の対で構成する。
     パース失敗時・文が途中で切れている場合は None（呼び出し側は動画を作らない。
-    途中で切れた文を読み上げる動画を出すくらいなら、その日は投稿しない）。"""
+    途中で切れた文を読み上げる動画を出すくらいなら、その日は投稿しない）。
+
+    字数超過は _retries 回まで作り直す。作り直しでは「何字の文が長すぎたか」を
+    プロンプトに足して伝える（同じ指示をそのまま投げ直しても同じ長さが返るため。
+    2026-08-19に日本製鉄の回が2回とも86〜93字で返って投稿0件になった実障害への対策）。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
@@ -198,9 +202,17 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
 記事本文:
 {body_text[:2500]}
 
-この動画は音声ナレーションで記事の内容をほぼ読み上げ、画面には要点だけを大きく出します。
-そのため各シーンについて **narration（読み上げ文）** と **caption（画面に出す字幕）** の
-2つを作ってください。captionはnarrationの要約であって、同じ文をそのまま入れないこと。
+この動画は**40秒前後のショート動画**です。記事を読み上げるのではなく、記事の要点だけを
+テンポよく短く言い切ります。各シーンについて **narration（読み上げ文）** と
+**caption（画面に出す字幕）** の2つを作ってください。captionはnarrationの要約であって、
+同じ文をそのまま入れないこと。
+
+**1文は40字以内**にしてください。説明が入り切らない場合は情報を削ってください
+（2文に分けるのではなく、そのシーンで一番大事な一点だけを残す）。
+
+大量保有報告書は株式の取得・売却の開示であって企業買収ではありません。
+「買収」「経営権を握る」「TOB」など、開示内容を超える語は使わないでください
+（「取得」「買い増し」「新規保有」「売却」など事実に合う語を使う）。
 
 1. hook: 冒頭で指を止めさせる部分。最初の1秒で固有名詞か金額が耳に入ることが最優先。
    - narration: **22〜30字**。語順は〈誰が〉→〈何を〉→〈いくら〉に固定する。
@@ -226,7 +238,7 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
 **すべての narration は必ず「。」で終わる完結した文にしてください。**
 文の途中で終わる出力は使えません。**字数は動画のレイアウトと尺の制約なので厳守してください。**
 
-出力はJSON形式のみとし、コードフェンスや他のテキストは含めないでください:
+{_feedback}出力はJSON形式のみとし、コードフェンスや他のテキストは含めないでください:
 {{"hook": {{"narration": "...", "caption": "..."}},
   "sections": [{{"kind": "company", "narration": "...", "caption": "..."}}, ...4件...],
   "closing": {{"narration": "...", "caption": "..."}}}}
@@ -255,8 +267,15 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
     too_long = [s["caption"] for s in scenes if len(s["caption"]) > CAPTION_MAX_CHARS]
     too_long += [s["narration"] for s in scenes if len(s["narration"]) > NARRATION_MAX_CHARS]
     if too_long and _retries > 0:
-        print(f"  ↻ 台本が長すぎるため作り直します（最長{max(len(t) for t in too_long)}字）")
-        return generate_script(article, company_description, filer_profile, _retries - 1)
+        longest = max(too_long, key=len)
+        print(f"  ↻ 台本が長すぎるため作り直します（最長{len(longest)}字）")
+        feedback = (
+            f"【前回の出力の問題】ある文が{len(longest)}字ありました:「{longest[:60]}」。\n"
+            f"narrationは1文40字以内・1シーン{NARRATION_MAX_CHARS}字以内が絶対条件です。"
+            f"情報を削って短くしてください。\n\n"
+        )
+        return generate_script(article, company_description, filer_profile,
+                               _retries - 1, feedback)
 
     for scene in scenes:
         scene["caption"] = _trim(scene["caption"], CAPTION_MAX_CHARS)
@@ -266,7 +285,13 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
     if broken:
         if _retries > 0:
             print(f"  ↻ 読み上げ文が文の途中で切れているため作り直します: {broken[0][-24:]}")
-            return generate_script(article, company_description, filer_profile, _retries - 1)
+            feedback = (
+                f"【前回の出力の問題】「{broken[0][:60]}」が長すぎて途中で切れました。\n"
+                f"narrationは1文40字以内・1シーン{NARRATION_MAX_CHARS}字以内で、"
+                f"必ず「。」で終わる完結した文にしてください。\n\n"
+            )
+            return generate_script(article, company_description, filer_profile,
+                                   _retries - 1, feedback)
         print(f"  ⚠ 読み上げ文が文の途中で切れたままのため動画を作りません: {broken[0][-24:]}")
         return None
     return {"scenes": scenes}
