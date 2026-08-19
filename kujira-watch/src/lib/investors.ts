@@ -280,6 +280,41 @@ export const getHoldingsByStockCode = unstable_cache(getHoldingsByStockCodeUncac
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });
 
+export type HoldingHistoryPoint = { discDate: string; holdingRatio: number };
+
+// 記事詳細の「この投資家の保有比率の推移」用。同一銘柄×同一提出者の開示を古い順に返す。
+// 1回ぶんの変化幅（前回比）だけでは「積み増している最中なのか、降りている最中なのか」が
+// 分からないという指摘（2026-08-19のユーザーインタビュー）への対応。
+async function getHoldingHistoryUncached(
+  stockCode: string,
+  filerName: string
+): Promise<HoldingHistoryPoint[]> {
+  const supabase = getSupabaseServerClient();
+  const { data } = await supabase
+    .from("edinet_large_holdings")
+    .select("disc_date, holding_ratio")
+    .eq("issuer_code", stockCode)
+    .eq("filer_name", filerName)
+    .order("disc_date", { ascending: true })
+    .limit(50);
+  const points: HoldingHistoryPoint[] = [];
+  for (const row of data ?? []) {
+    if (row.holding_ratio === null) continue;
+    // 同一開示日に複数行（訂正等）がある場合は最後の値を採用する。
+    const last = points[points.length - 1];
+    if (last && last.discDate === row.disc_date) {
+      last.holdingRatio = row.holding_ratio;
+      continue;
+    }
+    points.push({ discDate: row.disc_date, holdingRatio: row.holding_ratio });
+  }
+  return points;
+}
+
+export const getHoldingHistory = unstable_cache(getHoldingHistoryUncached, ["getHoldingHistory"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
+
 // 記事詳細のファクトボックス用。銘柄コード×開示日×提出者名でEDINET開示そのものを1件引き、
 // 保有比率・直前の保有比率を返す（CMSの記事には保有比率フィールドが無いため）。
 // 同一キーで複数行ある場合（同日の訂正等）は保有比率が取れている行を優先する。

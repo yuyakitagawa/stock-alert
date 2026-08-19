@@ -9,7 +9,7 @@ import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ThemeRegistry from "@/components/ThemeRegistry";
-import { SITE_DESCRIPTION_EN, SITE_NAME_EN, SITE_URL } from "@/lib/site";
+import { SITE_DESCRIPTION_EN, SITE_NAME_EN, SITE_URL, X_HANDLE } from "@/lib/site";
 import "../../globals.css";
 
 const geistSans = Geist({
@@ -66,6 +66,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
+    site: X_HANDLE,
+    creator: X_HANDLE,
     title: SITE_NAME_EN,
     description: SITE_DESCRIPTION_EN,
   },

@@ -15,6 +15,7 @@ import { getAllFilers, getFilerClassification, getFilerHoldings } from "@/lib/in
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
+import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildInvestorFaqItems } from "@/lib/investorFaq";
 
@@ -73,7 +74,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates: {
+      canonical: url,
+      types: { "application/rss+xml": `${url}/feed.xml` },
+    },
     openGraph: { title, description, url },
   };
 }
@@ -298,6 +302,12 @@ export default async function InvestorPage({ params }: Props) {
           {DEAL_TYPE_DESCRIPTIONS[category]}
         </p>
       )}
+      <div className="mt-8">
+        <FollowUpdatesCta
+          feedUrl={`/investors/${encodeURIComponent(filerName)}/feed.xml`}
+          targetLabel={displayFilerName(filerName)}
+        />
+      </div>
       {faqItems.length > 0 && (
         <div className="mt-8 border-t border-rule pt-4">
           <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>

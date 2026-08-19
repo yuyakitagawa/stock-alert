@@ -16,7 +16,7 @@ import video.background as bg_mod
 import video.line_notify as ln
 import video.youtube_client as yt
 import video.render as render_mod
-import video.se as se_mod
+import video.audio_gen as audio_gen
 import video.post_text as pt
 
 TK_ENV = {
@@ -208,6 +208,36 @@ def test_generate_script_returns_none_when_sections_missing():
         assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
 
 
+def test_generate_script_feeds_the_problem_back_on_retry():
+    """作り直しでは「何字の文が長すぎたか」をプロンプトに足して伝える。同じ指示を
+    そのまま投げ直すと同じ長さが返り、2026-08-19に投稿0件になった。"""
+    import json as _json
+    over = _json.loads(_script_json())
+    over["sections"][0]["narration"] = "長い文です。" * 15  # 90字
+    client = mock.Mock()
+    client.messages.create.side_effect = [
+        mock.Mock(content=[mock.Mock(text=_json.dumps(over, ensure_ascii=False))]),
+        mock.Mock(content=[mock.Mock(text=_script_json())]),
+    ]
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is not None
+    retry_prompt = client.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
+    assert "前回の出力の問題" in retry_prompt
+    assert "90字" in retry_prompt
+
+
+def test_prompt_forbids_takeover_wording():
+    """0.38%の取得を「買収」と読み上げた回があった。開示内容を超える語は禁止する。"""
+    client = mock.Mock()
+    client.messages.create.return_value = mock.Mock(content=[mock.Mock(text=_script_json())])
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
+    prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "買収" in prompt and "使わないでください" in prompt
+
+
 def test_generate_script_rejects_narration_cut_mid_sentence():
     """文の途中で切れた読み上げ文は作り直し、直らなければ動画を作らない。
     切れた「…」がそのまま画面に出てVOICEVOXにも読み上げられていた実害への対策。"""
@@ -220,7 +250,7 @@ def test_generate_script_rejects_narration_cut_mid_sentence():
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
-    assert client.messages.create.call_count == 3  # 初回 + 作り直し2回
+    assert client.messages.create.call_count == 4  # 初回 + 作り直し3回
 
 
 def test_generate_script_accepts_after_retry_fixes_broken_narration():
@@ -493,25 +523,47 @@ def test_assign_backgrounds_noop_with_empty_pool():
     assert "backgroundVideo" not in scenes[0]
 
 
-# ---------------- 効果音（自前生成） ----------------
+# ---------------- 効果音・BGM（自前生成） ----------------
 
 def test_ensure_sound_effects_writes_playable_wavs(tmp_path):
-    """SEは外部素材を持たずnumpyで合成する（毎日の全自動運用でライセンス確認が要らない）。"""
+    """効果音とBGMは外部素材を持たずnumpyで合成する（毎日の全自動運用でライセンス確認が要らない）。"""
     import wave as wave_mod
-    assert se_mod.ensure_sound_effects(str(tmp_path))
-    for name in se_mod.SE_FILENAMES:
+    assert audio_gen.ensure_sound_effects(str(tmp_path))
+    for name in audio_gen.GENERATED_AUDIO:
         with wave_mod.open(str(tmp_path / name)) as w:
             assert w.getnchannels() == 1
-            assert w.getframerate() == se_mod.SAMPLE_RATE
+            assert w.getframerate() == audio_gen.SAMPLE_RATE
             assert w.getnframes() > 0
+
+
+def test_bgm_loops_without_a_click(tmp_path):
+    """BGMは12秒でループする。末尾と先頭の段差が普通のサンプル間差分より大きいと
+    ループのたびにプチッと鳴るため、段差が通常の範囲に収まっていることを確かめる。"""
+    import numpy as np
+    import wave as wave_mod
+
+    audio_gen.ensure_sound_effects(str(tmp_path))
+    with wave_mod.open(str(tmp_path / "bgm.wav")) as w:
+        assert w.getnframes() == int(audio_gen.SAMPLE_RATE * audio_gen.BGM_LOOP_SEC)
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32767
+    loop_step = abs(x[0] - x[-1])
+    typical_step = float(np.percentile(np.abs(np.diff(x)), 99))
+    assert loop_step <= typical_step * 3
+
+
+def test_bgm_leaves_headroom():
+    """クリップするとナレーションの上で歪む。ピークに余裕を持たせる。"""
+    import numpy as np
+
+    assert float(np.max(np.abs(audio_gen._bgm()))) <= 0.6
 
 
 def test_ensure_sound_effects_is_deterministic(tmp_path):
     """同じ波形が毎回できること（差分レビューでSEの変更に気づけるように）。"""
     a, b = tmp_path / "a", tmp_path / "b"
-    se_mod.ensure_sound_effects(str(a))
-    se_mod.ensure_sound_effects(str(b))
-    for name in se_mod.SE_FILENAMES:
+    audio_gen.ensure_sound_effects(str(a))
+    audio_gen.ensure_sound_effects(str(b))
+    for name in audio_gen.GENERATED_AUDIO:
         assert (a / name).read_bytes() == (b / name).read_bytes()
 
 

@@ -53,6 +53,12 @@ export default async function PriceAfterDisclosure({
     threeMonths && { label: "3ヶ月後", point: threeMonths },
     latest && { label: "直近", point: latest },
   ].filter((p): p is { label: string; point: PriceSnapshot } => Boolean(p));
+  // 新しい開示ほど1ヶ月後・3ヶ月後がまだ来ていない。枠ごと消すと「データが無いサイト」に
+  // 見えるため、いつ埋まるのかを空欄の位置に書いておく（新着記事の読者向け）。
+  const pending = [
+    !oneMonth && { label: "1ヶ月後", note: "開示から21営業日後" },
+    !threeMonths && { label: "3ヶ月後", note: "開示から63営業日後" },
+  ].filter((p): p is { label: string; note: string } => Boolean(p));
 
   return (
     <section className="mb-8 rounded-md border border-rule bg-section-tint p-4">
@@ -66,6 +72,12 @@ export default async function PriceAfterDisclosure({
         </div>
         {points.map(({ label, point }) => (
           <PricePoint key={label} label={label} base={base} point={point} />
+        ))}
+        {pending.map(({ label, note }) => (
+          <div key={label}>
+            <dt className="text-[11px] text-foreground/40">{label}</dt>
+            <dd className="m-0 mt-0.5 text-xs font-normal text-foreground/40">{note}に表示</dd>
+          </div>
         ))}
       </dl>
       <p className="mb-0 mt-3 text-[11px] leading-relaxed text-foreground/40">

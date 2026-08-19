@@ -50,7 +50,10 @@ def fetch_all_articles() -> list[dict]:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
-            params={"limit": limit, "offset": offset},
+            # ordersを明示しないとページングの並びが安定せず、途中でPATCHが走ると
+            # 一部の記事がどのページにも現れない（2026-08-19に是正ツールで取りこぼしを確認）。
+            # createdAtは更新で変わらないので昇順で固定する。
+            params={"limit": limit, "offset": offset, "orders": "createdAt"},
             timeout=20,
         )
         resp.raise_for_status()

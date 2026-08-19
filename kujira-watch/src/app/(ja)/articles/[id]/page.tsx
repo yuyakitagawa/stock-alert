@@ -7,21 +7,22 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
+import HoldingRatioChart from "@/components/HoldingRatioChart";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
-import { displayFilerName, excerptFromHtml, formatDate, formatDealAmountOrCorrection, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames } from "@/lib/format";
 import {
   getAllArticlesForSitemap,
   getArticleDetail,
   getArticleList,
   getArticlesByStockCode,
 } from "@/lib/microcms";
-import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingSnapshot } from "@/lib/investors";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot } from "@/lib/investors";
+import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
@@ -134,6 +135,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
+      site: X_HANDLE,
+      creator: X_HANDLE,
       title: article.title,
       description,
     },
@@ -150,10 +153,13 @@ export default async function ArticleDetailPage({ params }: Props) {
     throw error;
   });
 
+  // 「自動生成」は運用側の内部フラグ（web/publish_blog_articles.pyがtagsに立てる）で、
+  // 読者に見せると記事の信頼性を落とすだけなので表示しない。方向・訂正のタグは残す。
+  const HIDDEN_TAGS = ["自動生成"];
   const tags = article.tags
     ?.split(",")
     .map((tag) => tag.trim())
-    .filter(Boolean);
+    .filter((tag) => Boolean(tag) && !HIDDEN_TAGS.includes(tag));
 
   const category = article.dealType ? categoryLabel(article.dealType) : undefined;
   const url = `${SITE_URL}/articles/${id}`;
@@ -184,19 +190,23 @@ export default async function ArticleDetailPage({ params }: Props) {
     ? await getHoldingSnapshot(article.stockCode, dealDateOnly, filerName)
     : null;
   const holdingRatio = snapshot?.holdingRatio ?? null;
-  // 前回比は「EDINET開示の直前保有割合との差」を正とし、CMSのratioChangePctはそれが
-  // 取れないときのフォールバックに落とす。CMS側を優先すると、生成時に前回比率が取れず
-  // 「今回比率の全量」で記録された記事で、同じ画面に「保有比率10.57%（前回10.72%）」と
-  // 「前回比 −10.57pt」が並ぶ矛盾表示になる（2026-08-19の監査で確認）。
-  const ratioChangeFromEdinet =
+  // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
+  const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
+  // 前回比はEDINET開示（今回比率 − 直前保有割合）を正とし、取れないときだけCMSの
+  // ratioChangePctへフォールバックする。CMS側の値は記事生成時にXBRLの直前保有割合が
+  // まだ取れていないと「今回比率の全量」で入ってしまい、同じ画面に
+  // 「保有比率 10.57%（前回 10.72%）」と「前回比 −10.57pt」が並ぶ矛盾が起きていた
+  // （2026-08-19の監査で検出。生成側は publish_blog_articles.should_wait_for_prior_ratio で対処済み）。
+  const ratioChange =
     holdingRatio !== null && snapshot?.holdingRatioPrior != null
       ? Math.round((holdingRatio - snapshot.holdingRatioPrior) * 100) / 100
-      : null;
-  const ratioChange = ratioChangeFromEdinet ?? article.ratioChangePct ?? null;
+      : article.ratioChangePct ?? null;
   const formatRatio = (value: number) =>
     value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 
-  const linkedBody = linkifyFilerNames(article.body, filers.map((f) => f.filerName));
+  const linkedBody = frameSpeculation(
+    linkifyFilerNames(article.body, filers.map((f) => f.filerName))
+  );
 
   const articleJsonLd = {
     "@context": "https://schema.org",
@@ -321,9 +331,16 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Typography>
           </Box>
           <Box>
+            {/* EDINETは保有"比率"しか開示せず、金額は発行済株式数×株価×比率変化の概算。
+                桁が大きいほど断定的に見えるため、数字のすぐ隣に「概算」と添える。 */}
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>金額規模</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
               {formatDealAmountOrCorrection(article)}
+              {!isCorrectionArticle(article.tags) && (
+                <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                  （概算）
+                </Typography>
+              )}
             </Typography>
           </Box>
           {holdingRatio !== null && (
@@ -394,6 +411,13 @@ export default async function ArticleDetailPage({ params }: Props) {
           ）
         </p>
         <PriceAfterDisclosure stockCode={article.stockCode} dealDate={article.dealDate} />
+        {filerName && (
+          <HoldingRatioChart
+            filerName={displayFilerName(filerName)}
+            stockName={article.stockName}
+            points={holdingHistory}
+          />
+        )}
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}

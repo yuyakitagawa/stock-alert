@@ -11,6 +11,8 @@ export function mainNavLinks(locale: Locale): NavLink[] {
   if (locale === "en") {
     return [
       { href: "/en", label: "Top" },
+      // 英語版で唯一の一覧ページ。記事以外の回遊先が無いという指摘への導線。
+      { href: "/en/investors", label: "Top Whales" },
       ...DEAL_TYPES.map((dealType) => ({
         href: `/en/category/${DEAL_TYPE_EN[dealType].slug}`,
         label: DEAL_TYPE_EN[dealType].label,

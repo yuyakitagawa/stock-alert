@@ -68,8 +68,8 @@ export function formatAmountParts(
 // 登録されており、そのままでは読みにくい。表示専用に全角英数字と英文文脈の記号だけ半角へ寄せる。
 // リンクhref・DB照合・JSON-LD・metadataは原文のまま使うこと（照合が壊れるため）。
 // 日本語の句読点・中黒・全角括弧は変換しない。
-export function displayFilerName(name: string): string {
-  return name
+export function displayText(text: string): string {
+  return text
     .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
     .replace(/　/g, " ")
     .replace(/．/g, ".")
@@ -77,6 +77,26 @@ export function displayFilerName(name: string): string {
     .replace(/＆/g, "&")
     .replace(/ {2,}/g, " ")
     .trim();
+}
+
+export function displayFilerName(name: string): string {
+  return displayText(name);
+}
+
+// 「※推測:」で始まる段落は事実ではなく解釈（web/publish_blog_articles.pyのプロンプトが
+// 本文末尾に1文だけ書かせている）。地の文のまま流すと事実と混同されるため、
+// 見出し付きの枠に切り出して「ここから先は推測」と分かる形にする。
+const SPECULATION_RE = /<p>\s*※\s*推測\s*[:：]\s*([\s\S]*?)<\/p>/;
+
+export function frameSpeculation(html: string): string {
+  return html.replace(
+    SPECULATION_RE,
+    (_match, inner: string) =>
+      '<aside class="not-prose my-6 rounded-md border border-rule border-l-4 border-l-brand-blue bg-section-tint px-4 py-3">' +
+      '<p class="m-0 text-xs font-bold text-brand-navy">編集部の見立て（開示から読み取れる範囲の推測）</p>' +
+      `<p class="m-0 mt-1 text-sm leading-relaxed text-foreground/70">${inner}</p>` +
+      "</aside>"
+  );
 }
 
 export function excerptFromHtml(html: string, maxLength = 120): string {

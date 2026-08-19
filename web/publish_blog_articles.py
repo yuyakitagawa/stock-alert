@@ -527,9 +527,41 @@ def shares_outstanding(code: str) -> "float | None":
     return None
 
 
+# 変更報告書なのに直前保有割合が取れていない開示を「その日のうちに」記事化しないための待機日数。
+# EDINETはメタデータ公開とXBRL本文の可用性にラグがあり、提出直後の便では
+# fetch_xbrl_details() が holding_ratio_prior を拾えないことがある。その状態で記事化すると
+# ratio_change_pct() が「今回比率の全量＝新規取得」とみなし、
+#   - タイトルが「X%を新規保有」（実際は変更報告書）
+#   - estimate_deal_amount_oku() の推定金額が比率全量ぶんに膨らむ
+# という二重の誤りが公開されたまま残る（次の便でDB側の前回比率は埋まるが、記事は初回値のまま）。
+# 実測（2026-08-19、直近14日の照合可能56件）で13件=23%がこの誤りを抱えていた。
+# この日数を過ぎても前回比率が埋まらない開示は、XBRLの書式差で恒久的に取れないと判断し、
+# 従来どおり過去開示からの再導出にフォールバックして記事化する（取りこぼしを作らない）。
+PRIOR_RATIO_WAIT_DAYS = 2
+
+
+def is_change_report(doc_description: str) -> bool:
+    """変更報告書（訂正報告書は除く）かどうか。変更報告書は必ず直前保有割合を持つ。"""
+    desc = doc_description or ""
+    return "変更報告書" in desc and "訂正" not in desc
+
+
+def should_wait_for_prior_ratio(doc_description: str, prior_ratio: "float | None",
+                                disc_date: str, today: "date | None" = None) -> bool:
+    """変更報告書なのに直前保有割合が未取得なら、次の便まで記事化を見送るかどうか。"""
+    if prior_ratio is not None or not is_change_report(doc_description):
+        return False
+    today = today or date.today()
+    try:
+        elapsed = (today - date.fromisoformat(disc_date[:10])).days
+    except ValueError:
+        return False
+    return elapsed < PRIOR_RATIO_WAIT_DAYS
+
+
 def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date: str,
                      prior_ratio: "float | None" = None,
-                     doc_kind: str = "新規") -> "float | None":
+                     is_amendment: bool = False) -> "float | None":
     """今回開示の保有比率が前回からどれだけ動いたか（変化幅、%ポイント）を返す。
 
     EDINET開示自体が持つ直前保有割合(prior_ratio)があればそれを使う。DB蓄積分の履歴から
@@ -538,13 +570,13 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
     ＴＯＹＯ ＴＩＲＥ 20%→0%「短期大量譲渡」が「金額を概算できない」として不投稿）。
     prior_ratioが無い開示のみ、従来通り過去開示から直近の比率を探す。
 
-    doc_kindは disclosure_kind_label() の返り値（新規/変更/訂正）。前回比率も過去開示も
+    is_amendmentは変更報告書かどうか（is_change_report()の結果）。前回比率も過去開示も
     無いときに「今回比率の全量＝今回動いた分」とみなせるのは**新規の大量保有報告書だけ**。
-    変更報告書は定義上その提出者が既に5%以上を保有しており、全量を動かした証拠が無いのに
-    全量ぶんの変化幅を返すと、変化幅も推定金額も実態の数十倍に膨らむ（実例: 2026-08-19の
-    監査で直近90日に7件。変更報告書のprior充填率は99.6%なので影響はごく薄い裾野だが、
-    誤表示は必ず記事化の足切りを通過して「注目」枠に出るため件数の割に目立つ）。
-    その場合は変化幅を「不明」としてNoneを返し、呼び出し側で記事化を見送る。"""
+    変更報告書は提出者が既に5%以上を保有している届出なので、全量ぶんの変化幅を返すと
+    変化幅も推定金額も実態の数十倍に膨らむ。should_wait_for_prior_ratio()はXBRLの遅延を
+    PRIOR_RATIO_WAIT_DAYSだけ待つが、待っても直前保有割合が入らない開示（特例報告に多い。
+    2026-08-19の実測で直近90日に7件。変更報告書のprior充填率は99.6%）はそこを通過して
+    しまうため、ここで変化幅を「不明」としてNoneを返し、呼び出し側で記事化を見送る。"""
     if prior_ratio is not None:
         return abs(current_ratio - prior_ratio)
     history = get_edinet_large_holdings_recent(days=400, codes=[code])
@@ -555,7 +587,7 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
         and h.get("holding_ratio") is not None
     ]
     if not past:
-        return None if doc_kind == "変更" else current_ratio
+        return None if is_amendment else current_ratio
     past.sort(key=lambda h: h["disc_date"])
     prev_ratio = past[-1]["holding_ratio"]
     return abs(current_ratio - prev_ratio)
@@ -584,14 +616,25 @@ def close_price_from_yfinance(code: str, target_date: date) -> "float | None":
         return None
 
 
+def disclosure_close_price(code: str, disc_date: str) -> "float | None":
+    """開示日の終値（yahoo_price_cache優先、無ければyfinance）。
+
+    推定金額の計算と、記事本文へ渡す「開示日時点の株価」の両方でこの1つの値を使う。
+    以前は本文用の株価を gen_rankings（日次ランキング、開示日にまだ当日行が無ければ数日前の
+    行を拾う）から取っていたため、記事本文の「2026年8月18日時点の株価11,180円」と
+    ファクトボックスの「基準終値（2026/08/18）10,760円」が同じ画面で食い違っていた
+    （2026-08-19の監査で検出）。"""
+    target = date.fromisoformat(disc_date[:10])
+    return get_price_at_date(code, target) or close_price_from_yfinance(code, target)
+
+
 def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> "float | None":
     """推定取得金額（億円） = 比率変化(%) × 発行済株式数 × 株価 ÷ 100 ÷ 1億。
     株式数・株価のいずれかが取得できなければ None（呼び出し側でスキップする）。"""
     if ratio_change <= 0:
         return None
     shares = shares_outstanding(code)
-    target = date.fromisoformat(disc_date)
-    price = get_price_at_date(code, target) or close_price_from_yfinance(code, target)
+    price = disclosure_close_price(code, disc_date)
     if not shares or not price:
         return None
     amount_yen = shares * price * (ratio_change / 100)
@@ -751,7 +794,7 @@ def is_new_holding(fact_sheet: dict) -> bool:
     なるケースを新規とみなす従来のヒューリスティックにフォールバックする。"""
     if fact_sheet.get("is_correction"):
         return False
-    # 変更報告書は「既に5%以上を保有している提出者」しか出せない届出なので、前回比率が
+    # 変更報告書は「既に5%以上を保有している提出者」しか出せない届出なので、直前保有割合が
     # 取れなくても新規保有ではありえない。ヒューリスティックより報告書種別を優先する。
     if fact_sheet.get("doc_type_label") == "変更報告書":
         return False
@@ -1141,15 +1184,17 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
 
         prior_ratio = h.get("holding_ratio_prior")
         is_correction = is_correction_report(h.get("doc_description") or "")
-        doc_kind = disclosure_kind_label(h.get("doc_description"), h.get("doc_type_code", ""))
+        if should_wait_for_prior_ratio(h.get("doc_description") or "", prior_ratio, disc_date):
+            print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合が未取得のため次の便へ持ち越し")
+            continue
         change = ratio_change_pct(
-            code, filer_name, h["holding_ratio"], disc_date, prior_ratio, doc_kind
+            code, filer_name, h["holding_ratio"], disc_date, prior_ratio,
+            is_change_report(h.get("doc_description") or ""),
         )
         if change is None:
-            # 変更報告書なのに前回比率も過去開示も無い＝動いた量が分からない。全量を動いたと
-            # みなすと「X%を新規保有」＋過大な推定金額になるため記事化しない。次便以降に
-            # 前回比率が埋まるか、同一提出者の次の開示が入れば通常どおり記事になる。
-            print(f"  ⏭ {name}({code}): 変更報告書だが前回保有比率が不明で変化幅を確定できないためスキップ")
+            # 待っても直前保有割合が入らなかった変更報告書。全量を動いたとみなすと
+            # 「X%を新規保有」＋過大な推定金額になるため記事化しない。
+            print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合を取得できず変化幅を確定できないためスキップ")
             continue
         if change <= 0:
             print(f"  ⏭ {name}({code}): 前回開示から保有比率が変わっていないためスキップ")
@@ -1181,7 +1226,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             continue
 
         snapshot = get_pit_ranking_snapshot(code, disc_date)
-        context_close = snapshot.get("close") if snapshot else None
+        # 株価は金額の概算に使ったものと同じ値を本文へ渡す（サイトの「基準終値」とも同じ源）。
+        # 下落リスク水準はモデル側の値なのでPITスナップショットから取る。
+        context_close = disclosure_close_price(code, disc_date)
         context_dp = snapshot.get("drop_prob") if snapshot else None
         filer_info = classify_filer(filer_name)
         company_description = get_company_description(code, name)
@@ -1242,9 +1289,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
 
         direction_mark = "📝訂正" if is_correction else ("📉売り" if is_sell else "📈買い")
         amount_mark = f"{signed_change:+.2f}pt" if is_correction else f"推定{deal_amount}億円"
+        # holdingRatioはX投稿の1行目（「〇%まで買い増し」）と数字カード画像で使う。
+        # microCMSのスキーマは変えたくないので、送信するpayloadではなく戻り値にだけ足す。
         if dry_run:
             print(f"  [dry-run] {direction_mark} {name}({code}) {disc_date} {amount_mark}\n    title: {payload['title']}")
-            published.append({**payload, "id": None})
+            published.append({**payload, "id": None, "holdingRatio": h["holding_ratio"]})
             continue
 
         if is_correction:
@@ -1276,7 +1325,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             break
         if content_id:
             print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} → id={content_id}")
-            published.append({**payload, "id": content_id})
+            published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
 

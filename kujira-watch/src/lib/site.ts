@@ -30,6 +30,9 @@ export const X_SCREEN_NAME = "kujira_watch";
 export const X_PROFILE_URL = `https://x.com/${X_SCREEN_NAME}`;
 // フォローintent。プロフィールへの素のリンクよりワンタップ少なくフォローできる。
 export const X_FOLLOW_URL = `https://x.com/intent/follow?screen_name=${X_SCREEN_NAME}`;
+// Xカードの帰属表示（twitter:site / twitter:creator）用。これが無いと、サイトのURLが
+// Xで共有されてもカードにアカウント名が出ず、共有のたびに得られるはずの露出を捨てている。
+export const X_HANDLE = `@${X_SCREEN_NAME}`;
 
 // 公式YouTubeチャンネル（1分ショート動画。video/publish_video.pyが平日投稿）。
 // チャンネル側からサイトへはリンク済みだが、サイト側からの導線もここで持つ。

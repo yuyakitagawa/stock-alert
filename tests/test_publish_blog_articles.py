@@ -178,7 +178,7 @@ def test_build_and_publish_includes_sell_and_tags_them():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, kind="新規": ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             side_effect=[
@@ -343,9 +343,9 @@ def test_is_new_holding_false_for_amendment_without_prior_ratio():
 def test_ratio_change_pct_returns_none_for_amendment_without_prior_or_history():
     """変更報告書で前回比率も過去開示も無いときは、全量を動いたとみなさずNoneを返す。"""
     with mock.patch.object(m, "get_edinet_large_holdings_recent", return_value=[]):
-        assert m.ratio_change_pct("3878", "ＦＭＲ　ＬＬＣ", 7.6, "2026-08-18", None, "変更") is None
+        assert m.ratio_change_pct("3878", "ＦＭＲ　ＬＬＣ", 7.6, "2026-08-18", None, True) is None
         # 新規の大量保有報告書は従来どおり今回比率をそのまま変化幅として扱う
-        assert m.ratio_change_pct("3878", "ＦＭＲ　ＬＬＣ", 7.6, "2026-08-18", None, "新規") == 7.6
+        assert m.ratio_change_pct("3878", "ＦＭＲ　ＬＬＣ", 7.6, "2026-08-18", None, False) == 7.6
 
 
 def test_build_article_titles_amendment_without_prior_is_not_new_holding():
@@ -361,8 +361,9 @@ def test_build_article_titles_amendment_without_prior_is_not_new_holding():
 
 def test_build_and_publish_skips_amendment_with_unknown_change():
     """前回比率も過去開示も無い変更報告書は、誤った「新規保有」記事にせずスキップする。"""
+    # PRIOR_RATIO_WAIT_DAYSの待ちを過ぎてもpriorが入らない開示（特例報告に多い）を想定する
     holdings = [{"issuer_code": "3878", "name": "テスト製紙", "filer_name": "ＦＭＲ　ＬＬＣ",
-                 "holding_ratio": 7.6, "disc_date": "2026-08-18", "doc_type_code": "350",
+                 "holding_ratio": 7.6, "disc_date": "2026-07-01", "doc_type_code": "350",
                  "doc_description": "変更報告書（特例対象株券等）"}]
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
@@ -399,6 +400,52 @@ def test_build_and_publish_skips_when_ratio_unchanged():
          mock.patch.object(m, "estimate_deal_amount_oku") as est:
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
     assert results == []
+    est.assert_not_called()
+
+
+def test_should_wait_for_prior_ratio_true_for_fresh_change_report():
+    """変更報告書なのに直前保有割合が未取得＝XBRL未反映。その便では記事化しない。"""
+    from datetime import date as _date
+    assert m.should_wait_for_prior_ratio("変更報告書", None, "2026-08-18",
+                                         today=_date(2026, 8, 18)) is True
+    assert m.should_wait_for_prior_ratio("変更報告書（特例対象株券等）", None, "2026-08-18",
+                                         today=_date(2026, 8, 19)) is True
+
+
+def test_should_wait_for_prior_ratio_false_after_wait_days():
+    """待機日数を過ぎても埋まらない開示はXBRLの書式差とみなし、履歴からの再導出で記事化する。"""
+    from datetime import date as _date
+    assert m.should_wait_for_prior_ratio("変更報告書", None, "2026-08-18",
+                                         today=_date(2026, 8, 20)) is False
+
+
+def test_should_wait_for_prior_ratio_false_for_new_filing_and_when_prior_exists():
+    """大量保有報告書（新規）はそもそも直前保有割合を持たない。前回比率が有る開示も待たない。"""
+    from datetime import date as _date
+    assert m.should_wait_for_prior_ratio("大量保有報告書", None, "2026-08-18",
+                                         today=_date(2026, 8, 18)) is False
+    assert m.should_wait_for_prior_ratio("変更報告書", 10.72, "2026-08-18",
+                                         today=_date(2026, 8, 18)) is False
+
+
+def test_build_and_publish_defers_change_report_without_prior_ratio():
+    """直前保有割合が未取得の変更報告書は、比率全量を変化幅とみなして記事化してしまうため
+    その便では投稿せず次の便へ持ち越す（実例: 2026-08-18のセイコーグループ8050が
+    実際は-0.15ptなのに-10.57pt・966.1億円として公開された）。"""
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    holdings = [{"issuer_code": "8050", "name": "セイコーグループ", "filer_name": "三光起業株式会社",
+                 "holding_ratio": 10.57, "holding_ratio_prior": None, "disc_date": today,
+                 "doc_type_code": "360", "doc_description": "変更報告書"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct") as chg, \
+         mock.patch.object(m, "estimate_deal_amount_oku") as est:
+        results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
+    assert results == []
+    chg.assert_not_called()
     est.assert_not_called()
 
 
@@ -731,7 +778,7 @@ def test_build_and_publish_stops_early_on_permission_error():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, kind="新規": ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "その他", "is_foreign": False, "description": ""}), \
@@ -934,7 +981,7 @@ def test_build_and_publish_includes_english_fields_when_generated():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, kind="新規": ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
@@ -957,7 +1004,7 @@ def test_build_and_publish_omits_english_fields_when_not_generated():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, kind="新規": ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
@@ -1199,6 +1246,8 @@ def test_build_and_publish_embeds_chart_image_in_body():
 
 
 def test_build_and_publish_includes_pit_context_in_fact_sheet():
+    """本文へ渡す株価は金額の概算に使った開示日終値と同じ値（サイトの基準終値と同源）にする。
+    下落リスク水準だけをPITスナップショット（gen_rankings）から取る。"""
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書"}]
@@ -1214,7 +1263,8 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
-         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 3000.0, "drop_prob": 25.0}), \
+         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 2900.0, "drop_prob": 25.0}), \
+         mock.patch.object(m, "disclosure_close_price", return_value=3000.0), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body", side_effect=_fake_generate), \
@@ -1347,6 +1397,10 @@ if __name__ == "__main__":
     test_build_and_publish_skips_amendment_with_unknown_change()
     test_estimate_deal_amount_falls_back_to_yfinance_price()
     test_build_and_publish_skips_when_ratio_unchanged()
+    test_should_wait_for_prior_ratio_true_for_fresh_change_report()
+    test_should_wait_for_prior_ratio_false_after_wait_days()
+    test_should_wait_for_prior_ratio_false_for_new_filing_and_when_prior_exists()
+    test_build_and_publish_defers_change_report_without_prior_ratio()
     test_build_and_publish_publishes_material_correction_without_amount()
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
-    print("全テスト成功 (95件)")
+    print("全テスト成功 (99件)")

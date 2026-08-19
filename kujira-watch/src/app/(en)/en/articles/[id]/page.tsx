@@ -10,7 +10,7 @@ import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
 import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
-import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
+import { SITE_NAME_EN, SITE_URL, X_HANDLE } from "@/lib/site";
 import { UI } from "@/lib/i18n";
 import { isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import AdUnit from "@/components/AdUnit";
@@ -58,6 +58,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
+      site: X_HANDLE,
+      creator: X_HANDLE,
       title: article.titleEn,
       description,
     },

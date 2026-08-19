@@ -121,3 +121,25 @@ EDINETスナップショット（`getHoldingSnapshot`、前回比率あり）を
 - `/en` の大型拡充（投資家一覧・ランキング）: 今日の方針転換（需要が極小と実測）と整合させ、様子見。
 - AdSense有効化: 既定方針どおり月間PVが5倍になるまで待つ。
 - 銘柄のPER/PBR表示: 本体パイプラインのデータを持ち込む必要があり、フロント単独では完結しない。
+
+---
+
+## 6. 実装結果（2026-08-19、オーナー指示「全部対応」）
+12件すべて実装した。対応は「投票順位 → 実装内容（対象ファイル）」。
+
+| 順位 | 実装内容 | 主な対象 |
+|---|---|---|
+| 1 | 変更報告書で直前保有割合が未取得の開示は、その便で記事化せず次便へ持ち越す（`should_wait_for_prior_ratio()`、`PRIOR_RATIO_WAIT_DAYS`=2） | `web/publish_blog_articles.py` |
+| 2 | 公開済み記事の是正ツール（変化幅・金額・タイトル・tags・本文を作り直してPATCH。基準割れは`--delete`でバックアップ後に削除） | `tools/fix_misreported_blog_articles.py` |
+| 3 | ファクトボックスの前回比はEDINET開示を正に、CMS値はフォールバックへ降格 | `articles/[id]/page.tsx` |
+| 4 | 本文の株価を開示日終値（金額概算と同じ値）に統一し、金額欄に「（概算）」を追加 | `disclosure_close_price()` / `articles/[id]/page.tsx` |
+| 5 | 保有比率の推移グラフ（同一投資家×銘柄、インラインSVG） | `HoldingRatioChart.tsx` / `getHoldingHistory()` |
+| 6 | 「更新を追う」導線（投資家別・銘柄別RSS＋公式X）。**ウォッチリストは復活させない**（オーナー判断） | `FollowUpdatesCta.tsx` / `*/feed.xml` |
+| 7 | `/activists` のHTML掲載件数に上限（注目銘柄30件・直近の動き60件）、打ち切り件数を明記 | `activists/page.tsx` |
+| 8 | `自動生成`タグを非表示、「※推測:」を「編集部の見立て」枠へ | `format.ts` / `articles/[id]/page.tsx` |
+| 9 | TOPに「この日の開示は確定」/「受付中」 | `jst.ts` / `TodayWhaleSummary.tsx` |
+| 10 | タイトルの全角英数を表示時に半角へ（microCMS受け取り時に1か所で） | `microcms.ts` / `format.ts` |
+| 11 | 株価推移の未到来地点に「開示から21営業日後に表示」 | `PriceAfterDisclosure.tsx` |
+| 12 | `/en/investors`（Top Whales）新設＋日本語版への導線明示 | `(en)/en/investors/page.tsx` |
+
+据え置きにした3件（`/en`の大型拡充・AdSense・PER/PBR表示）は当初方針どおり未着手。

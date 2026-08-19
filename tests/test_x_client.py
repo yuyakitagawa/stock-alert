@@ -1,10 +1,11 @@
-"""X(Twitter)自動投稿（web/x_client）のロジックのユニットテスト。
-ネットワーク(X API)は全てモックし、純粋なロジックのみ検証する。
+"""X(Twitter)自動投稿（web/x_client, web/x_insight, web/x_followup）のロジックのユニットテスト。
+ネットワーク(X API)とSupabaseは全てモックし、純粋なロジックのみ検証する。
 
 実行: python3 tests/test_x_client.py
 """
 import os
 import sys
+from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,39 +19,101 @@ X_ENV = {
     "X_ACCESS_TOKEN_SECRET": "token_secret",
 }
 
-
-def test_build_tweet_text_includes_title_amount_and_url():
-    text = m.build_tweet_text("ソフトバンクG、大量保有報告書を提出", 120.5, is_sell=False, article_id="abc123")
-    assert "ソフトバンクG、大量保有報告書を提出" in text
-    assert "推定取得金額: 120.5億円" in text
-    assert f"{m.SITE_URL}/articles/abc123" in text
-    assert "#EDINET" in text
-
-
-def test_build_tweet_text_sell_direction_label():
-    text = m.build_tweet_text("〇〇HD、株式を一部売却", 30.0, is_sell=True, article_id="xyz")
-    assert "推定売却金額: 30.0億円" in text
-
-
-def test_build_tweet_text_appends_sanitized_stock_hashtag():
-    text = m.build_tweet_text("タイトル", 10.0, is_sell=False, article_id="id1",
-                              stock_name="シンプレクス・アセット（8151）")
-    # 「・」「（）」はハッシュタグを切ってしまうため除去される
-    assert text.endswith("#EDINET #大量保有報告書 #シンプレクスアセット8151")
+BUY_ARTICLE = {
+    "id": "a1", "title": "記事タイトル", "stockName": "東陽テクニカ", "stockCode": "8151",
+    "filerName": "三井住友トラスト・アセットマネジメント株式会社", "dealAmount": 120.5,
+    "tags": "EDINET,自動生成", "ratioChangePct": 1.81, "holdingRatio": 5.02,
+    "dealDate": "2026-08-19T00:00:00.000Z",
+}
+CORRECTION_ARTICLE = {
+    "id": "c1", "title": "訂正記事", "stockName": "太陽誘電", "stockCode": "6976",
+    "filerName": "テストファンド", "dealAmount": 0.0, "tags": "EDINET,自動生成,訂正,売り",
+    "ratioChangePct": -10.81, "holdingRatio": 4.41,
+}
 
 
-def test_build_tweet_text_omits_stock_hashtag_when_name_empty():
-    text = m.build_tweet_text("タイトル", 10.0, is_sell=False, article_id="id1")
-    assert text.endswith("#EDINET #大量保有報告書")
+def _ok_response(tweet_id="111"):
+    return mock.Mock(status_code=201, json=lambda: {"data": {"id": tweet_id}})
 
 
-def test_build_tweet_text_truncates_long_title():
-    long_title = "あ" * 200
-    text = m.build_tweet_text(long_title, 10.0, is_sell=False, article_id="id1")
-    body_line = text.split("\n")[0]
-    assert len(body_line) <= m.TWEET_BODY_MAX_CHARS
-    assert body_line.endswith("…")
+# ------------------------------------------------------------------ 本文の組み立て
 
+def test_build_tweet_text_leads_with_who_did_what():
+    """1行目は記事タイトルの流用ではなく「誰が・どの銘柄を・どうした」のフックにする。"""
+    text = m.build_tweet_text(BUY_ARTICLE)
+    first = text.splitlines()[0]
+    assert first.startswith("🟢 ")
+    assert "東陽テクニカ(8151)" in first
+    assert "買い増し" in first
+    assert "記事タイトル" not in text
+
+
+def test_build_tweet_text_second_line_has_amount_and_ratio_change():
+    text = m.build_tweet_text(BUY_ARTICLE)
+    assert text.splitlines()[1] == "約120億円・保有比率 3.21%→5.02%"
+
+
+def test_build_tweet_text_labels_new_position():
+    """直前の保有割合が0なら「買い増し」ではなく「新規取得」。"""
+    text = m.build_tweet_text({**BUY_ARTICLE, "ratioChangePct": 5.02, "holdingRatio": 5.02})
+    assert "を新規取得" in text.splitlines()[0]
+
+
+def test_build_tweet_text_sell_uses_red_mark():
+    text = m.build_tweet_text({**BUY_ARTICLE, "tags": "EDINET,自動生成,売り",
+                               "ratioChangePct": -2.0, "holdingRatio": 3.02})
+    assert text.splitlines()[0].startswith("🔴 ")
+    assert "を売却" in text.splitlines()[0]
+
+
+def test_build_tweet_text_uses_two_searchable_hashtags_only():
+    """#EDINETや`#社名`は検索母数が無いため付けず、銘柄はコード付きで本文に素で書く。"""
+    text = m.build_tweet_text(BUY_ARTICLE)
+    assert text.endswith("#日本株 #大量保有報告書")
+    assert "#EDINET" not in text
+    assert "#東陽テクニカ" not in text
+
+
+def test_build_tweet_text_includes_insight_line_when_it_fits():
+    text = m.build_tweet_text(BUY_ARTICLE, insight="この提出者の開示は過去1434件、東陽テクニカでは2回目")
+    assert "この提出者の開示は過去1434件" in text
+
+
+def test_build_tweet_text_drops_insight_when_too_long():
+    text = m.build_tweet_text(BUY_ARTICLE, insight="あ" * 200)
+    assert "あ" * 200 not in text
+    assert m.weighted_len(text) <= 270
+
+
+def test_build_tweet_text_puts_url_in_body_only_when_given():
+    """既定ではURLは自己リプライに置くのでlink_urlは空。A/Bのlink_in_body側でのみ本文に入る。"""
+    assert m.SITE_URL not in m.build_tweet_text(BUY_ARTICLE)
+    text = m.build_tweet_text(BUY_ARTICLE, link_url=f"{m.SITE_URL}/articles/a1")
+    assert f"{m.SITE_URL}/articles/a1" in text
+
+
+def test_build_tweet_text_correction_shows_ratio_not_amount():
+    text = m.build_tweet_text(CORRECTION_ARTICLE)
+    assert text.splitlines()[0].startswith("⚠️ 訂正｜")
+    assert "保有比率 15.22%→4.41%（-10.81pt）" in text
+    assert "億円" not in text
+
+
+def test_format_oku_rounds_for_readability():
+    assert m._format_oku(120.5) == "約120億円"
+    assert m._format_oku(8.44) == "約8.4億円"
+    assert m._format_oku(12000) == "約1.2兆円"
+    assert m._format_oku(0) == ""
+
+
+def test_build_article_alt_carries_the_numbers_in_the_card():
+    alt = m.build_article_alt(BUY_ARTICLE)
+    assert "東陽テクニカ（8151）" in alt
+    assert "3.21%→5.02%" in alt
+    assert "EDINET" in alt
+
+
+# ------------------------------------------------------------------ 認証・投稿API
 
 def test_auth_returns_none_when_env_vars_missing():
     with mock.patch.dict(os.environ, {}, clear=True):
@@ -59,38 +122,84 @@ def test_auth_returns_none_when_env_vars_missing():
 
 def test_auth_returns_oauth1_when_all_env_vars_set():
     with mock.patch.dict(os.environ, X_ENV, clear=True):
-        auth = m._auth()
-        assert auth is not None
+        assert m._auth() is not None
 
 
 def test_post_tweet_skips_without_auth():
     with mock.patch.dict(os.environ, {}, clear=True), \
          mock.patch.object(m.requests, "post") as mock_post:
-        assert m.post_tweet("hello") is False
+        assert m.post_tweet("hello") is None
         mock_post.assert_not_called()
 
 
-def test_post_tweet_returns_true_on_success():
+def test_post_tweet_returns_tweet_id_and_logs_it():
+    """boolではなくtweet_idを返し、x_postsに記録する（どの投稿が伸びたかを追うため）。"""
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(m.requests, "post", return_value=mock.Mock(status_code=201)):
-        assert m.post_tweet("hello") is True
+         mock.patch.object(m.requests, "post", return_value=_ok_response("12345")), \
+         mock.patch.object(m, "log_post") as log_mock:
+        assert m.post_tweet("hello", kind="article") == "12345"
+    assert log_mock.call_args.args[0] == "12345"
+    assert log_mock.call_args.args[1] == "article"
 
 
-def test_post_tweet_returns_false_on_http_error():
+def test_post_tweet_returns_none_on_http_error():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m, "verify_auth", return_value={"access_level": "read", "reason": ""}), \
+         mock.patch.object(m.requests, "post",
+                           return_value=mock.Mock(status_code=403, text="Forbidden")):
+        assert m.post_tweet("hello") is None
+
+
+def test_post_tweet_includes_media_ids_and_reply_target():
+    captured = {}
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m, "log_post"), \
          mock.patch.object(
              m.requests, "post",
-             return_value=mock.Mock(status_code=403, text="Forbidden"),
-         ):
-        assert m.post_tweet("hello") is False
+             side_effect=lambda url, auth, json, timeout: captured.update(json) or _ok_response()):
+        m.post_tweet("hello", media_ids=["999", "888"], reply_to="777")
+    assert captured["media"] == {"media_ids": ["999", "888"]}
+    assert captured["reply"] == {"in_reply_to_tweet_id": "777"}
 
 
-def test_upload_media_returns_media_id_on_success():
-    resp = mock.Mock(ok=True, json=lambda: {"media_id_string": "999"})
+def test_publish_puts_link_in_a_self_reply_when_ab_flag_on():
+    """X_LINK_IN_REPLY=1 のときだけURLを2投稿目に分ける（既定は本文）。"""
+    calls = []
+    with mock.patch.dict(os.environ, {**X_ENV, "X_LINK_IN_REPLY": "1"}, clear=True), \
+         mock.patch.object(m, "post_tweet",
+                           side_effect=lambda text, **kw: calls.append((text, kw)) or "100"):
+        assert m.publish("本文", link_line="https://example.com", kind="article") == "100"
+    assert len(calls) == 2
+    assert "https://example.com" not in calls[0][0]
+    assert "https://example.com" in calls[1][0]
+    assert calls[1][1]["reply_to"] == "100"
+
+
+def test_publish_keeps_link_in_body_by_default():
+    """親投稿にURLが無いと、スレッドを開かない読者にリンクが届かないため既定は本文。"""
+    calls = []
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(m.requests, "post", return_value=resp) as mock_post:
-        assert m.upload_media(b"png-bytes") == "999"
-    assert mock_post.call_args.kwargs["files"]["media"][0] == "chart.png"
+         mock.patch.object(m, "post_tweet",
+                           side_effect=lambda text, **kw: calls.append(text) or "100"):
+        m.publish("本文", link_line="https://example.com", kind="article")
+    assert len(calls) == 1
+    assert calls[0].endswith("https://example.com")
+
+
+def test_upload_media_sets_alt_text():
+    """画像内の数字が読み上げ環境に伝わらないため、altを必ず設定する。"""
+    posts = []
+
+    def fake_post(url, **kwargs):
+        posts.append((url, kwargs))
+        return mock.Mock(ok=True, json=lambda: {"media_id_string": "999"})
+
+    with mock.patch.dict(os.environ, X_ENV, clear=True), \
+         mock.patch.object(m.requests, "post", side_effect=fake_post):
+        assert m.upload_media(b"png-bytes", alt_text="保有比率 3.21%→5.02%") == "999"
+    assert posts[0][0] == m.MEDIA_UPLOAD_URL
+    assert posts[1][0] == m.MEDIA_METADATA_URL
+    assert posts[1][1]["json"]["alt_text"]["text"] == "保有比率 3.21%→5.02%"
 
 
 def test_upload_media_returns_none_on_http_error():
@@ -107,90 +216,110 @@ def test_upload_media_returns_none_without_auth():
         mock_post.assert_not_called()
 
 
-def test_post_tweet_includes_media_ids_when_media_id_given():
-    captured = {}
+# ------------------------------------------------------------------ 投稿時間帯
+
+def test_within_posting_hours_rejects_late_night_jst():
+    # 20時UTC = 翌5時JST
+    assert m.within_posting_hours(datetime(2026, 8, 19, 20, 0, tzinfo=timezone.utc)) is False
+    # 3時UTC = 12時JST
+    assert m.within_posting_hours(datetime(2026, 8, 19, 3, 0, tzinfo=timezone.utc)) is True
+
+
+def test_post_top_articles_skips_outside_posting_hours():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(
-             m.requests, "post",
-             side_effect=lambda url, auth, json, timeout: captured.update(json) or mock.Mock(status_code=201),
-         ):
-        assert m.post_tweet("hello", media_id="999") is True
-    assert captured["media"] == {"media_ids": ["999"]}
+         mock.patch.object(m, "publish") as publish_mock:
+        posted = m.post_top_articles([BUY_ARTICLE], featured_ids={"a1"},
+                                     now_utc=datetime(2026, 8, 19, 20, 0, tzinfo=timezone.utc))
+    assert posted == 0
+    publish_mock.assert_not_called()
+
+
+# ------------------------------------------------------------------ 記事投稿の選別
+
+def _patch_article_deps(publish_side_effect):
+    """post_top_articlesの外部依存（画像生成・Supabase・投稿）をまとめてモックする。"""
+    return [
+        mock.patch.object(m, "build_article_media", return_value=[]),
+        mock.patch.object(m, "find_prior_tweet", return_value=None),
+        mock.patch("web.x_insight.fetch_filer_context", return_value={}),
+        mock.patch.object(m, "publish", side_effect=publish_side_effect),
+    ]
+
+
+def _run_post_top(published, featured_ids, top_n=m.ARTICLES_PER_RUN, publish_side_effect=None):
+    calls = []
+    side_effect = publish_side_effect or (lambda body, **kw: calls.append((body, kw)) or "1")
+    patches = _patch_article_deps(side_effect)
+    with mock.patch.dict(os.environ, X_ENV, clear=True):
+        for p in patches:
+            p.start()
+        try:
+            posted = m.post_top_articles(published, featured_ids, top_n=top_n,
+                                         now_utc=datetime(2026, 8, 19, 3, 0, tzinfo=timezone.utc))
+        finally:
+            for p in patches:
+                p.stop()
+    return posted, calls
 
 
 def test_post_top_articles_skips_without_auth():
-    published = [{"id": "1", "title": "t", "dealAmount": 100.0, "tags": "",
-                  "stockCode": "1234", "stockName": "テスト"}]
     with mock.patch.dict(os.environ, {}, clear=True):
-        assert m.post_top_articles(published, featured_ids={"1"}) == 0
+        assert m.post_top_articles([BUY_ARTICLE], featured_ids={"a1"}) == 0
 
 
-def test_post_top_articles_picks_largest_deal_amount_first_among_featured():
+def test_post_top_articles_posts_one_article_per_run():
+    """以前は1回の実行で3件連投していた。毎時バッチなので1件ずつで十分分散する。"""
     published = [
-        {"id": "1", "title": "小さい取引", "dealAmount": 10.0, "tags": "",
-         "stockCode": "1111", "stockName": "小さい会社"},
-        {"id": "2", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
-         "stockCode": "2222", "stockName": "大きい会社"},
-        {"id": None, "title": "dry-runなのでID無し", "dealAmount": 999.0, "tags": "",
-         "stockCode": "3333", "stockName": "対象外"},
+        {**BUY_ARTICLE, "id": "1", "stockName": "小さい会社", "dealAmount": 10.0},
+        {**BUY_ARTICLE, "id": "2", "stockName": "大きい会社", "dealAmount": 500.0},
     ]
-    posted_texts = []
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
-         mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
-        posted = m.post_top_articles(published, featured_ids={"1", "2"}, top_n=1)
-
+    posted, calls = _run_post_top(published, {"1", "2"})
     assert posted == 1
-    assert "大きい取引" in posted_texts[0]
+    assert "大きい会社" in calls[0][0]
 
 
 def test_post_top_articles_excludes_articles_not_in_featured_ids():
-    """当日一番金額が大きくても、ホームページの「注目」に入っていなければ投稿しない
-    （8/9運用で9.6億円の記事が投稿された一方、8/7の1406億円の記事が「注目」に
-    居座り続けていた実例を踏まえた仕様）。"""
-    published = [
-        {"id": "1", "title": "今日の中では一番大きいが注目には入らない", "dealAmount": 9.6, "tags": "",
-         "stockCode": "1111", "stockName": "小さい会社"},
-    ]
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
-         mock.patch.object(m, "post_tweet") as mock_tweet:
-        posted = m.post_top_articles(published, featured_ids={"other-id"})
-
+    """当日一番金額が大きくても、ホームページの「注目」に入っていなければ投稿しない。"""
+    posted, calls = _run_post_top([{**BUY_ARTICLE, "id": "1"}], {"other-id"})
     assert posted == 0
-    mock_tweet.assert_not_called()
+    assert calls == []
 
 
-def test_post_top_articles_attaches_chart_when_generated():
-    """チャート画像が生成できた場合、アップロードしてmedia_idを付けて投稿する。"""
-    published = [{"id": "1", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
-                  "stockCode": "2222", "stockName": "大きい会社"}]
+def test_post_top_articles_posts_every_correction_without_cap():
+    """訂正報告書は既報の前提を覆すため件数制限を設けない（施策7）。"""
+    published = [
+        {**CORRECTION_ARTICLE, "id": "c1", "ratioChangePct": -10.81},
+        {**CORRECTION_ARTICLE, "id": "c2", "ratioChangePct": -3.0, "stockCode": "1111"},
+        {**BUY_ARTICLE, "id": "f1"},
+    ]
+    posted, calls = _run_post_top(published, {"f1"})
+    assert posted == 3
+    assert calls[0][1]["kind"] == "correction"
+    assert calls[1][1]["kind"] == "correction"
+    assert calls[2][1]["kind"] == "article"
+
+
+def test_post_top_articles_replies_correction_to_the_prior_post_on_the_same_stock():
     calls = []
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=b"png-bytes"), \
-         mock.patch.object(m, "upload_media", return_value="777"), \
-         mock.patch.object(m, "post_tweet",
-                            side_effect=lambda text, media_id=None: calls.append(media_id) or True):
-        posted = m.post_top_articles(published, featured_ids={"1"}, top_n=1)
+    patches = [
+        mock.patch.object(m, "build_article_media", return_value=[]),
+        mock.patch.object(m, "find_prior_tweet", return_value="900"),
+        mock.patch("web.x_insight.fetch_filer_context", return_value={}),
+        mock.patch.object(m, "publish", side_effect=lambda body, **kw: calls.append(kw) or "1"),
+    ]
+    with mock.patch.dict(os.environ, X_ENV, clear=True):
+        for p in patches:
+            p.start()
+        try:
+            m.post_top_articles([CORRECTION_ARTICLE], featured_ids=set(),
+                                now_utc=datetime(2026, 8, 19, 3, 0, tzinfo=timezone.utc))
+        finally:
+            for p in patches:
+                p.stop()
+    assert calls[0]["reply_to"] == "900"
 
-    assert posted == 1
-    assert calls == ["777"]
 
-
-def test_post_top_articles_posts_without_chart_when_generation_fails():
-    """チャート生成に失敗してもテキストのみで投稿を続行する。"""
-    published = [{"id": "1", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
-                  "stockCode": "2222", "stockName": "大きい会社"}]
-    calls = []
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
-         mock.patch.object(m, "post_tweet",
-                            side_effect=lambda text, media_id=None: calls.append(media_id) or True):
-        posted = m.post_top_articles(published, featured_ids={"1"}, top_n=1)
-
-    assert posted == 1
-    assert calls == [None]
-
+# ------------------------------------------------------------------ 日次サマリー
 
 def test_build_daily_summary_text_includes_count_total_and_extremes():
     articles = [
@@ -203,41 +332,8 @@ def test_build_daily_summary_text_includes_count_total_and_extremes():
     assert "3件・合計75.5億円" in text
     assert "大型買い +40.0億円（買いファンド）" in text
     assert "大型売り -30.0億円（売りファンド）" in text
-    assert f"{m.SITE_URL}/date/2026-08-15" in text
-    assert "utm_campaign=daily_summary" in text
-    # 取り上げた最大買い増し・最大売却の銘柄タグが付く
-    assert text.endswith("#EDINET #大量保有報告書 #大型買い #大型売り")
-
-
-def test_build_video_tweet_text_includes_shorts_url_and_stock_tag():
-    props = {"stockName": "東陽テクニカ", "filerName": "テストファンド",
-             "direction": "sell", "dealAmountOku": 40.1}
-    text = m.build_video_tweet_text(props, "abc123XYZ00")
-    assert "🎬 1分解説｜東陽テクニカをテストファンドが推定40.1億円売却" in text
-    assert "https://youtube.com/shorts/abc123XYZ00" in text
-    assert text.endswith("#Shorts #大量保有報告書 #東陽テクニカ")
-
-
-def test_build_video_tweet_text_uses_generic_subject_without_filer():
-    props = {"stockName": "テスト社", "filerName": "", "direction": "buy", "dealAmountOku": 5.0}
-    text = m.build_video_tweet_text(props, "vid")
-    assert "テスト社を大口投資家が推定5.0億円取得" in text
-
-
-def test_post_video_tweet_skips_without_auth():
-    with mock.patch.dict(os.environ, {}, clear=True), \
-         mock.patch.object(m, "post_tweet") as tweet_mock:
-        assert m.post_video_tweet({"stockName": "A"}, "vid") is False
-        tweet_mock.assert_not_called()
-
-
-def test_post_video_tweet_posts_when_authed():
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(m, "post_tweet", return_value=True) as tweet_mock:
-        assert m.post_video_tweet(
-            {"stockName": "A", "filerName": "F", "direction": "buy", "dealAmountOku": 1.0}, "vid"
-        ) is True
-    assert "youtube.com/shorts/vid" in tweet_mock.call_args.args[0]
+    assert text.endswith("#日本株 #大量保有報告書")
+    assert m.SITE_URL not in text  # URLは自己リプライ側
 
 
 def test_build_daily_summary_text_none_when_no_articles():
@@ -250,89 +346,67 @@ def test_build_daily_summary_text_uses_total_count_when_truncated():
     assert "120件" in text
 
 
-def test_post_daily_summary_only_fires_at_final_run_hour():
-    """19時JST(10時UTC)の最終便以外の時間帯では投稿しない（1日1回の重複ガード）。"""
-    from datetime import datetime, timezone
-
+def test_post_daily_summary_only_fires_at_the_21jst_run():
+    """21時JST(12時UTC)の便以外では投稿しない（1日1回の重複ガード）。"""
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date") as fetch_mock:
-        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 5, 0, tzinfo=timezone.utc)) is False
+        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc)) is False
         fetch_mock.assert_not_called()
 
 
-def test_post_daily_summary_posts_at_final_run_hour():
-    from datetime import datetime, timezone
-
-    articles = [{"stockName": "A", "dealAmount": 10.0, "tags": "", "filerName": ""}]
+def test_post_daily_summary_posts_at_the_final_run():
+    articles = [{"stockName": "A", "stockCode": "1234", "dealAmount": 10.0, "tags": "", "filerName": ""}]
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=(articles, 1)), \
-         mock.patch.object(m, "post_tweet", return_value=True) as tweet_mock:
-        # 10時UTC＝19時JSTなのでJST日付は当日
-        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 10, 30, tzinfo=timezone.utc))
+         mock.patch.object(m, "build_daily_summary_media", return_value=["m1"]), \
+         mock.patch.object(m, "publish", return_value="1") as publish_mock:
+        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc))
     assert ok is True
-    posted_text = tweet_mock.call_args.args[0]
-    assert "8/15" in posted_text
+    assert "8/15" in publish_mock.call_args.args[0]
+    assert publish_mock.call_args.kwargs["media_ids"] == ["m1"]
 
 
 def test_post_daily_summary_skips_when_no_articles():
-    from datetime import datetime, timezone
-
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=([], 0)), \
+         mock.patch.object(m, "publish") as publish_mock:
+        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)) is False
+    publish_mock.assert_not_called()
+
+
+# ------------------------------------------------------------------ 動画クロス投稿
+
+def test_build_video_tweet_text_includes_shorts_url_and_tags():
+    props = {"stockName": "東陽テクニカ", "filerName": "テストファンド",
+             "direction": "sell", "dealAmountOku": 40.1}
+    text = m.build_video_tweet_text(props, "abc123XYZ00")
+    assert "🎬 1分解説｜テストファンドが東陽テクニカを約40億円売却" in text
+    assert "https://youtube.com/shorts/abc123XYZ00" in text
+    assert text.endswith("#Shorts #日本株 #大量保有報告書")
+
+
+def test_build_video_tweet_text_uses_generic_subject_without_filer():
+    props = {"stockName": "テスト社", "filerName": "", "direction": "buy", "dealAmountOku": 5.0}
+    assert "大口投資家がテスト社を約5.0億円取得" in m.build_video_tweet_text(props, "vid")
+
+
+def test_post_video_tweet_skips_without_auth():
+    with mock.patch.dict(os.environ, {}, clear=True), \
          mock.patch.object(m, "post_tweet") as tweet_mock:
-        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc))
-    assert ok is False
-    tweet_mock.assert_not_called()
+        assert m.post_video_tweet({"stockName": "A"}, "vid") is False
+        tweet_mock.assert_not_called()
 
 
-if __name__ == "__main__":
-    import pytest
-    sys.exit(pytest.main([__file__, "-v"]))
-
-
-def test_post_top_articles_includes_correction_even_when_not_featured():
-    """訂正記事はdealAmount=0で「注目」枠に入らないが、既報の前提を覆す開示なので投稿する
-    （実例: 2026-08-18、太陽誘電6976の15.22%→4.41%訂正）。金額ではなく修正幅を出す。"""
-    published = [
-        {"id": "c1", "title": "太陽誘電（6976）、保有比率を4.41%に訂正", "dealAmount": 0.0,
-         "tags": "EDINET,自動生成,訂正,売り", "ratioChangePct": -10.81,
-         "stockCode": "6976", "stockName": "太陽誘電"},
-    ]
-    posted_texts = []
+def test_post_video_tweet_posts_when_authed():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
-         mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
-        posted = m.post_top_articles(published, featured_ids=set(), top_n=3)
-
-    assert posted == 1
-    assert "届出保有比率の訂正: -10.81pt" in posted_texts[0]
-    assert "億円" not in posted_texts[0].split("\n")[1]
+         mock.patch.object(m, "post_tweet", return_value="1") as tweet_mock:
+        assert m.post_video_tweet(
+            {"stockName": "A", "filerName": "F", "direction": "buy", "dealAmountOku": 1.0}, "vid"
+        ) is True
+    assert "youtube.com/shorts/vid" in tweet_mock.call_args.args[0]
 
 
-def test_post_top_articles_puts_correction_before_featured_articles():
-    published = [
-        {"id": "f1", "title": "大きい取引", "dealAmount": 500.0, "tags": "",
-         "stockCode": "2222", "stockName": "大きい会社"},
-        {"id": "c1", "title": "訂正記事", "dealAmount": 0.0, "tags": "EDINET,自動生成,訂正",
-         "ratioChangePct": -10.81, "stockCode": "6976", "stockName": "太陽誘電"},
-    ]
-    posted_texts = []
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None), \
-         mock.patch.object(m, "post_tweet", side_effect=lambda text, media_id=None: posted_texts.append(text) or True):
-        posted = m.post_top_articles(published, featured_ids={"f1"}, top_n=2)
-
-    assert posted == 2
-    assert "訂正記事" in posted_texts[0]
-    assert "大きい取引" in posted_texts[1]
-
-
-def test_build_tweet_text_uses_ratio_change_for_correction():
-    text = m.build_tweet_text("訂正タイトル", 0.0, True, "abc", stock_name="太陽誘電",
-                              ratio_change_pt=-10.81, is_correction=True)
-    assert "届出保有比率の訂正: -10.81pt" in text
-    assert "推定売却金額" not in text
-
+# ------------------------------------------------------------------ トークン権限の確認
 
 def _verify_response(status, headers, body=None):
     resp = mock.MagicMock()
@@ -367,3 +441,99 @@ def test_verify_auth_ok_for_read_write_token():
 def test_verify_auth_without_credentials():
     with mock.patch.dict(os.environ, {}, clear=True):
         assert m.verify_auth()["ok"] is False
+
+
+# ------------------------------------------------------------------ 解釈行（web/x_insight）
+
+def test_build_insight_line_marks_first_appearance():
+    import web.x_insight as ins
+
+    assert ins.build_insight_line("東陽テクニカ", {"filer_disclosures": 1, "stock_disclosures": 1}) \
+        == "この提出者がEDINETに登場するのは初"
+
+
+def test_build_insight_line_counts_repeat_filings_on_the_same_stock():
+    import web.x_insight as ins
+
+    line = ins.build_insight_line("東陽テクニカ", {"filer_disclosures": 1434, "stock_disclosures": 3})
+    assert line == "この提出者の開示は過去1434件、東陽テクニカでは3回目"
+
+
+def test_build_insight_line_empty_without_context():
+    import web.x_insight as ins
+
+    assert ins.build_insight_line("東陽テクニカ", {}) == ""
+
+
+# ------------------------------------------------------------------ 答え合わせ（web/x_followup）
+
+def test_build_followup_text_reports_average_and_both_extremes():
+    """勝った銘柄だけを出さない（平均・上昇数・最も下げた銘柄まで出す）。"""
+    import web.x_followup as fu
+
+    holdings = [{"issuer_code": c, "issuer_name": n} for c, n in
+                [("1111", "上げた会社"), ("2222", "下げた会社"), ("3333", "横ばい会社"),
+                 ("4444", "D社"), ("5555", "E社")]]
+    returns = {"1111": 30.0, "2222": -20.0, "3333": 1.0, "4444": 5.0, "5555": -2.0}
+    stats = fu.build_stats(holdings, returns)
+    text = fu.build_followup_text("2026-05-20", stats)
+    assert "5/20に大量保有報告書が出た5銘柄のその後" in text
+    assert "平均 +2.8%" in text
+    assert "上がったのは 3/5銘柄" in text
+    assert "上げた会社(1111) +30.0%" in text
+    assert "下げた会社(2222) -20.0%" in text
+    assert text.endswith("#日本株 #大量保有報告書")
+
+
+def test_build_followup_text_none_when_too_few_samples():
+    import web.x_followup as fu
+
+    holdings = [{"issuer_code": "1111", "issuer_name": "A"}]
+    stats = fu.build_stats(holdings, {"1111": 5.0})
+    assert fu.build_followup_text("2026-05-20", stats) is None
+
+
+def test_fetch_returns_excludes_split_adjusted_series():
+    """株式分割で終値が不連続な銘柄は、実態とかけ離れたリターンになるため除外する。"""
+    import web.x_followup as fu
+
+    rows = [
+        {"code": "1111", "date": "2026-05-20", "close": 1000.0},
+        {"code": "1111", "date": "2026-05-21", "close": 250.0},   # 4分割（-75%）
+        {"code": "2222", "date": "2026-05-20", "close": 1000.0},
+        {"code": "2222", "date": "2026-05-21", "close": 1100.0},
+    ]
+    with mock.patch.object(fu.sb, "select", return_value=rows):
+        out = fu.fetch_returns(["1111", "2222"], "2026-05-20")
+    assert "1111" not in out
+    assert round(out["2222"], 1) == 10.0
+
+
+def test_fetch_returns_skips_series_starting_long_after_disclosure():
+    import web.x_followup as fu
+
+    rows = [
+        {"code": "1111", "date": "2026-06-20", "close": 1000.0},
+        {"code": "1111", "date": "2026-06-21", "close": 1100.0},
+    ]
+    with mock.patch.object(fu.sb, "select", return_value=rows):
+        assert fu.fetch_returns(["1111"], "2026-05-20") == {}
+
+
+# ------------------------------------------------------------------ メトリクス収集（web/x_metrics）
+
+def test_fetch_target_tweet_ids_url_encodes_the_timestamp():
+    """ISO文字列の"+00:00"を生でクエリに載せると空白と解釈されPostgRESTが400を返す。"""
+    import web.x_metrics as xm
+
+    captured = {}
+    with mock.patch.object(xm.sb, "select",
+                           side_effect=lambda table, query: captured.update(q=query) or []):
+        xm.fetch_target_tweet_ids()
+    assert "+00:00" not in captured["q"]
+    assert "%2B00%3A00" in captured["q"]
+
+
+if __name__ == "__main__":
+    import pytest
+    sys.exit(pytest.main([__file__, "-q"]))

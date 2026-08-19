@@ -1,0 +1,49 @@
+name: X Metrics
+
+# 投稿したポストのインプレッション等を日次で取得し、Supabaseのx_posts / x_post_metricsに保存する。
+# どの投稿フォーマットが伸びたかを検証するための土台（docs/x_post_improvement_1000.md 施策1）。
+# non_public_metricsは投稿から30日以内の自分の投稿しか取れないため、毎日回す必要がある。
+on:
+  schedule:
+    # 毎日 10:00 JST（UTC 01:00）。前日の投稿が一晩伸びきった後の数字を取る。
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv requests-oauthlib
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "X_API_KEY=${{ secrets.X_API_KEY }}" >> ~/stock-alert/.env
+          echo "X_API_KEY_SECRET=${{ secrets.X_API_KEY_SECRET }}" >> ~/stock-alert/.env
+          echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
+          echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
+
+      - name: Collect metrics
+        run: |
+          cd ~/stock-alert
+          python web/x_metrics.py --report

@@ -26,6 +26,7 @@ import { getAllArticlesForSitemap, getArticlesByStockCode } from "@/lib/microcms
 import { SITE_URL } from "@/lib/site";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
+import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildStockFaqItems } from "@/lib/stockFaq";
 
@@ -94,6 +95,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ...(contents.length === 0 ? { robots: { index: false, follow: true } } : {}),
     alternates: {
       canonical: url,
+      types: { "application/rss+xml": `${url}/feed.xml` },
       ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/stocks/${code}` } } : {}),
     },
     openGraph: { title, description, url },
@@ -276,6 +278,7 @@ export default async function StockPage({ params }: Props) {
           ))}
         </>
       )}
+      <FollowUpdatesCta feedUrl={`/stocks/${code}/feed.xml`} targetLabel={`${stockName}（${code}）`} />
       <div className="mb-8 border-t border-rule pt-4">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>
         <FaqAccordionList faqs={faqItems} />

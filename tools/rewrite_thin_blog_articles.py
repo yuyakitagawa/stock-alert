@@ -41,7 +41,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from tools.reclassify_blog_articles import fetch_all_articles
-from lib.edinet import disclosure_doc_label, disclosure_kind_label
+from lib.edinet import disclosure_doc_label
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY,
     classify_filer, get_company_description, get_pit_ranking_snapshot, dp_level_label,
@@ -67,7 +67,7 @@ def visible_text_len(body_html: str) -> int:
 def find_filer_names(code: str, disc_date: str) -> set:
     rows = sb.select(
         "edinet_large_holdings",
-        f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name,doc_type_code,doc_description,holding_ratio,holding_ratio_prior",
+        f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name,doc_type_code,doc_description,holding_ratio",
     )
     return rows
 
@@ -132,17 +132,7 @@ def main():
         row = next(r for r in rows if r.get("filer_name") == filer_name)
 
         is_sell = "売り" in (a.get("tags") or "")
-        # 開示自体が持つ直前保有割合と報告書種別を渡す。渡さないと変更報告書でも
-        # 「今回比率の全量が動いた」とみなされ、リライトで変化幅が膨らむ。
-        change = ratio_change_pct(
-            code, filer_name, row["holding_ratio"], disc_date,
-            row.get("holding_ratio_prior"),
-            disclosure_kind_label(row.get("doc_description"), row.get("doc_type_code", "")),
-        )
-        if change is None:
-            # 変更報告書で変化幅を確定できない記事は、本文を作り直しても数字の根拠が無い。
-            skipped_no_match.append(a["id"])
-            continue
+        change = ratio_change_pct(code, filer_name, row["holding_ratio"], disc_date)
         snapshot = get_pit_ranking_snapshot(code, disc_date)
         context_close = snapshot.get("close") if snapshot else None
         context_dp = snapshot.get("drop_prob") if snapshot else None

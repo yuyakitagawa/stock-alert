@@ -1,18 +1,13 @@
-name: X Weekend Post
+name: X Follow-up Post
 
+# 「3ヶ月前に大量保有報告書が出た銘柄はその後どうなったか」の答え合わせ投稿。
+# 速報だけのアカウントに検証を足すための枠（docs/x_post_improvement_1000.md 施策6）。
 on:
   schedule:
-    # 土曜 18:00 JST（UTC 09:00）: 急増ランキング（前週比、web/x_weekly_trending.py）
-    - cron: '0 9 * * 6'
-    # 日曜 18:00 JST（UTC 09:00）: 今週のアクティビストの動き（web/x_weekly_activists.py）
-    - cron: '0 9 * * 0'
+    # 水曜 21:00 JST（UTC 12:00）。土日の週次2本と離し、週の中日に1本置く。
+    - cron: '0 12 * * 3'
   workflow_dispatch:
     inputs:
-      target:
-        description: 'どちらを投稿するか'
-        type: choice
-        options: [trending, activists]
-        default: trending
       dry_run:
         description: '本文の生成・表示のみで投稿しない'
         type: boolean
@@ -38,7 +33,6 @@ jobs:
       - name: Install dependencies
         run: pip install requests python-dotenv requests-oauthlib Pillow
 
-      # 週次投稿にも一覧カード画像を添付するため（web/x_card_image.py）
       - name: Install Noto Sans CJK
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
 
@@ -56,16 +50,7 @@ jobs:
           echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
 
-      # scheduleイベントでは inputs.* が空、workflow_dispatchでは github.event.schedule が空になるため、
-      # この2条件のORで「土曜の定期実行 or 手動でtrending指定」を表現できる。
-      - name: Post weekly trending (土曜)
-        if: github.event.schedule == '0 9 * * 6' || inputs.target == 'trending'
+      - name: Post follow-up
         run: |
           cd ~/stock-alert
-          python web/x_weekly_trending.py ${{ inputs.dry_run && '--dry-run' || '' }}
-
-      - name: Post weekly activists (日曜)
-        if: github.event.schedule == '0 9 * * 0' || inputs.target == 'activists'
-        run: |
-          cd ~/stock-alert
-          python web/x_weekly_activists.py ${{ inputs.dry_run && '--dry-run' || '' }}
+          python web/x_followup.py ${{ inputs.dry_run && '--dry-run' || '' }}

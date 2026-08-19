@@ -61,9 +61,3 @@ def label(text: str, max_units: int) -> str:
         used += cost
     return out + "…"
 
-
-def hashtag(name: str) -> str:
-    """銘柄名などをハッシュタグにする。Xのハッシュタグは記号・空白で切れてしまうため、
-    記号類を取り除いた連続文字列にする。空になったら付けない。"""
-    cleaned = re.sub(r"\W+", "", name or "")
-    return f"#{cleaned}" if cleaned else ""
