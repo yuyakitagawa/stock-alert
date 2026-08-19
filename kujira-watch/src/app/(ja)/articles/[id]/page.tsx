@@ -22,7 +22,7 @@ import {
   getArticlesByStockCode,
 } from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot } from "@/lib/investors";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
@@ -135,6 +135,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
+      site: X_HANDLE,
+      creator: X_HANDLE,
       title: article.title,
       description,
     },
