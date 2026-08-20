@@ -5,9 +5,9 @@ import { getHoldingsInRange } from "@/lib/investors";
 import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
 import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
 import DisclosureTrendChart from "@/components/DisclosureTrendChart";
-import TrendingTable from "@/components/TrendingTable";
+import TrendingDirectionTable from "@/components/TrendingDirectionTable";
 import { SITE_URL } from "@/lib/site";
-import { buildTrendingIssuers } from "@/lib/trendingStats";
+import { buildTrendingIssuers, selectDirection } from "@/lib/trendingStats";
 import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
@@ -25,7 +25,7 @@ const title = "取引が急増した銘柄";
 
 export const metadata: Metadata = {
   title,
-  description: `直近${WINDOW_DAYS}日間で大量保有報告書の開示が増えた銘柄を、その前の${WINDOW_DAYS}日間と比べた増加件数順にランキング。EDINETの開示データをもとに毎日更新しています。`,
+  description: `直近${WINDOW_DAYS}日間で大量保有報告書の開示が増えた銘柄を、その前の${WINDOW_DAYS}日間と比べた増加件数順にランキング。買い・売り・両方で絞り込めます。EDINETの開示データをもとに毎日更新しています。`,
   alternates: { canonical: url },
   openGraph: { title, url },
 };
@@ -47,7 +47,7 @@ export default async function TrendingPage() {
     getMonthlyDisclosureCounts().catch(() => []),
   ]);
 
-  // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す。
+  // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
   const trendingIssuers = buildTrendingIssuers(rows, currentFrom);
 
   // 社名と証券コードだけでは何の会社か分からないため、事業内容を1行添える。
@@ -62,7 +62,7 @@ export default async function TrendingPage() {
   // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
   // リンクにせずテキストのまま出す（404へのリンクを作らない）。
 
-  // href・noteはサーバー側で解決してから渡す（TrendingTableはクライアント
+  // href・noteはサーバー側で解決してから渡す（TrendingDirectionTableはクライアント
   // コンポーネントなので関数propsを境界を越えて渡せない）。
   const trendingItems = trendingIssuers.map((entry) => ({
     ...entry,
@@ -80,11 +80,13 @@ export default async function TrendingPage() {
   };
 
   // 可視コンテンツと合わせ、実際にリンクしている銘柄のみItemList化する。
+  // 絞り込みの初期値は「買い」なので、SSRされるHTMLと同じく買いの一覧を載せる。
+  const defaultViewItems = selectDirection(trendingItems, "buy");
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    name: `大量保有報告書の開示が増えた銘柄（直近${WINDOW_DAYS}日）`,
-    itemListElement: trendingItems
+    name: `買いの大量保有報告書の開示が増えた銘柄（直近${WINDOW_DAYS}日）`,
+    itemListElement: defaultViewItems
       .slice(0, JSON_LD_COUNT)
       .filter((entry) => entry.href !== null)
       .map((entry, index) => ({
@@ -117,6 +119,7 @@ export default async function TrendingPage() {
           大口投資家の取引（大量保有報告書の提出）が最近増えている銘柄のランキングです。
           直近{WINDOW_DAYS}日間の件数がその前の{WINDOW_DAYS}日間からどれだけ増えたかで順位づけしており、
           いま市場で注目が集まっている銘柄がわかります。
+          保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
           <br />
           投資家版は
           <Link href="/ranking/trending" className="text-brand-blue hover:underline">
@@ -131,13 +134,7 @@ export default async function TrendingPage() {
       </div>
 
       <section className="mb-10">
-        {trendingIssuers.length === 0 ? (
-          <p className="text-sm text-foreground/60">
-            直近{WINDOW_DAYS}日間で前期間より開示が増えた銘柄はありません。
-          </p>
-        ) : (
-          <TrendingTable items={trendingItems} headLabel="銘柄" windowDays={WINDOW_DAYS} />
-        )}
+        <TrendingDirectionTable items={trendingItems} windowDays={WINDOW_DAYS} />
       </section>
 
       {monthlyCounts.length >= 2 && (

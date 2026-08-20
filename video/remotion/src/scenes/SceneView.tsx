@@ -624,7 +624,7 @@ const ChartVisual: React.FC<{scene: Scene; accent: string}> = ({scene, accent}) 
 
 /**
  * 締め。URLの手打ちは期待せず「検索」に落とす。末尾0.8秒は冒頭と同じ金額組版に
- * カットで戻し、ループ再生で0秒目と絵が繋がるようにする（TikTokはループ回数も評価に入る）。
+ * カットで戻し、ループ再生で0秒目と絵が繋がるようにする（ループ視聴と相性が良い）。
  */
 const CtaVisual: React.FC<{
   props: ShortProps;

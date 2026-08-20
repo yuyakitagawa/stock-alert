@@ -150,6 +150,45 @@ def test_post_tweet_returns_none_on_http_error():
         assert m.post_tweet("hello") is None
 
 
+def test_card_stock_line_keeps_stock_code():
+    """社名が長くても証券コードは残す（銘柄検索の手掛かりを消さない）。フォント無しの環境では飛ばす。"""
+    from PIL import Image, ImageDraw
+
+    import web.x_card_image as card
+
+    if card._font_path() is None:
+        return
+    draw = ImageDraw.Draw(Image.new("RGB", (card.CARD_W, card.CARD_H)))
+    max_w = card.CARD_W - card.PAD * 2
+    for name in ("ニチレイ", "セブン&アイ・ホールディングス", "あ" * 40):
+        label, font = card._stock_line(draw, name, "3382", max_w)
+        assert label.endswith("（3382）"), label
+        assert draw.textlength(label, font=font) <= max_w, label
+
+
+def test_build_article_media_attaches_card_only():
+    """Xは複数画像を左右に並べて両方切り落とすため、添付は数字カード1枚だけにする。"""
+    chart = mock.Mock(side_effect=AssertionError("カードが作れた時にチャートを作ってはいけない"))
+    with mock.patch("web.x_card_image.build_deal_card", return_value=b"card"), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", chart), \
+         mock.patch.object(m, "upload_media", return_value="m1"):
+        assert m.build_article_media(BUY_ARTICLE) == ["m1"]
+
+
+def test_build_article_media_falls_back_to_chart():
+    """カードが作れない（フォント欠如等）ときだけチャートを代替に使う。これも1枚。"""
+    with mock.patch("web.x_card_image.build_deal_card", return_value=None), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=b"chart"), \
+         mock.patch.object(m, "upload_media", return_value="m2"):
+        assert m.build_article_media(BUY_ARTICLE) == ["m2"]
+
+
+def test_build_article_media_without_any_image():
+    with mock.patch("web.x_card_image.build_deal_card", return_value=None), \
+         mock.patch("web.publish_blog_articles.generate_price_chart_image", return_value=None):
+        assert m.build_article_media(BUY_ARTICLE) == []
+
+
 def test_post_tweet_includes_media_ids_and_reply_target():
     captured = {}
     with mock.patch.dict(os.environ, X_ENV, clear=True), \

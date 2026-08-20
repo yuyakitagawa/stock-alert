@@ -61,6 +61,12 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_history.py --years 1
 
+      # 投資家リターンランキング(/ranking/returns)の集計ビュー。株価キャッシュと
+      # EDINET開示の両方に依存するため、Step 0の株価更新の直後に再計算する。
+      - name: Step 0b - 投資家リターン集計ビュー更新（Supabase）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/refresh_investor_returns.py
+
       - name: Step 2b - カタリスト候補スクリーン（EDINET突合用）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/screen_catalyst_candidates.py --min-turnover 500

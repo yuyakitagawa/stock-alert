@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from video import audio_gen  # noqa: E402
 
-# YouTube / TikTok の音量基準。両プラットフォームとも -14 LUFS 前後に正規化して再生し、
+# YouTube の音量基準。-14 LUFS 前後に正規化して再生され、
 # これより大きい動画は下げるが、小さい動画は上げてくれない。VOICEVOXの生成音声は
 # 素のままだと -25 LUFS 前後で、スマホの通常音量ではナレーションがほぼ聞こえないため、
 # 書き出し後にここへ合わせる（2026-08-18: 声が聞こえないというオーナー指摘で追加）。

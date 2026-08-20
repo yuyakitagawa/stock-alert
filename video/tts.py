@@ -4,9 +4,9 @@ video/tts.py
 ナレーション音声の合成（VOICEVOX）。
 
 VOICEVOX は無料・登録不要・商用利用可（クレジット表記のみ必要）の日本語音声合成エンジン。
-ずんだもん等の声は日本の TikTok / YouTube Shorts の解説動画で広く使われており、
+ずんだもん等の声は日本のショート動画の解説ジャンルで広く使われており、
 視聴者の馴染みがある。クレジット表記（例: 「VOICEVOX:ずんだもん」）は
-動画のCTAシーン・YouTube説明文・TikTokキャプションに入れる（利用規約上の必須事項）。
+動画のCTAシーン・YouTube説明文に入れる（利用規約上の必須事項）。
 
 エンジンはHTTPサーバとして動く。CI（video_post.yml）では公式Dockerイメージ
 `voicevox/voicevox_engine:cpu-ubuntu20.04-latest` をジョブ内で起動し、ローカルでは

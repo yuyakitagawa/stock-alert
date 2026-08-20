@@ -175,11 +175,37 @@ export const getFilersByStockCode = unstable_cache(getFilersByStockCodeUncached,
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });
 
+// 開示1件の売買方向。「flat」は方向が判定できない開示（保有比率が動かない訂正報告書など）。
+export type HoldingDirection = "buy" | "sell" | "flat";
+
+// 保有比率が取れないときに概要欄から売り方向を拾うための語。
+// トレーディングシステム側 tools/scan_large_holdings.py の _SELL_KEYWORDS と揃えてある。
+const SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"];
+
+// 保有比率とその前回値が両方取れるならその増減で判定し、取れない（初回の大量保有報告書など）
+// ときだけ概要欄の語にフォールバックする。EDINETの概要欄は「変更報告書」とだけ書かれていて
+// 売買方向を示さないことが多く、テキストだけに頼ると売り抜けを買いと誤判定するため
+// （tools/scan_large_holdings.py: is_sell_disclosure() と同じ規律）。
+export function holdingDirection(
+  holdingRatio: number | null,
+  holdingRatioPrior: number | null,
+  docDescription: string | null
+): HoldingDirection {
+  if (holdingRatio !== null && holdingRatioPrior !== null) {
+    if (holdingRatio > holdingRatioPrior) return "buy";
+    if (holdingRatio < holdingRatioPrior) return "sell";
+    return "flat";
+  }
+  const description = docDescription ?? "";
+  return SELL_KEYWORDS.some((keyword) => description.includes(keyword)) ? "sell" : "buy";
+}
+
 export type HoldingRow = {
   issuerCode: string;
   issuerName: string;
   filerName: string;
   discDate: string;
+  direction: HoldingDirection;
 };
 
 // 期間内の大量保有・変更報告書を全件返す（/trendingの期間比較と、提出者名の突合で共用）。
@@ -190,7 +216,7 @@ async function getHoldingsInRangeUncached(from: string, to: string): Promise<Hol
     const offset = page * PAGE_SIZE;
     const { data } = await supabase
       .from("edinet_large_holdings")
-      .select("issuer_code, issuer_name, disc_date, filer_name")
+      .select("issuer_code, issuer_name, disc_date, filer_name, holding_ratio, holding_ratio_prior, doc_description")
       .gte("disc_date", from)
       .lte("disc_date", to)
       .order("disc_date", { ascending: true })
@@ -204,6 +230,7 @@ async function getHoldingsInRangeUncached(from: string, to: string): Promise<Hol
         issuerName: row.issuer_name ?? row.issuer_code,
         filerName: row.filer_name,
         discDate: row.disc_date,
+        direction: holdingDirection(row.holding_ratio, row.holding_ratio_prior, row.doc_description),
       });
     }
     if (data.length < PAGE_SIZE) break;
@@ -211,7 +238,10 @@ async function getHoldingsInRangeUncached(from: string, to: string): Promise<Hol
   return rows;
 }
 
-export const getHoldingsInRange = unstable_cache(getHoldingsInRangeUncached, ["getHoldingsInRange"], {
+// キーに"v2"を足しているのは、directionを持たない旧いキャッシュを引き継がないため
+// （Vercelのデータキャッシュはデプロイをまたいで残るので、キーを変えないと売買方向の
+// 絞り込みが最大1時間ぶん空振りする）。
+export const getHoldingsInRange = unstable_cache(getHoldingsInRangeUncached, ["getHoldingsInRange", "v2"], {
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });
 

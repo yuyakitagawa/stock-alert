@@ -11,7 +11,7 @@ export const RemotionRoot: React.FC = () => {
       id="ArticleShort"
       component={ArticleShort}
       fps={FPS}
-      // YouTube Shorts / TikTok 共通の 9:16。1080x1920 が両方の推奨解像度。
+      // YouTube Shorts の 9:16。1080x1920 が推奨解像度。
       width={1080}
       height={1920}
       defaultProps={defaultShortProps}

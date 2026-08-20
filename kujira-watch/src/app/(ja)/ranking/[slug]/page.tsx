@@ -5,45 +5,46 @@ import { displayFilerName, formatDate, formatDealAmount } from "@/lib/format";
 import { getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import {
-  buildFilerRows,
-  buildStockRows,
-  type RankingSlug,
-} from "@/lib/rankingStats";
+  getInvestorReturns,
+  getInvestorReturnsSummary,
+  formatSignedPercent,
+  formatSignedPoint,
+  MIN_POSITIONS,
+  RETURN_TRADING_DAYS,
+} from "@/lib/investorReturns";
+import { buildStockRows } from "@/lib/rankingStats";
 import AdUnit from "@/components/AdUnit";
 import DealTypeLabel from "@/components/DealTypeLabel";
 import RankingTabNav from "@/components/RankingTabNav";
 
-// ランキングの元データ（記事）は毎時更新なので1時間キャッシュで十分。
+// activistの元データ（記事）は毎時更新、returnsの元データ（Supabaseのマテリアライズド
+// ビュー）は日次更新なので1時間キャッシュで十分。
 export const revalidate = 3600;
 
-// 集計対象期間（暦日）と表示件数。
+// activist（記事ベース）の集計対象期間（暦日）と、両ランキング共通の表示件数。
 const RANKING_DAYS = 30;
 const RANKING_SIZE = 30;
 
-// 集計の軸。buys/sellsは「月間ランキング」タブの一員なので投資家別に集計する
-// （銘柄別の同種ランキングは/trendingや各銘柄ページの役割）。activistはタブに含めない
-// 「アクティビストが動いた銘柄」なので銘柄別のまま。
-type RankingAxis = "filer" | "stock";
+export type RankingSlug = "returns" | "activist";
+
+// 集計の軸。returnsは投資家別（この投資家が買った銘柄はその後どうなったか）、
+// activistはタブに含めない「アクティビストが動いた銘柄」なので銘柄別。
+type RankingAxis = "returns" | "stock";
 
 const RANKINGS: Record<
   RankingSlug,
   { axis: RankingAxis; title: string; description: string; note: string }
 > = {
-  buys: {
-    axis: "filer",
-    title: `買い増しランキング（直近${RANKING_DAYS}日）`,
+  returns: {
+    axis: "returns",
+    title: "3ヶ月リターンランキング（買い開示の成績）",
     description:
-      `EDINET大量保有報告書で開示された買い増し・新規取得を投資家別に合計し、推定取得金額が` +
-      `大きい順に並べた直近${RANKING_DAYS}日のランキング。いちばん買っている大口投資家が分かります。`,
-    note: "投資家ごとの推定取得金額（発行済株式数×株価×保有比率の変化幅の概算）の合計が大きい順です。",
-  },
-  sells: {
-    axis: "filer",
-    title: `売却ランキング（直近${RANKING_DAYS}日）`,
-    description:
-      `EDINET大量保有報告書で開示された売却（保有比率の減少）を投資家別に合計し、推定売却金額が` +
-      `大きい順に並べた直近${RANKING_DAYS}日のランキング。いちばん売っている大口投資家が分かります。`,
-    note: "投資家ごとの推定売却金額（発行済株式数×株価×保有比率の変化幅の概算）の合計が大きい順です。",
+      "EDINET大量保有報告書で買い増し・新規取得を開示した投資家について、開示日の終値から" +
+      "3ヶ月後（63営業日後）の終値までの騰落率を1件ずつ計算し、平均が高い順に並べた" +
+      "ランキング。「この投資家が買った銘柄はその後どうなったか」が分かります。",
+    note:
+      `買い開示1件を1ポジションとして等ウェイトで平均した騰落率です（金額加重ではありません）。` +
+      `開示${MIN_POSITIONS}件以上・3ヶ月が経過した開示のみが対象。`,
   },
   activist: {
     axis: "stock",
@@ -81,18 +82,22 @@ export default async function RankingSlugPage({ params }: Props) {
   const ranking = RANKINGS[slug as RankingSlug];
   if (!ranking) notFound();
 
-  const { contents } = await getRecentArticles(RANKING_DAYS);
-  const filerRows =
-    ranking.axis === "filer" ? buildFilerRows(slug as "buys" | "sells", contents, RANKING_SIZE) : [];
-  const stockRows = ranking.axis === "stock" ? buildStockRows(contents, RANKING_SIZE) : [];
-  const rowCount = ranking.axis === "filer" ? filerRows.length : stockRows.length;
+  const returnRows = ranking.axis === "returns" ? await getInvestorReturns(RANKING_SIZE) : [];
+  const returnSummary =
+    ranking.axis === "returns" ? await getInvestorReturnsSummary() : { filerCount: 0, latestBuyDate: null };
+  // 記事(microCMS)を読むのはactivistだけ。returnsの集計元はSupabaseなので取りに行かない。
+  const stockRows =
+    ranking.axis === "stock"
+      ? buildStockRows((await getRecentArticles(RANKING_DAYS)).contents, RANKING_SIZE)
+      : [];
+  const rowCount = ranking.axis === "returns" ? returnRows.length : stockRows.length;
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "月間ランキング", item: `${SITE_URL}/ranking/buys` },
+      { "@type": "ListItem", position: 2, name: "投資家ランキング", item: `${SITE_URL}/ranking/returns` },
       { "@type": "ListItem", position: 3, name: ranking.title, item: `${SITE_URL}/ranking/${slug}` },
     ],
   };
@@ -103,8 +108,8 @@ export default async function RankingSlugPage({ params }: Props) {
     "@type": "ItemList",
     name: ranking.title,
     itemListElement:
-      ranking.axis === "filer"
-        ? filerRows.map((row, index) => ({
+      ranking.axis === "returns"
+        ? returnRows.map((row, index) => ({
             "@type": "ListItem",
             position: index + 1,
             name: displayFilerName(row.filerName),
@@ -131,39 +136,43 @@ export default async function RankingSlugPage({ params }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <Link href="/ranking/buys" className="hover:text-brand-blue">月間ランキング</Link>
+        <Link href="/ranking/returns" className="hover:text-brand-blue">投資家ランキング</Link>
         {" / "}
         <span className="text-foreground/70">{ranking.title}</span>
       </nav>
       {/* タブ切替時に見出しの高さ・位置が変わらないよう、h1は全ランキング共通にして
           個別のランキング名はタブ直下のh2に置く（/ranking/trendingと同じ構成）。 */}
-      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">月間ランキング</h1>
+      <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
       <RankingTabNav current={`/ranking/${slug}`} />
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
       <p className="mb-2 text-sm text-foreground/50">{ranking.description}</p>
       <p className="mb-6 text-xs text-foreground/40">
-        ※{ranking.note} 出典はEDINET大量保有報告書。投資助言ではありません。
+        ※{ranking.note} 出典はEDINET大量保有報告書。過去の成績であり、将来の値動きや投資助言を示すものではありません。
       </p>
-      {/* アクティビストランキングだけは/activists（アクティビストの動き）と対の関係にあるため
+      {/* アクティビストランキングだけは/activists（アクティビスト注目銘柄）と対の関係にあるため
           相互リンクを置く。他のタブページには無関係なリンクを並べない。 */}
       {slug === "activist" && (
         <nav aria-label="関連ページ" className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <Link href="/activists" className="text-brand-blue hover:underline">
-            アクティビストの動き
+            アクティビスト注目銘柄
           </Link>
         </nav>
       )}
       {rowCount === 0 ? (
-        <p className="text-foreground/50">直近{RANKING_DAYS}日に該当する開示がありません。</p>
-      ) : ranking.axis === "filer" ? (
-        // 「1行目=順位＋投資家名（全幅）／2行目=メタ・金額（右端）」の1件1カード。
-        // 投資家・代表銘柄・解説記事と別々のリンクが3つあるためカード全体はリンクにしない。
+        <p className="text-foreground/50">
+          {ranking.axis === "returns"
+            ? "集計対象の開示がまだありません。"
+            : `直近${RANKING_DAYS}日に該当する開示がありません。`}
+        </p>
+      ) : ranking.axis === "returns" ? (
+        // 「1行目=順位＋投資家名（全幅）／2行目=メタ・平均リターン（右端）」の1件1カード。
+        // 投資家・最高銘柄と別々のリンクが2つあるためカード全体はリンクにしない。
         <>
           <p className="kicker mb-2 text-foreground/40">
-            順位・投資家 ／ 分類・開示件数・代表銘柄・推定金額の合計
+            順位・投資家 ／ 分類・買い開示件数・勝率・日経平均比・最も上がった銘柄・3ヶ月平均リターン
           </p>
           <ul className="card-grid card-grid-wide">
-            {filerRows.map((row, index) => (
+            {returnRows.map((row, index) => (
               <li key={row.filerName} className="card">
                 <span className="flex items-baseline gap-2">
                   <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
@@ -177,26 +186,40 @@ export default async function RankingSlugPage({ params }: Props) {
                   </Link>
                 </span>
                 <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-foreground/60">
-                  {row.category && <DealTypeLabel dealType={row.category} />}
-                  <span className="font-semibold">{row.count}件の開示</span>
-                  <Link
-                    href={`/stocks/${row.topStockCode}`}
-                    className="text-brand-blue hover:underline"
+                  <DealTypeLabel dealType={row.category} />
+                  <span className="font-semibold">買い開示{row.positionCount}件</span>
+                  <span>勝率{row.winRate}%</span>
+                  {row.avgExcessReturn !== null && (
+                    <span>日経平均比{formatSignedPoint(row.avgExcessReturn)}</span>
+                  )}
+                  <span className="flex items-center gap-1">
+                    最高
+                    <Link
+                      href={`/stocks/${row.bestStockCode}`}
+                      className="text-brand-blue hover:underline"
+                    >
+                      {row.bestStockName}（{formatSignedPercent(row.bestReturn, 0)}）
+                    </Link>
+                  </span>
+                  <span>最終買い{formatDate(row.latestBuyDate)}</span>
+                  <span
+                    className={`ml-auto whitespace-nowrap text-sm font-semibold tabular-nums ${
+                      row.avgReturn >= 0 ? "text-gain" : "text-loss"
+                    }`}
                   >
-                    {row.topStockName}（{row.topStockCode}）
-                  </Link>
-                  <Link href={`/articles/${row.topArticleId}`} className="text-brand-blue hover:underline">
-                    解説記事
-                  </Link>
-                  <span>最終開示{formatDate(row.latestDealDate)}</span>
-                  <span className="ml-auto whitespace-nowrap text-sm font-semibold tabular-nums text-brand-navy">
-                    {formatDealAmount(row.amount)}
-                    <span className="kicker ml-1 font-normal text-foreground/40">合計</span>
+                    {formatSignedPercent(row.avgReturn)}
+                    <span className="kicker ml-1 font-normal text-foreground/40">3ヶ月平均</span>
                   </span>
                 </span>
               </li>
             ))}
           </ul>
+          <p className="mt-4 text-xs leading-relaxed text-foreground/40">
+            集計対象は開示{MIN_POSITIONS}件以上の投資家{returnSummary.filerCount}名で、上位
+            {returnRows.length}名を表示しています。リターンは開示日（休場なら直後の営業日）の終値を基準に
+            {RETURN_TRADING_DAYS}営業日後の終値までを計算したもので、実際の取得単価・売却時期は反映していません。
+            日経平均比は同じ期間の日経平均の騰落率との差（％pt）です。
+          </p>
         </>
       ) : (
         <ul className="card-grid card-grid-wide">
