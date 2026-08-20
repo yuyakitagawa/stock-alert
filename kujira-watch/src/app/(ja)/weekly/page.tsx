@@ -10,6 +10,7 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import DailyDigestList from "@/components/DailyDigestList";
+import AmountTrendChart from "@/components/AmountTrendChart";
 import DisclosureTrendChart from "@/components/DisclosureTrendChart";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
@@ -51,6 +52,12 @@ function weekStartOf(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+// 「今日」は日本時間で判定する。UTCのまま new Date() を使うと月曜の0〜9時（JST）に
+// UTCではまだ日曜で、今週が前週として扱われ最新週がグラフから消える。
+function todayJst(): string {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
 // "8/11〜8/17" 形式の週ラベル。
 function weekRangeLabel(weekStart: string): string {
   const start = new Date(`${weekStart}T00:00:00Z`);
@@ -68,30 +75,38 @@ type WeeklyAmountRow = {
   isPartial: boolean;
 };
 
-// 記事ダイジェストを月曜始まりの暦週で集計する。記事データが無い最古側の空週は出さない。
+// 記事ダイジェストを月曜始まりの暦週で集計する。開示が1件も無い週も枠として残し
+// （グラフの横軸が飛ぶと「その週は少なかった」と読めてしまうため）、記事データが
+// まだ無い最古側の空週だけ落とす。新しい週が先頭。
 function buildWeeklyAmountRows(digests: ArticleDigest[], weeks: number): WeeklyAmountRow[] {
-  const currentWeekStart = weekStartOf(new Date().toISOString().slice(0, 10));
+  const currentWeekStart = weekStartOf(todayJst());
   const byWeek = new Map<string, WeeklyAmountRow>();
-  for (const digest of digests) {
-    const weekStart = weekStartOf(digest.dealDate);
-    const row = byWeek.get(weekStart) ?? {
+  // 直近weeks週ぶんの枠を先に作る（間の週が抜けないように）。
+  for (let i = 0; i < weeks; i++) {
+    const d = new Date(`${currentWeekStart}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    const weekStart = d.toISOString().slice(0, 10);
+    byWeek.set(weekStart, {
       weekStart,
       count: 0,
       buyAmount: 0,
       sellAmount: 0,
       isPartial: weekStart === currentWeekStart,
-    };
+    });
+  }
+  for (const digest of digests) {
+    const row = byWeek.get(weekStartOf(digest.dealDate));
+    if (!row) continue;
     row.count += 1;
     if (isSellArticle(digest.tags)) {
       row.sellAmount += digest.dealAmount;
     } else {
       row.buyAmount += digest.dealAmount;
     }
-    byWeek.set(weekStart, row);
   }
-  return [...byWeek.values()]
-    .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
-    .slice(0, weeks);
+  const rows = [...byWeek.values()].sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+  while (rows.length > 0 && rows[rows.length - 1].count === 0) rows.pop();
+  return rows;
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -126,8 +141,6 @@ export default async function WeeklyDigestPage() {
   const countDelta = summary.totalCount - previousSummary.totalCount;
   const amountDelta = summary.totalAmount - previousSummary.totalAmount;
   const amountDeltaPct = previousSummary.totalAmount > 0 ? (amountDelta / previousSummary.totalAmount) * 100 : null;
-  const netAmount = summary.buyAmount - summary.sellAmount;
-  const netLabel = netAmount >= 0 ? "買い越し" : "売り越し";
   const featured = [...contents].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, FEATURED_COUNT);
   const dateGroups = groupArticlesByDealDate(contents);
   const dateGroupMap = new Map(dateGroups.map((g) => [g.date, g]));
@@ -275,8 +288,22 @@ export default async function WeeklyDigestPage() {
           <h2 className="mb-2 text-xl font-bold text-brand-navy">週別の売買金額トレンド</h2>
           <p className="mb-2 text-sm text-foreground/60">
             解説記事化した開示の推定金額を週ごとに買い・売りへ分けた推移です。
-            差し引きがプラスの週は買い越し、マイナスの週は売り越しです。
+            ベースラインより上が買い、下が売りで、上に大きく振れた週ほど買い越しです。
           </p>
+          {/* グラフは古い週が左＝時系列順。表は他の一覧と揃えて新しい週が上のまま。 */}
+          <AmountTrendChart
+            bars={[...amountRows].reverse().map((row) => ({
+              key: row.weekStart,
+              axisLabel: weekRangeLabel(row.weekStart).split("〜")[0],
+              tableLabel: weekRangeLabel(row.weekStart),
+              count: row.count,
+              buyAmount: row.buyAmount,
+              sellAmount: row.sellAmount,
+              isPartial: row.isPartial,
+            }))}
+          />
+          <details className="mt-2 text-sm text-foreground/60">
+            <summary className="cursor-pointer">数値を表で見る</summary>
           <TableContainer>
             <Table size="small" sx={{ minWidth: 420, "& .MuiTableCell-root": { borderColor: "divider" } }}>
               <TableHead>
@@ -321,68 +348,45 @@ export default async function WeeklyDigestPage() {
               </TableBody>
             </Table>
           </TableContainer>
+          </details>
           <p className="mt-2 text-xs text-foreground/50">
             ※推定金額は発行済株式数×株価×保有比率の変化幅から概算した参考値です。
           </p>
         </section>
       )}
 
-      {contents.length > 0 && (
+      {summary.categoryBreakdown.length > 0 && (
         <section className="mb-10 border-y border-rule py-6">
-          <h2 className="text-xl font-bold text-brand-navy">直近7日間のポイント</h2>
-          <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
-            <Card variant="outlined" sx={{ bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
-              <Typography variant="overline" sx={{ color: "text.secondary" }}>買い</Typography>
-              <Typography variant="h5" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
-                {formatDealAmount(summary.buyAmount)}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.25, color: "text.secondary" }}>{summary.buyCount}件</Typography>
-            </Card>
-            <Card variant="outlined" sx={{ bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
-              <Typography variant="overline" sx={{ color: "text.secondary" }}>売り</Typography>
-              <Typography variant="h5" sx={{ mt: 0.5, fontWeight: 700, color: "primary.main" }}>
-                {formatDealAmount(summary.sellAmount)}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.25, color: "text.secondary" }}>{summary.sellCount}件</Typography>
-            </Card>
-          </Box>
-          <p className="mt-4 text-sm leading-relaxed text-foreground/70">
-            金額ベースでは買いが{formatDealAmount(summary.buyAmount)}、売りが
-            {formatDealAmount(summary.sellAmount)}で、差し引き{formatDealAmount(Math.abs(netAmount))}の
-            {netLabel}でした（複数の開示を合算した推定値のため、実際の資金フローとは異なります）。
+          <h2 className="text-xl font-bold text-brand-navy">直近7日間の投資家分類別の内訳</h2>
+          <p className="mb-2 mt-2 text-sm text-foreground/60">
+            直近{WINDOW_DAYS}日間の開示を、提出者のタイプ別に集計しています。
           </p>
-
-          {summary.categoryBreakdown.length > 0 && (
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="overline" sx={{ display: "block", mb: 1, color: "text.secondary" }}>
-                投資家分類別の内訳
-              </Typography>
-              <TableContainer>
-                <Table size="small" sx={{ minWidth: 420, "& .MuiTableCell-root": { borderColor: "divider" } }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ color: "text.secondary" }}>投資家分類</TableCell>
-                      <TableCell align="right" sx={{ color: "text.secondary" }}>件数</TableCell>
-                      <TableCell align="right" sx={{ color: "text.secondary" }}>推定金額</TableCell>
+          <Box sx={{ mt: 2 }}>
+            <TableContainer>
+              <Table size="small" sx={{ minWidth: 420, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ color: "text.secondary" }}>投資家分類</TableCell>
+                    <TableCell align="right" sx={{ color: "text.secondary" }}>件数</TableCell>
+                    <TableCell align="right" sx={{ color: "text.secondary" }}>推定金額</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {summary.categoryBreakdown.map((c) => (
+                    <TableRow key={c.dealType}>
+                      <TableCell title={DEAL_TYPE_DESCRIPTIONS[c.dealType]} sx={{ color: "primary.main" }}>
+                        {c.dealType}
+                      </TableCell>
+                      <TableCell align="right" sx={{ color: "text.secondary" }}>{c.count}件</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
+                        {formatDealAmount(c.amount)}
+                      </TableCell>
                     </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {summary.categoryBreakdown.map((c) => (
-                      <TableRow key={c.dealType}>
-                        <TableCell title={DEAL_TYPE_DESCRIPTIONS[c.dealType]} sx={{ color: "primary.main" }}>
-                          {c.dealType}
-                        </TableCell>
-                        <TableCell align="right" sx={{ color: "text.secondary" }}>{c.count}件</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
-                          {formatDealAmount(c.amount)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-          )}
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
         </section>
       )}
 

@@ -50,8 +50,11 @@ jobs:
         # pandas/numpy は株価チャートシーン（lib.utils.get_prices）が使う
         run: pip install requests anthropic python-dotenv pandas numpy requests-oauthlib
 
-      - name: Install Noto Sans CJK (動画内の日本語フォント)
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      # ffmpeg は書き出したmp4の音量を配信基準(-14 LUFS)へ正規化するのに必須。
+      # Ubuntu 24.04 のランナーイメージには入っていないため明示的に入れる
+      # （未インストールのまま無言でスキップされ、-25 LUFS の動画が投稿されていた。2026-08-21）
+      - name: Install Noto Sans CJK (動画内の日本語フォント) と ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk ffmpeg
 
       - name: Install Remotion dependencies
         run: cd video/remotion && npm ci

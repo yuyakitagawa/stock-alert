@@ -103,8 +103,10 @@ export type WeeklyDisclosureCount = {
 export const getWeeklyDisclosureCounts = unstable_cache(
   async (weeks: number): Promise<WeeklyDisclosureCount[]> => {
     const supabase = getSupabaseServerClient();
-    // 今週の月曜日（UTC基準。disc_dateは日付文字列なので日単位のズレのみ許容）。
-    const monday = new Date();
+    // 今週の月曜日。「今日」は日本時間で判定する（UTCのまま new Date() を使うと
+    // 月曜の0〜9時（JST）はUTCではまだ日曜で、今週が前週として扱われ最新週が消える）。
+    const todayJst = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+    const monday = new Date(`${todayJst}T00:00:00Z`);
     monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
     const weekStarts: string[] = [];
     for (let i = weeks - 1; i >= 0; i--) {

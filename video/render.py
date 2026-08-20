@@ -89,7 +89,16 @@ def _has_audio_stream(path: str) -> bool:
              "-show_entries", "stream=codec_name", "-of", "csv=p=0", path],
             capture_output=True, text=True, timeout=120,
         )
-    except (OSError, subprocess.SubprocessError):
+    except FileNotFoundError:
+        # ffprobe が無い環境では音量正規化が丸ごと効かない。無言で飛ばすと
+        # 「-25 LUFS のまま投稿されているのに誰も気づかない」状態になる
+        # （実際にCIのUbuntu 24.04でffmpegが未インストールで、2026-08-18に入れた
+        # 音量正規化が本番では一度も動いていなかった）。必ずログに残す。
+        print("  ⚠ ffprobe が見つからないため音量正規化をスキップします"
+              "（配信基準より約11dB小さいまま投稿されます）")
+        return False
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"  ⚠ 音声ストリームの確認に失敗しました（音量はそのまま）: {e}")
         return False
     return result.returncode == 0 and bool(result.stdout.strip())
 
@@ -103,6 +112,10 @@ def _measure_loudness(path: str) -> "dict | None":
              "-f", "null", "-"],
             capture_output=True, text=True, timeout=900,
         )
+    except FileNotFoundError:
+        print("  ⚠ ffmpeg が見つからないため音量正規化をスキップします"
+              "（配信基準より約11dB小さいまま投稿されます）")
+        return None
     except (OSError, subprocess.SubprocessError) as e:
         print(f"  ⚠ 音量測定に失敗しました（音量はそのまま）: {e}")
         return None

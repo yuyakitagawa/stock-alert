@@ -21,7 +21,7 @@ const WINDOW_DAYS = 30;
 const JSON_LD_COUNT = 30;
 
 const url = `${SITE_URL}/trending`;
-const title = "取引が急増した銘柄";
+const title = "銘柄ランキング";
 
 export const metadata: Metadata = {
   title,
@@ -116,9 +116,7 @@ export default async function TrendingPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          大口投資家の取引（大量保有報告書の提出）が最近増えている銘柄のランキングです。
-          直近{WINDOW_DAYS}日間の件数がその前の{WINDOW_DAYS}日間からどれだけ増えたかで順位づけしており、
-          いま市場で注目が集まっている銘柄がわかります。
+          大口投資家の取引（大量保有報告書の提出）が直近{WINDOW_DAYS}日間で前の{WINDOW_DAYS}日間より増えた銘柄のランキングです。
           保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
           <br />
           投資家版は

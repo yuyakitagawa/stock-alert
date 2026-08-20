@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -153,6 +154,84 @@ SECTION_SPEC = [
 ]
 
 
+# 作り直しでも直らなかったシーンを、記事の事実だけで組み直すための定型文。
+# 数値はすべて記事・開示由来で、ここで新しい事実を作らない（build_price_scene と同じ考え方）。
+# company / filer は事実の言い換えが必要で定型化できないため、壊れていたらシーンごと落とす。
+SALVAGEABLE_KINDS = ("hook", "deal", "change", "cta")
+DROPPABLE_KINDS = ("company", "filer")
+
+
+def _facts(article: dict) -> dict:
+    """定型文の組み立てに使う、記事から確定できる事実。"""
+    is_sell = "売り" in (article.get("tags") or "")
+    filer = article.get("filerName") or ""
+    return {
+        "stock": article.get("stockName") or "この銘柄",
+        # 提出者名は英語の正式名だと読み上げが長くなるため、20字を超えたら分類ラベルで代える
+        "filer": filer if 0 < len(filer) <= 20 else deal_type_label(article),
+        "amount": article.get("dealAmount") or 0,
+        "ratio": extract_holding_ratio(article),
+        "prev": extract_prev_holding_ratio(article),
+        "verb": "売却しました" if is_sell else "取得しました",
+    }
+
+
+def _template_scene(kind: str, f: dict) -> "dict | None":
+    """壊れたシーンを事実だけで組み直す。組めない場合は None（呼び出し側が落とす）。"""
+    if kind == "hook":
+        return {"kind": "hook",
+                "caption": f"{f['stock']}に{f['amount']}億円",
+                "narration": f"{f['filer']}が{f['stock']}を{f['amount']}億円{f['verb']}。"}
+    if kind == "deal":
+        return {"kind": "deal",
+                "caption": f"推定{f['amount']}億円・保有{f['ratio']}%",
+                "narration": f"推定の金額は{f['amount']}億円。"
+                             f"保有比率は{f['ratio']}パーセントです。"}
+    if kind == "change" and f["prev"] is not None:
+        diff = abs(f["ratio"] - f["prev"])
+        move = "減らしました" if f["prev"] > f["ratio"] else "積み増しました"
+        return {"kind": "change",
+                "caption": f"{f['prev']}%から{diff:.2f}ポイント",
+                "narration": f"前回の{f['prev']}パーセントから"
+                             f"{diff:.2f}ポイント{move}。"}
+    if kind == "cta":
+        return {"kind": "cta",
+                "caption": "続きはブログで公開中",
+                "narration": "詳しくは大口投資家の監視ブログで。"}
+    return None
+
+
+def salvage_scenes(scenes: list, article: dict) -> "list | None":
+    """作り直しでも読み上げ文が直らなかったシーンを、落とすか定型文に差し替える。
+
+    1シーンの生成に失敗しただけで動画を丸ごと諦めると、その日の投稿が飛ぶ
+    （2026-08-19・20と2日続けて0件になった）。壊れた文を読み上げないことと、
+    毎日1本出すことを両立させるため、事実だけで組み直せるシーンは組み直し、
+    組み直せないシーン（会社説明・投資家説明）は落とす。"""
+    facts = _facts(article)
+    salvaged = []
+    for scene in scenes:
+        if not is_broken_narration(scene["narration"]):
+            salvaged.append(scene)
+            continue
+        kind = scene["kind"]
+        if kind in DROPPABLE_KINDS:
+            print(f"  ↷ {kind}シーンの読み上げ文が直らないためシーンごと落とします")
+            continue
+        replacement = _template_scene(kind, facts)
+        if replacement is None:
+            print(f"  ↷ {kind}シーンを組み直せないため落とします")
+            continue
+        print(f"  ↷ {kind}シーンの読み上げ文を事実ベースの定型文に差し替えました")
+        salvaged.append(replacement)
+
+    kinds = [s["kind"] for s in salvaged]
+    if "hook" not in kinds or "cta" not in kinds:
+        print("  ⚠ hook / cta を組み直せないため動画を作りません")
+        return None
+    return salvaged
+
+
 def is_broken_narration(text: str) -> bool:
     """読み上げ文が文の途中で切れているか。切り詰めの「…」がそのまま画面に出て
     VOICEVOXにも読み上げられていた実害（2026-08-19に指摘）を検知するために使う。"""
@@ -211,8 +290,10 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
 （2文に分けるのではなく、そのシーンで一番大事な一点だけを残す）。
 
 大量保有報告書は株式の取得・売却の開示であって企業買収ではありません。
-「買収」「経営権を握る」「TOB」など、開示内容を超える語は使わないでください
-（「取得」「買い増し」「新規保有」「売却」など事実に合う語を使う）。
+「買収」「経営権を握る」「TOB」など、開示内容を超える語は使わないでください。
+
+取引の言い方は開示の事実に合わせてください。**今回が新規保有なら「買い増し」とは書かず
+「新規に取得」「新たに保有」**と書きます（逆に、前回の開示がある場合だけ「買い増し」が使えます）。
 
 1. hook: 冒頭で指を止めさせる部分。最初の1秒で固有名詞か金額が耳に入ることが最優先。
    - narration: **22〜30字**。語順は〈誰が〉→〈何を〉→〈いくら〉に固定する。
@@ -264,15 +345,28 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
         print("  ⚠ 台本の形式が不正（hook / sections / closing の欠落）")
         return None
 
-    too_long = [s["caption"] for s in scenes if len(s["caption"]) > CAPTION_MAX_CHARS]
-    too_long += [s["narration"] for s in scenes if len(s["narration"]) > NARRATION_MAX_CHARS]
-    if too_long and _retries > 0:
-        longest = max(too_long, key=len)
-        print(f"  ↻ 台本が長すぎるため作り直します（最長{len(longest)}字）")
+    over_caption = [s["caption"] for s in scenes if len(s["caption"]) > CAPTION_MAX_CHARS]
+    over_narration = [s["narration"] for s in scenes if len(s["narration"]) > NARRATION_MAX_CHARS]
+    if (over_caption or over_narration) and _retries > 0:
+        # captionとnarrationは上限が別（26字 / 55字）。どちらが超えたかを言い分けないと、
+        # 29字のcaption超過を「narrationが長い」と伝えて見当違いの直しをさせることになる
+        # （2026-08-20の博報堂DYの回が実際にこれで3回とも外し、投稿0件になった）。
+        problems = []
+        if over_caption:
+            worst = max(over_caption, key=len)
+            problems.append(
+                f"caption「{worst[:40]}」が{len(worst)}字ありました（上限{CAPTION_MAX_CHARS}字）"
+            )
+        if over_narration:
+            worst = max(over_narration, key=len)
+            problems.append(
+                f"narration「{worst[:60]}」が{len(worst)}字ありました（上限{NARRATION_MAX_CHARS}字）"
+            )
+        print(f"  ↻ 台本が長すぎるため作り直します（{' / '.join(problems)}）")
         feedback = (
-            f"【前回の出力の問題】ある文が{len(longest)}字ありました:「{longest[:60]}」。\n"
-            f"narrationは1文40字以内・1シーン{NARRATION_MAX_CHARS}字以内が絶対条件です。"
-            f"情報を削って短くしてください。\n\n"
+            "【前回の出力の問題】" + "。".join(problems) + "。\n"
+            f"captionは{CAPTION_MAX_CHARS}字以内、narrationは1文40字以内かつ"
+            f"{NARRATION_MAX_CHARS}字以内が絶対条件です。字数を数えてから出力してください。\n\n"
         )
         return generate_script(article, company_description, filer_profile,
                                _retries - 1, feedback)
@@ -282,17 +376,18 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
         scene["narration"] = _trim_narration(scene["narration"], NARRATION_MAX_CHARS)
 
     broken = [s["narration"] for s in scenes if is_broken_narration(s["narration"])]
-    if broken:
-        if _retries > 0:
-            print(f"  ↻ 読み上げ文が文の途中で切れているため作り直します: {broken[0][-24:]}")
-            feedback = (
-                f"【前回の出力の問題】「{broken[0][:60]}」が長すぎて途中で切れました。\n"
-                f"narrationは1文40字以内・1シーン{NARRATION_MAX_CHARS}字以内で、"
-                f"必ず「。」で終わる完結した文にしてください。\n\n"
-            )
-            return generate_script(article, company_description, filer_profile,
-                                   _retries - 1, feedback)
-        print(f"  ⚠ 読み上げ文が文の途中で切れたままのため動画を作りません: {broken[0][-24:]}")
+    if broken and _retries > 0:
+        print(f"  ↻ 読み上げ文が文の途中で切れているため作り直します: {broken[0][-24:]}")
+        feedback = (
+            f"【前回の出力の問題】narration「{broken[0][:60]}」が長すぎて途中で切れました。\n"
+            f"narrationは1文40字以内・1シーン{NARRATION_MAX_CHARS}字以内で、"
+            "必ず「。」で終わる完結した文にしてください。\n\n"
+        )
+        return generate_script(article, company_description, filer_profile,
+                               _retries - 1, feedback)
+
+    scenes = salvage_scenes(scenes, article)
+    if scenes is None:
         return None
     return {"scenes": scenes}
 
@@ -321,6 +416,58 @@ def _flatten_scenes(data: dict) -> "list | None":
     return scenes
 
 
+# 法人格の表記ゆれ（「株式会社」の有無など）で照合を落とさないために除く語。
+_FILER_SUFFIX = re.compile(r"(株式会社|合同会社|有限会社|一般社団法人|公益財団法人|財団法人)")
+
+
+def _normalize_name(text: str) -> str:
+    """提出者名の照合用に正規化する。全角半角・空白・中黒・法人格の差を吸収する
+    （開示データは「久世　良太」、本文は「久世良太氏」のように書かれるため）。"""
+    text = unicodedata.normalize("NFKC", text or "")
+    text = _FILER_SUFFIX.sub("", text)
+    return re.sub(r"[\s　・.,．，]", "", text).lower()
+
+
+def resolve_filer_name(article: dict) -> str:
+    """記事の提出者名。microCMSのfilerNameが空の旧記事（2026-08-16以前）は、
+    同じ銘柄・同じ開示日の大量保有報告書の提出者を候補に挙げ、**記事本文に名前が
+    書かれているもの**を選ぶ。
+
+    同一銘柄・同一開示日には複数の提出者がいることが普通なので、開示データだけでは
+    一意に決まらない。本文との突き合わせを条件にすることで、誤った提出者名を
+    動画のタイトルに載せないようにする。一意に決まらなければ空文字を返し、
+    呼び出し側は「大口投資家」という総称にフォールバックする。"""
+    name = article.get("filerName") or ""
+    if name:
+        return name
+    code = str(article.get("stockCode") or "")
+    disc_date = (article.get("dealDate") or "")[:10]
+    body = article.get("body") or ""
+    if not (code and disc_date and body):
+        return ""
+    try:
+        from lib.db import sb
+
+        rows = sb.select(
+            "edinet_large_holdings",
+            f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name",
+        )
+    except Exception as e:
+        print(f"  ⚠ 提出者名の照会に失敗しました（総称で続行）: {e}")
+        return ""
+
+    normalized_body = _normalize_name(_strip_html(body))
+    hits = {
+        r["filer_name"] for r in rows
+        if _normalize_name(r.get("filer_name")) and _normalize_name(r["filer_name"]) in normalized_body
+    }
+    if len(hits) == 1:
+        found = hits.pop()
+        print(f"  ↷ 記事にfilerNameが無いため開示データから特定しました: {found}")
+        return found
+    return ""
+
+
 def deal_type_label(article: dict) -> str:
     """microCMSのdealTypeはセレクト型なので配列で返る（例: ["国内アセットマネジメント"]）。
     動画には1行のラベルとして出すため先頭要素だけを使う。未設定なら汎用ラベル。"""
@@ -338,9 +485,9 @@ def build_props(article: dict, script: dict) -> dict:
     return {
         "stockName": article.get("stockName") or "",
         "stockCode": str(article.get("stockCode") or ""),
-        # filerName は古い記事だと未設定のことがある（microCMSは空フィールドを返さない）。
-        # 動画側は空文字なら提出者名の行を出さない。
-        "filerName": article.get("filerName") or "",
+        # filerName は古い記事だと未設定。開示データと本文の突き合わせで特定を試み、
+        # それでも決まらなければ空文字（動画側は提出者名の行を出さない）。
+        "filerName": resolve_filer_name(article),
         "dealTypeLabel": deal_type_label(article),
         "direction": "sell" if is_sell else "buy",
         "dealAmountOku": float(article.get("dealAmount") or 0),

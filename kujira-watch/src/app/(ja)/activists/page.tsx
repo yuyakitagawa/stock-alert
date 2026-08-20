@@ -21,7 +21,7 @@ const ATTENTION_DISPLAY_LIMIT = 10;
 // 「もっと見る」で開く分もHTMLには載っている（CSSで隠しているだけ）ため、30日分を全部
 // 描画するとページのHTMLが重くなる。HTMLに載せる件数自体をここで打ち切る
 // （打ち切った件数は画面にも明記して、全件があるように見せない）。
-const ATTENTION_RENDER_LIMIT = 30;
+const ATTENTION_RENDER_LIMIT = 100;
 
 const url = `${SITE_URL}/activists`;
 const title = "アクティビスト注目銘柄";
