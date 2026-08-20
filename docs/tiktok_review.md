@@ -56,5 +56,15 @@ account」に変えて提出する。まずは video.upload のみで通し、�
       Scopes（video.upload）を追加（審査は本体構成に対して行われるため。Sandboxとは別設定）
 - [x] **審査提出完了（2026-08-16）** — ステータス「in review」。結果待ち（通常数日〜2週間、
       混雑時はさらに遅延の告知あり）。結果は Developer Portal の History / Review comments に届く
-- [ ] 承認後: `gh secret set TIKTOK_DIRECT_POST --body 1` で直接公開へ切替（本体側の
-      Client Key/Secret への差し替えと再認可も必要になる場合がある — 承認時に確認）
+- [x] **審査結果: リジェクト（2026-08-20）** — 理由「App will not be approved for personal
+      or company internal use（個人・自社内利用のアプリは承認対象外）」。
+      自アカウントへの自動投稿という用途そのものがTikTokの本番承認ポリシーの対象外であり、
+      書類・デモの改善で通る余地は無い。**再申請はしない**（多数ユーザー向けを装う虚偽申請や
+      ブラウザ自動化はToS違反・アカウント停止リスクのため不採用）。
+
+## 最終結論（2026-08-20）
+- TikTokは **Sandbox＋inbox下書き送信＋LINEキャプション通知＋手動公開** が恒久運用。
+  Sandboxは審査不要で使い続けられる（Target Users=自アカウント、下書きのみ）。
+- TIKTOK_DIRECT_POST への切替計画は放棄。コード上のフラグは「将来ポリシーが変わった場合」の
+  ために残置。
+- 残る定期作業: TikTokリフレッシュトークンの再認可（365日ごと、次回2027-08頃）。
