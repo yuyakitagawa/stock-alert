@@ -396,3 +396,6 @@ https://kujira-watch.com/ ）。EDINET大量保有報告書をもとに機関投
 | `design-consult` | **デザインコンサルタント**。kujira-watchサイト・アイキャッチ画像・Remotion動画のデザインレビューと改善提案。ブランドトークン（globals.css / theme.ts）と技術制約（和文ウェブフォント禁止・MUI規約・RSC境界）を踏まえ、375px/1280px × ja/en のスクリーンショット確認込みで優先度付きの指摘を出す |
 | `manim-video` | Manimによる数学アニメーション動画の生成 |
 | `note-cover` | note記事用の表紙画像（1280x670）生成 |
+| `revision-review` | **修整レビュー10ラウンド**。修整指示に対する変更を、観点（指示充足/バグ/特徴量整合性/戦略規律/PIT規律/IOコスト/CI/テスト/コード規律/総合）を変えて10回レビューし、指摘を潰してから完了判定する。1観点1体の `revision-reviewer` サブエージェント（`.claude/agents/`）を並列起動する |
+
+サブエージェント定義は `.claude/agents/` に置く（現在は `revision-reviewer` の1体。`revision-review` スキルから起動する読み取り専用レビュアー）。

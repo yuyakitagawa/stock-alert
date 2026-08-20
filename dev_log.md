@@ -1427,3 +1427,18 @@ Haikuが数値の上限より枠組みの指示に従っていた。
 - `.github/workflows/video_post.yml` の apt に `ffmpeg` を追加
 - `_has_audio_stream()` / `_measure_loudness()` で `FileNotFoundError` を個別に捕まえ、
   「音量正規化をスキップします（配信基準より約11dB小さいまま投稿されます）」と必ずログに出す
+
+## 2026-08-20 修整レビュー10ラウンドのエージェント追加（.claude/agents + revision-review スキル）
+
+「修整指示に対して10回ぐらいレビューしてほしい」への対応。同じレビューを10回回しても
+指摘が重複するだけなので、**1体1観点**に分割して10ラウンドにした。
+
+- `.claude/agents/revision-reviewer.md`: 読み取り専用（Edit/Write なし）のレビュアー。
+  渡された観点1つだけを見て、`file:line` と根拠つきの指摘を最大5件返す。
+  ファイル全文の出力・観点外の指摘・推測での指摘を禁止（Token Saving / No Hallucination）。
+- `.claude/skills/revision-review/SKILL.md`: 10観点（指示充足 / バグ / 64次元特徴量の整合性 /
+  戦略規律・ハードフィルター / PIT規律・リーク / Supabase往復とAPIコスト / CI・運用 /
+  テストのデグレ / コード規律§7・README更新 / 総合再レビュー）を固定し、
+  1〜9は3体ずつ並列 → 重複排除 → B/M を修正 → 10で潰れたかを再検証する。
+  ラウンド10で Blocker が出たら修正して10をやり直す（最大3回、収束しなければ残件を報告）。
+- 締めに `tests/test_*.py` 全実行、モデル・ランキングに触れた場合は bear バックテストで数値確認。
