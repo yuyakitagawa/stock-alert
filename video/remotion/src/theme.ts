@@ -18,7 +18,7 @@ export const fontFamily =
   "'Noto Sans JP', 'Noto Sans CJK JP', 'Hiragino Sans', 'Yu Gothic', sans-serif";
 
 /**
- * TikTok / Shorts のUIに隠れない領域。動画は1080x1920だが、実際に読ませてよいのは
+ * Shorts のUIに隠れない領域。動画は1080x1920だが、実際に読ませてよいのは
  * この内側だけ。下部はキャプションとメニュー、右端はシェア・いいねのボタン列が重なる。
  *
  * 左右は必ず同じ値にする。以前は left:70 / right:190 だったため、中央寄せした要素が

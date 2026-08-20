@@ -1,12 +1,7 @@
 """
 video/line_notify.py
 
-TikTokへ下書きを送信したあと、公開時に貼るキャプション文をLINEでスマホに届ける。
-
-TikTokの下書き送信API（inbox）はキャプションを一緒に送れない仕様のため、
-公開操作をするオーナーのスマホにコピペ用の文面を送っておく（TikTokの通知で下書きを開く
-→ LINEからキャプションをコピペ → 公開、の30秒運用にする）。アプリ審査が通って
-直接公開（TIKTOK_DIRECT_POST=1）に切り替えたら、この通知は公開報告として残す。
+動画の投稿完了をLINEでスマホに通知する（毎日の実行結果の確認用）。
 
 認証はブログ・市況アラートと同じLINE Messaging APIのチャネルを再利用する
 （LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID）。未設定なら黙ってスキップし、
@@ -19,32 +14,24 @@ import requests
 PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 
-def build_message(props: dict, caption: str, youtube_id: "str | None",
-                  tiktok_publish_id: "str | None") -> str:
+def build_message(props: dict, youtube_id: "str | None") -> str:
     lines = [f"🎬 今日の動画: {props.get('articleTitle') or props.get('stockName', '')}"]
     if youtube_id:
         lines.append(f"▶️ YouTube公開済み: https://youtube.com/shorts/{youtube_id}")
-    if tiktok_publish_id:
-        lines.append("🎵 TikTokに下書きを送りました。アプリの通知から開いて、"
-                     "下のキャプションを貼り付けて公開してください。")
-        lines.append("")
-        lines.append("--- キャプション（コピー用） ---")
-        lines.append(caption)
     return "\n".join(lines)
 
 
-def notify(props: dict, caption: str, youtube_id: "str | None" = None,
-           tiktok_publish_id: "str | None" = None) -> bool:
+def notify(props: dict, youtube_id: "str | None" = None) -> bool:
     """投稿結果をLINEでプッシュする。認証情報未設定・失敗時はFalse（他処理は止めない）。"""
     token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
     user_id = os.getenv("LINE_USER_ID")
     if not token or not user_id:
         print("[line_notify] LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID 未設定のため通知をスキップします")
         return False
-    if not youtube_id and not tiktok_publish_id:
-        return False  # 何も投稿できていない日は通知しない
+    if not youtube_id:
+        return False  # 投稿できていない日は通知しない
 
-    message = build_message(props, caption, youtube_id, tiktok_publish_id)
+    message = build_message(props, youtube_id)
     try:
         resp = requests.post(
             PUSH_URL,

@@ -1,7 +1,7 @@
 """
 video/build_script.py
 
-microCMSに公開済みのブログ記事から、縦動画（YouTube Shorts / TikTok）1本ぶんの
+microCMSに公開済みのブログ記事から、縦動画（YouTube Shorts）1本ぶんの
 台本＝Remotionに渡すprops JSONを組み立てる。
 
 対象記事の選び方は web/x_client.py と同じ思想:

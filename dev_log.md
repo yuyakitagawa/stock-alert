@@ -1,5 +1,22 @@
 # Dev Log
 
+## 2026-08-20 TikTok投稿機能を完全撤去
+
+```
+背景: TikTokアプリ審査がリジェクト（「App will not be approved for personal or company
+internal use」）。自アカウントへの自動投稿という用途自体がTikTok for Developersの
+本番承認ポリシーの対象外で、書類・デモの改善で通る余地が無い。Sandboxでの下書き運用は
+可能だが、毎晩の手動公開が必要なことからオーナー判断で撤去を決定。
+
+削除: video/tiktok_client.py・video/tiktok_auth.py・関連テスト・video_post.ymlのTIKTOK_*
+env・GitHub SecretsのTIKTOK_*（3件）・README/コメントの言及。LINE通知はTikTokキャプション
+連携用だったが、YouTube投稿完了通知として簡素化して残置（line_notify.notify(props, youtube_id)）。
+
+学び: プラットフォームAPIの審査ポリシー（誰向けのアプリを承認するか）は実装前に確認する。
+TikTokは「自社サービスのユーザーに使わせるアプリ」のみ承認し、自社アカウント運用の
+自動化ツールは承認しない。経緯の詳細は docs/tiktok_review.md。
+```
+
 ## 2026-08-19 X投稿カードのブランド配色化とURLの本文復帰（オーナー指摘）
 
 ```

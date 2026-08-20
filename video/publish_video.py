@@ -3,12 +3,12 @@ video/publish_video.py
 
 自動動画投稿のオーケストレーター。1日1回、以下を順に実行する:
   1. build_script.py  … microCMSの新着記事×注目枠から1件選び、Claudeで縦動画の台本を作る
-  2. render.py        … Remotion で 1080x1920 / 20秒の mp4 を書き出す
+  2. render.py        … Remotion で 1080x1920 の mp4 を書き出す
   3. youtube_client   … YouTube Shorts へアップロード
-  4. tiktok_client    … TikTok へアップロード（既定は下書き。詳細は tiktok_client.py 参照）
 
 対象記事が無い日は何も投稿せずに終了する（毎日必ず出す運用にはしない）。
-片方のプラットフォームの認証情報が未設定・アップロード失敗でも、もう片方は続行する。
+※TikTok投稿は2026-08-20に完全撤去（自アカウント用途はTikTokの本番審査ポリシー対象外のため。
+  経緯は docs/tiktok_review.md）。
 
 使い方:
   python video/publish_video.py                  # 台本→レンダリング→両方へ投稿
@@ -24,7 +24,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
 from video import background, build_script, line_notify, render, tts  # noqa: E402
-from video import tiktok_client, youtube_client  # noqa: E402
+from video import youtube_client  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.expanduser("~/stock-alert"), "video", "out")
 
@@ -71,13 +71,8 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
         print(f"[publish_video] --render-only のため投稿しません: {video_path}")
         return 0
 
-    configured = [
-        name for name, keys in (
-            ("YouTube", ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN")),
-            ("TikTok", ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TIKTOK_REFRESH_TOKEN")),
-        )
-        if all(os.getenv(k) for k in keys)
-    ]
+    configured = all(os.getenv(k) for k in
+                     ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"))
 
     posted = 0
     youtube_id = youtube_client.upload(video_path, props)
@@ -92,15 +87,10 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
                 print("  🐦 動画リンクをXへクロス投稿しました")
         except Exception as e:
             print(f"  ⚠ Xクロス投稿に失敗しましたが動画投稿は完了しています: {e}")
-    tiktok_publish_id = tiktok_client.upload(video_path, props)
-    if tiktok_publish_id:
-        posted += 1
-
     print(f"[publish_video] {posted}プラットフォームへ投稿しました（対象記事: {props.get('articleTitle')}）")
 
-    # TikTokの下書きはキャプションを運べないため、公開時に貼る文面をLINEでスマホへ送る
-    line_notify.notify(props, tiktok_client.build_caption(props),
-                       youtube_id=youtube_id, tiktok_publish_id=tiktok_publish_id)
+    # 投稿完了をLINEでスマホへ通知する
+    line_notify.notify(props, youtube_id=youtube_id)
 
     if not keep_video and posted > 0:
         os.remove(video_path)

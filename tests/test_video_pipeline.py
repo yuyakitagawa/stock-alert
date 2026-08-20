@@ -1,5 +1,5 @@
 """自動動画投稿パイプライン（video/）のロジックのユニットテスト。
-ネットワーク(microCMS / Claude / YouTube / TikTok)は全てモックし、純粋なロジックのみ検証する。
+ネットワーク(microCMS / Claude / YouTube)は全てモックし、純粋なロジックのみ検証する。
 
 実行: python3 tests/test_video_pipeline.py
 """
@@ -10,7 +10,6 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import video.build_script as bs
-import video.tiktok_client as tk
 import video.tts as tts_mod
 import video.background as bg_mod
 import video.line_notify as ln
@@ -19,11 +18,6 @@ import video.render as render_mod
 import video.audio_gen as audio_gen
 import video.post_text as pt
 
-TK_ENV = {
-    "TIKTOK_CLIENT_KEY": "ckey",
-    "TIKTOK_CLIENT_SECRET": "csec",
-    "TIKTOK_REFRESH_TOKEN": "rtok",
-}
 
 PROPS = {
     "stockName": "東陽テクニカ",
@@ -569,29 +563,20 @@ def test_ensure_sound_effects_is_deterministic(tmp_path):
 
 # ---------------- LINE通知 ----------------
 
-def test_line_message_includes_caption_and_youtube_url():
-    msg = ln.build_message({"articleTitle": "テスト記事", "stockName": "A社"},
-                           "キャプション本文 #tag", youtube_id="abc123", tiktok_publish_id="p1")
+def test_line_message_includes_title_and_youtube_url():
+    msg = ln.build_message({"articleTitle": "テスト記事", "stockName": "A社"}, youtube_id="abc123")
     assert "テスト記事" in msg
     assert "https://youtube.com/shorts/abc123" in msg
-    assert "キャプション本文 #tag" in msg
-    assert "コピー用" in msg
-
-
-def test_line_message_omits_tiktok_block_when_not_uploaded():
-    msg = ln.build_message({"articleTitle": "t"}, "cap", youtube_id="abc", tiktok_publish_id=None)
-    assert "キャプション" not in msg
-    assert "youtube.com" in msg
 
 
 def test_line_notify_skips_without_credentials():
     with mock.patch.dict(os.environ, {}, clear=True):
-        assert ln.notify({"articleTitle": "t"}, "cap", youtube_id="abc") is False
+        assert ln.notify({"articleTitle": "t"}, youtube_id="abc") is False
 
 
 def test_line_notify_skips_when_nothing_posted():
     with mock.patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "t", "LINE_USER_ID": "u"}, clear=True):
-        assert ln.notify({"articleTitle": "t"}, "cap") is False
+        assert ln.notify({"articleTitle": "t"}) is False
 
 
 # ---------------- YouTube ----------------
@@ -668,146 +653,6 @@ def test_youtube_description_leads_with_searchable_hashtags():
 def test_youtube_upload_skipped_without_credentials():
     with mock.patch.dict(os.environ, {}, clear=True):
         assert yt.upload("/tmp/none.mp4", PROPS) is None
-
-
-# ---------------- TikTok ----------------
-
-def test_tiktok_caption_includes_deal_details():
-    """定型の誘導文ではなく取引詳細（比率・開示日・要点）で構成する（2026-08-17指示）。"""
-    caption = tk.build_caption(PROPS)
-    assert "東陽テクニカ" in caption
-    assert "8151" in caption
-    assert "保有比率8.77%" in caption
-    assert "8/14開示" in caption
-    assert "#東陽テクニカ" in caption
-    # 廃止した定型文が混ざっていないこと
-    assert "プロフィール" not in caption
-    assert "VOICEVOX" not in caption
-    # 台本の要点が箇条書きで入ること（company/change/outlook/chartから最大3つ）
-    assert "・電子計測の専業" in caption
-
-
-def test_tiktok_caption_falls_back_when_filer_name_missing():
-    """filerName未設定の記事でも主語が欠けない（「大口投資家」に置換される）。"""
-    caption = tk.build_caption({**PROPS, "filerName": ""})
-    assert "大口投資家が" in caption
-
-
-def test_tiktok_caption_truncates_long_head():
-    caption = tk.build_caption({**PROPS, "stockName": "あ" * 200})
-    head = caption.split("\n")[0]
-    assert len(head) <= tk.CAPTION_MAX_CHARS
-    assert head.endswith("…")
-
-
-def test_tiktok_caption_has_site_link_text():
-    """TikTokのキャプションはリンクを押せないので、URLを文字列で置く。
-    以前は導線が1行も無く、TikTokからの流入が構造的に発生しなかった。"""
-    caption = tk.build_caption(PROPS)
-    assert pt.SITE_HOST in caption
-    assert pt.SITE_NAME in caption
-
-
-def test_post_text_hashtag_strips_unusable_characters():
-    """銘柄名の空白や「．」をそのまま「#」に続けるとタグが途中で切れて本文が漏れる
-    （例: Ｊ．フロント リテイリング）。"""
-    assert pt.hashtag("Ｊ．フロント リテイリング") == "#Ｊフロントリテイリング"
-    assert pt.hashtag("アインホールディングス") == "#アインホールディングス"
-    assert pt.hashtag("") == ""
-    assert pt.hashtag("・（）") == ""
-
-
-def test_post_text_hashtag_used_for_stock_tag():
-    caption = tk.build_caption(dict(PROPS, stockName="Ｊ．フロント リテイリング"))
-    assert "#Ｊフロントリテイリング" in caption
-    assert "#Ｊ．フロント" not in caption
-
-
-def test_article_url_falls_back_to_site_root():
-    assert pt.article_url("", "tiktok").startswith(pt.SITE_URL + "?utm_source=tiktok")
-    assert pt.article_url("abc", "youtube").startswith(pt.SITE_URL + "/articles/abc?")
-
-
-def test_tiktok_upload_skipped_without_credentials():
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert tk.upload("/tmp/none.mp4", PROPS) is None
-
-
-def test_tiktok_uses_inbox_endpoint_by_default(tmp_path):
-    """アプリ審査前は直接公開できないため、既定では下書き(inbox)へ送る。"""
-    video = tmp_path / "v.mp4"
-    video.write_bytes(b"x" * 100)
-    posted = {}
-
-    def fake_post(url, **kwargs):
-        posted["url"] = url
-        return mock.Mock(ok=True, json=lambda: {"data": {"upload_url": "https://up", "publish_id": "p1"}})
-
-    with mock.patch.dict(os.environ, TK_ENV, clear=True), \
-         mock.patch.object(tk, "_access_token", return_value="tok"), \
-         mock.patch.object(tk, "_upload_bytes", return_value=True), \
-         mock.patch("requests.post", side_effect=fake_post):
-        publish_id = tk.upload(str(video), PROPS)
-
-    assert publish_id == "p1"
-    assert posted["url"] == tk.INBOX_INIT_URL
-
-
-def test_tiktok_direct_post_falls_back_to_self_only_when_public_not_allowed(tmp_path):
-    """審査未通過アカウントでは一般公開が選べないため SELF_ONLY へ落とす。"""
-    video = tmp_path / "v.mp4"
-    video.write_bytes(b"x" * 100)
-    sent = {}
-
-    def fake_post(url, **kwargs):
-        if url == tk.DIRECT_INIT_URL:
-            sent["payload"] = kwargs.get("json")
-            return mock.Mock(ok=True, json=lambda: {"data": {"upload_url": "https://up", "publish_id": "p2"}})
-        return mock.Mock(ok=True, json=lambda: {"data": {"privacy_level_options": ["SELF_ONLY"]}})
-
-    with mock.patch.dict(os.environ, {**TK_ENV, "TIKTOK_DIRECT_POST": "1"}, clear=True), \
-         mock.patch.object(tk, "_access_token", return_value="tok"), \
-         mock.patch.object(tk, "_upload_bytes", return_value=True), \
-         mock.patch("requests.post", side_effect=fake_post):
-        publish_id = tk.upload(str(video), PROPS)
-
-    assert publish_id == "p2"
-    assert sent["payload"]["post_info"]["privacy_level"] == "SELF_ONLY"
-
-
-def test_tiktok_chunk_plan_sends_small_file_in_one_chunk():
-    """64MB未満は丸ごと1チャンク（従来どおり）。"""
-    assert tk._chunk_plan(40 * 1024 * 1024) == (40 * 1024 * 1024, 1)
-
-
-def test_tiktok_chunk_plan_splits_file_over_64mb():
-    """64MB以上を1チャンクで申告するとinitが400（chunk size is invalid）になるため分割する。
-    2026-08-18に85MBの動画で実際に失敗し、TikTokだけ投稿されなかった。"""
-    size = 85 * 1024 * 1024
-    chunk, total = tk._chunk_plan(size)
-    assert tk.CHUNK_MIN_BYTES <= chunk <= tk.CHUNK_MAX_BYTES
-    assert total == size // chunk
-    assert total > 1
-
-
-def test_tiktok_upload_bytes_covers_whole_file_across_chunks(tmp_path):
-    """分割送信でも Content-Range が先頭から末尾まで隙間なく並び、端数は最終チャンクに載る。"""
-    video = tmp_path / "v.mp4"
-    size = 25
-    video.write_bytes(b"x" * size)
-    ranges = []
-    lengths = []
-
-    def fake_put(url, **kwargs):
-        ranges.append(kwargs["headers"]["Content-Range"])
-        lengths.append(len(kwargs["data"]))
-        return mock.Mock(ok=True)
-
-    with mock.patch("requests.put", side_effect=fake_put):
-        assert tk._upload_bytes("https://up", str(video), 10, 2) is True
-
-    assert ranges == [f"bytes 0-9/{size}", f"bytes 10-{size - 1}/{size}"]
-    assert sum(lengths) == size
 
 
 # ---------------- 音量正規化（配信基準 -14 LUFS） ----------------

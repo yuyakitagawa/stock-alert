@@ -93,7 +93,7 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> ~/stock-alert/.env
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
 
-      - name: 縦動画の生成・投稿（YouTube Shorts / TikTok）
+      - name: 縦動画の生成・投稿（YouTube Shorts）
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -105,12 +105,7 @@ jobs:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
-          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
-          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
-          # TikTokアプリの審査通過後に "1" を設定すると直接公開になる（既定は下書き送信）
-          TIKTOK_DIRECT_POST: ${{ secrets.TIKTOK_DIRECT_POST }}
-          # TikTok下書きの公開時に貼るキャプションをスマホへ届けるLINE通知
+          # 投稿完了をスマホへ届けるLINE通知
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
