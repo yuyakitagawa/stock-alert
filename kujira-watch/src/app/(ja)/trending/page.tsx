@@ -119,9 +119,9 @@ export default async function TrendingPage() {
           大口投資家の取引（大量保有報告書の提出）が直近{WINDOW_DAYS}日間で前の{WINDOW_DAYS}日間より増えた銘柄のランキングです。
           保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
           <br />
-          投資家版は
-          <Link href="/ranking/trending" className="text-brand-blue hover:underline">
-            開示急増投資家ランキング
+          投資家ごとの成績は
+          <Link href="/ranking/returns" className="text-brand-blue hover:underline">
+            3ヶ月リターンランキング
           </Link>
           へ。詳しい見方は
           <Link href="/faq/usage" className="text-brand-blue hover:underline">

@@ -69,9 +69,8 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
       url: `${SITE_URL}/faq/${category.id}`,
     })),
     { url: `${SITE_URL}/investors`, lastModified: latestDisclosure },
-    // 投資家ランキングの2タブは記事ではなくEDINET開示データが源泉。
+    // 3ヶ月リターンランキングは記事ではなくEDINET開示データが源泉。
     { url: `${SITE_URL}/ranking/returns`, lastModified: latestDisclosure },
-    { url: `${SITE_URL}/ranking/trending`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/ranking/activist`, lastModified: latestArticle },
     { url: `${SITE_URL}/stocks`, lastModified: latestArticle },
     ...CATEGORIES.map((category) => ({

@@ -1,6 +1,6 @@
 import type { HoldingRow } from "./investors";
 
-// /trending（クジラの動きが急増した銘柄・投資家）用の期間比較。
+// /trending（取引が急増した銘柄）用の期間比較。
 // 記事(microCMS)ではなくEDINET開示(Supabase `edinet_large_holdings`)を数える。
 // 記事の蓄積は2026年7月に始まったばかりで前期間がほぼ空になり比較が成立しないのに対し、
 // 開示データは1年分あるため、今日時点でも意味のある「前期間比」を出せるため。
@@ -16,11 +16,6 @@ export type TrendingCounts = {
   delta: number;
   // 直前期間に開示が1件も無かった＝この期間で初めてクジラが動いた対象。
   isNew: boolean;
-};
-
-export type TrendingEntry = TrendingCounts & {
-  key: string;
-  label: string;
 };
 
 // 買い・売り・両方の3通りの件数を1件にまとめて持つ。絞り込みの切り替えで
@@ -109,20 +104,4 @@ export function buildTrendingIssuers(
       both: toCounts(entry.buckets.both),
     }))
     .filter((entry) => entry.buy.delta > 0 || entry.sell.delta > 0 || entry.both.delta > 0);
-}
-
-// /ranking/trendingの投資家一覧。売買方向の絞り込みは銘柄一覧だけの機能なので、
-// こちらは従来どおり全開示（both）の増加件数順に上位limit件を返す。
-export function buildTrendingFilers(
-  rows: HoldingRow[],
-  currentFrom: string,
-  limit: number
-): TrendingEntry[] {
-  const entries = collect(rows, currentFrom, (r) => r.filerName, (r) => r.filerName);
-
-  return [...entries]
-    .map(([key, entry]) => ({ key, label: entry.label, ...toCounts(entry.buckets.both) }))
-    .filter((entry) => entry.delta > 0)
-    .sort(compareTrending)
-    .slice(0, limit);
 }

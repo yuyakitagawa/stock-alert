@@ -15,7 +15,6 @@ import {
 import { buildStockRows } from "@/lib/rankingStats";
 import AdUnit from "@/components/AdUnit";
 import DealTypeLabel from "@/components/DealTypeLabel";
-import RankingTabNav from "@/components/RankingTabNav";
 
 // activistの元データ（記事）は毎時更新、returnsの元データ（Supabaseのマテリアライズド
 // ビュー）は日次更新なので1時間キャッシュで十分。
@@ -140,10 +139,10 @@ export default async function RankingSlugPage({ params }: Props) {
         {" / "}
         <span className="text-foreground/70">{ranking.title}</span>
       </nav>
-      {/* タブ切替時に見出しの高さ・位置が変わらないよう、h1は全ランキング共通にして
-          個別のランキング名はタブ直下のh2に置く（/ranking/trendingと同じ構成）。 */}
+      {/* h1はヘッダー・フッターのラベル（投資家ランキング）と揃え、個別のランキング名は
+          h2に置く。2026-08-21に開示急増投資家ランキングを廃止してタブは無くなったが、
+          パンくず・ナビの語との一致を優先してこの2段構成のままにしている。 */}
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
-      <RankingTabNav current={`/ranking/${slug}`} />
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
       <p className="mb-2 text-sm text-foreground/50">{ranking.description}</p>
       <p className="mb-6 text-xs text-foreground/40">

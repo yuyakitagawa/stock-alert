@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { displayFilerName } from "@/lib/format";
-import type { TrendingEntry } from "@/lib/trendingStats";
+import type { TrendingCounts } from "@/lib/trendingStats";
 
 // 表示に必要なものはサーバー側で解決して渡す。hrefやnoteを関数propsで受け取ると
 // クライアントコンポーネントの境界を越えられないため。
-export type TrendingItem = TrendingEntry & {
+export type TrendingItem = TrendingCounts & {
+  key: string;
+  label: string;
   href: string | null;
   // 社名だけでは何の会社か分からないため、銘柄一覧では事業内容(無ければ業種)を1行添える。
   note?: string | null;
@@ -19,7 +21,7 @@ const INITIAL_COUNT = 30;
 const STEP = 30;
 
 // 期間比較（直近N日 vs 前N日）の増加件数ランキング。
-// /trending（銘柄）と/ranking/trending（投資家）で共用する。
+// /trending（銘柄）の一覧表。
 // 表だと375pxで横スクロールが必要（minWidth 420px）だったため、1件=1カードにして
 // 数値をカード内に折り返す。見出し行が無くなるぶん、各数値にラベルを付けている。
 // 件数制限を外して全件出すようにしたところ/trendingが466件・HTML 1.08MB（gzip 106KB）に

@@ -535,3 +535,32 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
 - `tsc --noEmit`・`eslint` パス
 - dev サーバーのHTMLで、横軸8週（6/29〜8/17）・空週2つが枠として残ること、
   ツールチップの金額・件数・差し引き・「集計中」表示を実データで確認
+
+## 2026-08-21 /ranking/trending（開示急増投資家ランキング）を廃止
+
+### 背景
+「直近30日の開示件数 − 前30日の開示件数」の降順というランキングで、次の3点により
+読者の行動につながらなかった（利用イメージが無いという指摘）。
+- 件数は変更報告書の提出回数で、金額・重要性を表さない。保有先の多い常連が上位を占める
+- 買いか売りかが分からない（/trendingの銘柄版には売買方向の絞り込みがあるが投資家版には無い）
+- どの銘柄に対する開示なのかが一覧に出ないので、銘柄選びの手掛かりにならない
+投資家軸のランキングは「この投資家が買った銘柄はその後どうなったか」を出す
+/ranking/returns（3ヶ月リターン）に一本化する。
+
+### 対応
+- `src/app/(ja)/ranking/trending/page.tsx` と `src/components/RankingTabNav.tsx` を削除
+  （残り1タブのタブUIは意味が無いため、コンポーネントごと削除）
+- `buildTrendingFilers()`・`TrendingEntry` 型（`src/lib/trendingStats.ts`）を削除。
+  `TrendingTable` の props 型は銘柄一覧向けにその場で定義し直す
+- `next.config.ts`: `/ranking/trending` → `/ranking/returns` の301を追加。
+  併せて `/ranking/filings` の飛び先を（廃止した）`/ranking/trending` から
+  `/ranking/returns` に付け替えてリダイレクトの連鎖を解消
+- `sitemap.ts` から該当URLを削除。記事詳細の「関連ランキング」navと
+  `/trending` の相互リンクは銘柄ランキング／3ヶ月リターンランキングへ差し替え
+
+### 検証
+- `tsc --noEmit`・`eslint` パス
+- dev で `/ranking/trending`・`/ranking/filings` が `/ranking/returns` へ308、
+  `/ranking/returns`・`/ranking/activist`・`/trending` が200、
+  `/sitemap/pages.xml` に該当URLが無いこと、レンダリング後のHTMLに
+  「開示急増」「ranking/trending」の残骸が無いことを確認
