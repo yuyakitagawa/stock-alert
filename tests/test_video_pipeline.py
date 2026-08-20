@@ -775,6 +775,14 @@ def test_measure_loudness_returns_none_when_unparsable():
         assert render_mod._measure_loudness("dummy.mp4") is None
 
 
+def test_normalize_loudness_warns_when_ffprobe_missing(capsys):
+    """ffmpeg/ffprobe が無い環境では音量正規化が丸ごと効かない。無言で飛ばすと
+    -25 LUFS のまま投稿され続けるので必ずログに残す（CIのUbuntu 24.04で実際に起きた）。"""
+    with mock.patch("subprocess.run", side_effect=FileNotFoundError("ffprobe")):
+        assert render_mod.normalize_loudness("x.mp4") is False
+    assert "ffprobe が見つからない" in capsys.readouterr().out
+
+
 def test_normalize_loudness_skips_when_no_audio_stream():
     """無音の動画（TTS失敗時）は正規化せずFalseを返す。"""
     with mock.patch.object(render_mod, "_has_audio_stream", return_value=False):
