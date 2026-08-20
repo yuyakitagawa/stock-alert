@@ -8,8 +8,14 @@ filerName は2026-08-15にmicroCMSへ追加したフィールドで、それ以�
 が判定できず、同じ投資家×同じ銘柄の記事が何本も検索結果に並んだままになる。
 
 逆引きは stockCode + dealDate で `edinet_large_holdings` を引く。同日に複数の提出者が
-同じ銘柄へ報告書を出しているケースは、記事タイトルに提出者名が含まれているかで絞り込み、
-それでも一意にならないものはスキップする（誤った提出者を書き込む方が害が大きい）。
+同じ銘柄へ報告書を出しているケースは、記事**タイトル**、次に記事**本文**に提出者名が
+含まれているかで絞り込み、それでも一意にならないものはスキップする
+（誤った提出者を書き込む方が害が大きい）。
+
+本文まで見るのは、タイトルが提出者名を出さない書き方のことがあるため
+（例:「個人投資家が3.5億円規模を売却、パンチ工業の保有比率が2.44%に」でも、
+本文には「個人投資家の森久保哲司氏が」と書かれている）。2026-08-21時点で
+タイトルだけでは残り13件中3件しか埋まらないが、本文も見ると10件が埋まる。
 
 使い方:
     python3 tools/backfill_article_filer_name.py            # dry-run（既定）
@@ -40,6 +46,7 @@ _LEGAL_SUFFIXES = [
 ]
 # 長音符(ー)は「アドバイザーズ」のような語の一部なので落とさない。落とすとカタカナ社名が壊れる。
 _NOISE_RE = re.compile(r"[\s・．，,.\-‐−―（）()「」【】]")
+_TAG_RE = re.compile(r"<[^>]+>")
 
 # 短すぎる語での部分一致は誤爆する（例:「ＭＣ」が無関係な記事タイトルに含まれる）。
 MIN_MATCH_LEN = 4
@@ -54,18 +61,30 @@ def normalize(text: str) -> str:
     return s.lower()
 
 
-def pick_filer(title: str, candidates: list[str]) -> tuple[str | None, str]:
-    """同日・同銘柄の提出者候補から記事の提出者を1つ選ぶ。(選んだ名前, 理由) を返す。"""
+def strip_html(html: str) -> str:
+    return _TAG_RE.sub("", html or "")
+
+
+def pick_filer(article: dict, candidates: list[str]) -> tuple[str | None, str]:
+    """同日・同銘柄の提出者候補から記事の提出者を1つ選ぶ。(選んだ名前, 理由) を返す。
+
+    タイトル→本文の順に見て、**ちょうど1件だけ**名前が出てくる場合のみ確定する。
+    0件でも2件以上でもスキップする（誤った提出者を書き込むより、総称のままの方がまし）。"""
     uniq = sorted({c for c in candidates if c})
     if not uniq:
         return None, "候補なし"
     if len(uniq) == 1:
         return uniq[0], "候補1件"
-    norm_title = normalize(title)
-    matched = [c for c in uniq if len(normalize(c)) >= MIN_MATCH_LEN and normalize(c) in norm_title]
-    if len(matched) == 1:
-        return matched[0], f"候補{len(uniq)}件→タイトル一致で特定"
-    return None, f"候補{len(uniq)}件・タイトル一致{len(matched)}件で一意にならず"
+    for text, label in ((article.get("title", ""), "タイトル"),
+                        (strip_html(article.get("body", "")), "本文")):
+        norm_text = normalize(text)
+        matched = [
+            c for c in uniq
+            if len(normalize(c)) >= MIN_MATCH_LEN and normalize(c) in norm_text
+        ]
+        if len(matched) == 1:
+            return matched[0], f"候補{len(uniq)}件→{label}一致で特定"
+    return None, f"候補{len(uniq)}件・タイトル/本文のどちらでも一意にならず"
 
 
 def load_disclosures(stock_codes: set[str]) -> dict[tuple[str, str], list[str]]:
@@ -109,7 +128,7 @@ def main() -> int:
     for article in targets:
         disc_date = article["dealDate"][:10]
         candidates = table.get((article["stockCode"], disc_date), [])
-        filer, reason = pick_filer(article.get("title", ""), candidates)
+        filer, reason = pick_filer(article, candidates)
         if not filer:
             skipped += 1
             skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
