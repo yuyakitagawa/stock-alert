@@ -52,6 +52,7 @@ x_verify.yml（Xトークンの実権限確認・手動実行専用）
 |---|---|
 | `core/screener.py` | **手動実行専用ツール**（日次パイプラインからは2026-08-01に除外済み）。`get_tse_stock_list()`（JPX全銘柄取得）のみ`rank_stocks.py`/`backfill_history.py`が再利用。銘柄コード絞り込みは`STOCK_CODE_PATTERN`（`^\d{3}[0-9A-Z]$`）で、旧4桁数字に加えTSEが2024年以降に発行する新形式（末尾1桁が英字。例: 151A）も含める（旧`^\d{4}$`では新形式コードが全銘柄スキャンから恒久的に漏れていた）。`apply_screener_v1`によるスクリーニング自体は現在ほぼ価格・流動性のみで`rank_stocks.py`のハードフィルターと重複しており、出力する`data/screeners/*.csv`はどこからも読まれない（下落確率ランキングは`rank_stocks.py`が全銘柄取得〜フィルターまで単独で実施）。手動での銘柄スクリーニング確認用に残置 |
 | `tools/fetch_history.py` | Yahoo Finance で全銘柄株価四本値を取得し `yahoo_price_cache` を差分更新（daily_alert.yml Step 0で毎日 `--years 1` 実行。`rank_stocks.py`の「直近株価」の鮮度に直結。既存(code,date)は insert_ignore で保護されるため初回10年分バックフィルにも日次更新にも使える）。`get_all_codes()`はyahoo_price_cache既存コードだけで打ち切らず、毎回JPX最新銘柄リストとの和集合を対象にする（新規上場銘柄が価格キャッシュに永久に追加されない事態を防止。JPX取得失敗時は既存コードのみにフォールバック）。対象は内国株式に加えJ-REITも含む（`_fetch_jpx_codes()`、ブログ記事の金額推定でJ-REIT銘柄の株価が引けるようにするため。コア銘柄スクリーニングの対象銘柄は`core/screener.py`側で別途REITを除外しており本変更の影響を受けない） |
+| `tools/refresh_investor_returns.py` | Supabaseのマテリアライズドビュー`investor_returns_3m`（投資家別の3ヶ月リターン、kujira-watch `/ranking/returns`の集計元）を再計算（daily_alert.yml Step 0b）。RPC`refresh_investor_returns_3m()`を叩くだけの薄いバッチで、集計ロジックは`supabase/create_investor_returns_3m.sql`側にある |
 | `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可。既存日付は既定でスキップするため、価格データ修正後に再生成したい場合は`--force`で上書き。生成後に`check_price_freshness`で複数日にまたがるclose凍結（更新漏れ）を検査）|
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
@@ -252,6 +253,7 @@ DBキャッシュは廃止。
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
 | `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|
 | `edinet_filer_classification` | EDINET提出者(投資家)の分類マスター（個人/創業家の資産管理会社/公益・一般財団法人/プライムブローカー/アクティビスト/VC/PE・メザニンファンド/独立系ブティックAM/国内アセットマネジメント/外資系伝統運用会社/日系証券銀行/事業会社/その他。Web検索で確認済みのconfidence='high'と、Claude推測のみのconfidence='low'を区別。publish_blog_articles.pyのdealType分類とバックテスト分析で共用）|
+| `investor_returns_3m`（マテビュー） | EDINET買い開示の3ヶ月(63営業日)後リターンを投資家別に等ウェイト平均したもの（開示3件以上の投資家のみ。平均・中央値・勝率・日経平均比・最高/最低銘柄）。kujira-watch `/ranking/returns`の集計元。定義は`supabase/create_investor_returns_3m.sql`、更新はdaily_alert.yml Step 0b |
 | `edinet_filer_summary`（ビュー） | `edinet_large_holdings`×`edinet_filer_classification`を投資家(filer_name)単位に集計したビュー（保有開示件数・最終開示日・分類）。kujira-watch（`kujira-watch/src/lib/investors.ts`）の`/investors`一覧・サイトマップ生成が参照。投資家は600件超あり`edinet_large_holdings`の生データを直接集計すると1000行上限に掛かるため、1投資家1行に事前集計したビュー経由で取得する |
 | `ext_tdnet_disclosures` | TDnet適時開示（やのしん・⚠️個人運営ソースのため `ext_` で隔離）|
 | `jpx_short_selling` | JPX空売り残高報告（0.5%以上）|
