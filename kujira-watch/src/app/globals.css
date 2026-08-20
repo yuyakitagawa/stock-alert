@@ -93,12 +93,6 @@ body {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
   }
 
-  /* ShowMoreListで「もっと見る」を押すまで隠しておく分。DOMには最初から全件入れて
-     CSSで隠すだけにして、クローラーからは全件見えるようにする。 */
-  .show-more-collapsed > .show-more-extra {
-    display: none;
-  }
-
   /* 1件で全幅を使う一覧（開示明細のように項目数が多いもの）用。 */
   .card-list {
     display: grid;
