@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -415,6 +416,58 @@ def _flatten_scenes(data: dict) -> "list | None":
     return scenes
 
 
+# 法人格の表記ゆれ（「株式会社」の有無など）で照合を落とさないために除く語。
+_FILER_SUFFIX = re.compile(r"(株式会社|合同会社|有限会社|一般社団法人|公益財団法人|財団法人)")
+
+
+def _normalize_name(text: str) -> str:
+    """提出者名の照合用に正規化する。全角半角・空白・中黒・法人格の差を吸収する
+    （開示データは「久世　良太」、本文は「久世良太氏」のように書かれるため）。"""
+    text = unicodedata.normalize("NFKC", text or "")
+    text = _FILER_SUFFIX.sub("", text)
+    return re.sub(r"[\s　・.,．，]", "", text).lower()
+
+
+def resolve_filer_name(article: dict) -> str:
+    """記事の提出者名。microCMSのfilerNameが空の旧記事（2026-08-16以前）は、
+    同じ銘柄・同じ開示日の大量保有報告書の提出者を候補に挙げ、**記事本文に名前が
+    書かれているもの**を選ぶ。
+
+    同一銘柄・同一開示日には複数の提出者がいることが普通なので、開示データだけでは
+    一意に決まらない。本文との突き合わせを条件にすることで、誤った提出者名を
+    動画のタイトルに載せないようにする。一意に決まらなければ空文字を返し、
+    呼び出し側は「大口投資家」という総称にフォールバックする。"""
+    name = article.get("filerName") or ""
+    if name:
+        return name
+    code = str(article.get("stockCode") or "")
+    disc_date = (article.get("dealDate") or "")[:10]
+    body = article.get("body") or ""
+    if not (code and disc_date and body):
+        return ""
+    try:
+        from lib.db import sb
+
+        rows = sb.select(
+            "edinet_large_holdings",
+            f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name",
+        )
+    except Exception as e:
+        print(f"  ⚠ 提出者名の照会に失敗しました（総称で続行）: {e}")
+        return ""
+
+    normalized_body = _normalize_name(_strip_html(body))
+    hits = {
+        r["filer_name"] for r in rows
+        if _normalize_name(r.get("filer_name")) and _normalize_name(r["filer_name"]) in normalized_body
+    }
+    if len(hits) == 1:
+        found = hits.pop()
+        print(f"  ↷ 記事にfilerNameが無いため開示データから特定しました: {found}")
+        return found
+    return ""
+
+
 def deal_type_label(article: dict) -> str:
     """microCMSのdealTypeはセレクト型なので配列で返る（例: ["国内アセットマネジメント"]）。
     動画には1行のラベルとして出すため先頭要素だけを使う。未設定なら汎用ラベル。"""
@@ -432,9 +485,9 @@ def build_props(article: dict, script: dict) -> dict:
     return {
         "stockName": article.get("stockName") or "",
         "stockCode": str(article.get("stockCode") or ""),
-        # filerName は古い記事だと未設定のことがある（microCMSは空フィールドを返さない）。
-        # 動画側は空文字なら提出者名の行を出さない。
-        "filerName": article.get("filerName") or "",
+        # filerName は古い記事だと未設定。開示データと本文の突き合わせで特定を試み、
+        # それでも決まらなければ空文字（動画側は提出者名の行を出さない）。
+        "filerName": resolve_filer_name(article),
         "dealTypeLabel": deal_type_label(article),
         "direction": "sell" if is_sell else "buy",
         "dealAmountOku": float(article.get("dealAmount") or 0),
