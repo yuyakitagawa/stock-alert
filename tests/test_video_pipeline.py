@@ -219,6 +219,25 @@ def test_generate_script_feeds_the_problem_back_on_retry():
     retry_prompt = client.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
     assert "前回の出力の問題" in retry_prompt
     assert "90字" in retry_prompt
+    assert "narration" in retry_prompt
+
+
+def test_retry_feedback_distinguishes_caption_from_narration():
+    """captionの26字超過を「narrationが長い」と伝えると見当違いの直しをさせる
+    （2026-08-20の博報堂DYの回が3回とも外して投稿0件になった）。"""
+    import json as _json
+    over = _json.loads(_script_json())
+    over["sections"][0]["caption"] = "あ" * (bs.CAPTION_MAX_CHARS + 3)
+    client = mock.Mock()
+    client.messages.create.side_effect = [
+        mock.Mock(content=[mock.Mock(text=_json.dumps(over, ensure_ascii=False))]),
+        mock.Mock(content=[mock.Mock(text=_script_json())]),
+    ]
+    with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
+    retry_prompt = client.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
+    assert "caption" in retry_prompt and f"{bs.CAPTION_MAX_CHARS + 3}字" in retry_prompt
 
 
 def test_prompt_forbids_takeover_wording():
@@ -230,11 +249,13 @@ def test_prompt_forbids_takeover_wording():
         bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
     prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "買収" in prompt and "使わないでください" in prompt
+    # 新規保有を「買い増し」と読み上げた回があった（日本製鉄×JPモルガン 0.38%）
+    assert "新規保有なら「買い増し」とは書かず" in prompt
 
 
-def test_generate_script_rejects_narration_cut_mid_sentence():
-    """文の途中で切れた読み上げ文は作り直し、直らなければ動画を作らない。
-    切れた「…」がそのまま画面に出てVOICEVOXにも読み上げられていた実害への対策。"""
+def test_generate_script_drops_scene_that_stays_broken_instead_of_the_video():
+    """1シーンの読み上げ文が直らないだけで動画を丸ごと諦めると、その日の投稿が飛ぶ
+    （2026-08-19・20と2日続けて0件になった）。会社説明はシーンごと落として動画は出す。"""
     import json as _json
     data = _json.loads(_script_json())
     data["sections"][0]["narration"] = "あ" * (bs.NARRATION_MAX_CHARS + 30)  # 句点なし→…で切れる
@@ -243,8 +264,53 @@ def test_generate_script_rejects_narration_cut_mid_sentence():
     client.messages.create.return_value = mock.Mock(content=[mock.Mock(text=payload)])
     with mock.patch.object(bs, "ANTHROPIC_API_KEY", "key"), \
          mock.patch("anthropic.Anthropic", return_value=client):
-        assert bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""}) is None
-    assert client.messages.create.call_count == 4  # 初回 + 作り直し3回
+        script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
+    assert script is not None
+    assert "company" not in [sc["kind"] for sc in script["scenes"]]
+    assert all(not bs.is_broken_narration(sc["narration"]) for sc in script["scenes"])
+
+
+def test_salvage_scenes_rebuilds_hook_from_facts():
+    """hookは動画の要なので落とせない。壊れていたら記事の事実だけで組み直す。"""
+    article = {"stockName": "日本製鉄", "filerName": "JPモルガン", "dealAmount": 137.7,
+               "body": "<p>0.38%</p>", "tags": "買い"}
+    scenes = [
+        {"kind": "hook", "caption": "x", "narration": "途中で切れた文…"},
+        {"kind": "cta", "caption": "y", "narration": "完結した文です。"},
+    ]
+    salvaged = bs.salvage_scenes(scenes, article)
+    hook = salvaged[0]
+    assert hook["kind"] == "hook"
+    assert not bs.is_broken_narration(hook["narration"])
+    assert "日本製鉄" in hook["narration"] and "137.7" in hook["narration"]
+
+
+def test_salvage_scenes_uses_deal_type_label_for_long_filer_names():
+    """英語の正式名は読み上げが長くなるので、20字を超えたら分類ラベルで代える。"""
+    article = {"stockName": "電通総研", "filerName": "Oasis Management Company Ltd.",
+               "dealType": ["アクティビスト"], "dealAmount": 262.9,
+               "body": "<p>5.01%</p>", "tags": "買い"}
+    salvaged = bs.salvage_scenes(
+        [{"kind": "hook", "caption": "x", "narration": "切れた…"},
+         {"kind": "cta", "caption": "y", "narration": "完結した文です。"}], article)
+    assert "アクティビスト" in salvaged[0]["narration"]
+
+
+def test_salvage_scenes_drops_change_without_previous_ratio():
+    """前回比率が無ければ「推移」を語れないので、定型文も作らず落とす。"""
+    article = {"stockName": "A", "filerName": "B", "dealAmount": 10,
+               "body": "<p>5.01%</p>", "tags": "買い"}
+    salvaged = bs.salvage_scenes(
+        [{"kind": "hook", "caption": "x", "narration": "完結した文です。"},
+         {"kind": "change", "caption": "y", "narration": "切れた…"},
+         {"kind": "cta", "caption": "z", "narration": "完結した文です。"}], article)
+    assert [sc["kind"] for sc in salvaged] == ["hook", "cta"]
+
+
+def test_salvage_scenes_returns_none_without_hook_or_cta():
+    article = {"stockName": "A", "filerName": "B", "dealAmount": 10, "body": "", "tags": ""}
+    assert bs.salvage_scenes([{"kind": "deal", "caption": "x", "narration": "完結した文です。"}],
+                             article) is None
 
 
 def test_generate_script_accepts_after_retry_fixes_broken_narration():
@@ -648,6 +714,26 @@ def test_youtube_description_leads_with_searchable_hashtags():
     tags = yt.build_description(PROPS).rstrip().split("\n")[-1].split()
     assert tags[:2] == ["#日本株", "#大量保有報告書"]
     assert "#Shorts" in tags and tags.index("#Shorts") >= 3
+
+
+def test_post_text_hashtag_strips_unusable_characters():
+    """銘柄名の空白や「．」をそのまま「#」に続けるとタグが途中で切れて本文が漏れる
+    （例: Ｊ．フロント リテイリング）。"""
+    assert pt.hashtag("Ｊ．フロント リテイリング") == "#Ｊフロントリテイリング"
+    assert pt.hashtag("アインホールディングス") == "#アインホールディングス"
+    assert pt.hashtag("") == ""
+    assert pt.hashtag("・（）") == ""
+
+
+def test_youtube_description_uses_sanitized_stock_hashtag():
+    desc = yt.build_description(dict(PROPS, stockName="Ｊ．フロント リテイリング"))
+    assert "#Ｊフロントリテイリング" in desc
+    assert "#Ｊ．フロント" not in desc
+
+
+def test_article_url_falls_back_to_site_root():
+    assert pt.article_url("", "youtube").startswith(pt.SITE_URL + "?utm_source=youtube")
+    assert pt.article_url("abc", "youtube").startswith(pt.SITE_URL + "/articles/abc?")
 
 
 def test_youtube_upload_skipped_without_credentials():
