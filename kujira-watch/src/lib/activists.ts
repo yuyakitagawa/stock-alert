@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
-// /activists（アクティビストの動き）用。投資家分類が「アクティビスト」の提出者について、
+// /activists（アクティビスト注目銘柄）用。投資家分類が「アクティビスト」の提出者について、
 // 銘柄ごとの最新開示を「現在の保有」とみなして横断集計する。競合（アクティビストメディア等）の
 // 「アクティビスト保有一覧」に対応するページの裏側。
 
@@ -151,7 +151,7 @@ export type ActivistMove = {
   discDate: string;
 };
 
-// /activists「直近の動き」用。直近days日にアクティビストが提出した開示を新しい順に返す。
+// /activists（注目銘柄の集計）用。直近days日にアクティビストが提出した開示を新しい順に返す。
 // アクティビストの30日分は数十件規模なのでチャンクごとのページングは不要。
 export const getActivistRecentMoves = unstable_cache(
   async (days: number): Promise<ActivistMove[]> => {
