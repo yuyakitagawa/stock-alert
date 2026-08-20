@@ -353,13 +353,16 @@ def build_article_alt(article: dict) -> str:
 
 
 def build_article_media(article: dict) -> list:
-    """記事投稿の添付画像を作ってアップロードする。1枚目=数字カード、2枚目=株価チャート。
-    どちらも失敗しうるので、取れたものだけをmedia_idsとして返す。"""
-    from web.publish_blog_articles import generate_price_chart_image
+    """記事投稿の添付画像を作ってアップロードする。**添付は必ず1枚だけ**。
+
+    かつては1枚目=数字カード、2枚目=株価チャートの2枚組にしていたが、Xは複数画像を
+    左右に並べて両方とも切り落とすため、タイムラインでは銘柄名も数字もチャートも読めない
+    （2026-08-19、オーナー指摘）。投稿の主張を運んでいるのは数字カードの方なので、
+    カードだけを1枚で出し、チャートはリンク先の記事に任せる。
+    カードが作れなかったとき（フォント欠如等）だけチャートを代替として添える。"""
     from web.x_card_image import build_deal_card
 
     f = article_facts(article)
-    media_ids = []
     date_label = (article.get("dealDate") or "")[:10].replace("-", "/")
     card = build_deal_card(
         f["stock_name"], f["stock_code"], f["filer_name"], f["badge"],
@@ -368,15 +371,18 @@ def build_article_media(article: dict) -> list:
     if card:
         media_id = upload_media(card, alt_text=build_article_alt(article))
         if media_id:
-            media_ids.append(media_id)
+            return [media_id]
+
+    from web.publish_blog_articles import generate_price_chart_image
+
     chart = generate_price_chart_image(article.get("stockCode") or "", f["stock_name"])
     if chart:
         media_id = upload_media(
             chart, alt_text=f"{f['stock_name']}（{f['stock_code']}）の直近3ヶ月の終値推移チャート。",
         )
         if media_id:
-            media_ids.append(media_id)
-    return media_ids
+            return [media_id]
+    return []
 
 
 def _summary_line(article: dict, sign: str) -> str:

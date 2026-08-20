@@ -78,6 +78,23 @@ def _fit(draw, text: str, font, max_w: int) -> str:
     return (out + "…") if out else "…"
 
 
+def _stock_line(draw, stock_name: str, stock_code: str, max_w: int):
+    """「社名（コード）」を証券コードを落とさずに収め、(表示文字列, フォント) を返す。
+
+    社名が長いと末尾から削られてコードごと「…」に消えていた（実例: セブン&アイ・
+    ホールディングス（3382）→「セブン&アイ・ホールディングス（3…」）。コードは銘柄検索で
+    拾われる手掛かりなので、まずフォントを段階的に下げて全体を入れ、それでも入らない場合は
+    社名側だけを削る。"""
+    suffix = f"（{stock_code}）" if stock_code else ""
+    for size in (60, 54, 48, 42):
+        font = _font(size)
+        if draw.textlength(stock_name + suffix, font=font) <= max_w:
+            return stock_name + suffix, font
+    font = _font(42)
+    name = _fit(draw, stock_name, font, max_w - draw.textlength(suffix, font=font))
+    return name + suffix, font
+
+
 def _accent(kind: str):
     return {"sell": SELL, "correction": NAVY_DEEP}.get(kind, BUY)
 
@@ -142,10 +159,8 @@ def build_deal_card(stock_name: str, stock_code: str, filer_name: str, badge: st
                   font=filer_font, fill=MUTED, anchor="lm")
 
         # 2段目: 銘柄名（このカードで一番大きい固有名詞）
-        stock_font = _font(60)
-        stock_label = f"{stock_name}（{stock_code}）" if stock_code else stock_name
-        draw.text((PAD, 236), _fit(draw, stock_label, stock_font, CARD_W - PAD * 2),
-                  font=stock_font, fill=INK, anchor="lm")
+        stock_label, stock_font = _stock_line(draw, stock_name, stock_code, CARD_W - PAD * 2)
+        draw.text((PAD, 236), stock_label, font=stock_font, fill=INK, anchor="lm")
 
         # 3段目: 主役の帯（保有比率の変化 ＋ 推定金額）
         band_top, band_bottom = 300, 524
