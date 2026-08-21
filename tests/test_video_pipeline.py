@@ -100,11 +100,53 @@ def test_build_props_marks_sell_from_tags():
 
 
 def test_build_props_defaults_missing_filer_name_to_empty():
-    """古い記事はfilerNameが未設定（microCMSは空フィールドを返さない）。動画側で行ごと省く。"""
+    """古い記事はfilerNameが未設定（microCMSは空フィールドを返さない）。開示データからも
+    特定できなければ空文字にして、動画側で行ごと省く。"""
     article = {"stockName": "A社", "stockCode": "1234", "tags": "", "dealType": ["個人"],
                "dealDate": "2026-08-14T00:00:00.000Z", "dealAmount": 1.0, "body": "<p>5.00%</p>"}
-    props = bs.build_props(article, {"scenes": PROPS["scenes"]})
+    with mock.patch("lib.db.sb.select", return_value=[]):
+        props = bs.build_props(article, {"scenes": PROPS["scenes"]})
     assert props["filerName"] == ""
+
+
+def _old_article(body: str) -> dict:
+    return {"stockName": "サンクゼール", "stockCode": "2937", "tags": "売り",
+            "dealDate": "2026-08-10T00:00:00.000Z", "dealAmount": 14.8, "body": body}
+
+
+def test_resolve_filer_name_picks_the_candidate_named_in_the_body():
+    """同一銘柄・同一開示日には複数の提出者がいるのが普通なので、開示データだけでは
+    一意に決まらない。本文に名前が書かれているものだけを採る。"""
+    article = _old_article("<p>個人投資家の久世良太氏が保有株式の売却を進めることが明らかに。</p>")
+    rows = [{"filer_name": "久世　良太"}, {"filer_name": "公益財団法人サンクゼール財団"}]
+    with mock.patch("lib.db.sb.select", return_value=rows):
+        assert bs.resolve_filer_name(article) == "久世　良太"
+
+
+def test_resolve_filer_name_returns_empty_when_ambiguous():
+    """本文に複数の候補が出てくる回は特定できない。誤った提出者名を出すより総称に落とす。"""
+    article = _old_article("<p>久世良太氏とサンクゼール財団が保有。</p>")
+    rows = [{"filer_name": "久世　良太"}, {"filer_name": "公益財団法人サンクゼール財団"}]
+    with mock.patch("lib.db.sb.select", return_value=rows):
+        assert bs.resolve_filer_name(article) == ""
+
+
+def test_resolve_filer_name_returns_empty_without_disclosure_rows():
+    with mock.patch("lib.db.sb.select", return_value=[]):
+        assert bs.resolve_filer_name(_old_article("<p>本文</p>")) == ""
+
+
+def test_resolve_filer_name_keeps_existing_value_without_lookup():
+    """filerNameがある記事では照会しない（毎回Supabaseを叩かない）。"""
+    article = dict(_old_article("<p>本文</p>"), filerName="既にある名前")
+    with mock.patch("lib.db.sb.select", side_effect=AssertionError("照会してはいけない")):
+        assert bs.resolve_filer_name(article) == "既にある名前"
+
+
+def test_normalize_name_absorbs_width_space_and_corporate_suffix():
+    assert bs._normalize_name("久世　良太") == bs._normalize_name("久世良太")
+    assert bs._normalize_name("アースエレメンツ・キャピタル株式会社") == \
+        bs._normalize_name("アースエレメンツキャピタル")
 
 
 def test_extract_holding_ratio_takes_last_percentage_in_body():

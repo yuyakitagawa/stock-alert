@@ -9,17 +9,14 @@ import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
 import AdUnit from "@/components/AdUnit";
-import ShowMoreList from "@/components/ShowMoreList";
 import { getAllListedCodes } from "@/lib/companyInfo";
 
 export const revalidate = 3600;
 
 // 買い入れの集計期間（/ranking/activist・/trendingと同じ30日）。
 const MOVES_WINDOW_DAYS = 30;
-// アクティビスト注目銘柄の初期表示件数。残りは「もっと見る」で開く。
-const ATTENTION_DISPLAY_LIMIT = 10;
-// 「もっと見る」で開く分もHTMLには載っている（CSSで隠しているだけ）ため、30日分を全部
-// 描画するとページのHTMLが重くなる。HTMLに載せる件数自体をここで打ち切る
+// アクティビスト注目銘柄の表示件数。全件を一度に並べるが、30日分を全部描画すると
+// ページのHTMLが重くなるため件数自体をここで打ち切る
 // （打ち切った件数は画面にも明記して、全件があるように見せない）。
 const ATTENTION_RENDER_LIMIT = 100;
 
@@ -90,11 +87,8 @@ export default async function ActivistsPage() {
   const attentionStocks = attentionStocksAll.slice(0, ATTENTION_RENDER_LIMIT);
   const attentionOmitted = attentionStocksAll.length - attentionStocks.length;
 
-  const attentionItem = (row: AttentionRow, index: number) => (
-    <li
-      key={row.issuerCode}
-      className={`card text-sm${index >= ATTENTION_DISPLAY_LIMIT ? " show-more-extra" : ""}`}
-    >
+  const attentionItem = (row: AttentionRow) => (
+    <li key={row.issuerCode} className="card text-sm">
       <span className="font-medium">{stockLabel(row.issuerName, row.issuerCode)}</span>
       <span className="ml-2 whitespace-nowrap text-xs font-bold text-gain">▲{row.totalDelta}pt買い入れ</span>
       {row.multiHolder && (
@@ -161,13 +155,7 @@ export default async function ActivistsPage() {
             直近{MOVES_WINDOW_DAYS}日にアクティビストが買い入れた銘柄はありません。
           </p>
         ) : (
-          <ShowMoreList
-            className="card-grid card-grid-wide"
-            restCount={attentionStocks.length - ATTENTION_DISPLAY_LIMIT}
-            unit="銘柄"
-          >
-            {attentionStocks.map(attentionItem)}
-          </ShowMoreList>
+          <ul className="card-grid card-grid-wide">{attentionStocks.map(attentionItem)}</ul>
         )}
       </section>
 

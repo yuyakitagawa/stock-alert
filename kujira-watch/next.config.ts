@@ -14,13 +14,18 @@ const nextConfig: NextConfig = {
   // - /ranking（旧3ヶ月リターンランキング）: 2026-08-18に廃止後は/ranking/buysへ
   //   飛ばしていたが、リダイレクトの連鎖を作らないよう/ranking/returnsへ直接飛ばす。
   // - /ranking/filings（報告書件数ランキング）: 2026-08-18に廃止。開示件数を投資家別に
-  //   数えるだけで/ranking/trending（前30日比の増加件数）と重複していたため、そちらへ。
+  //   数えるだけだったため当時は/ranking/trendingへ飛ばしていたが、その/ranking/trendingも
+  //   廃止したのでリダイレクトの連鎖を作らないよう/ranking/returnsへ直接飛ばす。
+  // - /ranking/trending（開示急増投資家ランキング）: 2026-08-21に廃止。開示件数の「増加分」順は
+  //   変更報告書を大量に出す常連が上位に来るだけで、買いか売りか・対象銘柄が分からず
+  //   次の行動につながらなかった。投資家軸のランキングは成績で並べる/ranking/returnsに一本化。
   async redirects() {
     return [
       { source: "/ranking", destination: "/ranking/returns", permanent: true },
       { source: "/ranking/buys", destination: "/ranking/returns", permanent: true },
       { source: "/ranking/sells", destination: "/ranking/returns", permanent: true },
-      { source: "/ranking/filings", destination: "/ranking/trending", permanent: true },
+      { source: "/ranking/filings", destination: "/ranking/returns", permanent: true },
+      { source: "/ranking/trending", destination: "/ranking/returns", permanent: true },
     ];
   },
   images: {

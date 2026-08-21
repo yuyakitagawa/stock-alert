@@ -15,9 +15,11 @@ import { getAllFilers, getFilerClassification, getFilerHoldings } from "@/lib/in
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
+import FilerReturnRecord from "@/components/FilerReturnRecord";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildInvestorFaqItems } from "@/lib/investorFaq";
+import { getFilerReturnPositions, formatSignedPercent } from "@/lib/investorReturns";
 
 export const revalidate = 300;
 
@@ -86,9 +88,11 @@ export default async function InvestorPage({ params }: Props) {
   const { filer } = await params;
   const filerName = decodeURIComponent(filer);
 
-  const [holdings, classification] = await Promise.all([
+  const [holdings, classification, returnPositions] = await Promise.all([
     getFilerHoldings(filerName),
     getFilerClassification(filerName),
+    // 開示テーブルの「3ヶ月後」列。買い開示のうち3ヶ月が経過したものだけ値が入る。
+    getFilerReturnPositions(filerName),
   ]);
 
   if (holdings.length === 0) {
@@ -190,6 +194,9 @@ export default async function InvestorPage({ params }: Props) {
           </p>
         </div>
       )}
+      {/* 「この投資家についていって大丈夫か」に最初に答える数字なので、プロフィールの直後・
+          保有銘柄の前に置く。/ranking/returnsと同じ行を読むので数字は必ず一致する。 */}
+      <FilerReturnRecord filerName={filerName} />
       {majorHoldings.length > 0 && (
         <div className="mb-8 border-t border-rule pt-4">
           <h2 className="mb-2 text-sm font-bold text-brand-navy">主な保有銘柄</h2>
@@ -249,17 +256,20 @@ export default async function InvestorPage({ params }: Props) {
         <h2 className="text-xl font-bold text-brand-navy">最近の取引</h2>
         <p className="mt-1 text-sm text-foreground/50">
           EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
-          {holdings.length}件まとめています。個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
+          {holdings.length}件まとめています。「3ヶ月後」は買い増し・新規取得の開示について、開示日の終値から
+          63営業日後の終値までの騰落率です（売却の開示・訂正報告書・まだ3ヶ月経っていない開示は「—」）。
+          個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
         </p>
       </div>
       <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-        <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { borderColor: "divider" } }}>
+        <Table size="small" sx={{ minWidth: 640, "& .MuiTableCell-root": { borderColor: "divider" } }}>
           <TableHead>
             <TableRow>
               <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>銘柄</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>種別</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>保有比率</TableCell>
+              <TableCell sx={{ color: "text.disabled" }}>3ヶ月後</TableCell>
               <TableCell sx={{ color: "text.disabled" }}>原文</TableCell>
             </TableRow>
           </TableHead>
@@ -279,6 +289,23 @@ export default async function InvestorPage({ params }: Props) {
                 </TableCell>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
+                </TableCell>
+                {/* 開示日の終値から63営業日後の終値までの騰落率。売却の開示・訂正報告書・
+                    まだ3ヶ月経っていない開示は明細ビューに無いので空欄（—）になる。
+                    突合はdocIdなので、同日に変更報告書と訂正報告書が並んでも
+                    実際に集計された1行にしか数字が出ない。 */}
+                <TableCell sx={{ whiteSpace: "nowrap" }}>
+                  {(() => {
+                    const ret = returnPositions[h.docId];
+                    if (ret === undefined) return <span className="text-foreground/30">—</span>;
+                    return (
+                      <span
+                        className={`text-xs font-bold tabular-nums ${ret >= 0 ? "text-gain" : "text-loss"}`}
+                      >
+                        {formatSignedPercent(ret)}
+                      </span>
+                    );
+                  })()}
                 </TableCell>
                 {/* 一次ソース（EDINETの原文PDF）への直リンク。以前は/disclosuresだけが
                     持っていたが、同ページ廃止にあたり銘柄・投資家ページへ移した。 */}

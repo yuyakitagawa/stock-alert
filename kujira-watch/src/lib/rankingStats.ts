@@ -1,7 +1,7 @@
 import type { ArticleContent } from "@/types/article";
 
 // /ranking/activist の集計。記事(microCMS)1件＝EDINET大量保有報告書1件の開示として扱う。
-// 投資家別のランキング（/ranking/returns・/ranking/trending）はEDINET開示そのものを持つ
+// 投資家別のランキング（/ranking/returns）はEDINET開示そのものを持つ
 // Supabase側で集計するため、ここには記事ベースの銘柄別集計だけが残っている。
 
 // 銘柄別ランキング（activist）の1行。
