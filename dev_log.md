@@ -1,5 +1,20 @@
 # Dev Log
 
+## 2026-08-22 EDINET開示の推定売買金額ビューを新設（銘柄ランキングの金額表示用）
+
+kujira-watchの銘柄ランキング(`/trending`)に開示件数と並べて金額を出すため、
+Supabaseにマテリアライズドビュー`edinet_holding_amounts`を追加した
+（`supabase/create_edinet_holding_amounts.sql`）。開示1件ごとに
+`保有比率の変化幅 ÷ 100 × 発行済株式数(jquants_fin_summary.sh_out のPIT値) × 開示日終値`で
+推定売買金額（億円）を概算する。式は`web/publish_blog_articles.py: estimate_deal_amount_oku()`と同じ。
+訂正報告書・前回比率が取れない変更報告書・株価/株式数が取れない銘柄は行を作らない（金額不明）。
+
+- 再計算バッチ: `tools/refresh_holding_amounts.py`（RPC`refresh_edinet_holding_amounts()`を叩くだけ）
+- 実行タイミング: edinet_blog.yml の開示スキャン直後（毎時）＋ daily_alert.yml Step 2e
+  （株価キャッシュ Step 0・財務サマリー Step 2d の後）
+- 全13,011行の再作成で約9秒。PostgRESTの接続ロールに8秒の上限があるため、
+  RPC側で`SET statement_timeout = '300s'`を明示している
+
 ## 2026-08-20 TikTok投稿機能を完全撤去
 
 ```
@@ -1386,6 +1401,29 @@ Haikuが数値の上限より枠組みの指示に従っていた。
 
 テストは x_client 50→54件。
 
+### 2026-08-19 追記: 「新規保有」誤表示の残り穴を塞ぐ（待っても前回比率が入らない開示）
+
+同日の `955294e` で `should_wait_for_prior_ratio()` を入れ、直前保有割合が未取得の変更報告書は
+`PRIOR_RATIO_WAIT_DAYS`=2日まで記事化を持ち越すようにした。ただし**待っても入らない開示**は
+その先へ抜け、従来どおり「今回比率の全量＝変化幅」となって「X%を新規保有」＋過大な推定金額のまま
+公開される経路が残っていた。
+
+実測（Supabase、直近90日）: 変更報告書3,242件のうち `holding_ratio_prior` の充填率は99.6%。
+前回比率もDB内の過去開示も無く、待っても埋まらないのは**7件（0.2%）**
+（ＦＭＲ ＬＬＣ3・古野興産1・伊藤直之1・フィデリティ投信1・ＡＰ ＰＳ ＩＶ1。特例報告に多い）。
+これらはXBRLに直前保有割合のタグ自体が無いとみられ、待ちでは解消しない。
+
+- `ratio_change_pct()`: `is_amendment`（`is_change_report()`の結果）を受け取り、前回比率も過去開示も
+  無い変更報告書では変化幅を「不明」としてNoneを返す。全量を変化幅にするのは新規の大量保有報告書のみ。
+- `build_and_publish()`: 変化幅Noneの開示はスキップ（yfinanceの金額概算にも到達しないためAPI費用も減る）。
+- `is_new_holding()`: `doc_type_label` が変更報告書なら常にFalse。変更報告書は提出者が既に5%以上を
+  保有している届出なので、前回比率が取れなくても新規保有ではありえない。ヒューリスティックより種別を優先する。
+
+テスト: `tests/test_publish_blog_articles.py` 95→99件（変化幅None・記事化スキップ・新規保有と判定しないこと・
+タイトル表現）。持ち越し（既存）と恒久スキップ（今回）の両方がテストで踏まれることを確認。
+
+なお公開済み記事の是正は `tools/fix_misreported_blog_articles.py`（955294eで追加済み）が担う。
+
 ### 2026-08-21 定時便が2日連続で投稿0件だった件の根治
 8/19（日本製鉄×JPモルガン）に続き 8/20（博報堂ＤＹ×シルチェスター）も投稿0件だった。
 8/20のログ:
@@ -1507,3 +1545,53 @@ dry-runで10件の対応表を確認済み。書き込み（--apply）はオー�
   （`web/export_to_web.py`・kujira-watch）の追従。
 
 並列は3体×4バッチ（1〜3 / 4〜6 / 7〜9 / 10〜12）、総合はラウンド13。README も同一コミットで更新。
+
+### 2026-08-22 「読者がいる」前提を実データで検証した（X metrics停止・アクセスログの機械混入）
+
+改善提案が表示の追加ばかりで刺さらないという指摘を受け、前提を数字で確かめた。結果、
+提案が弱かったのは「効果を測る手段が無い状態で体験を磨いていた」ためと分かった。
+
+**1. X metricsは4日連続で0件だった。コードではなくAPIクレジット切れ。**
+X metricsの定期実行は毎日動いていて4回とも success。しかしログを見ると全便で
+`HTTP 402 {"detail":"credits depleted"}`。`x_posts` 14本すべて impressions が NULL、
+metrics_updated_at も0本。`/users/me` は通っており **フォロワーは0人**。
+コードもworkflowも正しく、有料プランなしでは取得できない。
+
+- `fetch_metrics()`: 401/402/403は待っても直らないので `MetricsUnavailable` を投げる。
+  500等の一時的な失敗は従来どおり空dictのまま（次の便で直りうる）。
+- `run()`: 恒久失敗を捕まえて終了コード2。呼び出し側（統合後は `x_post.yml` の
+  `metrics` ステップ）に continue-on-error は無いので
+  ジョブが赤くなる。空dictを返して成功扱いにしていたのが4日気付けなかった直接原因。
+
+**2. アクセスログの "Browser" は大半が機械だった。**
+直近14日 111,165PV / visitor 18,921 に対し **IPは1,671**、単一visitorの最大24,407PV、
+`/investors` `/` `/weekly` `/about` `/stocks` `/en` `/faq` が4千〜6千で横並び（記事は上位10に無し）。
+proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」を全部 "Browser" にするため、
+ヘッドレスのスクレイパーがここに入る。
+
+判別に使えなかった指標（同じ検証を繰り返さないため記録する）:
+- **クッキー(visitor_id)の保持**: 2PV以上の1,268人が93,435PV＝1人74PV。クッキーを保持する
+  クローラーが居る。当初「クッキーを持たない＝クローラー」と考えたが外れ。
+- **JS実行(`/api/counter`)**: JS実行ありの1,226人が1人75PV。ヘッドレスブラウザはJSを実行する。
+
+効いたのは **1IPあたりのPV**。上位5IPで全体の31.8%（最大IP単体16,707PV）を占めており、
+100PV超の167IPを除くと残り20,095PV / 1,513IP＝**1IPあたり13PV**。時間帯もJST3時357 /
+12時1,373と深夜が凹み、人間らしい波になる（除外前は4時台7,131で凹まない）。
+`tools/traffic_report.py` としてこの切り分けを再実行可能にした。閾値は `--max-pv-per-ip`。
+
+**3. 記事は入口になっていない。**
+除外後の記事ページ率は14.0%（約2,800PV/14日）。ただし人気pathは `/` 1,173・`/weekly` 714・
+`/about` 605・`/investors` 509 と**トップレベルが上位を占め、個別記事は1本も上位10に入らない**。
+記事は約10,000本あるので、14%が全記事に薄く分散している状態。集客が記事ではなく
+トップページ経由であることを示す。何を足すかの議論はこの事実の上でやる。
+
+テスト: `tests/test_x_metrics.py` 7→11件、`tests/test_traffic_report.py` 9件を新規追加。
+なお traffic_report.py 自体はこの環境にSupabase認証情報が無く実データ実行はしていない
+（同等のSQLをSupabase側で直接実行して数値を確認した）。
+
+## 2026-08-22 GitHub Actions ワークフロー整理（13本→8本）
+- X関連4本（x_weekend_post / x_followup / x_metrics / x_verify）→ `x_post.yml` に統合。cron値 or `target` 入力で分岐。
+- keepalive + watchdog → `ops.yml` に統合（2ジョブ、`github.event.schedule` で分岐）。
+- data_backfill + backfill_rankings → `backfill.yml` に統合（`targets` に prices / rankings を追加）。
+- ファイル削除済みなのにGitHub側に残っていた「Debug/Backfill Blog Categories (temporary)」2本は実行履歴を削除して一覧から除去。
+- 実行時刻・処理内容は変更なし。tests 392件 pass。

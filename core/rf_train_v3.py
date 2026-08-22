@@ -8,7 +8,7 @@ from sklearn.metrics import roc_auc_score, classification_report, precision_reca
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 import lightgbm as lgb
-from lib.utils import IsotonicCalibrated, PlattCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
+from lib.utils import PlattCalibrated, EnsembleCalibratedLGB, extract_features, calc_rsi, add_cs_rank_features, get_sector_cached, get_market_index_df_cached
 from lib.fundamentals import get_pit_fundamentals
 
 FORECAST=63; DROP_THRESHOLD=15.0  # 63日(3ヶ月)-15%ラベル（設計通り）
@@ -46,10 +46,6 @@ def _load_edinet_map():
     except Exception:
         return {}
 
-
-def _fetch_index_df(ticker_encoded, days=2200):
-    """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す (legacy stub)"""
-    return None
 
 _LOCAL_INDEX_CACHE = None
 def _load_local_index():
@@ -311,24 +307,6 @@ def generate_samples(df, nk_df=None, screener_only=False, sample_code=None,
         samples.append((dates[i],feat,label_drop))
     return samples
 
-def _select_features(X_tr, y_tr, X_te, X_cal, feat_names):
-    """複数モデルの重要度を合算し、全モデルで重要度0の特徴量のみ除外"""
-    from xgboost import XGBClassifier as _XGB
-    pos=y_tr.sum(); neg=len(y_tr)-pos; spw=neg/pos if pos>0 else 1.0
-    imp_sum = np.zeros(X_tr.shape[1])
-    for depth, lr in [(4, 0.03), (6, 0.02), (8, 0.01)]:
-        quick=_XGB(n_estimators=500,max_depth=depth,learning_rate=lr,scale_pos_weight=spw,
-                   eval_metric="auc",random_state=RANDOM_SEED,n_jobs=-1,subsample=0.7,colsample_bytree=0.6)
-        quick.fit(X_tr,y_tr,verbose=0)
-        imp_sum += quick.feature_importances_
-    keep=[i for i in range(len(imp_sum)) if imp_sum[i]>0]
-    dropped=[feat_names[i] for i in range(len(imp_sum)) if imp_sum[i]==0]
-    if dropped:
-        print(f"  特徴量選択: {len(keep)}/{len(imp_sum)} 採用（除外: {', '.join(dropped)}）")
-    else:
-        print(f"  特徴量選択: 全{len(imp_sum)}次元を採用")
-    return keep
-
 def _smoteenn_resample(X, y):
     """SMOTE+ENN: 過少サンプルをSMOTEで合成し、境界付近ノイズをENNで除去"""
     try:
@@ -377,12 +355,6 @@ def _class_balanced_focal_weights(y, gamma=2.0):
     w *= (0.5 ** gamma)
     return w
 
-def _fbeta_score(pre, rec, beta=2.0):
-    """F-beta score array from precision/recall arrays"""
-    b2 = beta ** 2
-    return (1 + b2) * pre * rec / (b2 * pre + rec + 1e-10)
-
-
 def _xgb_params_to_lgb(params):
     """XGBoostのハイパーパラメータをLightGBM等価パラメータに変換"""
     return {
@@ -408,11 +380,6 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
         pre, rec, thr = precision_recall_curve(y, probs)
         f1 = 2 * pre * rec / (pre + rec + 1e-10)
         return f1[:-1].max()
-
-    def _best_fbeta(probs, beta=2.0, y=y_te):
-        pre, rec, thr = precision_recall_curve(y, probs)
-        fb = _fbeta_score(pre[:-1], rec[:-1], beta)
-        return fb.max(), float(thr[fb.argmax()])
 
     # ① グリッドサーチ（AUC最適化）
     print(f"\n  グリッドサーチ ({len(PARAM_GRID)}パターン)...")

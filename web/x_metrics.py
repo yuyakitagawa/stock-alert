@@ -50,15 +50,26 @@ def fetch_target_tweet_ids() -> list:
     return [r["tweet_id"] for r in rows if r.get("tweet_id")]
 
 
+# 取得を諦めるしかない恒久的な失敗。リトライやコード修正では解消せず、プラン変更か
+# 権限付与が要る。緑のまま流すと「数字が無い」ことに何日でも気付けないため区別する。
+FATAL_STATUSES = {401: "認証が通らない", 402: "APIクレジットが尽きている",
+                  403: "このプランでは許可されていない"}
+
+
+class MetricsUnavailable(RuntimeError):
+    """X APIが恒久的な理由で数字を返さないときに投げる。"""
+
+
 def fetch_metrics(tweet_ids: list) -> dict:
     """{tweet_id: {impressions, likes, ...}} を返す。non_public_metricsが取れない
-    プラン・権限の場合はpublic_metricsだけで再取得する（impressionsはNoneになる）。"""
+    プラン・権限の場合はpublic_metricsだけで再取得する（impressionsはNoneになる）。
+    401/402/403のように待っても直らない失敗は MetricsUnavailable を投げる。"""
     auth = _auth()
     if auth is None:
-        print("[x_metrics] X_API_KEY等が未設定のため取得をスキップします")
-        return {}
+        raise MetricsUnavailable("X_API_KEY等が未設定です")
 
     out: dict = {}
+    fatal: str | None = None
     for i in range(0, len(tweet_ids), BATCH):
         chunk = tweet_ids[i:i + BATCH]
         for fields in ("public_metrics,non_public_metrics", "public_metrics"):
@@ -86,7 +97,11 @@ def fetch_metrics(tweet_ids: list) -> dict:
                         "user_profile_clicks": non_pub.get("user_profile_clicks"),
                     }
                 break
+            if resp.status_code in FATAL_STATUSES:
+                fatal = f"HTTP {resp.status_code}（{FATAL_STATUSES[resp.status_code]}）"
             print(f"[x_metrics] 取得失敗 HTTP {resp.status_code} ({fields}): {resp.text[:200]}")
+    if not out and fatal:
+        raise MetricsUnavailable(fatal)
     return out
 
 
@@ -193,7 +208,14 @@ def run(with_report: bool = False) -> int:
         if with_report:
             report()
         return 0
-    saved = save(fetch_metrics(ids))
+    try:
+        saved = save(fetch_metrics(ids))
+    except MetricsUnavailable as e:
+        # 成功扱いにすると「毎日動いているのに数字が無い」状態が緑のまま続く。
+        # 実際、402(credits depleted)で4日連続successのまま0件だった。
+        print(f"[x_metrics] メトリクスを取得できません: {e}")
+        print(f"[x_metrics] 対象{len(ids)}件は数字が空のままです。X APIのプラン/権限を確認してください")
+        return 2
     print(f"[x_metrics] {saved}/{len(ids)}件のメトリクスを更新しました")
     if with_report:
         report()

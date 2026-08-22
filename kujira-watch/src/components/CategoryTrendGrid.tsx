@@ -12,9 +12,10 @@ import type { DealType } from "@/types/article";
 // 「買いは上・売りは下」の上下対称の小さな棒グラフを1枚ずつ描き、グリッドに並べる。
 // 以前は買い用・売り用の2枚のヒートマップ表に分けていたが、「ある分類が買っているのか
 // 売っているのか」を読むには同じ分類の買いと売りが隣にある方が早いため、分類単位で
-// 買い・売りを1枚にまとめた（2026-08-22）。縦軸のスケールは全分類で共通にし、
-// グラフの高さをそのまま分類間の規模の比較に使えるようにする（分類ごとに最大値を
-// 取ると、小さな分類の棒が大きな分類と同じ高さに見えて誤読されるため）。
+// 買い・売りを1枚にまとめた（2026-08-22）。縦軸のスケールは分類ごとに取る。当初は
+// 全分類共通にしていたが、最大の分類（数千億円規模）に引っ張られて他の分類の棒が
+// 数px以下になりほぼ見えなかったため同日中に分類ごとへ変更。分類間の規模の誤読は
+// 各カード右上の期間計（買い越し/売り越し額）と「目盛り」表示で補う。
 
 export type CategoryWeekCell = {
   buyCount: number;
@@ -39,7 +40,7 @@ export type CategoryWeekColumn = {
 
 const WIDTH = 300;
 const HEIGHT = 150;
-const PAD_TOP = 16; // 最新週の直接ラベル分
+const PAD_TOP = 28; // 目盛り表示＋直接ラベル分
 const PAD_BOTTOM = 30; // 横軸ラベル＋売り側の直接ラベル分
 const PAD_X = 6;
 
@@ -52,17 +53,15 @@ function shortAmount(amountOku: number): string {
 function CategoryChart({
   row,
   weeks,
-  max,
 }: {
   row: CategoryTrendRow;
   weeks: CategoryWeekColumn[];
-  max: number;
 }) {
+  const max = Math.max(...row.cells.flatMap((c) => [c.buyAmount, c.sellAmount]), 1);
   const half = (HEIGHT - PAD_TOP - PAD_BOTTOM) / 2;
   const baseY = PAD_TOP + half;
   const step = (WIDTH - PAD_X * 2) / weeks.length;
   const barWidth = Math.min(step - 6, 28);
-  const lastIndex = weeks.length - 1;
   const net = row.buyTotal - row.sellTotal;
   const dotColor = (DEAL_TYPE_COLORS[row.dealType] ?? DEAL_TYPE_COLORS["その他"]).dot;
 
@@ -94,13 +93,15 @@ function CategoryChart({
         aria-label={`${row.dealType}の週別の買い・売り推定取引金額の棒グラフ`}
         className="mt-1 h-auto w-full"
       >
+        <text x={WIDTH - PAD_X} y={9} textAnchor="end" fontSize={9} fill="var(--foreground)" opacity={0.45}>
+          目盛り {formatDealAmount(max)}
+        </text>
         <line x1={PAD_X} y1={baseY} x2={WIDTH - PAD_X} y2={baseY} stroke="var(--rule)" strokeWidth={1} />
         {row.cells.map((cell, i) => {
           const w = weeks[i];
           const x = PAD_X + i * step + (step - barWidth) / 2;
           const buyHeight = cell.buyAmount > 0 ? Math.max((cell.buyAmount / max) * half, 2) : 0;
           const sellHeight = cell.sellAmount > 0 ? Math.max((cell.sellAmount / max) * half, 2) : 0;
-          const showValue = i === lastIndex;
           // React 19は<title>のchildrenが単一の文字列でないと中身を落とすため、先に組み立てる。
           const tooltip =
             `${row.dealType} ${w.tableLabel}: 買い${formatDealAmount(cell.buyAmount)}（${cell.buyCount}件） / ` +
@@ -118,12 +119,12 @@ function CategoryChart({
                   <title>{tooltip}</title>
                 </rect>
               )}
-              {showValue && cell.buyAmount > 0 && (
+              {cell.buyAmount > 0 && (
                 <text x={x + barWidth / 2} y={baseY - buyHeight - 4} textAnchor="middle" fontSize={10} fill="var(--foreground)" opacity={0.75}>
                   {shortAmount(cell.buyAmount)}
                 </text>
               )}
-              {showValue && cell.sellAmount > 0 && (
+              {cell.sellAmount > 0 && (
                 <text x={x + barWidth / 2} y={baseY + sellHeight + 11} textAnchor="middle" fontSize={10} fill="var(--foreground)" opacity={0.75}>
                   {shortAmount(cell.sellAmount)}
                 </text>
@@ -148,7 +149,6 @@ export default function CategoryTrendGrid({
 }) {
   if (rows.length === 0 || weeks.length === 0) return null;
 
-  const max = Math.max(...rows.flatMap((r) => r.cells.flatMap((c) => [c.buyAmount, c.sellAmount])), 1);
   const hasPartial = weeks.some((w) => w.isPartial);
 
   return (
@@ -165,12 +165,12 @@ export default function CategoryTrendGrid({
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map((row) => (
-          <CategoryChart key={row.dealType} row={row} weeks={weeks} max={max} />
+          <CategoryChart key={row.dealType} row={row} weeks={weeks} />
         ))}
       </div>
       <figcaption className="mt-2 text-xs text-foreground/50">
         解説記事化した開示の推定取引金額を投資家分類×週（月曜始まり）で買い・売りに分けて集計。
-        単位は億円で、縦軸のスケールは全分類で共通（棒の高さをそのまま分類間で比べられます）。
+        単位は億円。縦軸のスケールは分類ごと（各カード右上の「目盛り」が棒の最大値）なので、分類間の規模は右上の期間計で比べてください。
         並びは期間計（買い＋売り）の大きい順。
         {hasPartial && "薄い棒は今週（集計中）です。"}
       </figcaption>

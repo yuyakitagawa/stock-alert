@@ -549,7 +549,6 @@ def run_rolling_main():
         if len(nk_at) < 61:
             continue
 
-        nk_vals  = nk_at.values
         round_stocks = quality_filtered  # 常に全銘柄（品質フィルターのみ）
         nkp = nk_at.values
         nkr = ((nkp[-1]-nkp[-6])/nkp[-6] if len(nkp)>=6 else 0,

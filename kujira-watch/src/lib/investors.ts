@@ -142,17 +142,30 @@ export const getAllFilers = unstable_cache(
 );
 
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
-// 投資家一覧（名称+分類）を返す。
-async function getFilersByStockCodeUncached(
-  stockCode: string
-): Promise<{ filerName: string; category: DealType }[]> {
+// 投資家一覧（名称+分類+最新開示の保有比率）を返す。保有比率はその投資家の最新開示行の
+// holding_ratio（訂正報告書で欠損していれば null）で、比率の高い順→名称順に並べる。
+export type StockFiler = {
+  filerName: string;
+  category: DealType;
+  latestRatio: number | null;
+  latestDiscDate: string | null;
+};
+
+async function getFilersByStockCodeUncached(stockCode: string): Promise<StockFiler[]> {
   const supabase = getSupabaseServerClient();
   const { data: holdings } = await supabase
     .from("edinet_large_holdings")
-    .select("filer_name")
-    .eq("issuer_code", stockCode);
+    .select("filer_name, holding_ratio, disc_date")
+    .eq("issuer_code", stockCode)
+    .order("disc_date", { ascending: false });
 
-  const filerNames = [...new Set((holdings ?? []).map((h) => h.filer_name).filter(Boolean))];
+  // 開示日降順で最初に現れた行＝最新開示。
+  const latestByFiler = new Map<string, { ratio: number | null; discDate: string }>();
+  for (const h of holdings ?? []) {
+    if (!h.filer_name || latestByFiler.has(h.filer_name)) continue;
+    latestByFiler.set(h.filer_name, { ratio: h.holding_ratio, discDate: h.disc_date });
+  }
+  const filerNames = [...latestByFiler.keys()];
   if (filerNames.length === 0) return [];
 
   const { data: classifications } = await supabase
@@ -167,8 +180,14 @@ async function getFilersByStockCodeUncached(
     .map((filerName) => ({
       filerName,
       category: categoryByFiler.get(filerName) ?? ("その他" as DealType),
+      latestRatio: latestByFiler.get(filerName)?.ratio ?? null,
+      latestDiscDate: latestByFiler.get(filerName)?.discDate ?? null,
     }))
-    .sort((a, b) => a.filerName.localeCompare(b.filerName, "ja"));
+    .sort(
+      (a, b) =>
+        (b.latestRatio ?? -1) - (a.latestRatio ?? -1) ||
+        a.filerName.localeCompare(b.filerName, "ja")
+    );
 }
 
 export const getFilersByStockCode = unstable_cache(getFilersByStockCodeUncached, ["getFilersByStockCode"], {
@@ -201,6 +220,8 @@ export function holdingDirection(
 }
 
 export type HoldingRow = {
+  // 推定売買金額(edinet_holding_amounts)を開示1件単位で突き合わせるためのキー。
+  docId: string;
   issuerCode: string;
   issuerName: string;
   filerName: string;
@@ -216,7 +237,7 @@ async function getHoldingsInRangeUncached(from: string, to: string): Promise<Hol
     const offset = page * PAGE_SIZE;
     const { data } = await supabase
       .from("edinet_large_holdings")
-      .select("issuer_code, issuer_name, disc_date, filer_name, holding_ratio, holding_ratio_prior, doc_description")
+      .select("doc_id, issuer_code, issuer_name, disc_date, filer_name, holding_ratio, holding_ratio_prior, doc_description")
       .gte("disc_date", from)
       .lte("disc_date", to)
       .order("disc_date", { ascending: true })
@@ -226,6 +247,7 @@ async function getHoldingsInRangeUncached(from: string, to: string): Promise<Hol
     for (const row of data) {
       if (!row.issuer_code || !row.disc_date || !row.filer_name) continue;
       rows.push({
+        docId: row.doc_id,
         issuerCode: row.issuer_code,
         issuerName: row.issuer_name ?? row.issuer_code,
         filerName: row.filer_name,
@@ -238,12 +260,51 @@ async function getHoldingsInRangeUncached(from: string, to: string): Promise<Hol
   return rows;
 }
 
-// キーに"v2"を足しているのは、directionを持たない旧いキャッシュを引き継がないため
-// （Vercelのデータキャッシュはデプロイをまたいで残るので、キーを変えないと売買方向の
-// 絞り込みが最大1時間ぶん空振りする）。
-export const getHoldingsInRange = unstable_cache(getHoldingsInRangeUncached, ["getHoldingsInRange", "v2"], {
+// キーに版番号を足しているのは、新しいフィールドを持たない旧いキャッシュを引き継がないため
+// （Vercelのデータキャッシュはデプロイをまたいで残るので、キーを変えないと最大1時間ぶん
+// 空振りする）。v2=売買方向(direction)の追加、v3=doc_idの追加（推定売買金額の突き合わせ用）。
+export const getHoldingsInRange = unstable_cache(getHoldingsInRangeUncached, ["getHoldingsInRange", "v3"], {
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });
+
+// 開示1件ごとの推定売買金額（億円）。doc_idをキーに返す。
+// EDINET開示そのものには取引金額が無く、「保有比率の変化幅 × 発行済株式数 × 開示日終値」で
+// 概算する必要があるため、集計はSupabaseのマテリアライズドビュー側で完結させている
+// （定義とレビュー観点は supabase/create_edinet_holding_amounts.sql）。
+// 訂正報告書や、株価・発行済株式数が取れない開示はビューに行が無い＝金額不明で、
+// 呼び出し側では0億円として扱う（件数には入るが金額には入らない）。
+async function getHoldingAmountsInRangeUncached(from: string, to: string): Promise<Record<string, number>> {
+  const supabase = getSupabaseServerClient();
+  const amounts: Record<string, number> = {};
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const offset = page * PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("edinet_holding_amounts")
+      .select("doc_id, deal_amount_oku")
+      .gte("disc_date", from)
+      .lte("disc_date", to)
+      .order("doc_id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    // 金額はランキングの並べ替え軸ではなく件数に添える情報なので、読み取りに失敗しても
+    // ページ自体は件数だけで成立させる（0件を「金額ゼロ」として焼き付けない代わりに、
+    // ここで投げてページを落とすことはしない）。
+    if (error || !data || data.length === 0) break;
+    for (const row of data) {
+      if (row.deal_amount_oku === null) continue;
+      amounts[row.doc_id] = Number(row.deal_amount_oku);
+    }
+    if (data.length < PAGE_SIZE) break;
+  }
+  return amounts;
+}
+
+// unstable_cacheはMapを返せない（キャッシュへの保存でJSON化されるため）ので
+// プレーンオブジェクトで持ち回す。
+export const getHoldingAmountsInRange = unstable_cache(
+  getHoldingAmountsInRangeUncached,
+  ["getHoldingAmountsInRange"],
+  { revalidate: SUPABASE_REVALIDATE_SECONDS }
+);
 
 // microCMSの`articles`スキーマには提出者名(filerName)フィールドが存在せず、
 // web/publish_blog_articles.py がpayloadに載せている値はAPI側で黙って捨てられている

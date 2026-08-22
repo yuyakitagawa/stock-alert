@@ -89,6 +89,52 @@ def test_follower_report_without_records():
     assert "記録がまだありません" in buf.getvalue()
 
 
+def test_fetch_metrics_raises_on_credits_depleted():
+    """402(credits depleted)は待っても直らないので例外にする。空dictを返して
+    成功扱いにすると、毎日動いているのに数字が0件のまま緑が続く。"""
+    with mock.patch.object(m, "_auth", return_value=object()), \
+         mock.patch.object(m.requests, "get", return_value=_resp(status=402)):
+        try:
+            m.fetch_metrics(["1"])
+        except m.MetricsUnavailable as e:
+            assert "402" in str(e), e
+        else:
+            raise AssertionError("MetricsUnavailableが投げられていない")
+
+
+def test_fetch_metrics_raises_without_credentials():
+    with mock.patch.object(m, "_auth", return_value=None):
+        try:
+            m.fetch_metrics(["1"])
+        except m.MetricsUnavailable:
+            pass
+        else:
+            raise AssertionError("未設定でもMetricsUnavailableが投げられていない")
+
+
+def test_fetch_metrics_does_not_raise_on_transient_error():
+    """500等の一時的な失敗は例外にしない（次の便で直りうる）。"""
+    with mock.patch.object(m, "_auth", return_value=object()), \
+         mock.patch.object(m.requests, "get", return_value=_resp(status=500)):
+        assert m.fetch_metrics(["1"]) == {}
+
+
+def test_run_returns_nonzero_when_metrics_unavailable():
+    """恒久失敗のときrunは0を返さない＝CIが緑にならない。"""
+    buf = io.StringIO()
+    with mock.patch.object(m.sb, "is_configured", return_value=True), \
+         mock.patch.object(m, "fetch_followers", return_value={}), \
+         mock.patch.object(m, "fetch_target_tweet_ids", return_value=["1", "2"]), \
+         mock.patch.object(m, "fetch_metrics",
+                           side_effect=m.MetricsUnavailable("HTTP 402（APIクレジットが尽きている）")), \
+         redirect_stdout(buf):
+        rc = m.run()
+    assert rc == 2, rc
+    out = buf.getvalue()
+    assert "402" in out, out
+    assert "対象2件" in out, out
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):
