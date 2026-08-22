@@ -10,10 +10,10 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import AmountTrendChart from "@/components/AmountTrendChart";
-import CategoryWeeklyTrend, {
+import CategoryTrendGrid, {
+  type CategoryTrendRow,
   type CategoryWeekColumn,
-  type CategoryWeeklyRow,
-} from "@/components/CategoryWeeklyTrend";
+} from "@/components/CategoryTrendGrid";
 import {
   getPreviousPeriodArticles,
   getRecentArticleDigests,
@@ -34,7 +34,7 @@ const WINDOW_DAYS = 7;
 // 週次トレンドの表示期間。記事データ（2026-07開始）から最大8週。
 const AMOUNT_TREND_WEEKS = 8;
 
-// 投資家分類別の週次トレンドは行が13分類あり、列（週）を増やすほど横スクロールが伸びる。
+// 投資家分類別の週次トレンドは分類ごとの小さなグラフなので、週を増やすほど棒が細くなる。
 // 「今どの分類が活発か」を読むのに必要な直近ぶんだけを、売買金額トレンドと同じ週区切りで出す。
 const CATEGORY_TREND_WEEKS = 6;
 
@@ -53,6 +53,14 @@ function weekStartOf(dateStr: string): string {
 // UTCではまだ日曜で、今週が前週として扱われ最新週がグラフから消える。
 function todayJst(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
+// 今週を「集計中」として扱うか。EDINETの開示も記事生成（平日9〜21時JST）も平日にしか
+// 動かないため、金曜の夜以降（土・日）は今週分の数字が確定している。暦週（月〜日）の
+// 判定だけだと日曜まで「集計中」と出てしまい実態と合わない。
+function isCurrentWeekPartial(today: string): boolean {
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  return dow !== 0 && dow !== 6;
 }
 
 // "8/11〜8/17" 形式の週ラベル。
@@ -76,7 +84,9 @@ type WeeklyAmountRow = {
 // （グラフの横軸が飛ぶと「その週は少なかった」と読めてしまうため）、記事データが
 // まだ無い最古側の空週だけ落とす。新しい週が先頭。
 function buildWeeklyAmountRows(digests: ArticleDigest[], weeks: number): WeeklyAmountRow[] {
-  const currentWeekStart = weekStartOf(todayJst());
+  const today = todayJst();
+  const currentWeekStart = weekStartOf(today);
+  const currentWeekPartial = isCurrentWeekPartial(today);
   const byWeek = new Map<string, WeeklyAmountRow>();
   // 直近weeks週ぶんの枠を先に作る（間の週が抜けないように）。
   for (let i = 0; i < weeks; i++) {
@@ -88,7 +98,7 @@ function buildWeeklyAmountRows(digests: ArticleDigest[], weeks: number): WeeklyA
       count: 0,
       buyAmount: 0,
       sellAmount: 0,
-      isPartial: weekStart === currentWeekStart,
+      isPartial: weekStart === currentWeekStart && currentWeekPartial,
     });
   }
   for (const digest of digests) {
@@ -107,32 +117,34 @@ function buildWeeklyAmountRows(digests: ArticleDigest[], weeks: number): WeeklyA
 }
 
 // 投資家分類×週の集計。週の枠（weekStarts）は売買金額トレンドと同じものを渡し、
-// グラフと表で「同じ週」を見ていることが保証されるようにする。古い週→新しい週の並び。
-// 買いと売りは打ち消し合ってしまうため合算せず、方向ごとに1回ずつ呼んで別々の表にする。
-function buildCategoryWeeklyRows(
-  digests: ArticleDigest[],
-  weekStarts: string[],
-  tone: "buy" | "sell"
-): CategoryWeeklyRow[] {
+// グラフ同士で「同じ週」を見ていることが保証されるようにする。古い週→新しい週の並び。
+// 買いと売りは打ち消し合うため合算せず、セル内で別々に持つ（分類ごとのグラフで上下に描く）。
+function buildCategoryTrendRows(digests: ArticleDigest[], weekStarts: string[]): CategoryTrendRow[] {
   const weekIndex = new Map(weekStarts.map((weekStart, i) => [weekStart, i]));
-  const byCategory = new Map<DealType, CategoryWeeklyRow>();
+  const byCategory = new Map<DealType, CategoryTrendRow>();
   for (const digest of digests) {
     const i = weekIndex.get(weekStartOf(digest.dealDate));
     if (i === undefined || !digest.dealType) continue;
-    if (isSellArticle(digest.tags) !== (tone === "sell")) continue;
     const row =
       byCategory.get(digest.dealType) ??
       {
         dealType: digest.dealType,
-        cells: weekStarts.map(() => ({ count: 0, amount: 0 })),
-        total: 0,
+        cells: weekStarts.map(() => ({ buyCount: 0, buyAmount: 0, sellCount: 0, sellAmount: 0 })),
+        buyTotal: 0,
+        sellTotal: 0,
       };
-    row.cells[i].count += 1;
-    row.cells[i].amount += digest.dealAmount;
-    row.total += digest.dealAmount;
+    if (isSellArticle(digest.tags)) {
+      row.cells[i].sellCount += 1;
+      row.cells[i].sellAmount += digest.dealAmount;
+      row.sellTotal += digest.dealAmount;
+    } else {
+      row.cells[i].buyCount += 1;
+      row.cells[i].buyAmount += digest.dealAmount;
+      row.buyTotal += digest.dealAmount;
+    }
     byCategory.set(digest.dealType, row);
   }
-  return [...byCategory.values()].sort((a, b) => b.total - a.total);
+  return [...byCategory.values()].sort((a, b) => b.buyTotal + b.sellTotal - (a.buyTotal + a.sellTotal));
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -179,18 +191,22 @@ export default async function WeeklyDigestPage() {
       isPartial: row.isPartial,
     }));
   const categoryWeekStarts = categoryWeeks.map((w) => w.weekStart);
-  const buyCategoryRows = buildCategoryWeeklyRows(digests, categoryWeekStarts, "buy");
-  const sellCategoryRows = buildCategoryWeeklyRows(digests, categoryWeekStarts, "sell");
-  // 「今どこが活発か」を文章でも言い切る（表を読まない読者・LLM向け）。買い・売りそれぞれの最新週の上位。
+  const categoryRows = buildCategoryTrendRows(digests, categoryWeekStarts);
+  // 「今どこが活発か」を文章でも言い切る（グラフを読まない読者・LLM向け）。買い・売りそれぞれの最新週の上位。
   const latestWeek = categoryWeeks[categoryWeeks.length - 1];
-  const latestLeaders = (rows: CategoryWeeklyRow[]) =>
-    rows
-      .map((row) => ({ dealType: row.dealType, ...row.cells[row.cells.length - 1] }))
+  const latestLeaders = (tone: "buy" | "sell") =>
+    categoryRows
+      .map((row) => {
+        const cell = row.cells[row.cells.length - 1];
+        return tone === "buy"
+          ? { dealType: row.dealType, count: cell.buyCount, amount: cell.buyAmount }
+          : { dealType: row.dealType, count: cell.sellCount, amount: cell.sellAmount };
+      })
       .filter((c) => c.count > 0)
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 3);
-  const latestBuyLeaders = latestLeaders(buyCategoryRows);
-  const latestSellLeaders = latestLeaders(sellCategoryRows);
+  const latestBuyLeaders = latestLeaders("buy");
+  const latestSellLeaders = latestLeaders("sell");
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -347,22 +363,21 @@ export default async function WeeklyDigestPage() {
         </section>
       )}
 
-      {(buyCategoryRows.length > 0 || sellCategoryRows.length > 0) && (
+      {categoryRows.length > 0 && (
         <section className="mb-10 border-y border-rule py-6">
           <h2 className="text-xl font-bold text-brand-navy">投資家分類別の週次トレンド</h2>
-          <p className="mb-4 mt-2 text-sm leading-relaxed text-foreground/60">
+          <p className="mb-2 mt-2 text-sm leading-relaxed text-foreground/60">
             アクティビスト・事業会社・外資系運用会社といった提出者のタイプ別に、週ごとの
-            開示件数と推定取引金額を並べたものです。買いと売りは打ち消し合わないよう別の表にしているので、
-            どの種類の投資家がいま買い集めているのか・降りているのかが分かります。
+            推定取引金額を買い（上）・売り（下）に分けて並べたものです。
+            どの種類の投資家がいま買い集めているのか・降りているのかが分類ごとに分かります。
           </p>
-
-          {buyCategoryRows.length > 0 && (
-            <>
-              <h3 className="mt-6 text-base font-bold text-brand-navy">買い</h3>
+          {(latestBuyLeaders.length > 0 || latestSellLeaders.length > 0) && (
+            <p className="mt-1 text-sm leading-relaxed text-foreground/70">
+              直近の週（{latestWeek.tableLabel}
+              {latestWeek.isPartial && "・集計中"}）に
               {latestBuyLeaders.length > 0 && (
-                <p className="mt-1 text-sm leading-relaxed text-foreground/70">
-                  直近の週（{latestWeek.tableLabel}
-                  {latestWeek.isPartial && "・集計中"}）に最も買っていたのは
+                <>
+                  最も買っていたのは
                   {latestBuyLeaders.map((c, i) => (
                     <span key={c.dealType}>
                       {i > 0 && "、"}
@@ -370,20 +385,12 @@ export default async function WeeklyDigestPage() {
                       （{c.count}件・{formatDealAmount(c.amount)}）
                     </span>
                   ))}
-                  でした。
-                </p>
+                </>
               )}
-              <CategoryWeeklyTrend rows={buyCategoryRows} weeks={categoryWeeks} tone="buy" />
-            </>
-          )}
-
-          {sellCategoryRows.length > 0 && (
-            <>
-              <h3 className="mt-6 text-base font-bold text-brand-navy">売り</h3>
+              {latestBuyLeaders.length > 0 && latestSellLeaders.length > 0 && "、"}
               {latestSellLeaders.length > 0 && (
-                <p className="mt-1 text-sm leading-relaxed text-foreground/70">
-                  直近の週（{latestWeek.tableLabel}
-                  {latestWeek.isPartial && "・集計中"}）に最も売っていたのは
+                <>
+                  最も売っていたのは
                   {latestSellLeaders.map((c, i) => (
                     <span key={c.dealType}>
                       {i > 0 && "、"}
@@ -391,13 +398,12 @@ export default async function WeeklyDigestPage() {
                       （{c.count}件・{formatDealAmount(c.amount)}）
                     </span>
                   ))}
-                  でした。
-                </p>
+                </>
               )}
-              <CategoryWeeklyTrend rows={sellCategoryRows} weeks={categoryWeeks} tone="sell" />
-            </>
+              でした。
+            </p>
           )}
-
+          <CategoryTrendGrid rows={categoryRows} weeks={categoryWeeks} />
           <p className="mt-2 text-xs text-foreground/50">
             ※推定金額は発行済株式数×株価×保有比率の変化幅から概算した参考値です。
           </p>
