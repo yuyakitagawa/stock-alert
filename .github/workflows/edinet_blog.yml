@@ -65,6 +65,12 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 2
 
+      # スキャンで増えた開示にも銘柄ランキング(/trending)の推定売買金額を付ける。
+      # 株価・発行済株式数の更新分は daily_alert.yml Step 2e が拾う。
+      - name: 推定売買金額ビュー更新（Supabase）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/refresh_holding_amounts.py
+
       - name: ブログ記事自動生成・投稿（EDINET大口取引解説「大口投資家の監視ブログ」）
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py

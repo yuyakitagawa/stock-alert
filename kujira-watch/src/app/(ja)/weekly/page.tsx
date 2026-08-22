@@ -169,21 +169,6 @@ export default async function WeeklyDigestPage() {
     }));
   const categoryWeekStarts = categoryWeeks.map((w) => w.weekStart);
   const categoryRows = buildCategoryTrendRows(digests, categoryWeekStarts);
-  // 「今どこが活発か」を文章でも言い切る（グラフを読まない読者・LLM向け）。買い・売りそれぞれの最新週の上位。
-  const latestWeek = categoryWeeks[categoryWeeks.length - 1];
-  const latestLeaders = (tone: "buy" | "sell") =>
-    categoryRows
-      .map((row) => {
-        const cell = row.cells[row.cells.length - 1];
-        return tone === "buy"
-          ? { dealType: row.dealType, count: cell.buyCount, amount: cell.buyAmount }
-          : { dealType: row.dealType, count: cell.sellCount, amount: cell.sellAmount };
-      })
-      .filter((c) => c.count > 0)
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 3);
-  const latestBuyLeaders = latestLeaders("buy");
-  const latestSellLeaders = latestLeaders("sell");
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -299,38 +284,6 @@ export default async function WeeklyDigestPage() {
             推定取引金額を買い（上）・売り（下）に分けて並べたものです。
             どの種類の投資家がいま買い集めているのか・降りているのかが分類ごとに分かります。
           </p>
-          {(latestBuyLeaders.length > 0 || latestSellLeaders.length > 0) && (
-            <p className="mt-1 text-sm leading-relaxed text-foreground/70">
-              直近の週（{latestWeek.tableLabel}
-              {latestWeek.isPartial && "・集計中"}）に
-              {latestBuyLeaders.length > 0 && (
-                <>
-                  最も買っていたのは
-                  {latestBuyLeaders.map((c, i) => (
-                    <span key={c.dealType}>
-                      {i > 0 && "、"}
-                      <span className="font-bold text-brand-navy">{c.dealType}</span>
-                      （{c.count}件・{formatDealAmount(c.amount)}）
-                    </span>
-                  ))}
-                </>
-              )}
-              {latestBuyLeaders.length > 0 && latestSellLeaders.length > 0 && "、"}
-              {latestSellLeaders.length > 0 && (
-                <>
-                  最も売っていたのは
-                  {latestSellLeaders.map((c, i) => (
-                    <span key={c.dealType}>
-                      {i > 0 && "、"}
-                      <span className="font-bold text-brand-navy">{c.dealType}</span>
-                      （{c.count}件・{formatDealAmount(c.amount)}）
-                    </span>
-                  ))}
-                </>
-              )}
-              でした。
-            </p>
-          )}
           <CategoryTrendGrid rows={categoryRows} weeks={categoryWeeks} />
           <p className="mt-2 text-xs text-foreground/50">
             ※推定金額は発行済株式数×株価×保有比率の変化幅から概算した参考値です。

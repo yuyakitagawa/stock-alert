@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { formatMonth } from "@/lib/format";
-import { getHoldingsInRange } from "@/lib/investors";
+import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
 import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
 import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
 import DisclosureTrendChart from "@/components/DisclosureTrendChart";
@@ -25,7 +25,7 @@ const title = "銘柄ランキング";
 
 export const metadata: Metadata = {
   title,
-  description: `直近${WINDOW_DAYS}日間で大量保有報告書の開示が増えた銘柄を、その前の${WINDOW_DAYS}日間と比べた増加件数順にランキング。買い・売り・両方で絞り込めます。EDINETの開示データをもとに毎日更新しています。`,
+  description: `直近${WINDOW_DAYS}日間で大量保有報告書の開示が増えた銘柄を、その前の${WINDOW_DAYS}日間と比べた増加件数順にランキング。開示の件数と推定売買金額を並べて表示し、買い・売り・両方で絞り込めます。EDINETの開示データをもとに毎日更新しています。`,
   alternates: { canonical: url },
   openGraph: { title, url },
 };
@@ -41,14 +41,16 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, listedCodes, monthlyCounts] = await Promise.all([
+  const [rows, amountByDocId, listedCodes, monthlyCounts] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
+    // 金額は件数に添えるだけの情報なので、取れなくてもランキング自体は成立させる。
+    getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
     getAllListedCodes().catch(() => new Set<string>()),
     getMonthlyDisclosureCounts().catch(() => []),
   ]);
 
   // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
-  const trendingIssuers = buildTrendingIssuers(rows, currentFrom);
+  const trendingIssuers = buildTrendingIssuers(rows, currentFrom, amountByDocId);
 
   // 社名と証券コードだけでは何の会社か分からないため、事業内容を1行添える。
   // 事業内容(jpx_stock_list.description)は未生成の銘柄があるので、その場合は業種で代替する。
@@ -118,6 +120,7 @@ export default async function TrendingPage() {
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
           大口投資家の取引（大量保有報告書の提出）が直近{WINDOW_DAYS}日間で前の{WINDOW_DAYS}日間より増えた銘柄のランキングです。
           保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
+          並び順は増加件数順で、各銘柄には開示の件数と推定売買金額（保有比率の変化幅×発行済株式数×開示日の終値の概算）を添えています。
           <br />
           投資家ごとの成績は
           <Link href="/ranking/returns" className="text-brand-blue hover:underline">
@@ -133,6 +136,10 @@ export default async function TrendingPage() {
 
       <section className="mb-10">
         <TrendingDirectionTable items={trendingItems} windowDays={WINDOW_DAYS} />
+        <p className="mt-3 text-xs leading-relaxed text-foreground/40">
+          ※金額はEDINET開示に取引金額の記載が無いための概算です。売買を伴わない訂正報告書や、
+          株価・発行済株式数が取れない銘柄は金額に含めていない（件数には含む）ため、件数と金額は必ずしも比例しません。
+        </p>
       </section>
 
       {monthlyCounts.length >= 2 && (

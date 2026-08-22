@@ -79,6 +79,12 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 7
 
+      # 銘柄ランキング(/trending)の推定売買金額。株価キャッシュ(Step 0)と
+      # 発行済株式数(Step 2d)の両方に依存するので、財務サマリー更新の直後に再計算する。
+      - name: Step 2e - 推定売買金額ビュー更新（Supabase）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/refresh_holding_amounts.py
+
       - name: Step 2f - TDnet適時開示取得（やのしん・隔離テーブル）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_tdnet.py --days 3 --catalyst-only
