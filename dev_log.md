@@ -1605,3 +1605,15 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   `fits()`/`URL_WEIGHTED_UNITS`/`SITE_URL`(x_client) を削除。`x_posts.variant` は `no_link`。
 - Xプロフィールの固定リンクは `https://kujira-watch.com/?utm_source=x&utm_medium=profile` にする（手動）。
 - 見込み: 月$26〜30 → 月$2前後。tests 407件 pass。
+
+## 2026-08-23 marketingskills監査: アイキャッチ未保存バグ修正・TOP/記事メタ改善
+- coreyhaines31/marketingskills（seo-audit / cro / schema / copywriting）で kujira-watch.com を監査。
+  TOPに画像が0枚だったのを追うと、microCMSの全950記事で `eyecatch` が未設定と判明。
+- 原因: microCMSの画像フィールドはPOST時にメディアURL**文字列**を要求するが、`build_eyecatch_for_article()`
+  が `{"url": ...}` オブジェクトを返していたため `'eyecatch' has unexpected data type` で毎回除外され、
+  8/15の実装以来ずっと画像なしで投稿されていた（CIログで17/17記事に除外メッセージ）。文字列URLを返すよう修正、
+  draft POSTで201を確認。あわせてバッジ絵文字→▲/▼/■（Noto CJKで豆腐化）、PNG約1MB→JPEG約90KB。
+- TOP: H1「{日付}の取引」→「大量保有報告書で読む大口投資家の動き（{日付}の取引）」＋1文リード、
+  注目枠直後に `FollowCta`（主要コンバージョン=Xフォローの導線がTOPに無かった）。
+- 記事description: 「横河電機の日系証券銀行を解説」→「横河電機（6841）｜日系証券銀行の大量保有報告書を解説。」。
+- 過去記事950件のアイキャッチはバックフィル（別タスク）。tests/test_publish_blog_articles.py 98件 pass。
