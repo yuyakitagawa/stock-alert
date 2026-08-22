@@ -45,7 +45,7 @@ WHITE = (255, 255, 255)
 BUY = (4, 120, 87)         # success #047857（買い・上昇）
 SELL = (190, 18, 60)       # error #be123c（売り・下落）
 
-BRAND = "KUJIRA WATCH"
+BRAND = "大口投資家の監視ブログ"
 SITE_LABEL = "kujira-watch.com"
 DISCLAIMER = "EDINET提出書類より作成。投資助言ではありません"
 

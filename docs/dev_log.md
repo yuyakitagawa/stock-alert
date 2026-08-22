@@ -229,3 +229,13 @@ LINE投稿上位はウォッチ銘柄の2026-07-21付開示に占拠されてい
 - 初回dry-run（8/20〜21分）で検出: X API `HTTP 402 credits depleted` で投稿停止、daily_alert Step 0bがstatement timeoutで
   exit 1なのにジョブ成功扱い、TDnet `xbrl_url` カラム不在で380件未保存、カタリスト候補テーブル不在で0件、
   microCMSの`dealType`/`eyecatch`型不一致による毎回再送信、記事タイトル規約の混在・同一銘柄同日複数記事のカニバリ。
+
+## 2026-08-22: 日次ログレビューの指摘を裏取りして即時対応（1〜4）
+- 指摘の裏取り: 11件中 9件実在・2件誤検知（「タイトル規約2系統混在」はログの進捗行を記事タイトルと誤認、
+  「ops/x_post停止」はレビューツール側の `gh run list --workflow` 取りこぼし → REST API の path 別列挙に修正済み）。
+- 対応済み:
+  1. `ALTER FUNCTION refresh_investor_returns_3m SET statement_timeout='120s'`（authenticatorの8sで毎回57014）→ 投資家198名で成功
+  2. `ext_tdnet_disclosures.xbrl_url` 列追加（2026-07-07以降 PGRST204 で全行未保存）→ `fetch_tdnet.py --days 45` で591行補填
+  3. microCMS `dealType` を配列で送信（毎記事の400→再送信を解消）
+  4. X クレジット回復後、土曜トレンド投稿を `gh workflow run x_post.yml -f target=trending` で再実行 → 投稿成功
+- 未対応（次）: `screen_catalyst_candidates` RPC の `kabutan_fundamentals` 参照差し替え、件数0監視、X 402 の失敗化、imblearn/shap（要bearバックテスト）。

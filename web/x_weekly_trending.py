@@ -125,7 +125,7 @@ def build_trending_media(issuers: list, filers: list) -> list:
     from web.x_card_image import build_list_card
 
     rows = [(e["label"], f"+{e['delta']}件", "buy") for e in issuers[:3]]
-    rows += [(f"👤 {e['label']}", f"+{e['delta']}件", "none") for e in filers[:2]]
+    rows += [(e["label"], f"+{e['delta']}件", "none") for e in filers[:2]]
     card = build_list_card("大口投資家の取引急増ランキング", "前週比（直近7日 vs その前7日）",
                            rows, "全ランキングは kujira-watch.com/trending")
     if not card:

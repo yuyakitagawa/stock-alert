@@ -1285,7 +1285,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "body": article["body"],
             "stockName": name,
             "stockCode": code,
-            "dealType": deal_type,
+            "dealType": [deal_type],  # microCMSのセレクト(複数選択)は配列。文字列だと400→再送信が毎回発生していた
             "dealDate": f"{disc_date}T00:00:00.000Z",
             "dealAmount": deal_amount,
             "ratioChangePct": signed_change,
