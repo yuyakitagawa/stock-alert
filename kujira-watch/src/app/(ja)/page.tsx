@@ -23,7 +23,9 @@ export default async function HomePage() {
   const { contents: latestDayArticles } = latestDealDate
     ? await getArticlesByDealDate(latestDealDate.slice(0, 10))
     : { contents: [] };
-  const latestDaySellCount = latestDayArticles.filter((a) => isSellArticle(a.tags)).length;
+  const latestDaySell = latestDayArticles.filter((a) => isSellArticle(a.tags));
+  const latestDayBuy = latestDayArticles.filter((a) => !isSellArticle(a.tags));
+  const sumAmount = (list: typeof latestDayArticles) => list.reduce((sum, a) => sum + a.dealAmount, 0);
 
   // 初回表示分（INITIAL_ARTICLES_COUNT件）のみをItemListとして構造化データ化する。
   // オートスクロールで追加取得される分はクライアント側描画のためJSON-LDには含めない
@@ -59,9 +61,10 @@ export default async function HomePage() {
             <TodayWhaleSummary
               date={latestDealDate}
               count={latestDayArticles.length}
-              amount={latestDayArticles.reduce((sum, a) => sum + a.dealAmount, 0)}
-              buyCount={latestDayArticles.length - latestDaySellCount}
-              sellCount={latestDaySellCount}
+              buyCount={latestDayBuy.length}
+              buyAmount={sumAmount(latestDayBuy)}
+              sellCount={latestDaySell.length}
+              sellAmount={sumAmount(latestDaySell)}
               disclosuresFixed={areDisclosuresFixed(latestDealDate)}
             />
           )}
