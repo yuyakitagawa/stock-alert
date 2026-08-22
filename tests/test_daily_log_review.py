@@ -48,6 +48,18 @@ class FilterRunsTest(unittest.TestCase):
         ]
         self.assertEqual(len(dlr.filter_runs(runs, since)), 1)
 
+    def test_group_runs_by_path_excludes_ci_and_self(self):
+        runs = [
+            {"path": ".github/workflows/ops.yml", "displayTitle": "Keepalive"},
+            {"path": ".github/workflows/ops.yml", "displayTitle": "Watchdog"},
+            {"path": ".github/workflows/x_post.yml"},
+            {"path": ".github/workflows/ci.yml"},
+            {"path": ".github/workflows/daily_log_review.yml"},
+        ]
+        grouped = dlr.group_runs(runs)
+        self.assertEqual(sorted(grouped), ["ops.yml", "x_post.yml"])
+        self.assertEqual(len(grouped["ops.yml"]), 2)
+
 
 class FormatAndSummaryTest(unittest.TestCase):
     def test_format_jobs_marks_and_duration(self):

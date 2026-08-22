@@ -5,7 +5,8 @@ tools/daily_log_review.py
 プロダクト）でレビューさせ、気づきと改善提案を GitHub Issue（全文）と LINE（要約）へ届ける。
 
 流れ:
-  1. `gh run list` で直近 --since-hours 以内に完了した対象ワークフローの run を列挙
+  1. GitHub REST API（`gh api .../actions/runs?created=>=...`）で直近 --since-hours 以内に完了した run を
+     ワークフローファイル（path）ごとに列挙（ci.yml と自分自身を除く全ワークフロー）
   2. `gh run view --json jobs` でステップごとの成否・所要時間、`gh run view --log` で本文ログを取得
   3. ログはそのままでは数万行あるので、エラー/警告/Traceback/HTTPエラー/スキップ通知の行と
      各ステップの先頭・末尾だけに圧縮する（condense_log）
@@ -39,14 +40,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MODEL = "claude-opus-5"
 JST = timezone(timedelta(hours=9))
 
-# レビュー対象のワークフロー（ファイル名）。ci.yml はPR単位なので対象外。
-WORKFLOWS = [
-    "daily_alert.yml",
-    "edinet_blog.yml",
-    "x_post.yml",
-    "video_post.yml",
-    "ops.yml",
-]
+# レビュー対象外のワークフロー（ファイル名）。ci.yml はPR単位、daily_log_review.yml は自分自身。
+EXCLUDE_WORKFLOWS = {"ci.yml", "daily_log_review.yml"}
 
 # 圧縮時に必ず残す行（エラー・警告・重要イベント）
 _KEEP_PATTERN = re.compile(
@@ -125,16 +120,25 @@ def _gh(args: list[str], timeout: int = 120) -> str:
     return result.stdout
 
 
-def list_recent_runs(workflow: str, since: datetime, repo: str | None = None) -> list[dict]:
-    """直近 since 以降に作成された完了済みrunを新しい順で返す。"""
-    args = [
-        "run", "list", "--workflow", workflow, "--limit", "20",
-        "--json", "databaseId,conclusion,status,createdAt,updatedAt,displayTitle,url,event",
-    ]
-    if repo:
-        args += ["--repo", repo]
-    runs = json.loads(_gh(args) or "[]")
-    return filter_runs(runs, since)
+def list_recent_runs(since: datetime, repo: str) -> dict[str, list[dict]]:
+    """since 以降に作成された完了済みrunをワークフローのファイル名ごとに返す（新しい順）。
+
+    `gh run list --workflow <file>` は run の workflowName（ジョブ名に上書きされることがある）で
+    引くため、ops.yml(Keepalive/Watchdog) や x_post.yml(X Metrics 等) を取りこぼす。
+    REST API の `path` で束ねれば、ワークフロー名の付け方に関係なく漏れなく拾える。"""
+    date = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    runs: list[dict] = []
+    for page in (1, 2, 3):
+        out = _gh([
+            "api", f"repos/{repo}/actions/runs?created=>={date}&per_page=100&page={page}",
+            "--jq", "[.workflow_runs[] | {databaseId: .id, conclusion, status, createdAt: .created_at, "
+                    "updatedAt: .updated_at, displayTitle: .display_title, url: .html_url, event, path}]",
+        ])
+        chunk = json.loads(out or "[]")
+        runs += chunk
+        if len(chunk) < 100:
+            break
+    return group_runs(filter_runs(runs, since))
 
 
 def filter_runs(runs: list[dict], since: datetime) -> list[dict]:
@@ -144,6 +148,16 @@ def filter_runs(runs: list[dict], since: datetime) -> list[dict]:
         if created >= since and r.get("status") == "completed":
             out.append(r)
     return out
+
+
+def group_runs(runs: list[dict]) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+    for r in runs:
+        wf = (r.get("path") or "").rsplit("/", 1)[-1]
+        if not wf or wf in EXCLUDE_WORKFLOWS:
+            continue
+        grouped.setdefault(wf, []).append(r)
+    return grouped
 
 
 def fetch_run_detail(run_id: int, repo: str | None = None) -> tuple[list[dict], str]:
@@ -341,7 +355,7 @@ def post_issue_comment(body: str, repo: str | None) -> str | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--since-hours", type=int, default=24)
-    ap.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY"))
+    ap.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY"), help="owner/name")
     ap.add_argument("--dry-run", action="store_true", help="Issue/LINEに送らず標準出力のみ")
     args = ap.parse_args()
 
@@ -349,19 +363,16 @@ def main() -> int:
     since = now - timedelta(hours=args.since_hours)
     date_label = now.astimezone(JST).strftime("%Y-%m-%d")
 
-    runs_by_workflow: dict[str, list[dict]] = {}
+    if not args.repo:
+        print("--repo または GITHUB_REPOSITORY が必要です")
+        return 1
+    runs_by_workflow = list_recent_runs(since, args.repo)
     total = 0
-    for wf in WORKFLOWS:
-        try:
-            runs = list_recent_runs(wf, since, args.repo)
-        except Exception as e:
-            print(f"[gh] {wf} の一覧取得失敗: {e}")
-            runs = []
+    for wf, runs in runs_by_workflow.items():
         for r in runs:
             jobs, log = fetch_run_detail(r["databaseId"], args.repo)
             r["_jobs_text"] = format_jobs(jobs)
             r["_log_text"] = condense_log(log)
-        runs_by_workflow[wf] = runs
         total += len(runs)
         print(f"[gh] {wf}: {len(runs)} run(s)")
 
