@@ -7,13 +7,34 @@ import DealDateHeading from "@/components/DealDateHeading";
 import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { getArticlesByStockCode } from "@/lib/microcms";
+import { getArticlesByStockCode, getTranslatedArticlesForSitemap } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { UI } from "@/lib/i18n";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
 
-export const revalidate = 300;
+// データ源はEDINETの日次開示なので再検証は1日で足りる（ja側と同じ判断）。
+export const revalidate = 86400;
+
+// generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
+// 何度アクセスしてもCDNキャッシュに乗らない（ja側の/stocks・/investorsと同じ）。
+// 一部でも事前生成するとルート全体がISR扱いになるため、英訳記事のある銘柄から事前生成する。
+const PRERENDERED_EN_STOCKS = 100;
+
+export async function generateStaticParams() {
+  // 取得に失敗しても空配列を返してビルドは通す（ja側と同じ判断）。空でもISR扱いは維持される。
+  try {
+    const articles = await getTranslatedArticlesForSitemap();
+    const codes: string[] = [];
+    for (const article of articles) {
+      if (article.stockCode && !codes.includes(article.stockCode)) codes.push(article.stockCode);
+      if (codes.length >= PRERENDERED_EN_STOCKS) break;
+    }
+    return codes.map((code) => ({ code }));
+  } catch {
+    return [];
+  }
+}
 
 type Props = {
   params: Promise<{ code: string }>;

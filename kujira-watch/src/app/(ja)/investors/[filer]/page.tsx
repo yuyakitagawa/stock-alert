@@ -21,13 +21,15 @@ import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildInvestorFaqItems } from "@/lib/investorFaq";
 import { getFilerReturnPositions, formatSignedPercent } from "@/lib/investorReturns";
 
-export const revalidate = 300;
+// データ源はEDINETの日次開示。5分周期の再検証はクローラーのアクセスがほぼ毎回
+// 再生成に当たりコールドTTFBが1.4〜3.5秒になっていた（クロール速度の律速）ため1日にする。
+export const revalidate = 86400;
 
 // generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
 // 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。
 // 一部でも事前生成しておくとルート全体がISR扱いになり、事前生成していないパラメータも
 // 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
-const PRERENDERED_FILERS = 100;
+const PRERENDERED_FILERS = 300;
 
 // 事前生成は .next/server/app/investors/<URLエンコード済みの提出者名>/ を実際に掘るため、
 // エンコード後がファイル名の上限(255バイト)に触れる提出者はビルドが ENAMETOOLONG で
