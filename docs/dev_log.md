@@ -221,3 +221,11 @@ LINE投稿上位はウォッチ銘柄の2026-07-21付開示に占拠されてい
 
 ## 2026-08-22 未使用コード削除
 - `lib.fundamentals.get_progress_rate`（進捗率）を削除。2026-07のA/Bで不採用のまま未使用だったため。fnp列はデータとして残存、必要なら再実装する。
+
+## 2026-08-22: 日次ログレビュー（AIフィードバック）フロー追加
+- `tools/daily_log_review.py` + `.github/workflows/daily_log_review.yml`（平日 15:30 UTC = 0:30 JST、watchdog再実行分まで含める）。
+- GitHub Actionsの当日ログを `gh run view --log` で取得→圧縮→Claude（claude-opus-5）が SRE／クオンツ運用／プロダクト／SEO・GEO の4観点でレビュー。
+  全文は `daily-review` ラベルのIssueへコメント追記、要約はLINEへ。
+- 初回dry-run（8/20〜21分）で検出: X API `HTTP 402 credits depleted` で投稿停止、daily_alert Step 0bがstatement timeoutで
+  exit 1なのにジョブ成功扱い、TDnet `xbrl_url` カラム不在で380件未保存、カタリスト候補テーブル不在で0件、
+  microCMSの`dealType`/`eyecatch`型不一致による毎回再送信、記事タイトル規約の混在・同一銘柄同日複数記事のカニバリ。
