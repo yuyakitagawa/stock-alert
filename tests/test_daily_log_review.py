@@ -29,6 +29,13 @@ class CondenseLogTest(unittest.TestCase):
         self.assertIn("progress 199", out)         # 末尾は残る
         self.assertNotIn("2026-08-22T07:00:00", out)  # タイムスタンプは除去
 
+    def test_full_step_is_not_condensed(self):
+        lines = [_log_line("Step 5b - マーケットタイミング＆dpウォッチアラート", f"本文 {i}") for i in range(200)]
+        out = dlr.condense_log("\n".join(lines))
+        self.assertIn("全文", out)
+        self.assertIn("本文 100", out)
+        self.assertNotIn("行省略", out)
+
     def test_truncates_total_size_keeping_tail(self):
         raw = "\n".join(_log_line("S", f"ERROR line {i}") for i in range(5000))
         out = dlr.condense_log(raw, max_chars=3000)
@@ -53,12 +60,37 @@ class FilterRunsTest(unittest.TestCase):
             {"path": ".github/workflows/ops.yml", "displayTitle": "Keepalive"},
             {"path": ".github/workflows/ops.yml", "displayTitle": "Watchdog"},
             {"path": ".github/workflows/x_post.yml"},
-            {"path": ".github/workflows/ci.yml"},
+            {"path": ".github/workflows/ci.yml", "conclusion": "success"},
+            {"path": ".github/workflows/ci.yml", "conclusion": "failure"},
             {"path": ".github/workflows/daily_log_review.yml"},
         ]
         grouped = dlr.group_runs(runs)
-        self.assertEqual(sorted(grouped), ["ops.yml", "x_post.yml"])
+        self.assertEqual(sorted(grouped), ["ci.yml", "ops.yml", "x_post.yml"])
         self.assertEqual(len(grouped["ops.yml"]), 2)
+        self.assertEqual(len(grouped["ci.yml"]), 1)  # CIは失敗分だけ
+
+    def test_summarize_snapshot_human_filter_and_sections(self):
+        now = datetime(2026, 8, 22, 15, 30, tzinfo=timezone.utc)
+        recent, old = "2026-08-22T10:00:00Z", "2026-08-16T10:00:00Z"
+        pv = [{"occurred_at": recent, "path": "/articles/a", "visitor_id": "v1", "ip_address": "1.1.1.1"}] * 3
+        pv += [{"occurred_at": recent, "path": "/stocks/7203", "visitor_id": "bot", "ip_address": "9.9.9.9"}] * 150
+        pv += [{"occurred_at": old, "path": "/", "visitor_id": "v2", "ip_address": "2.2.2.2"}] * 14
+        rows = {
+            "x_posts_24h": [{"posted_at": "2026-08-22T09:00:00Z", "kind": "trending", "variant": "A",
+                             "body": "🟢 今週の急増\n詳細", "impressions": 0, "likes": 0,
+                             "url_link_clicks": 0, "has_media": True}],
+            "x_followers": [{"measured_on": "2026-08-22", "followers": 120}, {"measured_on": "2026-08-21", "followers": 118}],
+            "pv": pv,
+            "rankings": [{"recommend": "💎 買い"}, {"recommend": "💎 買い"}, {"recommend": "⚪ 様子見"}],
+        }
+        out = dlr.summarize_snapshot(rows, now)
+        self.assertIn("直近24h: 3 PV / ユニーク 1（前7日平均 2 PV/日）", out)   # 9.9.9.9(150PV)は機械として除外
+        self.assertIn("生PV24h: 153", out)
+        self.assertIn("/articles/*=3", out)
+        self.assertIn("08-21=118, 08-22=120", out)
+        self.assertIn("💎=2", out)
+        self.assertIn("今週の急増 / 詳細", out)
+        self.assertEqual(dlr.summarize_snapshot({}, now), "（成果物スナップショット: 取得不可）")
 
 
 class FormatAndSummaryTest(unittest.TestCase):

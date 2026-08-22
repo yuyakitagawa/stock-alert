@@ -239,3 +239,10 @@ LINE投稿上位はウォッチ銘柄の2026-07-21付開示に占拠されてい
   3. microCMS `dealType` を配列で送信（毎記事の400→再送信を解消）
   4. X クレジット回復後、土曜トレンド投稿を `gh workflow run x_post.yml -f target=trending` で再実行 → 投稿成功
 - 未対応（次）: `screen_catalyst_candidates` RPC の `kabutan_fundamentals` 参照差し替え、件数0監視、X 402 の失敗化、imblearn/shap（要bearバックテスト）。
+
+## 2026-08-23: 日次ログレビューを8観点に拡張（UX・デザイン／バックエンド／フロントエンド／PdM を追加）
+- 入力に Supabase の成果物スナップショットを追加: X投稿文と反応・フォロワー推移・人間推定PV（`bot_name='Browser'` かつ
+  1IP≤100PV/8日。実測: 生47,122PV/日のうち人間推定2,161PV＝約5%）・上位ページ・当日ランキングの推奨ラベル内訳。
+- LINE送信本文を含むステップ（マーケットタイミング）は圧縮せず全文を渡す（UX観点の原文評価用）。ci.yml は失敗runのみ対象。
+- 検証中に判明: Anthropic API が月次上限到達（9/1 00:00 UTC まで400）。ブログ生成・動画台本・本レビューは上限引き上げまで停止。
+  X Metrics は 8/20〜22 の 402 で impressions 全件None・フォロワー0記録（失敗時に0を書く副作用あり）。クレジット回復後に metrics を手動再実行。
