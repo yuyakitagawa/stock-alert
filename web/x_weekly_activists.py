@@ -26,8 +26,8 @@ load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
 from lib.edinet import disclosure_kind_label  # noqa: E402
-from web.x_client import SITE_URL, post_tweet, upload_media  # noqa: E402
-from web.x_post_format import clean_name, fits, label  # noqa: E402
+from web.x_client import PROFILE_CTA, post_tweet, upload_media  # noqa: E402
+from web.x_post_format import POST_MAX_WEIGHTED, clean_name, label, weighted_len  # noqa: E402
 
 WINDOW_DAYS = 7
 
@@ -126,7 +126,6 @@ def build_activist_text(moves: list) -> "str | None":
     if not buys and not sells:
         return None
 
-    url = f"{SITE_URL}/activists?utm_source=x&utm_medium=social&utm_campaign=weekly_activists"
     fund_count = len({m["filer"] for m in moves})
 
     def render(buy_n: int, sell_n: int) -> str:
@@ -140,14 +139,14 @@ def build_activist_text(moves: list) -> "str | None":
         lines += [
             "",
             f"今週の動き{len(moves)}件・{fund_count}ファンド",
-            url,
+            f"全一覧は{PROFILE_CTA[3:]}",  # URLは入れない（リンク入り投稿は$0.20課金）
             "#日本株 #アクティビスト",
         ]
         return "\n".join(lines)
 
     for buy_n, sell_n in LADDER:
         text = render(buy_n, sell_n)
-        if fits(text, url):
+        if weighted_len(text) <= POST_MAX_WEIGHTED:
             return text
     return text
 

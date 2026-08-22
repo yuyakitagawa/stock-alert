@@ -3,7 +3,8 @@ web/x_post_format.py
 
 週末のX自動投稿（x_weekly_trending.py / x_weekly_activists.py）で共用する整形ヘルパー。
 
-Xの投稿上限は280「単位」で、全角文字は2単位・半角は1単位・URLは長さに関わらず一律23単位。
+Xの投稿上限は280「単位」で、全角文字は2単位・半角は1単位（URLは入れない。リンク入り投稿は
+X APIの従量課金で$0.20/本と13倍になるため、2026-08-22に全投稿から外した）。
 本文は日本語の固有名詞（社名・ファンド名）が主役で長さが読めないため、組み立てたあとに
 `weighted_len()` で実測し、収まるまで行を落とす方式を両モジュールで共通にする。
 """
@@ -13,18 +14,11 @@ import unicodedata
 # 280単位に対する安全マージン。絵文字（環境により2単位以上に数えられることがある）と
 # 改行の揺らぎを吸収するため10単位残す。
 POST_MAX_WEIGHTED = 270
-URL_WEIGHTED_UNITS = 23
 
 
 def weighted_len(text: str) -> int:
-    """Xの文字数カウントの近似。ASCII=1単位・それ以外（全角・絵文字）=2単位。
-    URLは呼び出し側で `URL_WEIGHTED_UNITS` として別途加算する。"""
+    """Xの文字数カウントの近似。ASCII=1単位・それ以外（全角・絵文字）=2単位。"""
     return sum(1 if ord(c) < 128 else 2 for c in text)
-
-
-def fits(text: str, url: str) -> bool:
-    """本文（URLを含む）が投稿上限に収まるか。URLは実長ではなく23単位で数える。"""
-    return weighted_len(text.replace(url, "")) + URL_WEIGHTED_UNITS <= POST_MAX_WEIGHTED
 
 
 def clean_name(name: str) -> str:

@@ -72,7 +72,8 @@ def test_build_weekly_trending_text_includes_entries_url_and_tags():
     assert "🐋 大口投資家の取引急増ランキング（前週比）" in text
     assert "1. 玉井商船（1111） +5件" in text
     assert "1. テスト投資組合 +4件" in text
-    assert f"{m.SITE_URL}/trending?utm_source=x" in text
+    assert "http" not in text and "kujira-watch.com" not in text  # リンク入り投稿は$0.20課金
+    assert "全ランキングはプロフィールのリンクから" in text
     # ハッシュタグは銘柄名のみ（証券コードは付けない）
     # ハッシュタグは母数のある2つだけ（`#社名` は検索されないため付けない）
     assert text.endswith("#日本株 #大量保有報告書")
@@ -105,8 +106,7 @@ def test_build_weekly_trending_text_fits_weighted_limit_with_long_names():
     issuers = [{"key": str(i), "label": f"{long}（{i}000）", "delta": 10 - i} for i in range(1, 4)]
     filers = [{"key": f"F{i}", "label": long, "delta": 9 - i} for i in range(1, 3)]
     text = m.build_weekly_trending_text(issuers, filers)
-    url = f"{m.SITE_URL}/trending?utm_source=x&utm_medium=social&utm_campaign=weekly_trending"
-    assert m.weighted_len(text.replace(url, "")) + m.URL_WEIGHTED_UNITS <= m.POST_MAX_WEIGHTED
+    assert m.weighted_len(text) <= m.POST_MAX_WEIGHTED
 
 
 def test_run_posts_text_built_from_fetched_rows():

@@ -89,7 +89,8 @@ def test_build_activist_text_shows_buys_sells_and_summary():
     assert "・電通総研(4812) 新規5.0% Oasis Management" in text
     assert "・カシオ計算機(6952) 5.0→4.0% 3D Investment" in text
     assert "今週の動き2件・2ファンド" in text
-    assert f"{m.SITE_URL}/activists?utm_source=x" in text
+    assert "http" not in text and "kujira-watch.com" not in text  # リンク入り投稿は$0.20課金
+    assert "全一覧はプロフィールのリンクから" in text
     assert text.endswith("#日本株 #アクティビスト")
 
 
@@ -110,9 +111,8 @@ def test_build_activist_text_fits_weighted_limit_with_long_names():
         for i in range(1, 4)
     ]
     text = m.build_activist_text(moves)
-    url = f"{m.SITE_URL}/activists?utm_source=x&utm_medium=social&utm_campaign=weekly_activists"
-    from web.x_post_format import POST_MAX_WEIGHTED, URL_WEIGHTED_UNITS, weighted_len
-    assert weighted_len(text.replace(url, "")) + URL_WEIGHTED_UNITS <= POST_MAX_WEIGHTED
+    from web.x_post_format import POST_MAX_WEIGHTED, weighted_len
+    assert weighted_len(text) <= POST_MAX_WEIGHTED
 
 
 def test_run_posts_and_skips_appropriately():

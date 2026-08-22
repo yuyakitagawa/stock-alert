@@ -4,7 +4,7 @@
 
 - [x] 1. 投稿ログ＋メトリクス収集基盤（`x_posts` / `x_post_metrics` テーブル作成、`post_tweet()`がtweet_idを返す、`web/x_metrics.py` + x_metrics.yml 毎日10時JST）
 - [x] 2. 1行目フック化（`build_tweet_text()`刷新。記事タイトル流用をやめ「誰が・銘柄(コード)・どうした」＋「約N億円・保有比率 X%→Y%」）
-- [x] 3. リンクを自己リプライへ（`publish()` / `post_tweet(reply_to=)`。`X_LINK_IN_REPLY=0`で本文に戻すA/B、`x_posts.variant`で識別）
+- [x] 3. ~~リンクを自己リプライへ~~ → 2026-08-22に撤回。リンク入り投稿は$0.20/本課金のため、URLは全投稿から外しプロフィールの固定リンクに集約（`x_posts.variant`=`no_link`）
 - [x] 4. 数字カード画像＋alt（`web/x_card_image.py`。日次サマリー・週次2本・答え合わせにも一覧カードを追加）
 - [x] 5. 投稿時刻の再設計（1回1件・JST8〜22時のみ・日次サマリー21時JST、edinet_blog.yml cron 0-12 UTC）
 - [x] 6. 答え合わせ投稿（`web/x_followup.py` + x_followup.yml 水21時JST。実データで5/20の54銘柄=平均+5.9%を確認）

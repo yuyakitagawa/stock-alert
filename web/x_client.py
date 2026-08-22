@@ -15,8 +15,10 @@ publish_blog_articles.py が投稿した新着記事のうち、ホームペー�
   ハッシュタグは母数のある `#日本株 #大量保有報告書` の2つだけ
 - 添付画像の1枚目は保有比率と金額を大きく出す数字カード（x_card_image）、
   2枚目が株価チャート。両方にalt（代替テキスト）を付ける
-- URLは本文に入れる（親投稿にURLが無いとスレッドを開かない読者にリンクが届かないため）。
-  X_LINK_IN_REPLY=1 で自己リプライ（2投稿目）へ移すA/Bに切り替えられる
+- URLは一切入れない。X APIの従量課金はリンク入り投稿が$0.20/本（リンク無し$0.015の13倍）で、
+  投稿コストのほぼ全部がこの加算だった（2026-08-22、14本で$2.2）。誘導は末尾の
+  PROFILE_CTA「詳細はプロフィールのリンクから」に統一する（自己リプライにURLを置いても
+  そのリプライが$0.20になるので回避にならない）
 - 投稿したtweet_idはSupabaseの`x_posts`に記録し、web/x_metrics.pyが日次で
   インプレッション等を追記する（どの型が伸びたかを検証できるようにするため）
 
@@ -32,9 +34,10 @@ from datetime import datetime, timedelta, timezone
 import requests
 from requests_oauthlib import OAuth1
 
-from web.x_post_format import clean_name, fits, label, weighted_len
+from web.x_post_format import clean_name, label, weighted_len
 
-SITE_URL = "https://kujira-watch.com"
+# 本文にURLを入れない代わりの誘導行。記事・日次サマリー・週次・答え合わせで共通。
+PROFILE_CTA = "詳細はプロフィールのリンクから"
 API_URL = "https://api.x.com/2/tweets"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 MEDIA_METADATA_URL = "https://api.twitter.com/1.1/media/metadata/create.json"
@@ -60,16 +63,6 @@ TAGS = "#日本株 #大量保有報告書"
 # 1行目に載せる社名・ファンド名の表示上限（Xのカウント単位。全角=2・半角=1）。
 STOCK_LABEL_MAX_UNITS = 26
 FILER_LABEL_MAX_UNITS = 26
-
-
-def link_in_reply() -> bool:
-    """URLを自己リプライ（2投稿目）に置くか。既定は本文に入れる。
-
-    「本文中の外部リンクはリーチが落ちる」という定説から一度は自己リプライを既定にしたが、
-    親投稿にURLが無いと、スレッドを開かない読者にはリンクが一切届かない（2026-08-19、
-    オーナー指摘）。まず本文にURLがある状態を既定とし、X_LINK_IN_REPLY=1 で自己リプライ側に
-    切り替えてA/Bを取る（どちらだったかは x_posts.variant に残る）。"""
-    return os.getenv("X_LINK_IN_REPLY", "0") == "1"
 
 
 def _auth() -> "OAuth1 | None":
@@ -134,9 +127,9 @@ def log_post(tweet_id: str, kind: str, body: str, **fields) -> None:
             "kind": kind,
             "body": body,
             "body_weighted_len": weighted_len(body),
-            "variant": fields.get("variant") or ("link_in_reply" if link_in_reply() else "link_in_body"),
+            "variant": fields.get("variant") or "no_link",
             "has_media": bool(fields.get("has_media")),
-            "link_in_reply": bool(fields.get("link_in_reply", link_in_reply())),
+            "link_in_reply": False,
             "stock_code": fields.get("stock_code") or None,
             "article_id": fields.get("article_id") or None,
             "reply_to_tweet_id": fields.get("reply_to") or None,
@@ -230,21 +223,6 @@ def post_tweet(text: str, media_ids: "list | None" = None, reply_to: "str | None
     return tweet_id or None
 
 
-def publish(body: str, link_line: str = "", media_ids: "list | None" = None,
-            kind: str = "other", reply_to: "str | None" = None, **log_fields) -> "str | None":
-    """本文とリンクを投稿する。X_LINK_IN_REPLY=1 のときだけリンクを自己リプライに分ける。
-    戻り値は親投稿のtweet_id。"""
-    if link_in_reply() and link_line:
-        parent = post_tweet(body, media_ids=media_ids, reply_to=reply_to, kind=kind, **log_fields)
-        if parent:
-            post_tweet(f"↓ 詳細・出典\n{link_line}", reply_to=parent, kind=f"{kind}_link",
-                       stock_code=log_fields.get("stock_code"),
-                       article_id=log_fields.get("article_id"))
-        return parent
-    text = f"{body}\n{link_line}" if link_line else body
-    return post_tweet(text, media_ids=media_ids, reply_to=reply_to, kind=kind, **log_fields)
-
-
 # ---------------------------------------------------------------- 本文の組み立て
 
 def _format_oku(amount_oku: "float | None") -> str:
@@ -303,10 +281,10 @@ def article_facts(article: dict) -> dict:
     }
 
 
-def build_tweet_text(article: dict, insight: str = "", link_url: str = "") -> str:
+def build_tweet_text(article: dict, insight: str = "") -> str:
     """記事1件分の投稿本文。1行目は「誰が・どの銘柄を・どうした」のフックにし、
     2行目に金額と保有比率の変化を置く（施策2）。insightは提出者の文脈1行（施策9）で、
-    文字数に収まらなければ落とす。link_urlを渡すと本文にURLを含める（A/Bのlink_in_body側）。"""
+    文字数に収まらなければ落とす。URLは入れず、末尾の PROFILE_CTA で誘導する。"""
     f = article_facts(article)
     stock = label(f["stock_name"], STOCK_LABEL_MAX_UNITS)
     stock_label = f"{stock}({f['stock_code']})" if f["stock_code"] else stock
@@ -324,23 +302,20 @@ def build_tweet_text(article: dict, insight: str = "", link_url: str = "") -> st
         parts = [p for p in (f["amount_label"], _ratio_phrase(f["ratio"], f["prior"], f["change_pt"])) if p]
         second = "・".join(parts)
 
-    def assemble(with_insight: bool, with_link: bool) -> str:
+    def assemble(with_insight: bool) -> str:
         lines = [head]
         if second:
             lines.append(second)
         if with_insight and insight:
             lines.append(insight)
-        if with_link and link_url:
-            lines.append(link_url)
-        lines.append(TAGS)
+        lines += [PROFILE_CTA, TAGS]
         return "\n".join(lines)
 
-    want_link = bool(link_url)
     for with_insight in (True, False):
-        text = assemble(with_insight, want_link)
-        if fits(text, link_url) if want_link else weighted_len(text) <= 270:
+        text = assemble(with_insight)
+        if weighted_len(text) <= 270:
             return text
-    return assemble(False, want_link)
+    return assemble(False)
 
 
 def build_article_alt(article: dict) -> str:
@@ -392,12 +367,11 @@ def _summary_line(article: dict, sign: str) -> str:
     return f"{article['stockName']} {sign}{article['dealAmount']}億円{filer_part}"
 
 
-def build_daily_summary_text(articles: list, date_str: str, total_count: "int | None" = None,
-                             link_url: str = "") -> "str | None":
+def build_daily_summary_text(articles: list, date_str: str, total_count: "int | None" = None) -> "str | None":
     """その日(dealDate)の記事一覧から「本日のクジラ」日次サマリー本文を組み立てる。
     0件の日はNone（投稿しない）。articlesはmicroCMSのdealAmount降順取得を前提とする。
     total_countはmicroCMSのtotalCount（100件超の日にarticlesが先頭100件に切れていても
-    件数表示を正確にするため）。link_urlを渡した場合のみ本文にURLを入れる（A/B用）。"""
+    件数表示を正確にするため）。URLは入れず、全件一覧へはプロフィールのリンクで誘導する。"""
     if not articles:
         return None
     count = total_count if total_count is not None else len(articles)
@@ -411,9 +385,7 @@ def build_daily_summary_text(articles: list, date_str: str, total_count: "int | 
         lines += ["🟢 最大買い増し", _summary_line(buys[0], "+"), ""]
     if sells:
         lines += ["🔴 最大売却", _summary_line(sells[0], "-"), ""]
-    if link_url:
-        lines += [f"↓ 今日の全{count}件", link_url]
-    lines.append(TAGS)
+    lines += [f"今日の全{count}件は{PROFILE_CTA[3:]}", TAGS]
     return "\n".join(lines)
 
 
@@ -454,8 +426,9 @@ def build_video_tweet_text(props: dict, youtube_id: str) -> str:
     stock = clean_name(props.get("stockName") or "")
     body = (f"🎬 1分解説｜{label(filer, FILER_LABEL_MAX_UNITS)}が"
             f"{label(stock, STOCK_LABEL_MAX_UNITS)}を{_format_oku(props.get('dealAmountOku'))}{direction}")
-    url = f"https://youtube.com/shorts/{youtube_id}"
-    return f"{body}\n{url}\n#Shorts {TAGS}"
+    # YouTubeのURLも「リンク入り投稿」として$0.20課金されるため入れない（youtube_idは
+    # 投稿ログの突き合わせ用に残す）。動画への誘導はプロフィール経由に統一する。
+    return f"{body}\n動画は{PROFILE_CTA[3:]}\n#Shorts {TAGS}"
 
 
 # ---------------------------------------------------------------- 投稿の実行
@@ -503,15 +476,12 @@ def post_daily_summary(now_utc=None, force: bool = False) -> bool:
         return False
     today_jst = (now + timedelta(hours=9)).strftime("%Y-%m-%d")
     articles, total_count = fetch_articles_by_deal_date(today_jst)
-    url = f"{SITE_URL}/date/{today_jst}?utm_source=x&utm_medium=social&utm_campaign=daily_summary"
-    text = build_daily_summary_text(articles, today_jst, total_count,
-                                    link_url="" if link_in_reply() else url)
+    text = build_daily_summary_text(articles, today_jst, total_count)
     if text is None:
         print("  [x_client] 本日の開示記事が無いため日次サマリーをスキップします")
         return False
     media_ids = build_daily_summary_media(articles, today_jst, total_count)
-    tweet_id = publish(text, link_line=f"↓ 今日の全{total_count}件\n{url}" if link_in_reply() else "",
-                       media_ids=media_ids, kind="daily")
+    tweet_id = post_tweet(text, media_ids=media_ids, kind="daily")
     if tweet_id:
         print(f"  🐦 X日次サマリー投稿: {today_jst} 全{total_count}件")
         return True
@@ -549,17 +519,14 @@ def post_top_articles(published: list, featured_ids: set, top_n: int = ARTICLES_
         is_correction = "訂正" in (article.get("tags") or "")
         context = fetch_filer_context(article.get("filerName") or "", article.get("stockCode") or "")
         insight = build_insight_line(clean_name(article.get("stockName") or ""), context)
-        url = (f"{SITE_URL}/articles/{article['id']}"
-               "?utm_source=x&utm_medium=social&utm_campaign=auto_post")
-        text = build_tweet_text(article, insight=insight,
-                                link_url="" if link_in_reply() else url)
+        text = build_tweet_text(article, insight=insight)
         media_ids = build_article_media(article)
         reply_to = find_prior_tweet(article.get("stockCode") or "") if is_correction else None
 
-        tweet_id = publish(text, link_line=url if link_in_reply() else "", media_ids=media_ids,
-                           kind="correction" if is_correction else "article",
-                           reply_to=reply_to,
-                           stock_code=article.get("stockCode"), article_id=article.get("id"))
+        tweet_id = post_tweet(text, media_ids=media_ids,
+                              kind="correction" if is_correction else "article",
+                              reply_to=reply_to,
+                              stock_code=article.get("stockCode"), article_id=article.get("id"))
         if tweet_id:
             print(f"  🐦 X投稿: {text.splitlines()[0]}"
                   + (f"（画像{len(media_ids)}枚）" if media_ids else "")

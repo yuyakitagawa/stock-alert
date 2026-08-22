@@ -26,15 +26,8 @@ from dotenv import load_dotenv
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
-from web.x_client import SITE_URL, TAGS, post_tweet, upload_media  # noqa: E402
-from web.x_post_format import (  # noqa: E402
-    POST_MAX_WEIGHTED,
-    URL_WEIGHTED_UNITS,
-    clean_name,
-    fits,
-    label,
-    weighted_len,
-)
+from web.x_client import PROFILE_CTA, TAGS, post_tweet, upload_media  # noqa: E402
+from web.x_post_format import POST_MAX_WEIGHTED, clean_name, label, weighted_len  # noqa: E402
 
 # 比較窓。/trendingページは30日窓だが、週次投稿で30日窓を使うと隣り合う日曜の投稿で
 # データが23日分重複してほぼ同じランキングが並んでしまうため、投稿は「直近7日 vs その前7日」
@@ -99,8 +92,6 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
     if not issuers:
         return None
 
-    url = f"{SITE_URL}/trending?utm_source=x&utm_medium=social&utm_campaign=weekly_trending"
-
     def render(issuer_n: int, filer_n: int) -> str:
         lines = ["🐋 大口投資家の取引急増ランキング（前週比）", "", "📈 銘柄"]
         for i, e in enumerate(issuers[:issuer_n], 1):
@@ -111,7 +102,8 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
                 lines.append(f"{i}. {label(e['label'], FILER_LABEL_MAX_UNITS)} +{e['delta']}件")
         # ハッシュタグは母数のある2つだけ（`#社名` は実際には検索されないため付けない。
         # 銘柄は本文のランキング行に `社名（コード）` として素で載っている）
-        lines += ["", "↓ 全ランキング", url, TAGS]
+        # URLは入れない（リンク入り投稿は$0.20課金）。全ランキングへはプロフィール経由で誘導する
+        lines += ["", f"全ランキングは{PROFILE_CTA[3:]}", TAGS]
         return "\n".join(lines)
 
     # 収まるまで行を減らす（最低でも銘柄1件は残す）。
@@ -123,7 +115,7 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
         (1, 0),
     ]:
         text = render(issuer_n, filer_n)
-        if fits(text, url):
+        if weighted_len(text) <= POST_MAX_WEIGHTED:
             return text
     return text  # 銘柄1件でも超える場合はそのまま出す（ラベル切り詰め済みで実際には起きない想定）
 

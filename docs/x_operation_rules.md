@@ -50,9 +50,10 @@ JST 8〜22時の外では自動投稿しない（`x_client.within_posting_hours`
   伸びない時はどの段で落ちているかを先に特定する（リーチ不足か、プロフィールに飛ばないか）
 - 悪化した変更はコードごと戻す。結果は `dev_log.md` に残す
 
-## 7. A/Bの切り替え方
-リンク位置は環境変数で切り替える（既定は本文にURLを入れる）。
-```bash
-X_LINK_IN_REPLY=1 python3 web/x_followup.py --dry-run
-```
-`x_posts.variant` に `link_in_reply` / `link_in_body` が入るので、`web/x_metrics.py --report` で比較する。
+## 7. URLは投稿に入れない（2026-08-22〜）
+X APIの従量課金はリンク入り投稿が$0.20/本（リンク無し$0.015の13倍）で、投稿コストの
+ほぼ全部がこの加算だった（8/19〜20の14本で$2.2、クレジット枯渇）。自己リプライにURLを
+置いてもそのリプライが$0.20になるため回避にならない。全投稿の末尾を
+「詳細はプロフィールのリンクから」に統一し、URLはプロフィールの固定リンク1本に集約する。
+プロフィールのリンクには `?utm_source=x&utm_medium=profile` を付け、GA4でX経由を識別する。
+`x_posts.variant` は `no_link` で記録される。

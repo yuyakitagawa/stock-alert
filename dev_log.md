@@ -1595,3 +1595,13 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - data_backfill + backfill_rankings → `backfill.yml` に統合（`targets` に prices / rankings を追加）。
 - ファイル削除済みなのにGitHub側に残っていた「Debug/Backfill Blog Categories (temporary)」2本は実行履歴を削除して一覧から除去。
 - 実行時刻・処理内容は変更なし。tests 392件 pass。
+
+## 2026-08-22 X投稿からURLを全撤去（プロフィールの固定リンクに集約）
+- 8/19〜20の14本（うち11本リンク入り）で約$2.3消費しXクレジットが枯渇。X API従量課金はリンク入り投稿$0.20/本
+  （リンク無し$0.015の13倍）で、投稿コストの95%がリンク加算だった。自己リプライにURLを置いても
+  そのリプライが$0.20になるため回避にならない。
+- 記事・訂正・日次サマリー・答え合わせ・週次2本・動画クロス投稿のすべてからURLを外し、末尾を
+  `PROFILE_CTA`「詳細はプロフィールのリンクから」に統一。`link_in_reply()`/`publish()`/`X_LINK_IN_REPLY`/
+  `fits()`/`URL_WEIGHTED_UNITS`/`SITE_URL`(x_client) を削除。`x_posts.variant` は `no_link`。
+- Xプロフィールの固定リンクは `https://kujira-watch.com/?utm_source=x&utm_medium=profile` にする（手動）。
+- 見込み: 月$26〜30 → 月$2前後。tests 407件 pass。

@@ -85,11 +85,11 @@ def test_build_tweet_text_drops_insight_when_too_long():
     assert m.weighted_len(text) <= 270
 
 
-def test_build_tweet_text_puts_url_in_body_only_when_given():
-    """既定ではURLは自己リプライに置くのでlink_urlは空。A/Bのlink_in_body側でのみ本文に入る。"""
-    assert m.SITE_URL not in m.build_tweet_text(BUY_ARTICLE)
-    text = m.build_tweet_text(BUY_ARTICLE, link_url=f"{m.SITE_URL}/articles/a1")
-    assert f"{m.SITE_URL}/articles/a1" in text
+def test_build_tweet_text_has_no_url_and_ends_with_profile_cta():
+    """リンク入り投稿は$0.20/本（リンク無しの13倍）なのでURLは入れず、プロフィール経由で誘導する。"""
+    text = m.build_tweet_text(BUY_ARTICLE)
+    assert "http" not in text and "kujira-watch.com" not in text
+    assert text.splitlines()[-2] == m.PROFILE_CTA
 
 
 def test_build_tweet_text_correction_shows_ratio_not_amount():
@@ -201,30 +201,6 @@ def test_post_tweet_includes_media_ids_and_reply_target():
     assert captured["reply"] == {"in_reply_to_tweet_id": "777"}
 
 
-def test_publish_puts_link_in_a_self_reply_when_ab_flag_on():
-    """X_LINK_IN_REPLY=1 のときだけURLを2投稿目に分ける（既定は本文）。"""
-    calls = []
-    with mock.patch.dict(os.environ, {**X_ENV, "X_LINK_IN_REPLY": "1"}, clear=True), \
-         mock.patch.object(m, "post_tweet",
-                           side_effect=lambda text, **kw: calls.append((text, kw)) or "100"):
-        assert m.publish("本文", link_line="https://example.com", kind="article") == "100"
-    assert len(calls) == 2
-    assert "https://example.com" not in calls[0][0]
-    assert "https://example.com" in calls[1][0]
-    assert calls[1][1]["reply_to"] == "100"
-
-
-def test_publish_keeps_link_in_body_by_default():
-    """親投稿にURLが無いと、スレッドを開かない読者にリンクが届かないため既定は本文。"""
-    calls = []
-    with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(m, "post_tweet",
-                           side_effect=lambda text, **kw: calls.append(text) or "100"):
-        m.publish("本文", link_line="https://example.com", kind="article")
-    assert len(calls) == 1
-    assert calls[0].endswith("https://example.com")
-
-
 def test_upload_media_sets_alt_text():
     """画像内の数字が読み上げ環境に伝わらないため、altを必ず設定する。"""
     posts = []
@@ -266,7 +242,7 @@ def test_within_posting_hours_rejects_late_night_jst():
 
 def test_post_top_articles_skips_outside_posting_hours():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
-         mock.patch.object(m, "publish") as publish_mock:
+         mock.patch.object(m, "post_tweet") as publish_mock:
         posted = m.post_top_articles([BUY_ARTICLE], featured_ids={"a1"},
                                      now_utc=datetime(2026, 8, 19, 20, 0, tzinfo=timezone.utc))
     assert posted == 0
@@ -281,7 +257,7 @@ def _patch_article_deps(publish_side_effect):
         mock.patch.object(m, "build_article_media", return_value=[]),
         mock.patch.object(m, "find_prior_tweet", return_value=None),
         mock.patch("web.x_insight.fetch_filer_context", return_value={}),
-        mock.patch.object(m, "publish", side_effect=publish_side_effect),
+        mock.patch.object(m, "post_tweet", side_effect=publish_side_effect),
     ]
 
 
@@ -344,7 +320,7 @@ def test_post_top_articles_replies_correction_to_the_prior_post_on_the_same_stoc
         mock.patch.object(m, "build_article_media", return_value=[]),
         mock.patch.object(m, "find_prior_tweet", return_value="900"),
         mock.patch("web.x_insight.fetch_filer_context", return_value={}),
-        mock.patch.object(m, "publish", side_effect=lambda body, **kw: calls.append(kw) or "1"),
+        mock.patch.object(m, "post_tweet", side_effect=lambda body, **kw: calls.append(kw) or "1"),
     ]
     with mock.patch.dict(os.environ, X_ENV, clear=True):
         for p in patches:
@@ -372,7 +348,8 @@ def test_build_daily_summary_text_includes_count_total_and_extremes():
     assert "大型買い +40.0億円（買いファンド）" in text
     assert "大型売り -30.0億円（売りファンド）" in text
     assert text.endswith("#日本株 #大量保有報告書")
-    assert m.SITE_URL not in text  # URLは自己リプライ側
+    assert "http" not in text  # リンク入り投稿は$0.20課金なのでURLは入れない
+    assert "今日の全3件はプロフィールのリンクから" in text
 
 
 def test_build_daily_summary_text_none_when_no_articles():
@@ -398,7 +375,7 @@ def test_post_daily_summary_posts_at_the_final_run():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=(articles, 1)), \
          mock.patch.object(m, "build_daily_summary_media", return_value=["m1"]), \
-         mock.patch.object(m, "publish", return_value="1") as publish_mock:
+         mock.patch.object(m, "post_tweet", return_value="1") as publish_mock:
         ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc))
     assert ok is True
     assert "8/15" in publish_mock.call_args.args[0]
@@ -408,19 +385,21 @@ def test_post_daily_summary_posts_at_the_final_run():
 def test_post_daily_summary_skips_when_no_articles():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=([], 0)), \
-         mock.patch.object(m, "publish") as publish_mock:
+         mock.patch.object(m, "post_tweet") as publish_mock:
         assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)) is False
     publish_mock.assert_not_called()
 
 
 # ------------------------------------------------------------------ 動画クロス投稿
 
-def test_build_video_tweet_text_includes_shorts_url_and_tags():
+def test_build_video_tweet_text_has_no_url_and_tags():
+    """YouTubeのURLもリンク入り投稿として$0.20課金されるため入れない。"""
     props = {"stockName": "東陽テクニカ", "filerName": "テストファンド",
              "direction": "sell", "dealAmountOku": 40.1}
     text = m.build_video_tweet_text(props, "abc123XYZ00")
     assert "🎬 1分解説｜テストファンドが東陽テクニカを約40億円売却" in text
-    assert "https://youtube.com/shorts/abc123XYZ00" in text
+    assert "youtube.com" not in text and "http" not in text
+    assert "プロフィールのリンクから" in text
     assert text.endswith("#Shorts #日本株 #大量保有報告書")
 
 
@@ -442,7 +421,7 @@ def test_post_video_tweet_posts_when_authed():
         assert m.post_video_tweet(
             {"stockName": "A", "filerName": "F", "direction": "buy", "dealAmountOku": 1.0}, "vid"
         ) is True
-    assert "youtube.com/shorts/vid" in tweet_mock.call_args.args[0]
+    assert "1分解説" in tweet_mock.call_args.args[0]
 
 
 # ------------------------------------------------------------------ トークン権限の確認

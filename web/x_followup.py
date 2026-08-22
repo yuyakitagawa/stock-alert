@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
-from web.x_client import SITE_URL, TAGS, link_in_reply, publish, upload_media  # noqa: E402
+from web.x_client import PROFILE_CTA, TAGS, post_tweet, upload_media  # noqa: E402
 from web.x_post_format import clean_name, label  # noqa: E402
 
 # 何日前の開示を振り返るか（63営業日≒3ヶ月。記事ページの+3ヶ月表示と同じ考え方）。
@@ -88,8 +88,9 @@ def fetch_returns(codes: list, disc_date: str) -> dict:
     return out
 
 
-def build_followup_text(disc_date: str, stats: dict, link_url: str = "") -> "str | None":
-    """答え合わせ本文。勝った銘柄だけでなく平均・上昇銘柄数・最下位まで出す。"""
+def build_followup_text(disc_date: str, stats: dict) -> "str | None":
+    """答え合わせ本文。勝った銘柄だけでなく平均・上昇銘柄数・最下位まで出す。
+    URLは入れない（リンク入り投稿は$0.20課金）。この日の開示一覧へはプロフィール経由で誘導する。"""
     if not stats or stats["n"] < 5:
         return None
     month_day = f"{int(disc_date[5:7])}/{int(disc_date[8:10])}"
@@ -102,9 +103,7 @@ def build_followup_text(disc_date: str, stats: dict, link_url: str = "") -> "str
         f"📈 最大 {label(best['name'], STOCK_LABEL_MAX_UNITS)}({best['code']}) {best['ret']:+.1f}%",
         f"📉 最小 {label(worst['name'], STOCK_LABEL_MAX_UNITS)}({worst['code']}) {worst['ret']:+.1f}%",
     ]
-    if link_url:
-        lines += ["", link_url]
-    lines.append(TAGS)
+    lines += ["", f"この日の開示一覧は{PROFILE_CTA[3:]}", TAGS]
     return "\n".join(lines)
 
 
@@ -156,8 +155,7 @@ def run(dry_run: bool = False) -> int:
 
     codes = sorted({h["issuer_code"] for h in holdings})
     stats = build_stats(holdings, fetch_returns(codes, disc_date))
-    url = f"{SITE_URL}/date/{disc_date}?utm_source=x&utm_medium=social&utm_campaign=followup"
-    text = build_followup_text(disc_date, stats, link_url="" if link_in_reply() else url)
+    text = build_followup_text(disc_date, stats)
     if text is None:
         print(f"[x_followup] {disc_date}は株価が取れた銘柄が少ないため投稿しません")
         return 0
@@ -167,8 +165,7 @@ def run(dry_run: bool = False) -> int:
         print(text)
         return 0
 
-    if publish(text, link_line=f"↓ この日の開示一覧\n{url}" if link_in_reply() else "",
-               media_ids=build_media(disc_date, stats), kind="followup"):
+    if post_tweet(text, media_ids=build_media(disc_date, stats), kind="followup"):
         print(f"[x_followup] 🐦 {disc_date}の答え合わせを投稿しました")
         return 0
     print("[x_followup] 投稿に失敗しました")
