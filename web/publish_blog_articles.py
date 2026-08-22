@@ -249,7 +249,12 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
         filer_font = ImageFont.truetype(EYECATCH_FONT_PATH, 52 * ss, index=0)
         stock_font = ImageFont.truetype(EYECATCH_FONT_PATH, 44 * ss, index=0)
 
-        badge_text = f"{card['badge_label']}　{card['disc_date']}"
+        # バッジ先頭の絵文字（📈📉📝）はNoto Sans CJKに無く豆腐（☒）で描画されるため、
+        # フォントが持つ記号に置き換えて焼き込む。
+        badge_label = card["badge_label"]
+        for emoji, symbol in (("📈", "▲"), ("📉", "▼"), ("📝", "■")):
+            badge_label = badge_label.replace(emoji, symbol)
+        badge_text = f"{badge_label}　{card['disc_date']}"
         filer_lines = _wrap_text_lines(draw, card["filer_name"], filer_font, max_text_width, max_lines=2)
         stock_text = f"{card['stock_name']}　{card['holding_ratio']:.2f}%"
         stock_lines = _wrap_text_lines(draw, stock_text, stock_font, max_text_width, max_lines=2)
@@ -291,22 +296,24 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
 
         img = img.resize((EYECATCH_W, EYECATCH_H), Image.LANCZOS)
         buf = io.BytesIO()
-        img.save(buf, "PNG")
+        # 写真ベースなのでPNG（約1MB）ではなくJPEGで保存する（約100〜200KB。
+        # microCMSのメディア容量と配信帯域を抑える。表示側はnext/imageが再最適化する）。
+        img.save(buf, "JPEG", quality=85, optimize=True)
         return buf.getvalue()
     except Exception as e:
         print(f"    ⚠ アイキャッチ合成失敗: {e}")
         return None
 
 
-def _upload_media(image_bytes: bytes, filename: str) -> "str | None":
-    """microCMSのメディアアップロードAPI(management API)へPNGを送りURLを返す。
+def _upload_media(image_bytes: bytes, filename: str, content_type: str = "image/png") -> "str | None":
+    """microCMSのメディアアップロードAPI(management API)へ画像を送りURLを返す。
     APIキーに「メディアアップロード」権限が無い場合は失敗するので、その場合はNoneを返し
     呼び出し側は画像なしで記事を投稿する。アイキャッチ・株価チャートの両方が使う共通処理。"""
     try:
         resp = requests.post(
             f"https://{MICROCMS_DOMAIN}.microcms-management.io/api/v1/media",
             headers={"X-MICROCMS-API-KEY": MICROCMS_KEY},
-            files={"file": (filename, image_bytes, "image/png")},
+            files={"file": (filename, image_bytes, content_type)},
             timeout=30,
         )
         if resp.status_code not in (200, 201):
@@ -319,7 +326,7 @@ def _upload_media(image_bytes: bytes, filename: str) -> "str | None":
 
 
 def upload_eyecatch(image_bytes: bytes) -> "str | None":
-    return _upload_media(image_bytes, "eyecatch.png")
+    return _upload_media(image_bytes, "eyecatch.jpg", "image/jpeg")
 
 
 def upload_price_chart(image_bytes: bytes) -> "str | None":
@@ -393,17 +400,19 @@ def build_price_chart_for_article(code: str, name: str) -> "str | None":
     return upload_price_chart(image_bytes)
 
 
-def build_eyecatch_for_article(category: str, card: dict) -> "dict | None":
+def build_eyecatch_for_article(category: str, card: dict) -> "str | None":
     """投資家分類・ニュースカード情報からアイキャッチを生成・アップロードし、microCMSのimage型
-    フィールドにそのまま設定できる {"url": ...} を返す。どこかで失敗すればNone
-    （画像なしで記事を投稿する）。"""
+    フィールドに設定するメディアURL（文字列）を返す。どこかで失敗すればNone
+    （画像なしで記事を投稿する）。
+    microCMSのコンテンツAPIは画像フィールドに {"url": ...} のオブジェクトではなく
+    メディアURL文字列を要求する。2026-08-15〜08-22はオブジェクトで送っていたため毎回
+    「'eyecatch' has unexpected data type」で除外され、全記事が画像なしで投稿されていた。"""
     if not PEXELS_API_KEY:
         return None
     image_bytes = generate_eyecatch_image(category, card)
     if not image_bytes:
         return None
-    url = upload_eyecatch(image_bytes)
-    return {"url": url} if url else None
+    return upload_eyecatch(image_bytes)
 
 
 def _microcms_base_url() -> str:

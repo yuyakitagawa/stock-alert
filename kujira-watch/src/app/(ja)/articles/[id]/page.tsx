@@ -98,7 +98,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const article = await getArticleDetail(id).catch(() => null);
   if (!article) return {};
 
-  const description = `${article.stockName}(${article.stockCode})の${article.dealType}を解説。${excerptFromHtml(article.body)}`;
+  // dealTypeは投資家分類（例: 日系証券銀行）なので「横河電機の日系証券銀行を解説」とは
+  // 日本語として繋がらない。検索結果の説明文は「銘柄｜投資家分類の大量保有報告書を解説。」に
+  // 揃え、続く本文1文目（直答文）で誰が何%にしたかを伝える。
+  const description = `${article.stockName}（${article.stockCode}）｜${article.dealType}の大量保有報告書を解説。${excerptFromHtml(article.body)}`;
   const url = `${SITE_URL}/articles/${id}`;
   // 同一「銘柄×提出者」の記事は最新1本だけをindexする（カニバリゼーション対策。
   // 詳細はlib/articleIndexability.tsのsupersededArticleIds()を参照）。

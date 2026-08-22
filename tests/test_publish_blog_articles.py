@@ -697,12 +697,14 @@ def test_build_eyecatch_for_article_none_when_generation_fails():
         assert m.build_eyecatch_for_article("その他", _SAMPLE_EYECATCH_CARD) is None
 
 
-def test_build_eyecatch_for_article_returns_url_dict_on_success():
+def test_build_eyecatch_for_article_returns_url_string_on_success():
+    """microCMSの画像フィールドはPOST時にメディアURL文字列を要求する（{"url": ...}の
+    オブジェクトだと 'eyecatch' has unexpected data type で除外される）。"""
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
-         mock.patch.object(m, "generate_eyecatch_image", return_value=b"png-bytes"), \
-         mock.patch.object(m, "upload_eyecatch", return_value="https://images.microcms-assets.io/x.png"):
+         mock.patch.object(m, "generate_eyecatch_image", return_value=b"jpg-bytes"), \
+         mock.patch.object(m, "upload_eyecatch", return_value="https://images.microcms-assets.io/x.jpg"):
         result = m.build_eyecatch_for_article("その他", _SAMPLE_EYECATCH_CARD)
-    assert result == {"url": "https://images.microcms-assets.io/x.png"}
+    assert result == "https://images.microcms-assets.io/x.jpg"
 
 
 def test_build_and_publish_includes_eyecatch_when_available():
