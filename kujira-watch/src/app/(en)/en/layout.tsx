@@ -9,7 +9,7 @@ import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ThemeRegistry from "@/components/ThemeRegistry";
-import { SITE_DESCRIPTION_EN, SITE_NAME_EN, SITE_URL, X_HANDLE } from "@/lib/site";
+import { SITE_DESCRIPTION_EN, SITE_NAME_EN, SITE_URL, X_HANDLE, SITE_ALTERNATE_NAMES, ORGANIZATION_SAME_AS } from "@/lib/site";
 import "../../globals.css";
 
 const geistSans = Geist({
@@ -86,6 +86,9 @@ const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: SITE_NAME_EN,
+  alternateName: SITE_ALTERNATE_NAMES.filter((n) => n !== SITE_NAME_EN),
+  description: SITE_DESCRIPTION_EN,
+  sameAs: ORGANIZATION_SAME_AS,
   url: EN_SITE_URL,
   logo: `${SITE_URL}/logo`,
 };

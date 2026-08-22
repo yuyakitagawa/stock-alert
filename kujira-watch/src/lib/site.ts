@@ -15,6 +15,11 @@ export const SITE_DESCRIPTION =
 // 別物として管理されているため、英語ブランド名も直訳ではなく既存のクジラ文脈に合わせる。
 export const SITE_NAME_EN = "Big Investor Watch";
 
+// Organization構造化データの alternateName。サイトは「大口投資家の監視ブログ」（ブランド名）・
+// 「クジラウォッチ」（/aboutの自称）・「kujira-watch」（ドメイン）の3表記で呼ばれており、
+// AI検索エンジンが別エンティティと誤認しないよう、正式名以外の呼び名をここで1つに束ねる。
+export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "クジラウォッチ", "kujira-watch", "Big Investor Watch"];
+
 export const SITE_DESCRIPTION_EN =
   "A blog tracking Japanese-market \"whales\" — institutional investors, insiders, and buybacks — based on EDINET large-shareholding filings.";
 
@@ -38,6 +43,10 @@ export const X_HANDLE = `@${X_SCREEN_NAME}`;
 // チャンネル側からサイトへはリンク済みだが、サイト側からの導線もここで持つ。
 // ハンドル変更時は video/youtube_client.py の CHANNEL_URL も対で更新すること。
 export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@kujira-watch";
+
+// Organization構造化データの sameAs。本文・フッターのリンクだけではAI検索エンジンの
+// エンティティグラフに結び付かないため、公式アカウントをスキーマ側でも宣言する。
+export const ORGANIZATION_SAME_AS = [X_PROFILE_URL, YOUTUBE_CHANNEL_URL];
 
 // 読者向けLINE公式アカウントの友だち追加URL（lin.ee/…）。アカウント未開設のため
 // 通常は未設定で、未設定の間はLINE導線を一切表示しない。開設したらVercelの環境変数

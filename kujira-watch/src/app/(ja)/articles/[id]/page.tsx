@@ -22,6 +22,7 @@ import {
   getArticlesByStockCode,
 } from "@/lib/microcms";
 import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot } from "@/lib/investors";
+import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
@@ -421,6 +422,27 @@ export default async function ArticleDetailPage({ params }: Props) {
             points={holdingHistory}
           />
         )}
+        {/* AEO（回答エンジン最適化）用の質問型見出し＋直答。強調スニペット／AI検索は
+            「質問見出しの直下にある40〜60字の1文」を抜き出すため、構造化データから
+            組み立てた事実だけの1文を本文の前に置く。取れない項目は省いて文を短くする。 */}
+        {filerName && holdingRatio !== null && (
+          <section className="mb-6">
+            <h2 className="mb-2 text-xl font-bold text-brand-navy">この開示で何が起きた？</h2>
+            <p className="m-0 text-base leading-relaxed text-foreground/80">
+              {formatDate(article.dealDate)}、{displayFilerName(filerName)}が{article.stockName}（{article.stockCode}）の
+              保有比率を
+              {snapshot?.holdingRatioPrior != null
+                ? `${formatRatio(snapshot.holdingRatioPrior)}%から${formatRatio(holdingRatio)}%へ`
+                : `${formatRatio(holdingRatio)}%と`}
+              {ratioChange === null || ratioChange === 0
+                ? "報告しました"
+                : ratioChange > 0
+                  ? "引き上げました"
+                  : "引き下げました"}
+              （EDINET大量保有報告書）。
+            </p>
+          </section>
+        )}
         <div
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
@@ -468,7 +490,15 @@ export default async function ArticleDetailPage({ params }: Props) {
         )}
         {filerName && (
           <div className="mt-10 border-t border-rule pt-6">
-            <h2 className="mb-2 text-xl font-bold text-brand-navy">この取引をした投資家</h2>
+            <h2 className="mb-2 text-xl font-bold text-brand-navy">
+              {displayFilerName(filerName)}とはどんな投資家？
+            </h2>
+            {article.dealType && (
+              <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+                {displayFilerName(filerName)}は「{category}」に分類される投資家です。
+                {DEAL_TYPE_DESCRIPTIONS[article.dealType]}
+              </p>
+            )}
             <ActionButton href={`/investors/${encodeURIComponent(filerName)}`}>
               {displayFilerName(filerName)}の保有銘柄・比率推移を見る
             </ActionButton>
