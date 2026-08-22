@@ -46,19 +46,20 @@ export default function TodayWhaleSummary({
           </Typography>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>件の開示</Typography>
         </Box>
-        {/* 合計金額だけでは買い優勢か売り優勢か分からないため、買い・売りの件数と金額を分けて出す。 */}
+        {/* 合計金額だけでは買い優勢か売り優勢か分からないため、買い・売りの件数と金額を分けて出す。
+            合計値なので小数第1位は読む意味が薄く、整数に丸めて桁を見やすくする。 */}
         <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", columnGap: 3, rowGap: 0.5 }}>
           <Box sx={{ display: "flex", alignItems: "baseline", columnGap: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 700, color: "primary.main" }}>買い</Typography>
             <Typography variant="h3" component="span" sx={{ ...bigNumberSx, color: "primary.main" }}>
-              {formatDealAmount(buyAmount)}
+              {formatDealAmount(Math.round(buyAmount))}
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary" }}>{buyCount}件</Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "baseline", columnGap: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 700, color: "error.main" }}>売り</Typography>
             <Typography variant="h3" component="span" sx={{ ...bigNumberSx, color: "error.main" }}>
-              {formatDealAmount(sellAmount)}
+              {formatDealAmount(Math.round(sellAmount))}
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary" }}>{sellCount}件</Typography>
           </Box>
