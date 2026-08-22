@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { displayFilerName } from "@/lib/format";
+import { displayFilerName, formatAmountParts } from "@/lib/format";
 import type { TrendingCounts } from "@/lib/trendingStats";
 
 // 表示に必要なものはサーバー側で解決して渡す。hrefやnoteを関数propsで受け取ると
@@ -19,6 +19,16 @@ export type TrendingItem = TrendingCounts & {
 // SSRされるのは初回分だけなので、この値がクローラーから見える件数の下限になる。
 const INITIAL_COUNT = 30;
 const STEP = 30;
+
+// 金額は「件数に添える規模の目安」なので、桁だけ読めれば十分（億円未満は出さない）。
+// 推定できない開示（訂正報告書・株価や発行済株式数が取れない銘柄）は0億円扱いになるため、
+// 合計が0のときは「推定0億円」ではなく金額そのものを出さない。
+function amountLabel(amountOku: number): string | null {
+  if (amountOku <= 0) return null;
+  // 1兆円以上は兆表記に繰り上がる（億円は整数、兆円は小数第1位まで）。
+  const { value, unit } = formatAmountParts(amountOku);
+  return `推定${value}${unit}`;
+}
 
 // 期間比較（直近N日 vs 前N日）の増加件数ランキング。
 // /trending（銘柄）の一覧表。
@@ -69,6 +79,8 @@ export default function TrendingTable({
       </p>
       <ul className="card-grid card-grid-wide">
         {items.slice(0, shown).map((entry) => {
+          const currentAmount = amountLabel(entry.amount);
+          const prevAmount = amountLabel(entry.prevAmount);
           const label = (
             <span className="block">
               {displayFilerName(entry.label)}
@@ -83,8 +95,14 @@ export default function TrendingTable({
                 </span>
               )}
               <span className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-0.5 pt-1.5 font-normal text-foreground/50">
-                <span className="text-sm font-bold text-brand-navy">直近{windowDays}日 {entry.count}件</span>
-                <span className="text-xs">前{windowDays}日 {entry.prevCount}件</span>
+                <span className="text-sm font-bold text-brand-navy">
+                  直近{windowDays}日 {entry.count}件
+                  {currentAmount && <span className="ml-1 font-semibold">{currentAmount}</span>}
+                </span>
+                <span className="text-xs">
+                  前{windowDays}日 {entry.prevCount}件
+                  {prevAmount && <span className="ml-1">{prevAmount}</span>}
+                </span>
                 <span className="text-xs text-brand-gold">増加 +{entry.delta}件</span>
               </span>
             </>
