@@ -4,7 +4,7 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { getAboutPage } from "@/lib/microcms";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_NAME, SITE_URL, X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 
@@ -119,6 +119,21 @@ export default async function AboutPage() {
           className="prose prose-sm max-w-none text-foreground/70"
           dangerouslySetInnerHTML={{ __html: about.profileBody }}
         />
+      </section>
+
+      {/* E-E-A-T（経験・専門性・権威性・信頼性）向けの運営者情報。運営者は実名を公開しない
+          方針（2026-08-23）のため、ハンドル名・運営体制・連絡先（X）だけを書く。
+          Organization構造化データのcontactPoint（ルートレイアウト）と連絡先を一致させる。 */}
+      <section className="mb-6">
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">運営者について</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
+          本サイトは個人（X:{" "}
+          <a href={X_PROFILE_URL} target="_blank" rel="noopener noreferrer" className="text-brand-blue hover:underline">
+            {X_HANDLE}
+          </a>
+          ）が運営しています。記事はEDINET開示などの事実情報からAIが生成し、運営者が内容を確認・修正したうえで公開しています。
+          数値の誤りや訂正依頼、掲載に関するご連絡はXのダイレクトメッセージまたはリプライでお寄せください。
+        </p>
       </section>
 
       <section className="mb-6">
