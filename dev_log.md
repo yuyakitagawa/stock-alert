@@ -1,5 +1,20 @@
 # Dev Log
 
+## 2026-08-22 EDINET開示の推定売買金額ビューを新設（銘柄ランキングの金額表示用）
+
+kujira-watchの銘柄ランキング(`/trending`)に開示件数と並べて金額を出すため、
+Supabaseにマテリアライズドビュー`edinet_holding_amounts`を追加した
+（`supabase/create_edinet_holding_amounts.sql`）。開示1件ごとに
+`保有比率の変化幅 ÷ 100 × 発行済株式数(jquants_fin_summary.sh_out のPIT値) × 開示日終値`で
+推定売買金額（億円）を概算する。式は`web/publish_blog_articles.py: estimate_deal_amount_oku()`と同じ。
+訂正報告書・前回比率が取れない変更報告書・株価/株式数が取れない銘柄は行を作らない（金額不明）。
+
+- 再計算バッチ: `tools/refresh_holding_amounts.py`（RPC`refresh_edinet_holding_amounts()`を叩くだけ）
+- 実行タイミング: edinet_blog.yml の開示スキャン直後（毎時）＋ daily_alert.yml Step 2e
+  （株価キャッシュ Step 0・財務サマリー Step 2d の後）
+- 全13,011行の再作成で約9秒。PostgRESTの接続ロールに8秒の上限があるため、
+  RPC側で`SET statement_timeout = '300s'`を明示している
+
 ## 2026-08-20 TikTok投稿機能を完全撤去
 
 ```
