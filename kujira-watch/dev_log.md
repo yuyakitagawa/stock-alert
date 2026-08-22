@@ -1,3 +1,21 @@
+## 2026-08-23 kujira-watch: 銘柄ランキングの「月別の開示件数トレンド」を削除
+
+オーナー指示「月別の開示件数トレンドが銘柄ランキングにあるけど、週次トレンドと被るから消して」。
+`/weekly`（大口投資家の週次トレンド）が市場全体の増減を週単位で見せており、
+`/trending`下部の月別グラフは同じ「市場全体で開示が増えているか」を粗い粒度で
+繰り返しているだけだった。銘柄ランキングは銘柄を選ぶページなので、市場全体の話は`/weekly`に寄せる。
+
+- `/trending`から月別グラフのセクションを削除（`src/app/(ja)/trending/page.tsx`）
+- 使い手が居なくなった`src/components/DisclosureTrendChart.tsx`と
+  `src/lib/disclosures.ts`の`getMonthlyDisclosureCounts()`・`MonthlyDisclosureCount`型を削除。
+  コメントアウトで残さない（CLAUDE.md §7）。`/weekly`の`AmountTrendChart`・`CategoryTrendGrid`は別実装なので影響なし
+- 副次的に、ページ表示ごとに走っていた月数ぶん（十数本）の並列countクエリが無くなる
+
+### 検証
+- `npx tsc --noEmit` / `npx eslint src` エラー無し
+- 残存参照の全文検索（DisclosureTrendChart / getMonthlyDisclosureCounts / MonthlyDisclosureCount）は
+  過去ログの記述を除いてゼロ
+
 ## 2026-08-23 kujira-watch: 投資家ページのURLを提出者名から連番IDへ（/investors/<番号>）
 
 Search Consoleカバレッジ（2026-08-23）で、`/investors/<提出者名>` 603件がインデックス未登録だった。
