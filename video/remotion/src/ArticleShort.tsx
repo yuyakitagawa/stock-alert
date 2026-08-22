@@ -1,7 +1,16 @@
 import React from 'react';
-import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useVideoConfig} from 'remotion';
+import {
+  AbsoluteFill,
+  Audio,
+  Img,
+  Sequence,
+  interpolate,
+  staticFile,
+  useCurrentFrame,
+  useVideoConfig,
+} from 'remotion';
 import {Background} from './Background';
-import {SceneView} from './scenes/SceneView';
+import {LOOP_TAIL_FRAMES, SceneView} from './scenes/SceneView';
 import {sceneDurationSec, type ShortProps} from './types';
 
 /**
@@ -53,6 +62,12 @@ export const ArticleShort: React.FC<ShortProps> = (props) => {
               videoDurationSec={scene.backgroundVideoDurationSec}
             />
           ) : null}
+          {/* 締めはCanva製のエンドカード画像。ループ末尾（冒頭と同じ絵に戻す区間）は外す */}
+          {scene.kind === 'cta' && props.endCard ? (
+            <Sequence durationInFrames={Math.max(1, durationInFrames - LOOP_TAIL_FRAMES)}>
+              <EndCard file={props.endCard} />
+            </Sequence>
+          ) : null}
           {scene.audio ? <Audio src={staticFile(scene.audio)} /> : null}
           {/* カット頭のホワイトノイズ掃引。無音の切れ目が「再生バグ」に聞こえるのを防ぐ */}
           {props.sfx ? <Audio src={staticFile('se_whoosh.wav')} volume={0.26} /> : null}
@@ -75,6 +90,24 @@ export const ArticleShort: React.FC<ShortProps> = (props) => {
           />
         </Sequence>
       ))}
+    </AbsoluteFill>
+  );
+};
+
+/** エンドカード。静止画に見せないため、他の背景と同じくわずかに寄り続ける。 */
+const EndCard: React.FC<{file: string}> = ({file}) => {
+  const frame = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{overflow: 'hidden'}}>
+      <Img
+        src={staticFile(file)}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: `scale(${1 + frame * 0.0003})`,
+        }}
+      />
     </AbsoluteFill>
   );
 };

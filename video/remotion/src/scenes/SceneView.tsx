@@ -18,7 +18,7 @@ import {
 import type {Scene, ShortProps} from '../types';
 
 /** ループ再生で頭と繋げるため、ctaの末尾この長さだけ冒頭と同じ金額組版に戻す。 */
-const LOOP_TAIL_FRAMES = 24;
+export const LOOP_TAIL_FRAMES = 24;
 
 /**
  * 1シーンの見た目。kind ごとに中央のビジュアルを切り替え、下段に字幕を大きく出す。
@@ -48,6 +48,9 @@ export const SceneView: React.FC<{
   // ctaの末尾はループの継ぎ目。冒頭と同じ絵に戻すため字幕とヘッダを引く。
   const inLoopTail =
     scene.kind === 'cta' && frame >= durationInFrames - LOOP_TAIL_FRAMES;
+  // Canva製エンドカード（クジラ・サイト名・ピルが描き込み済み）を敷く区間。
+  // 画像側に名乗りがあるのでヘッダを消し、中央ビジュアルはURLと音声クレジットだけにする
+  const onEndCard = scene.kind === 'cta' && !inLoopTail && Boolean(props.endCard);
 
   return (
     <AbsoluteFill
@@ -63,7 +66,11 @@ export const SceneView: React.FC<{
     >
       {/* 上段: 銘柄と出典の常時表示。どのシーンから見始めても文脈と一次情報がわかる。
           ループ末尾は冒頭と同じ絵にするため hook として描く */}
-      <Header props={props} kind={inLoopTail ? 'hook' : scene.kind} />
+      {onEndCard ? (
+        <div style={{height: 92}} />
+      ) : (
+        <Header props={props} kind={inLoopTail ? 'hook' : scene.kind} />
+      )}
 
       {/* 中段: kindごとのビジュアル */}
       <div
@@ -84,6 +91,7 @@ export const SceneView: React.FC<{
           props={props}
           accent={accent}
           durationInFrames={durationInFrames}
+          onEndCard={onEndCard}
         />
       </div>
 
@@ -216,7 +224,8 @@ const Visual: React.FC<{
   props: ShortProps;
   accent: string;
   durationInFrames: number;
-}> = ({scene, props, accent, durationInFrames}) => {
+  onEndCard: boolean;
+}> = ({scene, props, accent, durationInFrames, onEndCard}) => {
   switch (scene.kind) {
     case 'hook':
       return <HookVisual props={props} accent={accent} />;
@@ -231,7 +240,14 @@ const Visual: React.FC<{
     case 'chart':
       return <ChartVisual scene={scene} accent={accent} />;
     case 'cta':
-      return <CtaVisual props={props} accent={accent} durationInFrames={durationInFrames} />;
+      return (
+        <CtaVisual
+          props={props}
+          accent={accent}
+          durationInFrames={durationInFrames}
+          onEndCard={onEndCard}
+        />
+      );
     default:
       return null;
   }
@@ -630,7 +646,8 @@ const CtaVisual: React.FC<{
   props: ShortProps;
   accent: string;
   durationInFrames: number;
-}> = ({props, accent, durationInFrames}) => {
+  onEndCard: boolean;
+}> = ({props, accent, durationInFrames, onEndCard}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const enter = spring({frame, fps, config: {damping: 14, stiffness: 200}});
@@ -640,12 +657,23 @@ const CtaVisual: React.FC<{
   }
 
   return (
-    <div style={{textAlign: 'center', transform: `scale(${interpolate(enter, [0, 1], [0.9, 1])})`}}>
+    <div
+      style={{
+        textAlign: 'center',
+        transform: `scale(${interpolate(enter, [0, 1], [0.9, 1])})`,
+        // エンドカード画像は y≈600〜830 に名乗りと「1分でチェック」ピルを持つので、
+        // その下（y≈900〜）にURLと音声クレジットを置く
+        paddingTop: onEndCard ? 300 : 0,
+      }}
+    >
       {/* サイトの名乗りは kujira-watch/src/lib/site.ts の SITE_NAME に合わせる。
-          「クジラウォッチ」という名前では運営していないので動画側で勝手に名乗らない */}
-      <div style={{fontSize: 64, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
-        大口投資家の監視ブログ
-      </div>
+          「クジラウォッチ」という名前では運営していないので動画側で勝手に名乗らない。
+          エンドカード画像には名乗りが描き込み済みなので二重に出さない */}
+      {onEndCard ? null : (
+        <div style={{fontSize: 64, fontWeight: 900, color: '#ffffff', textShadow: TEXT_SHADOW}}>
+          大口投資家の監視ブログ
+        </div>
+      )}
       <div
         style={{
           display: 'inline-block',

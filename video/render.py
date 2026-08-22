@@ -30,6 +30,9 @@ TARGET_LRA = 11.0
 
 REMOTION_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "remotion")
 PUBLIC_DIR = os.path.join(REMOTION_DIR, "public")
+# Canvaで作ったブランド素材（締めのエンドカード）。public/ はgit管理外なので毎回コピーする
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+END_CARD = "cta_endcard.png"
 COMPOSITION_ID = "ArticleShort"
 
 # Remotion に渡してはいけない（ShortProps に無い）補助キー。build_script.py が
@@ -183,6 +186,20 @@ def has_broken_narration(props: dict) -> bool:
     return False
 
 
+def _stage_end_card(props: dict) -> list:
+    """締めシーンのエンドカード画像を remotion/public/ へコピーし、propsに名前を書き込む。
+    素材が無ければ従来のテキストだけの締めで続行する。"""
+    src = os.path.join(ASSETS_DIR, END_CARD)
+    if not os.path.exists(src):
+        props.pop("endCard", None)
+        return []
+    os.makedirs(PUBLIC_DIR, exist_ok=True)
+    dst = os.path.join(PUBLIC_DIR, END_CARD)
+    shutil.copyfile(src, dst)
+    props["endCard"] = END_CARD
+    return [dst]
+
+
 def render(props: dict, out_path: str, assets_dir: "str | None" = None) -> bool:
     """props で mp4 を書き出す。成功したら True。"""
     if not os.path.isdir(os.path.join(REMOTION_DIR, "node_modules")):
@@ -196,6 +213,7 @@ def render(props: dict, out_path: str, assets_dir: "str | None" = None) -> bool:
     render_props = {k: v for k, v in props.items() if k not in NON_PROP_KEYS}
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     staged = _stage_assets(render_props, assets_dir)
+    staged += _stage_end_card(render_props)
 
     # 効果音とBGMは毎回その場で生成する（外部素材を持たないのでライセンス確認が要らない）
     render_props["sfx"] = audio_gen.ensure_sound_effects(PUBLIC_DIR)

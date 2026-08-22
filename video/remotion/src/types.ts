@@ -53,6 +53,8 @@ export type ShortProps = {
   scenes: Scene[];
   /** 効果音（public/se_*.wav）が用意できたか。render.py が生成可否を書き込む */
   sfx?: boolean;
+  /** 締めシーンのエンドカード画像（public/配下、Canva製）。render.py が素材があるときだけ書き込む */
+  endCard?: string;
 };
 
 /** 音声が無いときの尺の見積もり（日本語の読み上げ速度の実測概算・文字/秒）。 */

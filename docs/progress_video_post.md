@@ -144,3 +144,14 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - 8/18 19:30の定時便は上限エラーで空振り（対象はエムスリー×Oasis）。その後オーナーが上限を
   上げ、手動実行で投稿成功（ https://youtube.com/shorts/CYl84alBoYo ）。
 - TikTokは引き続き未審査のため inbox（下書き）投稿。アプリの通知から手動公開が必要。
+
+## v7改修（2026-08-23 オーナー指示「Canva連携してYouTubeの動画を改善して」）
+- [x] Canva MCPでブランド素材を2点生成（ブランドキット未作成のため配色はtheme.tsの値を指示文に直書き）
+      - エンドカード `video/assets/cta_endcard.png`（1080x1920、Canvaデザイン DAHTDmPpCxs）
+      - サムネ台紙 `video/assets/thumbnail_base.png`（1280x720、Canvaデザイン DAHTDqxwt6A）
+- [x] ctaシーンの背景をエンドカード画像に（`render._stage_end_card()` → `props.endCard` → `ArticleShort.EndCard`）。
+      ループ末尾の冒頭再現区間は従来どおり。画像に名乗りがあるのでヘッダと見出し文字は出さない
+- [x] YouTubeカスタムサムネイル（`video/thumbnail.py` + `youtube_client.set_thumbnail()`）を投稿後に設定。
+      workflowに pillow を追加
+- [x] テスト95件pass、`npx tsc --noEmit` OK、ctaの静止フレームとサムネ2種を目視確認
+- [ ] 次回の定時便（平日19:30 JST）で実動画のエンドカードとStudio上のサムネイルを確認

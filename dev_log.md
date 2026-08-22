@@ -1617,3 +1617,9 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   注目枠直後に `FollowCta`（主要コンバージョン=Xフォローの導線がTOPに無かった）。
 - 記事description: 「横河電機の日系証券銀行を解説」→「横河電機（6841）｜日系証券銀行の大量保有報告書を解説。」。
 - 過去記事950件のアイキャッチはバックフィル（別タスク）。tests/test_publish_blog_articles.py 98件 pass。
+
+## 2026-08-23 Canva連携でYouTube動画の締めとサムネイルをブランド化
+- Canva MCP（generate-design → export-design）でエンドカード（1080x1920）とサムネ台紙（1280x720）を生成し `video/assets/` に置いた。CIからCanvaは呼ばず、生成物だけを使う。
+- ctaシーン: エンドカード画像を背景に敷き、URLピルと音声クレジットだけを重ねる（`props.endCard`）。素材が無ければ従来のテキスト締め。
+- サムネイル: `video/thumbnail.py` が台紙に銘柄・金額・提出者を合成し、投稿直後に `thumbnails.set` で設定。Shortsフィード以外（検索・チャンネルページ・横長おすすめ）のクリック率狙い。
+- tests/test_video_pipeline.py 88→95件。

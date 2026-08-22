@@ -21,6 +21,7 @@ from video.post_text import SITE_NAME, SITE_URL, article_url, hashtag
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
+THUMBNAIL_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 # 説明文の登録導線用。?sub_confirmation=1 で登録確認ダイアログ付きで開く。
 # ハンドルを変更したらここも更新すること（kujira-watch側 src/lib/site.ts と対）。
 CHANNEL_URL = "https://www.youtube.com/@kujira-watch"
@@ -166,3 +167,27 @@ def upload(video_path: str, props: dict, privacy_status: str = "public") -> "str
     except Exception as e:
         print(f"  ⚠ YouTubeアップロード例外: {e}")
         return None
+
+
+def set_thumbnail(video_id: str, image_path: str) -> bool:
+    """カスタムサムネイル（PNG/JPG, 2MB以下）を設定する。失敗しても投稿自体は完了しているのでFalseを返すだけ。"""
+    token = _access_token()
+    if token is None or not video_id or not os.path.exists(image_path):
+        return False
+    try:
+        with open(image_path, "rb") as f:
+            res = requests.post(
+                THUMBNAIL_URL,
+                params={"videoId": video_id, "uploadType": "media"},
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "image/png"},
+                data=f,
+                timeout=60,
+            )
+        if not res.ok:
+            print(f"  ⚠ サムネイル設定失敗 HTTP {res.status_code}: {res.text[:300]}")
+            return False
+        print("  🖼 カスタムサムネイルを設定しました")
+        return True
+    except Exception as e:
+        print(f"  ⚠ サムネイル設定例外: {e}")
+        return False
