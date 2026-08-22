@@ -560,15 +560,23 @@ def should_wait_for_prior_ratio(doc_description: str, prior_ratio: "float | None
 
 
 def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date: str,
-                     prior_ratio: "float | None" = None) -> float:
+                     prior_ratio: "float | None" = None,
+                     is_amendment: bool = False) -> "float | None":
     """今回開示の保有比率が前回からどれだけ動いたか（変化幅、%ポイント）を返す。
 
     EDINET開示自体が持つ直前保有割合(prior_ratio)があればそれを使う。DB蓄積分の履歴から
     前回比率を再導出すると、履歴に同じ比率の行が残っている場合や履歴が無い全売却
     （比率0%）で変化幅が0と算出され、記事化されずに落ちる（実例: 2026-08-17、三菱商事の
     ＴＯＹＯ ＴＩＲＥ 20%→0%「短期大量譲渡」が「金額を概算できない」として不投稿）。
-    prior_ratioが無い開示のみ、従来通り過去開示から直近の比率を探す（それも無ければ
-    今回の比率をそのまま新規取得分として扱う）。"""
+    prior_ratioが無い開示のみ、従来通り過去開示から直近の比率を探す。
+
+    is_amendmentは変更報告書かどうか（is_change_report()の結果）。前回比率も過去開示も
+    無いときに「今回比率の全量＝今回動いた分」とみなせるのは**新規の大量保有報告書だけ**。
+    変更報告書は提出者が既に5%以上を保有している届出なので、全量ぶんの変化幅を返すと
+    変化幅も推定金額も実態の数十倍に膨らむ。should_wait_for_prior_ratio()はXBRLの遅延を
+    PRIOR_RATIO_WAIT_DAYSだけ待つが、待っても直前保有割合が入らない開示（特例報告に多い。
+    2026-08-19の実測で直近90日に7件。変更報告書のprior充填率は99.6%）はそこを通過して
+    しまうため、ここで変化幅を「不明」としてNoneを返し、呼び出し側で記事化を見送る。"""
     if prior_ratio is not None:
         return abs(current_ratio - prior_ratio)
     history = get_edinet_large_holdings_recent(days=400, codes=[code])
@@ -579,7 +587,7 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
         and h.get("holding_ratio") is not None
     ]
     if not past:
-        return current_ratio
+        return None if is_amendment else current_ratio
     past.sort(key=lambda h: h["disc_date"])
     prev_ratio = past[-1]["holding_ratio"]
     return abs(current_ratio - prev_ratio)
@@ -785,6 +793,10 @@ def is_new_holding(fact_sheet: dict) -> bool:
     化ける。prior_ratioが無い開示のみ、直近400日に同一提出者の過去開示が無く変化幅=今回比率に
     なるケースを新規とみなす従来のヒューリスティックにフォールバックする。"""
     if fact_sheet.get("is_correction"):
+        return False
+    # 変更報告書は「既に5%以上を保有している提出者」しか出せない届出なので、直前保有割合が
+    # 取れなくても新規保有ではありえない。ヒューリスティックより報告書種別を優先する。
+    if fact_sheet.get("doc_type_label") == "変更報告書":
         return False
     prior = fact_sheet.get("prior_ratio")
     if prior is not None:
@@ -1175,7 +1187,15 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if should_wait_for_prior_ratio(h.get("doc_description") or "", prior_ratio, disc_date):
             print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合が未取得のため次の便へ持ち越し")
             continue
-        change = ratio_change_pct(code, filer_name, h["holding_ratio"], disc_date, prior_ratio)
+        change = ratio_change_pct(
+            code, filer_name, h["holding_ratio"], disc_date, prior_ratio,
+            is_change_report(h.get("doc_description") or ""),
+        )
+        if change is None:
+            # 待っても直前保有割合が入らなかった変更報告書。全量を動いたとみなすと
+            # 「X%を新規保有」＋過大な推定金額になるため記事化しない。
+            print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合を取得できず変化幅を確定できないためスキップ")
+            continue
         if change <= 0:
             print(f"  ⏭ {name}({code}): 前回開示から保有比率が変わっていないためスキップ")
             continue
