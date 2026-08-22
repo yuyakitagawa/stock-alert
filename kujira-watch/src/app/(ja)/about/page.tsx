@@ -9,7 +9,8 @@ import { DEAL_TYPES } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 
 const title = "このサイトについて";
-const description = "本サイトの運営方針、データソース、免責事項について。";
+const description =
+  "大口投資家の監視ブログの運営方針・データソース・免責事項。金融庁EDINETの大量保有報告書（5%ルール）を日次で取得し、機関投資家・アクティビスト・創業家など13種類の投資家分類で大口投資家の売買を解説しています。";
 
 export const metadata: Metadata = {
   title,

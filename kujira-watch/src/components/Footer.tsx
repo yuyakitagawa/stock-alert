@@ -88,7 +88,10 @@ export default function Footer({ locale = "ja" }: { locale?: Locale }) {
         >
           {groups.map((group) => (
             <div key={group.heading}>
-              <h2 className="kicker mb-2 text-brand-navy">{group.heading}</h2>
+              {/* 見出しタグにしない。h2だと本文にH2が無い一覧ページ（/investors /stocks
+                  /activists 等）で「主要ページ／一覧・アーカイブ／サイト情報／フォロー」が
+                  そのページの見出し構造として検索エンジンに拾われてしまう（2026-08-23の監査で検出）。 */}
+              <p className="kicker mb-2 text-brand-navy">{group.heading}</p>
               <ul className="space-y-1.5 text-sm">
                 {group.links.map((link) => (
                   <li key={link.href}>
