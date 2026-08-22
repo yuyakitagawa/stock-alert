@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   const investors = filers
     .filter((f) => f.filerName.includes(q))
     .slice(0, MAX_INVESTOR_RESULTS)
-    .map(({ filerName, category }) => ({ filerName, category }));
+    .map(({ filerName, filerId, category }) => ({ filerName, filerId, category }));
 
   return NextResponse.json(
     { results, investors },

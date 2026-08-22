@@ -159,11 +159,13 @@ def test_card_stock_line_keeps_stock_code():
     if card._font_path() is None:
         return
     draw = ImageDraw.Draw(Image.new("RGB", (card.CARD_W, card.CARD_H)))
-    max_w = card.CARD_W - card.PAD * 2
-    for name in ("ニチレイ", "セブン&アイ・ホールディングス", "あ" * 40):
-        label, font = card._stock_line(draw, name, "3382", max_w)
-        assert label.endswith("（3382）"), label
-        assert draw.textlength(label, font=font) <= max_w, label
+    max_w = card.SPLIT_X - card.PAD * 2
+    for name in ("ニチレイ", "トヨタ自動車", "セブン&アイ・ホールディングス", "あ" * 40):
+        lines, font = card._stock_block(draw, name, "3382", card.PAD, 250, max_w)
+        assert 1 <= len(lines) <= 2, lines
+        assert lines[-1].endswith("（3382）"), lines  # コードは行またぎで割らず末尾に丸ごと残す
+        for line in lines:
+            assert draw.textlength(line, font=font) <= max_w, line
 
 
 def test_build_article_media_attaches_card_only():

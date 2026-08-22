@@ -39,6 +39,8 @@ export type FilerClassification = {
 
 export type FilerSummary = {
   filerName: string;
+  // /investors/<番号> のURL用ID（edinet_filer_ids）。採番前の提出者はnull。
+  filerId: number | null;
   category: DealType;
   holdingCount: number;
   latestDiscDate: string;
@@ -120,7 +122,7 @@ export const getAllFilers = unstable_cache(
       const offset = page * PAGE_SIZE;
       const { data } = await supabase
         .from("edinet_filer_summary")
-        .select("filer_name, category, holding_count, latest_disc_date")
+        .select("filer_name, category, holding_count, latest_disc_date, filer_id")
         .order("latest_disc_date", { ascending: false })
         .order("filer_name", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
@@ -128,6 +130,7 @@ export const getAllFilers = unstable_cache(
       filers.push(
         ...data.map((r) => ({
           filerName: r.filer_name,
+          filerId: r.filer_id ?? null,
           category: r.category as DealType,
           holdingCount: r.holding_count,
           latestDiscDate: r.latest_disc_date,
@@ -146,6 +149,7 @@ export const getAllFilers = unstable_cache(
 // holding_ratio（訂正報告書で欠損していれば null）で、比率の高い順→名称順に並べる。
 export type StockFiler = {
   filerName: string;
+  filerId: number | null;
   category: DealType;
   latestRatio: number | null;
   latestDiscDate: string | null;
@@ -176,9 +180,11 @@ async function getFilersByStockCodeUncached(stockCode: string): Promise<StockFil
   const categoryByFiler = new Map(
     (classifications ?? []).map((c) => [c.filer_name, c.category as DealType])
   );
+  const idByFiler = await getFilerIdMap();
   return filerNames
     .map((filerName) => ({
       filerName,
+      filerId: idByFiler[filerName] ?? null,
       category: categoryByFiler.get(filerName) ?? ("その他" as DealType),
       latestRatio: latestByFiler.get(filerName)?.ratio ?? null,
       latestDiscDate: latestByFiler.get(filerName)?.discDate ?? null,
@@ -432,3 +438,67 @@ export const getHoldingSnapshot = unstable_cache(getHoldingSnapshotUncached, ["g
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });
 
+
+// ---- 投資家ページのURL用ID ----
+// 投資家ページのURLは /investors/<連番ID>（edinet_filer_ids）。以前は /investors/<提出者名>
+// だったが、日本語・全角・空白を含む長いURLはGoogleにインデックスされず
+// （2026-08-23のSearch Consoleカバレッジで投資家ページ603件が未登録）、事前生成時の
+// ファイル名長制限(ENAMETOOLONG)にも掛かっていたため番号化した。
+// 旧URL（提出者名）は /investors/[filer] 側で番号URLへ301転送する。
+
+export { investorPath } from "@/lib/investorPath";
+
+// 提出者名→IDの全件対応表。約3,000件で1回の読み取りに収まるため、リンクを大量に組み立てる
+// ページ（銘柄ページの推移表・ランキング等）はこれを1度取って引く。
+// unstable_cacheはJSON化して保存するため、MapではなくRecordで返す。
+export const getFilerIdMap = unstable_cache(
+  async (): Promise<Record<string, number>> => {
+    const supabase = getSupabaseServerClient();
+    const map: Record<string, number> = {};
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const offset = page * PAGE_SIZE;
+      const { data, error } = await supabase
+        .from("edinet_filer_ids")
+        .select("id, filer_name")
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) throw new Error(`getFilerIdMap failed: ${error.message}`);
+      if (!data || data.length === 0) break;
+      for (const r of data) map[r.filer_name] = r.id;
+      if (data.length < PAGE_SIZE) break;
+    }
+    return map;
+  },
+  ["filer-id-map"],
+  { revalidate: SUPABASE_REVALIDATE_SECONDS }
+);
+
+async function getFilerNameByIdUncached(filerId: number): Promise<string | null> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("edinet_filer_ids")
+    .select("filer_name")
+    .eq("id", filerId)
+    .maybeSingle();
+  if (error) throw new Error(`getFilerNameById failed for ${filerId}: ${error.message}`);
+  return data?.filer_name ?? null;
+}
+
+export const getFilerNameById = unstable_cache(getFilerNameByIdUncached, ["getFilerNameById"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
+
+async function getFilerIdByNameUncached(filerName: string): Promise<number | null> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("edinet_filer_ids")
+    .select("id")
+    .eq("filer_name", filerName)
+    .maybeSingle();
+  if (error) throw new Error(`getFilerIdByName failed for ${filerName}: ${error.message}`);
+  return data?.id ?? null;
+}
+
+export const getFilerIdByName = unstable_cache(getFilerIdByNameUncached, ["getFilerIdByName"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});

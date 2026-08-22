@@ -48,6 +48,16 @@ export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@kujira-watch";
 // エンティティグラフに結び付かないため、公式アカウントをスキーマ側でも宣言する。
 export const ORGANIZATION_SAME_AS = [X_PROFILE_URL, YOUTUBE_CHANNEL_URL];
 
+// Organization構造化データの contactPoint。運営者は実名・メールを公開しない方針のため、
+// 連絡先は公式XのみをE-E-A-T（信頼性）の連絡可能性シグナルとして宣言する。/aboutの
+// 「運営者について」と同じ窓口を指す。
+export const ORGANIZATION_CONTACT_POINT = {
+  "@type": "ContactPoint",
+  contactType: "customer support",
+  url: X_PROFILE_URL,
+  availableLanguage: ["ja", "en"],
+};
+
 // 読者向けLINE公式アカウントの友だち追加URL（lin.ee/…）。アカウント未開設のため
 // 通常は未設定で、未設定の間はLINE導線を一切表示しない。開設したらVercelの環境変数
 // NEXT_PUBLIC_LINE_ADD_FRIEND_URL にURLを入れるだけでFollowCtaにボタンが出る。

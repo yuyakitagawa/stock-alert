@@ -16,6 +16,23 @@
 - 残存参照の全文検索（DisclosureTrendChart / getMonthlyDisclosureCounts / MonthlyDisclosureCount）は
   過去ログの記述を除いてゼロ
 
+## 2026-08-23 kujira-watch: 投資家ページのURLを提出者名から連番IDへ（/investors/<番号>）
+
+Search Consoleカバレッジ（2026-08-23）で、`/investors/<提出者名>` 603件がインデックス未登録だった。
+日本語・全角英字・全角空白・改行までURLに含む長いパスで、URLエンコード後は数百バイトになる
+（事前生成時のENAMETOOLONGの原因でもあった）。オーナー指示で番号化。
+
+- Supabaseに`edinet_filer_ids`（id serial, filer_name unique）を新設し2,967件を採番。
+  `edinet_large_holdings`のINSERT/UPDATEトリガーで新規提出者は自動採番。
+  `edinet_filer_summary`ビューに`filer_id`列を追加（`supabase/create_edinet_filer_ids.sql`）
+- `/investors/[filer]`は番号なら`getFilerNameById()`で名前を引き、旧形式（名前）なら
+  `getFilerIdByName()`→`permanentRedirect`で番号URLへ308転送。該当なしは404
+- リンク生成は全箇所`investorPath(filerId, filerName)`に統一（`src/lib/investorPath.ts`。
+  クライアント側の検索ボックス・リターンランキングからも使うためSupabase依存の`investors.ts`と分離）。
+  名前しか持たない行（推移表・アクティビスト・月次・RSS）は`getFilerIdMap()`で一括解決
+- `/api/stocks/search`の投資家結果に`filerId`を追加、`InvestorReturnRow`/`StockFiler`/`FilerSummary`にも`filerId`
+- 記事本文の投資家名リンク化（`linkifyFilerNames`）は`{filerName, filerId}[]`を受けるよう変更
+
 ## 2026-08-22 kujira-watch: 銘柄ランキングに開示件数と推定売買金額を並べて表示
 
 オーナー指示「銘柄ランキングには、件数と金額を乗せて」への対応。

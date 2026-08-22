@@ -12,7 +12,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { formatDealAmount, formatMonth } from "@/lib/format";
 import { getAllMonthsForIndex, getArticlesByMonth, MONTH_PATTERN } from "@/lib/microcms";
-import { getFilerNamesByStockAndDate } from "@/lib/investors";
+import { getFilerIdMap, getFilerNamesByStockAndDate, investorPath } from "@/lib/investors";
 import { SITE_URL } from "@/lib/site";
 import { buildFilerRanking, buildStockRanking, buildWeeklySummary } from "@/lib/weeklyStats";
 import AdUnit from "@/components/AdUnit";
@@ -67,11 +67,12 @@ export default async function MonthlyArchivePage({ params }: Props) {
     notFound();
   }
 
-  const [{ contents }, months, filerByKey] = await Promise.all([
+  const [{ contents }, months, filerByKey, filerIds] = await Promise.all([
     getArticlesByMonth(month),
     getAllMonthsForIndex(),
     // disc_dateはtext型のYYYY-MM-DDなので、月末日は31日固定の文字列比較で足りる。
     getFilerNamesByStockAndDate(`${month}-01`, `${month}-31`),
+    getFilerIdMap(),
   ]);
 
   if (contents.length === 0) {
@@ -186,7 +187,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
                   <TableRow key={filer.filerName}>
                     <TableCell>
                       <Link
-                        href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                        href={investorPath(filerIds[filer.filerName], filer.filerName)}
                         className="text-brand-blue hover:underline"
                       >
                         {filer.filerName}

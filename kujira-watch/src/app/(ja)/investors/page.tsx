@@ -4,7 +4,7 @@ import Link from "next/link";
 import DealTypeLabel from "@/components/DealTypeLabel";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
-import { getAllFilers } from "@/lib/investors";
+import { getAllFilers, investorPath } from "@/lib/investors";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
@@ -139,7 +139,7 @@ async function InvestorsBody({ searchParams }: Props) {
                カードの高さと各行の位置がカードごとにずれていた。 */
             <li key={filer.filerName}>
               <Link
-                href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                href={investorPath(filer.filerId, filer.filerName)}
                 className="card font-medium text-brand-blue"
               >
                 {displayFilerName(filer.filerName)}

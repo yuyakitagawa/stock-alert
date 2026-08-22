@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
+import { getFilerIdMap } from "@/lib/investors";
 import type { DealType } from "@/types/article";
 
 // /ranking/returns（投資家リターンランキング）と /investors/[filer]（投資家ページ）の読み取り。
@@ -12,6 +13,7 @@ import type { DealType } from "@/types/article";
 
 export type InvestorReturnRow = {
   filerName: string;
+  filerId: number | null;
   category: DealType;
   positionCount: number;
   avgReturn: number;
@@ -45,8 +47,10 @@ async function getInvestorReturnsUncached(limit: number): Promise<InvestorReturn
   // 「該当なし」として空ページに焼き付けない）。
   if (error) throw new Error(`getInvestorReturns failed: ${error.message}`);
 
+  const idByFiler = await getFilerIdMap();
   return (data ?? []).map((r) => ({
     filerName: r.filer_name,
+    filerId: idByFiler[r.filer_name] ?? null,
     category: (r.category ?? "その他") as DealType,
     positionCount: r.position_count,
     avgReturn: Number(r.avg_return),
@@ -109,6 +113,7 @@ async function getFilerReturnSummaryUncached(filerName: string): Promise<FilerRe
   return {
     row: {
       filerName: data.filer_name,
+      filerId: (await getFilerIdMap())[data.filer_name] ?? null,
       category: (data.category ?? "その他") as DealType,
       positionCount: data.position_count,
       avgReturn: Number(data.avg_return),

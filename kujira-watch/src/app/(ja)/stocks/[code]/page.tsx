@@ -13,7 +13,9 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
-import { getFilersByStockCode, getHoldingsByStockCode } from "@/lib/investors";
+import { getFilerIdMap, getFilersByStockCode, getHoldingsByStockCode, investorPath } from "@/lib/investors";
+import { getBuybacksByStockCode } from "@/lib/buybacks";
+import BuybackHistory from "@/components/BuybackHistory";
 import { formatDate } from "@/lib/format";
 import RatioTransition from "@/components/RatioTransition";
 import Table from "@mui/material/Table";
@@ -105,11 +107,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers, holdings] = await Promise.all([
+  const [{ contents }, companyInfo, filers, holdings, buybacks, filerIds] = await Promise.all([
     getArticlesByStockCode(code),
     getCompanyInfo(code),
     getFilersByStockCode(code),
     getHoldingsByStockCode(code),
+    getBuybacksByStockCode(code),
+    getFilerIdMap(),
   ]);
 
   // 解説記事が無くてもEDINET開示・会社情報があれば銘柄ページとして成立させる
@@ -192,7 +196,7 @@ export default async function StockPage({ params }: Props) {
             {filers.map((filer) => (
               <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1, flexWrap: "wrap" }}>
                 <Link
-                  href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                  href={investorPath(filer.filerId, filer.filerName)}
                   className="text-brand-blue hover:underline"
                 >
                   {filer.filerName}
@@ -232,7 +236,7 @@ export default async function StockPage({ params }: Props) {
                     </TableCell>
                     <TableCell>
                       <Link
-                        href={`/investors/${encodeURIComponent(h.filerName)}`}
+                        href={investorPath(filerIds[h.filerName], h.filerName)}
                         className="text-brand-blue hover:underline"
                       >
                         {h.filerName}
@@ -263,6 +267,7 @@ export default async function StockPage({ params }: Props) {
           </TableContainer>
         </Box>
       )}
+      <BuybackHistory rows={buybacks} />
       {contents.length > 0 && (
         <>
           <div className="mb-6">

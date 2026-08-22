@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getAllFilers } from "@/lib/investors";
+import { getAllFilers, investorPath } from "@/lib/investors";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { SITE_NAME_EN, SITE_URL } from "@/lib/site";
@@ -41,7 +41,7 @@ export default async function EnInvestorsPage() {
       "@type": "ListItem",
       position: index + 1,
       name: displayFilerName(filer.filerName),
-      url: `${SITE_URL}/investors/${encodeURIComponent(filer.filerName)}`,
+      url: `${SITE_URL}${investorPath(filer.filerId, filer.filerName)}`,
     })),
   };
 
@@ -83,7 +83,7 @@ export default async function EnInvestorsPage() {
             <li key={filer.filerName} className="card text-sm">
               <span className="mr-2 text-xs font-bold text-foreground/40">{index + 1}</span>
               <Link
-                href={`/investors/${encodeURIComponent(filer.filerName)}`}
+                href={investorPath(filer.filerId, filer.filerName)}
                 hrefLang="ja"
                 className="font-medium text-brand-blue hover:underline"
               >

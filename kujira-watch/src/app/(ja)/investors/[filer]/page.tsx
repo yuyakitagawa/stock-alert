@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -11,7 +11,14 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import RatioTransition from "@/components/RatioTransition";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
-import { getAllFilers, getFilerClassification, getFilerHoldings } from "@/lib/investors";
+import {
+  getAllFilers,
+  getFilerClassification,
+  getFilerHoldings,
+  getFilerIdByName,
+  getFilerNameById,
+  investorPath,
+} from "@/lib/investors";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
@@ -31,34 +38,38 @@ export const revalidate = 86400;
 // 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
 const PRERENDERED_FILERS = 300;
 
-// 事前生成は .next/server/app/investors/<URLエンコード済みの提出者名>/ を実際に掘るため、
-// エンコード後がファイル名の上限(255バイト)に触れる提出者はビルドが ENAMETOOLONG で
-// 落ち、デプロイ全体が失敗する（実例: 2026-08-18、全角表記の「Ｆｉｄｅｌｉｔｙ　Ｍａｎａｇｅｍｅｎｔ　＆　
-// Ｒｅｓｅａｒｃｈ　Ｃｏｍｐａｎｙ　ＬＬＣ」は1文字あたり9バイトに膨らみ240字超になる）。
-// 拡張子(.segments/.rsc/.meta等)の余白を見て余裕を持たせ、超える提出者は事前生成の対象から
-// 外す（ルート自体はISRのままなので、当該ページは初回アクセス時に生成される）。
-const MAX_PRERENDER_SEGMENT_LEN = 200;
-
+// URLは /investors/<連番ID>（edinet_filer_ids）。以前は /investors/<提出者名> で、日本語・
+// 全角・空白を含む長いURLはGoogleに登録されず（2026-08-23のSearch Consoleカバレッジで
+// 投資家ページ603件が未登録）、事前生成時もURLエンコード後のファイル名が255バイト制限に
+// 掛かってビルドが落ちていた（ENAMETOOLONG、2026-08-18）。番号化で両方とも解消する。
+// 旧URL（提出者名）で来たアクセスは下のresolveFilerで番号URLへ301転送する。
 export async function generateStaticParams() {
   // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で
   // デプロイ全体を落とさないため）。空でもルートはISR扱いのままになる。
   try {
     const filers = await getAllFilers();
     return filers
-      .slice()
+      .filter((filer) => filer.filerId !== null)
       .sort((a, b) => b.holdingCount - a.holdingCount)
-      // paramsは「素の提出者名」を返す。Next.jsが自身でURLエンコードしてパスを組み立てるため、
-      // ここでencodeURIComponent()すると二重エンコードになり、ページ側の
-      // decodeURIComponent(filer)が元の名前ではなく1段だけ戻した"%E9%87%8E..."を返す。
-      // その名前でSupabaseを引くと0件になり、notFound()が静的な404として焼き付いていた
-      // （2026-08-19まで主要投資家100ページが初回アクセス404・2回目200という状態だった実際の原因）。
-      .map((filer) => ({ filer: filer.filerName }))
-      // ファイル名長の判定はディスクに書かれるURLエンコード後の長さで行う。
-      .filter(({ filer }) => encodeURIComponent(filer).length <= MAX_PRERENDER_SEGMENT_LEN)
-      .slice(0, PRERENDERED_FILERS);
+      .slice(0, PRERENDERED_FILERS)
+      .map((filer) => ({ filer: String(filer.filerId) }));
   } catch {
     return [];
   }
+}
+
+// URLパラメータから提出者を解決する。番号なら edinet_filer_ids を引き、旧形式（提出者名）
+// なら名前→番号を引いて正規URLへ301転送する。どちらも該当が無ければnull（=404）。
+async function resolveFiler(filer: string): Promise<{ filerId: number; filerName: string } | null> {
+  if (/^\d+$/.test(filer)) {
+    const filerId = Number(filer);
+    const filerName = await getFilerNameById(filerId);
+    return filerName ? { filerId, filerName } : null;
+  }
+  const filerName = decodeURIComponent(filer);
+  const filerId = await getFilerIdByName(filerName);
+  if (filerId === null) return null;
+  permanentRedirect(investorPath(filerId, filerName));
 }
 
 type Props = {
@@ -67,7 +78,10 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { filer } = await params;
-  const filerName = decodeURIComponent(filer);
+  // 旧URLの転送はページ本体(resolveFiler)に任せ、metadata側は空を返す。
+  if (!/^\d+$/.test(filer)) return {};
+  const filerName = await getFilerNameById(Number(filer));
+  if (!filerName) return {};
   const holdings = await getFilerHoldings(filerName);
   if (holdings.length === 0) return {};
 
@@ -88,7 +102,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function InvestorPage({ params }: Props) {
   const { filer } = await params;
-  const filerName = decodeURIComponent(filer);
+  const resolved = await resolveFiler(filer);
+  if (!resolved) notFound();
+  const { filerName } = resolved;
 
   const [holdings, classification, returnPositions] = await Promise.all([
     getFilerHoldings(filerName),
@@ -334,7 +350,7 @@ export default async function InvestorPage({ params }: Props) {
       )}
       <div className="mt-8">
         <FollowUpdatesCta
-          feedUrl={`/investors/${encodeURIComponent(filerName)}/feed.xml`}
+          feedUrl={`/investors/${filer}/feed.xml`}
           targetLabel={displayFilerName(filerName)}
         />
       </div>

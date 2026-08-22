@@ -17,6 +17,7 @@ export const DEAL_TYPE_COLORS: Record<DealType, { dot: string; text: string }> =
   日系証券銀行: { dot: "#0284c7", text: "#0369a1" },
   事業会社: { dot: "#059669", text: "#047857" },
   その他: { dot: "#9ca3af", text: "rgba(32, 29, 26, 0.6)" },
+  自社株買い: { dot: "#b45309", text: "#92400e" },
 };
 
 // web/publish_blog_articles.py の classify_filer() が使う判断基準と表現をそろえた説明文。
@@ -35,6 +36,7 @@ export const DEAL_TYPE_DESCRIPTIONS: Record<DealType, string> = {
   日系証券銀行: "日本の証券会社・銀行本体（資産運用子会社ではなく本体としての保有）。",
   事業会社: "金融業ではない一般の事業会社（国内外問わず）。",
   その他: "上記のいずれにも明確に当てはまらない、または判定できなかった提出者。",
+  自社株買い: "発行体自身による自己株式の取得（TDnet適時開示）。取締役会で決議した取得枠の上限を示す。",
 };
 
 // 英語版（/en）用の投資家分類ラベル・URLスラッグ・説明文。
@@ -105,6 +107,11 @@ export const DEAL_TYPE_EN: Record<DealType, { label: string; slug: string; descr
     label: "Other",
     slug: "other",
     description: "A filer that does not clearly fit the categories above, or could not be determined.",
+  },
+  自社株買い: {
+    label: "Share Buyback",
+    slug: "share-buyback",
+    description: "The issuer's own share repurchase (TDnet timely disclosure), showing the board-approved upper limit.",
   },
 };
 

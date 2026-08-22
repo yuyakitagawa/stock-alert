@@ -23,7 +23,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
-from video import background, build_script, line_notify, render, tts  # noqa: E402
+from video import background, build_script, line_notify, render, thumbnail, tts  # noqa: E402
 from video import youtube_client  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.expanduser("~/stock-alert"), "video", "out")
@@ -78,6 +78,11 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     youtube_id = youtube_client.upload(video_path, props)
     if youtube_id:
         posted += 1
+        # 検索結果・チャンネルページ用のカスタムサムネイル（Canva台紙＋銘柄・金額）。
+        # 失敗しても動画は公開済みなので成否は投稿数に影響させない
+        thumb = thumbnail.compose(props, os.path.join(OUT_DIR, f"thumb_{stamp}.png"))
+        if thumb:
+            youtube_client.set_thumbnail(youtube_id, thumb)
         # 動画公開をXへもクロス投稿する（X未認証・失敗でも動画投稿の成否には影響させない）。
         # requests_oauthlib未導入の環境でも動画パイプラインが落ちないよう遅延importにする。
         try:

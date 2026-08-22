@@ -881,3 +881,63 @@ def test_normalize_loudness_keeps_original_when_ffmpeg_fails(tmp_path):
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# ---------------- Canva製ブランド素材（エンドカード・サムネイル） ----------------
+
+import video.thumbnail as thumb_mod
+
+
+def test_stage_end_card_copies_canva_asset_and_sets_prop(tmp_path):
+    with mock.patch.object(render_mod, "PUBLIC_DIR", str(tmp_path)):
+        props = {}
+        staged = render_mod._stage_end_card(props)
+    assert props["endCard"] == "cta_endcard.png"
+    assert staged == [str(tmp_path / "cta_endcard.png")]
+    assert os.path.exists(staged[0])
+
+
+def test_stage_end_card_falls_back_to_text_cta_without_asset(tmp_path):
+    with mock.patch.object(render_mod, "ASSETS_DIR", str(tmp_path)):
+        props = {"endCard": "stale"}
+        assert render_mod._stage_end_card(props) == []
+    assert "endCard" not in props
+
+
+def test_thumbnail_compose_writes_1280x720_png(tmp_path):
+    from PIL import Image
+
+    out = thumb_mod.compose(dict(PROPS), str(tmp_path / "t.png"))
+    assert out and os.path.exists(out)
+    assert Image.open(out).size == (1280, 720)
+
+
+def test_thumbnail_compose_skips_without_base(tmp_path):
+    with mock.patch.object(thumb_mod, "BASE_IMAGE", str(tmp_path / "none.png")):
+        assert thumb_mod.compose(dict(PROPS), str(tmp_path / "t.png")) is None
+
+
+def test_thumbnail_format_amount_matches_remotion():
+    assert thumb_mod.format_amount(1893.4) == "1,893"
+    assert thumb_mod.format_amount(40.1) == "40.1"
+    assert thumb_mod.format_amount(40.0) == "40"
+
+
+def test_set_thumbnail_skips_without_credentials(tmp_path):
+    img = tmp_path / "t.png"
+    img.write_bytes(b"x")
+    with mock.patch.object(yt, "_access_token", return_value=None), \
+         mock.patch.object(yt.requests, "post") as post:
+        assert yt.set_thumbnail("vid", str(img)) is False
+    post.assert_not_called()
+
+
+def test_set_thumbnail_posts_png_to_thumbnails_set(tmp_path):
+    img = tmp_path / "t.png"
+    img.write_bytes(b"png")
+    res = mock.Mock(ok=True)
+    with mock.patch.object(yt, "_access_token", return_value="tok"), \
+         mock.patch.object(yt.requests, "post", return_value=res) as post:
+        assert yt.set_thumbnail("vid123", str(img)) is True
+    assert post.call_args.kwargs["params"]["videoId"] == "vid123"
+    assert post.call_args.kwargs["headers"]["Content-Type"] == "image/png"

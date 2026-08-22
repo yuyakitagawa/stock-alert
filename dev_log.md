@@ -1617,3 +1617,18 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   注目枠直後に `FollowCta`（主要コンバージョン=Xフォローの導線がTOPに無かった）。
 - 記事description: 「横河電機の日系証券銀行を解説」→「横河電機（6841）｜日系証券銀行の大量保有報告書を解説。」。
 - 過去記事950件のアイキャッチはバックフィル（別タスク）。tests/test_publish_blog_articles.py 98件 pass。
+
+## 2026-08-23 Canva連携でYouTube動画の締めとサムネイルをブランド化
+- Canva MCP（generate-design → export-design）でエンドカード（1080x1920）とサムネ台紙（1280x720）を生成し `video/assets/` に置いた。CIからCanvaは呼ばず、生成物だけを使う。
+- ctaシーン: エンドカード画像を背景に敷き、URLピルと音声クレジットだけを重ねる（`props.endCard`）。素材が無ければ従来のテキスト締め。
+- サムネイル: `video/thumbnail.py` が台紙に銘柄・金額・提出者を合成し、投稿直後に `thumbnails.set` で設定。Shortsフィード以外（検索・チャンネルページ・横長おすすめ）のクリック率狙い。
+- tests/test_video_pipeline.py 88→95件。
+
+## 2026-08-23 自社株買い（TDnet）をサイト・X・ブログに展開
+- 背景: `ext_tdnet_disclosures` に自社株買い開示（直近30日73件）が溜まっていたが、サイト（/stocks/[code] は見出しに「自社株買い履歴」と書きながらEDINETのみ）・X・ブログのどこにも出ていなかった。
+- 共通データ層: `lib/buyback.py` + `tools/enrich_buybacks.py`。タイトルで「決定」と月次「進捗」を分け、決定のみ原文PDF（pypdf）から上限株数・金額・比率・期間・方法・消却有無を正規表現で抽出→`tdnet_buybacks`（PK: code, disclosed_at, title）。直近14本の決定開示で全件抽出成功。Haikuは正規表現が空振りした時だけ（Anthropic APIが使用量上限で9/1まで停止中のため、API無しで動く設計にした）。TDnetのPDFは約1ヶ月で404になる→日次で回す（daily_alert Step 2f2）。
+- サイト: `/stocks/[code]` に「自社株買い（TDnet適時開示）」表（`lib/buybacks.ts`・`BuybackHistory.tsx`）。DealTypeに「自社株買い」を追加し、記事ページは dealType=自社株買い のとき「（上限）」「発行済比率（上限）」表示・EDINET突き合わせ無しに切り替え。
+- X: `web/x_buyback.py`（x_post.yml 平日19:00 JST）。当日の決定を上限金額順、1億円未満除外。投稿前にTDnet取得＋抽出を回す（引け後の開示を拾うため）。
+- ブログ: `web/publish_buyback_articles.py`（edinet_blog.yml）。上限10億円以上 or 発行済3%以上。microCMSの dealType セレクトに「自社株買い」が存在することは下書きPOSTで確認（→削除）。記事生成はAPI上限解除（9/1）後に稼働。
+- テスト: test_buyback 9件 / test_x_buyback 7件 / test_publish_buyback_articles 8件。既存テスト全件パス。
+- 追記: TOPタブ「自社株買い」(/buybacks) を追加。直近30日の決定を発行済比率ランキング・上限金額ランキング・最新一覧（方法・期間・消却・PDF）・月別件数・数字の見方・FAQ（JSON-LD）で構成。ナビ/サイトマップに追加。

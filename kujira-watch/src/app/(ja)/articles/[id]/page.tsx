@@ -21,7 +21,7 @@ import {
   getArticleList,
   getArticlesByStockCode,
 } from "@/lib/microcms";
-import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot } from "@/lib/investors";
+import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot, investorPath } from "@/lib/investors";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
@@ -102,7 +102,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // dealTypeは投資家分類（例: 日系証券銀行）なので「横河電機の日系証券銀行を解説」とは
   // 日本語として繋がらない。検索結果の説明文は「銘柄｜投資家分類の大量保有報告書を解説。」に
   // 揃え、続く本文1文目（直答文）で誰が何%にしたかを伝える。
-  const description = `${article.stockName}（${article.stockCode}）｜${article.dealType}の大量保有報告書を解説。${excerptFromHtml(article.body)}`;
+  const description =
+    article.dealType === "自社株買い"
+      ? `${article.stockName}（${article.stockCode}）｜自社株買い（TDnet適時開示）の取得枠を解説。${excerptFromHtml(article.body)}`
+      : `${article.stockName}（${article.stockCode}）｜${article.dealType}の大量保有報告書を解説。${excerptFromHtml(article.body)}`;
   const url = `${SITE_URL}/articles/${id}`;
   // 同一「銘柄×提出者」の記事は最新1本だけをindexする（カニバリゼーション対策。
   // 詳細はlib/articleIndexability.tsのsupersededArticleIds()を参照）。
@@ -186,8 +189,12 @@ export default async function ArticleDetailPage({ params }: Props) {
   // microCMSのarticlesスキーマには提出者名フィールドが無く、article.filerNameは常にundefinedに
   // なる（lib/investors.tsのgetFilerNamesByStockAndDateの注記を参照）。CMS側にフィールドが
   // 追加されればそれを優先し、無い間はEDINET開示（Supabase）との突き合わせで補う。
-  const filerName =
-    article.filerName ?? filerByKey.get(`${article.stockCode}|${dealDateOnly}`);
+  // 自社株買い記事は提出者が発行体自身で、同日に同銘柄の大量保有報告書があっても無関係なので
+  // EDINET突き合わせはしない（投資家名・保有比率ブロックはすべて出さない）。
+  const isBuyback = article.dealType === "自社株買い";
+  const filerName = isBuyback
+    ? undefined
+    : article.filerName ?? filerByKey.get(`${article.stockCode}|${dealDateOnly}`);
 
   // ファクトボックス用: 保有比率はCMSに無いため、提出者が特定できた記事のみEDINET開示から引く。
   const snapshot = filerName
@@ -196,6 +203,7 @@ export default async function ArticleDetailPage({ params }: Props) {
   const holdingRatio = snapshot?.holdingRatio ?? null;
   // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
   const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
+  const filerId = filerName ? await getFilerIdByName(filerName) : null;
   // 前回比はEDINET開示（今回比率 − 直前保有割合）を正とし、取れないときだけCMSの
   // ratioChangePctへフォールバックする。CMS側の値は記事生成時にXBRLの直前保有割合が
   // まだ取れていないと「今回比率の全量」で入ってしまい、同じ画面に
@@ -209,7 +217,7 @@ export default async function ArticleDetailPage({ params }: Props) {
     value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 
   const linkedBody = frameSpeculation(
-    linkifyFilerNames(article.body, filers.map((f) => f.filerName))
+    linkifyFilerNames(article.body, filers)
   );
 
   const articleJsonLd = {
@@ -342,7 +350,8 @@ export default async function ArticleDetailPage({ params }: Props) {
               {formatDealAmountOrCorrection(article)}
               {!isCorrectionArticle(article.tags) && (
                 <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
-                  （概算）
+                  {/* 自社株買いは取締役会決議の取得枠上限（概算ではなく開示値） */}
+                  {isBuyback ? "（上限）" : "（概算）"}
                 </Typography>
               )}
             </Typography>
@@ -362,12 +371,17 @@ export default async function ArticleDetailPage({ params }: Props) {
           )}
           {ratioChange !== null && ratioChange !== 0 && (
             <Box>
-              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>前回比</Typography>
+              {/* 自社株買い記事の ratioChangePct には取得枠の発行済株式比率（上限）を入れている */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                {isBuyback ? "発行済比率（上限）" : "前回比"}
+              </Typography>
               <Typography
                 component="dd"
                 sx={{ m: 0, mt: 0.5, fontWeight: 500, color: ratioChange > 0 ? "success.main" : "error.main" }}
               >
-                {ratioChange > 0 ? "＋" : "−"}{formatRatio(Math.abs(ratioChange))}pt
+                {isBuyback
+                  ? `${formatRatio(ratioChange)}%`
+                  : `${ratioChange > 0 ? "＋" : "−"}${formatRatio(Math.abs(ratioChange))}pt`}
               </Typography>
             </Box>
           )}
@@ -376,7 +390,7 @@ export default async function ArticleDetailPage({ params }: Props) {
               <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引企業</Typography>
               <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
                 <Link
-                  href={`/investors/${encodeURIComponent(filerName)}`}
+                  href={investorPath(filerId, filerName)}
                   className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
                 >
                   {displayFilerName(filerName)}
@@ -499,7 +513,7 @@ export default async function ArticleDetailPage({ params }: Props) {
                 {DEAL_TYPE_DESCRIPTIONS[article.dealType]}
               </p>
             )}
-            <ActionButton href={`/investors/${encodeURIComponent(filerName)}`}>
+            <ActionButton href={investorPath(filerId, filerName)}>
               {displayFilerName(filerName)}の保有銘柄・比率推移を見る
             </ActionButton>
           </div>

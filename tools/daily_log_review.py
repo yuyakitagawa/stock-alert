@@ -10,11 +10,14 @@ tools/daily_log_review.py
   2. `gh run view --json jobs` でステップごとの成否・所要時間、`gh run view --log` で本文ログを取得
   3. ログはそのままでは数万行あるので、エラー/警告/Traceback/HTTPエラー/スキップ通知の行と
      各ステップの先頭・末尾だけに圧縮する（condense_log）
-  4. Claude に日本語Markdownのレビュー（健全性 / 異常・注意点 / 改善提案(優先度付き) / LINE要約）を書かせる
+  3b. Supabase から成果物スナップショット（X投稿と反応・フォロワー・人間推定PVと上位ページ・当日シグナル数）を付ける
+  4. Claude に SRE/クオンツ/プロダクト/SEO・GEO/UX・デザイン/バックエンド/フロントエンド/PdM の8観点で
+     日本語Markdownのレビュー（健全性 / 異常 / SEO / UX / エンジニアリング / PdM / 改善提案 / LINE要約）を書かせる
   5. 全文: $GITHUB_STEP_SUMMARY と `daily-review` ラベルのIssue（1本を使い回してコメント追記）
      要約: LINE push（LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID）
 
 必要な環境変数: GH_TOKEN（actions:read, issues:write）, ANTHROPIC_API_KEY,
+              SUPABASE_URL / SUPABASE_SERVICE_KEY（成果物スナップショット用。未設定ならログのみ）,
               LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID（未設定ならLINEはスキップ）
 
 使い方:
@@ -37,11 +40,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 MODEL = "claude-opus-5"
 JST = timezone(timedelta(hours=9))
 
-# レビュー対象外のワークフロー（ファイル名）。ci.yml はPR単位、daily_log_review.yml は自分自身。
-EXCLUDE_WORKFLOWS = {"ci.yml", "daily_log_review.yml"}
+# レビュー対象外のワークフロー（ファイル名）。daily_log_review.yml は自分自身。
+# ci.yml は成功runが大量にあるので失敗したものだけ対象にする（エンジニア観点のため）。
+EXCLUDE_WORKFLOWS = {"daily_log_review.yml"}
+FAILURE_ONLY_WORKFLOWS = {"ci.yml"}
+
+# このステップ名を含むログは圧縮せず全文を渡す（LINE送信本文など、UX観点で原文が必要なもの）
+_FULL_STEP_PATTERN = re.compile(r"マーケットタイミング|LINE")
+_FULL_STEP_MAX_CHARS = 12_000
 
 # 圧縮時に必ず残す行（エラー・警告・重要イベント）
 _KEEP_PATTERN = re.compile(
@@ -62,7 +72,8 @@ _LINE_MAX_CHARS = 1000
 SYSTEM_PROMPT = """あなたは個人開発の株式アラートシステム「stock-alert」（日本株の下落確率ランキングをXGBoostで算出し、
 LINE配信・ブログ自動生成（microCMS → kujira-watch.com「大口投資家の監視ブログ」）・X投稿・YouTube動画投稿を
 GitHub Actionsで毎日回している）の運用レビュアーです。
-次の4人のプロフェッショナルの視点を併せ持って、渡された当日のワークフロー実行ログを診断してください。
+次の8人のプロフェッショナルの視点を併せ持って、渡された当日のワークフロー実行ログと成果物スナップショット
+（X投稿と反応・フォロワー推移・サイトPV・当日ランキングのシグナル数）を診断してください。
 
 1. SRE: 失敗・タイムアウト・リトライ・所要時間の異常・continue-on-errorで握り潰されている失敗・
    外部API（Yahoo Finance / EDINET / J-Quants / Supabase / microCMS / X / YouTube / Anthropic）の劣化兆候。
@@ -80,6 +91,20 @@ GitHub Actionsで毎日回している）の運用レビュアーです。
    を評価し、記事生成プロンプト（web/publish_blog_articles.py）やタイトルテンプレート、
    X投稿フォーマット（web/x_post_format.py）への具体的な改善提案を出す。
    ※インデックス反映には数日〜数週間かかるため「すぐ検索順位を確認せよ」といった提案はしない。
+5. UX/デザイン（モバイルUXライター）: ログ中の LINE 送信本文（`--- <user> ---` 以下の全文）と X投稿文を
+   スマホで読む前提で評価する。情報の優先順位（最初の3行で「今日何をすべきか」が分かるか）、1通の長さ、
+   絵文字・記号の使い方、数値の桁・単位・前日比の見せ方、行動喚起（リンク・次のアクション）の明確さ、
+   同じ表現の繰り返し。改善は文面テンプレート（web/market_timing_alert.py の build_*_section、
+   web/x_post_format.py）への具体的な書き換え案として出す。
+6. バックエンドエンジニア: ログから読み取れる実装品質。握り潰された例外、リトライの無い外部API呼び出し、
+   同じデータの二重取得（N+1）、冪等性（再実行で重複する処理）、タイムアウト・所要時間の偏り、
+   Anthropic/X/microCMS の API 課金を無駄にしている呼び出し（再生成・再送信）。対象ファイルと関数名まで書く。
+7. フロントエンドエンジニア（kujira-watch / Next.js）: PVスナップショットの上位パス・アクセスされているのに
+   薄いページ・CIの失敗・perf_check の結果から、ページ構成・表示速度・計測上の問題を指摘する。
+   Actionsログにフロントのビルドログは無いので、無い情報は「ログから判断不可」と明記し推測で埋めない。
+8. PdM: KPIスナップショット（PV・ユニーク訪問・フォロワー・X反応・記事数・💎シグナル数）の前日比/前週比を読み、
+   当日の成果物が「初心者投資家が今日何をすべきか分かる」という価値に繋がったかを判定する。
+   1〜7の改善提案を「ユーザー価値 × 実装コスト」で並べ直し、**今週やる3件／やらない事**を明示する。
 
 ルール:
 - ログに根拠がある事だけを書く。推測は「※推測:」と明記する。無い問題を作らない。
@@ -99,11 +124,22 @@ GitHub Actionsで毎日回している）の運用レビュアーです。
 （当日生成されたコンテンツについて、上記4の観点での評価と具体的な改善提案。記事が1件も生成されていない日は
  「本日は生成なし」とし、見送り理由の妥当性だけコメントする）
 
+## UX・デザイン所見
+（LINE本文・X投稿文の評価。良い点1〜2行＋直すべき点。書き換え案は before/after で示す）
+
+## エンジニアリング所見
+### バックエンド
+### フロントエンド
+（それぞれ箇条書き。根拠のログ行・KPI行を添える。判断材料が無い項目は「ログから判断不可」）
+
+## PdM所見（KPIと優先順位）
+（KPIの前日比/前週比を表で示し、今日の成果物の価値判定を1段落。続けて「今週やる3件」「やらない事」）
+
 ## 改善提案
-（運用面＋SEO/GEO面をまとめた優先度付き箇条書き。「[高] 提案: … / 対象: … / 理由: …」の形式）
+（全観点をまとめた優先度付き箇条書き。「[高] 提案: … / 対象: … / 理由: … / 観点: SRE|クオンツ|プロダクト|SEO|UX|BE|FE|PdM」の形式）
 
 ## LINE要約
-（スマホで読む前提。500字以内、絵文字OK。最重要の異常1〜2件、SEO/GEOの気づき1件、最優先の改善提案1件だけ。
+（スマホで読む前提。500字以内、絵文字OK。最重要の異常1〜2件、KPIの一言、最優先の改善提案1件（観点名付き）だけ。
  この節の本文だけがLINEに送られる）
 """
 
@@ -156,6 +192,8 @@ def group_runs(runs: list[dict]) -> dict[str, list[dict]]:
         wf = (r.get("path") or "").rsplit("/", 1)[-1]
         if not wf or wf in EXCLUDE_WORKFLOWS:
             continue
+        if wf in FAILURE_ONLY_WORKFLOWS and r.get("conclusion") == "success":
+            continue
         grouped.setdefault(wf, []).append(r)
     return grouped
 
@@ -206,6 +244,10 @@ def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN) -> str:
     chunks = []
     for step in order:
         lines = by_step[step]
+        if _FULL_STEP_PATTERN.search(step):
+            full = "\n".join(l[:400] for l in lines)[:_FULL_STEP_MAX_CHARS]
+            chunks.append(f"### step: {step} ({len(lines)}行・全文)\n" + full)
+            continue
         keep_idx = set(range(min(_HEAD_LINES, len(lines))))
         keep_idx |= set(range(max(0, len(lines) - _TAIL_LINES), len(lines)))
         keep_idx |= {i for i, l in enumerate(lines) if _KEEP_PATTERN.search(l)}
@@ -257,6 +299,106 @@ def build_review_input(runs_by_workflow: dict[str, list[dict]], date_label: str)
                 f"```\n{r['_jobs_text']}\n```\n\n{r['_log_text']}\n"
             )
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# 成果物スナップショット（Supabase）: UX / FE / PdM 観点の入力
+# ---------------------------------------------------------------------------
+_HUMAN_MAX_PV_PER_IP = 100  # tools/traffic_report.py と同じ基準（これを超えるIPは機械とみなす）
+
+
+def _iso(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fetch_snapshot_rows(now: datetime) -> dict:
+    """Supabaseから素の行を取る（整形は summarize_snapshot）。未設定・失敗時は空dict。"""
+    from lib import supabase_client as sb
+
+    if not sb.is_configured():
+        return {}
+    d1, d8 = now - timedelta(hours=24), now - timedelta(days=8)
+    today = now.astimezone(JST).strftime("%Y-%m-%d")
+    out = {}
+    try:
+        out["x_posts_24h"] = sb.select(
+            "x_posts", f"posted_at=gte.{_iso(d1)}&select=posted_at,kind,variant,body,impressions,likes,"
+                       "reposts,bookmarks,url_link_clicks,has_media&order=posted_at.desc")
+        # sb.select は query 内の limit を無視して1000件ページングするため Python 側で切る
+        out["x_posts_7d_top"] = sb.select(
+            "x_posts", f"posted_at=gte.{_iso(d8)}&select=posted_at,kind,body,impressions,likes,url_link_clicks"
+                       "&order=impressions.desc.nullslast")[:5]
+        out["x_followers"] = sb.select("x_followers", "select=measured_on,followers&order=measured_on.desc")[:8]
+        # proxy.ts の classifyVisitor() は人間らしいアクセスを bot_name='Browser' で記録する（NULLではない）
+        out["pv"] = sb.select(
+            "blog_crawler_log", f"occurred_at=gte.{_iso(d8)}&bot_name=eq.Browser"
+                                "&select=occurred_at,path,visitor_id,ip_address")
+        out["rankings"] = sb.select("gen_rankings", f"date=eq.{today}&select=recommend")
+        if not out["rankings"]:
+            latest = sb.select("gen_rankings", "select=date&order=date.desc&limit=1")
+            if latest:
+                out["rankings_date"] = latest[0]["date"]
+                out["rankings"] = sb.select("gen_rankings", f"date=eq.{latest[0]['date']}&select=recommend")
+    except Exception as e:
+        print(f"[snapshot] 取得失敗（スナップショット無しで続行）: {e}")
+    return out
+
+
+def summarize_snapshot(rows: dict, now: datetime) -> str:
+    """fetch_snapshot_rows の結果をレビュー入力用Markdownにする。"""
+    if not rows:
+        return "（成果物スナップショット: 取得不可）"
+    from collections import Counter
+
+    lines = ["# 成果物スナップショット（Supabase）"]
+
+    # --- X ---
+    posts = rows.get("x_posts_24h") or []
+    lines.append(f"\n## X投稿（直近24h: {len(posts)}件）※指標は翌1:00 UTC更新のため当日分はほぼ0")
+    for p in posts[:12]:
+        body = (p.get("body") or "").replace("\n", " / ")[:160]
+        lines.append(f"- {p.get('posted_at','')[:16]} [{p.get('kind')}/{p.get('variant')}] imp={p.get('impressions')} "
+                     f"like={p.get('likes')} click={p.get('url_link_clicks')} media={p.get('has_media')}: {body}")
+    top = rows.get("x_posts_7d_top") or []
+    if top:
+        lines.append("\n## X 直近7日 インプレッション上位5")
+        for p in top:
+            lines.append(f"- imp={p.get('impressions')} like={p.get('likes')} click={p.get('url_link_clicks')} "
+                         f"[{p.get('kind')}]: {(p.get('body') or '').replace(chr(10), ' / ')[:120]}")
+    fol = rows.get("x_followers") or []
+    if fol:
+        seq = ", ".join(f"{f['measured_on'][5:]}={f['followers']}" for f in reversed(fol))
+        lines.append(f"\n## Xフォロワー推移（古→新）: {seq}")
+
+    # --- PV ---
+    pv = rows.get("pv") or []
+    if pv:
+        ip_total = Counter(r.get("ip_address") for r in pv)
+        human = [r for r in pv if ip_total[r.get("ip_address")] <= _HUMAN_MAX_PV_PER_IP]
+        d1 = _iso(now - timedelta(hours=24))
+        last24 = [r for r in human if (r.get("occurred_at") or "") >= d1]
+        prev7 = [r for r in human if (r.get("occurred_at") or "") < d1]
+        uniq24 = len({r.get("visitor_id") for r in last24 if r.get("visitor_id")})
+        lines.append(f"\n## サイトPV（bot除外・1IP>{_HUMAN_MAX_PV_PER_IP}PV/8日を機械として除外した人間推定値）")
+        lines.append(f"- 直近24h: {len(last24)} PV / ユニーク {uniq24}（前7日平均 {len(prev7)/7:.0f} PV/日）"
+                     f"　除外前の生PV24h: {sum(1 for r in pv if (r.get('occurred_at') or '') >= d1)}")
+        def _bucket(path: str) -> str:
+            parts = (path or "/").split("?")[0].split("/")
+            return "/" + parts[1] + ("/*" if len(parts) > 2 and parts[2] else "") if len(parts) > 1 and parts[1] else "/"
+        lines.append("- 24hのセクション別PV: " + ", ".join(
+            f"{k}={v}" for k, v in Counter(_bucket(r.get("path")) for r in last24).most_common(8)))
+        lines.append("- 24hの上位ページ:")
+        for path, n in Counter(r.get("path") or "-" for r in last24).most_common(10):
+            lines.append(f"  - {n:4d}  {path[:90]}")
+
+    # --- ランキング ---
+    rk = rows.get("rankings") or []
+    if rk:
+        label = rows.get("rankings_date") or now.astimezone(JST).strftime("%Y-%m-%d")
+        cnt = Counter((r.get("recommend") or "").split(" ")[0] or "-" for r in rk)
+        lines.append(f"\n## ランキング（{label}、{len(rk)}銘柄）推奨ラベル内訳: " +
+                     ", ".join(f"{k}={v}" for k, v in cnt.most_common(8)))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +522,8 @@ def main() -> int:
         print("対象runが無いためレビューをスキップします")
         return 0
 
-    review_input = build_review_input(runs_by_workflow, date_label)
+    snapshot = summarize_snapshot(fetch_snapshot_rows(now), now)
+    review_input = build_review_input(runs_by_workflow, date_label) + "\n\n" + snapshot
     print(f"[review] 入力 {len(review_input):,} 文字")
     review_md = review_with_claude(review_input)
 

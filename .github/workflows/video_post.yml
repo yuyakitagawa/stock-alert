@@ -48,7 +48,8 @@ jobs:
 
       - name: Install Python dependencies
         # pandas/numpy は株価チャートシーン（lib.utils.get_prices）が使う
-        run: pip install requests anthropic python-dotenv pandas numpy requests-oauthlib
+        # pillow は YouTube カスタムサムネイル（video/thumbnail.py）の合成に使う
+        run: pip install requests anthropic python-dotenv pandas numpy requests-oauthlib pillow
 
       # ffmpeg は書き出したmp4の音量を配信基準(-14 LUFS)へ正規化するのに必須。
       # Ubuntu 24.04 のランナーイメージには入っていないため明示的に入れる

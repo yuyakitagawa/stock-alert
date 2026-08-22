@@ -166,6 +166,7 @@ EYECATCH_QUERY_BY_CATEGORY = {
     "外資系伝統運用会社": "new york stock exchange skyline",
     "日系証券銀行": "bank building japan",
     "事業会社": "corporate headquarters building",
+    "自社株買い": "corporate finance treasury office",  # web/publish_buyback_articles.py が使う
 }
 EYECATCH_DEFAULT_QUERY = "stock market finance city"
 

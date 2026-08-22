@@ -25,6 +25,7 @@ export function mainNavLinks(locale: Locale): NavLink[] {
     { href: "/ranking/returns", label: "投資家ランキング" },
     { href: "/weekly", label: "週次トレンド" },
     { href: "/activists", label: "アクティビスト注目銘柄" },
+    { href: "/buybacks", label: "自社株買い" },
     { href: "/investors", label: "投資家一覧" },
     { href: "/stocks", label: "銘柄一覧" },
     // 月別アーカイブは回遊の起点というより過去分の入口なので一番右に置く。
