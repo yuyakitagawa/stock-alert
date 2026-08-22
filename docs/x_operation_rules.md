@@ -57,3 +57,10 @@ X APIの従量課金はリンク入り投稿が$0.20/本（リンク無し$0.015
 「詳細はプロフィールのリンクから」に統一し、URLはプロフィールの固定リンク1本に集約する。
 プロフィールのリンクには `?utm_source=x&utm_medium=profile` を付け、GA4でX経由を識別する。
 `x_posts.variant` は `no_link` で記録される。
+
+## 8. YouTubeの誘導URLもUTMで識別する
+動画の概要欄のリンクはコード（`video/post_text.py` / `video/youtube_client.py`）が
+`?utm_source=youtube&utm_medium=social&utm_campaign=auto_video` を付けて出している。
+チャンネルページのリンク欄（YouTube Studio → カスタマイズ → 基本情報 → リンク、オーナーが手動設定）には
+Xのプロフィールと同じ形で `https://kujira-watch.com?utm_source=youtube&utm_medium=profile` を設定し、
+GA4で概要欄経由（social）とチャンネルページ経由（profile）を分けて見る。
