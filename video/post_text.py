@@ -12,8 +12,6 @@ import re
 # kujira-watch/src/lib/site.ts の SITE_NAME と同じ。変更したら両方を直すこと。
 SITE_NAME = "大口投資家の監視ブログ"
 SITE_URL = "https://kujira-watch.com"
-# 押せないリンク欄で見せる用の、スキーム無しの短い表記。
-SITE_HOST = "kujira-watch.com"
 
 # ハッシュタグに使えない文字。銘柄名には空白や「．」が入ることがあり
 # （例: Ｊ．フロント リテイリング）、そのまま「#」に続けるとタグが途中で切れて

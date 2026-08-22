@@ -322,8 +322,6 @@ DBキャッシュは廃止。
 
 | Secret名 | 内容 |
 |---|---|
-| `GMAIL_ADDRESS` | 送信元Gmailアドレス |
-| `GMAIL_APP_PASSWORD` | Gmailアプリパスワード |
 | `SUPABASE_URL` | Supabase プロジェクトURL（全データ永続化の宛先）|
 | `SUPABASE_SERVICE_KEY` | Supabase service_role キー（バックエンド書込用）|
 | `EDINET_API_KEY` | EDINET API v2 サブスクリプションキー（daily_alert.yml Step 2d + edinet_blog.yml毎時の大量保有スキャン用。未登録ならスキャンはスキップ）|

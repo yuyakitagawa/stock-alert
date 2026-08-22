@@ -117,7 +117,7 @@ def main() -> None:
     #     出ても気づけるようパイプライン側と二重化。critical でも公開は止めない）
     try:
         from lib.data_sanity import run_gate
-        run_gate(ranking_rows, source="export_to_web", alert=True)
+        run_gate(ranking_rows, source="export_to_web")
     except Exception as _e:
         print(f"[export_to_web] QAチェックでエラー（無視して継続）: {_e}")
 

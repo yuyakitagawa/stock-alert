@@ -11,19 +11,15 @@ check_ranking(rows): ランキング単体の不変条件（下落確率レン�
     run_gate(ranking_rows, source="rank_stocks")          # リリース前ゲート
 
 各チェックは純粋関数。重大度 critical / warning を付与して Violation のリストを返す。
-alert-only: critical でも例外を投げず、呼び出し側の処理は継続させる（通知のみ）。
+alert-only: critical でも例外を投げず、呼び出し側の処理は継続させる（ログ出力のみ）。
 """
 from __future__ import annotations
 import os
-import smtplib
 import logging
 from collections import Counter
 from dataclasses import dataclass
-from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
-NOTIFY_TO = os.getenv("ALERT_TO", "dosankoure@gmail.com")
-
 # 既知の推奨ラベル（絵文字付き・無し両対応）
 KNOWN_RECOMMEND = {
     "💎 買い", "—",
@@ -140,10 +136,6 @@ def check_ranking(data) -> list[Violation]:
     return v
 
 
-def has_critical(violations: list[Violation]) -> bool:
-    return any(x.severity == "critical" for x in violations)
-
-
 def format_violations(violations: list[Violation]) -> str:
     """違反リストを人間可読サマリに整形。"""
     if not violations:
@@ -153,44 +145,6 @@ def format_violations(violations: list[Violation]) -> str:
         mark = "🔴 critical" if x.severity == "critical" else "🟡 warning"
         lines.append(f"  [{mark}] {x.check}: {x.detail}")
     return "\n".join(lines)
-
-
-def send_qa_alert(violations: list[Violation], source: str = "") -> bool:
-    """違反をメール通知する（alert-only: 処理は止めない）。送信成否を返す。"""
-    # ユーザー依頼でデータ整合性アラートメール停止(2026-06-20)。復活はこのreturnを削除。
-    return False
-    if not violations:
-        return False
-    gmail_addr = os.getenv("GMAIL_ADDRESS")
-    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
-    if not gmail_addr or not gmail_pass:
-        logger.warning("[data_sanity] GMAIL未設定のためQAアラート送信スキップ")
-        return False
-
-    n_crit = sum(1 for x in violations if x.severity == "critical")
-    icon   = "🔴" if n_crit else "🟡"
-    subject = f"{icon} データ整合性アラート — {source or 'ランキング'} ({n_crit}件critical)"
-    body = (
-        f"出力データの不変条件チェックで違反を検知しました。\n"
-        f"発生源: {source}\n\n"
-        f"{format_violations(violations)}\n\n"
-        "━━━━━━━━━━━━━━━━\n"
-        "※ alert-only 設定のため、データ更新は継続しています。\n"
-        "  critical の場合は web/メールに誤データが出ている可能性があるため確認してください。\n"
-    )
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"]    = gmail_addr
-    msg["To"]      = NOTIFY_TO
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(gmail_addr, gmail_pass)
-            server.sendmail(gmail_addr, NOTIFY_TO, msg.as_string())
-        logger.info("📧 QAアラート送信: %s", subject)
-        return True
-    except Exception as e:
-        logger.error("[data_sanity] QAアラート送信失敗: %s", e)
-        return False
 
 
 # 銘柄の価格が全期間で同一値のまま = 凍結（更新パイプラインが古いデータを掴んだまま
@@ -227,31 +181,27 @@ def check_price_freshness(history: dict) -> list[Violation]:
     return v
 
 
-def run_price_freshness_gate(history: dict, source: str = "", alert: bool = True) -> list[Violation]:
-    """価格凍結チェック→ログ→（違反あれば）メール通知。alert-only。"""
+def run_price_freshness_gate(history: dict, source: str = "") -> list[Violation]:
+    """価格凍結チェック→ログ出力。alert-only。"""
     violations = check_price_freshness(history)
     summary = format_violations(violations)
     if violations:
         logger.warning("[%s] %s", source or "price_freshness", summary)
         print(summary)
-        if alert:
-            send_qa_alert(violations, source)
     else:
         logger.info("[%s] %s", source or "price_freshness", summary)
         print(summary)
     return violations
 
 
-def run_gate(data, source: str = "", alert: bool = True) -> list[Violation]:
-    """検査→ログ出力→（違反あれば）メール通知 をまとめて行うパイプライン用ゲート。
+def run_gate(data, source: str = "") -> list[Violation]:
+    """検査→ログ出力 をまとめて行うパイプライン用ゲート。
        alert-only: critical でも例外を投げず、呼び出し側の処理は継続させる。"""
     violations = check_ranking(data)
     summary = format_violations(violations)
     if violations:
         logger.warning("[%s] %s", source or "data_sanity", summary)
         print(summary)
-        if alert:
-            send_qa_alert(violations, source)
     else:
         logger.info("[%s] %s", source or "data_sanity", summary)
         print(summary)
