@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import MonthList from "@/components/MonthList";
+import RelatedArticles from "@/components/RelatedArticles";
 import { formatMonth } from "@/lib/format";
-import { getAllMonthsForIndex } from "@/lib/microcms";
+import { getAllMonthsForIndex, getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
@@ -24,7 +25,11 @@ export const metadata: Metadata = {
 // （サイトマップにしか載らない孤立ページになっていた）。月ハブを挟むことで
 // 全ての取引日別ページが「ヘッダー → 月別アーカイブ → 各月 → 各日」で辿れるようにする。
 export default async function MonthlyIndexPage() {
-  const months = await getAllMonthsForIndex();
+  const [months, { contents: latestArticles }] = await Promise.all([
+    getAllMonthsForIndex(),
+    // 月リストの下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
+    getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
+  ]);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -74,6 +79,13 @@ export default async function MonthlyIndexPage() {
       ) : (
         <MonthList months={months} />
       )}
+      <div className="mt-10">
+        <RelatedArticles
+          title="最新の解説記事"
+          lead="今月ぶんのアーカイブに入る、直近の取引の解説記事です。"
+          articles={latestArticles}
+        />
+      </div>
       <AdUnit placement="bottom" />
     </div>
   );

@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
-import { getAllStocksForIndex } from "@/lib/microcms";
+import RelatedArticles from "@/components/RelatedArticles";
+import { getAllStocksForIndex, getArticleList } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -81,10 +82,12 @@ export default async function StocksIndexPage({ searchParams }: Props) {
 }
 
 async function StocksBody({ searchParams }: Props) {
-  const [{ sector, page }, stocks, sectorByCode] = await Promise.all([
+  const [{ sector, page }, stocks, sectorByCode, { contents: latestArticles }] = await Promise.all([
     searchParams,
     getAllStocksForIndex(),
     getAllSectorsByCode(),
+    // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
+    getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
   ]);
 
   const counts = new Map<string, number>();
@@ -172,6 +175,13 @@ async function StocksBody({ searchParams }: Props) {
           )}
         </nav>
       )}
+      <div className="mt-10">
+        <RelatedArticles
+          title="最新の解説記事"
+          lead="一覧の銘柄で直近にあった大口取引の解説記事です。"
+          articles={latestArticles}
+        />
+      </div>
     </>
   );
 }

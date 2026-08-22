@@ -6,8 +6,10 @@ import {
   type ActivistMove,
 } from "@/lib/activists";
 import { displayFilerName, formatDate } from "@/lib/format";
+import { getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
+import RelatedArticles from "@/components/RelatedArticles";
 import AdUnit from "@/components/AdUnit";
 import { getAllListedCodes } from "@/lib/companyInfo";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
@@ -33,11 +35,13 @@ export const metadata: Metadata = {
 };
 
 export default async function ActivistsPage() {
-  const [summary, recentMoves, listedCodes, filerIds] = await Promise.all([
+  const [summary, recentMoves, listedCodes, filerIds, { contents: activistArticles }] = await Promise.all([
     getActivistHoldingsSummary(),
     getActivistRecentMoves(MOVES_WINDOW_DAYS).catch(() => []),
     getAllListedCodes().catch(() => new Set<string>()),
     getFilerIdMap().catch(() => ({}) as Record<string, number>),
+    // アイキャッチ付き記事カード用のアクティビスト分類の最新記事。取れなくてもページは成立させる。
+    getArticleList({ dealType: "アクティビスト", limit: 4 }).catch(() => ({ contents: [] })),
   ]);
 
   // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
@@ -160,6 +164,12 @@ export default async function ActivistsPage() {
           <ul className="card-grid card-grid-wide">{attentionStocks.map(attentionItem)}</ul>
         )}
       </section>
+
+      <RelatedArticles
+        title="アクティビストの解説記事"
+        lead="アクティビストによる直近の取引を、取引ごとの解説記事で読めます。"
+        articles={activistArticles}
+      />
 
       <AdUnit placement="bottom" />
     </div>
