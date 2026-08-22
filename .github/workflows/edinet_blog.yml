@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests pandas numpy python-dotenv \
-            anthropic Pillow requests-oauthlib yfinance
+            anthropic Pillow requests-oauthlib yfinance pypdf
 
       - name: Install Noto Sans CJK (ブログのアイキャッチ画像生成用フォント)
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
@@ -74,6 +74,16 @@ jobs:
       - name: ブログ記事自動生成・投稿（EDINET大口取引解説「大口投資家の監視ブログ」）
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
+
+      # 自社株買い決定（TDnet）の記事化。取得枠は daily_alert.yml Step 2f2 と x_post.yml(buyback) が
+      # tdnet_buybacks に抽出済み。ここでは当日分の取りこぼしを拾うため抽出も先に回す。
+      - name: 自社株買い取得枠の抽出（tdnet_buybacks）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_tdnet.py --days 1 --catalyst-only && python tools/enrich_buybacks.py --days 2
+
+      - name: ブログ記事自動生成・投稿（自社株買い決定・上限10億円以上 or 発行済3%以上）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/publish_buyback_articles.py
 
       # 概算金額の再計算ブレ等で重複判定をすり抜けた同一開示の二重記事を自動回収する
       # （同一銘柄・同一開示日・同一提出者の後発記事を削除。実例: 2026-08-17）

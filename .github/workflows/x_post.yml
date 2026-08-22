@@ -5,6 +5,7 @@ name: X Post
 #   土曜 18:00 JST  trending  : 大口投資家の取引急増ランキング（web/x_weekly_trending.py）
 #   日曜 18:00 JST  activists : 今週のアクティビストの動き（web/x_weekly_activists.py）
 #   水曜 21:00 JST  followup  : 3ヶ月前の大量保有報告の答え合わせ（web/x_followup.py）
+#   平日 19:00 JST  buyback   : 本日の自社株買い決定（web/x_buyback.py。投稿前にTDnet取得＋取得枠抽出）
 #   毎日 10:00 JST  metrics   : 投稿のインプレッション等を収集（web/x_metrics.py）
 #                               ※non_public_metricsは30日以内の自分の投稿しか取れないため毎日回す
 #   手動のみ        verify    : アクセストークンの実権限確認（投稿しない。web/x_client --verify）
@@ -15,16 +16,17 @@ on:
     - cron: '0 9 * * 6'   # trending
     - cron: '0 9 * * 0'   # activists
     - cron: '0 12 * * 3'  # followup
+    - cron: '0 10 * * 1-5' # buyback
     - cron: '0 1 * * *'   # metrics
   workflow_dispatch:
     inputs:
       target:
         description: 'どれを実行するか'
         type: choice
-        options: [trending, activists, followup, metrics, verify]
+        options: [trending, activists, followup, buyback, metrics, verify]
         default: trending
       dry_run:
-        description: '本文の生成・表示のみで投稿しない（trending/activists/followup）'
+        description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback）'
         type: boolean
         default: false
 
@@ -43,6 +45,7 @@ jobs:
           || (github.event.schedule == '0 9 * * 6' && 'trending')
           || (github.event.schedule == '0 9 * * 0' && 'activists')
           || (github.event.schedule == '0 12 * * 3' && 'followup')
+          || (github.event.schedule == '0 10 * * 1-5' && 'buyback')
           || (github.event.schedule == '0 1 * * *' && 'metrics')
           || '' }}
       DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
@@ -57,11 +60,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests python-dotenv requests-oauthlib Pillow
+        run: pip install requests python-dotenv requests-oauthlib Pillow pypdf
 
       # 投稿系はカード画像（web/x_card_image.py）で日本語フォントが必要
       - name: Install Noto Sans CJK
-        if: env.TARGET == 'trending' || env.TARGET == 'activists' || env.TARGET == 'followup'
+        if: env.TARGET == 'trending' || env.TARGET == 'activists' || env.TARGET == 'followup' || env.TARGET == 'buyback'
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
 
       - name: Link repo to ~/stock-alert
@@ -89,6 +92,10 @@ jobs:
       - name: Post follow-up (水曜)
         if: env.TARGET == 'followup'
         run: cd ~/stock-alert && python web/x_followup.py $DRY_RUN
+
+      - name: Post daily buybacks (平日)
+        if: env.TARGET == 'buyback'
+        run: cd ~/stock-alert && python web/x_buyback.py $DRY_RUN
 
       - name: Collect metrics (毎日)
         if: env.TARGET == 'metrics'

@@ -33,7 +33,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost lightgbm \
-            yfinance anthropic
+            yfinance anthropic pypdf
 
       - name: Link repo to ~/stock-alert
         run: |
@@ -88,6 +88,12 @@ jobs:
       - name: Step 2f - TDnet適時開示取得（やのしん・隔離テーブル）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_tdnet.py --days 3 --catalyst-only
+
+      # 自社株買い「決定」開示の原文PDFから取得枠を抽出（サイト/X/ブログ共通の事実）。
+      # TDnetのPDFは公開から約1ヶ月で404になるため、取りこぼしは日次で拾う必要がある。
+      - name: Step 2f2 - 自社株買い取得枠の抽出（tdnet_buybacks）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/enrich_buybacks.py --days 3
 
       - name: Step 2g - JPX空売り・信用残取得
         continue-on-error: true
