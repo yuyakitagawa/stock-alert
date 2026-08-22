@@ -198,6 +198,11 @@ export default async function StockPage({ params }: Props) {
                   {filer.filerName}
                 </Link>
                 <DealTypeBadge dealType={filer.category} />
+                {filer.latestRatio !== null && filer.latestDiscDate && (
+                  <Typography component="span" variant="caption" sx={{ color: "text.secondary" }}>
+                    保有比率 {filer.latestRatio}%（{formatDate(filer.latestDiscDate)}時点）
+                  </Typography>
+                )}
               </ListItem>
             ))}
           </List>
