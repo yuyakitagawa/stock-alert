@@ -66,30 +66,6 @@ export const getInvestorReturns = unstable_cache(getInvestorReturnsUncached, ["g
   revalidate: 3600,
 });
 
-// ランキング全体の母数。「n人中の何位か」を説明するために使う。
-async function getInvestorReturnsSummaryUncached(): Promise<{
-  filerCount: number;
-  latestBuyDate: string | null;
-}> {
-  const supabase = getSupabaseServerClient();
-  const [{ count }, { data }] = await Promise.all([
-    supabase.from("investor_returns_3m").select("filer_name", { count: "exact", head: true }),
-    supabase
-      .from("investor_returns_3m")
-      .select("latest_buy_date")
-      .order("latest_buy_date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-  return { filerCount: count ?? 0, latestBuyDate: data?.latest_buy_date ?? null };
-}
-
-export const getInvestorReturnsSummary = unstable_cache(
-  getInvestorReturnsSummaryUncached,
-  ["getInvestorReturnsSummary"],
-  { revalidate: 3600 }
-);
-
 // 「+25.2%」「-3.4%」。0は符号なし。
 export function formatSignedPercent(value: number, digits = 1): string {
   const sign = value > 0 ? "+" : "";
