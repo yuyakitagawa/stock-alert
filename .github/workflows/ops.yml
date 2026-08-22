@@ -1,0 +1,70 @@
+name: Ops (keepalive + watchdog)
+
+# 運用系の小さな定期処理をまとめた1本。
+#   平日 06:00 UTC  keepalive : 空コミットでリポジトリを活性状態に保つ（GitHubは60日間コミットが無いと
+#                               scheduleワークフローを自動停止するため）。daily_alertの前に走らせる。
+#   平日 14:30 UTC  watchdog  : daily_alert.yml が今日成功していなければ再実行する。
+#                               daily_alertのschedule実行は遅延が多く、実測では予定より最大2〜3時間遅れて
+#                               開始する。早い時刻に監視すると「まだ成功していない」と誤判定して二重起動
+#                               （LINE二重通知）になるため（実例: 2026-08-03）、確実に完了した後の
+#                               23:30 JST に置いている。
+on:
+  schedule:
+    - cron: '0 6 * * 1-5'   # keepalive
+    - cron: '30 14 * * 1-5' # watchdog
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'どれを実行するか'
+        type: choice
+        options: [watchdog, keepalive]
+        default: watchdog
+
+jobs:
+  keepalive:
+    if: github.event.schedule == '0 6 * * 1-5' || inputs.job == 'keepalive'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Keep repository active
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "GitHub Actions"
+          git commit --allow-empty -m "chore: keepalive [skip ci]"
+          git push
+
+  watchdog:
+    if: github.event.schedule == '30 14 * * 1-5' || inputs.job == 'watchdog'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Check if daily alert ran today
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          echo "Checking runs for $TODAY..."
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/workflows/daily_alert.yml/runs?per_page=5" \
+            --jq ".workflow_runs[] | select(.created_at | startswith(\"$TODAY\")) | .conclusion" \
+            | grep -v "^$" | head -1)
+          echo "Today's conclusion: '$CONCLUSION'"
+          if [ "$CONCLUSION" = "success" ]; then
+            echo "needs_trigger=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_trigger=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger daily alert if missing or failed
+        if: steps.check.outputs.needs_trigger == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Daily alert not completed today. Triggering..."
+          gh workflow run daily_alert.yml --repo "${{ github.repository }}"

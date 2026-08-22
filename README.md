@@ -34,12 +34,9 @@ Chrome Headlessが必要で毎時回すには重いため、記事投稿とは�
 `--article-id`でローカル実行も可）。
 
 その他ワークフロー: ci.yml（テスト）、
-keepalive.yml（Supabase keepalive）、watchdog.yml（daily_alert.yml監視）、
-data_backfill.yml（JPX/TDnet/EDINET手動遡及）、backfill_rankings.yml（株価キャッシュ更新+ランキング遡及・手動実行）、
-x_weekend_post.yml（週末のX投稿2本立て。土曜18:00 JST=急増ランキング`web/x_weekly_trending.py`／日曜18:00 JST=今週のアクティビストの動き`web/x_weekly_activists.py`。どちらのステップを走らせるかは`github.event.schedule`で分岐し、手動実行は`target`入力で選ぶ）、
-x_followup.yml（水曜21:00 JSTの「答え合わせ」投稿`web/x_followup.py`）、
-x_metrics.yml（毎日10:00 JSTにX投稿のインプレッション等とアカウントのフォロワー数を収集`web/x_metrics.py`）、
-x_verify.yml（Xトークンの実権限確認・手動実行専用）
+ops.yml（運用系2本立て。平日06:00 UTC=keepalive空コミット／平日14:30 UTC=watchdog=daily_alert.ymlが今日成功していなければ再実行。`github.event.schedule`でジョブを分岐し、手動実行は`job`入力で選ぶ）、
+backfill.yml（手動遡及を1本に統合。`targets`入力にカンマ区切りで jpx / tdnet / edinet / prices（株価キャッシュ更新）/ rankings（ランキング遡及、`start_date`必須）を指定）、
+x_post.yml（X関連を1本に統合。土曜18:00 JST=急増ランキング`web/x_weekly_trending.py`／日曜18:00 JST=今週のアクティビストの動き`web/x_weekly_activists.py`／水曜21:00 JST=「答え合わせ」投稿`web/x_followup.py`／毎日10:00 JST=インプレッション等の収集`web/x_metrics.py`／手動のみ=Xトークンの実権限確認`web/x_client --verify`。cronの値または`target`入力でステップを分岐）
 ```
 
 ユーザー向けの通知・操作は LINE Messaging API 経由（Supabase Edge Function `supabase/functions/line-webhook`）で提供する。Web/Vercelアプリは廃止済み。
@@ -327,8 +324,6 @@ DBキャッシュは廃止。
 
 | Secret名 | 内容 |
 |---|---|
-| `GMAIL_ADDRESS` | 送信元Gmailアドレス |
-| `GMAIL_APP_PASSWORD` | Gmailアプリパスワード |
 | `SUPABASE_URL` | Supabase プロジェクトURL（全データ永続化の宛先）|
 | `SUPABASE_SERVICE_KEY` | Supabase service_role キー（バックエンド書込用）|
 | `EDINET_API_KEY` | EDINET API v2 サブスクリプションキー（daily_alert.yml Step 2d + edinet_blog.yml毎時の大量保有スキャン用。未登録ならスキャンはスキップ）|

@@ -142,17 +142,30 @@ export const getAllFilers = unstable_cache(
 );
 
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
-// 投資家一覧（名称+分類）を返す。
-async function getFilersByStockCodeUncached(
-  stockCode: string
-): Promise<{ filerName: string; category: DealType }[]> {
+// 投資家一覧（名称+分類+最新開示の保有比率）を返す。保有比率はその投資家の最新開示行の
+// holding_ratio（訂正報告書で欠損していれば null）で、比率の高い順→名称順に並べる。
+export type StockFiler = {
+  filerName: string;
+  category: DealType;
+  latestRatio: number | null;
+  latestDiscDate: string | null;
+};
+
+async function getFilersByStockCodeUncached(stockCode: string): Promise<StockFiler[]> {
   const supabase = getSupabaseServerClient();
   const { data: holdings } = await supabase
     .from("edinet_large_holdings")
-    .select("filer_name")
-    .eq("issuer_code", stockCode);
+    .select("filer_name, holding_ratio, disc_date")
+    .eq("issuer_code", stockCode)
+    .order("disc_date", { ascending: false });
 
-  const filerNames = [...new Set((holdings ?? []).map((h) => h.filer_name).filter(Boolean))];
+  // 開示日降順で最初に現れた行＝最新開示。
+  const latestByFiler = new Map<string, { ratio: number | null; discDate: string }>();
+  for (const h of holdings ?? []) {
+    if (!h.filer_name || latestByFiler.has(h.filer_name)) continue;
+    latestByFiler.set(h.filer_name, { ratio: h.holding_ratio, discDate: h.disc_date });
+  }
+  const filerNames = [...latestByFiler.keys()];
   if (filerNames.length === 0) return [];
 
   const { data: classifications } = await supabase
@@ -167,8 +180,14 @@ async function getFilersByStockCodeUncached(
     .map((filerName) => ({
       filerName,
       category: categoryByFiler.get(filerName) ?? ("その他" as DealType),
+      latestRatio: latestByFiler.get(filerName)?.ratio ?? null,
+      latestDiscDate: latestByFiler.get(filerName)?.discDate ?? null,
     }))
-    .sort((a, b) => a.filerName.localeCompare(b.filerName, "ja"));
+    .sort(
+      (a, b) =>
+        (b.latestRatio ?? -1) - (a.latestRatio ?? -1) ||
+        a.filerName.localeCompare(b.filerName, "ja")
+    );
 }
 
 export const getFilersByStockCode = unstable_cache(getFilersByStockCodeUncached, ["getFilersByStockCode"], {

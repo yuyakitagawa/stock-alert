@@ -1,0 +1,123 @@
+name: Backfill (JPX / TDnet / EDINET / 株価 / ランキング)
+
+# 手動実行専用。過去データの遡及取得・再生成をまとめた1本。targets で対象を選ぶ。
+#   jpx      : JPX 空売り・信用残（tools/fetch_jpx_market.py）
+#   tdnet    : TDnet 適時開示（tools/fetch_tdnet.py --days）
+#   edinet   : EDINET 決算XBRL（tools/fetch_edinet_financials.py --days / --start）
+#   prices   : Yahoo Finance 株価キャッシュ（tools/fetch_history.py --years）
+#   rankings : gen_rankings の遡及生成（tools/backfill_history.py --start/--end/--force）
+#              ※通常 prices とセットで使う（例: targets=prices,rankings）
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: '取得対象（カンマ区切り: jpx,tdnet,edinet,prices,rankings）'
+        required: true
+        default: 'jpx,tdnet'
+      tdnet_days:
+        description: '[tdnet] 遡る日数'
+        default: '30'
+      edinet_days:
+        description: '[edinet] 遡る日数'
+        default: '90'
+      edinet_start_date:
+        description: '[edinet] 開始日 (YYYY-MM-DD, 指定時はdays無視)'
+        default: ''
+      price_years:
+        description: '[prices] 株価キャッシュを遡って更新する年数'
+        default: '1'
+      start_date:
+        description: '[rankings] 遡及対象の開始日 (YYYY-MM-DD)'
+        default: ''
+      end_date:
+        description: '[rankings] 遡及対象の終了日 (YYYY-MM-DD, 省略時は今日)'
+        default: ''
+      force:
+        description: '[rankings] 既存日付も再生成・上書きする（価格データ修正後の再生成用）'
+        type: boolean
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy scikit-learn joblib \
+            python-dotenv openpyxl xlrd xgboost lightgbm yfinance
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+
+      - name: Verify secrets
+        run: |
+          cd ~/stock-alert
+          python3 -c "
+          import os
+          from dotenv import load_dotenv; load_dotenv()
+          for k in ['SUPABASE_URL','SUPABASE_SERVICE_KEY','EDINET_API_KEY']:
+              v = os.environ.get(k,'')
+              print(f'{k}: {\"SET (len={len(v)})\" if v else \"MISSING\"}')"
+
+      - name: JPX 空売り・信用残取得
+        if: contains(inputs.targets, 'jpx')
+        run: cd ~/stock-alert && python tools/fetch_jpx_market.py
+
+      - name: TDnet 適時開示取得
+        if: contains(inputs.targets, 'tdnet')
+        run: cd ~/stock-alert && python tools/fetch_tdnet.py --days ${{ inputs.tdnet_days }}
+
+      - name: EDINET 決算XBRL取得
+        if: contains(inputs.targets, 'edinet')
+        run: |
+          cd ~/stock-alert
+          python tools/fetch_edinet_financials.py --verify
+          if [ -n "${{ inputs.edinet_start_date }}" ]; then
+            python tools/fetch_edinet_financials.py --start "${{ inputs.edinet_start_date }}" --sleep 1.5
+          else
+            python tools/fetch_edinet_financials.py --days "${{ inputs.edinet_days }}" --sleep 1.5
+          fi
+
+      - name: 株価キャッシュ更新（Yahoo Finance）
+        if: contains(inputs.targets, 'prices')
+        run: cd ~/stock-alert && python tools/fetch_history.py --years ${{ inputs.price_years }}
+
+      - name: Restore model cache
+        if: contains(inputs.targets, 'rankings')
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/rf_drop_model.pkl
+          key: rf-drop-model-v1
+
+      - name: ランキング遡及生成（gen_rankings backfill）
+        if: contains(inputs.targets, 'rankings')
+        run: |
+          cd ~/stock-alert
+          if [ -z "${{ inputs.start_date }}" ]; then
+            echo "::error::rankings には start_date が必要です"; exit 1
+          fi
+          ARGS="--start ${{ inputs.start_date }}"
+          [ -n "${{ inputs.end_date }}" ] && ARGS="$ARGS --end ${{ inputs.end_date }}"
+          [ "${{ inputs.force }}" = "true" ] && ARGS="$ARGS --force"
+          python tools/backfill_history.py $ARGS

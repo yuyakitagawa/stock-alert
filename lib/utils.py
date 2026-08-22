@@ -361,22 +361,6 @@ def compute_seq_features(seq):
     return [ac, skew, max_r, min_r, pos_ratio, slope, recent_vs_early]
 
 
-def _days_to_nearest_event(from_date, months, day=25):
-    """from_date から最も近い未来の(year, month, day)までの日数を返す。"""
-    import calendar as _cal
-    from datetime import date as _date
-    best = 9999
-    for m in months:
-        for yr_add in [0, 1]:
-            yr = from_date.year + yr_add
-            last = _cal.monthrange(yr, m)[1]
-            d = _date(yr, m, min(day, last))
-            delta = (d - from_date).days
-            if 0 <= delta < best:
-                best = delta
-    return best if best < 9999 else None
-
-
 def extract_features(p, v=None, nk_rets=None, fundamentals=None):
     """54次元特徴量: テクニカル10 + トレンド反転5 + 出来高3 + 日経マクロ3 + 60日系列要約7 + 日経相対アルファ4 + ファンダメンタル11 + マクロ拡張4 + 新規IB8 + EDINET1
     fundamentals dict keys (all optional):

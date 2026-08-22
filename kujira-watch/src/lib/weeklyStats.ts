@@ -14,10 +14,7 @@ export type WeeklySummary = {
   sellAmount: number;
   // 開示があった投資家分類すべてを金額降順で返す（テーブル表示用。上位3件等への絞り込みは呼び出し側で行わない）。
   categoryBreakdown: CategoryBreakdown[];
-  topStocks: StockBreakdown[];
 };
-
-const TOP_STOCK_COUNT = 3;
 
 // /monthly（月別アーカイブ）の「今月の主役」向け。誰が動いたかを金額規模の降順で並べる。
 // filerNameはフィールド追加前の記事には無いため、持たない記事は集計から除く。
@@ -34,8 +31,7 @@ export function buildFilerRanking(articles: ArticleContent[], limit: number): Fi
   return [...byFiler.values()].sort((a, b) => b.amount - a.amount).slice(0, limit);
 }
 
-// 銘柄別の集計。buildWeeklySummary.topStocks（上位3件）と/monthlyの銘柄ランキング
-// （上位10件）で件数だけが異なるため、limitを引数にして共有する。
+// 銘柄別の集計（/monthlyの銘柄ランキング用）。
 export function buildStockRanking(articles: ArticleContent[], limit: number): StockBreakdown[] {
   const byStock = new Map<string, StockBreakdown>();
   for (const article of articles) {
@@ -52,8 +48,8 @@ export function buildStockRanking(articles: ArticleContent[], limit: number): St
   return [...byStock.values()].sort((a, b) => b.amount - a.amount).slice(0, limit);
 }
 
-// /weeklyの「今週のポイント」・/monthlyの「今月のポイント」向けに、件数・金額を
-// 買い/売り・投資家分類・銘柄の軸で集計する。
+// /weeklyの直近7日サマリー・/monthlyの「今月のポイント」向けに、件数・金額を
+// 買い/売り・投資家分類の軸で集計する。
 // 記事本文の解説とは別に、数字だけから機械的に導ける事実のみを扱う（解釈・予測はしない）。
 export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
   let buyCount = 0;
@@ -85,6 +81,5 @@ export function buildWeeklySummary(articles: ArticleContent[]): WeeklySummary {
     sellCount,
     sellAmount,
     categoryBreakdown: [...categoryMap.values()].sort((a, b) => b.amount - a.amount),
-    topStocks: buildStockRanking(articles, TOP_STOCK_COUNT),
   };
 }

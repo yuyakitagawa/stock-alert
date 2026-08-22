@@ -157,7 +157,6 @@ SECTION_SPEC = [
 # 作り直しでも直らなかったシーンを、記事の事実だけで組み直すための定型文。
 # 数値はすべて記事・開示由来で、ここで新しい事実を作らない（build_price_scene と同じ考え方）。
 # company / filer は事実の言い換えが必要で定型化できないため、壊れていたらシーンごと落とす。
-SALVAGEABLE_KINDS = ("hook", "deal", "change", "cta")
 DROPPABLE_KINDS = ("company", "filer")
 
 

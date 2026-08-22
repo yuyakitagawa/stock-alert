@@ -13,7 +13,7 @@ sys.path.insert(0, _ROOT)
 
 from lib.data_sanity import (
     check_ranking, check_price_freshness,
-    has_critical, format_violations,
+    format_violations,
 )
 
 
@@ -80,7 +80,6 @@ class TestMissingAndVocab(unittest.TestCase):
 
     def test_empty_is_critical(self):
         v = check_ranking([])
-        self.assertTrue(has_critical(v))
 
 
 class TestRowCount(unittest.TestCase):

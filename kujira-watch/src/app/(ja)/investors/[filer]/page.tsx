@@ -21,13 +21,15 @@ import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildInvestorFaqItems } from "@/lib/investorFaq";
 import { getFilerReturnPositions, formatSignedPercent } from "@/lib/investorReturns";
 
-export const revalidate = 300;
+// データ源はEDINETの日次開示。5分周期の再検証はクローラーのアクセスがほぼ毎回
+// 再生成に当たりコールドTTFBが1.4〜3.5秒になっていた（クロール速度の律速）ため1日にする。
+export const revalidate = 86400;
 
 // generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
 // 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。
 // 一部でも事前生成しておくとルート全体がISR扱いになり、事前生成していないパラメータも
 // 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
-const PRERENDERED_FILERS = 100;
+const PRERENDERED_FILERS = 300;
 
 // 事前生成は .next/server/app/investors/<URLエンコード済みの提出者名>/ を実際に掘るため、
 // エンコード後がファイル名の上限(255バイト)に触れる提出者はビルドが ENAMETOOLONG で
@@ -103,9 +105,10 @@ export default async function InvestorPage({ params }: Props) {
   const category = classification?.category ?? "その他";
 
   // holdingsはdisc_date降順のため、issuerCodeごとに最初に出現したもの(=最新の開示)を採用する。
+  // 表示順は保有比率の高い順（比率不明は末尾）。FAQや買い増し/売却リストも同じ順に揃う。
   const majorHoldings = Array.from(
     new Map(holdings.map((h) => [h.issuerCode, h])).values()
-  );
+  ).sort((a, b) => (b.holdingRatio ?? -1) - (a.holdingRatio ?? -1));
   // 最新開示の増減方向で「買い増し・新規」「売却」に分ける（前回比率が取れない開示は方向不明として除外）。
   const direction = (h: (typeof majorHoldings)[number]) =>
     h.holdingRatio !== null && h.holdingRatioPrior !== null

@@ -771,7 +771,7 @@ def main():
     # QA: 出力データの不変条件チェック（alert-only。違反でも処理は止めない）
     try:
         from lib.data_sanity import run_gate
-        run_gate(db_rows, source="rank_stocks", alert=True)
+        run_gate(db_rows, source="rank_stocks")
     except Exception as _e:
         print(f"[rank_stocks] QAチェックでエラー（無視して継続）: {_e}")
 

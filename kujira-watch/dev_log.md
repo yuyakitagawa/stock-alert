@@ -689,3 +689,18 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
   `/ranking/returns`・`/ranking/activist`・`/trending` が200、
   `/sitemap/pages.xml` に該当URLが無いこと、レンダリング後のHTMLに
   「開示急増」「ranking/trending」の残骸が無いことを確認
+
+## 2026-08-22 /weekly 投資家分類別トレンドを分類ごとのグラフへ・「集計中」判定を平日のみに
+- 「集計中」が土曜にも出ていた原因: 今週判定が暦週（月〜日）のみで、`isPartial = weekStart === currentWeekStart`。
+  EDINET開示も記事生成cron（平日0-12 UTC）も平日しか動かないため、土・日は確定扱いへ（`isCurrentWeekPartial()`）。
+- 投資家分類別トレンド: 買い用・売り用の2枚のヒートマップ表（`CategoryWeeklyTrend`）を廃止し、
+  分類ごとに買い上・売り下の小さな棒グラフを並べる `CategoryTrendGrid` へ。縦軸スケールは当初全分類共通にしたが、最大分類に引っ張られて他がほぼ見えないため分類ごとのスケール＋「目盛り」表示へ変更。
+  最新週の買い/売り上位3分類の文章は1段落に統合。全数値は`<details>`内の表（買い / 売り併記）。
+
+## 2026-08-22 /weekly 直近7日間の件数・金額タイルを削除しグラフ主体へ
+- 冒頭の「開示件数（直近7日）」「推定取引金額（直近7日）」タイルは取得・売却を合算した規模で
+  方向が読めず、下のグラフ（買い/売り別・分類別）と比べて伝える情報が無かったため削除。
+- 専用だった `getPreviousPeriodArticles()`（microcms.ts）・前週比の算出・`formatSigned` も削除。
+  `generateMetadata` は件数を含まない固定文言に変更（microCMSへの追加取得が1本減る）。
+- データ不足でグラフが出せない場合のフォールバック文を追加。
+- `tsc --noEmit`・`eslint` パス、dev で /weekly の描画を確認。

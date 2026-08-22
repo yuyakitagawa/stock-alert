@@ -1,0 +1,99 @@
+name: X Post
+
+# X（旧Twitter）関連の定期処理をまとめた1本。どれを走らせるかは cron の値（schedule実行）
+# または target 入力（手動実行）で分岐する。
+#   土曜 18:00 JST  trending  : 大口投資家の取引急増ランキング（web/x_weekly_trending.py）
+#   日曜 18:00 JST  activists : 今週のアクティビストの動き（web/x_weekly_activists.py）
+#   水曜 21:00 JST  followup  : 3ヶ月前の大量保有報告の答え合わせ（web/x_followup.py）
+#   毎日 10:00 JST  metrics   : 投稿のインプレッション等を収集（web/x_metrics.py）
+#                               ※non_public_metricsは30日以内の自分の投稿しか取れないため毎日回す
+#   手動のみ        verify    : アクセストークンの実権限確認（投稿しない。web/x_client --verify）
+#                               App権限変更前に発行したトークンは読み取り専用のままで投稿だけ403になる
+#                               （実例: 2026-08-18）ため、トークン更新後の確認に使う。
+on:
+  schedule:
+    - cron: '0 9 * * 6'   # trending
+    - cron: '0 9 * * 0'   # activists
+    - cron: '0 12 * * 3'  # followup
+    - cron: '0 1 * * *'   # metrics
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'どれを実行するか'
+        type: choice
+        options: [trending, activists, followup, metrics, verify]
+        default: trending
+      dry_run:
+        description: '本文の生成・表示のみで投稿しない（trending/activists/followup）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # scheduleイベントでは inputs.* が空、workflow_dispatchでは github.event.schedule が空になるため
+      # 両者をここで1つの TARGET に正規化して各ステップの if を単純にする。
+      TARGET: >-
+        ${{ inputs.target
+          || (github.event.schedule == '0 9 * * 6' && 'trending')
+          || (github.event.schedule == '0 9 * * 0' && 'activists')
+          || (github.event.schedule == '0 12 * * 3' && 'followup')
+          || (github.event.schedule == '0 1 * * *' && 'metrics')
+          || '' }}
+      DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv requests-oauthlib Pillow
+
+      # 投稿系はカード画像（web/x_card_image.py）で日本語フォントが必要
+      - name: Install Noto Sans CJK
+        if: env.TARGET == 'trending' || env.TARGET == 'activists' || env.TARGET == 'followup'
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      - name: Create .env from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
+          echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
+          echo "X_API_KEY=${{ secrets.X_API_KEY }}" >> ~/stock-alert/.env
+          echo "X_API_KEY_SECRET=${{ secrets.X_API_KEY_SECRET }}" >> ~/stock-alert/.env
+          echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
+          echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
+
+      - name: Post weekly trending (土曜)
+        if: env.TARGET == 'trending'
+        run: cd ~/stock-alert && python web/x_weekly_trending.py $DRY_RUN
+
+      - name: Post weekly activists (日曜)
+        if: env.TARGET == 'activists'
+        run: cd ~/stock-alert && python web/x_weekly_activists.py $DRY_RUN
+
+      - name: Post follow-up (水曜)
+        if: env.TARGET == 'followup'
+        run: cd ~/stock-alert && python web/x_followup.py $DRY_RUN
+
+      - name: Collect metrics (毎日)
+        if: env.TARGET == 'metrics'
+        run: cd ~/stock-alert && python web/x_metrics.py --report
+
+      - name: Verify X access token permissions (手動)
+        if: env.TARGET == 'verify'
+        run: cd ~/stock-alert && python -m web.x_client --verify
