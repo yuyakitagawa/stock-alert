@@ -14,12 +14,6 @@ DB_PATH = os.path.join(_BASE_DIR, "stock_alert.db")
 
 # ── 移行後の共通ヘルパー（旧・直接sqlite3呼び出しの置換用） ──────────────
 
-def get_latest_ranking_date():
-    """gen_rankings の最新日付を返す。なければ None。"""
-    row = sb.select_one("gen_rankings", "order=date.desc&select=date")
-    return row["date"] if row else None
-
-
 def get_ranking_by_date(date_str, select="*", order="drop_prob.asc"):
     """指定日のランキング全行を返す。"""
     return sb.select("gen_rankings", f"date=eq.{date_str}&order={order}&select={select}")

@@ -1495,14 +1495,15 @@ dry-runで10件の対応表を確認済み。書き込み（--apply）はオー�
 提案が弱かったのは「効果を測る手段が無い状態で体験を磨いていた」ためと分かった。
 
 **1. X metricsは4日連続で0件だった。コードではなくAPIクレジット切れ。**
-x_metrics.yml は毎日動いていて4回とも success。しかしログを見ると全便で
+X metricsの定期実行は毎日動いていて4回とも success。しかしログを見ると全便で
 `HTTP 402 {"detail":"credits depleted"}`。`x_posts` 14本すべて impressions が NULL、
 metrics_updated_at も0本。`/users/me` は通っており **フォロワーは0人**。
 コードもworkflowも正しく、有料プランなしでは取得できない。
 
 - `fetch_metrics()`: 401/402/403は待っても直らないので `MetricsUnavailable` を投げる。
   500等の一時的な失敗は従来どおり空dictのまま（次の便で直りうる）。
-- `run()`: 恒久失敗を捕まえて終了コード2。x_metrics.yml に continue-on-error は無いので
+- `run()`: 恒久失敗を捕まえて終了コード2。呼び出し側（統合後は `x_post.yml` の
+  `metrics` ステップ）に continue-on-error は無いので
   ジョブが赤くなる。空dictを返して成功扱いにしていたのが4日気付けなかった直接原因。
 
 **2. アクセスログの "Browser" は大半が機械だった。**
@@ -1530,3 +1531,10 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 テスト: `tests/test_x_metrics.py` 7→11件、`tests/test_traffic_report.py` 9件を新規追加。
 なお traffic_report.py 自体はこの環境にSupabase認証情報が無く実データ実行はしていない
 （同等のSQLをSupabase側で直接実行して数値を確認した）。
+
+## 2026-08-22 GitHub Actions ワークフロー整理（13本→8本）
+- X関連4本（x_weekend_post / x_followup / x_metrics / x_verify）→ `x_post.yml` に統合。cron値 or `target` 入力で分岐。
+- keepalive + watchdog → `ops.yml` に統合（2ジョブ、`github.event.schedule` で分岐）。
+- data_backfill + backfill_rankings → `backfill.yml` に統合（`targets` に prices / rankings を追加）。
+- ファイル削除済みなのにGitHub側に残っていた「Debug/Backfill Blog Categories (temporary)」2本は実行履歴を削除して一覧から除去。
+- 実行時刻・処理内容は変更なし。tests 392件 pass。

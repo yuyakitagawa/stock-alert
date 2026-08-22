@@ -9,7 +9,7 @@ import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ArticleCard from "@/components/ArticleCard";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
-import { getArticleDetail, getArticleList, getArticlesByStockCode } from "@/lib/microcms";
+import { getArticleDetail, getArticleList, getArticlesByStockCode, getTranslatedArticlesForSitemap } from "@/lib/microcms";
 import { SITE_NAME_EN, SITE_URL, X_HANDLE } from "@/lib/site";
 import { UI } from "@/lib/i18n";
 import { isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
@@ -18,6 +18,21 @@ import AdUnit from "@/components/AdUnit";
 // ja版と同じ理由でISRの保持を1日にする（記事本文は公開後ほぼ変わらず、60秒だと
 // クローラーのアクセスがほぼ毎回再生成に当たってTTFBが落ちる）。
 export const revalidate = 86400;
+
+// generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
+// 何度アクセスしてもCDNキャッシュに乗らない（ja側の/articlesと同じ）。
+// 一部でも事前生成するとルート全体がISR扱いになる。英訳済み記事（新しい順）から事前生成する。
+const PRERENDERED_EN_ARTICLES = 100;
+
+export async function generateStaticParams() {
+  // 取得に失敗しても空配列を返してビルドは通す（ja側と同じ判断）。空でもISR扱いは維持される。
+  try {
+    const articles = await getTranslatedArticlesForSitemap();
+    return articles.slice(0, PRERENDERED_EN_ARTICLES).map((article) => ({ id: article.id }));
+  } catch {
+    return [];
+  }
+}
 
 // ja版と同じカニバリ判定（同一「銘柄×提出者」で最新1本だけをindex）。判定を揃えないと
 // ja側がnoindexなのにen側がindexという食い違いが出る。

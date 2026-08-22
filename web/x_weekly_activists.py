@@ -1,7 +1,7 @@
 """
 web/x_weekly_activists.py
 
-週次「今週のアクティビストの動きまとめ」のX自動投稿（x_weekend_post.yml、日曜18:00 JST）。
+週次「今週のアクティビストの動きまとめ」のX自動投稿（x_post.yml、日曜18:00 JST）。
 土曜の急増ランキング（x_weekly_trending.py）と対になる週末2本立ての片方で、
 こちらは「誰が・どの銘柄で・何%→何%動いたか」という中身を見せて /activists へ誘導する。
 

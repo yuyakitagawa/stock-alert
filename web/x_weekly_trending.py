@@ -1,7 +1,7 @@
 """
 web/x_weekly_trending.py
 
-週次「大口投資家の取引急増ランキング」のX自動投稿（x_weekend_post.yml、土曜18:00 JST）。
+週次「大口投資家の取引急増ランキング」のX自動投稿（x_post.yml、土曜18:00 JST）。
 平日の記事投稿・日次サマリーが無い週末のタイムラインを埋め、/trending への導線を作る。
 日曜18:00の「今週のアクティビストの動き」（x_weekly_activists.py）と対になる週末2本立て。
 
