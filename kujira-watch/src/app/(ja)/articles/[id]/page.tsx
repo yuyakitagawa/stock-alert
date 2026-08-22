@@ -21,7 +21,7 @@ import {
   getArticleList,
   getArticlesByStockCode,
 } from "@/lib/microcms";
-import { getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot } from "@/lib/investors";
+import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot, investorPath } from "@/lib/investors";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
@@ -203,6 +203,7 @@ export default async function ArticleDetailPage({ params }: Props) {
   const holdingRatio = snapshot?.holdingRatio ?? null;
   // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
   const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
+  const filerId = filerName ? await getFilerIdByName(filerName) : null;
   // 前回比はEDINET開示（今回比率 − 直前保有割合）を正とし、取れないときだけCMSの
   // ratioChangePctへフォールバックする。CMS側の値は記事生成時にXBRLの直前保有割合が
   // まだ取れていないと「今回比率の全量」で入ってしまい、同じ画面に
@@ -216,7 +217,7 @@ export default async function ArticleDetailPage({ params }: Props) {
     value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 
   const linkedBody = frameSpeculation(
-    linkifyFilerNames(article.body, filers.map((f) => f.filerName))
+    linkifyFilerNames(article.body, filers)
   );
 
   const articleJsonLd = {
@@ -389,7 +390,7 @@ export default async function ArticleDetailPage({ params }: Props) {
               <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引企業</Typography>
               <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
                 <Link
-                  href={`/investors/${encodeURIComponent(filerName)}`}
+                  href={investorPath(filerId, filerName)}
                   className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
                 >
                   {displayFilerName(filerName)}
@@ -512,7 +513,7 @@ export default async function ArticleDetailPage({ params }: Props) {
                 {DEAL_TYPE_DESCRIPTIONS[article.dealType]}
               </p>
             )}
-            <ActionButton href={`/investors/${encodeURIComponent(filerName)}`}>
+            <ActionButton href={investorPath(filerId, filerName)}>
               {displayFilerName(filerName)}の保有銘柄・比率推移を見る
             </ActionButton>
           </div>
