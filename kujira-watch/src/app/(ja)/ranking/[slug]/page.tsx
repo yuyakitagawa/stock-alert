@@ -4,17 +4,10 @@ import { notFound } from "next/navigation";
 import { displayFilerName, formatDate, formatDealAmount } from "@/lib/format";
 import { getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
-import {
-  getInvestorReturns,
-  getInvestorReturnsSummary,
-  formatSignedPercent,
-  formatSignedPoint,
-  MIN_POSITIONS,
-  RETURN_TRADING_DAYS,
-} from "@/lib/investorReturns";
+import { getInvestorReturns, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
 import { buildStockRows } from "@/lib/rankingStats";
 import AdUnit from "@/components/AdUnit";
-import DealTypeLabel from "@/components/DealTypeLabel";
+import InvestorReturnRanking from "@/components/InvestorReturnRanking";
 
 // activistの元データ（記事）は毎時更新、returnsの元データ（Supabaseのマテリアライズド
 // ビュー）は日次更新なので1時間キャッシュで十分。
@@ -23,6 +16,9 @@ export const revalidate = 3600;
 // activist（記事ベース）の集計対象期間（暦日）と、両ランキング共通の表示件数。
 const RANKING_DAYS = 30;
 const RANKING_SIZE = 30;
+// returnsは分類での絞り込みをクライアント側で行うため全件（2026-08-22時点で198名）を渡す。
+// ビューはn>=3の投資家しか持たないので件数は増えても数百のオーダーに収まる。
+const RANKING_FETCH_LIMIT = 1000;
 
 export type RankingSlug = "returns" | "activist";
 
@@ -81,9 +77,8 @@ export default async function RankingSlugPage({ params }: Props) {
   const ranking = RANKINGS[slug as RankingSlug];
   if (!ranking) notFound();
 
-  const returnRows = ranking.axis === "returns" ? await getInvestorReturns(RANKING_SIZE) : [];
-  const returnSummary =
-    ranking.axis === "returns" ? await getInvestorReturnsSummary() : { filerCount: 0, latestBuyDate: null };
+  const returnRows =
+    ranking.axis === "returns" ? await getInvestorReturns(RANKING_FETCH_LIMIT) : [];
   // 記事(microCMS)を読むのはactivistだけ。returnsの集計元はSupabaseなので取りに行かない。
   const stockRows =
     ranking.axis === "stock"
@@ -108,7 +103,8 @@ export default async function RankingSlugPage({ params }: Props) {
     name: ranking.title,
     itemListElement:
       ranking.axis === "returns"
-        ? returnRows.map((row, index) => ({
+        ? // 構造化データは初期表示（絞り込みなしの上位30名）に揃える。
+          returnRows.slice(0, RANKING_SIZE).map((row, index) => ({
             "@type": "ListItem",
             position: index + 1,
             name: displayFilerName(row.filerName),
@@ -164,58 +160,10 @@ export default async function RankingSlugPage({ params }: Props) {
             : `直近${RANKING_DAYS}日に該当する開示がありません。`}
         </p>
       ) : ranking.axis === "returns" ? (
-        // 「1行目=順位＋投資家名（全幅）／2行目=メタ・平均リターン（右端）」の1件1カード。
-        // 投資家・最高銘柄と別々のリンクが2つあるためカード全体はリンクにしない。
         <>
-          <p className="kicker mb-2 text-foreground/40">
-            順位・投資家 ／ 分類・買い開示件数・勝率・日経平均比・最も上がった銘柄・3ヶ月平均リターン
-          </p>
-          <ul className="card-grid card-grid-wide">
-            {returnRows.map((row, index) => (
-              <li key={row.filerName} className="card">
-                <span className="flex items-baseline gap-2">
-                  <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
-                    {index + 1}
-                  </span>
-                  <Link
-                    href={`/investors/${encodeURIComponent(row.filerName)}`}
-                    className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
-                  >
-                    {displayFilerName(row.filerName)}
-                  </Link>
-                </span>
-                <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-foreground/60">
-                  <DealTypeLabel dealType={row.category} />
-                  <span className="font-semibold">買い開示{row.positionCount}件</span>
-                  <span>勝率{row.winRate}%</span>
-                  {row.avgExcessReturn !== null && (
-                    <span>日経平均比{formatSignedPoint(row.avgExcessReturn)}</span>
-                  )}
-                  <span className="flex items-center gap-1">
-                    最高
-                    <Link
-                      href={`/stocks/${row.bestStockCode}`}
-                      className="text-brand-blue hover:underline"
-                    >
-                      {row.bestStockName}（{formatSignedPercent(row.bestReturn, 0)}）
-                    </Link>
-                  </span>
-                  <span>最終買い{formatDate(row.latestBuyDate)}</span>
-                  <span
-                    className={`ml-auto whitespace-nowrap text-sm font-semibold tabular-nums ${
-                      row.avgReturn >= 0 ? "text-gain" : "text-loss"
-                    }`}
-                  >
-                    {formatSignedPercent(row.avgReturn)}
-                    <span className="kicker ml-1 font-normal text-foreground/40">3ヶ月平均</span>
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-xs leading-relaxed text-foreground/40">
-            集計対象は開示{MIN_POSITIONS}件以上の投資家{returnSummary.filerCount}名で、上位
-            {returnRows.length}名を表示しています。リターンは開示日（休場なら直後の営業日）の終値を基準に
+          <InvestorReturnRanking rows={returnRows} size={RANKING_SIZE} />
+          <p className="mt-2 text-xs leading-relaxed text-foreground/40">
+            集計対象は買い開示{MIN_POSITIONS}件以上の投資家です。リターンは開示日（休場なら直後の営業日）の終値を基準に
             {RETURN_TRADING_DAYS}営業日後の終値までを計算したもので、実際の取得単価・売却時期は反映していません。
             日経平均比は同じ期間の日経平均の騰落率との差（％pt）です。
           </p>
