@@ -1360,7 +1360,7 @@ if __name__ == "__main__":
     test_upload_eyecatch_returns_none_on_failure()
     test_build_eyecatch_for_article_none_without_pexels_key()
     test_build_eyecatch_for_article_none_when_generation_fails()
-    test_build_eyecatch_for_article_returns_url_dict_on_success()
+    test_build_eyecatch_for_article_returns_url_string_on_success()
     test_build_and_publish_includes_eyecatch_when_available()
     test_build_and_publish_skips_eyecatch_on_dry_run()
     test_generate_article_body_includes_company_description_when_available()
