@@ -164,11 +164,9 @@ export default async function BuybacksPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          上場企業が取締役会で決議した自社株買い（自己株式取得）の取得枠を、TDnet適時開示の原文PDFから
-          {SITE_NAME}のシステムが毎日抽出しています。会社自身が自社株を買う「最大のクジラ」の動きを、
-          直近{WINDOW_DAYS}日の決定について発行済株式比率・上限金額の大きい順に並べました。
-          月次の取得状況報告（進捗）は含みません。数字の見方は下部の
-          <a href="#faq" className="text-brand-blue hover:underline">よくある質問</a>をご覧ください。
+          上場企業が決議した自社株買いの取得枠を、TDnet開示の原文PDFから{SITE_NAME}が毎日抽出。
+          直近{WINDOW_DAYS}日の決定を発行済株式比率・上限金額の大きい順に並べています（数字の見方は
+          <a href="#faq" className="text-brand-blue hover:underline">FAQ</a>）。
         </p>
       </div>
 
