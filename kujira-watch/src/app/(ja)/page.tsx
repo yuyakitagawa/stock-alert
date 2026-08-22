@@ -51,7 +51,7 @@ export default async function HomePage() {
         />
       )}
       <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">
-        {latestDealDate ? `今日${formatDate(latestDealDate)}の取引` : "注目の取引"}
+        {latestDealDate ? `${formatDate(latestDealDate)}の取引` : "注目の取引"}
       </h1>
       {contents.length === 0 ? (
         <p className="text-foreground/50">記事がまだありません。</p>
