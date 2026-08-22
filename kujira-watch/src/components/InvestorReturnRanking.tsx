@@ -12,6 +12,7 @@ import {
   type InvestorReturnRow,
 } from "@/lib/investorReturns";
 import { DEAL_TYPES, type DealType } from "@/types/article";
+import { investorPath } from "@/lib/investorPath";
 
 // /ranking/returns のランキング本体＋投資家分類の絞り込み。
 // 全件（2026-08-22時点で198名）を最初からクライアントに渡してその場で絞り込む。
@@ -101,7 +102,7 @@ export default function InvestorReturnRanking({
                 {index + 1}
               </span>
               <Link
-                href={`/investors/${encodeURIComponent(row.filerName)}`}
+                href={investorPath(row.filerId, row.filerName)}
                 className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
               >
                 {displayFilerName(row.filerName)}

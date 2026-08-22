@@ -1,5 +1,5 @@
 import { displayFilerName, formatDate } from "@/lib/format";
-import { getFilerHoldings } from "@/lib/investors";
+import { getFilerHoldings, getFilerIdByName, getFilerNameById, investorPath } from "@/lib/investors";
 import { buildRss, rssResponse } from "@/lib/rss";
 import { SITE_URL } from "@/lib/site";
 
@@ -11,9 +11,14 @@ const FEED_ITEMS = 20;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ filer: string }> }) {
   const { filer } = await params;
-  const filerName = decodeURIComponent(filer);
+  // /investors/<番号>/feed.xml が正。旧形式（提出者名）も同じ内容を返す。
+  const filerId = /^\d+$/.test(filer) ? Number(filer) : null;
+  const filerName =
+    filerId !== null ? await getFilerNameById(filerId).catch(() => null) : decodeURIComponent(filer);
+  if (!filerName) return new Response("Not Found", { status: 404 });
+  const resolvedId = filerId ?? (await getFilerIdByName(filerName).catch(() => null));
   const holdings = await getFilerHoldings(filerName).catch(() => []);
-  const pageUrl = `${SITE_URL}/investors/${encodeURIComponent(filerName)}`;
+  const pageUrl = `${SITE_URL}${investorPath(resolvedId, filerName)}`;
   const label = displayFilerName(filerName);
 
   const xml = buildRss({

@@ -1,3 +1,4 @@
+import { investorPath } from "@/lib/investorPath";
 import type { Locale } from "@/lib/i18n";
 
 export function formatDate(dateString: string, locale: Locale = "ja"): string {
@@ -147,9 +148,13 @@ function filerNameCandidates(name: string): string[] {
 // EDINETのXBRLは提出者名を全角（Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…）で保持する一方、
 // 記事本文は半角で書かれるため、NFKC正規化した文字列上で位置を探し、本文側の表記
 // （半角・通称）はそのまま残しつつ、リンク先だけDB上の正式表記（全角・フルネーム）でエンコードする。
-export function linkifyFilerNames(html: string, filerNames: string[]): string {
+export function linkifyFilerNames(
+  html: string,
+  filers: { filerName: string; filerId: number | null }[]
+): string {
   let result = html;
-  for (const name of [...filerNames].sort((a, b) => b.length - a.length)) {
+  const idByName = new Map(filers.map((f) => [f.filerName, f.filerId]));
+  for (const name of [...idByName.keys()].sort((a, b) => b.length - a.length)) {
     if (!name) continue;
     for (const candidate of filerNameCandidates(name)) {
       const normalizedCandidate = candidate.normalize("NFKC");
@@ -157,7 +162,7 @@ export function linkifyFilerNames(html: string, filerNames: string[]): string {
       const idx = normalizedResult.indexOf(normalizedCandidate);
       if (idx === -1) continue;
       const matchedText = result.slice(idx, idx + normalizedCandidate.length);
-      const link = `<a href="/investors/${encodeURIComponent(name)}" class="text-brand-blue hover:underline">${matchedText}</a>`;
+      const link = `<a href="${investorPath(idByName.get(name), name)}" class="text-brand-blue hover:underline">${matchedText}</a>`;
       result = result.slice(0, idx) + link + result.slice(idx + matchedText.length);
       break;
     }

@@ -6,6 +6,7 @@ import { getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { getInvestorReturns, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
 import { buildStockRows } from "@/lib/rankingStats";
+import { getFilerIdMap, investorPath } from "@/lib/investors";
 import AdUnit from "@/components/AdUnit";
 import InvestorReturnRanking from "@/components/InvestorReturnRanking";
 
@@ -84,6 +85,7 @@ export default async function RankingSlugPage({ params }: Props) {
     ranking.axis === "stock"
       ? buildStockRows((await getRecentArticles(RANKING_DAYS)).contents, RANKING_SIZE)
       : [];
+  const filerIds = ranking.axis === "stock" ? await getFilerIdMap() : {};
   const rowCount = ranking.axis === "returns" ? returnRows.length : stockRows.length;
 
   const breadcrumbJsonLd = {
@@ -108,7 +110,7 @@ export default async function RankingSlugPage({ params }: Props) {
             "@type": "ListItem",
             position: index + 1,
             name: displayFilerName(row.filerName),
-            url: `${SITE_URL}/investors/${encodeURIComponent(row.filerName)}`,
+            url: `${SITE_URL}${investorPath(row.filerId, row.filerName)}`,
           }))
         : stockRows.map((row, index) => ({
             "@type": "ListItem",
@@ -187,7 +189,7 @@ export default async function RankingSlugPage({ params }: Props) {
                 <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
                 {row.filerName && (
                   <Link
-                    href={`/investors/${encodeURIComponent(row.filerName)}`}
+                    href={investorPath(filerIds[row.filerName], row.filerName)}
                     className="text-brand-blue hover:underline"
                   >
                     {row.filerName}

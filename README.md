@@ -269,7 +269,8 @@ DBキャッシュは廃止。
 | `investor_return_positions_3m`（マテビュー） | EDINET買い開示1件＝1行の明細。開示日の終値から63営業日後の終値までの騰落率と日経平均比を持つ。kujira-watch `/investors/[filer]`の開示テーブルの「3ヶ月後」列に`doc_id`で突き合わせて使う |
 | `investor_returns_3m`（マテビュー） | 上を投資家単位に等ウェイト集計したもの（開示3件以上の投資家のみ。平均・中央値・勝率・日経平均比・最高/最低銘柄）。kujira-watch `/ranking/returns`と`/investors/[filer]`の成績パネルの集計元。定義は`supabase/create_investor_returns_3m.sql`、更新はdaily_alert.yml Step 0b |
 | `edinet_holding_amounts`（マテビュー） | EDINET大量保有報告書1件＝1行の推定売買金額（億円）。保有比率の変化幅×発行済株式数（`jquants_fin_summary.sh_out`のPIT値）×開示日終値（`yahoo_price_cache`）の概算。訂正報告書・株価/株式数が取れない開示は行を作らない（金額不明と金額ゼロを混ぜないため）。kujira-watchの銘柄ランキング(`/trending`)が件数と並べて表示する金額の元。定義は`supabase/create_edinet_holding_amounts.sql`、再計算は`tools/refresh_holding_amounts.py` |
-| `edinet_filer_summary`（ビュー） | `edinet_large_holdings`×`edinet_filer_classification`を投資家(filer_name)単位に集計したビュー（保有開示件数・最終開示日・分類）。kujira-watch（`kujira-watch/src/lib/investors.ts`）の`/investors`一覧・サイトマップ生成が参照。投資家は600件超あり`edinet_large_holdings`の生データを直接集計すると1000行上限に掛かるため、1投資家1行に事前集計したビュー経由で取得する |
+| `edinet_filer_ids` | 投資家(filer_name)→連番ID（`/investors/<番号>`のURL用、`supabase/create_edinet_filer_ids.sql`）。`edinet_large_holdings`へのINSERT/UPDATEトリガー`trg_assign_edinet_filer_id`で新しい提出者に自動採番。以前のURLは提出者名そのもの（日本語・全角・空白）で、Search Consoleカバレッジで投資家ページ603件がインデックス未登録だったため2026-08-23に番号化した |
+| `edinet_filer_summary`（ビュー） | `edinet_large_holdings`×`edinet_filer_classification`×`edinet_filer_ids`を投資家(filer_name)単位に集計したビュー（保有開示件数・最終開示日・分類・`filer_id`）。kujira-watch（`kujira-watch/src/lib/investors.ts`）の`/investors`一覧・サイトマップ生成が参照。投資家は600件超あり`edinet_large_holdings`の生データを直接集計すると1000行上限に掛かるため、1投資家1行に事前集計したビュー経由で取得する |
 | `ext_tdnet_disclosures` | TDnet適時開示（やのしん・⚠️個人運営ソースのため `ext_` で隔離）|
 | `jpx_short_selling` | JPX空売り残高報告（0.5%以上）|
 | `jpx_margin_balance` | JPX個別銘柄信用取引週末残高 |

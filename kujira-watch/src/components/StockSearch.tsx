@@ -8,6 +8,7 @@ import IconButton from "@mui/material/IconButton";
 import SearchIcon from "@mui/icons-material/Search";
 import type { StockSearchResult } from "@/lib/microcms";
 import { UI, type Locale } from "@/lib/i18n";
+import { investorPath } from "@/lib/investorPath";
 
 // 企業名・証券コード・投資家名で検索し、選択(またはEnter)で /stocks/[code] または
 // /investors/[filer] に遷移する。
@@ -17,7 +18,7 @@ const DEBOUNCE_MS = 300;
 // 検索結果の1件。銘柄と投資家(EDINET提出者)を同じドロップダウンにグループ表示する。
 export type SearchOption =
   | { type: "stock"; stockCode: string; stockName: string }
-  | { type: "investor"; filerName: string };
+  | { type: "investor"; filerName: string; filerId: number | null };
 
 // パネル(Autocomplete/TextField/CircularProgress)は虫眼鏡をタップするまで表示されない。
 // MUIの中でも重い部類なので、初期JSから外して開いたときに読み込む。
@@ -82,9 +83,10 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
           const investors: SearchOption[] =
             locale === "en"
               ? []
-              : ((data.investors ?? []) as { filerName: string }[]).map((i) => ({
+              : ((data.investors ?? []) as { filerName: string; filerId: number | null }[]).map((i) => ({
                   type: "investor",
                   filerName: i.filerName,
+                  filerId: i.filerId,
                 }));
           setResults([...stocks, ...investors]);
         })
@@ -100,7 +102,7 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
     if (option.type === "stock") {
       router.push(locale === "en" ? `/en/stocks/${option.stockCode}` : `/stocks/${option.stockCode}`);
     } else {
-      router.push(`/investors/${encodeURIComponent(option.filerName)}`);
+      router.push(investorPath(option.filerId, option.filerName));
     }
   };
 

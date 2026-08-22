@@ -4,7 +4,7 @@ import {
   getAllArticlesForSitemap,
   getTranslatedArticlesForSitemap,
 } from "@/lib/microcms";
-import { getAllFilers } from "@/lib/investors";
+import { getAllFilers, investorPath } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { CATEGORIES, DEAL_TYPES } from "@/types/article";
@@ -146,7 +146,7 @@ async function investorEntries(): Promise<MetadataRoute.Sitemap> {
   return filers
     .filter((filer) => filer.holdingCount >= SITEMAP_MIN_FILER_HOLDINGS)
     .map((filer) => ({
-      url: `${SITE_URL}/investors/${encodeURIComponent(filer.filerName)}`,
+      url: `${SITE_URL}${investorPath(filer.filerId, filer.filerName)}`,
       lastModified: filer.latestDiscDate,
     }));
 }

@@ -10,6 +10,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
 import AdUnit from "@/components/AdUnit";
 import { getAllListedCodes } from "@/lib/companyInfo";
+import { getFilerIdMap, investorPath } from "@/lib/investors";
 
 export const revalidate = 3600;
 
@@ -32,10 +33,11 @@ export const metadata: Metadata = {
 };
 
 export default async function ActivistsPage() {
-  const [summary, recentMoves, listedCodes] = await Promise.all([
+  const [summary, recentMoves, listedCodes, filerIds] = await Promise.all([
     getActivistHoldingsSummary(),
     getActivistRecentMoves(MOVES_WINDOW_DAYS).catch(() => []),
     getAllListedCodes().catch(() => new Set<string>()),
+    getFilerIdMap().catch(() => ({}) as Record<string, number>),
   ]);
 
   // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
@@ -98,7 +100,7 @@ export default async function ActivistsPage() {
         {row.buys.map((move) => (
           <li key={move.docId}>
             <Link
-              href={`/investors/${encodeURIComponent(move.filerName)}`}
+              href={investorPath(filerIds[move.filerName], move.filerName)}
               className="text-brand-blue hover:underline"
             >
               {displayFilerName(move.filerName)}

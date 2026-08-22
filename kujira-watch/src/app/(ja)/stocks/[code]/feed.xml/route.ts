@@ -1,6 +1,6 @@
 import { displayFilerName, formatDate } from "@/lib/format";
 import { getCompanyInfo } from "@/lib/companyInfo";
-import { getHoldingsByStockCode } from "@/lib/investors";
+import { getFilerIdMap, getHoldingsByStockCode, investorPath } from "@/lib/investors";
 import { buildRss, rssResponse } from "@/lib/rss";
 import { SITE_URL } from "@/lib/site";
 
@@ -11,9 +11,10 @@ const FEED_ITEMS = 20;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const [holdings, company] = await Promise.all([
+  const [holdings, company, filerIds] = await Promise.all([
     getHoldingsByStockCode(code).catch(() => []),
     getCompanyInfo(code).catch(() => null),
+    getFilerIdMap().catch(() => ({}) as Record<string, number>),
   ]);
   const pageUrl = `${SITE_URL}/stocks/${code}`;
   const stockLabel = company?.name ? `${company.name}（${code}）` : code;
@@ -29,7 +30,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cod
       const prior = h.holdingRatioPrior === null ? "" : `（前回 ${h.holdingRatioPrior}%）`;
       return {
         title: `${label} ${ratio}${prior}`,
-        link: `${SITE_URL}/investors/${encodeURIComponent(h.filerName)}`,
+        link: `${SITE_URL}${investorPath(filerIds[h.filerName], h.filerName)}`,
         guid: h.docId,
         pubDate: new Date(`${h.discDate}T00:00:00+09:00`).toUTCString(),
         description: `${formatDate(h.discDate)}にEDINETで開示。${label}の${ratio}${prior}。`,
