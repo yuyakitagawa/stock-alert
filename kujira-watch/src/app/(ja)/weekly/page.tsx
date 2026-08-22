@@ -1,35 +1,28 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Box from "@mui/material/Box";
-import Card from "@mui/material/Card";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import Typography from "@mui/material/Typography";
 import AmountTrendChart from "@/components/AmountTrendChart";
 import CategoryTrendGrid, {
   type CategoryTrendRow,
   type CategoryWeekColumn,
 } from "@/components/CategoryTrendGrid";
-import {
-  getPreviousPeriodArticles,
-  getRecentArticleDigests,
-  getRecentArticles,
-  type ArticleDigest,
-} from "@/lib/microcms";
+import { getRecentArticleDigests, type ArticleDigest } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
-import { formatAmountParts, formatDate, formatDealAmount, isSellArticle } from "@/lib/format";
+import { formatDealAmount, isSellArticle } from "@/lib/format";
 import type { DealType } from "@/types/article";
-import { buildWeeklySummary } from "@/lib/weeklyStats";
 import AdUnit from "@/components/AdUnit";
 
 // 「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。
-// 直近7日間のサマリーに加え、週ごとの推移（売買金額・投資家分類別）を出して
-// 「今が多いのか少ないのか」のトレンドが分かるようにする（2026-08-18に週次トレンド化）。
-const WINDOW_DAYS = 7;
+// 週ごとの推移（売買金額・投資家分類別）のグラフを主役にして「今が多いのか少ないのか・
+// どの投資家が動いているか」のトレンドが分かるようにする（2026-08-18に週次トレンド化）。
+// 冒頭にあった直近7日間の開示件数・推定取引金額タイルは、取得と売却を合算した規模で
+// 方向が読めず、グラフと比べて伝える情報が無かったため2026-08-22に削除した。
 
 // 週次トレンドの表示期間。記事データ（2026-07開始）から最大8週。
 const AMOUNT_TREND_WEEKS = 8;
@@ -37,10 +30,6 @@ const AMOUNT_TREND_WEEKS = 8;
 // 投資家分類別の週次トレンドは分類ごとの小さなグラフなので、週を増やすほど棒が細くなる。
 // 「今どの分類が活発か」を読むのに必要な直近ぶんだけを、売買金額トレンドと同じ週区切りで出す。
 const CATEGORY_TREND_WEEKS = 6;
-
-function formatSigned(value: number, unit: string): string {
-  return `${value >= 0 ? "+" : ""}${value.toLocaleString("ja-JP")}${unit}`;
-}
 
 // 月曜始まりの暦週の開始日（YYYY-MM-DD）。dealDateはISO日時のこともあるため日付部分だけ使う。
 function weekStartOf(dateStr: string): string {
@@ -147,12 +136,11 @@ function buildCategoryTrendRows(digests: ArticleDigest[], weekStarts: string[]):
   return [...byCategory.values()].sort((a, b) => b.buyTotal + b.sellTotal - (a.buyTotal + a.sellTotal));
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-  const { contents } = await getRecentArticles(WINDOW_DAYS);
+export function generateMetadata(): Metadata {
   const title = "大口投資家の週次トレンド";
   const description =
-    `EDINET大量保有報告書をもとにした大口投資家の週次トレンド。直近${WINDOW_DAYS}日間の` +
-    `${contents.length}件の開示まとめに加え、週ごとの売買金額・投資家分類別（買い/売り）の推移を確認できます。`;
+    "EDINET大量保有報告書をもとにした大口投資家の週次トレンド。" +
+    "週ごとの売買金額（買い/売り）と、アクティビスト・事業会社など投資家分類別の推移をグラフで確認できます。";
   const url = `${SITE_URL}/weekly`;
 
   return {
@@ -164,20 +152,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function WeeklyDigestPage() {
-  const [{ contents }, { contents: previousContents }, digests] = await Promise.all([
-    getRecentArticles(WINDOW_DAYS),
-    getPreviousPeriodArticles(WINDOW_DAYS),
-    getRecentArticleDigests(AMOUNT_TREND_WEEKS * 7).catch(() => []),
-  ]);
+  const digests = await getRecentArticleDigests(AMOUNT_TREND_WEEKS * 7).catch(() => []);
   const url = `${SITE_URL}/weekly`;
 
-  const oldestDate = contents.length > 0 ? contents[contents.length - 1].dealDate : null;
-  const newestDate = contents.length > 0 ? contents[0].dealDate : null;
-  const summary = buildWeeklySummary(contents);
-  const previousSummary = buildWeeklySummary(previousContents);
-  const countDelta = summary.totalCount - previousSummary.totalCount;
-  const amountDelta = summary.totalAmount - previousSummary.totalAmount;
-  const amountDeltaPct = previousSummary.totalAmount > 0 ? (amountDelta / previousSummary.totalAmount) * 100 : null;
   const amountRows = buildWeeklyAmountRows(digests, AMOUNT_TREND_WEEKS);
   // 分類別トレンドは金額トレンドの週枠の新しい方から必要数だけ切り出す（古い週→新しい週）。
   // グラフと違い表では空の列に意味が無いため、記事データが無い最古側の週は列ごと落とす。
@@ -230,66 +207,17 @@ export default async function WeeklyDigestPage() {
       </nav>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の週次トレンド</h1>
-        {contents.length > 0 && oldestDate && newestDate ? (
-          <>
-            <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-              {SITE_NAME}がEDINET大量保有報告書をもとに集計した、大口投資家の
-              週ごとの動きです。直近{WINDOW_DAYS}日間（{formatDate(oldestDate)}〜
-              {formatDate(newestDate)}）のサマリーと、週別の売買金額・投資家分類別の推移を掲載しています。
-            </p>
-            <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
-              <Card variant="outlined" sx={{ borderLeft: 4, borderLeftColor: "brand.gold", bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
-                <Typography variant="overline" sx={{ color: "text.secondary" }}>開示件数（直近7日）</Typography>
-                <Typography
-                  variant="h4"
-                  sx={{ mt: 0.5, fontWeight: 700, color: "primary.main", fontSize: { xs: "1.75rem", sm: "2.125rem" } }}
-                >
-                  {summary.totalCount}
-                  <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>件</Typography>
-                </Typography>
-                <Typography variant="caption" sx={{ mt: 0.5, display: "block", color: "text.secondary" }}>
-                  前週比 {formatSigned(countDelta, "件")}（前7日間{previousSummary.totalCount}件）
-                </Typography>
-              </Card>
-              <Card variant="outlined" sx={{ borderLeft: 4, borderLeftColor: "brand.gold", bgcolor: "action.hover", p: 2, borderColor: "divider" }}>
-                <Typography variant="overline" sx={{ color: "text.secondary" }}>推定取引金額（直近7日）</Typography>
-                {/* 「4,083億円」をh4一体で出すと375pxのタイル幅で折り返して高さが揃わない。
-                    開示件数タイルと同じ「数字+単位」構造に統一し、1兆円以上は兆円へ繰り上げる。 */}
-                <Typography
-                  variant="h4"
-                  sx={{
-                    mt: 0.5,
-                    fontWeight: 700,
-                    color: "primary.main",
-                    // 375pxのタイル幅でも「数字+単位」が1行に収まるサイズ（左の件数タイルと揃える）。
-                    fontSize: { xs: "1.75rem", sm: "2.125rem" },
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {formatAmountParts(summary.totalAmount).value}
-                  <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>
-                    {formatAmountParts(summary.totalAmount).unit}
-                  </Typography>
-                </Typography>
-                <Typography variant="caption" sx={{ mt: 0.5, display: "block", color: "text.secondary" }}>
-                  前週比{" "}
-                  {amountDeltaPct !== null
-                    ? formatSigned(Number(amountDeltaPct.toFixed(1)), "%")
-                    : formatSigned(amountDelta, "億円")}
-                  （前7日間{formatDealAmount(previousSummary.totalAmount)}）
-                </Typography>
-              </Card>
-            </Box>
-            <p className="mt-2 text-xs text-foreground/50">
-              ※推定取引金額は取得・売却双方向を合算した規模で、資金の純流入額ではありません。
-            </p>
-          </>
-        ) : (
-          <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-            直近{WINDOW_DAYS}日間はEDINET大量保有報告書の新規開示がありませんでした。
-          </p>
-        )}
+        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+          {SITE_NAME}がEDINET大量保有報告書をもとに集計した、大口投資家の週ごとの動きです。
+          週別の売買金額（買い/売り）と投資家分類別の推移をグラフで掲載しています。
+        </p>
       </div>
+
+      {amountRows.length < 2 && (
+        <p className="mb-10 text-sm leading-relaxed text-foreground/70">
+          週次トレンドを表示できるだけの開示データがまだありません。
+        </p>
+      )}
 
       {amountRows.length >= 2 && (
         <section className="mb-10">

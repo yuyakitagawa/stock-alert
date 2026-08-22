@@ -249,22 +249,6 @@ export async function getRecentArticleDigests(days: number): Promise<ArticleDige
   return digests.map(normalizeDealType);
 }
 
-// /weeklyの「先週比」用。getRecentArticles(days)が取得する直近days暦日の直前・
-// 同じ日数分の期間を取得する（境界の扱いはgetRecentArticles上部の注意書きを参照）。
-export async function getPreviousPeriodArticles(days: number) {
-  const from = new Date();
-  from.setDate(from.getDate() - (days * 2 - 1));
-  const fromDate = from.toISOString().slice(0, 10);
-  const to = new Date();
-  to.setDate(to.getDate() - (days - 1));
-  const toDate = to.toISOString().slice(0, 10);
-
-  const contents = await fetchAllArticlesByFilter(
-    `dealDate[greater_than]${fromDate}[and]dealDate[less_than]${toDate}`
-  );
-  return { contents };
-}
-
 export const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 
 // /monthly/[month]用。YYYY-MM の暦月に含まれる記事を全件取得する。
