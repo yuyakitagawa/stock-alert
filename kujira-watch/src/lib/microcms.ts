@@ -12,7 +12,10 @@ if (!serviceDomain || !apiKey) {
   );
 }
 
-export const client = createClient({ serviceDomain, apiKey });
+// retry: 429(レート制限)・5xxを指数バックオフで最大2回再試行する（SDK標準機能）。
+// 事前生成が1,000ページ超になりビルド時の並列fetchがmicroCMSの秒間上限に当たるため必須
+// （2026-08-22、retry無しでは本番ビルドが429で失敗した実測あり）。
+export const client = createClient({ serviceDomain, apiKey, retry: true });
 
 export const ARTICLES_PER_PAGE = 10;
 
@@ -229,19 +232,21 @@ export async function getRecentArticles(days: number) {
   return { contents };
 }
 
-export type ArticleDigest = Pick<Article, "dealDate" | "dealAmount" | "tags">;
+export type ArticleDigest = Pick<Article, "dealDate" | "dealAmount" | "tags" | "dealType">;
 
-// /weeklyの週次トレンド用。直近days暦日の記事を集計に必要な3フィールドだけで取得する
-// （全フィールドだと本文込みで数百件が重くなるため）。
+// /weeklyの週次トレンド用。直近days暦日の記事を集計に必要な4フィールドだけで取得する
+// （全フィールドだと本文込みで数百件が重くなるため）。dealTypeは投資家分類別の週次トレンド用。
 export async function getRecentArticleDigests(days: number): Promise<ArticleDigest[]> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - (days - 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
-  return fetchAllPagesParallel<ArticleDigest>({
-    fields: "dealDate,dealAmount,tags",
+  const digests = await fetchAllPagesParallel<ArticleDigest>({
+    fields: "dealDate,dealAmount,tags,dealType",
     orders: "-dealDate",
     filters: `dealDate[greater_than]${cutoffDate}`,
   });
+  // dealTypeが複数選択(配列)で入っている記事が混在するため、他の取得経路と同じ形に正規化する。
+  return digests.map(normalizeDealType);
 }
 
 // /weeklyの「先週比」用。getRecentArticles(days)が取得する直近days暦日の直前・

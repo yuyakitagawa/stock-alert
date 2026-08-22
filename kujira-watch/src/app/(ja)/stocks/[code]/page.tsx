@@ -30,15 +30,16 @@ import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildStockFaqItems } from "@/lib/stockFaq";
 
-// 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次で更新するため、
-// microCMS記事(revalidate:60)とずれない範囲で定期的に再取得する。
-export const revalidate = 300;
+// 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次更新なので、
+// 再検証も1日で足りる。5分周期はクローラーのアクセスがほぼ毎回再生成に当たり
+// コールドTTFBを悪化させていた（クロール速度の律速）。
+export const revalidate = 86400;
 
 // generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
 // 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。
 // 一部でも事前生成しておくとルート全体がISR扱いになり、事前生成していないパラメータも
 // 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
-const PRERENDERED_STOCKS = 100;
+const PRERENDERED_STOCKS = 300;
 
 export async function generateStaticParams() {
   // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で

@@ -1,4 +1,4 @@
-// 開示件数トレンドの棒グラフ。/trending（月別）と/weekly（週別）で共用する。
+// 開示件数トレンドの棒グラフ（/trendingの月別）。期間の単位はpropsで受けるため月別以外にも使える。
 // /stocks/[code]の株価グラフと同じく外部チャートライブラリを使わず
 // インラインSVGで自前描画するサーバーコンポーネント。
 // 単一系列なので凡例は置かず、色はブランドネイビー1色（集計中の期間のみ薄色）。
@@ -8,10 +8,10 @@
 
 export type TrendBar = {
   key: string;
-  axisLabel: string; // 棒の下の短いラベル（例: "25/07"・"8/11週"）
+  axisLabel: string; // 棒の下の短いラベル（例: "25/07"）
   tableLabel: string; // <details>内テーブルの行ラベル（例: "2025年7月"・"8/11〜8/17"）
   count: number;
-  isPartial: boolean; // 集計中の期間（当月・今週）
+  isPartial: boolean; // 集計中の期間（当月）
 };
 
 const WIDTH = 640;
@@ -30,7 +30,7 @@ export default function DisclosureTrendChart({
   bars: TrendBar[];
   ariaLabel: string;
   caption: string;
-  periodHeadLabel: string; // テーブル見出し（例: "月"・"週"）
+  periodHeadLabel: string; // テーブル見出し（例: "月"）
   partialNote: string; // 集計中の棒がある場合の注記（例: "薄い棒は当月（集計中）です。"）
 }) {
   if (bars.length < 2) return null;

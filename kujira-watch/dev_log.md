@@ -644,3 +644,10 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
   `/ranking/returns`・`/ranking/activist`・`/trending` が200、
   `/sitemap/pages.xml` に該当URLが無いこと、レンダリング後のHTMLに
   「開示急増」「ranking/trending」の残骸が無いことを確認
+
+## 2026-08-22 /weekly 投資家分類別トレンドを分類ごとのグラフへ・「集計中」判定を平日のみに
+- 「集計中」が土曜にも出ていた原因: 今週判定が暦週（月〜日）のみで、`isPartial = weekStart === currentWeekStart`。
+  EDINET開示も記事生成cron（平日0-12 UTC）も平日しか動かないため、土・日は確定扱いへ（`isCurrentWeekPartial()`）。
+- 投資家分類別トレンド: 買い用・売り用の2枚のヒートマップ表（`CategoryWeeklyTrend`）を廃止し、
+  分類ごとに買い上・売り下の小さな棒グラフを並べる `CategoryTrendGrid` へ。縦軸スケールは全分類共通。
+  最新週の買い/売り上位3分類の文章は1段落に統合。全数値は`<details>`内の表（買い / 売り併記）。
