@@ -105,9 +105,10 @@ export default async function InvestorPage({ params }: Props) {
   const category = classification?.category ?? "その他";
 
   // holdingsはdisc_date降順のため、issuerCodeごとに最初に出現したもの(=最新の開示)を採用する。
+  // 表示順は保有比率の高い順（比率不明は末尾）。FAQや買い増し/売却リストも同じ順に揃う。
   const majorHoldings = Array.from(
     new Map(holdings.map((h) => [h.issuerCode, h])).values()
-  );
+  ).sort((a, b) => (b.holdingRatio ?? -1) - (a.holdingRatio ?? -1));
   // 最新開示の増減方向で「買い増し・新規」「売却」に分ける（前回比率が取れない開示は方向不明として除外）。
   const direction = (h: (typeof majorHoldings)[number]) =>
     h.holdingRatio !== null && h.holdingRatioPrior !== null
