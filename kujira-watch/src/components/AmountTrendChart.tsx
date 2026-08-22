@@ -5,7 +5,7 @@ import { formatAmountParts, formatDealAmount } from "@/lib/format";
 // ベースラインを中央に置き、買いは上・売りは下へ伸ばして「どちらに傾いた週か」が
 // 一目で分かる形にする。外部チャートライブラリは使わずインラインSVGで自前描画する
 // （サイト内の他のグラフと同じ方針）。数値は全部を直接ラベルすると潰れるため
-// 最新週だけ直接ラベルし、全数値はグラフ下の<details>内テーブルで参照できるようにする。
+// 全週に直接ラベルを付ける（当初は最新週のみだったが、他の週の数字も読みたいとの要望で2026-08-22に全週へ）。全数値はグラフ下の<details>内テーブルでも参照できる。
 
 export type AmountTrendBar = {
   key: string;
@@ -74,7 +74,6 @@ export default function AmountTrendChart({ bars }: { bars: AmountTrendBar[] }) {
           const buyHeight = b.buyAmount > 0 ? Math.max((b.buyAmount / max) * half, 2) : 0;
           const sellHeight = b.sellAmount > 0 ? Math.max((b.sellAmount / max) * half, 2) : 0;
           const net = b.buyAmount - b.sellAmount;
-          const showValue = i === lastIndex;
           const showAxisLabel = (bars.length - 1 - i) % labelEvery === 0;
           // React 19は<title>のchildrenが単一の文字列でないと中身を落とすため、先に組み立てる。
           const tooltip =
@@ -110,7 +109,7 @@ export default function AmountTrendChart({ bars }: { bars: AmountTrendBar[] }) {
                   <title>{tooltip}</title>
                 </rect>
               )}
-              {showValue && b.buyAmount > 0 && (
+              {b.buyAmount > 0 && (
                 <text
                   x={x + barWidth / 2}
                   y={baseY - buyHeight - 5}
@@ -122,7 +121,7 @@ export default function AmountTrendChart({ bars }: { bars: AmountTrendBar[] }) {
                   {shortAmount(b.buyAmount)}
                 </text>
               )}
-              {showValue && b.sellAmount > 0 && (
+              {b.sellAmount > 0 && (
                 <text
                   x={x + barWidth / 2}
                   y={baseY + sellHeight + 13}

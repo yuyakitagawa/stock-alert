@@ -40,7 +40,7 @@ export type CategoryWeekColumn = {
 
 const WIDTH = 300;
 const HEIGHT = 150;
-const PAD_TOP = 28; // 目盛り表示＋最新週の直接ラベル分
+const PAD_TOP = 28; // 目盛り表示＋直接ラベル分
 const PAD_BOTTOM = 30; // 横軸ラベル＋売り側の直接ラベル分
 const PAD_X = 6;
 
@@ -62,7 +62,6 @@ function CategoryChart({
   const baseY = PAD_TOP + half;
   const step = (WIDTH - PAD_X * 2) / weeks.length;
   const barWidth = Math.min(step - 6, 28);
-  const lastIndex = weeks.length - 1;
   const net = row.buyTotal - row.sellTotal;
   const dotColor = (DEAL_TYPE_COLORS[row.dealType] ?? DEAL_TYPE_COLORS["その他"]).dot;
 
@@ -103,7 +102,6 @@ function CategoryChart({
           const x = PAD_X + i * step + (step - barWidth) / 2;
           const buyHeight = cell.buyAmount > 0 ? Math.max((cell.buyAmount / max) * half, 2) : 0;
           const sellHeight = cell.sellAmount > 0 ? Math.max((cell.sellAmount / max) * half, 2) : 0;
-          const showValue = i === lastIndex;
           // React 19は<title>のchildrenが単一の文字列でないと中身を落とすため、先に組み立てる。
           const tooltip =
             `${row.dealType} ${w.tableLabel}: 買い${formatDealAmount(cell.buyAmount)}（${cell.buyCount}件） / ` +
@@ -121,12 +119,12 @@ function CategoryChart({
                   <title>{tooltip}</title>
                 </rect>
               )}
-              {showValue && cell.buyAmount > 0 && (
+              {cell.buyAmount > 0 && (
                 <text x={x + barWidth / 2} y={baseY - buyHeight - 4} textAnchor="middle" fontSize={10} fill="var(--foreground)" opacity={0.75}>
                   {shortAmount(cell.buyAmount)}
                 </text>
               )}
-              {showValue && cell.sellAmount > 0 && (
+              {cell.sellAmount > 0 && (
                 <text x={x + barWidth / 2} y={baseY + sellHeight + 11} textAnchor="middle" fontSize={10} fill="var(--foreground)" opacity={0.75}>
                   {shortAmount(cell.sellAmount)}
                 </text>
