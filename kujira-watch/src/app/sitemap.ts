@@ -56,6 +56,7 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/en/investors`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/weekly`, lastModified: latestArticle },
     { url: `${SITE_URL}/activists`, lastModified: latestDisclosure },
+    { url: `${SITE_URL}/buybacks`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/monthly`, lastModified: latestArticle },
     { url: `${SITE_URL}/trending`, lastModified: latestArticle },
     { url: `${SITE_URL}/about`, lastModified: aboutUpdatedAt },
