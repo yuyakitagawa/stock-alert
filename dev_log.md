@@ -1465,3 +1465,10 @@ dry-runで10件の対応表を確認済み。書き込み（--apply）はオー�
 ※ このとき既存のテストファイルを確認せず上書きしてしまい、元の6件を復元して統合した。
    pick_filer のシグネチャを (title, candidates) から (article, candidates) に変えたため、
    既存6件も記事dictを渡す形に追従させている。テストは4件追加して10件。
+
+## 2026-08-22 GitHub Actions ワークフロー整理（13本→8本）
+- X関連4本（x_weekend_post / x_followup / x_metrics / x_verify）→ `x_post.yml` に統合。cron値 or `target` 入力で分岐。
+- keepalive + watchdog → `ops.yml` に統合（2ジョブ、`github.event.schedule` で分岐）。
+- data_backfill + backfill_rankings → `backfill.yml` に統合（`targets` に prices / rankings を追加）。
+- ファイル削除済みなのにGitHub側に残っていた「Debug/Backfill Blog Categories (temporary)」2本は実行履歴を削除して一覧から除去。
+- 実行時刻・処理内容は変更なし。tests 392件 pass。
