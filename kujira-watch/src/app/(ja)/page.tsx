@@ -3,7 +3,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TodayWhaleSummary from "@/components/TodayWhaleSummary";
 import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
-import { isSellArticle } from "@/lib/format";
+import { formatDate, isSellArticle } from "@/lib/format";
 import { areDisclosuresFixed } from "@/lib/jst";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
@@ -48,8 +48,9 @@ export default async function HomePage() {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
         />
       )}
-      {/* 「今日の〜」は日付をまたいで見ると実態とずれるため使わない（日付は直下のサマリーに出る）。 */}
-      <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">注目の取引</h1>
+      <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">
+        {latestDealDate ? `今日${formatDate(latestDealDate)}の取引` : "注目の取引"}
+      </h1>
       {contents.length === 0 ? (
         <p className="text-foreground/50">記事がまだありません。</p>
       ) : (
