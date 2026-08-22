@@ -17,7 +17,7 @@
 - [x] 2. サイト: `kujira-watch/src/lib/buybacks.ts` + `/stocks/[code]` に自社株買いセクション
 - [x] 3. X: `web/x_buyback.py`（平日19:00 JST「本日の自社株買い決定」）+ x_post.yml + tests
 - [x] 4. ブログ: `web/publish_buyback_articles.py`（上限10億円以上 or 比率3%以上）+ edinet_blog.yml + tests
-- [ ] 5. README / dev_log 更新、デプロイ確認（kujira-watch.com 本番で表示確認）
+- [x] 5. README / dev_log 更新、デプロイ確認（kujira-watch.com 本番で表示確認）
 
 ## 既知の課題
 - `ext_tdnet_disclosures` の日付カバレッジが2ヶ月で16日分しか無い（daily_alert の fetch_tdnet が
