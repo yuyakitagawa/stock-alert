@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatMonth } from "@/lib/format";
 import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
 import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
-import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
-import DisclosureTrendChart from "@/components/DisclosureTrendChart";
 import TrendingDirectionTable from "@/components/TrendingDirectionTable";
 import { SITE_URL } from "@/lib/site";
 import { buildTrendingIssuers, selectDirection } from "@/lib/trendingStats";
@@ -41,12 +38,11 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, amountByDocId, listedCodes, monthlyCounts] = await Promise.all([
+  const [rows, amountByDocId, listedCodes] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
     // 金額は件数に添えるだけの情報なので、取れなくてもランキング自体は成立させる。
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
     getAllListedCodes().catch(() => new Set<string>()),
-    getMonthlyDisclosureCounts().catch(() => []),
   ]);
 
   // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
@@ -141,28 +137,6 @@ export default async function TrendingPage() {
           株価・発行済株式数が取れない銘柄は金額に含めていない（件数には含む）ため、件数と金額は必ずしも比例しません。
         </p>
       </section>
-
-      {monthlyCounts.length >= 2 && (
-        <section className="mb-10">
-          <h2 className="mb-2 text-xl font-bold text-brand-navy">月別の開示件数トレンド</h2>
-          <p className="mb-2 text-sm text-foreground/60">
-            市場全体で大口投資家の動き（開示）が増えているのか減っているのかを月単位で見られます。
-          </p>
-          <DisclosureTrendChart
-            bars={monthlyCounts.map((c) => ({
-              key: c.month,
-              axisLabel: c.month.slice(2).replace("-", "/"),
-              tableLabel: formatMonth(c.month),
-              count: c.count,
-              isPartial: c.isPartial,
-            }))}
-            ariaLabel="月別のEDINET大量保有報告書 開示件数の棒グラフ"
-            caption="EDINETに提出された大量保有・変更・訂正報告書の月別件数。"
-            periodHeadLabel="月"
-            partialNote="薄い棒は当月（集計中）です。"
-          />
-        </section>
-      )}
 
       <AdUnit placement="bottom" />
     </div>

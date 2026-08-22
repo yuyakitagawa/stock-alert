@@ -1,9 +1,5 @@
-import { unstable_cache } from "next/cache";
-import { getSupabaseServerClient } from "@/lib/supabase";
-
 // Supabase edinet_large_holdings（EDINETの大量保有報告書・変更報告書・訂正報告書）を
-// 読むための共通ヘルパー。開示の種別ラベル・原文PDFリンクと、/trending・/weeklyの
-// 件数トレンド集計をまとめている。
+// 読むための共通ヘルパー。開示の種別ラベルと原文PDFリンクを持つ。
 // かつては全件を日付降順に並べる /disclosures（開示速報）があったが、同じ開示を
 // TOPの記事一覧と二重に見せているだけだったため2026-08-18に廃止した
 // （原文PDFへのリンクは /stocks/[code]・/investors/[filer] の開示履歴表へ移設）。
@@ -43,52 +39,3 @@ export function disclosureDocLabel(row: {
 }): string {
   return DOC_LABEL_BY_KIND[disclosureKindLabel(row)];
 }
-
-export type MonthlyDisclosureCount = {
-  month: string; // "YYYY-MM"
-  count: number;
-  isPartial: boolean; // 当月（集計中）
-};
-
-// /trendingの「月別の開示件数トレンド」用。月ごとの開示件数をhead:trueのcountクエリで集計する
-// （PostgRESTにGROUP BYが無いため月数ぶんの並列カウントで代替。月数は高々十数個）。
-// データ取得開始月（2025-06、月の途中から）は件数が過少で傾向を誤読させるため除外し、
-// 当月はisPartial=trueで「集計中」の表示に使う。
-export const getMonthlyDisclosureCounts = unstable_cache(
-  async (): Promise<MonthlyDisclosureCount[]> => {
-    const supabase = getSupabaseServerClient();
-    const { data: first } = await supabase
-      .from("edinet_large_holdings")
-      .select("disc_date")
-      .order("disc_date", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (!first?.disc_date) return [];
-
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const months: string[] = [];
-    // データ開始月の翌月から当月まで。
-    const cursor = new Date(`${first.disc_date.slice(0, 7)}-01T00:00:00Z`);
-    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
-    while (cursor.toISOString().slice(0, 7) <= currentMonth) {
-      months.push(cursor.toISOString().slice(0, 7));
-      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
-    }
-
-    const counts = await Promise.all(
-      months.map(async (month) => {
-        const next = new Date(`${month}-01T00:00:00Z`);
-        next.setUTCMonth(next.getUTCMonth() + 1);
-        const { count } = await supabase
-          .from("edinet_large_holdings")
-          .select("doc_id", { count: "exact", head: true })
-          .gte("disc_date", `${month}-01`)
-          .lt("disc_date", `${next.toISOString().slice(0, 7)}-01`);
-        return { month, count: count ?? 0, isPartial: month === currentMonth };
-      })
-    );
-    return counts;
-  },
-  ["monthly-disclosure-counts"],
-  { revalidate: 3600 }
-);
