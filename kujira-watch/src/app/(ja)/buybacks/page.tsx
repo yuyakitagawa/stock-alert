@@ -15,8 +15,7 @@ export const revalidate = 3600;
 
 // 集計窓（/activists・/trendingと同じ30日）。
 const WINDOW_DAYS = 30;
-// ランキングの表示件数。上限金額は大型株、発行済比率は小型株が上位に来やすく、
-// 2つ並べることで「規模」と「需給インパクト」の両面から注目銘柄を拾える。
+// ランキングの表示件数。
 const RANK_LIMIT = 15;
 // 最新一覧の描画上限（30日で決定は100件前後。超えた分は件数を明記する）。
 const LIST_LIMIT = 100;
@@ -95,13 +94,13 @@ function Frame({ d }: { d: BuybackDecision }) {
   );
 }
 
+// 上限金額順の1本のランキング。発行済比率は金額の補足として併記する
+// （比率だけの別ランキングは「何の順位か」が伝わらなかったため2026-08-23に統合）。
 function RankingList({
   items,
-  valueOf,
   sectorOf,
 }: {
   items: BuybackDecision[];
-  valueOf: (d: BuybackDecision) => string;
   sectorOf: (code: string) => string | null | undefined;
 }) {
   return (
@@ -121,7 +120,10 @@ function RankingList({
           <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
             <span>{formatDate(d.disclosedAt.slice(0, 10))}</span>
             {d.willCancel && <span className="rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">消却</span>}
-            <span className="ml-auto whitespace-nowrap text-sm font-bold tabular-nums text-brand-navy">{valueOf(d)}</span>
+            <span className="ml-auto whitespace-nowrap tabular-nums">
+              <span className="text-sm font-bold text-brand-navy">{formatAmountOku(d.maxAmountYen) ?? "-"}</span>
+              {d.ratioPct !== null && <span className="ml-1.5 text-foreground/50">発行済の{d.ratioPct}%</span>}
+            </span>
           </span>
         </li>
       ))}
@@ -145,10 +147,6 @@ export default async function BuybacksPage() {
   const byAmount = [...decisions]
     .filter((d) => d.maxAmountYen !== null)
     .sort((a, b) => (b.maxAmountYen ?? 0) - (a.maxAmountYen ?? 0))
-    .slice(0, RANK_LIMIT);
-  const byRatio = [...decisions]
-    .filter((d) => d.ratioPct !== null)
-    .sort((a, b) => (b.ratioPct ?? 0) - (a.ratioPct ?? 0))
     .slice(0, RANK_LIMIT);
   const largest = byAmount[0];
   const cancelCount = decisions.filter((d) => d.willCancel).length;
@@ -213,34 +211,18 @@ export default async function BuybacksPage() {
         {tile("消却を同時決議", `${cancelCount}件`, decisions.length > 0 ? `決定の${Math.round((cancelCount / decisions.length) * 100)}%` : undefined)}
       </section>
 
-      <div className="mb-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <section>
-          <h2 className="mb-1 text-xl font-bold text-brand-navy">発行済株式比率ランキング</h2>
-          <p className="mb-3 text-xs text-foreground/60">
-            取得上限が発行済株式総数（自己株式を除く）に占める割合。比率が高いほど1株当たりの押し上げ効果と需給インパクトが大きい。
-          </p>
-          {byRatio.length === 0 ? (
-            <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日に比率が開示された決定はありません。</p>
-          ) : (
-            <RankingList items={byRatio} valueOf={(d) => `${d.ratioPct}%`} sectorOf={sectorOf} />
-          )}
-        </section>
-        <section>
-          <h2 className="mb-1 text-xl font-bold text-brand-navy">上限金額ランキング</h2>
-          <p className="mb-3 text-xs text-foreground/60">
-            取得価額の総額の上限。大型株が上位に来やすいため、規模感の把握用。比率ランキングと併せて見る。
-          </p>
-          {byAmount.length === 0 ? (
-            <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日に上限金額が開示された決定はありません。</p>
-          ) : (
-            <RankingList
-              items={byAmount}
-              valueOf={(d) => formatAmountOku(d.maxAmountYen) ?? "-"}
-              sectorOf={sectorOf}
-            />
-          )}
-        </section>
-      </div>
+      <section className="mb-10">
+        <h2 className="mb-1 text-xl font-bold text-brand-navy">上限金額ランキング</h2>
+        <p className="mb-3 text-xs text-foreground/60">
+          会社が決めた買い戻しの上限金額の大きい順。右の「発行済の○%」は市場に出回る株のうち何％まで買い戻すかで、
+          大きいほど株価を押し上げる力が強い（一般的には1〜3%、5%超は大型）。
+        </p>
+        {byAmount.length === 0 ? (
+          <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日に上限金額が開示された決定はありません。</p>
+        ) : (
+          <RankingList items={byAmount} sectorOf={sectorOf} />
+        )}
+      </section>
 
       <section className="mb-10">
         <h2 className="mb-1 text-xl font-bold text-brand-navy">最新の自社株買い決定</h2>
