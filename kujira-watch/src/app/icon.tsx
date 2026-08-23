@@ -1,9 +1,19 @@
 import { ImageResponse } from "next/og";
 
-export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
 
-export default function Icon() {
+const SIZES = [32, 192, 512];
+
+export function generateImageMetadata() {
+  return SIZES.map((s) => ({
+    id: String(s),
+    size: { width: s, height: s },
+    contentType,
+  }));
+}
+
+export default async function Icon({ id }: { id: Promise<string> }) {
+  const s = Number(await id);
   return new ImageResponse(
     (
       <div
@@ -15,12 +25,12 @@ export default function Icon() {
           justifyContent: "center",
           background: "#16213a",
           borderRadius: "50%",
-          fontSize: 22,
+          fontSize: Math.round(s * 0.68),
         }}
       >
         🐋
       </div>
     ),
-    { ...size }
+    { width: s, height: s }
   );
 }
