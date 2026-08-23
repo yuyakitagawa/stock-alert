@@ -1632,3 +1632,6 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - ブログ: `web/publish_buyback_articles.py`（edinet_blog.yml）。上限10億円以上 or 発行済3%以上。microCMSの dealType セレクトに「自社株買い」が存在することは下書きPOSTで確認（→削除）。記事生成はAPI上限解除（9/1）後に稼働。
 - テスト: test_buyback 9件 / test_x_buyback 7件 / test_publish_buyback_articles 8件。既存テスト全件パス。
 - 追記: TOPタブ「自社株買い」(/buybacks) を追加。直近30日の決定を発行済比率ランキング・上限金額ランキング・最新一覧（方法・期間・消却・PDF）・月別件数・数字の見方・FAQ（JSON-LD）で構成。ナビ/サイトマップに追加。
+- 追記（同日）: `tools/backfill_blog_eyecatch.py` で過去記事のアイキャッチをバックフィル完了。
+  別セッション527件＋本セッション423件＝950/950件、失敗0（Pexels 180件/時ペース、約2.5時間）。
+  本番TOPの記事カードに30枚の画像、記事og:imageにeyecatch.jpgが出ることを確認。
