@@ -100,13 +100,13 @@ npm run dev
 | `/ads.txt` | AdSenseの販売者情報（`src/app/ads.txt/route.ts`）。`NEXT_PUBLIC_ADSENSE_CLIENT`未設定時は404を返す |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。ヘッダーのハンバーガーメニュー・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/investors/[filer]/feed.xml`・`/stocks/[code]/feed.xml` | 投資家別・銘柄別のRSS（`src/lib/rss.ts`で組み立て、`revalidate = 300`）。記事ではなくEDINET開示そのものを源にするため、記事化されなかった小さな開示も追える。各ページの`<head>`の`alternate`と「更新を追う」導線から参照 |
-| `/api/counter` | ヘッダー上部の累計訪問者数カウンター用（POST、`increment_blog_visit_counter` RPCを呼ぶ） |
+| `/api/counter` | 累計訪問者数カウンター用。POSTは `increment_blog_visit_counter` RPCで加算、GETは加算せず現在値を返す（ハンバーガーメニュー内表示用） |
 | `/api/articles` | 記事一覧のオートスクロール用（GET、`offset`/`dealType`クエリでmicroCMSの次のページを返す） |
 | `/api/stocks/search` | ヘッダーの検索用（GET、`q`クエリで銘柄の`results`（microCMS記事の`stockCode`/`stockName`部分一致＋Supabase `jpx_stock_list`の全上場銘柄検索`searchStockMaster()`＝コード前方一致・社名部分一致、コードで重複排除し記事ヒットを先頭に最大20件）と、EDINET提出者名の部分一致`investors`（`getAllFilers()`のキャッシュから最大10件）を返す。投資家の結果は日本語版のみドロップダウンに「銘柄/投資家」のグループ表示） |
 
 ## 計測・ログ
 
-- **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側、モバイル幅ではロゴの1行表示を優先して非表示・sm以上のみ）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` を叩き、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。
+- **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側、モバイル幅ではロゴの1行表示を優先して非表示・sm以上のみ）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` をPOSTし、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。スマホでも見られるようハンバーガーメニュー最下部にも置いており、こちらは `increment={false}` でGET（加算なし）を使い二重計上を防ぐ。
 - **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
