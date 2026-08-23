@@ -143,13 +143,10 @@ export default async function BuybacksPage() {
   );
   const sectorOf = (code: string) => briefs.get(code)?.sector;
 
-  const totalYen = decisions.reduce((s, d) => s + (d.maxAmountYen ?? 0), 0);
   const byAmount = [...decisions]
     .filter((d) => d.maxAmountYen !== null)
     .sort((a, b) => (b.maxAmountYen ?? 0) - (a.maxAmountYen ?? 0))
     .slice(0, RANK_LIMIT);
-  const largest = byAmount[0];
-  const cancelCount = decisions.filter((d) => d.willCancel).length;
   const listed = decisions.slice(0, LIST_LIMIT);
 
   const breadcrumbJsonLd = {
@@ -170,15 +167,6 @@ export default async function BuybacksPage() {
     })),
   };
 
-  // モバイルでランキングまでの距離を縮めるため、タイルは小型化し1行で並べる（sm以上で通常サイズ）。
-  const tile = (label: string, value: string, sub?: string) => (
-    <div className="min-w-[7.5rem] shrink-0 rounded-lg border border-rule bg-surface/60 px-3 py-2 sm:min-w-0 sm:shrink sm:px-4 sm:py-3">
-      <div className="text-[11px] text-foreground/50 sm:text-xs">{label}</div>
-      <div className="mt-0.5 text-base font-bold text-brand-navy sm:mt-1 sm:text-xl">{value}</div>
-      {sub && <div className="mt-0.5 truncate text-[11px] text-foreground/60 sm:text-xs">{sub}</div>}
-    </div>
-  );
-
   return (
     <div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
@@ -195,21 +183,10 @@ export default async function BuybacksPage() {
           <span className="hidden sm:inline">
             上場企業が決議した自社株買いの取得枠を、TDnet開示の原文PDFから{SITE_NAME}が毎日抽出。
           </span>
-          直近{WINDOW_DAYS}日の決定を発行済株式比率・上限金額の大きい順に並べています（数字の見方は
+          直近{WINDOW_DAYS}日の決定を上限金額の大きい順に並べています（数字の見方は
           <a href="#faq" className="text-brand-blue hover:underline">FAQ</a>）。
         </p>
       </div>
-
-      <section className="-mx-4 mb-6 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:mb-10 sm:grid sm:grid-cols-4 sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0">
-        {tile(`直近${WINDOW_DAYS}日の決定`, `${decisions.length}件`)}
-        {tile("上限金額の合計", formatAmountOku(totalYen) ?? "-")}
-        {tile(
-          "最大の取得枠",
-          largest ? formatAmountOku(largest.maxAmountYen) ?? "-" : "-",
-          largest ? `${largest.stockName}（${largest.code}）` : undefined
-        )}
-        {tile("消却を同時決議", `${cancelCount}件`, decisions.length > 0 ? `決定の${Math.round((cancelCount / decisions.length) * 100)}%` : undefined)}
-      </section>
 
       <section className="mb-10">
         <h2 className="mb-1 text-xl font-bold text-brand-navy">上限金額ランキング</h2>
