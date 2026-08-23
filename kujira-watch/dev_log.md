@@ -760,3 +760,14 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
 - 専用だった `getMonthlyBuybackCounts()`・`MonthlyBuybackCount` 型（lib/buybacks.ts）と
   ページのMUI Tableインポートも削除（月別表が最後の利用箇所だった）。
 - `tsc --noEmit`・`eslint` パス。
+
+## 2026-08-23 業種・分類アイコンを絵文字から自作SVGラインアイコンへ
+- 絵文字はOS・ブラウザで見た目がバラつくため、SectorIcon（33業種+汎用ブリーフケース）・
+  DealTypeIcon（14分類）の中身を24x24グリッドのストローク描画（strokeWidth 2、丸キャップ）の
+  自作SVGへ差し替え。ページ側のAPI（sector/dealType/size）は変更なし。
+- 色はSectorIconが紺（text-brand-navy/80）＋bg-brand-navy/10、DealTypeIconが分類の
+  文字色（DEAL_TYPE_COLORS.text）＋ドット色の約12%アルファ背景。
+- 一時ページ(icon-preview)＋headless Chromiumのスクリーンショットで全47種の描画を確認し、
+  判読しづらかった鉱業（つるはし）・繊維製品（Tシャツに変更）・海運業（コンテナ船に変更）・
+  VC（ロケット）を描き直した。一時ページは確認後に削除済み。
+- `tsc --noEmit`・`eslint` パス。
