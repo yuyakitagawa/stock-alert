@@ -1,22 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Box from "@mui/material/Box";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import AdUnit from "@/components/AdUnit";
 import ArticleCard from "@/components/ArticleCard";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import SectorIcon from "@/components/SectorIcon";
 import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
-import {
-  formatAmountOku,
-  getMonthlyBuybackCounts,
-  getRecentBuybackDecisions,
-  type BuybackDecision,
-} from "@/lib/buybacks";
+import { formatAmountOku, getRecentBuybackDecisions, type BuybackDecision } from "@/lib/buybacks";
 import type { FaqItem } from "@/lib/faqData";
 import { formatDate } from "@/lib/format";
 import { getArticleList } from "@/lib/microcms";
@@ -136,9 +125,8 @@ function RankingList({
 }
 
 export default async function BuybacksPage() {
-  const [decisions, monthly, { contents: articles }] = await Promise.all([
+  const [decisions, { contents: articles }] = await Promise.all([
     getRecentBuybackDecisions(WINDOW_DAYS).catch(() => [] as BuybackDecision[]),
-    getMonthlyBuybackCounts().catch(() => []),
     getArticleList({ dealType: "自社株買い", limit: 6 }).catch(() => ({ contents: [] })),
   ]);
 
@@ -307,39 +295,6 @@ export default async function BuybacksPage() {
           </ul>
         )}
       </section>
-
-      {monthly.length > 0 && (
-        <section className="mb-10">
-          <h2 className="mb-1 text-xl font-bold text-brand-navy">月別の決定件数</h2>
-          <p className="mb-3 text-xs text-foreground/60">
-            取得枠の新設（決定開示）の件数。上限合計は取得枠の抽出を始めた2026年8月中旬以降の月のみ。
-          </p>
-          <Box sx={{ overflowX: "auto" }}>
-            <Table size="small" sx={{ maxWidth: 480, "& .MuiTableCell-root": { borderColor: "divider" } }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ color: "text.disabled" }}>月</TableCell>
-                  <TableCell align="right" sx={{ color: "text.disabled" }}>決定件数</TableCell>
-                  <TableCell align="right" sx={{ color: "text.disabled" }}>上限合計</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {monthly.map((m) => (
-                  <TableRow key={m.month}>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>
-                      {m.month.replace("-", "年")}月{m.isPartial && <span className="ml-1 text-xs text-foreground/50">（集計中）</span>}
-                    </TableCell>
-                    <TableCell align="right">{m.decisions}件</TableCell>
-                    <TableCell align="right" sx={{ color: m.totalYen > 0 ? "text.primary" : "text.disabled" }}>
-                      {formatAmountOku(m.totalYen) ?? "-"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-        </section>
-      )}
 
       {articles.length > 0 && (
         <section className="mb-10">

@@ -144,39 +144,3 @@ export const getRecentBuybackDecisions = unstable_cache(
   ["getRecentBuybackDecisions"],
   { revalidate: SUPABASE_REVALIDATE_SECONDS }
 );
-
-export type MonthlyBuybackCount = { month: string; decisions: number; totalYen: number; isPartial: boolean };
-
-// 月別の決定件数と上限合計。件数はext_tdnet_disclosures（タイトル分類）から、金額はtdnet_buybacksから。
-// 取得枠の抽出を始めた2026-08-13より前の月は金額が0になるため、件数だけの月として表示側で扱う。
-async function getMonthlyBuybackCountsUncached(): Promise<MonthlyBuybackCount[]> {
-  const supabase = getSupabaseServerClient();
-  const [{ data: disclosures }, { data: facts }] = await Promise.all([
-    supabase
-      .from("ext_tdnet_disclosures")
-      .select("disclosed_at, title")
-      .eq("category", "自社株買い")
-      .order("disclosed_at", { ascending: false })
-      .limit(3000),
-    supabase.from("tdnet_buybacks").select("disclosed_at, max_amount_yen").eq("extract_ok", true).limit(3000),
-  ]);
-  const currentMonth = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7);
-  const byMonth = new Map<string, MonthlyBuybackCount>();
-  for (const d of disclosures ?? []) {
-    if (buybackKind(d.title) !== "決定") continue;
-    const month = d.disclosed_at.slice(0, 7);
-    const cur = byMonth.get(month) ?? { month, decisions: 0, totalYen: 0, isPartial: month === currentMonth };
-    cur.decisions += 1;
-    byMonth.set(month, cur);
-  }
-  for (const f of facts ?? []) {
-    const month = f.disclosed_at.slice(0, 7);
-    const cur = byMonth.get(month);
-    if (cur) cur.totalYen += f.max_amount_yen ?? 0;
-  }
-  return [...byMonth.values()].sort((a, b) => (a.month < b.month ? 1 : -1));
-}
-
-export const getMonthlyBuybackCounts = unstable_cache(getMonthlyBuybackCountsUncached, ["getMonthlyBuybackCounts"], {
-  revalidate: SUPABASE_REVALIDATE_SECONDS,
-});

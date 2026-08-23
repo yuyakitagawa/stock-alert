@@ -754,3 +754,9 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
 - ヘッダー上タブの「アクティビスト注目銘柄」→「アクティビスト」に短縮（lib/nav.ts。
   ページタイトル・フッターは据え置き）。
 - `tsc --noEmit`・`eslint` パス（Supabase/microCMSキーが無い環境のため実描画は未確認）。
+
+## 2026-08-23 /buybacks 「月別の決定件数」を削除
+- 最新一覧・ランキングと比べて意思決定に使える情報が無いため、セクションごと削除。
+- 専用だった `getMonthlyBuybackCounts()`・`MonthlyBuybackCount` 型（lib/buybacks.ts）と
+  ページのMUI Tableインポートも削除（月別表が最後の利用箇所だった）。
+- `tsc --noEmit`・`eslint` パス。
