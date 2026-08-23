@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatMonth } from "@/lib/format";
 import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
 import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
-import { getMonthlyDisclosureCounts } from "@/lib/disclosures";
-import DisclosureTrendChart from "@/components/DisclosureTrendChart";
 import RelatedArticles from "@/components/RelatedArticles";
 import TrendingDirectionTable from "@/components/TrendingDirectionTable";
 import { getArticleList } from "@/lib/microcms";
@@ -43,12 +40,11 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, amountByDocId, listedCodes, monthlyCounts, { contents: recentArticles }] = await Promise.all([
+  const [rows, amountByDocId, listedCodes, { contents: recentArticles }] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
     // 金額は件数に添えるだけの情報なので、取れなくてもランキング自体は成立させる。
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
     getAllListedCodes().catch(() => new Set<string>()),
-    getMonthlyDisclosureCounts().catch(() => []),
     // ランキング銘柄の解説記事（アイキャッチ付きカード）用。取れなくてもページは成立させる。
     getArticleList({ limit: 30 }).catch(() => ({ contents: [] })),
   ]);
@@ -162,28 +158,6 @@ export default async function TrendingPage() {
         lead="ランキングに入った銘柄の直近の大口取引を、取引ごとの解説記事で読めます。"
         articles={trendingArticles}
       />
-
-      {monthlyCounts.length >= 2 && (
-        <section className="mb-10">
-          <h2 className="mb-2 text-xl font-bold text-brand-navy">月別の開示件数トレンド</h2>
-          <p className="mb-2 text-sm text-foreground/60">
-            市場全体で大口投資家の動き（開示）が増えているのか減っているのかを月単位で見られます。
-          </p>
-          <DisclosureTrendChart
-            bars={monthlyCounts.map((c) => ({
-              key: c.month,
-              axisLabel: c.month.slice(2).replace("-", "/"),
-              tableLabel: formatMonth(c.month),
-              count: c.count,
-              isPartial: c.isPartial,
-            }))}
-            ariaLabel="月別のEDINET大量保有報告書 開示件数の棒グラフ"
-            caption="EDINETに提出された大量保有・変更・訂正報告書の月別件数。"
-            periodHeadLabel="月"
-            partialNote="薄い棒は当月（集計中）です。"
-          />
-        </section>
-      )}
 
       <AdUnit placement="bottom" />
     </div>
