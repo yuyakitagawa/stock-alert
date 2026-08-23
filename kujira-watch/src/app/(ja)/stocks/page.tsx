@@ -4,6 +4,7 @@ import Link from "next/link";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
 import RelatedArticles from "@/components/RelatedArticles";
+import SectorIcon from "@/components/SectorIcon";
 import { getAllStocksForIndex, getArticleList } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
@@ -139,15 +140,20 @@ async function StocksBody({ searchParams }: Props) {
           {visibleStocks.map((stock) => (
             <li key={stock.stockCode}>
               <Link href={`/stocks/${stock.stockCode}`} className="card">
-                <span className="block font-medium text-brand-blue">
-                  {stock.stockName}（{stock.stockCode}）
-                </span>
-                <span className="mt-1 block text-xs text-foreground/50">
-                  {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
-                  記事{stock.articleCount}件
-                </span>
-                <span className="block text-xs text-foreground/50">
-                  最終開示{formatDate(stock.latestDealDate)}
+                <span className="flex items-start gap-2">
+                  <SectorIcon sector={sectorByCode.get(stock.stockCode)} />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-brand-blue">
+                      {stock.stockName}（{stock.stockCode}）
+                    </span>
+                    <span className="mt-1 block text-xs text-foreground/50">
+                      {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
+                      記事{stock.articleCount}件
+                    </span>
+                    <span className="block text-xs text-foreground/50">
+                      最終開示{formatDate(stock.latestDealDate)}
+                    </span>
+                  </span>
                 </span>
               </Link>
             </li>

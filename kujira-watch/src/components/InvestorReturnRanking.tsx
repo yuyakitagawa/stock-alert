@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
+import DealTypeIcon from "./DealTypeIcon";
 import DealTypeLabel from "./DealTypeLabel";
 import { displayFilerName, formatDate } from "@/lib/format";
 import {
@@ -97,10 +98,12 @@ export default function InvestorReturnRanking({
       <ul className="card-grid card-grid-wide">
         {shown.map((row, index) => (
           <li key={row.filerName} className="card">
-            <span className="flex items-baseline gap-2">
+            <span className="flex items-start gap-2">
               <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
                 {index + 1}
               </span>
+              {/* 投資家のロゴは持てないため、分類の絵文字＋分類色のアイコンで代替する。 */}
+              <DealTypeIcon dealType={row.category} />
               <Link
                 href={investorPath(row.filerId, row.filerName)}
                 className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
@@ -108,7 +111,7 @@ export default function InvestorReturnRanking({
                 {displayFilerName(row.filerName)}
               </Link>
             </span>
-            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-foreground/60">
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-16 text-xs text-foreground/60">
               {/* 分類で絞り込んでいる間は全行が同じ分類なのでラベルを繰り返さない。 */}
               {!filtering && <DealTypeLabel dealType={row.category} />}
               <span className="font-semibold">買い開示{row.positionCount}件</span>

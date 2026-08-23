@@ -24,7 +24,9 @@ export function mainNavLinks(locale: Locale): NavLink[] {
     { href: "/trending", label: "銘柄ランキング" },
     { href: "/ranking/returns", label: "投資家ランキング" },
     { href: "/weekly", label: "週次トレンド" },
-    { href: "/activists", label: "アクティビスト注目銘柄" },
+    // ページタイトルは「アクティビスト注目銘柄」のままだが、上部タブでは長くて
+    // 他タブを押し出すため短縮ラベルにする（2026-08-23）。
+    { href: "/activists", label: "アクティビスト" },
     { href: "/buybacks", label: "自社株買い" },
     { href: "/investors", label: "投資家一覧" },
     { href: "/stocks", label: "銘柄一覧" },

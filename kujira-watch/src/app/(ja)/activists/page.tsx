@@ -10,8 +10,9 @@ import { getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
 import RelatedArticles from "@/components/RelatedArticles";
+import SectorIcon from "@/components/SectorIcon";
 import AdUnit from "@/components/AdUnit";
-import { getAllListedCodes } from "@/lib/companyInfo";
+import { getAllListedCodes, getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
 
 export const revalidate = 3600;
@@ -93,14 +94,22 @@ export default async function ActivistsPage() {
   const attentionStocks = attentionStocksAll.slice(0, ATTENTION_RENDER_LIMIT);
   const attentionOmitted = attentionStocksAll.length - attentionStocks.length;
 
+  // 銘柄カードの業種アイコン用（会社ロゴは持てないため業種で代替）。表示分だけ一括取得。
+  const briefs = await getCompanyBriefs(attentionStocks.map((row) => row.issuerCode)).catch(
+    () => new Map<string, CompanyBrief>()
+  );
+
   const attentionItem = (row: AttentionRow) => (
     <li key={row.issuerCode} className="card text-sm">
-      <span className="font-medium">{stockLabel(row.issuerName, row.issuerCode)}</span>
-      <span className="ml-2 whitespace-nowrap text-xs font-bold text-gain">▲{row.totalDelta}pt買い入れ</span>
-      {row.multiHolder && (
-        <span className="kicker ml-2 whitespace-nowrap text-brand-gold">複数ファンド保有</span>
-      )}
-      <ul className="mt-1 space-y-0.5 pl-4 text-xs text-foreground/60">
+      <div className="flex items-start gap-2">
+        <SectorIcon sector={briefs.get(row.issuerCode)?.sector} />
+        <div className="min-w-0">
+          <span className="font-medium">{stockLabel(row.issuerName, row.issuerCode)}</span>
+          <span className="ml-2 whitespace-nowrap text-xs font-bold text-gain">▲{row.totalDelta}pt買い入れ</span>
+          {row.multiHolder && (
+            <span className="kicker ml-2 whitespace-nowrap text-brand-gold">複数ファンド保有</span>
+          )}
+          <ul className="mt-1 space-y-0.5 text-xs text-foreground/60">
         {row.buys.map((move) => (
           <li key={move.docId}>
             <Link
@@ -116,7 +125,9 @@ export default async function ActivistsPage() {
             </span>
           </li>
         ))}
-      </ul>
+          </ul>
+        </div>
+      </div>
     </li>
   );
 

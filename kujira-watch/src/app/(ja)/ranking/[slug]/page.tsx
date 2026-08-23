@@ -10,6 +10,8 @@ import { getFilerIdMap, investorPath } from "@/lib/investors";
 import AdUnit from "@/components/AdUnit";
 import InvestorReturnRanking from "@/components/InvestorReturnRanking";
 import RelatedArticles from "@/components/RelatedArticles";
+import SectorIcon from "@/components/SectorIcon";
+import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 
 // activistの元データ（記事）は毎時更新、returnsの元データ（Supabaseのマテリアライズド
 // ビュー）は日次更新なので1時間キャッシュで十分。
@@ -85,6 +87,13 @@ export default async function RankingSlugPage({ params }: Props) {
     ranking.axis === "stock" ? (await getRecentArticles(RANKING_DAYS)).contents : [];
   const stockRows = ranking.axis === "stock" ? buildStockRows(recentArticles, RANKING_SIZE) : [];
   const filerIds = ranking.axis === "stock" ? await getFilerIdMap() : {};
+  // 銘柄カードの業種アイコン用（会社ロゴは持てないため業種で代替）。
+  const stockBriefs =
+    ranking.axis === "stock"
+      ? await getCompanyBriefs(stockRows.map((row) => row.stockCode)).catch(
+          () => new Map<string, CompanyBrief>()
+        )
+      : new Map<string, CompanyBrief>();
   const rowCount = ranking.axis === "returns" ? returnRows.length : stockRows.length;
 
   // ランキングの文脈に合ったアイキャッチ付き記事カード。returnsはランキング上位投資家の
@@ -202,10 +211,11 @@ export default async function RankingSlugPage({ params }: Props) {
         <ul className="card-grid card-grid-wide">
           {stockRows.map((row, index) => (
             <li key={row.key} className="card">
-              <span className="flex items-baseline gap-2">
+              <span className="flex items-start gap-2">
                 <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
                   {index + 1}
                 </span>
+                <SectorIcon sector={stockBriefs.get(row.stockCode)?.sector} />
                 <Link
                   href={`/stocks/${row.stockCode}`}
                   className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
@@ -213,7 +223,7 @@ export default async function RankingSlugPage({ params }: Props) {
                   {row.stockName}（{row.stockCode}）
                 </Link>
               </span>
-              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-foreground/60">
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-16 text-xs text-foreground/60">
                 <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
                 {row.filerName && (
                   <Link

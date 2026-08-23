@@ -74,6 +74,7 @@ export default async function TrendingPage() {
     ...entry,
     href: listedCodes.has(entry.key) ? `/stocks/${entry.key}` : null,
     note: noteOf(entry.key),
+    sector: briefs.get(entry.key)?.sector ?? null,
   }));
 
   // ランキング入りした銘柄の解説記事（新着順・1銘柄1件まで）。表だけでは取引の中身が

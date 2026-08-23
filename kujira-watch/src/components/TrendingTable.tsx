@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { displayFilerName, formatAmountParts } from "@/lib/format";
 import type { TrendingCounts } from "@/lib/trendingStats";
+import SectorIcon from "./SectorIcon";
 
 // 表示に必要なものはサーバー側で解決して渡す。hrefやnoteを関数propsで受け取ると
 // クライアントコンポーネントの境界を越えられないため。
@@ -13,6 +14,8 @@ export type TrendingItem = TrendingCounts & {
   href: string | null;
   // 社名だけでは何の会社か分からないため、銘柄一覧では事業内容(無ければ業種)を1行添える。
   note?: string | null;
+  // 業種アイコン（SectorIcon）用。
+  sector?: string | null;
 };
 
 // 初回に描画する件数と、スクロールで追加する単位。
@@ -82,9 +85,12 @@ export default function TrendingTable({
           const currentAmount = amountLabel(entry.amount);
           const prevAmount = amountLabel(entry.prevAmount);
           const label = (
-            <span className="block">
-              {displayFilerName(entry.label)}
-              {entry.isNew && <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>}
+            <span className="flex items-start gap-2">
+              <SectorIcon sector={entry.sector} />
+              <span className="min-w-0">
+                {displayFilerName(entry.label)}
+                {entry.isNew && <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>}
+              </span>
             </span>
           );
           const body = (

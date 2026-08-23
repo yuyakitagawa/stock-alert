@@ -738,3 +738,19 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
 - `/buybacks` は既に解説記事カードがあるため変更なし。カテゴリ・日付・月別詳細ページは
   既存の `ArticleCard` 一覧で画像表示済み。
 - `tsc --noEmit`・`eslint` パス（microCMSキーが無い環境のため実描画は未確認）。
+
+## 2026-08-23 銘柄=業種アイコン・投資家=分類アイコンを全一覧へ、/buybacks再構成、タブ名短縮
+- 会社・投資家のロゴは商標・取得元の問題で使えないため、代替アイコン2種を新設:
+  - `SectorIcon`: JPX33業種→絵文字（jpx_stock_list.sector）。紺系の丸背景。未登録・"-"は💼。
+  - `DealTypeIcon`: 投資家分類→絵文字＋分類色（DEAL_TYPE_COLORSのドット色を約12%アルファで背景に）。
+- 適用箇所: /trending 銘柄カード、/ranking/returns 投資家カード、/ranking/activist 銘柄カード、
+  /weekly 分類別トレンドのカード見出し（色ドットを置き換え）、/activists 銘柄カード、
+  /buybacks 比率・金額ランキング＋決定一覧、/stocks・/investors の索引カード。
+  sectorが手元に無いページ（/ranking/activist・/activists・/buybacks）は表示分だけ
+  `getCompanyBriefs()`で一括取得（失敗時は空Mapでアイコンはフォールバック表示）。
+- /buybacks: 「最新の自社株買い決定」をMUI Table（minWidth 720px・スマホ横スクロール）から
+  他ページと同じ1件1カード（.card-grid-wide）へ変更。「自社株買いの数字の見方」セクションは
+  FAQへQ&A形式で移設（新規3問。消却・枠の性質は既存Q&Aと重複するため統合）。
+- ヘッダー上タブの「アクティビスト注目銘柄」→「アクティビスト」に短縮（lib/nav.ts。
+  ページタイトル・フッターは据え置き）。
+- `tsc --noEmit`・`eslint` パス（Supabase/microCMSキーが無い環境のため実描画は未確認）。

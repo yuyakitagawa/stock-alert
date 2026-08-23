@@ -4,12 +4,13 @@ import Box from "@mui/material/Box";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import AdUnit from "@/components/AdUnit";
 import ArticleCard from "@/components/ArticleCard";
 import FaqAccordionList from "@/components/FaqAccordionList";
+import SectorIcon from "@/components/SectorIcon";
+import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import {
   formatAmountOku,
   getMonthlyBuybackCounts,
@@ -73,6 +74,26 @@ const FAQS: FaqItem[] = [
     answer:
       "TDnet（適時開示情報閲覧サービス）に公表された「自己株式取得に係る事項の決定に関するお知らせ」等の原文PDFを、当サイトのシステムが毎日読み取り、上限株数・上限金額・発行済比率・取得期間・取得方法を抽出しています。月次の取得状況報告（進捗）は一覧に含めていません。各銘柄ページでは進捗を含む自社株買い開示の履歴を確認できます。",
   },
+  // 以下3件は本文にあった「自社株買いの数字の見方」セクションをQ&A形式へ移設したもの
+  // （2026-08-23。本文の読み物セクションよりFAQに集約した方が探しやすいため）。
+  {
+    category: "自社株買い",
+    question: "自社株買いの数字はどこから見ればよいですか？",
+    answer:
+      "まず発行済株式比率から見ます。上限金額は会社の規模に比例するため、需給インパクトは発行済株式比率で比べるのが基本です。5%を超える枠は大きく、10%超は株主構成を変えるレベルです。上限金額ランキングは規模感の把握用として、比率ランキングと併せて見てください。",
+  },
+  {
+    category: "自社株買い",
+    question: "取得期間の長さからは何が読み取れますか？",
+    answer:
+      "会社の買い方の本気度・スタイルです。ToSTNeT-3は翌営業日に一括で取得が終わる方式で、大株主の売却の受け皿であることが多い一方、1年近い取得期間の市場買付は株価を見ながら機動的に買う枠です。なお枠は取得の約束ではないため、実際の取得は毎月の取得状況報告（各銘柄ページの履歴）で確認してください。",
+  },
+  {
+    category: "自社株買い",
+    question: "大量保有報告書と合わせてどう読めばよいですか？",
+    answer:
+      "同じ銘柄で大量保有報告書の売り（保有比率の低下）と自社株買いが同時期に出ていれば、会社が大株主の売却を吸収している構図が読み取れます。銘柄ランキングや各銘柄ページで大口投資家の動きと突き合わせて確認できます。",
+  },
 ];
 
 function Frame({ d }: { d: BuybackDecision }) {
@@ -85,12 +106,21 @@ function Frame({ d }: { d: BuybackDecision }) {
   );
 }
 
-function RankingList({ items, valueOf }: { items: BuybackDecision[]; valueOf: (d: BuybackDecision) => string }) {
+function RankingList({
+  items,
+  valueOf,
+  sectorOf,
+}: {
+  items: BuybackDecision[];
+  valueOf: (d: BuybackDecision) => string;
+  sectorOf: (code: string) => string | null | undefined;
+}) {
   return (
     <ol className="divide-y divide-rule border-y border-rule">
       {items.map((d, i) => (
-        <li key={`${d.code}-${d.disclosedAt}`} className="flex items-baseline gap-3 py-2.5">
+        <li key={`${d.code}-${d.disclosedAt}`} className="flex items-center gap-3 py-2.5">
           <span className="w-6 shrink-0 text-right text-sm font-bold text-foreground/40">{i + 1}</span>
+          <SectorIcon sector={sectorOf(d.code)} />
           <div className="min-w-0 flex-1">
             <Link href={`/stocks/${d.code}`} className="font-medium text-brand-blue hover:underline">
               {d.stockName}（{d.code}）
@@ -111,6 +141,12 @@ export default async function BuybacksPage() {
     getMonthlyBuybackCounts().catch(() => []),
     getArticleList({ dealType: "自社株買い", limit: 6 }).catch(() => ({ contents: [] })),
   ]);
+
+  // 銘柄の業種アイコン用（会社ロゴは持てないため業種で代替）。決定一覧の銘柄ぶんを一括取得。
+  const briefs = await getCompanyBriefs([...new Set(decisions.map((d) => d.code))]).catch(
+    () => new Map<string, CompanyBrief>()
+  );
+  const sectorOf = (code: string) => briefs.get(code)?.sector;
 
   const totalYen = decisions.reduce((s, d) => s + (d.maxAmountYen ?? 0), 0);
   const byAmount = [...decisions]
@@ -190,7 +226,7 @@ export default async function BuybacksPage() {
           {byRatio.length === 0 ? (
             <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日に比率が開示された決定はありません。</p>
           ) : (
-            <RankingList items={byRatio} valueOf={(d) => `${d.ratioPct}%`} />
+            <RankingList items={byRatio} valueOf={(d) => `${d.ratioPct}%`} sectorOf={sectorOf} />
           )}
         </section>
         <section>
@@ -201,7 +237,11 @@ export default async function BuybacksPage() {
           {byAmount.length === 0 ? (
             <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日に上限金額が開示された決定はありません。</p>
           ) : (
-            <RankingList items={byAmount} valueOf={(d) => formatAmountOku(d.maxAmountYen) ?? "-"} />
+            <RankingList
+              items={byAmount}
+              valueOf={(d) => formatAmountOku(d.maxAmountYen) ?? "-"}
+              sectorOf={sectorOf}
+            />
           )}
         </section>
       </div>
@@ -215,59 +255,56 @@ export default async function BuybacksPage() {
         {listed.length === 0 ? (
           <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日の決定はありません。</p>
         ) : (
-          <TableContainer sx={{ borderTop: 1, borderColor: "divider" }}>
-            <Table size="small" sx={{ minWidth: 720, "& .MuiTableCell-root": { borderColor: "divider" } }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ color: "text.disabled" }}>開示日</TableCell>
-                  <TableCell sx={{ color: "text.disabled" }}>銘柄</TableCell>
-                  <TableCell sx={{ color: "text.disabled" }}>取得枠（上限）</TableCell>
-                  <TableCell sx={{ color: "text.disabled" }}>方法・期間</TableCell>
-                  <TableCell sx={{ color: "text.disabled" }}>原文</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {listed.map((d) => {
-                  const period =
-                    d.periodFrom && d.periodTo
-                      ? d.periodFrom === d.periodTo
-                        ? formatDate(d.periodFrom)
-                        : `${formatDate(d.periodFrom)}〜${formatDate(d.periodTo)}`
-                      : null;
-                  return (
-                    <TableRow key={`${d.code}-${d.disclosedAt}-${d.title}`}>
-                      <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                        {formatDate(d.disclosedAt.slice(0, 10))}
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/stocks/${d.code}`} className="text-brand-blue hover:underline">
+          /* 以前はMUI Table（minWidth 720px）でスマホは横スクロールが必要だった。
+             他の一覧ページと同じ1件1カード（.card-grid-wide）にして全項目を折り返しで収める。 */
+          <ul className="card-grid card-grid-wide">
+            {listed.map((d) => {
+              const period =
+                d.periodFrom && d.periodTo
+                  ? d.periodFrom === d.periodTo
+                    ? formatDate(d.periodFrom)
+                    : `${formatDate(d.periodFrom)}〜${formatDate(d.periodTo)}`
+                  : null;
+              return (
+                <li key={`${d.code}-${d.disclosedAt}-${d.title}`} className="card">
+                  <div className="flex items-start gap-2">
+                    <SectorIcon sector={sectorOf(d.code)} />
+                    <div className="min-w-0 grow">
+                      <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <Link href={`/stocks/${d.code}`} className="font-medium text-brand-blue hover:underline">
                           {d.stockName}（{d.code}）
                         </Link>
-                        {d.willCancel && <span className="ml-2 text-[10px] font-bold text-brand-navy">消却</span>}
-                      </TableCell>
-                      <TableCell sx={{ whiteSpace: "nowrap" }}>
-                        <Frame d={d} />
-                        {d.maxShares !== null && (
-                          <span className="block text-xs text-foreground/50">{d.maxShares.toLocaleString("ja-JP")}株</span>
+                        {d.willCancel && (
+                          <span className="rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">
+                            消却
+                          </span>
                         )}
-                      </TableCell>
-                      <TableCell sx={{ color: "text.secondary" }}>
-                        <span className="block text-xs">{d.method ?? "-"}</span>
-                        {period && <span className="block text-xs text-foreground/60">{period}</span>}
-                      </TableCell>
-                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        <span className="text-xs text-foreground/50">{formatDate(d.disclosedAt.slice(0, 10))}</span>
+                      </span>
+                      <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-foreground/60">
+                        <span className="text-sm">
+                          <Frame d={d} />
+                        </span>
+                        {d.maxShares !== null && <span>{d.maxShares.toLocaleString("ja-JP")}株</span>}
+                        {d.method && <span>{d.method}</span>}
+                        {period && <span>{period}</span>}
                         {d.docUrl && (
-                          <a href={d.docUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-blue hover:underline">
-                            PDF ↗
+                          <a
+                            href={d.docUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand-blue hover:underline"
+                          >
+                            原文PDF ↗
                           </a>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 
@@ -314,32 +351,6 @@ export default async function BuybacksPage() {
           </div>
         </section>
       )}
-
-      <section className="mb-10">
-        <h2 className="mb-3 text-xl font-bold text-brand-navy">自社株買いの数字の見方</h2>
-        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-foreground/80">
-          <li>
-            <strong>比率を先に見る。</strong>
-            上限金額は会社の規模に比例するので、需給インパクトは発行済株式比率で比べる。5%を超える枠は大きく、10%超は株主構成を変えるレベル。
-          </li>
-          <li>
-            <strong>期間の長さで本気度を測る。</strong>
-            ToSTNeT-3は翌営業日に一括で終わる（大株主の売却の受け皿であることが多い）。1年近い取得期間の市場買付は、株価を見ながら機動的に買う枠。
-          </li>
-          <li>
-            <strong>消却まで決めているか。</strong>
-            消却しない自己株式は将来のM&Aや株式報酬で市場に戻りうる。消却の同時決議は株数を恒久的に減らす意思表示。
-          </li>
-          <li>
-            <strong>枠は約束ではない。</strong>
-            実際の取得は毎月の取得状況報告で確認する。各銘柄ページの「自社株買い（TDnet適時開示）」に進捗を含む履歴がある。
-          </li>
-          <li>
-            <strong>大株主の動きと合わせて読む。</strong>
-            同じ銘柄で<Link href="/trending" className="text-brand-blue hover:underline">大量保有報告書</Link>の売り（比率低下）と自社株買いが同時期に出ていれば、会社が大株主の売却を吸収している構図。
-          </li>
-        </ul>
-      </section>
 
       <section id="faq" className="mb-8 border-t border-rule pt-4">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>

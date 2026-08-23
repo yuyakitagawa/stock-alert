@@ -4,7 +4,8 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import { DEAL_TYPE_COLORS, DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import DealTypeIcon from "@/components/DealTypeIcon";
+import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { formatAmountParts, formatDealAmount } from "@/lib/format";
 import type { DealType } from "@/types/article";
 
@@ -63,20 +64,17 @@ function CategoryChart({
   const step = (WIDTH - PAD_X * 2) / weeks.length;
   const barWidth = Math.min(step - 6, 28);
   const net = row.buyTotal - row.sellTotal;
-  const dotColor = (DEAL_TYPE_COLORS[row.dealType] ?? DEAL_TYPE_COLORS["その他"]).dot;
 
   return (
     <div className="rounded-md border border-rule p-3">
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
+        {/* 分類の色ドットは分類アイコン（絵文字＋分類色背景）に置き換えた。 */}
         <span
-          className="text-sm font-bold text-brand-navy"
+          className="flex items-center gap-1.5 text-sm font-bold text-brand-navy"
           title={DEAL_TYPE_DESCRIPTIONS[row.dealType]}
         >
-          <span
-            className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
-            style={{ background: dotColor }}
-          />
-          {row.dealType}
+          <DealTypeIcon dealType={row.dealType} size="sm" />
+          <span className="min-w-0">{row.dealType}</span>
         </span>
         <span
           className="whitespace-nowrap text-xs font-bold"

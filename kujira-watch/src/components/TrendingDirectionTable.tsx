@@ -7,11 +7,12 @@ import TrendingTable from "./TrendingTable";
 import { selectDirection } from "@/lib/trendingStats";
 import type { DirectionalTrendingEntry, TrendingDirection } from "@/lib/trendingStats";
 
-// hrefとnote（事業内容）はサーバー側で解決してから渡す（ここはクライアント
-// コンポーネントなので関数propsを境界を越えて渡せない）。
+// hrefとnote（事業内容）・sector（業種アイコン用）はサーバー側で解決してから渡す
+// （ここはクライアントコンポーネントなので関数propsを境界を越えて渡せない）。
 export type DirectionalTrendingItem = DirectionalTrendingEntry & {
   href: string | null;
   note?: string | null;
+  sector?: string | null;
 };
 
 // 既定は「買い」。大口投資家がどの銘柄を買い集めているかを見に来る読者が大半で、

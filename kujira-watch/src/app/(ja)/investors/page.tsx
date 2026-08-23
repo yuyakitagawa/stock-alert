@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import DealTypeIcon from "@/components/DealTypeIcon";
 import DealTypeLabel from "@/components/DealTypeLabel";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
@@ -148,12 +149,18 @@ async function InvestorsBody({ searchParams }: Props) {
                 href={investorPath(filer.filerId, filer.filerName)}
                 className="card font-medium text-brand-blue"
               >
-                {displayFilerName(filer.filerName)}
-                <span className="mt-1 block font-normal">
-                  <DealTypeLabel dealType={filer.category} />
-                </span>
-                <span className="block text-xs font-normal text-foreground/50">
-                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                <span className="flex items-start gap-2">
+                  {/* 投資家のロゴは持てないため、分類の絵文字＋分類色のアイコンで代替する。 */}
+                  <DealTypeIcon dealType={filer.category} />
+                  <span className="min-w-0">
+                    {displayFilerName(filer.filerName)}
+                    <span className="mt-1 block font-normal">
+                      <DealTypeLabel dealType={filer.category} />
+                    </span>
+                    <span className="block text-xs font-normal text-foreground/50">
+                      保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                    </span>
+                  </span>
                 </span>
               </Link>
             </li>
