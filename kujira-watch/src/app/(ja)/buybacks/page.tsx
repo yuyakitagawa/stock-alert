@@ -105,19 +105,24 @@ function RankingList({
   sectorOf: (code: string) => string | null | undefined;
 }) {
   return (
-    <ol className="divide-y divide-rule border-y border-rule">
+    <ol className="card-grid card-grid-wide">
       {items.map((d, i) => (
-        <li key={`${d.code}-${d.disclosedAt}`} className="flex items-center gap-3 py-2.5">
-          <span className="w-6 shrink-0 text-right text-sm font-bold text-foreground/40">{i + 1}</span>
-          <SectorIcon sector={sectorOf(d.code)} />
-          <div className="min-w-0 flex-1">
-            <Link href={`/stocks/${d.code}`} className="font-medium text-brand-blue hover:underline">
+        <li key={`${d.code}-${d.disclosedAt}`} className="card">
+          <span className="flex items-start gap-2">
+            <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">{i + 1}</span>
+            <SectorIcon sector={sectorOf(d.code)} />
+            <Link
+              href={`/stocks/${d.code}`}
+              className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
+            >
               {d.stockName}（{d.code}）
             </Link>
-            <span className="ml-2 text-xs text-foreground/50">{formatDate(d.disclosedAt.slice(0, 10))}</span>
-            {d.willCancel && <span className="ml-2 rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">消却</span>}
-          </div>
-          <span className="shrink-0 text-sm font-bold text-brand-navy">{valueOf(d)}</span>
+          </span>
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
+            <span>{formatDate(d.disclosedAt.slice(0, 10))}</span>
+            {d.willCancel && <span className="rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">消却</span>}
+            <span className="ml-auto whitespace-nowrap text-sm font-bold tabular-nums text-brand-navy">{valueOf(d)}</span>
+          </span>
         </li>
       ))}
     </ol>

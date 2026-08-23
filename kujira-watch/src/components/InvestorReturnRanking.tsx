@@ -111,7 +111,7 @@ export default function InvestorReturnRanking({
                 {displayFilerName(row.filerName)}
               </Link>
             </span>
-            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-16 text-xs text-foreground/60">
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
               {/* 分類で絞り込んでいる間は全行が同じ分類なのでラベルを繰り返さない。 */}
               {!filtering && <DealTypeLabel dealType={row.category} />}
               <span className="font-semibold">買い開示{row.positionCount}件</span>

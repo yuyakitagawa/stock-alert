@@ -223,7 +223,7 @@ export default async function RankingSlugPage({ params }: Props) {
                   {row.stockName}（{row.stockCode}）
                 </Link>
               </span>
-              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-16 text-xs text-foreground/60">
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
                 <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
                 {row.filerName && (
                   <Link

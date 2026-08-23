@@ -44,7 +44,7 @@ export default function AmountTrendChart({ bars }: { bars: AmountTrendBar[] }) {
   const labelEvery = bars.length > 10 ? 2 : 1;
 
   return (
-    <figure className="my-4">
+    <figure className="my-4 rounded-lg border border-rule bg-paper px-4 py-3">
       <div className="mb-1 flex items-center gap-4 text-xs text-foreground/60">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm" style={{ background: "var(--brand-blue)" }} />

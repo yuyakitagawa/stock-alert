@@ -13,6 +13,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
 import { UI, type Locale } from "@/lib/i18n";
+import VisitCounter from "./VisitCounter";
 
 // external: 外部サイト（公式Xなど）へのリンク。next/linkではなく素のaで別タブに開く。
 export type MenuLink = { href: string; label: string; external?: boolean };
@@ -120,9 +121,13 @@ export default function HeaderMenuDrawer({
               : "本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。"}
           </Typography>
           <Divider sx={{ my: 1 }} />
-          <Typography variant="caption" sx={{ display: "block", px: 2, pb: 2, color: "text.disabled" }}>
+          <Typography variant="caption" sx={{ display: "block", px: 2, color: "text.disabled" }}>
             © {year} {locale === "en" ? SITE_NAME_EN : SITE_NAME}
           </Typography>
+          {/* ヘッダーの訪問者数はスマホでは非表示のため、メニュー最下部にも置く（加算はしない）。 */}
+          <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
+            <VisitCounter locale={locale} increment={false} />
+          </Box>
         </Box>
       </Drawer>
   );

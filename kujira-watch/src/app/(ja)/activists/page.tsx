@@ -101,6 +101,7 @@ export default async function ActivistsPage() {
 
   const attentionItem = (row: AttentionRow) => (
     <li key={row.issuerCode} className="card text-sm">
+      {/* 1行目=アイコン＋銘柄名、2行目以降=明細をカード左端から（アイコン分の字下げはしない）。 */}
       <div className="flex items-start gap-2">
         <SectorIcon sector={briefs.get(row.issuerCode)?.sector} />
         <div className="min-w-0">
@@ -109,7 +110,9 @@ export default async function ActivistsPage() {
           {row.multiHolder && (
             <span className="kicker ml-2 whitespace-nowrap text-brand-gold">複数ファンド保有</span>
           )}
-          <ul className="mt-1 space-y-0.5 text-xs text-foreground/60">
+        </div>
+      </div>
+      <ul className="mt-1 space-y-0.5 text-xs text-foreground/60">
         {row.buys.map((move) => (
           <li key={move.docId}>
             <Link
@@ -125,9 +128,7 @@ export default async function ActivistsPage() {
             </span>
           </li>
         ))}
-          </ul>
-        </div>
-      </div>
+      </ul>
     </li>
   );
 
