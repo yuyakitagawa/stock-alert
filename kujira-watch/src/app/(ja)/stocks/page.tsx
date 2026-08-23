@@ -8,7 +8,7 @@ import SectorIcon from "@/components/SectorIcon";
 import { getAllStocksForIndex, getArticleList } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
@@ -108,9 +108,8 @@ async function StocksBody({ searchParams }: Props) {
   return (
     <>
       <p className="mb-4 text-sm text-foreground/50">
-        {SITE_NAME}が大量保有・自社株買いの動きを追跡している銘柄{stocks.length}件です。
-        証券コード順に並んでいます
-        {totalPages > 1 && `（${currentPage}/${totalPages}ページ、${matchedStocks.length}件中${visibleStocks.length}件を表示）`}。
+        大量保有・自社株買いの開示があった銘柄{stocks.length}件。証券コード順
+        {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
       {sectors.length > 0 && (
         <FilterButtonNav
@@ -142,18 +141,17 @@ async function StocksBody({ searchParams }: Props) {
               <Link href={`/stocks/${stock.stockCode}`} className="card">
                 <span className="flex items-start gap-2">
                   <SectorIcon sector={sectorByCode.get(stock.stockCode)} />
-                  <span className="min-w-0">
-                    <span className="block font-medium text-brand-blue">
-                      {stock.stockName}（{stock.stockCode}）
-                    </span>
-                    <span className="mt-1 block text-xs text-foreground/50">
-                      {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
-                      記事{stock.articleCount}件
-                    </span>
-                    <span className="block text-xs text-foreground/50">
-                      最終開示{formatDate(stock.latestDealDate)}
-                    </span>
+                  <span className="min-w-0 font-medium text-brand-blue">
+                    {stock.stockName}（{stock.stockCode}）
                   </span>
+                </span>
+                {/* 2・3行目はアイコン分を字下げせずカード左端から。 */}
+                <span className="mt-1 block text-xs text-foreground/50">
+                  {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
+                  記事{stock.articleCount}件
+                </span>
+                <span className="block text-xs text-foreground/50">
+                  最終開示{formatDate(stock.latestDealDate)}
                 </span>
               </Link>
             </li>

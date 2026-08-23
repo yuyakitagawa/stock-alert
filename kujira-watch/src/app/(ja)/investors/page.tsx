@@ -9,7 +9,7 @@ import RelatedArticles from "@/components/RelatedArticles";
 import { getAllFilers, investorPath } from "@/lib/investors";
 import { getArticleList } from "@/lib/microcms";
 import { displayFilerName, formatDate } from "@/lib/format";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 
@@ -110,9 +110,8 @@ async function InvestorsBody({ searchParams }: Props) {
   return (
     <>
       <p className="mb-4 text-sm text-foreground/50">
-        {SITE_NAME}がEDINET大量保有報告書から追跡している投資家（機関投資家・アクティビストファンド・
-        創業家の資産管理会社など）{filers.length}件です。最終開示日が新しい順に並んでいます
-        {totalPages > 1 && `（${currentPage}/${totalPages}ページ、${matchedFilers.length}件中${visibleFilers.length}件を表示）`}。
+        EDINET大量保有報告書に登場した投資家{filers.length}件。最終開示日が新しい順
+        {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
       {filers.length > 0 && (
         <FilterButtonNav
@@ -152,15 +151,14 @@ async function InvestorsBody({ searchParams }: Props) {
                 <span className="flex items-start gap-2">
                   {/* 投資家のロゴは持てないため、分類の絵文字＋分類色のアイコンで代替する。 */}
                   <DealTypeIcon dealType={filer.category} />
-                  <span className="min-w-0">
-                    {displayFilerName(filer.filerName)}
-                    <span className="mt-1 block font-normal">
-                      <DealTypeLabel dealType={filer.category} />
-                    </span>
-                    <span className="block text-xs font-normal text-foreground/50">
-                      保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
-                    </span>
-                  </span>
+                  <span className="min-w-0">{displayFilerName(filer.filerName)}</span>
+                </span>
+                {/* 2・3行目はアイコン分を字下げせずカード左端から。 */}
+                <span className="mt-1 block font-normal">
+                  <DealTypeLabel dealType={filer.category} />
+                </span>
+                <span className="block text-xs font-normal text-foreground/50">
+                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
                 </span>
               </Link>
             </li>
