@@ -741,3 +741,51 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
 - `tsc --noEmit`・`eslint` パス、dev で /weekly の描画を確認。
 - 2026-08-22: /weekly 分類別トレンドの「直近の週に最も買って/売っていたのは…」文章を削除（グラフと重複し冗長）。
 - 2026-08-22: /weekly の売買金額トレンド・分類別トレンドの数値ラベルを最新週のみ→全週表示に変更。
+
+## 2026-08-22 全タブにアイキャッチ付き記事カードを展開
+- TOPのアイキャッチ画像で見やすくなったのを受け、画像が無かったヘッダータブ全ページに
+  タブの文脈に合った記事カード（`ArticleCard`＝アイキャッチ付き）のセクションを追加。
+  共通コンポーネントは `src/components/RelatedArticles.tsx`（記事0件ならセクションごと非表示）。
+- 各タブの中身（いずれも4件・取れなくてもページ本体は成立させる `.catch`）:
+  - `/trending`: ランキング入り銘柄の最新記事（最新30件から1銘柄1件）
+  - `/ranking/returns`: 上位30名の投資家による直近記事（最新50件から1投資家1件）
+  - `/ranking/activist`: 取得済みの直近30日記事から金額上位（1銘柄1件・追加fetch無し）
+  - `/weekly`: 最新20件から推定金額上位（1銘柄1件）
+  - `/activists`: dealType=アクティビストの最新記事
+  - `/investors`・`/stocks`・`/monthly`: 最新の解説記事
+- `/buybacks` は既に解説記事カードがあるため変更なし。カテゴリ・日付・月別詳細ページは
+  既存の `ArticleCard` 一覧で画像表示済み。
+- `tsc --noEmit`・`eslint` パス（microCMSキーが無い環境のため実描画は未確認）。
+
+## 2026-08-23 銘柄=業種アイコン・投資家=分類アイコンを全一覧へ、/buybacks再構成、タブ名短縮
+- 会社・投資家のロゴは商標・取得元の問題で使えないため、代替アイコン2種を新設:
+  - `SectorIcon`: JPX33業種→絵文字（jpx_stock_list.sector）。紺系の丸背景。未登録・"-"は💼。
+  - `DealTypeIcon`: 投資家分類→絵文字＋分類色（DEAL_TYPE_COLORSのドット色を約12%アルファで背景に）。
+- 適用箇所: /trending 銘柄カード、/ranking/returns 投資家カード、/ranking/activist 銘柄カード、
+  /weekly 分類別トレンドのカード見出し（色ドットを置き換え）、/activists 銘柄カード、
+  /buybacks 比率・金額ランキング＋決定一覧、/stocks・/investors の索引カード。
+  sectorが手元に無いページ（/ranking/activist・/activists・/buybacks）は表示分だけ
+  `getCompanyBriefs()`で一括取得（失敗時は空Mapでアイコンはフォールバック表示）。
+- /buybacks: 「最新の自社株買い決定」をMUI Table（minWidth 720px・スマホ横スクロール）から
+  他ページと同じ1件1カード（.card-grid-wide）へ変更。「自社株買いの数字の見方」セクションは
+  FAQへQ&A形式で移設（新規3問。消却・枠の性質は既存Q&Aと重複するため統合）。
+- ヘッダー上タブの「アクティビスト注目銘柄」→「アクティビスト」に短縮（lib/nav.ts。
+  ページタイトル・フッターは据え置き）。
+- `tsc --noEmit`・`eslint` パス（Supabase/microCMSキーが無い環境のため実描画は未確認）。
+
+## 2026-08-23 /buybacks 「月別の決定件数」を削除
+- 最新一覧・ランキングと比べて意思決定に使える情報が無いため、セクションごと削除。
+- 専用だった `getMonthlyBuybackCounts()`・`MonthlyBuybackCount` 型（lib/buybacks.ts）と
+  ページのMUI Tableインポートも削除（月別表が最後の利用箇所だった）。
+- `tsc --noEmit`・`eslint` パス。
+
+## 2026-08-23 業種・分類アイコンを絵文字から自作SVGラインアイコンへ
+- 絵文字はOS・ブラウザで見た目がバラつくため、SectorIcon（33業種+汎用ブリーフケース）・
+  DealTypeIcon（14分類）の中身を24x24グリッドのストローク描画（strokeWidth 2、丸キャップ）の
+  自作SVGへ差し替え。ページ側のAPI（sector/dealType/size）は変更なし。
+- 色はSectorIconが紺（text-brand-navy/80）＋bg-brand-navy/10、DealTypeIconが分類の
+  文字色（DEAL_TYPE_COLORS.text）＋ドット色の約12%アルファ背景。
+- 一時ページ(icon-preview)＋headless Chromiumのスクリーンショットで全47種の描画を確認し、
+  判読しづらかった鉱業（つるはし）・繊維製品（Tシャツに変更）・海運業（コンテナ船に変更）・
+  VC（ロケット）を描き直した。一時ページは確認後に削除済み。
+- `tsc --noEmit`・`eslint` パス。

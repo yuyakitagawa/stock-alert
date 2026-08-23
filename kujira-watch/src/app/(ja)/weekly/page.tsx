@@ -12,7 +12,8 @@ import CategoryTrendGrid, {
   type CategoryTrendRow,
   type CategoryWeekColumn,
 } from "@/components/CategoryTrendGrid";
-import { getRecentArticleDigests, type ArticleDigest } from "@/lib/microcms";
+import RelatedArticles from "@/components/RelatedArticles";
+import { getArticleList, getRecentArticleDigests, type ArticleDigest } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { formatDealAmount, isSellArticle } from "@/lib/format";
 import type { DealType } from "@/types/article";
@@ -152,8 +153,24 @@ export function generateMetadata(): Metadata {
 }
 
 export default async function WeeklyDigestPage() {
-  const digests = await getRecentArticleDigests(AMOUNT_TREND_WEEKS * 7).catch(() => []);
+  const [digests, { contents: latestArticles }] = await Promise.all([
+    getRecentArticleDigests(AMOUNT_TREND_WEEKS * 7).catch(() => []),
+    // グラフの下に添えるアイキャッチ付き記事カード用。取れなくてもページは成立させる。
+    getArticleList({ limit: 20 }).catch(() => ({ contents: [] })),
+  ]);
   const url = `${SITE_URL}/weekly`;
+
+  // 直近の開示から推定取引金額の大きい取引（1銘柄1件まで）。グラフで「規模」を見た後に
+  // 「中身」を読める導線として置く。
+  const seenCodes = new Set<string>();
+  const featuredArticles = [...latestArticles]
+    .sort((a, b) => b.dealAmount - a.dealAmount)
+    .filter((article) => {
+      if (seenCodes.has(article.stockCode)) return false;
+      seenCodes.add(article.stockCode);
+      return true;
+    })
+    .slice(0, 4);
 
   const amountRows = buildWeeklyAmountRows(digests, AMOUNT_TREND_WEEKS);
   // 分類別トレンドは金額トレンドの週枠の新しい方から必要数だけ切り出す（古い週→新しい週）。
@@ -290,6 +307,12 @@ export default async function WeeklyDigestPage() {
           </p>
         </section>
       )}
+
+      <RelatedArticles
+        title="直近の大型取引の解説記事"
+        lead="直近の開示から推定取引金額の大きい取引をピックアップ。"
+        articles={featuredArticles}
+      />
 
       <AdUnit placement="bottom" />
     </div>

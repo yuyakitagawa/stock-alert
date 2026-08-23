@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
 import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
+import RelatedArticles from "@/components/RelatedArticles";
 import TrendingDirectionTable from "@/components/TrendingDirectionTable";
+import { getArticleList } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { buildTrendingIssuers, selectDirection } from "@/lib/trendingStats";
 import AdUnit from "@/components/AdUnit";
@@ -38,11 +40,13 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, amountByDocId, listedCodes] = await Promise.all([
+  const [rows, amountByDocId, listedCodes, { contents: recentArticles }] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
     // 金額は件数に添えるだけの情報なので、取れなくてもランキング自体は成立させる。
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
     getAllListedCodes().catch(() => new Set<string>()),
+    // ランキング銘柄の解説記事（アイキャッチ付きカード）用。取れなくてもページは成立させる。
+    getArticleList({ limit: 30 }).catch(() => ({ contents: [] })),
   ]);
 
   // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
@@ -66,7 +70,18 @@ export default async function TrendingPage() {
     ...entry,
     href: listedCodes.has(entry.key) ? `/stocks/${entry.key}` : null,
     note: noteOf(entry.key),
+    sector: briefs.get(entry.key)?.sector ?? null,
   }));
+
+  // ランキング入りした銘柄の解説記事（新着順・1銘柄1件まで）。表だけでは取引の中身が
+  // 分からないため、アイキャッチ付きカードで記事への導線を添える。
+  const trendingCodes = new Set(trendingIssuers.map((entry) => entry.key));
+  const seenCodes = new Set<string>();
+  const trendingArticles = recentArticles.filter((article) => {
+    if (!trendingCodes.has(article.stockCode) || seenCodes.has(article.stockCode)) return false;
+    seenCodes.add(article.stockCode);
+    return true;
+  }).slice(0, 4);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -137,6 +152,12 @@ export default async function TrendingPage() {
           株価・発行済株式数が取れない銘柄は金額に含めていない（件数には含む）ため、件数と金額は必ずしも比例しません。
         </p>
       </section>
+
+      <RelatedArticles
+        title="ランキング銘柄の解説記事"
+        lead="ランキングに入った銘柄の直近の大口取引を、取引ごとの解説記事で読めます。"
+        articles={trendingArticles}
+      />
 
       <AdUnit placement="bottom" />
     </div>
