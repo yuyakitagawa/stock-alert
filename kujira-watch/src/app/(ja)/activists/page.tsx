@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import InfoTip from "@/components/InfoTip";
 import {
   getActivistHoldingsSummary,
   getActivistRecentMoves,
@@ -156,13 +157,16 @@ export default async function ActivistsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          {SITE_NAME}が投資家分類「アクティビスト」（物言う株主）と判定した提出者が、
-          直近{MOVES_WINDOW_DAYS}日に保有比率を増やした（買い入れた）銘柄を、
-          増加幅の合計が大きい順に表示しています。出典はEDINET大量保有報告書です。詳しくは
-          <Link href="/faq/usage" className="text-brand-blue hover:underline">
-            よくある質問
-          </Link>
-          をご覧ください。
+          アクティビスト（物言う株主）が直近{MOVES_WINDOW_DAYS}日に買い入れた銘柄を、増加幅の大きい順に表示しています。
+          <InfoTip
+            content={
+              <>
+                {SITE_NAME}が投資家分類「アクティビスト」と判定した提出者が保有比率を増やした銘柄を、増加幅の合計順に並べています。出典はEDINET大量保有報告書。詳しくは
+                <Link href="/faq/usage" className="underline">よくある質問</Link>
+                をご覧ください。
+              </>
+            }
+          />
           {attentionOmitted > 0 && `（増加幅の大きい上位${ATTENTION_RENDER_LIMIT}銘柄を表示。ほか${attentionOmitted}銘柄は各銘柄ページでご確認ください）`}
         </p>
       </div>

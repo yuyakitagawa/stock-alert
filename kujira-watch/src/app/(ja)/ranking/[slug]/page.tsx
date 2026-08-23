@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import InfoTip from "@/components/InfoTip";
 import { notFound } from "next/navigation";
 import { displayFilerName, formatDate, formatDealAmount } from "@/lib/format";
 import { getArticleList, getRecentArticles } from "@/lib/microcms";
@@ -32,15 +33,15 @@ type RankingAxis = "returns" | "stock";
 
 const RANKINGS: Record<
   RankingSlug,
-  { axis: RankingAxis; title: string; description: string; note: string }
+  { axis: RankingAxis; title: string; description: string; detail: string; note: string }
 > = {
   returns: {
     axis: "returns",
     title: "3ヶ月リターンランキング（買い開示の成績）",
-    description:
+    description: "投資家が買った銘柄が3ヶ月後にどうなったかを、平均リターン順に並べたランキングです。",
+    detail:
       "EDINET大量保有報告書で買い増し・新規取得を開示した投資家について、開示日の終値から" +
-      "3ヶ月後（63営業日後）の終値までの騰落率を1件ずつ計算し、平均が高い順に並べた" +
-      "ランキング。「この投資家が買った銘柄はその後どうなったか」が分かります。",
+      "3ヶ月後（63営業日後）の終値までの騰落率を1件ずつ計算し、平均が高い順に並べています。",
     note:
       `買い開示1件を1ポジションとして等ウェイトで平均した騰落率です（金額加重ではありません）。` +
       `開示${MIN_POSITIONS}件以上・3ヶ月が経過した開示のみが対象。`,
@@ -48,9 +49,8 @@ const RANKINGS: Record<
   activist: {
     axis: "stock",
     title: `アクティビストが動いた銘柄（直近${RANKING_DAYS}日）`,
-    description:
-      `直近${RANKING_DAYS}日にアクティビスト（物言う株主）がEDINET大量保有報告書を提出した銘柄の` +
-      `一覧。取得も売却も含め、金額規模が大きい順に並べています。`,
+    description: `直近${RANKING_DAYS}日にアクティビスト（物言う株主）が動いた銘柄を金額規模順に並べています。`,
+    detail: "EDINET大量保有報告書の提出をもとに、取得も売却も含めて集計しています。",
     note: "投資家分類が「アクティビスト」の開示のみを金額規模順に並べています。",
   },
 };
@@ -179,9 +179,11 @@ export default async function RankingSlugPage({ params }: Props) {
           パンくず・ナビの語との一致を優先してこの2段構成のままにしている。 */}
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
-      <p className="mb-2 text-sm text-foreground/50">{ranking.description}</p>
-      <p className="mb-6 text-xs text-foreground/40">
-        ※{ranking.note} 出典はEDINET大量保有報告書。過去の成績であり、将来の値動きや投資助言を示すものではありません。
+      <p className="mb-6 text-sm text-foreground/50">
+        {ranking.description}
+        <InfoTip
+          content={`${ranking.detail} ${ranking.note} 出典はEDINET大量保有報告書。過去の成績であり、将来の値動きや投資助言を示すものではありません。`}
+        />
       </p>
       {/* アクティビストランキングだけは/activists（アクティビスト注目銘柄）と対の関係にあるため
           相互リンクを置く。他のタブページには無関係なリンクを並べない。 */}

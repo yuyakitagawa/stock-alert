@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import InfoTip from "@/components/InfoTip";
 import Box from "@mui/material/Box";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -210,8 +211,8 @@ export default async function WeeklyDigestPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の週次トレンド</h1>
         <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-          {SITE_NAME}がEDINET大量保有報告書をもとに集計した、大口投資家の週ごとの動きです。
-          週別の売買金額（買い/売り）と投資家分類別の推移をグラフで掲載しています。
+          大口投資家の週ごとの動きをグラフで掲載しています。
+          <InfoTip content={`${SITE_NAME}がEDINET大量保有報告書をもとに集計。週別の売買金額（買い/売り）と投資家分類別の推移を示します。`} />
         </p>
       </div>
 
@@ -225,8 +226,8 @@ export default async function WeeklyDigestPage() {
         <section className="mb-10">
           <h2 className="mb-2 text-xl font-bold text-brand-navy">週別の売買金額トレンド</h2>
           <p className="mb-2 text-sm text-foreground/60">
-            解説記事化した開示の推定金額を週ごとに買い・売りへ分けた推移です。
-            ベースラインより上が買い、下が売りで、上に大きく振れた週ほど買い越しです。
+            上が買い、下が売り。上に大きく振れた週ほど買い越しです。
+            <InfoTip content="解説記事化した開示の推定金額を週ごとに買い・売りへ分けた推移です。ベースラインより上が買い、下が売りです。" />
           </p>
           {/* グラフは古い週が左＝時系列順。表は他の一覧と揃えて新しい週が上のまま。 */}
           <AmountTrendChart

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import InfoTip from "@/components/InfoTip";
 import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
 import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
 import RelatedArticles from "@/components/RelatedArticles";
@@ -129,19 +130,25 @@ export default async function TrendingPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          大口投資家の取引（大量保有報告書の提出）が直近{WINDOW_DAYS}日間で前の{WINDOW_DAYS}日間より増えた銘柄のランキングです。
-          保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
-          並び順は増加件数順で、各銘柄には開示の件数と推定売買金額（保有比率の変化幅×発行済株式数×開示日の終値の概算）を添えています。
+          直近{WINDOW_DAYS}日間で大口投資家の取引（大量保有報告書）が増えた銘柄のランキングです。
+          <InfoTip
+            content={
+              <>
+                前の{WINDOW_DAYS}日間と比べた増加件数順に並べています。保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
+                各銘柄の推定売買金額は「保有比率の変化幅×発行済株式数×開示日の終値」の概算です。
+              </>
+            }
+          />
           <br />
           投資家ごとの成績は
           <Link href="/ranking/returns" className="text-brand-blue hover:underline">
             3ヶ月リターンランキング
           </Link>
-          へ。詳しい見方は
+          、見方は
           <Link href="/faq/usage" className="text-brand-blue hover:underline">
             よくある質問
           </Link>
-          をご覧ください。
+          へ。
         </p>
       </div>
 
