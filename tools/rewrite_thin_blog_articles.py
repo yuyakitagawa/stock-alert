@@ -3,8 +3,9 @@
 tools/rewrite_thin_blog_articles.py
 Google Search Consoleで「クロール済み - インデックス未登録」と判定された既存記事のうち、
 本文が薄い（可視文字数がTHIN_TEXT_THRESHOLD未満）ものを対象に、
-web.publish_blog_articles.generate_article_body() の現行プロンプト（保有比率の変化幅を
-事実として追加投入・本文目標650〜900字）で本文だけを再生成する。
+web.publish_blog_articles.generate_article_body() の現行プロンプト（保有比率の変化幅に加え、
+開示を横断して初めて書ける周辺事実＝保有の積み上げ履歴・その投資家の他の保有銘柄・その銘柄の
+他の大株主・開示日時点の指標を追加投入。本文目標1,300〜1,700字）で本文だけを再生成する。
 
 対象の特定方法: Search Console APIへのアクセス手段が無いため、URLの直接指定ではなく
 「可視文字数が閾値未満」という機械的な基準で候補を抽出する（旧プロンプト時代の記事は
@@ -43,6 +44,7 @@ import lib.supabase_client as sb
 from tools.reclassify_blog_articles import fetch_all_articles
 from lib.edinet import disclosure_doc_label
 from web.publish_blog_articles import (
+    build_context_facts,
     MICROCMS_DOMAIN, MICROCMS_KEY,
     classify_filer, get_company_description, get_pit_ranking_snapshot, dp_level_label,
     ratio_change_pct, generate_article_body_checked, update_article, MicroCMSPermissionError,
@@ -52,7 +54,7 @@ load_dotenv()
 
 # 新プロンプトの本文目標(650〜900字)を大きく下回る水準を「薄い」とみなす閾値。
 # HTMLタグと株価チャートの<figure>を除いた可視文字数で判定する。
-THIN_TEXT_THRESHOLD = 600
+THIN_TEXT_THRESHOLD = 1000
 
 _FIGURE_RE = re.compile(r"<figure>.*?</figure>", re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -154,6 +156,10 @@ def main():
             "filer_description": filer_info.get("description") or "",
             "company_description": company_description,
             "ratio_change_pct": change,
+            "prior_ratio": row.get("holding_ratio_prior"),
+            # 開示1件の数字だけでは記事がテンプレートのままになるため、開示を横断して
+            # 初めて書ける事実（保有の積み上げ履歴・他の保有銘柄・他の大株主・指標）を足す。
+            "context_facts": build_context_facts(code, filer_name, disc_date),
         }
         generated = generate_article_body_checked(fact_sheet)
         if generated is None:

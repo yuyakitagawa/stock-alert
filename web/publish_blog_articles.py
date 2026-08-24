@@ -915,6 +915,169 @@ def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_e
     return {"title": title, "titleEn": title_en}
 
 
+# 記事に独自性を与える周辺事実。EDINET開示1件の数字だけを書くと、どの記事も
+# 「誰が何%取得・推定何億円・※推測」の3段落テンプレートになり（実測2026-08-24:
+# 全976記事が1,000字未満、中央値455字）、Googleの「質の低いコンテンツ」ガイドラインが
+# 挙げる cookie cutter pages に該当した。AdSense審査も同じ理由で不承認になっている。
+#
+# ここで集めるのは、EDINET原本を1件見ただけでは分からず、開示を全期間ぶん横断して
+# 初めて書ける事実（同じ提出者がその銘柄を何回に分けて買い進めたか、他に何を持っているか、
+# その銘柄の株主構成に他に誰がいるか）。競合の大量保有報告書データベースには無い切り口で、
+# 「独自性のある質の高いコンテンツ」の要件に直接効く。
+#
+# 重要: すべて point-in-time で取る（CLAUDE.mdのSQL PIT規律）。開示日より後のデータを
+# 混ぜると「その時点では知り得なかった事実」を記事に書くことになる。
+MAX_RELATED_ITEMS = 5
+
+
+def _latest_by(rows: list, key: str) -> list:
+    """開示日降順で渡された行から、keyごとに最初に出現した行（=最新の開示）だけを残す。"""
+    seen, out = set(), []
+    for row in rows:
+        value = row.get(key)
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(row)
+    return out
+
+
+def build_context_facts(code: str, filer_name: str, disc_date: str) -> dict:
+    """開示日時点で判明している周辺事実を集める。取得に失敗した項目は空で返す
+    （記事生成そのものは止めない）。"""
+    facts: dict = {}
+    if not filer_name:
+        return facts
+    try:
+        # 1. この提出者×この銘柄の開示履歴（何回目の開示か、いつから買い進めているか）
+        history = sb.select(
+            "edinet_large_holdings",
+            f"select=disc_date,holding_ratio&issuer_code=eq.{code}"
+            f"&filer_name=eq.{requests.utils.quote(filer_name)}&disc_date=lte.{disc_date}"
+            "&order=disc_date.asc",
+        )
+        if len(history) >= 2:
+            first = history[0]
+            facts["holding_history"] = {
+                "count": len(history),
+                "first_date": first.get("disc_date"),
+                "first_ratio": first.get("holding_ratio"),
+            }
+
+        # 2. 同じ提出者が同時点で持っている他の銘柄（保有比率の高い順）
+        others = sb.select(
+            "edinet_large_holdings",
+            f"select=issuer_code,issuer_name,holding_ratio,disc_date"
+            f"&filer_name=eq.{requests.utils.quote(filer_name)}&disc_date=lte.{disc_date}"
+            "&order=disc_date.desc",
+            limit=500,
+        )
+        latest_others = [
+            r for r in _latest_by(others, "issuer_code")
+            if str(r.get("issuer_code")) != str(code) and r.get("holding_ratio") is not None
+        ]
+        latest_others.sort(key=lambda r: r["holding_ratio"], reverse=True)
+        if latest_others:
+            top_others = latest_others[:MAX_RELATED_ITEMS]
+            # 業種は必ずマスターから引く。社名から推測させると事実に無い記述が混ざる。
+            codes = ",".join(str(r["issuer_code"]) for r in top_others if r.get("issuer_code"))
+            sectors = {}
+            if codes:
+                for row in sb.select("jpx_stock_list", f"select=code,sector&code=in.({codes})"):
+                    if row.get("sector"):
+                        sectors[str(row["code"])] = row["sector"]
+            facts["filer_other_holdings"] = [
+                {
+                    "name": r.get("issuer_name") or r.get("issuer_code"),
+                    "code": r.get("issuer_code"),
+                    "ratio": r["holding_ratio"],
+                    "sector": sectors.get(str(r.get("issuer_code"))) or "",
+                }
+                for r in top_others
+            ]
+            facts["filer_holding_total"] = len(latest_others) + 1
+
+        # 3. 同じ銘柄の他の大株主（この開示が株主構成の中でどの位置づけか）
+        peers = sb.select(
+            "edinet_large_holdings",
+            f"select=filer_name,holding_ratio,disc_date&issuer_code=eq.{code}"
+            f"&disc_date=lte.{disc_date}&order=disc_date.desc",
+            limit=500,
+        )
+        latest_peers = [
+            r for r in _latest_by(peers, "filer_name")
+            if r.get("filer_name") != filer_name and r.get("holding_ratio") is not None
+        ]
+        latest_peers.sort(key=lambda r: r["holding_ratio"], reverse=True)
+        if latest_peers:
+            facts["stock_other_filers"] = [
+                {"name": r["filer_name"], "ratio": r["holding_ratio"]}
+                for r in latest_peers[:MAX_RELATED_ITEMS]
+            ]
+
+        # 4. 銘柄の指標（開示日以前で最新の行。開示日より後の株価は使わない）
+        metrics = sb.select_one(
+            "gen_rankings",
+            f"select=date,per,pbr,pos52&code=eq.{code}&date=lte.{disc_date}"
+            "&order=date.desc",
+        )
+        if metrics:
+            facts["stock_metrics"] = {
+                k: metrics.get(k) for k in ("per", "pbr", "pos52") if metrics.get(k) is not None
+            }
+
+        # 5. 業種（同業の中での位置づけに触れられるようにする）
+        master = sb.select_one("jpx_stock_list", f"select=sector&code=eq.{code}")
+        if master and master.get("sector"):
+            facts["sector"] = master["sector"]
+    except Exception as e:  # 周辺事実は「あれば厚くなる」ものなので、失敗しても記事は出す
+        print(f"    ⚠ 周辺事実の取得に失敗（記事は続行）: {e}")
+    return facts
+
+
+def format_context_facts(facts: dict, stock_name: str, filer_name: str) -> str:
+    """build_context_facts()の結果をプロンプトの「事実」ブロックに足す行に整形する。"""
+    if not facts:
+        return ""
+    lines = []
+    history = facts.get("holding_history")
+    if history:
+        lines.append(
+            f"- 過去の開示: {filer_name}はこの銘柄について今回を含め{history['count']}回の開示を出しており、"
+            f"最初の開示は{history['first_date']}（保有比率{format_ratio(history['first_ratio'])}%）"
+        )
+    others = facts.get("filer_other_holdings")
+    if others:
+        listed = "、".join(
+            f"{o['name']}（{o['code']}、{o['sector'] + '、' if o.get('sector') else ''}"
+            f"{format_ratio(o['ratio'])}%）"
+            for o in others
+        )
+        total = facts.get("filer_holding_total")
+        lines.append(
+            f"- {filer_name}が同時点で5%以上を保有している他の銘柄（保有比率の高い順、全{total}銘柄のうち上位）: {listed}"
+        )
+    peers = facts.get("stock_other_filers")
+    if peers:
+        listed = "、".join(f"{p['name']}（{format_ratio(p['ratio'])}%）" for p in peers)
+        lines.append(f"- {stock_name}に大量保有報告書を出している他の投資家（保有比率の高い順）: {listed}")
+    sector = facts.get("sector")
+    if sector:
+        lines.append(f"- {stock_name}の業種: {sector}")
+    metrics = facts.get("stock_metrics") or {}
+    if metrics:
+        parts = []
+        if metrics.get("per") is not None:
+            parts.append(f"PER {metrics['per']:.1f}倍")
+        if metrics.get("pbr") is not None:
+            parts.append(f"PBR {metrics['pbr']:.2f}倍")
+        if metrics.get("pos52") is not None:
+            parts.append(f"52週レンジ内の位置 {metrics['pos52']*100:.0f}%（0%が安値、100%が高値）")
+        if parts:
+            lines.append(f"- 開示日時点の{stock_name}の指標: " + " / ".join(parts))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからbodyを生成させる。JSONで
     {"body", "bodyEn"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
@@ -969,6 +1132,9 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
             change_line = f"- 変化: 保有比率はこれまでの開示から{ratio_change_pct:.2f}ポイント{'減少' if is_sell else '増加'}し、今回{fact_sheet['holding_ratio']}%になった\n"
     else:
         change_line = ""
+    context_facts_line = format_context_facts(
+        fact_sheet.get("context_facts") or {}, fact_sheet["stock_name"], fact_sheet["filer_name"]
+    )
     ratio_str = format_ratio(fact_sheet["holding_ratio"])
     if is_correction:
         answer_sentence = (
@@ -1022,7 +1188,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 報告書種別: {fact_sheet['doc_type_label']}
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
-{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}
+{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}{context_facts_line}
 本文の1文目は、必ず次の文をそのまま使ってください（検索してきた読者への直答として最初に置く）:
 「{answer_sentence}」
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
@@ -1032,6 +1198,21 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 株式のどれくらいの規模を占めるかが実感できるよう自然に触れてください（時価総額の一角を占める大株主、等）。
 変化 の事実がある場合は、今回の保有比率が一回限りの数字ではなく前回からの推移であることが
 伝わるよう、1文で自然に触れてください。
+
+以下は、事実に該当する項目があるときだけ、それぞれ独立した段落として書いてください
+（無い項目は飛ばす。無理に触れて薄い文を足さないこと）。各段落は3文以上、200字以上にしてください。
+
+- 過去の開示: 今回の{deal_verb}が単発ではなく、いつから何回に分けて積み上げてきたポジションなのか。
+  初回開示時の保有比率から今回までで何ポイント動いたかを数字で示す。
+- 同時点で保有している他の銘柄: その投資家がどんな銘柄を選ぶ投資家なのか（どの業種に集中しているか、
+  保有比率の傾向）。必ず具体的な銘柄名・業種・比率を挙げて論じる。
+- 他の投資家: 今回の{deal_verb}が対象企業の株主構成の中でどういう位置づけか（筆頭級か、他の大株主と
+  比べてどれだけ大きいか）。具体名と比率を挙げて比較する。
+- 業種・指標: PER・PBR・52週レンジ内の位置がそれぞれ何を示しているか。ただし「割安だから買い」のような
+  投資判断の断定はしないでください。
+
+他社の業種・事業内容は、事実に業種が明記されている銘柄についてだけ言及してください。社名から業種を
+推測して書くことは禁止です（例: 事実に業種の無い銘柄を「電機メーカー」と決めつけない）。
 
 最後に1文だけ、{risk_hint}この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
 加えてください。{speculation_scope}ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
@@ -1049,12 +1230,12 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
 テンプレートで組み立てるため出力しない）。stockNameEn/filerNameEnには英語タイトル用の
 ローマ字表記（例: "Ain Holdings", "Simplex Asset Management"）を短く書いてください:
-{{"body": "<p>...</p>形式のHTML本文（650〜900字程度、3〜4段落。最後の段落に※推測文を含む）", "bodyEn": "<p>...</p> HTML body in English, same structure as body", "stockNameEn": "...", "filerNameEn": "..."}}
+{{"body": "<p>...</p>形式のHTML本文（1,300〜1,700字、5〜7段落。最後の段落に※推測文を含む）", "bodyEn": "<p>...</p> HTML body in English, same structure as body", "stockNameEn": "...", "filerNameEn": "..."}}
 """
     try:
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=2400,
+            max_tokens=6000,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
@@ -1329,6 +1510,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "ratio_change_pct": change,
             "prior_ratio": prior_ratio,
             "is_correction": is_correction,
+            # 開示1件の数字だけでは記事がテンプレートになるため、開示を横断して初めて書ける
+            # 事実（保有の積み上げ履歴・他の保有銘柄・他の大株主・指標）を足す。
+            "context_facts": build_context_facts(code, filer_name, disc_date),
         }
         article = generate_article_body_checked(fact_sheet)
         if article is None:
