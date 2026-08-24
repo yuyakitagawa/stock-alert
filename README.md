@@ -34,7 +34,7 @@ Chrome Headlessが必要で毎時回すには重いため、記事投稿とは�
 通常の新着×注目枠選定を使わずその記事を動画にできる（気に入った記事を後から動画化する手動実行用。
 `--article-id`でローカル実行も可）。
 
-その他ワークフロー: ci.yml（テスト）、
+その他ワークフロー: ci.yml（main へのpush時にテスト全件を実行。サムネイル・画像生成のテストが日本語フォントを要求するため、edinet_blog.yml / video_post.yml と同じ `fonts-noto-cjk` を入れてから走らせる）、
 ops.yml（運用系2本立て。平日06:00 UTC=keepalive空コミット／平日14:30 UTC=watchdog=daily_alert.ymlが今日成功していなければ再実行。`github.event.schedule`でジョブを分岐し、手動実行は`job`入力で選ぶ）、
 backfill.yml（手動遡及を1本に統合。`targets`入力にカンマ区切りで jpx / tdnet / edinet / prices（株価キャッシュ更新）/ rankings（ランキング遡及、`start_date`必須）を指定）、
 x_post.yml（X関連を1本に統合。土曜18:00 JST=急増ランキング`web/x_weekly_trending.py`／日曜18:00 JST=今週のアクティビストの動き`web/x_weekly_activists.py`／水曜21:00 JST=「答え合わせ」投稿`web/x_followup.py`／平日19:00 JST=「本日の自社株買い決定」`web/x_buyback.py`（投稿前にTDnet取得＋取得枠抽出を回す）／毎日10:00 JST=インプレッション等の収集`web/x_metrics.py`／手動のみ=Xトークンの実権限確認`web/x_client --verify`。cronの値または`target`入力でステップを分岐）
