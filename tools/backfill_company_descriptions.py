@@ -32,7 +32,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 import lib.supabase_client as sb
-from web.publish_blog_articles import ANTHROPIC_API_KEY, get_company_description
+from lib import api_budget
+from web.publish_blog_articles import (
+    ANTHROPIC_API_KEY,
+    RECHECK_DAYS,
+    checked_recently,
+    get_company_description,
+)
 
 load_dotenv()
 
@@ -54,13 +60,18 @@ def main():
     p.add_argument("--limit", type=int, default=None, help="処理件数の上限（動作確認・分割実行用）")
     p.add_argument("--codes", type=str, default=None, help="対象銘柄コードをカンマ区切りで明示指定（未設定判定を無視して強制対象にする）")
     p.add_argument("--recent-days", type=int, default=None, help="直近N日以内に開示があった銘柄だけを対象にする")
+    p.add_argument(
+        "--recheck-days", type=int, default=RECHECK_DAYS,
+        help=f"過去に試して空文字だった銘柄を、N日経過していれば再挑戦する（既定{RECHECK_DAYS}日）。"
+             "0を指定すると試行済みでも全件やり直す（web_searchは1社約$0.05かかるため注意）",
+    )
     args = p.parse_args()
 
     if not args.dry_run and not ANTHROPIC_API_KEY:
         print("ANTHROPIC_API_KEY が未設定です。")
         sys.exit(1)
 
-    meta_rows = sb.select("jpx_stock_list", "select=code,name,description")
+    meta_rows = sb.select("jpx_stock_list", "select=code,name,description,description_checked_at")
     meta_by_code = {r["code"]: r for r in meta_rows}
 
     if args.codes:
@@ -70,7 +81,19 @@ def main():
         scope = f"（直近{args.recent_days}日の開示）" if args.recent_days else ""
         print(f"/stocks/[code]ページが存在する銘柄{scope}: {len(all_codes)}件")
         codes = [c for c in all_codes if not (meta_by_code.get(c, {}).get("description") or "")]
-    print(f"description未設定: {len(codes)}件\n")
+        print(f"description未設定: {len(codes)}件")
+        # 過去に試して空文字だった銘柄を除外する。これが無いと、実行のたびに同じ
+        # 「不明」社群へweb_searchでフル課金し直すことになる（2026-08-15〜18で4回発生）。
+        if args.recheck_days > 0:
+            before = len(codes)
+            codes = [
+                c for c in codes
+                if not checked_recently(
+                    (meta_by_code.get(c) or {}).get("description_checked_at"), args.recheck_days
+                )
+            ]
+            print(f"うち直近{args.recheck_days}日以内に試行済み（スキップ）: {before - len(codes)}件")
+    print(f"今回の対象: {len(codes)}件\n")
 
     if args.limit is not None:
         codes = codes[: args.limit]
@@ -79,7 +102,7 @@ def main():
     empty = []
     missing_name = []
 
-    for code in codes:
+    for i, code in enumerate(codes):
         name = (meta_by_code.get(code) or {}).get("name")
         if not name:
             missing_name.append(code)
@@ -90,6 +113,9 @@ def main():
             continue
 
         description = get_company_description(code, name)
+        if api_budget.reached():
+            print(f"\n利用上限に到達したため中断しました（残り{len(codes) - i - 1}件は未処理）。")
+            break
         if description:
             generated += 1
             print(f"  {code} {name}: {description}")

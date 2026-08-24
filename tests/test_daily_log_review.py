@@ -44,6 +44,46 @@ class CondenseLogTest(unittest.TestCase):
         self.assertIn("文字省略", out)
 
 
+class SignalOnlyCondenseTest(unittest.TestCase):
+    """同じワークフローの2本目以降に使う圧縮。opus-5への入力の8割が毎時実行の
+    同一ログの繰り返しだったため（2026-08-24計測: 248,678文字中198,042文字）、
+    重要行だけに落とす。"""
+
+    def test_keeps_only_signal_lines(self):
+        lines = [_log_line("Step 3", f"progress {i}") for i in range(200)]
+        lines.insert(120, _log_line("Step 3", "タイトル: トヨタ（7203）｜大量保有報告書"))
+        out = dlr.condense_log("\n".join(lines), signal_only=True)
+        self.assertIn("大量保有報告書", out)
+        self.assertNotIn("progress 0", out)    # 先頭の定型行も落とす
+        self.assertNotIn("progress 199", out)  # 末尾の定型行も落とす
+
+    def test_returns_empty_when_nothing_notable(self):
+        raw = "\n".join(_log_line("Step 3", f"progress {i}") for i in range(200))
+        self.assertEqual(dlr.condense_log(raw, signal_only=True), "")
+
+    def test_full_step_pattern_is_also_condensed(self):
+        """LINE本文の全文保持は最新1本で足りる。2本目以降まで全文だと効果が消える。"""
+        lines = [_log_line("Step 5b - マーケットタイミング", f"本文 {i}") for i in range(200)]
+        out = dlr.condense_log("\n".join(lines), signal_only=True)
+        self.assertNotIn("全文", out)
+
+    def test_signal_only_is_much_smaller_than_default(self):
+        lines = [_log_line("Step 3", f"progress {i}") for i in range(500)]
+        lines.insert(10, _log_line("Step 3", "⚠ 記事生成失敗"))
+        raw = "\n".join(lines)
+        self.assertLess(
+            len(dlr.condense_log(raw, signal_only=True)),
+            len(dlr.condense_log(raw)) / 5,
+        )
+
+
+class PerRunBudgetTest(unittest.TestCase):
+    def test_failure_budget_is_larger_than_success(self):
+        """失敗runは原因究明に全文が要るので絞らない。"""
+        self.assertGreater(dlr._MAX_CHARS_PER_RUN, dlr._MAX_CHARS_PER_SUCCESS_RUN)
+        self.assertGreater(dlr._MAX_CHARS_PER_SUCCESS_RUN, dlr._MAX_CHARS_PER_REPEAT_RUN)
+
+
 class FilterRunsTest(unittest.TestCase):
     def test_filters_by_time_and_completion(self):
         now = datetime(2026, 8, 22, 15, 30, tzinfo=timezone.utc)

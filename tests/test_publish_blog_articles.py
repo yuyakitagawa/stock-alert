@@ -6,11 +6,18 @@
 import os
 import sys
 import json
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import web.publish_blog_articles as m
+from lib import api_budget
+
+
+def _iso_days_ago(days: float) -> str:
+    """ネガティブキャッシュ判定用のISO8601タイムスタンプ。"""
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
 
 def test_estimate_deal_amount_oku_calculation():
@@ -1100,6 +1107,139 @@ def test_get_company_description_returns_empty_without_api_key_when_not_cached()
         assert m.get_company_description("9439", "エム・エイチ・グループ") == ""
 
 
+def test_get_company_description_skips_claude_when_checked_recently():
+    """空振り済みの銘柄はweb_searchを叩き直さない（1社あたり約$0.05かかるため）。"""
+    cached = {"description": "", "description_checked_at": _iso_days_ago(1)}
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=cached), \
+         mock.patch("anthropic.Anthropic") as client_mock:
+        assert m.get_company_description("9439", "エム・エイチ・グループ") == ""
+    client_mock.assert_not_called()
+
+
+def test_get_company_description_retries_after_recheck_window():
+    """RECHECK_DAYSを過ぎた銘柄は再挑戦する。"""
+    cached = {"description": "", "description_checked_at": _iso_days_ago(m.RECHECK_DAYS + 1)}
+    raw = json.dumps({"description": "美容室運営会社。"})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=cached), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        assert m.get_company_description("9439", "エム・エイチ・グループ") == "美容室運営会社。"
+
+
+def test_get_company_description_records_checked_at_even_when_blank():
+    """空文字でもchecked_atを刻む。これが無いと同じ銘柄に何度でも課金される。"""
+    raw = json.dumps({"description": ""})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert") as upsert_mock, \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        assert m.get_company_description("9439", "エム・エイチ・グループ") == ""
+    saved = upsert_mock.call_args.args[1][0]
+    assert "description" not in saved  # 空文字で既存の説明を潰さない
+    assert saved["description_checked_at"]
+
+
+def test_get_company_description_caps_web_search_uses():
+    """max_usesは検索料と入力トークンに直結するので、増やすときは意図的に。"""
+    raw = json.dumps({"description": "美容室運営会社。"})
+    captured = {}
+
+    class _Messages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return _fake_client(raw).messages.create(**kwargs)
+
+    class _Client:
+        messages = _Messages()
+
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", return_value=_Client()):
+        m.get_company_description("9439", "エム・エイチ・グループ")
+    assert captured["tools"][0]["max_uses"] == 2
+
+
+def _usage_limit_error() -> Exception:
+    return Exception(
+        "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+        "'message': 'You have reached your specified API usage limits. "
+        "You will regain access on 2026-09-01 at 00:00 UTC.'}}"
+    )
+
+
+def test_usage_limit_stops_further_claude_calls():
+    """上限到達を検知したら、同一プロセスの後続呼び出しはAPIを叩かずに諦める。
+
+    2026-08-24の毎時実行では、上限後も候補ごとに叩き続けて1回の実行で十数回失敗していた。
+    """
+    api_budget.reset()
+    try:
+        failing = mock.MagicMock()
+        failing.messages.create.side_effect = _usage_limit_error()
+        with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+             mock.patch.object(m.sb, "select_one", return_value=None), \
+             mock.patch.object(m.sb, "upsert"), \
+             mock.patch("anthropic.Anthropic", return_value=failing):
+            assert m.get_company_description("9439", "エム・エイチ・グループ") == ""
+        assert api_budget.reached()
+
+        # 2件目以降はクライアントすら生成しない
+        with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+             mock.patch.object(m.sb, "select_one", return_value=None), \
+             mock.patch("anthropic.Anthropic") as client_mock:
+            assert m.get_company_description("7203", "テスト自動車") == ""
+            assert m.get_filer_profile("テストファンド", "個人") == ""
+            assert m.classify_filer("テストファンド")["category"] == "その他"
+        client_mock.assert_not_called()
+    finally:
+        api_budget.reset()
+
+
+def test_usage_limit_does_not_poison_negative_cache():
+    """上限エラーは課金されていないので「試行済み」に含めない（次回ちゃんと再挑戦する）。"""
+    api_budget.reset()
+    try:
+        failing = mock.MagicMock()
+        failing.messages.create.side_effect = _usage_limit_error()
+        with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+             mock.patch.object(m.sb, "select_one", return_value=None), \
+             mock.patch.object(m.sb, "upsert") as upsert_mock, \
+             mock.patch("anthropic.Anthropic", return_value=failing):
+            m.get_company_description("9439", "エム・エイチ・グループ")
+        upsert_mock.assert_not_called()
+    finally:
+        api_budget.reset()
+
+
+def test_ordinary_failure_is_not_treated_as_usage_limit():
+    """通常のAPI障害でパイプライン全体を止めてしまわないこと。"""
+    api_budget.reset()
+    try:
+        failing = mock.MagicMock()
+        failing.messages.create.side_effect = Exception("Error code: 529 - overloaded_error")
+        with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+             mock.patch.object(m.sb, "select_one", return_value=None), \
+             mock.patch.object(m.sb, "upsert"), \
+             mock.patch("anthropic.Anthropic", return_value=failing):
+            m.get_company_description("9439", "エム・エイチ・グループ")
+        assert not api_budget.reached()
+    finally:
+        api_budget.reset()
+
+
+def test_checked_recently_handles_missing_and_malformed_values():
+    assert m.checked_recently(None) is False
+    assert m.checked_recently("") is False
+    assert m.checked_recently("not-a-timestamp") is False
+    assert m.checked_recently(_iso_days_ago(1)) is True
+    assert m.checked_recently(_iso_days_ago(m.RECHECK_DAYS + 1)) is False
+    # タイムゾーン無しの値もUTC扱いで判定できること（Supabaseの返し方に依存しない）
+    naive = (datetime.now(timezone.utc) - timedelta(days=1)).replace(tzinfo=None).isoformat()
+    assert m.checked_recently(naive) is True
+
 
 def test_is_worth_publishing_accepts_large_amount():
     # 金額が基準以上なら比率変化が小さくても記事にする
@@ -1208,7 +1348,12 @@ def test_get_filer_profile_returns_empty_without_api_key_when_not_cached():
 
 
 def test_get_filer_profile_returns_empty_when_claude_returns_blank():
-    """情報が乏しい個人名義等の提出者は空文字のまま(創作させない)。"""
+    """情報が乏しい個人名義等の提出者は空文字のまま(創作させない)。
+
+    空文字をprofileに書き込んでしまうと創作より悪い（不明が確定情報として残る）ので
+    profileキーは含めない。一方でprofile_checked_atは刻む（刻まないと同じ提出者を
+    記事のたびに叩き直すため）。
+    """
     raw = json.dumps({"profile": ""})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch.object(m.sb, "select_one", return_value=None), \
@@ -1216,7 +1361,31 @@ def test_get_filer_profile_returns_empty_when_claude_returns_blank():
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         result = m.get_filer_profile("個人 太郎", "個人")
     assert result == ""
-    upsert_mock.assert_not_called()
+    upsert_mock.assert_called_once()
+    saved = upsert_mock.call_args.args[1][0]
+    assert "profile" not in saved
+    assert saved["profile_checked_at"]
+
+
+def test_get_filer_profile_skips_claude_when_checked_recently():
+    """空振り済みの提出者は再課金しない（ネガティブキャッシュ）。"""
+    cached = {"profile": "", "profile_checked_at": _iso_days_ago(1)}
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=cached), \
+         mock.patch("anthropic.Anthropic") as client_mock:
+        assert m.get_filer_profile("個人 太郎", "個人") == ""
+    client_mock.assert_not_called()
+
+
+def test_get_filer_profile_retries_after_recheck_window():
+    """RECHECK_DAYSを過ぎたら再挑戦する（会社が有名になった等の変化を拾う）。"""
+    cached = {"profile": "", "profile_checked_at": _iso_days_ago(m.RECHECK_DAYS + 1)}
+    raw = json.dumps({"profile": "国内独立系の運用会社。"})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=cached), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        assert m.get_filer_profile("テストファンド", "独立系ブティックAM") == "国内独立系の運用会社。"
 
 
 def test_upload_price_chart_returns_url_on_success():
@@ -1387,6 +1556,14 @@ if __name__ == "__main__":
     test_get_company_description_uses_web_search_and_parses_trailing_json()
     test_get_company_description_tolerates_raw_newlines_in_json()
     test_get_company_description_returns_empty_without_api_key_when_not_cached()
+    test_get_company_description_skips_claude_when_checked_recently()
+    test_get_company_description_retries_after_recheck_window()
+    test_get_company_description_records_checked_at_even_when_blank()
+    test_get_company_description_caps_web_search_uses()
+    test_usage_limit_stops_further_claude_calls()
+    test_usage_limit_does_not_poison_negative_cache()
+    test_ordinary_failure_is_not_treated_as_usage_limit()
+    test_checked_recently_handles_missing_and_malformed_values()
     test_upload_price_chart_returns_url_on_success()
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
@@ -1398,6 +1575,8 @@ if __name__ == "__main__":
     test_get_filer_profile_asks_claude_and_persists_when_not_cached()
     test_get_filer_profile_returns_empty_without_api_key_when_not_cached()
     test_get_filer_profile_returns_empty_when_claude_returns_blank()
+    test_get_filer_profile_skips_claude_when_checked_recently()
+    test_get_filer_profile_retries_after_recheck_window()
     test_is_worth_publishing_accepts_large_amount()
     test_is_worth_publishing_accepts_large_ratio_change()
     test_is_worth_publishing_rejects_trivial_disclosure()
@@ -1424,4 +1603,4 @@ if __name__ == "__main__":
     test_build_and_publish_defers_change_report_without_prior_ratio()
     test_build_and_publish_publishes_material_correction_without_amount()
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
-    print("全テスト成功 (100件)")
+    print("全テスト成功 (110件)")

@@ -30,6 +30,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 import requests  # noqa: E402
 
+from lib import api_budget  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
@@ -288,7 +289,10 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
         data = json.loads(text, strict=False)
         return data if data.get("body") else None
     except Exception as e:
-        print(f"    ⚠ 記事生成失敗: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"    ⚠ 記事生成失敗: {e}")
         return None
 
 

@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 import requests
 
+from lib import api_budget
 from lib.writing_style import EN_STYLE_RULES
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, ANTHROPIC_API_KEY, CLAUDE_MODEL,
@@ -122,7 +123,10 @@ def translate_article(title: str, body: str) -> "dict | None":
             data["bodyEn"] = data["bodyEn"] + chart_html
         return data
     except Exception as e:
-        print(f"    ⚠ 翻訳失敗: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"    ⚠ 翻訳失敗: {e}")
         return None
 
 

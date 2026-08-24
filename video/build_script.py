@@ -25,6 +25,7 @@ import requests
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
+from lib import api_budget  # noqa: E402
 from lib.writing_style import NARRATION_STYLE_RULES  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
     CLAUDE_MODEL,
@@ -339,7 +340,10 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
             text = text[4:] if text.lower().startswith("json") else text
         data = json.loads(text)
     except Exception as e:
-        print(f"  ⚠ 台本生成失敗: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"  ⚠ 台本生成失敗: {e}")
         return None
 
     scenes = _flatten_scenes(data)

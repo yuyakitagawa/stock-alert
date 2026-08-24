@@ -62,7 +62,14 @@ _KEEP_PATTERN = re.compile(
     # SEO/GEOレビュー用: 記事タイトル・投稿・見送りの行は必ず残す
     r"タイトル|title|投稿しました|公開しました|記事化|見送り|重複|dealType|tweet|ツイート|X投稿|YouTube)"
 )
-_MAX_CHARS_PER_RUN = 40_000
+# run 1本あたりの上限。opus-5は入力$5/100万トークンで、1日分を全runフル解像度で渡すと
+# 入力が約25万文字（≒12万トークン）に膨らむ。実測ではその8割が EDINET Blog Hourly を
+# 12本ぶん並べただけの、ほぼ同一の内容だった（2026-08-24計測）。
+# 失敗runは原因究明に全文が要るので据え置き、成功runは絞り、同じワークフローの
+# 2本目以降は「重要行だけ」に落とす。
+_MAX_CHARS_PER_RUN = 40_000          # 失敗run（従来どおり）
+_MAX_CHARS_PER_SUCCESS_RUN = 12_000  # 成功run（そのワークフローの最新1本）
+_MAX_CHARS_PER_REPEAT_RUN = 2_000    # 同じワークフローの2本目以降（成功のみ、重要行だけ）
 _HEAD_LINES = 15
 _TAIL_LINES = 40
 _ISSUE_LABEL = "daily-review"
@@ -228,8 +235,14 @@ def _strip_prefix(line: str) -> str:
     return "", line
 
 
-def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN) -> str:
-    """ステップごとに 先頭N行 + 重要行 + 末尾M行 だけ残す。"""
+def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN, signal_only: bool = False) -> str:
+    """ステップごとに 先頭N行 + 重要行 + 末尾M行 だけ残す。
+
+    signal_only=True のときは先頭・末尾の定型行を捨て、_KEEP_PATTERN に当たる行だけ残す。
+    同じワークフローが1日に何度も走る場合（EDINET Blog Hourly は平日13本）、2本目以降は
+    セットアップ手順もスキップ一覧もほぼ同一で、レビューに効くのは「何を投稿したか」
+    「何が warn になったか」だけなので、そこだけ拾う。
+    """
     by_step: dict[str, list[str]] = {}
     order: list[str] = []
     for line in raw.splitlines():
@@ -244,13 +257,16 @@ def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN) -> str:
     chunks = []
     for step in order:
         lines = by_step[step]
-        if _FULL_STEP_PATTERN.search(step):
+        if _FULL_STEP_PATTERN.search(step) and not signal_only:
             full = "\n".join(l[:400] for l in lines)[:_FULL_STEP_MAX_CHARS]
             chunks.append(f"### step: {step} ({len(lines)}行・全文)\n" + full)
             continue
-        keep_idx = set(range(min(_HEAD_LINES, len(lines))))
-        keep_idx |= set(range(max(0, len(lines) - _TAIL_LINES), len(lines)))
-        keep_idx |= {i for i, l in enumerate(lines) if _KEEP_PATTERN.search(l)}
+        keep_idx = {i for i, l in enumerate(lines) if _KEEP_PATTERN.search(l)}
+        if not signal_only:
+            keep_idx |= set(range(min(_HEAD_LINES, len(lines))))
+            keep_idx |= set(range(max(0, len(lines) - _TAIL_LINES), len(lines)))
+        elif not keep_idx:
+            continue  # 重要行が1行も無い＝静かに成功したステップ。丸ごと落とす
         kept = []
         last = -1
         for i in sorted(keep_idx):
@@ -413,7 +429,9 @@ def review_with_claude(review_input: str) -> str:
         max_tokens=16000,
         system=SYSTEM_PROMPT,
         thinking={"type": "adaptive"},
-        output_config={"effort": "high"},
+        # 日次のログ確認に high は過剰（1回あたり出力$0.4前後）。medium で十分な粒度の
+        # 指摘が返る。深掘りしたい日は workflow_dispatch で個別に上げればよい。
+        output_config={"effort": "medium"},
         messages=[{"role": "user", "content": review_input}],
     ) as stream:
         msg = stream.get_final_message()
@@ -511,12 +529,24 @@ def main() -> int:
     runs_by_workflow = list_recent_runs(since, args.repo)
     total = 0
     for wf, runs in runs_by_workflow.items():
+        # runs は新しい順。失敗runは全文、成功runは最新1本だけ通常圧縮、
+        # 同じワークフローの2本目以降の成功runは重要行だけに落とす（入力の大半が
+        # 毎時実行の同一ログの繰り返しになるのを防ぐ）。
+        seen_success = False
         for r in runs:
             jobs, log = fetch_run_detail(r["databaseId"], args.repo)
             r["_jobs_text"] = format_jobs(jobs)
-            r["_log_text"] = condense_log(log)
+            if r.get("conclusion") != "success":
+                r["_log_text"] = condense_log(log, _MAX_CHARS_PER_RUN)
+            elif not seen_success:
+                r["_log_text"] = condense_log(log, _MAX_CHARS_PER_SUCCESS_RUN)
+                seen_success = True
+            else:
+                r["_log_text"] = condense_log(
+                    log, _MAX_CHARS_PER_REPEAT_RUN, signal_only=True
+                ) or "（重要行なし・静かに成功）"
         total += len(runs)
-        print(f"[gh] {wf}: {len(runs)} run(s)")
+        print(f"[gh] {wf}: {len(runs)} run(s), 圧縮後 {sum(len(r['_log_text']) for r in runs):,}字")
 
     if total == 0:
         print("対象runが無いためレビューをスキップします")
