@@ -736,6 +736,10 @@ def get_company_description(code: str, name: str) -> str:
         # 説明文の途中に生の改行が入ったJSONを返すことがあり、strict=Falseでないと
         # "Invalid control character" で丸ごと落ちる（2026-08-18のバックフィルで8件発生）。
         description = json.loads(matches[-1], strict=False).get("description", "") if matches else ""
+        # web_searchの引用を伴う回答は本文に<cite index="7-1">…</cite>を挟んで返すことがあり、
+        # そのまま保存するとkujira-watchの銘柄ページ・/trendingにタグが文字として表示される
+        # （2026-08-25の点検で64銘柄が汚染。DB側はtools/strip_html_from_descriptions.pyで一括修正）。
+        description = re.sub(r"<[^>]+>", "", description)
         description = " ".join(description.split())
         description = description or ""
     except Exception as e:

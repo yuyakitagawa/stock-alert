@@ -52,7 +52,7 @@ from web.publish_blog_articles import (
 
 load_dotenv()
 
-# 新プロンプトの本文目標(650〜900字)を大きく下回る水準を「薄い」とみなす閾値。
+# 新プロンプトの本文目標(1,300〜1,700字)を大きく下回る水準を「薄い」とみなす閾値。
 # HTMLタグと株価チャートの<figure>を除いた可視文字数で判定する。
 THIN_TEXT_THRESHOLD = 1000
 
