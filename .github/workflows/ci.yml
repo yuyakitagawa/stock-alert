@@ -22,6 +22,12 @@ jobs:
             python-dotenv openpyxl xlrd xgboost \
             yfinance pytest anthropic Pillow requests-oauthlib
 
+      # サムネイル生成テスト(test_video_pipeline.py)は日本語フォントが無いと
+      # thumbnail.compose() が None を返して落ちる。edinet_blog.yml / video_post.yml と
+      # 同じフォントを入れて、画像生成まで含めて検証する（2026-08-23からCIが赤だった）
+      - name: Install Noto Sans CJK (サムネイル生成テスト用フォント)
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
       - name: Run tests
         run: |
           python -m pytest tests/ -v --tb=short
