@@ -1708,3 +1708,22 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - 追記（同日）: `tools/backfill_blog_eyecatch.py` で過去記事のアイキャッチをバックフィル完了。
   別セッション527件＋本セッション423件＝950/950件、失敗0（Pexels 180件/時ペース、約2.5時間）。
   本番TOPの記事カードに30枚の画像、記事og:imageにeyecatch.jpgが出ることを確認。
+
+## 2026-08-24 無言停止の再発防止（異常はLINEで知らせる）
+- 事象: Anthropic APIが月次上限（400 invalid_request_error）に達した状態で edinet_blog.yml が毎時走り続け、
+  記事生成が全件失敗しても各ステップが `continue-on-error` のためrunは success。記事0件なので video_post.yml も
+  「投稿対象がないため終了」で正常終了し、**ブログも動画も丸一日出ていないのに通知はゼロ**だった。
+  唯一の見張りである日次ログレビュー（tools/daily_log_review.py）はClaude自身を使うため、同じ上限で一緒に停止していた。
+- 対策1 `lib/notify.py`: LINE push の共通口（`error()` / `warn()` / `push()`）。Claudeにもワークフローの
+  成否判定にも依存しない。未設定なら黙ってFalse、送信失敗は握りつぶす。`python -m lib.notify "本文" --url ...` でCLIからも。
+- 対策2 `lib/api_budget.note()`: 利用上限を初検知した瞬間に1回だけLINE通知。原因を当日中に知れる。
+- 対策3 `tools/output_heartbeat.py`（ops.yml heartbeat、平日13:00 UTC=22:00 JST）: ワークフローの成否ではなく
+  **成果物**（microCMSの当日記事数／x_postsの当日投稿数・kind=video／素材側のedinet_large_holdings・tdnet_buybacks）
+  を数え、「素材があるのに記事0件」「X投稿0件」「記事はあるのに動画0本」をLINEへ。開示が無い日の0件は正常扱い、
+  取得失敗(-1)は判定しない。Claude非依存なのでAPI障害中でも動く。
+- 対策4 各ワークフロー（daily_alert / edinet_blog / video_post / x_post / daily_log_review / ops-heartbeat）に
+  `if: failure()` のLINE通知ステップ。実行ログURL付き。
+- 対策5 `tools/daily_log_review.py`: Claude呼び出しが失敗したら「レビューを生成できなかった」こと自体をLINE通知して終了コード1。
+- 検証: 本日の実データで `python tools/output_heartbeat.py --dry-run` → 「動画0本（当日の記事は24件）」を検知
+  （動画便20:00 JSTの時点では記事が0件だったため。API上限解除後の手動再実行で記事だけ後から出た）。
+  tests 487→502件 pass。

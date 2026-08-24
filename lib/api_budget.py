@@ -37,6 +37,7 @@ _MARKERS = (
 )
 
 _reached = False
+_notified = False
 
 
 def is_usage_limit_error(exc: BaseException) -> bool:
@@ -49,13 +50,33 @@ def note(exc: BaseException) -> bool:
     """例外を記録する。利用上限エラーだった場合はフラグを立てて True を返す。
 
     以降 reached() が True を返すようになり、同一プロセス内の後続の呼び出しを
-    呼ぶ前にスキップできる。
+    呼ぶ前にスキップできる。初回の検知時だけLINEへ通知する（ワークフローは
+    continue-on-error で緑のまま終わるため、ここで言わないと誰も気づかない）。
     """
     global _reached
-    if is_usage_limit_error(exc):
-        _reached = True
-        return True
-    return False
+    if not is_usage_limit_error(exc):
+        return False
+    _reached = True
+    _notify_once(exc)
+    return True
+
+
+def _notify_once(exc: BaseException) -> None:
+    """同一プロセスで1回だけLINE通知する。通知の失敗で本処理は止めない。"""
+    global _notified
+    if _notified:
+        return
+    _notified = True
+    try:
+        from lib import notify
+
+        notify.error(
+            "Anthropic API 利用上限",
+            "上限に到達したため、ブログ記事・動画・日次レビューの生成を停止します。",
+            detail=str(exc),
+        )
+    except Exception as e:
+        print(f"[api_budget] ⚠ LINE通知に失敗: {e}")
 
 
 def reached() -> bool:
@@ -65,5 +86,6 @@ def reached() -> bool:
 
 def reset() -> None:
     """フラグを戻す（テスト用）。"""
-    global _reached
+    global _reached, _notified
     _reached = False
+    _notified = False

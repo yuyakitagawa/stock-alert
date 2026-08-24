@@ -555,7 +555,19 @@ def main() -> int:
     snapshot = summarize_snapshot(fetch_snapshot_rows(now), now)
     review_input = build_review_input(runs_by_workflow, date_label) + "\n\n" + snapshot
     print(f"[review] 入力 {len(review_input):,} 文字")
-    review_md = review_with_claude(review_input)
+    try:
+        review_md = review_with_claude(review_input)
+    except Exception as e:
+        # 見張り役が黙って落ちるのが一番まずい（Anthropic APIの利用上限に当たると
+        # このレビューも一緒に止まる。実例: 2026-08-24）。レビューできなかったこと自体を通知する。
+        print(f"[review] ⚠ レビュー生成に失敗: {e}")
+        if not args.dry_run:
+            from lib import notify
+
+            notify.error("日次ログレビュー",
+                         f"{date_label} のレビューを生成できませんでした（ログの確認は手動で必要）。",
+                         detail=str(e))
+        return 1
 
     run_url = ""
     if os.getenv("GITHUB_SERVER_URL") and os.getenv("GITHUB_RUN_ID") and args.repo:

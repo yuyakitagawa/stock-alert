@@ -3,6 +3,9 @@ name: Ops (keepalive + watchdog)
 # 運用系の小さな定期処理をまとめた1本。
 #   平日 06:00 UTC  keepalive : 空コミットでリポジトリを活性状態に保つ（GitHubは60日間コミットが無いと
 #                               scheduleワークフローを自動停止するため）。daily_alertの前に走らせる。
+#   平日 13:00 UTC  heartbeat : 当日の成果物（ブログ記事・X投稿・動画）を数え、欠けていればLINE通知。
+#                               ワークフローの成否ではなく成果物を見る（各ワークフローが
+#                               continue-on-error で緑のまま無言停止した実例: 2026-08-24）。
 #   平日 14:30 UTC  watchdog  : daily_alert.yml が今日成功していなければ再実行する。
 #                               daily_alertのschedule実行は遅延が多く、実測では予定より最大2〜3時間遅れて
 #                               開始する。早い時刻に監視すると「まだ成功していない」と誤判定して二重起動
@@ -11,13 +14,14 @@ name: Ops (keepalive + watchdog)
 on:
   schedule:
     - cron: '0 6 * * 1-5'   # keepalive
+    - cron: '0 13 * * 1-5'  # heartbeat
     - cron: '30 14 * * 1-5' # watchdog
   workflow_dispatch:
     inputs:
       job:
         description: 'どれを実行するか'
         type: choice
-        options: [watchdog, keepalive]
+        options: [watchdog, keepalive, heartbeat]
         default: watchdog
 
 jobs:
@@ -37,6 +41,41 @@ jobs:
           git config user.name  "GitHub Actions"
           git commit --allow-empty -m "chore: keepalive [skip ci]"
           git push
+
+  heartbeat:
+    if: github.event.schedule == '0 13 * * 1-5' || inputs.job == 'heartbeat'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      # 異常はスクリプトがLINEへ送る。集計自体に失敗したときだけ例外で落ち、下の通知が飛ぶ。
+      - name: 当日の成果物ハートビート（ブログ・X・動画）
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          MICROCMS_SERVICE_DOMAIN: ${{ secrets.MICROCMS_SERVICE_DOMAIN }}
+          MICROCMS_API_KEY: ${{ secrets.MICROCMS_API_KEY }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python tools/output_heartbeat.py
+
+      - name: 失敗をLINE通知
+        if: failure()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          python -m lib.notify "🚨 成果物ハートビートが失敗しました（当日の投稿状況を確認できていません）" \
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
   watchdog:
     if: github.event.schedule == '30 14 * * 1-5' || inputs.job == 'watchdog'
