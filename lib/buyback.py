@@ -26,6 +26,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from lib import api_budget  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
@@ -214,7 +215,10 @@ def extract_facts_llm(text: str, code: str, title: str) -> dict:
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         data = json.loads(m.group(0), strict=False) if m else {}
     except Exception as e:
-        print(f"[buyback] 抽出失敗 {code}: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"[buyback] 抽出失敗 {code}: {e}")
         return empty
     return _coerce_facts(data)
 

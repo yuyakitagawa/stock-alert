@@ -7,8 +7,12 @@ score: -1.0 (強い悲観) → 0.0 (中立) → +1.0 (強い楽観)
 """
 import re
 import os
+import sys
 import requests
 from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from lib import api_budget  # noqa: E402
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -48,7 +52,7 @@ def _score_with_claude(headlines: list, code: str) -> float:
     if not headlines:
         return 0.0
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
+    if not api_key or api_budget.reached():
         return 0.0
     client = anthropic.Anthropic(api_key=api_key)
     headlines_text = "\n".join(f"- {h}" for h in headlines)
@@ -70,8 +74,10 @@ def _score_with_claude(headlines: list, code: str) -> float:
         m = re.search(r'-?\d+\.?\d*', text)
         if m:
             return max(-1.0, min(1.0, float(m.group())))
-    except Exception:
-        pass
+    except Exception as e:
+        # ランキング上位20銘柄を連続で叩くため、上限到達時は残りを即スキップする
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
     return 0.0
 
 

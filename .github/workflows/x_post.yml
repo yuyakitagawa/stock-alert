@@ -104,3 +104,14 @@ jobs:
       - name: Verify X access token permissions (手動)
         if: env.TARGET == 'verify'
         run: cd ~/stock-alert && python -m web.x_client --verify
+
+      # ジョブが落ちたら必ずLINEへ。ワークフローの赤は誰も見ていないという前提で運用する。
+      - name: 失敗をLINE通知
+        if: failure()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          pip install --quiet requests
+          python -m lib.notify "🚨 X Post（$TARGET）が失敗しました" \
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

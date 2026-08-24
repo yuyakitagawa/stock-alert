@@ -1,5 +1,78 @@
 # Dev Log
 
+## 2026-08-24 Anthropic APIコスト削減（月次上限到達を受けて）
+
+2026-08-23に月次利用上限へ到達し（復帰 2026-09-01 00:00 UTC）、ブログ生成・動画・
+日次レビューが同時に停止した。原因を実測してから3点直した。
+
+**何が上限を消したか（定常運用ではなくバックフィル）**
+
+`get_company_description()` は Haiku + `web_search`(max_uses=3)。Web検索は
+**$10/1,000検索**に加えて検索結果本文が入力トークンとして課金されるため、1社あたり約$0.05。
+4,489社の全件バックフィル1回で約$225かかる計算になる。決定的だったのは
+**空文字（不明）で返った会社をキャッシュしていなかった**ことで、2026-08-15〜18に4回
+走らせたバックフィルが、そのたびに同じ「不明」社群（バックフィルログから抽出した実数で1,508社）へ
+フル課金し直していた。
+
+**A. daily_log_review の入力削減（月$17-21 → $5-7）**
+
+8/23に追加したきり未実行だったが、9/1以降は平日毎晩 opus-5 で走る。入力を実測すると
+19 runs / 248,678文字、うち198,042文字（80%）が EDINET Blog Hourly 12本のほぼ同一ログだった。
+run種別ごとに解像度を変えるようにした（失敗run=全文40,000字 / 成功runの最新1本=12,000字 /
+同一ワークフローの2本目以降=`signal_only`で重要行だけ2,000字）。実測 **248,678 → 81,798文字（67%減）**、
+EDINET分は198,042 → 34,270字（83%減）。あわせて`effort`を high → medium。
+
+**B. ネガティブキャッシュ**
+
+`jpx_stock_list.description_checked_at` / `edinet_filer_classification.profile_checked_at` を追加し、
+空振りでも試行日時を刻んで`RECHECK_DAYS`(90日)以内は再試行しない。空文字で既存の
+description/profileを上書きしないよう、値が取れたときだけそのキーをペイロードに入れる。
+`max_uses`は3→2。バックフィルログから「実際に試行して空だった」1,508社を抽出し、
+うち現存する444社に 2026-08-18 のタイムスタンプをシードした（証拠のない銘柄は
+未試行として残し、通常どおり1回だけ挑戦させる）。
+効果: `backfill_company_descriptions.py --dry-run` の対象が613社（約$31）→169社（約$8.5）、
+直後の再実行は$0。
+
+**C. 上限到達時のフェイルファスト（`lib/api_budget.py`）**
+
+8/24の毎時実行では、上限後も候補ごとに叩き続けて1回の実行で十数回失敗し、記事が無言で
+欠落していた。400の "You have reached your specified API usage limits" を検知したら
+同一プロセスの後続呼び出しをAPIに投げる前に諦める。429/529などの一時的失敗では
+打ち切らない（SDKのリトライを殺さないため）。上限エラーはネガティブキャッシュにも
+記録しない（課金されていないので次回ちゃんと再挑戦させる）。
+適用先: publish_blog_articles / publish_buyback_articles / buyback / build_script /
+nlp_sentiment / translate_blog_articles_en。
+
+**D. プロンプトキャッシュは見送り**
+
+A実施後の daily_log_review の入力は約3万トークンで、大半が当日固有のログ＝毎回変わるため
+キャッシュが効かない。ブログ生成系のプロンプトはキャッシュ下限（約1,024トークン）に届かない。
+効果がほぼゼロなのでプレフィックス管理の複雑さだけ増やす選択はしなかった。
+
+テスト: 29ファイル全通過（`test_api_budget.py` 6件を新設、`test_publish_blog_articles.py` +11件（同日の文体対策と合わせて110件）、
+`test_daily_log_review.py` 11→16件）。調査の詳細は `docs/progress_api_cost_reduction.md`。
+
+## 2026-08-24 生成文章の「AIっぽさ」対策（共通文体ルール＋AI常套句の検出・再生成）
+
+読者がひと目で「AIが書いた」と分かる文章パターン（「注目が集まっています」「〜と言える
+でしょう」等の常套句、同じ文末の連続、「また、」「さらに、」頼みの文つなぎ）を、
+文章を生成する全箇所から排除した。
+
+- 新設 `lib/writing_style.py`: プロンプト埋め込み用の文体ルール3種
+  （`JA_STYLE_RULES`=ブログ記事 / `EN_STYLE_RULES`=英語本文・英訳 /
+  `NARRATION_STYLE_RULES`=動画ナレーション）と、生成後にAI常套句・単調文末
+  （同一文末4連続）を検出する `find_ai_tells()` を集約。
+- 組み込み先: `web/publish_blog_articles.py`（ja+en）・`web/publish_buyback_articles.py`
+  （ja+en）・`video/build_script.py`（ナレーション）・`tools/translate_blog_articles_en.py`（en）。
+- 指示だけでは守られない前例（本文字数指示が全911本で守られていなかった件）があるため、
+  ブログ2系統は生成後に `find_ai_tells()` で実測し、検出時は1回だけ再生成。採用は
+  字数充足 > 常套句の少なさ > 字数の優先度（`body_quality_key()`。短い記事はGSCで
+  インデックスされない実害があるため字数を常套句より優先）。
+- テスト: `tests/test_writing_style.py`（7件）を新設、blog +2件（計100件。従来の
+  「99件」表記は実カウント98件とズレていたため実数に修正）、buyback +1件（計9件）。
+  効果の数値検証はAPIキーが要るため未実施（文章品質の変更であり、売買ロジック・
+  ランキングには一切影響しない）。
+
 ## 2026-08-22 EDINET開示の推定売買金額ビューを新設（銘柄ランキングの金額表示用）
 
 kujira-watchの銘柄ランキング(`/trending`)に開示件数と並べて金額を出すため、
@@ -1635,3 +1708,22 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - 追記（同日）: `tools/backfill_blog_eyecatch.py` で過去記事のアイキャッチをバックフィル完了。
   別セッション527件＋本セッション423件＝950/950件、失敗0（Pexels 180件/時ペース、約2.5時間）。
   本番TOPの記事カードに30枚の画像、記事og:imageにeyecatch.jpgが出ることを確認。
+
+## 2026-08-24 無言停止の再発防止（異常はLINEで知らせる）
+- 事象: Anthropic APIが月次上限（400 invalid_request_error）に達した状態で edinet_blog.yml が毎時走り続け、
+  記事生成が全件失敗しても各ステップが `continue-on-error` のためrunは success。記事0件なので video_post.yml も
+  「投稿対象がないため終了」で正常終了し、**ブログも動画も丸一日出ていないのに通知はゼロ**だった。
+  唯一の見張りである日次ログレビュー（tools/daily_log_review.py）はClaude自身を使うため、同じ上限で一緒に停止していた。
+- 対策1 `lib/notify.py`: LINE push の共通口（`error()` / `warn()` / `push()`）。Claudeにもワークフローの
+  成否判定にも依存しない。未設定なら黙ってFalse、送信失敗は握りつぶす。`python -m lib.notify "本文" --url ...` でCLIからも。
+- 対策2 `lib/api_budget.note()`: 利用上限を初検知した瞬間に1回だけLINE通知。原因を当日中に知れる。
+- 対策3 `tools/output_heartbeat.py`（ops.yml heartbeat、平日13:00 UTC=22:00 JST）: ワークフローの成否ではなく
+  **成果物**（microCMSの当日記事数／x_postsの当日投稿数・kind=video／素材側のedinet_large_holdings・tdnet_buybacks）
+  を数え、「素材があるのに記事0件」「X投稿0件」「記事はあるのに動画0本」をLINEへ。開示が無い日の0件は正常扱い、
+  取得失敗(-1)は判定しない。Claude非依存なのでAPI障害中でも動く。
+- 対策4 各ワークフロー（daily_alert / edinet_blog / video_post / x_post / daily_log_review / ops-heartbeat）に
+  `if: failure()` のLINE通知ステップ。実行ログURL付き。
+- 対策5 `tools/daily_log_review.py`: Claude呼び出しが失敗したら「レビューを生成できなかった」こと自体をLINE通知して終了コード1。
+- 検証: 本日の実データで `python tools/output_heartbeat.py --dry-run` → 「動画0本（当日の記事は24件）」を検知
+  （動画便20:00 JSTの時点では記事が0件だったため。API上限解除後の手動再実行で記事だけ後から出た）。
+  tests 487→502件 pass。

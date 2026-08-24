@@ -34,7 +34,7 @@ import sys
 import json
 import argparse
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -42,9 +42,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 import lib.supabase_client as sb
+from lib import api_budget
 from lib.db import get_edinet_large_holdings_recent
 from lib.edinet import disclosure_doc_label, disclosure_kind_label
 from lib.utils import get_price_at_date
+from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
@@ -56,6 +58,13 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+
+# 事業内容・投資家プロフィールを「空文字（不明）」で取りこぼした対象を、何日おきに
+# 再挑戦するか。web_searchは $10/1,000検索 + 検索結果が入力トークンとして課金され、
+# 1社あたり約$0.05かかる。空振りを記録せず毎回叩き直していたため、バックフィルの
+# たびに同じ「不明」社群にフル課金していた（2026-08-15〜18で4回、月次上限に到達）。
+# 一度不明だった先が急に判明することは稀なので、四半期に1度だけ再挑戦する。
+RECHECK_DAYS = 90
 
 # EDINET大量保有報告書の提出者分類。edinet_filer_classification（tools/backtest系の
 # 投資家分類マスター）と1対1で対応する13分類。自社株買い/ETFフローはこのデータ源では
@@ -92,7 +101,7 @@ def classify_filer(filer_name: str) -> dict:
 
     import anthropic
 
-    if not ANTHROPIC_API_KEY:
+    if not ANTHROPIC_API_KEY or api_budget.reached():
         return {"category": "その他", "is_foreign": False, "description": ""}
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     category_options = "\n".join(f"- {t}" for t in FILER_DEAL_TYPES)
@@ -140,7 +149,10 @@ def classify_filer(filer_name: str) -> dict:
         # API障害等の一時的な失敗まで「その他」として永続キャッシュすると誤分類が固定化される
         # （実運用で発生: 2026-08-14、課金切れでVC/個人の提出者が軒並み「その他」に上書きされた）。
         # キャッシュせず、次回呼び出し時に再判定させる。
-        print(f"    ⚠ 投資家分類に失敗（今回はその他扱い、キャッシュはしない）: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"    ⚠ 投資家分類に失敗（今回はその他扱い、キャッシュはしない）: {e}")
         return {"category": "その他", "is_foreign": False, "description": ""}
 
     sb.upsert(
@@ -651,20 +663,44 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
     return round(amount_yen / 1e8, 1)
 
 
+def checked_recently(checked_at: "str | None", days: int = RECHECK_DAYS) -> bool:
+    """ネガティブキャッシュの判定。checked_at（ISO8601）が days 日以内なら True。
+
+    未設定・解析不能なら False（＝まだ試していない扱いにして生成を許す）。
+    """
+    if not checked_at:
+        return False
+    try:
+        ts = datetime.fromisoformat(str(checked_at).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts > datetime.now(timezone.utc) - timedelta(days=days)
+
+
 def get_company_description(code: str, name: str) -> str:
     """対象企業の事業内容を1文程度で返す。jpx_stock_list.descriptionにキャッシュがあれば
     それを使い、無ければClaudeのweb_searchで会社概要を確認して生成しキャッシュする。
     ※一般知識だけで書かせると中小型株の約2/3が「不明（空文字）」になり
     （2026-08-15のバックフィルで生成1,134件に対し不明1,507件）、
     /trendingや/stocks/[code]で事業内容が出ない銘柄が大量に残るため、
-    web検索で裏取りさせる。創作を防ぐガード（不明なら空文字）はそのまま維持する。"""
-    cached = sb.select_one("jpx_stock_list", f"code=eq.{code}&select=description")
+    web検索で裏取りさせる。創作を防ぐガード（不明なら空文字）はそのまま維持する。
+
+    空文字だった場合も description_checked_at に試行日時を刻み、RECHECK_DAYS 以内は
+    再試行しない（web_searchは1社あたり約$0.05かかるため、同じ「不明」社群を
+    バックフィルのたびに叩き直すと一気に月次上限を食う）。"""
+    cached = sb.select_one(
+        "jpx_stock_list", f"code=eq.{code}&select=description,description_checked_at"
+    )
     if cached and cached.get("description"):
         return cached["description"]
+    if cached and checked_recently(cached.get("description_checked_at")):
+        return ""
 
     import anthropic
 
-    if not ANTHROPIC_API_KEY:
+    if not ANTHROPIC_API_KEY or api_budget.reached():
         return ""
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     prompt = f"""日本の上場企業「{name}」（証券コード{code}）の事業内容を調べ、
@@ -688,7 +724,9 @@ def get_company_description(code: str, name: str) -> str:
         resp = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=2000,
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+            # max_usesは検索料（$10/1,000検索）と入力トークン（1検索≒6,000トークン）に
+            # 直結する。会社四季報【特色】相当の一文に3検索は過剰なので2に抑える。
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
             messages=[{"role": "user", "content": prompt}],
         )
         # web_search使用時は検索結果ブロックとテキストブロックが交互に並ぶため、
@@ -701,11 +739,17 @@ def get_company_description(code: str, name: str) -> str:
         description = " ".join(description.split())
         description = description or ""
     except Exception as e:
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+            return ""  # 上限エラーは「試行済み」に含めない（課金されていないため）
         print(f"    ⚠ 事業内容取得に失敗: {e}")
         description = ""
 
+    # 空文字（不明）でもchecked_atを刻む。これが無いと同じ銘柄に何度でも課金される。
+    payload = {"code": code, "description_checked_at": datetime.now(timezone.utc).isoformat()}
     if description:
-        sb.upsert("jpx_stock_list", [{"code": code, "description": description}], on_conflict="code")
+        payload["description"] = description
+    sb.upsert("jpx_stock_list", [payload], on_conflict="code")
     return description
 
 
@@ -717,14 +761,16 @@ def get_filer_profile(filer_name: str, category: str) -> str:
     事実は創作させない。一般個人など公開情報が乏しい提出者は空文字を返す想定）。"""
     cached = sb.select_one(
         "edinet_filer_classification",
-        f"filer_name=eq.{requests.utils.quote(filer_name)}&select=profile",
+        f"filer_name=eq.{requests.utils.quote(filer_name)}&select=profile,profile_checked_at",
     )
     if cached and cached.get("profile"):
         return cached["profile"]
+    if cached and checked_recently(cached.get("profile_checked_at")):
+        return ""
 
     import anthropic
 
-    if not ANTHROPIC_API_KEY:
+    if not ANTHROPIC_API_KEY or api_budget.reached():
         return ""
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     prompt = f"""日本の株式市場でEDINET大量保有報告書（5%ルール）を提出している投資家
@@ -748,19 +794,25 @@ def get_filer_profile(filer_name: str, category: str) -> str:
             text = text[4:] if text.lower().startswith("json") else text
         profile = json.loads(text).get("profile", "") or ""
     except Exception as e:
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+            return ""  # 上限エラーは「試行済み」に含めない（課金されていないため）
         print(f"    ⚠ 投資家プロフィール取得に失敗: {e}")
         profile = ""
 
+    # categoryもペイロードに含める: on_conflict時のUPDATEでは不要だが、PostgreSQLは
+    # ON CONFLICTのUPDATE分岐に関わらずINSERT側の候補行構築時点でNOT NULL制約を
+    # 評価するため、category(NOT NULL)を欠いたペイロードだとUPDATEのみのつもりでも
+    # 「null value in column "category"」で失敗する（実運用で発生: 2026-08-10）。
+    # profileが空でもchecked_atは刻む（公開情報の乏しい提出者を毎回引き直さないため）。
+    payload = {
+        "filer_name": filer_name,
+        "category": category,
+        "profile_checked_at": datetime.now(timezone.utc).isoformat(),
+    }
     if profile:
-        # categoryもペイロードに含める: on_conflict時のUPDATEでは不要だが、PostgreSQLは
-        # ON CONFLICTのUPDATE分岐に関わらずINSERT側の候補行構築時点でNOT NULL制約を
-        # 評価するため、category(NOT NULL)を欠いたペイロードだとUPDATEのみのつもりでも
-        # 「null value in column "category"」で失敗する（実運用で発生: 2026-08-10）。
-        sb.upsert(
-            "edinet_filer_classification",
-            [{"filer_name": filer_name, "category": category, "profile": profile}],
-            on_conflict="filer_name",
-        )
+        payload["profile"] = profile
+    sb.upsert("edinet_filer_classification", [payload], on_conflict="filer_name")
     return profile
 
 
@@ -876,7 +928,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     翻訳による事実のズレとAPI呼び出し回数の増加を防ぐ）。"""
     import anthropic
 
-    if not ANTHROPIC_API_KEY:
+    if not ANTHROPIC_API_KEY or api_budget.reached():
         return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     is_sell = fact_sheet.get("direction") == "sell"
@@ -962,6 +1014,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 {nature_instruction}大量保有報告書制度そのものの一般的な説明（5%ルールの趣旨、市場透明性・投資家保護目的など）や、
 「今後の動向を注視する必要がある」といった、この取引固有ではない定型的な結びの文も書かないでください。
 
+{JA_STYLE_RULES}
+
 事実:
 - 対象銘柄: {fact_sheet['stock_name']}（{fact_sheet['stock_code']}）
 - 提出者: {fact_sheet['filer_name']}
@@ -990,6 +1044,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 直答（例: "A large shareholding report (EDINET filing) shows that ... raised its stake in ... to ...%."）で
 始めてください。※推測の文はEnglishでは
 "*Speculation:" という接頭辞で始めてください。金額は円建てのまま（例: "¥3.34 billion"）でよいです。
+{EN_STYLE_RULES}
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
 テンプレートで組み立てるため出力しない）。stockNameEn/filerNameEnには英語タイトル用の
@@ -1011,7 +1066,10 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
             return None
         return data
     except Exception as e:
-        print(f"    ⚠ 記事生成失敗: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"    ⚠ 記事生成失敗: {e}")
         return None
 
 
@@ -1026,20 +1084,30 @@ def body_char_count(html: str) -> int:
     return len(re.sub(r"\s+", "", re.sub(r"<[^>]+>", "", html or "")))
 
 
+def body_quality_key(body: str, min_chars: int) -> tuple:
+    """本文の採用優先度（大きいほど良い）。字数充足 > AI常套句の少なさ > 字数の順で比較する。
+    publish_buyback_articles.py の再生成判定でも使う。"""
+    return (body_char_count(body) >= min_chars, -len(find_ai_tells(body)), body_char_count(body))
+
+
 def generate_article_body_checked(fact_sheet: dict) -> "dict | None":
-    """generate_article_body()の結果が短すぎたら1回だけ再生成する。
-    2回目も不足していたら、より長い方を採用する（記事を落とすよりは公開する）。"""
+    """generate_article_body()の結果が短すぎる・AI常套句（lib/writing_style.py）を含む場合は
+    1回だけ再生成する。2回目も直らなければマシな方を採用する（記事を落とすよりは公開する）。"""
     first = generate_article_body(fact_sheet)
     if first is None:
         return None
     first_len = body_char_count(first.get("body", ""))
-    if first_len >= MIN_BODY_CHARS:
+    tells = find_ai_tells(first.get("body", ""))
+    if first_len >= MIN_BODY_CHARS and not tells:
         return first
-    print(f"    ↻ 本文{first_len}字（下限{MIN_BODY_CHARS}字）のため再生成")
+    reason = f"本文{first_len}字（下限{MIN_BODY_CHARS}字）" if first_len < MIN_BODY_CHARS else f"AI常套句{tells}"
+    print(f"    ↻ {reason}のため再生成")
     second = generate_article_body(fact_sheet)
     if second is None:
         return first
-    return second if body_char_count(second.get("body", "")) > first_len else first
+    if body_quality_key(second.get("body", ""), MIN_BODY_CHARS) > body_quality_key(first.get("body", ""), MIN_BODY_CHARS):
+        return second
+    return first
 
 
 class MicroCMSPermissionError(Exception):

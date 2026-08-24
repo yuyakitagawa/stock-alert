@@ -77,6 +77,15 @@ def test_answer_sentence_is_factual_direct_answer():
     assert "TDnetの適時開示" in s
 
 
+def test_generate_body_checked_retries_on_ai_tell():
+    # 字数が足りていてもAI常套句があれば1回だけ再生成し、常套句の無い方を採用する
+    telly = {"body": "<p>株主還元の姿勢に注目が集まっています。" + "あ" * 700 + "</p>"}
+    clean = {"body": "<p>" + "い" * 700 + "</p>"}
+    with mock.patch.object(m, "generate_body", side_effect=[telly, clean]) as gen:
+        assert m.generate_body_checked(FACT) is clean
+    assert gen.call_count == 2
+
+
 def test_build_and_publish_skips_published_and_respects_max():
     rows = [
         {"code": "7966", "disclosed_at": "2026-08-20T16:00:00+00:00", "amount_oku": 300.0, "ratio": 10.55, "max_amount_yen": 30_000_000_000},

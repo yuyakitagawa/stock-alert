@@ -25,6 +25,8 @@ import requests
 
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
+from lib import api_budget  # noqa: E402
+from lib.writing_style import NARRATION_STYLE_RULES  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
     CLAUDE_MODEL,
     _microcms_base_url,
@@ -294,6 +296,8 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
 取引の言い方は開示の事実に合わせてください。**今回が新規保有なら「買い増し」とは書かず
 「新規に取得」「新たに保有」**と書きます（逆に、前回の開示がある場合だけ「買い増し」が使えます）。
 
+{NARRATION_STYLE_RULES}
+
 1. hook: 冒頭で指を止めさせる部分。最初の1秒で固有名詞か金額が耳に入ることが最優先。
    - narration: **22〜30字**。語順は〈誰が〉→〈何を〉→〈いくら〉に固定する。
      「今日は」「みなさん」「ご存知ですか」などの前置きで始めるのは禁止。
@@ -336,7 +340,10 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
             text = text[4:] if text.lower().startswith("json") else text
         data = json.loads(text)
     except Exception as e:
-        print(f"  ⚠ 台本生成失敗: {e}")
+        if api_budget.note(e):
+            print(api_budget.SKIP_MESSAGE)
+        else:
+            print(f"  ⚠ 台本生成失敗: {e}")
         return None
 
     scenes = _flatten_scenes(data)

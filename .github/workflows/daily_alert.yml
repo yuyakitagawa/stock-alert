@@ -153,3 +153,14 @@ jobs:
             data/screeners/screener_*.csv
             data/catalyst_candidates.csv
           retention-days: 7
+
+      # ジョブが落ちたら必ずLINEへ。ワークフローの赤は誰も見ていないという前提で運用する。
+      - name: 失敗をLINE通知
+        if: failure()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          pip install --quiet requests
+          python -m lib.notify "🚨 Daily Stock Alert（ランキング・LINE配信）が失敗しました" \
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
