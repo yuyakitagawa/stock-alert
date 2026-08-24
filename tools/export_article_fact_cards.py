@@ -37,6 +37,19 @@ from web.publish_blog_articles import (
 
 load_dotenv()
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# tools/apply_rewritten_articles.py が反映のたびに追記する台帳。
+# 書き直した本文も1,000字未満に収まることが多く、可視文字数の閾値だけでは
+# 「もう直した記事」を候補から外せないため、IDで突き合わせて除外する。
+DONE_LEDGER = os.path.join(REPO_ROOT, "logs", "rewritten_article_ids.txt")
+
+
+def load_done_ids() -> set:
+    if not os.path.exists(DONE_LEDGER):
+        return set()
+    with open(DONE_LEDGER, encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -51,7 +64,12 @@ def main():
     if ids:
         targets = [a for a in articles if a["id"] in ids]
     else:
-        targets = [a for a in articles if visible_text_len(a.get("body")) < THIN_TEXT_THRESHOLD]
+        done = load_done_ids()
+        targets = [
+            a for a in articles
+            if a["id"] not in done and visible_text_len(a.get("body")) < THIN_TEXT_THRESHOLD
+        ]
+        print(f"リライト済み（台帳）: {len(done)}件 / 残り候補: {len(targets)}件")
     # 取引日の新しい順（読者が最初に見る記事から直す）
     targets.sort(key=lambda a: a.get("dealDate") or "", reverse=True)
     targets = targets[args.skip:]

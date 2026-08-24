@@ -35,6 +35,12 @@ load_dotenv()
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 反映済み記事IDの台帳。リライトは900本超あり何度も中断・再開するため、
+# 「どこまで終わったか」をファイルに残す。export_article_fact_cards.py が
+# この台帳を読んで、書き直し済みの記事を候補から外す。
+# 可視文字数の閾値だけでは判定できない（書き直した本文も1,000字未満に収まることが多い）。
+DONE_LEDGER = os.path.join(REPO_ROOT, "logs", "rewritten_article_ids.txt")
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -96,11 +102,14 @@ def main():
                 updated += 1
             else:
                 print(f"  ⚠ {aid} の更新に失敗しました")
+                continue
         except MicroCMSPermissionError as e:
             print(f"  ✖ 権限エラーのため中断: {e}")
             break
+        with open(DONE_LEDGER, "a", encoding="utf-8") as f:
+            f.write(aid + "\n")
         time.sleep(0.3)
-    print(f"更新: {updated}/{len(targets)}件")
+    print(f"更新: {updated}/{len(targets)}件（台帳: {DONE_LEDGER}）")
 
 
 if __name__ == "__main__":
