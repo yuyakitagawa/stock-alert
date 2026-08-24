@@ -42,6 +42,7 @@ from web.publish_blog_articles import (  # noqa: E402
     build_eyecatch_for_article,
     build_price_chart_for_article,
     dp_level_label,
+    exit_code_for_run,
     get_company_description,
     get_pit_ranking_snapshot,
     publish_article,
@@ -323,10 +324,12 @@ def build_payload(f: dict, article: dict) -> dict:
 
 
 def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = None,
-                      dry_run: bool = False) -> list[dict]:
+                      dry_run: bool = False, stats: "dict | None" = None) -> list[dict]:
+    """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
     candidates = fetch_candidates(days)
     print(f"[buyback_blog] 記事候補: {len(candidates)}件（上限{MIN_AMOUNT_OKU:g}億円以上 or 発行済{MIN_RATIO_PCT:g}%以上）")
     published: list[dict] = []
+    generation_attempts = 0
     for row in candidates:
         if max_articles is not None and len(published) >= max_articles:
             break
@@ -341,6 +344,8 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         ratio_label = f"{f['ratio']:g}%" if f["ratio"] is not None else "-"
         print(f"  🏦 {f['stock_name']}({code}) {disc_date} 上限{amount_label} / {ratio_label}")
 
+        # 重複除外を通り抜けて記事化に到達した候補（exit_code_for_run の判定材料）
+        generation_attempts += 1
         article = generate_body_checked(f)
         if not article:
             continue
@@ -370,6 +375,8 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         if content_id:
             print(f"    ✅ 投稿: {content_id}")
             published.append({**payload, "id": content_id})
+    if stats is not None:
+        stats["generation_attempts"] = generation_attempts
     return published
 
 
@@ -379,8 +386,17 @@ def main():
     p.add_argument("--max-articles", type=int, default=None, help="1回の実行で投稿する上限件数")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
     args = p.parse_args()
-    results = build_and_publish(days=args.days, max_articles=args.max_articles, dry_run=args.dry_run)
+    stats: dict = {}
+    results = build_and_publish(days=args.days, max_articles=args.max_articles,
+                                dry_run=args.dry_run, stats=stats)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
+
+    attempts = stats.get("generation_attempts", 0)
+    code = exit_code_for_run(attempts, len(results))
+    if code:
+        print(f"::error::記事化に到達した候補{attempts}件に対し投稿0件。"
+              f"Claude APIの上限超過かmicroCMSの障害を確認すること。")
+    sys.exit(code)
 
 
 if __name__ == "__main__":

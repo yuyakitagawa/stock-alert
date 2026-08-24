@@ -1166,8 +1166,24 @@ def is_worth_publishing(deal_amount_oku: float, ratio_change_pt: float) -> bool:
     return abs(ratio_change_pt) >= MIN_RATIO_CHANGE_PT
 
 
+def exit_code_for_run(generation_attempts: int, published_count: int) -> int:
+    """記事化まで到達した候補があったのに1件も投稿できなかった便を異常として1を返す。
+
+    Claude APIの上限超過やmicroCMS障害では、候補は毎回そろっているのに記事だけが全滅する。
+    それでもスクリプトは正常終了しGitHub Actionsも緑のままだったため、丸1日気付けなかった
+    （2026-08-24: ANTHROPIC_API_KEYの月間上限に達し、全便が「0件処理しました」でsuccess）。
+    足切り・重複除外で候補が全部落ちた「正常な0件」はgeneration_attempts=0なので区別できる。
+    """
+    if generation_attempts > 0 and published_count == 0:
+        return 1
+    return 0
+
+
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
-                       dry_run: bool = False) -> list:
+                       dry_run: bool = False, stats: "dict | None" = None) -> list:
+    """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
+    if stats is not None:
+        stats["generation_attempts"] = 0
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):
         print("[publish_blog_articles] MICROCMS_SERVICE_DOMAIN / MICROCMS_API_KEY 未設定のためスキップ")
         return []
@@ -1184,6 +1200,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
     )
 
     published = []
+    generation_attempts = 0
     for h in candidates:
         if max_articles is not None and len(published) >= max_articles:
             break
@@ -1262,6 +1279,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "prior_ratio": prior_ratio,
             "is_correction": is_correction,
         }
+        # 足切り・重複除外を通り抜けて記事化に到達した候補。ここから先で全滅したら
+        # 相場やフィルタではなく生成・投稿の障害なので、exit_code_for_run が拾う。
+        generation_attempts += 1
         article = generate_article_body_checked(fact_sheet)
         if article is None:
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
@@ -1339,6 +1359,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
 
+    if stats is not None:
+        stats["generation_attempts"] = generation_attempts
     return published
 
 
@@ -1349,7 +1371,9 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
     args = p.parse_args()
 
-    results = build_and_publish(days=args.days, max_articles=args.max_articles, dry_run=args.dry_run)
+    stats: dict = {}
+    results = build_and_publish(days=args.days, max_articles=args.max_articles,
+                                dry_run=args.dry_run, stats=stats)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
     if not args.dry_run:
@@ -1360,6 +1384,13 @@ def main():
             print(f"🐦 X投稿: {posted}件")
         # 「本日のクジラ」日次サマリー(21時JSTの最終便のみ投稿される。時刻ガードはx_client側)
         post_daily_summary()
+
+    attempts = stats.get("generation_attempts", 0)
+    code = exit_code_for_run(attempts, len(results))
+    if code:
+        print(f"::error::記事化に到達した候補{attempts}件に対し投稿0件。"
+              f"Claude APIの上限超過かmicroCMSの障害を確認すること。")
+    sys.exit(code)
 
 
 if __name__ == "__main__":
