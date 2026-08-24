@@ -31,6 +31,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 import requests  # noqa: E402
 
 from lib import supabase_client as sb  # noqa: E402
+from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
     ANTHROPIC_API_KEY,
     CLAUDE_MODEL,
@@ -39,6 +40,7 @@ from web.publish_blog_articles import (  # noqa: E402
     _microcms_base_url,
     _microcms_headers,
     body_char_count,
+    body_quality_key,
     build_eyecatch_for_article,
     build_price_chart_for_article,
     dp_level_label,
@@ -247,6 +249,8 @@ def generate_body(f: dict) -> "dict | None":
 自社株買い制度そのものの一般的な説明（会社法の条文、ROE向上の一般論など）や、「今後の動向を注視する必要がある」
 といった定型的な結びの文は書かないでください。
 
+{JA_STYLE_RULES}
+
 事実:
 {chr(10).join(lines)}
 
@@ -266,6 +270,7 @@ ToSTNeT-3（立会外買付）の場合は、翌営業日の取引開始前に�
 bodyEnには、上と同じ事実・トーンを保った自然な英語訳を書いてください（英語ネイティブの投資ニュース記事として
 自然な文章。1文目は日本語の1文目と同じ内容の直答で始める。※推測の文は "*Speculation:" で始める。
 金額は円建てのまま、例 "¥30 billion"）。
+{EN_STYLE_RULES}
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途テンプレートで
 組み立てるため出力しない）。stockNameEnには英語タイトル用のローマ字表記（例: "Lintec"）を短く書いてください:
@@ -288,15 +293,19 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 
 
 def generate_body_checked(f: dict) -> "dict | None":
+    """本文が短すぎる・AI常套句（lib/writing_style.py）を含む場合は1回だけ再生成し、
+    マシな方を採用する（publish_blog_articles.generate_article_body_checked と同じ方針）。"""
     first = generate_body(f)
     if first is None:
         return None
-    if body_char_count(first["body"]) >= MIN_BODY_CHARS:
+    if body_char_count(first["body"]) >= MIN_BODY_CHARS and not find_ai_tells(first["body"]):
         return first
     second = generate_body(f)
     if second is None:
         return first
-    return second if body_char_count(second["body"]) > body_char_count(first["body"]) else first
+    if body_quality_key(second["body"], MIN_BODY_CHARS) > body_quality_key(first["body"], MIN_BODY_CHARS):
+        return second
+    return first
 
 
 def build_payload(f: dict, article: dict) -> dict:
