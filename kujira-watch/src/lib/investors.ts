@@ -144,6 +144,32 @@ export const getAllFilers = unstable_cache(
   { revalidate: 3600 }
 );
 
+// 解説文（edinet_filer_classification.profile）が入っている提出者名の集合。
+// 投資家ページのインデックス判定（lib/pageIndexability.ts）に使う。判定はページ側と
+// サイトマップ側の両方で必要なので、1回のクエリで全件取り切ってキャッシュする。
+export const getFilersWithProfile = unstable_cache(
+  async (): Promise<Set<string>> => {
+    const supabase = getSupabaseServerClient();
+    const names = new Set<string>();
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const offset = page * PAGE_SIZE;
+      const { data } = await supabase
+        .from("edinet_filer_classification")
+        .select("filer_name, profile")
+        .not("profile", "is", null)
+        .neq("profile", "")
+        .order("filer_name", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      for (const row of data) names.add(row.filer_name);
+      if (data.length < PAGE_SIZE) break;
+    }
+    return names;
+  },
+  ["filers-with-profile"],
+  { revalidate: 3600 }
+);
+
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
 // 投資家一覧（名称+分類+最新開示の保有比率）を返す。保有比率はその投資家の最新開示行の
 // holding_ratio（訂正報告書で欠損していれば null）で、比率の高い順→名称順に並べる。

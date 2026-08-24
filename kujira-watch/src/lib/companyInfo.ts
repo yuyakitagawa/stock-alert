@@ -78,6 +78,41 @@ export async function getAllListedCodes(): Promise<Set<string>> {
   return new Set(await getAllListedCodeList());
 }
 
+// 事業内容の説明（jpx_stock_list.description）が入っている銘柄コード。銘柄ページの
+// インデックス判定（lib/pageIndexability.ts）に使う。判定はページ側とサイトマップ側の
+// 両方で必要なので、全件を1度に取ってキャッシュする。
+// unstable_cacheはJSONとして永続化するためSetではなく配列で保持する。
+const getStockDescriptionCodeList = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const supabase = getSupabaseServerClient();
+      const codes: string[] = [];
+      for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+        const { data } = await supabase
+          .from("jpx_stock_list")
+          .select("code, description")
+          .not("description", "is", null)
+          .neq("description", "")
+          .range(from, from + SUPABASE_PAGE_SIZE - 1);
+        for (const row of data ?? []) {
+          if (row.code) codes.push(String(row.code));
+        }
+        if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+      }
+      return codes;
+    } catch (error) {
+      console.error("[getStockDescriptionCodeList] 取得失敗", error);
+      return [];
+    }
+  },
+  ["stock-description-codes"],
+  { revalidate: 3600 }
+);
+
+export async function getStockDescriptionCodes(): Promise<Set<string>> {
+  return new Set(await getStockDescriptionCodeList());
+}
+
 export type CompanyInfo = {
   name: string | null;
   sector: string | null;

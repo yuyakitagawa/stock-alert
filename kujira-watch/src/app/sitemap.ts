@@ -4,9 +4,15 @@ import {
   getAllArticlesForSitemap,
   getTranslatedArticlesForSitemap,
 } from "@/lib/microcms";
-import { getAllFilers, investorPath } from "@/lib/investors";
+import { getAllFilers, getFilersWithProfile, investorPath } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
 import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import {
+  isIndexableDatePage,
+  isIndexableInvestorPage,
+  isIndexableStockPage,
+} from "@/lib/pageIndexability";
+import { getStockDescriptionCodes } from "@/lib/companyInfo";
 import { CATEGORIES, DEAL_TYPES } from "@/types/article";
 import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
@@ -85,6 +91,17 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
   ];
 }
 
+// キー（銘柄コード・取引日など）ごとの記事本数。インデックス判定に使う。
+function countBy<T>(items: T[], keyOf: (item: T) => string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 // キー（銘柄コード・取引日など）ごとの記事の最新取引日(=EDINET開示日)。
 // 銘柄・日別・月別ページの<lastmod>に使う。
 function latestDealDateBy<T extends { dealDate: string }>(
@@ -102,21 +119,34 @@ function latestDealDateBy<T extends { dealDate: string }>(
 }
 
 async function stockEntries(): Promise<MetadataRoute.Sitemap> {
-  const [articles, translatedArticles] = await Promise.all([
+  const [articles, translatedArticles, describedCodes] = await Promise.all([
     getAllArticlesForSitemap(),
     getTranslatedArticlesForSitemap(),
+    getStockDescriptionCodes(),
   ]);
   const latestByStock = latestDealDateBy(articles, (a) => a.stockCode);
   const latestByEnStock = latestDealDateBy(translatedArticles, (a) => a.stockCode);
+  const countByStock = countBy(articles, (a) => a.stockCode);
+  const countByEnStock = countBy(translatedArticles, (a) => a.stockCode);
+  // 記事が乏しい銘柄はページ側でnoindexにしているのでサイトマップからも外す。
+  const indexable = (code: string, counts: Map<string, number>) =>
+    isIndexableStockPage({
+      articleCount: counts.get(code) ?? 0,
+      hasCompanyDescription: describedCodes.has(code),
+    });
   return [
-    ...[...latestByStock.entries()].map(([code, lastModified]) => ({
-      url: `${SITE_URL}/stocks/${code}`,
-      lastModified,
-    })),
-    ...[...latestByEnStock.entries()].map(([code, lastModified]) => ({
-      url: `${SITE_URL}/en/stocks/${code}`,
-      lastModified,
-    })),
+    ...[...latestByStock.entries()]
+      .filter(([code]) => indexable(code, countByStock))
+      .map(([code, lastModified]) => ({
+        url: `${SITE_URL}/stocks/${code}`,
+        lastModified,
+      })),
+    ...[...latestByEnStock.entries()]
+      .filter(([code]) => indexable(code, countByEnStock))
+      .map(([code, lastModified]) => ({
+        url: `${SITE_URL}/en/stocks/${code}`,
+        lastModified,
+      })),
   ];
 }
 
@@ -124,28 +154,38 @@ async function dateEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
   const latestByDate = latestDealDateBy(articles, (a) => a.dealDate.slice(0, 10));
   const latestByMonth = latestDealDateBy(articles, (a) => a.dealDate.slice(0, 7));
+  const countByDate = countBy(articles, (a) => a.dealDate.slice(0, 10));
   return [
     ...[...latestByMonth.entries()].map(([month, lastModified]) => ({
       url: `${SITE_URL}/monthly/${month}`,
       lastModified,
     })),
-    ...[...latestByDate.entries()].map(([date, lastModified]) => ({
-      url: `${SITE_URL}/date/${date}`,
-      lastModified,
-    })),
+    // 開示が数件しかない日はページ側でnoindexにしているのでサイトマップからも外す。
+    ...[...latestByDate.entries()]
+      .filter(([date]) => isIndexableDatePage(countByDate.get(date) ?? 0))
+      .map(([date, lastModified]) => ({
+        url: `${SITE_URL}/date/${date}`,
+        lastModified,
+      })),
   ];
 }
 
-// 投資家ページは全2,950件のうち約1,000件が開示1件だけで、保有推移が1点しか出ず
-// 中身がほぼ定型になる。全件をsitemapに載せると記事に回るクロール枠を食うため、
-// 開示が複数ある投資家（=推移が読める投資家）だけを載せる。
-// 除外した投資家のページ自体は残す（noindexにはせず、内部リンクからは辿れる）。
-const SITEMAP_MIN_FILER_HOLDINGS = 2;
-
+// 投資家ページ2,972件のうち、解説文が無いものが2,152件・開示1件だけが1,002件あり、
+// 大半はEDINETの数行を表に起こしただけの定型ページになる。開示が複数あって推移が読め、
+// かつ解説文があるものだけを載せる（判定は lib/pageIndexability.ts、ページ側と共通）。
+// 除外した投資家のページ自体は残す（noindex,followなので内部リンクからは辿れる）。
 async function investorEntries(): Promise<MetadataRoute.Sitemap> {
-  const filers = await getAllFilers();
+  const [filers, filersWithProfile] = await Promise.all([
+    getAllFilers(),
+    getFilersWithProfile(),
+  ]);
   return filers
-    .filter((filer) => filer.holdingCount >= SITEMAP_MIN_FILER_HOLDINGS)
+    .filter((filer) =>
+      isIndexableInvestorPage({
+        holdingCount: filer.holdingCount,
+        hasProfile: filersWithProfile.has(filer.filerName),
+      })
+    )
     .map((filer) => ({
       url: `${SITE_URL}${investorPath(filer.filerId, filer.filerName)}`,
       lastModified: filer.latestDiscDate,

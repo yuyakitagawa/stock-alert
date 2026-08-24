@@ -17,10 +17,12 @@ import {
   getFilerHoldings,
   getFilerIdByName,
   getFilerNameById,
+  getFilersWithProfile,
   investorPath,
 } from "@/lib/investors";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
+import { isIndexableInvestorPage } from "@/lib/pageIndexability";
 import AdUnit from "@/components/AdUnit";
 import FilerReturnRecord from "@/components/FilerReturnRecord";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
@@ -82,8 +84,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!/^\d+$/.test(filer)) return {};
   const filerName = await getFilerNameById(Number(filer));
   if (!filerName) return {};
-  const holdings = await getFilerHoldings(filerName);
+  const [holdings, filersWithProfile] = await Promise.all([
+    getFilerHoldings(filerName),
+    getFilersWithProfile(),
+  ]);
   if (holdings.length === 0) return {};
+  const indexable = isIndexableInvestorPage({
+    holdingCount: holdings.length,
+    hasProfile: filersWithProfile.has(filerName),
+  });
 
   const title = `${filerName}の大量保有報告書・保有銘柄一覧`;
   const description = `${filerName}がEDINET大量保有報告書（5%ルール）で開示した保有銘柄・保有比率の推移を${holdings.length}件まとめました。`;
@@ -92,6 +101,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
+    // 解説文が無く開示も1件だけの投資家は、EDINETの1行を表に起こしただけのページになる。
+    // 判定は lib/pageIndexability.ts に集約（サイトマップ側と条件を必ず一致させる）。
+    ...(indexable ? {} : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
       types: { "application/rss+xml": `${url}/feed.xml` },
