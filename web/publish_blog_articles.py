@@ -45,6 +45,7 @@ import lib.supabase_client as sb
 from lib.db import get_edinet_large_holdings_recent
 from lib.edinet import disclosure_doc_label, disclosure_kind_label
 from lib.utils import get_price_at_date
+from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
@@ -962,6 +963,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 {nature_instruction}大量保有報告書制度そのものの一般的な説明（5%ルールの趣旨、市場透明性・投資家保護目的など）や、
 「今後の動向を注視する必要がある」といった、この取引固有ではない定型的な結びの文も書かないでください。
 
+{JA_STYLE_RULES}
+
 事実:
 - 対象銘柄: {fact_sheet['stock_name']}（{fact_sheet['stock_code']}）
 - 提出者: {fact_sheet['filer_name']}
@@ -990,6 +993,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 直答（例: "A large shareholding report (EDINET filing) shows that ... raised its stake in ... to ...%."）で
 始めてください。※推測の文はEnglishでは
 "*Speculation:" という接頭辞で始めてください。金額は円建てのまま（例: "¥3.34 billion"）でよいです。
+{EN_STYLE_RULES}
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
 テンプレートで組み立てるため出力しない）。stockNameEn/filerNameEnには英語タイトル用の
@@ -1026,20 +1030,30 @@ def body_char_count(html: str) -> int:
     return len(re.sub(r"\s+", "", re.sub(r"<[^>]+>", "", html or "")))
 
 
+def body_quality_key(body: str, min_chars: int) -> tuple:
+    """本文の採用優先度（大きいほど良い）。字数充足 > AI常套句の少なさ > 字数の順で比較する。
+    publish_buyback_articles.py の再生成判定でも使う。"""
+    return (body_char_count(body) >= min_chars, -len(find_ai_tells(body)), body_char_count(body))
+
+
 def generate_article_body_checked(fact_sheet: dict) -> "dict | None":
-    """generate_article_body()の結果が短すぎたら1回だけ再生成する。
-    2回目も不足していたら、より長い方を採用する（記事を落とすよりは公開する）。"""
+    """generate_article_body()の結果が短すぎる・AI常套句（lib/writing_style.py）を含む場合は
+    1回だけ再生成する。2回目も直らなければマシな方を採用する（記事を落とすよりは公開する）。"""
     first = generate_article_body(fact_sheet)
     if first is None:
         return None
     first_len = body_char_count(first.get("body", ""))
-    if first_len >= MIN_BODY_CHARS:
+    tells = find_ai_tells(first.get("body", ""))
+    if first_len >= MIN_BODY_CHARS and not tells:
         return first
-    print(f"    ↻ 本文{first_len}字（下限{MIN_BODY_CHARS}字）のため再生成")
+    reason = f"本文{first_len}字（下限{MIN_BODY_CHARS}字）" if first_len < MIN_BODY_CHARS else f"AI常套句{tells}"
+    print(f"    ↻ {reason}のため再生成")
     second = generate_article_body(fact_sheet)
     if second is None:
         return first
-    return second if body_char_count(second.get("body", "")) > first_len else first
+    if body_quality_key(second.get("body", ""), MIN_BODY_CHARS) > body_quality_key(first.get("body", ""), MIN_BODY_CHARS):
+        return second
+    return first
 
 
 class MicroCMSPermissionError(Exception):

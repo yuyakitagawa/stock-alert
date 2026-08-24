@@ -1143,6 +1143,23 @@ def test_generate_article_body_checked_no_retry_when_long_enough():
     assert gen.call_count == 1
 
 
+def test_generate_article_body_checked_retries_on_ai_tell_and_keeps_clean():
+    # 字数は足りていてもAI常套句があれば再生成し、常套句の無い方を採用する
+    telly = {"body": "<p>今回の取得には注目が集まっています。" + "あ" * 700 + "</p>"}
+    clean = {"body": "<p>" + "い" * 700 + "</p>"}
+    with mock.patch.object(m, "generate_article_body", side_effect=[telly, clean]) as gen:
+        assert m.generate_article_body_checked({}) is clean
+    assert gen.call_count == 2
+
+
+def test_generate_article_body_checked_length_beats_ai_tell():
+    # 字数充足はAI常套句の少なさより優先（短い記事はインデックスされない実害があるため）
+    telly_long = {"body": "<p>今回の取得には注目が集まっています。" + "あ" * 700 + "</p>"}
+    clean_short = {"body": "<p>" + "い" * 300 + "</p>"}
+    with mock.patch.object(m, "generate_article_body", side_effect=[telly_long, clean_short]):
+        assert m.generate_article_body_checked({}) is telly_long
+
+
 def test_build_and_publish_skips_disclosure_below_threshold(capsys=None):
     holdings = [{
         "issuer_code": "1234", "name": "テスト社", "filer_name": "野村證券株式会社",
@@ -1388,6 +1405,8 @@ if __name__ == "__main__":
     test_generate_article_body_checked_retries_when_body_too_short()
     test_generate_article_body_checked_keeps_longer_of_two_attempts()
     test_generate_article_body_checked_no_retry_when_long_enough()
+    test_generate_article_body_checked_retries_on_ai_tell_and_keeps_clean()
+    test_generate_article_body_checked_length_beats_ai_tell()
     test_build_and_publish_skips_disclosure_below_threshold()
     test_ratio_change_pct_uses_disclosure_prior_ratio()
     test_ratio_change_pct_counts_full_exit_as_full_prior_ratio()
@@ -1405,4 +1424,4 @@ if __name__ == "__main__":
     test_build_and_publish_defers_change_report_without_prior_ratio()
     test_build_and_publish_publishes_material_correction_without_amount()
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
-    print("全テスト成功 (99件)")
+    print("全テスト成功 (100件)")

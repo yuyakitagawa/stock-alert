@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 import requests
 
+from lib.writing_style import EN_STYLE_RULES
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, ANTHROPIC_API_KEY, CLAUDE_MODEL,
     _microcms_base_url, _microcms_headers, update_article, MicroCMSPermissionError,
@@ -96,6 +97,7 @@ def translate_article(title: str, body: str) -> "dict | None":
 事実を追加・削除・変更せず、自然な英語（投資ニュース記事のトーン、直訳調は避ける）に翻訳してください。
 本文はHTML（<p>タグ区切り）なので、タグ構造は保ったまま翻訳してください。
 「※推測:」で始まる文がある場合は "*Speculation:" という接頭辞に置き換えてください。
+{EN_STYLE_RULES}
 
 タイトル: {title}
 本文: {body_without_chart}
