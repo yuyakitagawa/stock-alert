@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_NAME, SITE_URL, X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 
 const title = "プライバシーポリシー";
 const description =
@@ -111,9 +111,32 @@ export default function PrivacyPage() {
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">個人情報の取り扱い</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
-          本サイトには会員登録・お問い合わせフォーム・コメント機能がなく、閲覧者から氏名・
-          メールアドレス等の個人情報を直接取得することはありません。上記の解析・広告配信で
-          取得される情報についても、運営者が個人を特定する目的で利用することはありません。
+          本サイトは会員登録を必要とせず、閲覧者から氏名・メールアドレス等の個人情報を
+          サイト上で直接取得することはありません。上記の解析・広告配信で取得される情報に
+          ついても、運営者が個人を特定する目的で利用することはありません。
+        </p>
+      </section>
+
+      <section className="mb-6">
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">お問い合わせ</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
+          本サイトへのご連絡は、公式X（旧Twitter）
+          <a
+            href={X_PROFILE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-blue hover:underline"
+          >
+            {X_HANDLE}
+          </a>
+          のダイレクトメッセージまたはリプライで受け付けています。掲載内容の誤りのご指摘、
+          訂正・削除のご依頼、引用・転載のお問い合わせ、本ポリシーに関するお問い合わせは、
+          すべてこの窓口へお寄せください。ご指摘をいただいた場合は、EDINET・TDnetの開示原本と
+          照合のうえ確認し、誤りが確認された記事は修正または削除します。
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+          なお本サイトは金融商品取引法上の投資助言・代理業者ではないため、個別銘柄の売買や
+          投資判断に関するご相談にはお答えできません。
         </p>
       </section>
 
