@@ -374,7 +374,7 @@ DBキャッシュは廃止。
 | `MICROCMS_SERVICE_DOMAIN` | `kujira-watch`（大口投資家の監視ブログ）用microCMSサービスドメイン（edinet_blog.yml: ブログ記事自動投稿。未登録ならスキップ）|
 | `MICROCMS_API_KEY` | 同上・書き込み権限付き＋メディアアップロード権限付きAPIキー（アイキャッチ画像のアップロードに使用）|
 | `PEXELS_API_KEY` | ブログのアイキャッチ画像生成用（Pexels検索API）。未登録ならアイキャッチ無しで記事のみ投稿 |
-| `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` / `YOUTUBE_REFRESH_TOKEN` | YouTube Shorts自動投稿用（video_post.yml）。Google Cloud ConsoleでYouTube Data API v3を有効化し「デスクトップアプリ」のOAuthクライアントを作成、ローカルで`python video/youtube_auth.py`を1回実行してリフレッシュトークンを取得する。未登録なら未登録なら投稿をスキップ |
+| `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` / `YOUTUBE_REFRESH_TOKEN` | YouTube Shorts自動投稿用（video_post.yml）。Google Cloud ConsoleでYouTube Data API v3を有効化し「デスクトップアプリ」のOAuthクライアントを作成、ローカルで`python video/youtube_auth.py`を1回実行してリフレッシュトークンを取得する。未登録なら投稿をスキップ。**OAuth同意画面が「テスト」状態のままだとリフレッシュトークンは約7日で失効し、`invalid_grant: Token has been expired or revoked` で投稿が落ちる**（2026-08-16取得のトークンが2026-08-25に失効）。恒久対策はGoogle Cloud Consoleで同意画面を「本番」に公開すること |
 
 ### 依存パッケージ
 ```

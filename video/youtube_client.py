@@ -37,6 +37,7 @@ def _access_token() -> "str | None":
     client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
     refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
     if not all([client_id, client_secret, refresh_token]):
+        print("[youtube_client] YOUTUBE_CLIENT_ID等が未設定のためアップロードをスキップします")
         return None
     try:
         resp = requests.post(
@@ -51,6 +52,12 @@ def _access_token() -> "str | None":
         )
         if not resp.ok:
             print(f"  ⚠ YouTubeトークン更新失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            if "invalid_grant" in resp.text:
+                # OAuth同意画面が「テスト」状態だとリフレッシュトークンは7日で失効する。
+                # 恒久対策は同意画面を「本番」に公開すること（README参照）。
+                print("  → リフレッシュトークンが失効しています。"
+                      "ローカルで `python video/youtube_auth.py` を実行し、"
+                      "`gh secret set YOUTUBE_REFRESH_TOKEN` で再登録してください")
             return None
         return resp.json().get("access_token")
     except Exception as e:
@@ -112,7 +119,6 @@ def upload(video_path: str, props: dict, privacy_status: str = "public") -> "str
     """動画をアップロードし、YouTubeの動画IDを返す。失敗・未設定時はNone。"""
     token = _access_token()
     if token is None:
-        print("[youtube_client] YOUTUBE_CLIENT_ID等が未設定のためアップロードをスキップします")
         return None
 
     file_size = os.path.getsize(video_path)
