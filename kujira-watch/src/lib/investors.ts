@@ -147,10 +147,16 @@ export const getAllFilers = unstable_cache(
 // 解説文（edinet_filer_classification.profile）が入っている提出者名の集合。
 // 投資家ページのインデックス判定（lib/pageIndexability.ts）に使う。判定はページ側と
 // サイトマップ側の両方で必要なので、1回のクエリで全件取り切ってキャッシュする。
-export const getFilersWithProfile = unstable_cache(
-  async (): Promise<Set<string>> => {
+// unstable_cache は戻り値をJSONで直列化して保存するため、Setを直接返してはいけない。
+// Setは JSON.stringify で {} になり、キャッシュから読み戻した値に .has() が生えていない。
+// noindex判定をビルド時のgenerateMetadataで呼ぶため、これは
+// 「TypeError: e.has is not a function」でプリレンダリングごと失敗し、
+// 本番デプロイが2026-08-24から24時間以上まるごと止まっていた（＝noindex対応が
+// 一度も本番に出ていなかった）。キャッシュには配列を入れ、Setは読み出し側で組み立てる。
+const getFilerNamesWithProfile = unstable_cache(
+  async (): Promise<string[]> => {
     const supabase = getSupabaseServerClient();
-    const names = new Set<string>();
+    const names: string[] = [];
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const offset = page * PAGE_SIZE;
       const { data } = await supabase
@@ -161,7 +167,7 @@ export const getFilersWithProfile = unstable_cache(
         .order("filer_name", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
       if (!data || data.length === 0) break;
-      for (const row of data) names.add(row.filer_name);
+      for (const row of data) names.push(row.filer_name);
       if (data.length < PAGE_SIZE) break;
     }
     return names;
@@ -169,6 +175,10 @@ export const getFilersWithProfile = unstable_cache(
   ["filers-with-profile"],
   { revalidate: 3600 }
 );
+
+export async function getFilersWithProfile(): Promise<Set<string>> {
+  return new Set(await getFilerNamesWithProfile());
+}
 
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
 // 投資家一覧（名称+分類+最新開示の保有比率）を返す。保有比率はその投資家の最新開示行の
