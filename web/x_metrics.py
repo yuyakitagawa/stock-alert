@@ -145,6 +145,11 @@ def save_followers(snapshot: dict) -> None:
 UNKNOWN_KIND = "unknown"
 
 
+class SaveFailed(RuntimeError):
+    """Supabaseへ書けなかったときに投げる。ここを握り潰すと「毎日成功しているのに
+    数字が入っていない」状態になる（2026-08-24〜25の23502が2日気付かれなかった原因）。"""
+
+
 def save(metrics: dict, kinds: dict) -> int:
     if not metrics:
         return 0
@@ -153,12 +158,15 @@ def save(metrics: dict, kinds: dict) -> int:
     # PostgRESTのupsertはINSERT ... ON CONFLICT DO UPDATEで、既存行の更新でも
     # 「INSERTしようとした行」に対してNOT NULL制約が先に評価される。kindを送らないと
     # 全行まとめて23502で落ち、最新値が何日も欠測する（2026-08-24〜25に18行が全滅）。
-    sb.upsert("x_posts", [{"tweet_id": tid, "kind": kinds.get(tid) or UNKNOWN_KIND,
-                           **m, "metrics_updated_at": now}
-                          for tid, m in metrics.items()], on_conflict="tweet_id")
-    sb.upsert("x_post_metrics", [{"tweet_id": tid, "measured_on": today, **m}
-                                 for tid, m in metrics.items()],
-              on_conflict="tweet_id,measured_on")
+    ok_posts = sb.upsert("x_posts", [{"tweet_id": tid, "kind": kinds.get(tid) or UNKNOWN_KIND,
+                                      **m, "metrics_updated_at": now}
+                                     for tid, m in metrics.items()], on_conflict="tweet_id")
+    ok_daily = sb.upsert("x_post_metrics", [{"tweet_id": tid, "measured_on": today, **m}
+                                            for tid, m in metrics.items()],
+                         on_conflict="tweet_id,measured_on")
+    failed = [name for name, ok in (("x_posts", ok_posts), ("x_post_metrics", ok_daily)) if not ok]
+    if failed:
+        raise SaveFailed(f"{'/'.join(failed)} への保存に失敗しました（上のログのHTTPコードを参照）")
     return len(metrics)
 
 
@@ -228,6 +236,9 @@ def run(with_report: bool = False) -> int:
         print(f"[x_metrics] メトリクスを取得できません: {e}")
         print(f"[x_metrics] 対象{len(ids)}件は数字が空のままです。X APIのプラン/権限を確認してください")
         return 2
+    except SaveFailed as e:
+        print(f"[x_metrics] メトリクスを保存できません: {e}")
+        return 3
     print(f"[x_metrics] {saved}/{len(ids)}件のメトリクスを更新しました")
     if with_report:
         report()

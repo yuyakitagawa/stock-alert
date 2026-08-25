@@ -1756,3 +1756,20 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - 検証: 本日の実データで `python tools/output_heartbeat.py --dry-run` → 「動画0本（当日の記事は24件）」を検知
   （動画便20:00 JSTの時点では記事が0件だったため。API上限解除後の手動再実行で記事だけ後から出た）。
   tests 487→502件 pass。
+
+## 2026-08-26 日次レビュー重大2件の後始末（YouTube失効・X保存失敗）
+- 事象①（8/25 YouTube投稿0件）: リフレッシュトークンが `invalid_grant`（Token has been expired or revoked）。
+  ローカルの `.env` のトークンでも同じ400を再現。OAuth同意画面が「テスト」状態のためトークンが約7日で失効する。
+  動画は74.9MB書き出し済み（レンダリング230秒）で、行き先だけが無かった。
+  → `video/youtube_client.check_auth()` / `is_configured()` を追加し、`publish_video.run()` が
+  **レンダリング前**に認証を1リクエストで確認して落ちるようにした。Secrets未登録時と `--render-only` は従来どおり続行。
+  恒久対策（人手）: Google Cloud Console でOAuth同意画面を「本番」に公開 → `python video/youtube_auth.py` で再取得 →
+  `gh secret set YOUTUBE_REFRESH_TOKEN`。公開状態にすればトークンは7日で失効しなくなる。
+- 事象②（X指標が保存できない）: kindのNOT NULL違反は 8/25 23:10 の f476b24a で修正済みだが、
+  **失敗しても気付けない**構造が残っていた。`sb.upsert()` はHTTPエラーをprintするだけで戻り値が無く、
+  `x_metrics.save()` は常に成功扱いだったため、18行全滅の日も workflow は success。
+  → `sb.upsert()` が bool（全バッチ成功でTrue）を返すようにし、`x_metrics.save()` は失敗時に `SaveFailed` を投げ、
+  `run()` が終了コード3。x_post.yml の `if: failure()` でLINEに飛ぶ。既存の呼び出し側は戻り値を無視すれば従来挙動。
+- 現状確認: `x_posts` 21件はkind欠損0・imp欠損3（当日投稿ぶん）。ただし数字自体はimp 1〜5、いいね0、
+  **フォロワー0人（8/20〜25で0のまま）**。フォーマットの効果測定以前に露出が無い。次テーマはXの露出そのもの。
+- テスト: 520→524件 pass。

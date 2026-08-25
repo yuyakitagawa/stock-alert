@@ -65,6 +65,18 @@ def _access_token() -> "str | None":
         return None
 
 
+def is_configured() -> bool:
+    return all(os.getenv(k) for k in
+               ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"))
+
+
+def check_auth() -> bool:
+    """アップロードできる状態かを、レンダリング前に1リクエストで確かめる。
+    リフレッシュトークンが失効していると230秒かけて書き出した動画の行き先が消えるため
+    （2026-08-25に実際に発生）、重い処理に入る前にここで落とす。"""
+    return _access_token() is not None
+
+
 def build_title(props: dict) -> str:
     direction = "売却" if props.get("direction") == "sell" else "取得"
     suffix = " #Shorts"

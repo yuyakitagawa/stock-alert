@@ -40,6 +40,13 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
         print("[publish_video] --dry-run のためレンダリング・投稿は行いません")
         return 0
 
+    # レンダリング前の認証チェック。トークンが死んでいる日に230秒かけて書き出しても
+    # 動画の行き先が無い（2026-08-25はここで74.9MBが丸損した）。--render-only や
+    # Secrets未登録のときは動画の生成自体が目的なので確認しない。
+    if not render_only and youtube_client.is_configured() and not youtube_client.check_auth():
+        print("[publish_video] YouTubeの認証が通らないため、レンダリング前に中止します")
+        return 1
+
     os.makedirs(OUT_DIR, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_path = os.path.join(OUT_DIR, f"short_{props.get('stockCode', 'x')}_{stamp}.mp4")
@@ -71,9 +78,6 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
         print(f"[publish_video] --render-only のため投稿しません: {video_path}")
         return 0
 
-    configured = all(os.getenv(k) for k in
-                     ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"))
-
     posted = 0
     youtube_id = youtube_client.upload(video_path, props)
     if youtube_id:
@@ -100,7 +104,7 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     if not keep_video and posted > 0:
         os.remove(video_path)
 
-    if not configured:
+    if not youtube_client.is_configured():
         # Secretsを1つも登録していない段階。動画は作れているので失敗扱いにはしない
         # （毎日ワークフローが赤くなって本当の失敗通知が埋もれるのを防ぐ）。
         print("[publish_video] 投稿先の認証情報が未登録のため、動画の生成のみで終了します")

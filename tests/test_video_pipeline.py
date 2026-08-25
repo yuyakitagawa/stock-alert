@@ -941,3 +941,30 @@ def test_set_thumbnail_posts_png_to_thumbnails_set(tmp_path):
         assert yt.set_thumbnail("vid123", str(img)) is True
     assert post.call_args.kwargs["params"]["videoId"] == "vid123"
     assert post.call_args.kwargs["headers"]["Content-Type"] == "image/png"
+
+
+def test_publish_aborts_before_rendering_when_youtube_token_is_dead():
+    """トークン失効の日に230秒かけて書き出さない（2026-08-25に74.9MBが丸損した）。"""
+    import video.publish_video as pv
+    with mock.patch.object(pv.build_script, "build", return_value={"scenes": []}), \
+         mock.patch.object(pv.youtube_client, "is_configured", return_value=True), \
+         mock.patch.object(pv.youtube_client, "check_auth", return_value=False), \
+         mock.patch.object(pv.render, "render") as render_call:
+        rc = pv.run()
+    assert rc == 1, rc
+    render_call.assert_not_called()
+
+
+def test_publish_renders_when_youtube_credentials_are_absent():
+    """Secrets未登録の段階は動画の生成自体が目的なので止めない。"""
+    import video.publish_video as pv
+    with mock.patch.object(pv.build_script, "build", return_value={"scenes": []}), \
+         mock.patch.object(pv.youtube_client, "is_configured", return_value=False), \
+         mock.patch.object(pv.youtube_client, "check_auth") as check, \
+         mock.patch.object(pv.tts, "narrate_sections", return_value=False), \
+         mock.patch.object(pv.background, "fetch_pool", return_value=[]), \
+         mock.patch.object(pv.background, "assign_backgrounds"), \
+         mock.patch.object(pv.render, "render", return_value=False):
+        rc = pv.run()
+    check.assert_not_called()
+    assert rc == 1, rc  # renderがFalse＝レンダリング失敗までは到達している

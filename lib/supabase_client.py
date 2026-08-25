@@ -73,25 +73,34 @@ def _dedup_batch(batch: list[dict], on_conflict: str) -> list[dict]:
     return [batch[i] for i in sorted(seen.values())]
 
 
-def upsert(table: str, rows: list[dict], on_conflict: str = "") -> None:
+def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
+    """全バッチが書けたら True、1バッチでも落ちたら False を返す。
+    呼び出し側が戻り値を無視すれば従来どおりの「失敗してもログだけ」の挙動になるが、
+    保存できたかどうかがジョブの成否そのものである処理（x_metrics等）は必ず見ること。
+    見ていなかったせいで、NOT NULL違反で18行が毎日落ちてもジョブは success のままだった
+    （2026-08-24〜25）。"""
     if not rows or not is_configured():
-        return
+        return False
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if on_conflict:
         url += f"?on_conflict={on_conflict}"
     rows = _sanitize(rows)
+    ok_all = True
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = _dedup_batch(rows[i: i + _BATCH_SIZE], on_conflict)
         try:
             resp = _request("POST", url, headers=_headers(), json=batch, timeout=_TIMEOUT)
         except Exception as e:
             print(f"[supabase] {table} upsert exception ({len(batch)} rows): {e}")
+            ok_all = False
             continue
         if not resp.ok:
             print(f"[supabase] {table} upsert failed ({len(batch)} rows): "
                   f"{resp.status_code} {resp.text[:500]}")
+            ok_all = False
         else:
             print(f"[supabase] {table} upsert OK ({len(batch)} rows)")
+    return ok_all
 
 
 def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
