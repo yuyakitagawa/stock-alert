@@ -49,6 +49,7 @@ from web.publish_blog_articles import (
     classify_filer, get_company_description, get_pit_ranking_snapshot, dp_level_label,
     ratio_change_pct, generate_article_body_checked, update_article, MicroCMSPermissionError,
 )
+from web.article_figures import insert_figures_into_body
 
 load_dotenv()
 
@@ -64,6 +65,19 @@ def visible_text_len(body_html: str) -> int:
     text = _FIGURE_RE.sub("", body_html or "")
     text = _TAG_RE.sub("", text)
     return len(text)
+
+
+def restore_figures(new_body: str, old_body: str) -> str:
+    """旧本文の<figure>を新本文に付け替える。株価チャートは末尾のまま、解説図（保有比率の
+    推移・株主構成・ポートフォリオ）は本文中に戻す。全部末尾に固めると本文が文字だけになる。
+    リライトでは図を作り直さない（同じ図を再アップロードするとメディアが二重に増えるため）。"""
+    figures = _FIGURE_RE.findall(old_body or "")
+    if not figures:
+        return new_body
+    charts = [f for f in figures if "株価推移" in f]
+    others = [f for f in figures if f not in charts]
+    body = insert_figures_into_body(new_body, [{"html": h, "anchors": []} for h in others])
+    return body + "".join(charts)
 
 
 def find_filer_names(code: str, disc_date: str) -> set:
@@ -166,10 +180,7 @@ def main():
             skipped_gen_failed.append(a["id"])
             continue
 
-        new_body = generated["body"]
-        old_figure = _FIGURE_RE.search(a.get("body") or "")
-        if old_figure:
-            new_body += old_figure.group(0)
+        new_body = restore_figures(generated["body"], a.get("body") or "")
         new_len = visible_text_len(new_body)
 
         rewritten += 1

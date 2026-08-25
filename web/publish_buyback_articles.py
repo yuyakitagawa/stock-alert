@@ -40,6 +40,7 @@ from web.publish_blog_articles import (  # noqa: E402
     MicroCMSPermissionError,
     _microcms_base_url,
     _microcms_headers,
+    attach_figures,
     body_char_count,
     body_quality_key,
     build_eyecatch_for_article,
@@ -49,6 +50,7 @@ from web.publish_blog_articles import (  # noqa: E402
     get_pit_ranking_snapshot,
     publish_article,
 )
+from web.article_figures import buyback_article_figures  # noqa: E402
 
 DEAL_TYPE = "自社株買い"
 DEFAULT_DAYS = 3
@@ -380,16 +382,28 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         })
         if eyecatch:
             payload["eyecatch"] = eyecatch
+        figure_count = attach_figures(payload, buyback_article_figures(f))
+
         chart_url = build_price_chart_for_article(code, f["stock_name"])
         if chart_url:
-            payload["body"] += f'<p><img src="{chart_url}" alt="{f["stock_name"]}（{code}）株価推移（直近3ヶ月）"></p>'
+            name = f["stock_name"]
+            payload["body"] += (
+                f'<figure><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）">'
+                f'<figcaption>{name}（{code}）の株価推移（直近3ヶ月・終値ベース）</figcaption></figure>'
+            )
+            if payload.get("bodyEn"):
+                payload["bodyEn"] += (
+                    f'<figure><img src="{chart_url}" alt="{name} ({code}) share price, last three months">'
+                    f'<figcaption>Share price of {name} ({code}) over the last three months (closing prices).</figcaption></figure>'
+                )
+            figure_count += 1
         try:
             content_id = publish_article(payload)
         except MicroCMSPermissionError as e:
             print(f"    ⚠ microCMSの権限エラーのため以降の候補をスキップ: {e}")
             break
         if content_id:
-            print(f"    ✅ 投稿: {content_id}")
+            print(f"    ✅ 投稿: {content_id}（図{figure_count}枚）")
             published.append({**payload, "id": content_id})
     return published
 

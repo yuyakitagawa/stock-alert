@@ -197,6 +197,7 @@ def test_build_and_publish_includes_sell_and_tags_them():
          mock.patch.object(m, "generate_article_body_checked",
                             return_value={"body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=4, dry_run=False)
 
@@ -475,6 +476,7 @@ def test_build_and_publish_publishes_material_correction_without_amount():
          mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid999"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
@@ -733,6 +735,7 @@ def test_build_and_publish_includes_eyecatch_when_available():
          mock.patch.object(m, "build_eyecatch_for_article",
                             return_value={"url": "https://images.microcms-assets.io/x.png"}) as eyecatch_mock, \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
@@ -793,6 +796,7 @@ def test_build_and_publish_stops_early_on_permission_error():
                             return_value={"category": "その他", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body_checked", side_effect=_track_generate), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article",
                             side_effect=m.MicroCMSPermissionError("HTTP 400: forbidden")):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
@@ -998,6 +1002,7 @@ def test_build_and_publish_includes_english_fields_when_generated():
                             return_value={"body": "<p>本文</p>", "bodyEn": "<p>Body</p>",
                                           "stockNameEn": "Test Motor", "filerNameEn": "Taro Kojin"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
     assert results[0]["titleEn"] == "Taro Kojin Takes 8.5% Stake in Test Motor (7203) | Large Shareholding Report"
@@ -1020,6 +1025,7 @@ def test_build_and_publish_omits_english_fields_when_not_generated():
          mock.patch.object(m, "generate_article_body_checked",
                             return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
     assert "titleEn" not in results[0]
@@ -1457,6 +1463,7 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body", side_effect=_fake_generate), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         m.build_and_publish(days=3, max_articles=3, dry_run=False)
 

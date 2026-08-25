@@ -26,6 +26,10 @@ microCMS管理画面で修正する運用）。
           簡易な折れ線チャートPNGをPillowのみで描画し、microCMSへアップロードして
           本文HTML末尾に<img>タグとして埋め込む（失敗時はチャート無しで記事のみ投稿）。
 
+解説図: attach_figures が web.article_figures で保有比率の推移・株主構成・提出者の
+          ポートフォリオを図にし、本文のその話をしている段落の直後に差し込む
+          （文字だけの記事を減らす目的。Pillow直描画なのでAPI課金は発生しない）。
+
 必要な環境変数: MICROCMS_SERVICE_DOMAIN, MICROCMS_API_KEY（書き込み権限）, ANTHROPIC_API_KEY
 """
 import os
@@ -47,6 +51,7 @@ from lib.db import get_edinet_large_holdings_recent
 from lib.edinet import disclosure_doc_label, disclosure_kind_label
 from lib.utils import get_price_at_date
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
+from web.article_figures import build_article_figures, figure_html, insert_figures_into_body
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
@@ -966,6 +971,10 @@ def build_context_facts(code: str, filer_name: str, disc_date: str) -> dict:
                 "count": len(history),
                 "first_date": first.get("disc_date"),
                 "first_ratio": first.get("holding_ratio"),
+                # 本文用には初回と回数だけで足りるが、解説図（保有比率の推移）は各回の数字を使う
+                "points": [
+                    {"date": r.get("disc_date"), "ratio": r.get("holding_ratio")} for r in history
+                ],
             }
 
         # 2. 同じ提出者が同時点で持っている他の銘柄（保有比率の高い順）
@@ -1302,6 +1311,26 @@ class MicroCMSPermissionError(Exception):
 _UNEXPECTED_TYPE_RE = re.compile(r"'(\w+)' has unexpected data type")
 
 
+def attach_figures(payload: dict, figures: list) -> int:
+    """web.article_figures が作った解説図をmicroCMSへアップロードし、本文（日本語・英語の
+    両方）の該当段落の直後に差し込む。差し込めた枚数を返す。アップロードに失敗した図は黙って
+    飛ばす（図が1枚も無くても記事は従来どおり公開する）。英語本文は段落と図の対応を語句で
+    探せないため、日本語と同じ順序で均等に配置する。"""
+    ja, en = [], []
+    for fig in figures:
+        url = _upload_media(fig["bytes"], fig["filename"])
+        if not url:
+            continue
+        ja.append({"html": figure_html(url, fig["alt"], fig["caption"]), "anchors": fig["anchors"]})
+        en.append({"html": figure_html(url, fig["alt_en"], fig["caption_en"]), "anchors": []})
+    if not ja:
+        return 0
+    payload["body"] = insert_figures_into_body(payload["body"], ja)
+    if payload.get("bodyEn"):
+        payload["bodyEn"] = insert_figures_into_body(payload["bodyEn"], en)
+    return len(ja)
+
+
 def _post_once(payload: dict) -> requests.Response:
     return requests.post(_microcms_base_url(), headers=_microcms_headers(), json=payload, timeout=20)
 
@@ -1580,9 +1609,20 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if eyecatch:
             payload["eyecatch"] = eyecatch
 
+        figure_count = attach_figures(payload, build_article_figures(fact_sheet))
+
         chart_url = build_price_chart_for_article(code, name)
         if chart_url:
-            payload["body"] += f'<p><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）"></p>'
+            payload["body"] += (
+                f'<figure><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）">'
+                f'<figcaption>{name}（{code}）の株価推移（直近3ヶ月・終値ベース）</figcaption></figure>'
+            )
+            if payload.get("bodyEn"):
+                payload["bodyEn"] += (
+                    f'<figure><img src="{chart_url}" alt="{name} ({code}) share price, last three months">'
+                    f'<figcaption>Share price of {name} ({code}) over the last three months (closing prices).</figcaption></figure>'
+                )
+            figure_count += 1
 
         try:
             content_id = publish_article(payload)
@@ -1590,7 +1630,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ✖ 権限エラーのため以降の候補もスキップして終了します: {e}")
             break
         if content_id:
-            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} → id={content_id}")
+            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} 図{figure_count}枚 → id={content_id}")
             published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")

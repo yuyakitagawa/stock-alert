@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.rewrite_thin_blog_articles import visible_text_len, build_patch_payload
+from tools.rewrite_thin_blog_articles import build_patch_payload, restore_figures, visible_text_len
 
 
 def test_visible_text_len_strips_tags():
@@ -32,9 +32,23 @@ def test_build_patch_payload_contains_only_body():
     assert payload == {"body": "<p>新しい本文</p>"}
 
 
+def test_restore_figures_keeps_chart_last_and_explainers_inline():
+    """リライト後も株価チャートは末尾、解説図は本文中に戻す（画像が全部末尾に固まらない）。"""
+    old = '<figure>解説図</figure><figure><img alt="テスト製薬 株価推移（直近3ヶ月）"></figure>'
+    new = restore_figures("<p>a</p><p>b</p><p>c</p><p>※推測</p>", old)
+    assert new.endswith('<figure><img alt="テスト製薬 株価推移（直近3ヶ月）"></figure>')
+    assert "<figure>解説図</figure><p>c</p>" in new
+
+
+def test_restore_figures_without_old_figures_returns_body():
+    assert restore_figures("<p>a</p>", "<p>図なし</p>") == "<p>a</p>"
+
+
 if __name__ == "__main__":
     test_visible_text_len_strips_tags()
     test_visible_text_len_excludes_figure_block()
     test_visible_text_len_empty_body_is_zero()
     test_build_patch_payload_contains_only_body()
-    print("OK: test_rewrite_thin_blog_articles (4 tests)")
+    test_restore_figures_keeps_chart_last_and_explainers_inline()
+    test_restore_figures_without_old_figures_returns_body()
+    print("OK: test_rewrite_thin_blog_articles (6 tests)")
