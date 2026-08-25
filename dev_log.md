@@ -29,9 +29,6 @@
 `tools/rewrite_thin_blog_articles.py`はリライト時に旧本文の`<figure>`を末尾へ1枚だけ
 戻していたので、解説図は本文中・株価チャートは末尾に戻す`restore_figures()`に変えた。
 
-**既存記事**（921件）は`tools/backfill_article_figures.py`で後追いする。本文を作り直さず
-図だけ足すのでAnthropic APIは不要。dry-runの実測で1記事あたり平均2.2枚（25件で55枚）。
-
 ## 2026-08-24 Anthropic APIコスト削減（月次上限到達を受けて）
 
 2026-08-23に月次利用上限へ到達し（復帰 2026-09-01 00:00 UTC）、ブログ生成・動画・
