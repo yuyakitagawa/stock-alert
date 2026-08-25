@@ -14,7 +14,7 @@ import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
-import { displayFilerName, excerptFromHtml, formatDate, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames } from "@/lib/format";
 import {
   getAllArticlesForSitemap,
   getArticleDetail,
@@ -201,6 +201,10 @@ export default async function ArticleDetailPage({ params }: Props) {
     ? await getHoldingSnapshot(article.stockCode, dealDateOnly, filerName)
     : null;
   const holdingRatio = snapshot?.holdingRatio ?? null;
+  // 短期大量譲渡の開示（法第27条の25第2項）だけは「誰にいくらで売ったか」が原文に載る。
+  // EDINETが金額を出さないこのサイトで、概算でない実額を出せる唯一のケース。
+  const transfers = snapshot?.transfers ?? null;
+  const exactAmountOku = transfers?.amountOku ?? null;
   // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
   const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
   const filerId = filerName ? await getFilerIdByName(filerName) : null;
@@ -347,11 +351,14 @@ export default async function ArticleDetailPage({ params }: Props) {
                 桁が大きいほど断定的に見えるため、数字のすぐ隣に「概算」と添える。 */}
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>金額規模</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
-              {formatDealAmountOrCorrection(article)}
+              {exactAmountOku !== null && !isCorrectionArticle(article.tags)
+                ? formatDealAmount(exactAmountOku)
+                : formatDealAmountOrCorrection(article)}
               {!isCorrectionArticle(article.tags) && (
                 <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
-                  {/* 自社株買いは取締役会決議の取得枠上限（概算ではなく開示値） */}
-                  {isBuyback ? "（上限）" : "（概算）"}
+                  {/* 自社株買いは取締役会決議の取得枠上限（概算ではなく開示値）。
+                      短期大量譲渡は開示された譲渡単価×株数の実額なので概算と区別する。 */}
+                  {isBuyback ? "（上限）" : exactAmountOku !== null ? "（開示単価ベース）" : "（概算）"}
                 </Typography>
               )}
             </Typography>
@@ -395,6 +402,30 @@ export default async function ArticleDetailPage({ params }: Props) {
                 >
                   {displayFilerName(filerName)}
                 </Link>
+              </Typography>
+            </Box>
+          )}
+          {transfers && transfers.counterparties.length > 0 && (
+            <Box sx={{ gridColumn: "1 / -1" }}>
+              {/* 短期大量譲渡の原文に載る相手方。通常の大量保有報告書には無い情報なので、
+                  取れた記事だけに出す（この列があるのは全開示の3%弱）。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                譲渡の相手方（開示原文より）
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
+                {transfers.counterparties.slice(0, 4).join("、")}
+                {transfers.counterparties.length > 4 && `ほか${transfers.counterparties.length - 4}者`}
+                {transfers.unitPrice !== null && (
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                    （{transfers.venue === "市場外" ? "市場外・" : ""}
+                    {/* 新株予約権等は1株あたりの株価ではないため、種類を明示して単位も変える */}
+                    {transfers.isEquity ? "1株" : `${transfers.securityType ?? "1単位"} 1単位`}
+                    {transfers.unitPrice.toLocaleString("ja-JP")}円
+                    {transfers.shares > 0 &&
+                      ` × ${transfers.shares.toLocaleString("ja-JP")}${transfers.isEquity ? "株" : ""}`}
+                    ）
+                  </Typography>
+                )}
               </Typography>
             </Box>
           )}
@@ -454,6 +485,14 @@ export default async function ArticleDetailPage({ params }: Props) {
                   ? "引き上げました"
                   : "引き下げました"}
               （EDINET大量保有報告書）。
+              {transfers && transfers.counterparties.length > 0 && (
+                <>
+                  譲渡の相手方は{transfers.counterparties.slice(0, 3).join("、")}
+                  {transfers.unitPrice !== null &&
+                    `（${transfers.isEquity ? "1株" : `${transfers.securityType ?? "1単位"} 1単位`}${transfers.unitPrice.toLocaleString("ja-JP")}円）`}
+                  です。
+                </>
+              )}
             </p>
           </section>
         )}
@@ -478,7 +517,11 @@ export default async function ArticleDetailPage({ params }: Props) {
               </>
             )}
           </p>
-          <p className="m-0 mt-1">金額は発行済株式数と株価からの概算です。</p>
+          <p className="m-0 mt-1">
+            {exactAmountOku !== null
+              ? "金額は開示された譲渡単価×株数です。"
+              : "金額は発行済株式数と株価からの概算です。"}
+          </p>
         </div>
         {tags && tags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">

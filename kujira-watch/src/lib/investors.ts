@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache";
 // x-vercel-cache: MISS・cache-control: no-store で毎回サーバー実行、TTFB約2秒）。
 // クローラーは同じURLを何度も取りに来るので、これがそのままクロール速度の上限になっていた。
 // EDINET開示は日次更新なので1時間のキャッシュで十分。
+import { summarizeDisposals, type TransferSummary } from "@/lib/disclosures";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type { DealType } from "@/types/article";
 
@@ -455,11 +456,15 @@ async function getHoldingSnapshotUncached(
   stockCode: string,
   discDate: string,
   filerName: string
-): Promise<{ holdingRatio: number | null; holdingRatioPrior: number | null } | null> {
+): Promise<{
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+  transfers: TransferSummary | null;
+} | null> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
-    .select("holding_ratio, holding_ratio_prior")
+    .select("holding_ratio, holding_ratio_prior, short_term_transfers")
     .eq("issuer_code", stockCode)
     .eq("disc_date", discDate)
     .eq("filer_name", filerName)
@@ -467,7 +472,16 @@ async function getHoldingSnapshotUncached(
     .limit(1)
     .maybeSingle();
   if (!data) return null;
-  return { holdingRatio: data.holding_ratio, holdingRatioPrior: data.holding_ratio_prior };
+  // 短期大量譲渡の開示なら「誰にいくらで売ったか」が入っている（それ以外はnull）
+  const ratioChange =
+    data.holding_ratio !== null && data.holding_ratio_prior !== null
+      ? data.holding_ratio - data.holding_ratio_prior
+      : null;
+  return {
+    holdingRatio: data.holding_ratio,
+    holdingRatioPrior: data.holding_ratio_prior,
+    transfers: summarizeDisposals(data.short_term_transfers, ratioChange),
+  };
 }
 
 export const getHoldingSnapshot = unstable_cache(getHoldingSnapshotUncached, ["getHoldingSnapshot"], {
