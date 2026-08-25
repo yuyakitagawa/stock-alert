@@ -67,6 +67,84 @@ Google のポリシー3本（コンテンツの最小要件 / 独自性のある
   生成側で除去するよう修正し、既存データも一括修正済み（`tools/strip_html_from_descriptions.py`）。
 - [ ] 4. 反映確認 → AdSense に再審査をリクエスト
 
+
+## 2026-08-25 審査員エージェント3体による再監査で判明したこと
+
+「1回目の対応は十分ではない」というオーナーの見立ては正しかった。**Phase 1（noindex）は
+本番に1行も出ていなかった。**
+
+### 本番デプロイが24時間以上まるごと失敗していた（最大の発見）
+
+Vercelの本番デプロイが 2026-08-24 22:24 以降すべて Error。最後に成功したビルドは1日前で、
+`77ce0f0f`（noindex対応）以降の変更は一つも本番に反映されていなかった。
+進捗ファイルの「[x] 薄い自動生成ページを noindex にする」は**コード上は事実だが本番では偽**
+だった。原因は独立した2つのビルドエラー:
+
+1. `src/lib/investors.ts` の `getFilersWithProfile` が `unstable_cache` から `Set` を返していた。
+   `unstable_cache` は戻り値をJSONで直列化するため `Set` は `{}` になり `.has()` が消える。
+   noindex判定を `generateMetadata` で呼ぶようにしたことで、`/investors/[filer]` の
+   プリレンダリングが `TypeError: e.has is not a function` で落ちビルドごと失敗していた。
+   → 配列でキャッシュしSetは読み出し側で組み立てる（`companyInfo.ts` の既存の書き方に統一）。
+2. `(en)/en/articles/[id]` の `DEAL_TYPE_EN[article.dealType].label` が、dealType未設定の
+   自社株買い記事で `undefined.label` になり `generateMetadata` が例外を投げていた。
+   → オプショナルチェーンでガード。
+
+**教訓: 「実装した」と「本番に出た」は別。以後 noindex/サイトマップ系の変更は必ず
+`curl` で本番の実測値を確認してから完了扱いにする。**
+
+### 自社株買い記事の重複が毎時1本ずつ増え続けていた
+
+microCMSの `dealType` はセレクト型で、**選択肢に無い値をPOSTしてもエラーにならず空配列で
+保存される**。「自社株買い」はCMS側に選択肢が無いため全記事で空になっており、これが
+3か所で無言の不具合を起こしていた。
+
+- `already_published()` が `dealType[contains]自社株買い` で既報判定 → 常に0件＝「未投稿」
+  → 毎時の `edinet_blog.yml` が同じ開示を何度でも新規投稿。コンヴァノ(6574)の同一開示から
+  **13本の重複記事**が公開され、トップページと `/stocks/6574` が同一タイトルで埋まっていた。
+  Googleの言う scaled content abuse に直撃する状態。
+- `cleanup_duplicate_blog_articles.py` は `filerName` 空の記事を対象外にしており、
+  発行体自身の開示でfilerNameを持たない自社株買い記事を回収できなかった。
+- フロント側も `dealType==="自社株買い"` が常に偽になり、`/buybacks` の記事一覧が0件、
+  記事ページの「（上限）」表示が「（概算）」に化けていた。
+
+→ すべて `tags` で突き合わせるよう修正（e45963e3）。重複12件は削除済み
+（`logs/deleted_duplicate_buyback_articles_20260825.json` にバックアップ）。
+
+### 修正後の実測（本番）
+
+| 項目 | 対応前 | 対応後 |
+|---|---|---|
+| sitemap 合計URL | 4,824 | **3,006** |
+| 　取引日 | 224 | **90** |
+| 　投資家 | 1,978 | **570** |
+| 　銘柄 | 1,346 | **1,188** |
+| 　記事(ja) | 873 | **794** |
+| 薄い日付ページのrobots | `index, follow` | **`noindex, follow`** |
+| コンヴァノ重複記事 | 13本 | **1本** |
+| `/buybacks` の記事一覧 | 0件 | **3件** |
+| `/en/articles/*` の500 | 14件 | **解消** |
+
+### 残っている課題（未対応）
+
+- [ ] **記事本文が薄い**: 933本・中央値461字・90%が600字未満・**94%が見出しゼロ**。
+      リライト済みは53本（5%）にとどまる。noindexで隠すのではなく、書くか消すかで決める。
+- [ ] **出典不明の「弊社リスクモデル」**: 283本（30%）が「弊社モデルでは下落リスク水準を◯◯と
+      評価」と書いているが、モデルの説明ページが無い（`/methodology` は404）。
+      YMYLで検証不能な独自指標を根拠に出している状態。methodologyページを作るか記述を消すか。
+      出所は `web/publish_blog_articles.py:1110` / `publish_buyback_articles.py:246` が
+      プロンプトに渡している `context_dp_level`。
+- [ ] **お問い合わせ窓口が無い**: `/contact` `/inquiry` 等すべて404。窓口はXのDMのみで、
+      プライバシーポリシーが「お問い合わせフォームがなく」と自認している。
+      匿名運営は維持したまま `contact@kujira-watch.com` を出すだけで解消する。
+- [ ] **広告枠が本番で0件**: Vercelに `NEXT_PUBLIC_ADSENSE_INFEED_SLOT` /
+      `NEXT_PUBLIC_ADSENSE_BOTTOM_SLOT` が未設定で、`AdUnit` が `return null` している。
+      `NEXT_PUBLIC_*` はビルド時にインライン化されるため、設定後は再デプロイが必要。
+- [ ] **EEA/UK向けCMPが無い**: 英語版を公開している以上、Google認定CMPでの同意取得が要る。
+- [ ] プライバシーポリシーに制定日・改定日が無い。
+- [ ] `/articles`（記事一覧）が404。873本に対して通覧導線が無い。
+- [ ] `not-found.tsx` が無く404がNext.jsの素の画面。
+- [ ] TikTok検証ファイル `src/app/tiktokxiQaSwLwWW8L1y11f8rmBurV9SzQtr5C.txt/` が残骸。
+
 ## メモ
 
 - Anthropic API は 2026-08-24 時点で利用可能（8/23の月次上限は解消済み）。
