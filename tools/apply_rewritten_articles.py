@@ -5,11 +5,14 @@ tools/apply_rewritten_articles.py
 
 tools/export_article_fact_cards.py が書き出した事実カードをもとに書いた本文を、
 {"記事ID": "<p>...</p>形式のHTML本文"} のJSONで受け取り、PATCHで更新する。
+タイトルも直したい場合は {"記事ID": {"body": "...", "title": "..."}} の形で渡す。
 
 安全策:
-- 更新前に現行の本文を logs/ へバックアップする（--backup で出力先を変更可）。
+- 更新前に現行の本文とタイトルを logs/ へバックアップする（--backup で出力先を変更可）。
 - 本文末尾の株価チャート<figure>は既存のものをそのまま引き継ぐ（画像の再生成はしない）。
-- タイトルは更新しない（アイキャッチ画像に焼き込み済みのため据え置く）。
+- タイトルは既定では据え置く（アイキャッチ画像に焼き込み済みのため）。開示データと矛盾する
+  タイトルだけを明示的に差し替える運用にする。実例: メタウォーター(9551)は保有19.48%なのに
+  タイトルが「17.5%から低下」となっており、本文だけ直すと見出しと中身が食い違う。
 - 本文がHTMLの<p>で始まらないもの、既存より短くなるものは反映せず警告する。
 
 Usage:
@@ -54,7 +57,9 @@ def main():
 
     by_id = {a["id"]: a for a in fetch_all_articles()}
     targets, problems = [], []
-    for aid, new_body in bodies.items():
+    for aid, entry in bodies.items():
+        new_body = entry["body"] if isinstance(entry, dict) else entry
+        new_title = entry.get("title") if isinstance(entry, dict) else None
         old = by_id.get(aid)
         if old is None:
             problems.append((aid, "microCMSに存在しない記事ID"))
@@ -70,10 +75,11 @@ def main():
         # 既存の株価チャートを引き継ぐ
         figure = _FIGURE_RE.search(old.get("body") or "")
         body = new_body + (figure.group(0) if figure else "")
-        targets.append((aid, old, body, old_len, new_len))
+        targets.append((aid, old, body, old_len, new_len, new_title))
 
-    for aid, old, _, old_len, new_len in targets:
-        print(f"  {aid}: {old.get('stockName')}({old.get('stockCode')}) {old_len}→{new_len}字")
+    for aid, old, _, old_len, new_len, new_title in targets:
+        note = f" / タイトル差し替え: {new_title}" if new_title else ""
+        print(f"  {aid}: {old.get('stockName')}({old.get('stockCode')}) {old_len}→{new_len}字{note}")
     if problems:
         print(f"\n反映しない記事 {len(problems)}件:")
         for aid, reason in problems:
@@ -92,13 +98,19 @@ def main():
     )
     os.makedirs(os.path.dirname(backup_path), exist_ok=True)
     with open(backup_path, "w", encoding="utf-8") as f:
-        json.dump({aid: old.get("body") for aid, old, _, _, _ in targets}, f, ensure_ascii=False, indent=1)
+        json.dump(
+            {aid: {"body": old.get("body"), "title": old.get("title")} for aid, old, _, _, _, _ in targets},
+            f, ensure_ascii=False, indent=1,
+        )
     print(f"\n現行本文をバックアップ: {backup_path}")
 
     updated = 0
-    for aid, _, body, _, _ in targets:
+    for aid, _, body, _, _, new_title in targets:
+        payload = {"body": body}
+        if new_title:
+            payload["title"] = new_title
         try:
-            if update_article(aid, {"body": body}):
+            if update_article(aid, payload):
                 updated += 1
             else:
                 print(f"  ⚠ {aid} の更新に失敗しました")

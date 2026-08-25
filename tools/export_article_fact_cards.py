@@ -21,6 +21,7 @@ import os
 import sys
 import json
 import argparse
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
@@ -42,6 +43,42 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 書き直した本文も1,000字未満に収まることが多く、可視文字数の閾値だけでは
 # 「もう直した記事」を候補から外せないため、IDで突き合わせて除外する。
 DONE_LEDGER = os.path.join(REPO_ROOT, "logs", "rewritten_article_ids.txt")
+
+
+def _norm(name: str) -> str:
+    """提出者名の突合用の正規化。EDINETのXBRLは提出者名を全角（Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…）で
+    保持する一方、記事側のfilerNameや本文は半角で入ることがあるため、NFKC正規化して空白を落とす。"""
+    return unicodedata.normalize("NFKC", name or "").replace(" ", "").replace("\u3000", "").lower()
+
+
+def resolve_filer(article: dict, rows: list) -> "str | None":
+    """同一銘柄・同一開示日に提出者が複数いる場合の一意化。
+
+    銘柄コード×開示日だけでは絞れない記事が全体の18%（実測2026-08-25: 999件中182件）あり、
+    そのままではリライトの材料が作れない。記事側が持つ情報で候補を絞る:
+      1. microCMSのfilerNameが候補と一致すればそれを採る（154件がこの経路で解決する）
+      2. 記事タイトルに候補の提出者名が含まれていればそれを採る
+    どちらでも決まらなければNone（＝材料を作らずスキップ）。誤った提出者で記事を書き直すと
+    別の投資家の取引として公開されることになるため、曖昧なままでは進めない。
+    """
+    names = {r["filer_name"] for r in rows if r.get("filer_name")}
+    if len(names) == 1:
+        return names.pop()
+    if not names:
+        return None
+
+    by_norm = {_norm(n): n for n in names}
+    filer_name = (article.get("filerName") or "").strip()
+    if filer_name:
+        hit = by_norm.get(_norm(filer_name))
+        if hit:
+            return hit
+
+    title = _norm(article.get("title") or "")
+    matches = [n for norm, n in by_norm.items() if norm and norm in title]
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def load_done_ids() -> set:
@@ -86,11 +123,11 @@ def main():
             continue
 
         rows = find_filer_names(code, disc_date)
-        filer_names = {r["filer_name"] for r in rows if r.get("filer_name")}
-        if len(filer_names) != 1:
-            skipped.append((a["id"], f"提出者を一意に特定できない({len(filer_names)}件)"))
+        filer_name = resolve_filer(a, rows)
+        if not filer_name:
+            n = len({r["filer_name"] for r in rows if r.get("filer_name")})
+            skipped.append((a["id"], f"提出者を一意に特定できない({n}件)"))
             continue
-        filer_name = filer_names.pop()
         row = next(r for r in rows if r.get("filer_name") == filer_name)
 
         is_sell = "売り" in (a.get("tags") or "")
