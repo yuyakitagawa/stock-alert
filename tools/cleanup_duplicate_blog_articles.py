@@ -24,6 +24,8 @@ from datetime import date, timedelta
 
 import requests
 
+BUYBACK_TAG = "自社株買い"
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from web.publish_blog_articles import _microcms_base_url, _microcms_headers, MICROCMS_DOMAIN, MICROCMS_KEY
 
@@ -38,7 +40,7 @@ def fetch_recent_articles(days: int) -> list:
             headers=_microcms_headers(),
             params={
                 "filters": f"dealDate[greater_than]{cutoff}",
-                "fields": "id,title,stockCode,dealDate,dealAmount,filerName,ratioChangePct,createdAt",
+                "fields": "id,title,stockCode,dealDate,dealAmount,filerName,ratioChangePct,createdAt,tags",
                 "limit": 100,
                 "offset": offset,
             },
@@ -52,16 +54,38 @@ def fetch_recent_articles(days: int) -> list:
             return articles
 
 
+def is_buyback(article: dict) -> bool:
+    """自社株買い記事（web/publish_buyback_articles.py が投稿）かどうか。
+
+    dealTypeでは判定できない。microCMSのdealTypeはセレクト型で、選択肢に無い値をPOSTしても
+    エラーにならず空配列で保存されるため、「自社株買い」は全記事で空になっている。
+    テキスト型のtagsには保存されているので、そちらで見る。
+    """
+    return BUYBACK_TAG in (article.get("tags") or "")
+
+
 def find_duplicates(articles: list) -> list:
-    """(stockCode, 開示日, filerName, ratioChangePct)ごとにグループ化し、各グループの
-    先発1件を除いた削除対象リストを返す。filerNameが空の記事（旧仕様）は判定不能のため対象外。"""
+    """同一開示から作られた記事をグループ化し、各グループの先発1件を除いた削除対象を返す。
+
+    突き合わせキーは記事の種類で分ける:
+      - 大量保有報告書: (stockCode, 開示日, filerName, ratioChangePct)
+        filerNameが空の記事（filerName送信開始=2026-08-15より前の旧仕様）は判定不能のため対象外。
+      - 自社株買い: (stockCode, 開示日)
+        提出者は発行体自身でfilerNameを持たないため、旧実装では丸ごと対象外になっていた。
+        その結果 already_published() のすり抜け（dealTypeで既報判定していた不具合）を
+        回収できず、同一開示から13本の重複記事が公開された（2026-08-25、コンヴァノ6574）。
+        同じ銘柄が同じ日に決定開示を2本出すことは実務上ないので、銘柄×日付で重複と見なす。
+    """
     groups = {}
     for a in articles:
-        if not a.get("filerName"):
+        if is_buyback(a):
+            key = ("buyback", a.get("stockCode"), str(a.get("dealDate", ""))[:10])
+        elif a.get("filerName"):
+            ratio = a.get("ratioChangePct")
+            key = (a.get("stockCode"), str(a.get("dealDate", ""))[:10], a["filerName"],
+                   round(ratio, 2) if ratio is not None else None)
+        else:
             continue
-        ratio = a.get("ratioChangePct")
-        key = (a.get("stockCode"), str(a.get("dealDate", ""))[:10], a["filerName"],
-               round(ratio, 2) if ratio is not None else None)
         groups.setdefault(key, []).append(a)
     to_delete = []
     for members in groups.values():

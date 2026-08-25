@@ -60,9 +60,41 @@ def test_find_duplicates_keeps_same_filer_with_different_ratio_change():
     assert find_duplicates(articles) == []
 
 
+def test_find_duplicates_catches_buyback_articles_without_filer_name():
+    """自社株買い記事は発行体自身の開示でfilerNameを持たない。旧実装ではfilerNameが
+    空という理由だけで丸ごと対象外になり、already_published()のすり抜けを回収できず
+    同一開示から13本の重複記事が公開された（2026-08-25、コンヴァノ6574）。
+    tagsで自社株買いと判別し、銘柄×開示日で重複と見なす。"""
+    articles = [
+        {"id": "late", "stockCode": "6574", "dealDate": "2026-08-24T00:00:00.000Z",
+         "tags": "自社株買い", "createdAt": "2026-08-25T02:15:41.000Z"},
+        {"id": "early", "stockCode": "6574", "dealDate": "2026-08-24T00:00:00.000Z",
+         "tags": "自社株買い,消却", "createdAt": "2026-08-24T14:38:21.000Z"},
+        {"id": "later", "stockCode": "6574", "dealDate": "2026-08-24T00:00:00.000Z",
+         "tags": "自社株買い", "createdAt": "2026-08-25T03:40:51.000Z"},
+    ]
+    dups = find_duplicates(articles)
+    assert sorted(a["id"] for a in dups) == ["late", "later"]
+
+
+def test_find_duplicates_keeps_buyback_articles_of_different_stock_or_date():
+    """銘柄か開示日が違えば別の取得枠決議なので削除しない。"""
+    articles = [
+        {"id": "a", "stockCode": "6574", "dealDate": "2026-08-24T00:00:00.000Z",
+         "tags": "自社株買い", "createdAt": "2026-08-24T14:38:21.000Z"},
+        {"id": "b", "stockCode": "9706", "dealDate": "2026-08-24T00:00:00.000Z",
+         "tags": "自社株買い", "createdAt": "2026-08-24T15:10:00.000Z"},
+        {"id": "c", "stockCode": "6574", "dealDate": "2026-05-12T00:00:00.000Z",
+         "tags": "自社株買い", "createdAt": "2026-05-12T09:00:00.000Z"},
+    ]
+    assert find_duplicates(articles) == []
+
+
 if __name__ == "__main__":
     test_find_duplicates_keeps_earliest_and_deletes_later()
     test_find_duplicates_ignores_different_filer_or_date()
     test_find_duplicates_skips_articles_without_filer_name()
     test_find_duplicates_keeps_same_filer_with_different_ratio_change()
-    print("全テスト成功 (4件)")
+    test_find_duplicates_catches_buyback_articles_without_filer_name()
+    test_find_duplicates_keeps_buyback_articles_of_different_stock_or_date()
+    print("全テスト成功 (6件)")

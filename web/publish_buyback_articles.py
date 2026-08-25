@@ -82,13 +82,21 @@ def fetch_candidates(days: int) -> list[dict]:
 
 def already_published(stock_code: str, disc_date: str) -> bool:
     """同じ銘柄・同じ開示日の自社株買い記事が既にあればTrue。同日に同銘柄が決定開示を2本出す
-    ことは実務上ない（取得枠と立会外買付を1本で出す）ので、銘柄×日付で十分。"""
+    ことは実務上ない（取得枠と立会外買付を1本で出す）ので、銘柄×日付で十分。
+
+    既報かどうかの判定に dealType を使ってはいけない。microCMSのdealTypeはセレクト型で、
+    選択肢に無い値をPOSTしても**エラーにならず空配列で保存される**。「自社株買い」は
+    CMS側の選択肢に登録されていないため、dealType[contains]自社株買い は常に0件を返し、
+    毎時のedinet_blog.ymlが同じ開示を何度でも新規投稿してしまう
+    （実害: 2026-08-25、コンヴァノ6574の同一開示から13本の重複記事が公開された）。
+    tags はテキスト型でそのまま保存されるので、そちらで突き合わせる。
+    """
     try:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
             params={
-                "filters": f"stockCode[equals]{stock_code}[and]dealType[contains]{DEAL_TYPE}"
+                "filters": f"stockCode[equals]{stock_code}[and]tags[contains]{DEAL_TYPE}"
                            f"[and]dealDate[begins_with]{disc_date}",
                 "fields": "id",
                 "limit": 1,
