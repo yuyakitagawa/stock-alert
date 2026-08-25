@@ -221,6 +221,73 @@ def test_build_and_publish_includes_sell_and_tags_them():
     assert by_code["6502"]["ratioChangePct"] == -15.1
 
 
+def test_build_and_publish_uses_disclosed_unit_price_over_market_estimate():
+    """短期大量譲渡は開示された単価×株数の実額を使い、株価からの概算に上書きさせない
+    （実例: 日立製作所→日立建機は開示日終値ベースの概算1,274.9億円に対し実額1,121.8億円）。"""
+    holdings = [
+        {"issuer_code": "6305", "name": "日立建機", "filer_name": "株式会社日立製作所",
+         "holding_ratio": 0.0, "holding_ratio_prior": 9.98, "disc_date": "2026-08-25",
+         "doc_type_code": "350", "doc_description": "変更報告書（短期大量譲渡）",
+         "short_term_transfers": [
+             {"date": "2026-08-19", "security_type": "普通株式", "shares": 21462310,
+              "ratio": 9.98, "venue": "市場外", "action": "処分",
+              "counterparty": "SMBC日興証券株式会社", "unit_price": 5227.0,
+              "unit_price_note": None},
+         ]},
+    ]
+    captured = {}
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=9.98), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=1274.9), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "事業会社", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body_checked",
+                            side_effect=lambda fs: captured.update(fs) or {"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid6305"):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
+
+    assert results[0]["dealAmount"] == 1121.8  # 概算の1274.9ではなく開示単価ベースの実額
+    assert captured["deal_amount_label"] == "売却金額"  # 実額なので「推定」を付けない
+    assert captured["transfers"]["counterparties"] == ["SMBC日興証券株式会社"]
+
+
+def test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive():
+    """取得と処分が混在する60日間の記録からは差引きが復元できないため概算を使う。"""
+    holdings = [
+        {"issuer_code": "1234", "name": "混在テスト", "filer_name": "ファンド株式会社",
+         "holding_ratio": 3.0, "holding_ratio_prior": 8.09, "disc_date": "2026-08-25",
+         "doc_type_code": "360", "doc_description": "変更報告書（短期大量譲渡）",
+         "short_term_transfers": [
+             {"date": "2026-07-15", "shares": 453800, "ratio": 5.09, "venue": "市場外",
+              "action": "取得", "counterparty": None, "unit_price": 4730.0,
+              "security_type": "株券", "unit_price_note": None},
+             {"date": "2026-07-16", "shares": 10000, "ratio": 0.11, "venue": "市場内",
+              "action": "処分", "counterparty": "市場内取引のため不明", "unit_price": 4700.0,
+              "security_type": "株券", "unit_price_note": None},
+         ]},
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=5.09), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=99.9), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "その他", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid1234"):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
+
+    assert results[0]["dealAmount"] == 99.9
+
+
 def test_build_and_publish_skips_when_already_published():
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
@@ -811,20 +878,12 @@ def _fact_sheet():
             "disc_date": "2026-07-20", "deal_amount_oku": 12.3}
 
 
-def test_dp_level_label_thresholds():
-    assert m.dp_level_label(35) == "高"
-    assert m.dp_level_label(25) == "やや高"
-    assert m.dp_level_label(18) == "中"
-    assert m.dp_level_label(10) == "やや低"
-    assert m.dp_level_label(3) == "低"
-
-
 def test_get_pit_ranking_snapshot_queries_as_of_disc_date():
     """記事公開時点(post-hoc)ではなく、開示日以前で直近のスナップショットを取る
     （先読みバイアス防止、CLAUDE.md PIT規律）。"""
-    with mock.patch.object(m.sb, "select_one", return_value={"close": 3000, "drop_prob": 12.0}) as select_mock:
+    with mock.patch.object(m.sb, "select_one", return_value={"close": 3000}) as select_mock:
         result = m.get_pit_ranking_snapshot("7203", "2026-07-20")
-    assert result == {"close": 3000, "drop_prob": 12.0}
+    assert result == {"close": 3000}
     query = select_mock.call_args.args[1]
     assert "code=eq.7203" in query
     assert "date=lte.2026-07-20" in query
@@ -857,29 +916,32 @@ def _capturing_client(text):
     return _Client(), calls
 
 
-def test_generate_article_body_includes_context_when_available():
+def test_generate_article_body_includes_close_price_but_never_the_drop_model():
+    """開示日終値は開示原本と突き合わせられる事実なのでプロンプトに渡す。
+    一方で下落モデルの水準は渡さない（モデルの説明ページがサイトに無いまま
+    検証不能な独自指標をYMYLの判断材料として本文に書かせないため、2026-08-25に廃止）。"""
     fact_sheet = _fact_sheet()
     fact_sheet["context_close"] = 3000.0
-    fact_sheet["context_dp_level"] = "やや低"
     raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         m.generate_article_body(fact_sheet)
     prompt = calls[0]["messages"][0]["content"]
-    assert "やや低" in prompt
     assert "3,000円" in prompt
+    assert "下落リスク水準" not in prompt
+    assert "弊社モデル" not in prompt
 
 
 def test_generate_article_body_omits_context_when_unavailable():
-    fact_sheet = _fact_sheet()  # context_close/context_dp_level 無し
+    fact_sheet = _fact_sheet()  # context_close 無し
     raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         m.generate_article_body(fact_sheet)
     prompt = calls[0]["messages"][0]["content"]
-    assert "下落リスク水準" not in prompt
+    assert "開示日時点の株価" not in prompt
 
 
 def test_generate_article_body_includes_ratio_increase_when_available():
@@ -1441,7 +1503,7 @@ def test_build_and_publish_embeds_chart_image_in_body():
 
 def test_build_and_publish_includes_pit_context_in_fact_sheet():
     """本文へ渡す株価は金額の概算に使った開示日終値と同じ値（サイトの基準終値と同源）にする。
-    下落リスク水準だけをPITスナップショット（gen_rankings）から取る。"""
+    下落モデルの水準はfact_sheetに入れない（2026-08-25に記事から廃止）。"""
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書"}]
@@ -1457,7 +1519,7 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
-         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 2900.0, "drop_prob": 25.0}), \
+         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 2900.0}), \
          mock.patch.object(m, "disclosure_close_price", return_value=3000.0), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
@@ -1468,7 +1530,7 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
         m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
     assert captured["context_close"] == 3000.0
-    assert captured["context_dp_level"] == "やや高"
+    assert "context_dp_level" not in captured
     assert captured["ratio_change_pct"] == 8.5
 
 
@@ -1516,9 +1578,8 @@ if __name__ == "__main__":
     test_classify_filer_returns_cached_master_row_without_calling_claude()
     test_classify_filer_asks_claude_and_persists_when_not_cached()
     test_classify_filer_falls_back_to_sonota_on_invalid_category()
-    test_dp_level_label_thresholds()
     test_get_pit_ranking_snapshot_queries_as_of_disc_date()
-    test_generate_article_body_includes_context_when_available()
+    test_generate_article_body_includes_close_price_but_never_the_drop_model()
     test_generate_article_body_omits_context_when_unavailable()
     test_generate_article_body_includes_ratio_increase_when_available()
     test_generate_article_body_describes_new_position_when_change_equals_ratio()
@@ -1610,4 +1671,6 @@ if __name__ == "__main__":
     test_build_and_publish_defers_change_report_without_prior_ratio()
     test_build_and_publish_publishes_material_correction_without_amount()
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
-    print("全テスト成功 (110件)")
+    test_build_and_publish_uses_disclosed_unit_price_over_market_estimate()
+    test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive()
+    print("全テスト成功 (111件)")

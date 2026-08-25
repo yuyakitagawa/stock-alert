@@ -45,7 +45,6 @@ from web.publish_blog_articles import (  # noqa: E402
     body_quality_key,
     build_eyecatch_for_article,
     build_price_chart_for_article,
-    dp_level_label,
     get_company_description,
     get_pit_ranking_snapshot,
     publish_article,
@@ -172,7 +171,6 @@ def build_fact_sheet(row: dict) -> dict:
     name = stock_name_of(code)
     snapshot = get_pit_ranking_snapshot(code, disc_date) or {}
     close = snapshot.get("close")
-    dp = snapshot.get("drop_prob")
     yen = row.get("max_amount_yen")
     shares = row.get("max_shares")
     # 1株あたりの想定取得単価（上限金額÷上限株数）。開示日終値との比較で「どの水準まで買う前提か」が分かる
@@ -194,7 +192,6 @@ def build_fact_sheet(row: dict) -> dict:
         "doc_url": row.get("doc_url"),
         "company_description": get_company_description(code, name) if name else "",
         "context_close": close,
-        "context_dp_level": dp_level_label(float(dp)) if dp is not None else None,
         "implied_price": implied_price,
         "prior": prior_buybacks(code, row["disclosed_at"]),
     }
@@ -244,8 +241,8 @@ def generate_body(f: dict) -> "dict | None":
     lines.append(f"- 取得した自己株式の消却: {'同時に決議・予定' if f['will_cancel'] else '開示に記載なし'}")
     if f["company_description"]:
         lines.append(f"- {f['stock_name']}の事業内容: {f['company_description']}")
-    if f["context_close"] is not None and f["context_dp_level"] is not None:
-        lines.append(f"- 開示日時点の株価: {f['context_close']:,.0f}円 / 弊社モデルの下落リスク水準: {f['context_dp_level']}")
+    if f["context_close"] is not None:
+        lines.append(f"- 開示日時点の株価: {f['context_close']:,.0f}円")
     if f["implied_price"] and f["context_close"]:
         lines.append(f"- 上限金額÷上限株数の想定取得単価: {f['implied_price']:,}円（開示日終値の{f['implied_price']/f['context_close']*100:.0f}%）")
     for p in f["prior"]:

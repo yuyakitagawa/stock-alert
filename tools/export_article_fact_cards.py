@@ -33,7 +33,7 @@ from tools.rewrite_thin_blog_articles import (
 from lib.edinet import disclosure_doc_label
 from web.publish_blog_articles import (
     build_context_facts, format_context_facts, classify_filer,
-    get_company_description, get_pit_ranking_snapshot, dp_level_label, ratio_change_pct,
+    get_company_description, get_pit_ranking_snapshot, ratio_change_pct,
 )
 
 load_dotenv()
@@ -149,7 +149,6 @@ def main():
             "direction": "sell" if is_sell else "buy",
             "deal_amount_oku": a.get("dealAmount"),
             "close_at_disclosure": snapshot.get("close") if snapshot else None,
-            "drop_risk_level": dp_level_label(snapshot["drop_prob"]) if snapshot and snapshot.get("drop_prob") is not None else None,
             "filer_description": classify_filer(filer_name).get("description") or "",
             "company_description": get_company_description(code, name) or "",
             "context_facts_text": format_context_facts(context_facts, name, filer_name),

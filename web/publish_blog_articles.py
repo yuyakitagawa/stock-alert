@@ -48,7 +48,7 @@ from dotenv import load_dotenv
 import lib.supabase_client as sb
 from lib import api_budget
 from lib.db import get_edinet_large_holdings_recent
-from lib.edinet import disclosure_doc_label, disclosure_kind_label
+from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
 from web.article_figures import build_article_figures, figure_html, insert_figures_into_body
@@ -668,6 +668,33 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
     return round(amount_yen / 1e8, 1)
 
 
+def deal_amount_label(is_sell: bool, is_exact: bool) -> str:
+    """金額の見出し語。短期大量譲渡で開示単価が取れたときだけ「推定」を外す。"""
+    verb = "売却" if is_sell else "取得"
+    return f"{verb}金額" if is_exact else f"推定{verb}金額"
+
+
+def format_transfer_facts(transfers: dict) -> str:
+    """短期大量譲渡の「譲渡の相手方・単価」をプロンプトの事実行にする。
+
+    EDINETは通常「誰に売ったか」を開示しないが、短期大量譲渡に該当する変更報告書だけは
+    相手方と単価が表で載る。記事の一次情報としての価値が最も高い部分なので必ず本文に出す。
+    """
+    if not transfers or not transfers.get("counterparties"):
+        return ""
+    names = "、".join(transfers["counterparties"][:3])
+    if len(transfers["counterparties"]) > 3:
+        names += f"ほか{len(transfers['counterparties']) - 3}者"
+    line = f"- 譲渡の相手方（開示された事実）: {names}\n"
+    unit_price = transfers.get("unit_price")
+    shares = transfers.get("shares")
+    if unit_price and shares:
+        line += f"- 譲渡の単価と数量（開示された事実）: 1株{unit_price:,.0f}円 × {shares:,}株\n"
+    if transfers.get("venue"):
+        line += f"- 取引の場: {transfers['venue']}（{'取引所外の相対取引' if transfers['venue'] == '市場外' else '取引所内'}）\n"
+    return line
+
+
 def checked_recently(checked_at: "str | None", days: int = RECHECK_DAYS) -> bool:
     """ネガティブキャッシュの判定。checked_at（ISO8601）が days 日以内なら True。
 
@@ -825,29 +852,18 @@ def get_filer_profile(filer_name: str, category: str) -> str:
     return profile
 
 
-def dp_level_label(drop_prob: float) -> str:
-    """README記載の5段階表示（高30/やや高22/中14/やや低7）と同じ閾値でdrop_probを
-    ラベル化する。Isotonic較正の特性上、小数%そのままだと多数の銘柄が同値に見えるため、
-    Web/メール/LINEと同じ粒度で記事にも文脈を渡す。"""
-    if drop_prob >= 30:
-        return "高"
-    if drop_prob >= 22:
-        return "やや高"
-    if drop_prob >= 14:
-        return "中"
-    if drop_prob >= 7:
-        return "やや低"
-    return "低"
-
-
 def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
-    """開示日(as_of)時点で直近のclose・drop_probをgen_rankingsから取得する。
+    """開示日(as_of)時点で直近のcloseをgen_rankingsから取得する。
     記事公開時点（post-hoc、開示後に株価が既に動いた後）のスナップショットを
     「開示当時の文脈」として出すと先読みバイアスになるため、as_of以前の最新行のみを見る
-    （CLAUDE.md PIT規律）。"""
+    （CLAUDE.md PIT規律）。
+
+    drop_prob（下落モデルの予測値）はかつてここから取って記事本文の「弊社モデルの
+    下落リスク水準」に使っていたが、モデルの説明ページがサイトに無いまま検証不能な
+    独自指標をYMYLの判断材料として提示する形になっていたため2026-08-25に取りやめた。"""
     return sb.select_one(
         "gen_rankings",
-        f"code=eq.{code}&date=lte.{as_of}&order=date.desc&select=close,drop_prob",
+        f"code=eq.{code}&date=lte.{as_of}&order=date.desc&select=close",
     )
 
 
@@ -1110,22 +1126,14 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     is_sell = fact_sheet.get("direction") == "sell"
     is_correction = bool(fact_sheet.get("is_correction"))
     deal_verb = "訂正" if is_correction else ("売却" if is_sell else "取得")
-    deal_amount_label = fact_sheet.get("deal_amount_label") or (
-        "推定売却金額" if is_sell else "推定取得金額"
-    )
+    label = fact_sheet.get("deal_amount_label") or deal_amount_label(is_sell, False)
+    # 下落モデル（drop_prob）の水準は記事に出さない。モデルの説明ページがサイトに無いまま
+    # 「弊社モデルでは下落リスク水準を◯◯と評価」と書くと、YMYL（金融）で検証不能な独自指標を
+    # 判断材料として提示していることになり、AdSense/E-E-A-Tの信頼性評価で減点される
+    # （2026-08-25の再監査で全記事の30%が該当）。開示日時点の株価は開示原本と突き合わせ可能な
+    # 事実なので残す。
     context_close = fact_sheet.get("context_close")
-    context_dp_level = fact_sheet.get("context_dp_level")
-    if context_close is not None and context_dp_level is not None:
-        context_line = f"- 開示日時点の株価: {context_close:,.0f}円 / 弊社モデルの下落リスク水準: {context_dp_level}\n"
-        if is_correction:
-            risk_hint = "既報の保有比率を前提に取引していた市場参加者にとって何を意味するか、といった観点も交えつつ、"
-        elif is_sell:
-            risk_hint = "下落リスクが高まる局面でのリスク回避的な売却か、値上がり後の利益確定売りか、といった観点も交えつつ、"
-        else:
-            risk_hint = "下落リスクが低い局面での買い増しか、リスクが高い局面での打診買いか、といった観点も交えつつ、"
-    else:
-        context_line = ""
-        risk_hint = ""
+    context_line = f"- 開示日時点の株価: {context_close:,.0f}円\n" if context_close is not None else ""
     filer_description = fact_sheet.get("filer_description") or ""
     filer_description_line = f"- 提出者について: {filer_description}\n" if filer_description else ""
     company_description = fact_sheet.get("company_description") or ""
@@ -1180,12 +1188,27 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
             "訂正が起きた原因・理由（ポジション調整、計算誤り等）の推測は書かないでください。"
         )
     else:
+        transfers = fact_sheet.get("transfers") or {}
+        is_exact_amount = transfers.get("amount_oku") is not None
         nature_instruction = (
             f"この取引は保有比率が{'減少した売却（譲渡等を含む）' if is_sell else '増加した取得（買い増し・新規取得）'}です。\n"
-            f"金額が概算であることは見出しの「{deal_amount_label}」表記のみで十分伝わるため、本文中で改めて\n"
-            f"「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。\n"
         )
-        amount_fact_line = f"- {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）\n"
+        if is_exact_amount:
+            # 開示に単価が載っている（短期大量譲渡）ケース。概算の注記を書かせない。
+            nature_instruction += (
+                "金額は開示された単価×株数から計算した実額です。「概算」「推定」とは書かないでください。\n"
+            )
+            amount_fact_line = (
+                f"- {label}: {fact_sheet['deal_amount_oku']}億円"
+                f"（開示された譲渡単価×株数から算出した実額）\n"
+            )
+        else:
+            nature_instruction += (
+                f"金額が概算であることは見出しの「{label}」表記のみで十分伝わるため、本文中で改めて\n"
+                f"「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。\n"
+            )
+            amount_fact_line = f"- {label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）\n"
+        amount_fact_line += format_transfer_facts(transfers)
         speculation_scope = ""
 
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
@@ -1227,7 +1250,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 他社の業種・事業内容は、事実に業種が明記されている銘柄についてだけ言及してください。社名から業種を
 推測して書くことは禁止です（例: 事実に業種の無い銘柄を「電機メーカー」と決めつけない）。
 
-最後に1文だけ、{risk_hint}この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
+最後に1文だけ、この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
 加えてください。{speculation_scope}ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
 分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
@@ -1491,9 +1514,15 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if change <= 0:
             print(f"  ⏭ {name}({code}): 前回開示から保有比率が変わっていないためスキップ")
             continue
+        # 短期大量譲渡の開示には「譲渡の相手方・単価」が載っており、単価×数量で実額が出せる。
+        # 実額が出せた開示では概算を使わない（実例: 日立製作所→日立建機は開示日終値ベースの
+        # 概算1,274.9億円に対し、開示単価5,227円ベースの実額は1,121.8億円）。
+        transfers = summarize_disposals(h.get("short_term_transfers") or [], change)
         if is_correction:
             # 訂正は売買を伴わないため推定金額を出さない（記事化の可否は比率変化幅で判断する）
             deal_amount = 0.0
+        elif transfers["amount_oku"] is not None:
+            deal_amount = transfers["amount_oku"]
         else:
             deal_amount = estimate_deal_amount_oku(code, change, disc_date)
             if deal_amount is None:
@@ -1517,11 +1546,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if already_published(code, disc_date, deal_amount, filer_name, signed_change, unique_filing):
             continue
 
-        snapshot = get_pit_ranking_snapshot(code, disc_date)
         # 株価は金額の概算に使ったものと同じ値を本文へ渡す（サイトの「基準終値」とも同じ源）。
-        # 下落リスク水準はモデル側の値なのでPITスナップショットから取る。
         context_close = disclosure_close_price(code, disc_date)
-        context_dp = snapshot.get("drop_prob") if snapshot else None
         filer_info = classify_filer(filer_name)
         company_description = get_company_description(code, name)
         get_filer_profile(filer_name, filer_info["category"])
@@ -1535,9 +1561,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "disc_date": disc_date,
             "deal_amount_oku": deal_amount,
             "direction": direction,
-            "deal_amount_label": "推定売却金額" if is_sell else "推定取得金額",
+            "deal_amount_label": deal_amount_label(is_sell, transfers["amount_oku"] is not None),
+            "transfers": transfers,
             "context_close": context_close,
-            "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
             "filer_description": filer_info.get("description") or "",
             "company_description": company_description,
             "ratio_change_pct": change,
@@ -1583,7 +1609,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             payload["bodyEn"] = article["bodyEn"]
 
         direction_mark = "📝訂正" if is_correction else ("📉売り" if is_sell else "📈買い")
-        amount_mark = f"{signed_change:+.2f}pt" if is_correction else f"推定{deal_amount}億円"
+        amount_estimated = transfers["amount_oku"] is None
+        amount_mark = (f"{signed_change:+.2f}pt" if is_correction
+                       else f"{'推定' if amount_estimated else '開示単価'}{deal_amount}億円")
         # holdingRatioはX投稿の1行目（「〇%まで買い増し」）と数字カード画像で使う。
         # microCMSのスキーマは変えたくないので、送信するpayloadではなく戻り値にだけ足す。
         if dry_run:

@@ -46,7 +46,7 @@ from lib.edinet import disclosure_doc_label
 from web.publish_blog_articles import (
     build_context_facts,
     MICROCMS_DOMAIN, MICROCMS_KEY,
-    classify_filer, get_company_description, get_pit_ranking_snapshot, dp_level_label,
+    classify_filer, get_company_description, get_pit_ranking_snapshot,
     ratio_change_pct, generate_article_body_checked, update_article, MicroCMSPermissionError,
 )
 from web.article_figures import insert_figures_into_body
@@ -151,7 +151,6 @@ def main():
         change = ratio_change_pct(code, filer_name, row["holding_ratio"], disc_date)
         snapshot = get_pit_ranking_snapshot(code, disc_date)
         context_close = snapshot.get("close") if snapshot else None
-        context_dp = snapshot.get("drop_prob") if snapshot else None
         filer_info = classify_filer(filer_name)
         company_description = get_company_description(code, name)
 
@@ -166,7 +165,6 @@ def main():
             "direction": "sell" if is_sell else "buy",
             "deal_amount_label": "推定売却金額" if is_sell else "推定取得金額",
             "context_close": context_close,
-            "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
             "filer_description": filer_info.get("description") or "",
             "company_description": company_description,
             "ratio_change_pct": change,

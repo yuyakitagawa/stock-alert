@@ -48,9 +48,9 @@ from tools.reclassify_blog_articles import fetch_all_articles
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, MicroCMSPermissionError,
-    build_article_titles, classify_filer, dp_level_label, estimate_deal_amount_oku,
+    build_article_titles, classify_filer, estimate_deal_amount_oku,
     disclosure_close_price, generate_article_body_checked, get_company_description,
-    get_pit_ranking_snapshot, is_worth_publishing, update_article,
+    is_worth_publishing, update_article,
 )
 
 load_dotenv()
@@ -164,8 +164,6 @@ def build_fact_sheet(article: dict, fix: dict, filer_name: str) -> dict:
     code = str(article["stockCode"])
     name = article.get("stockName") or code
     disc_date = (article.get("dealDate") or "")[:10]
-    snapshot = get_pit_ranking_snapshot(code, disc_date)
-    context_dp = snapshot.get("drop_prob") if snapshot else None
     filer_info = classify_filer(filer_name)
     return {
         "stock_name": name,
@@ -181,7 +179,6 @@ def build_fact_sheet(article: dict, fix: dict, filer_name: str) -> dict:
         "deal_amount_label": "推定売却金額" if fix["is_sell"] else "推定取得金額",
         # 本文の株価は金額の概算に使った開示日終値と同じ値（サイトの「基準終値」と同源）。
         "context_close": disclosure_close_price(code, disc_date),
-        "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
         "filer_description": filer_info.get("description") or "",
         "company_description": get_company_description(code, name),
         "ratio_change_pct": fix["change"],
