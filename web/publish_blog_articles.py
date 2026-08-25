@@ -618,20 +618,29 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
     ただしその日その提出者の開示が1件しか無い場合（unique_filing=True）は、比率変化幅が
     一致しなくても同一開示とみなす。変化幅の算出ロジックを変えると既報記事のキーとずれ、
     同じ開示がもう一度投稿されてしまうため（cleanup_duplicate_blog_articles.pyも
-    ratioChangePctまで一致した重複しか回収しない）。"""
+    ratioChangePctまで一致した重複しか回収しない）。
+
+    照会は開示日(dealDate)まで絞り込む。銘柄コードだけで引いてlimit=50を被せていた頃は、
+    記事が50件を超える銘柄で既報が応答に入らず重複と判定できない穴があった。
+    そして照会に失敗したときは**既報扱い(True)にして投稿を見送る**（publish_buyback_articles
+    の同名関数と同じ方針）。判定不能のまま投稿すると重複記事がサイトに恒久的に残り、
+    filerNameを持たない世代では回収もできない（実例: 9706に同一記事が11件）。
+    見送っても本スクリプトは平日9:00-21:00 JSTに毎時走り、直近LARGE_HOLDINGS_DAYS日の
+    開示を毎回見直すので、次の便で取り直せる。"""
     try:
         resp = requests.get(
             _microcms_base_url(),
             headers=_microcms_headers(),
             params={
-                "filters": f"stockCode[equals]{stock_code}",
+                "filters": f"stockCode[equals]{stock_code}[and]dealDate[begins_with]{disc_date}",
                 "fields": "id,dealDate,dealAmount,filerName,ratioChangePct",
                 "limit": 50,
             },
             timeout=15,
         )
         if resp.status_code != 200:
-            return False
+            print(f"    ⚠ 既報確認に失敗 HTTP {resp.status_code}（重複を避けて投稿を見送り）")
+            return True
         contents = resp.json().get("contents", [])
         for c in contents:
             if str(c.get("dealDate", ""))[:10] != disc_date:
@@ -652,8 +661,9 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
             if abs(c["dealAmount"] - deal_amount) < 0.05:
                 return True
         return False
-    except Exception:
-        return False
+    except Exception as e:
+        print(f"    ⚠ 既報確認に失敗（重複を避けて投稿を見送り）: {e}")
+        return True
 
 
 def shares_outstanding(code: str) -> "float | None":
