@@ -16,9 +16,15 @@ web/publish_blog_articles.py の build_eyecatch_for_article() が 2026-08-15〜0
 Pexels無料枠は200リクエスト/時・2万/月なので --max-per-hour（既定180）で間隔を空ける。
 まず --limit 50 で動作確認し、--days 60 --index-only で直近のインデックス対象記事から回す。
 
+--replace は逆に「画像が既に付いている記事」を対象にして画像を作り直す。2026-08-27に
+search_pexels_photo() が常に photos[0] を返していたバグ（同じ投資家分類の記事が全部同じ写真に
+なる）を直したため、それ以前に生成した既存記事の画像を差し替えるために使う。写真の選択は
+提出者名+銘柄名+開示日のハッシュで決まるので、同じ記事を2回流しても同じ画像になる。
+
 使い方:
     python3 tools/backfill_blog_eyecatch.py --dry-run --limit 50
     python3 tools/backfill_blog_eyecatch.py --limit 50 --days 60 --index-only
+    python3 tools/backfill_blog_eyecatch.py --replace --max-per-hour 600
     python3 tools/backfill_blog_eyecatch.py --font "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"
 """
 import argparse
@@ -95,16 +101,19 @@ def select_candidates(articles: list, days: "int | None" = None, index_only: boo
     return out
 
 
-def fetch_articles_without_eyecatch() -> list:
-    """microCMSから eyecatch 未設定の記事を新しい順に全件取得する（100件ずつページング）。"""
+def fetch_articles_without_eyecatch(replace: bool = False) -> list:
+    """microCMSから対象記事を新しい順に全件取得する（100件ずつページング）。
+    既定は eyecatch 未設定の記事。replace=True では逆に eyecatch 設定済みの記事を返す
+    （写真が全記事で重複していた頃の画像を作り直すため）。"""
     articles, offset, limit = [], 0, 100
+    filters = "eyecatch[exists]" if replace else "eyecatch[not_exists]"
     while True:
         resp = requests.get(
             pb._microcms_base_url(),
             headers=pb._microcms_headers(),
             params={
                 "limit": limit, "offset": offset, "orders": "-dealDate",
-                "filters": "eyecatch[not_exists]", "fields": ARTICLE_FIELDS,
+                "filters": filters, "fields": ARTICLE_FIELDS,
             },
             timeout=20,
         )
@@ -174,9 +183,10 @@ def run(args) -> int:
         print("PEXELS_API_KEY 未設定")
         return 1
 
-    all_articles = fetch_articles_without_eyecatch()
+    all_articles = fetch_articles_without_eyecatch(replace=args.replace)
     targets = select_candidates(all_articles, days=args.days, index_only=args.index_only, limit=args.limit)
-    print(f"画像なし記事 {len(all_articles)}件 → 対象 {len(targets)}件"
+    kind = "画像あり記事(差し替え)" if args.replace else "画像なし記事"
+    print(f"{kind} {len(all_articles)}件 → 対象 {len(targets)}件"
           f"（days={args.days}, index_only={args.index_only}, limit={args.limit}, dry_run={args.dry_run}）")
     if not targets:
         return 0
@@ -188,13 +198,16 @@ def run(args) -> int:
     for i, a in enumerate(targets, 1):
         ratio = resolve_holding_ratio(a, ratios)
         label = f"[{i}/{len(targets)}] {a.get('stockName')}({a.get('stockCode')}) {deal_date_str(a)} {a.get('id')}"
-        if ratio is None:
+        if ratio is None and not args.replace:
             print(f"{label} → スキップ（保有比率が取れない）")
             skipped += 1
             continue
-        card = build_card(a, ratio)
+        # 差し替えでは比率が取れなくても写真の重複解消のために作り直す
+        # （generate_eyecatch_image() 側が比率なしの表記に落とす）
+        card = build_card(a, ratio or 0.0)
         if args.dry_run:
-            print(f"{label} → {card['badge_label']} {card['filer_name']} {ratio:.2f}% [{category_of(a)}]")
+            ratio_label = f"{ratio:.2f}%" if ratio is not None else "比率なし"
+            print(f"{label} → {card['badge_label']} {card['filer_name']} {ratio_label} [{category_of(a)}]")
             done += 1
             continue
 
@@ -230,7 +243,11 @@ def main():
     p.add_argument("--days", type=int, default=None, help="開示日が直近N日以内の記事に絞る")
     p.add_argument("--index-only", action="store_true",
                    help="インデックス対象（dealAmount>=3億円 or |ratioChangePct|>=1pt）のみ")
-    p.add_argument("--max-per-hour", type=int, default=180, help="Pexels呼び出しの上限（件/時）")
+    p.add_argument("--replace", action="store_true",
+                   help="画像が既に付いている記事を対象に画像を作り直す（写真重複バグの後始末）")
+    # 候補リストをクエリ単位でキャッシュするようになったのでPexels検索APIは分類の数しか叩かない。
+    # ここで律速しているのは写真CDNとmicroCMSへの連投なので、差し替え時は600程度まで上げてよい。
+    p.add_argument("--max-per-hour", type=int, default=180, help="画像生成の上限（件/時）")
     p.add_argument("--font", default=os.getenv("EYECATCH_FONT_PATH"),
                    help="日本語フォントのパス（既定: EYECATCH_FONT_PATH 環境変数）")
     sys.exit(run(p.parse_args()))

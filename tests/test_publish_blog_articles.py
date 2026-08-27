@@ -801,6 +801,15 @@ def test_wrap_text_lines_breaks_number_longer_than_line():
     assert lines == ["12345", "67890"]
 
 
+def test_eyecatch_stock_line_variants():
+    """保有比率0%は全売却（売り記事）なら「全株売却」、それ以外は数字を出さない。
+    素の「0.00%」はデータ欠損に見えるので焼き込まない。"""
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": 13.41}, "▼ 売却") == "A　13.41%"
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": 0.0}, "▼ 売却") == "A　全株売却"
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": 0.0}, "🏦 自社株買い") == "A"
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": None}, "▲ 買い増し") == "A"
+
+
 def test_upload_eyecatch_returns_url_on_success():
     resp = _FakeResponse(201, "", {"url": "https://images.microcms-assets.io/assets/x/y.png"})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
@@ -1680,6 +1689,7 @@ if __name__ == "__main__":
     test_search_pexels_photo_caches_candidates_per_query()
     test_wrap_text_lines_keeps_number_token_whole()
     test_wrap_text_lines_breaks_number_longer_than_line()
+    test_eyecatch_stock_line_variants()
     test_upload_eyecatch_returns_url_on_success()
     test_upload_eyecatch_returns_none_on_failure()
     test_build_eyecatch_for_article_none_without_pexels_key()
@@ -1743,4 +1753,4 @@ if __name__ == "__main__":
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
     test_build_and_publish_uses_disclosed_unit_price_over_market_estimate()
     test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive()
-    print("全テスト成功 (116件)")
+    print("全テスト成功 (117件)")

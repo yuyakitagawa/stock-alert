@@ -266,6 +266,21 @@ def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) 
     return lines[:max_lines]
 
 
+def _stock_line_text(card: dict, badge_label: str) -> str:
+    """アイキャッチ2段目（銘柄名＋保有比率）の文字列を組み立てる。
+
+    保有比率0%は「全株売却して保有ゼロ」（実データ上ほとんどがこれ）と、自社株買い記事で
+    比率を取れなかった場合の既定値0.0の2通りがある。前者は事実として意味があるので
+    「全株売却」と書き、後者は数字を出さず銘柄名だけにする。素の「0.00%」はどちらも
+    データ欠損に見えるため焼き込まない。badge_labelは絵文字置換後の文字列を受け取る。"""
+    ratio = card.get("holding_ratio")
+    if ratio:
+        return f"{card['stock_name']}　{ratio:.2f}%"
+    if "売却" in badge_label:
+        return f"{card['stock_name']}　全株売却"
+    return card["stock_name"]
+
+
 def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
     """投資家分類とニュースカード情報（提出者名・銘柄名・保有比率・売買方向・開示日）から、
     Pexels写真+黒帯+3段組みテキストのアイキャッチPNG(bytes)を生成する。文章タイトルではなく
@@ -307,10 +322,7 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
             badge_label = badge_label.replace(emoji, symbol)
         badge_text = f"{badge_label}　{card['disc_date']}"
         filer_lines = _wrap_text_lines(draw, card["filer_name"], filer_font, max_text_width, max_lines=2)
-        # 保有比率をSupabase・タイトルのどちらからも取れなかった記事は 0.0 が入ってくる。
-        # 「0.00%」と焼き込むと保有ゼロに見えるため、その場合は銘柄名だけにする。
-        ratio = card.get("holding_ratio")
-        stock_text = f"{card['stock_name']}　{ratio:.2f}%" if ratio else card["stock_name"]
+        stock_text = _stock_line_text(card, badge_label)
         stock_lines = _wrap_text_lines(draw, stock_text, stock_font, max_text_width, max_lines=2)
 
         badge_h = int(30 * ss * 1.5)
