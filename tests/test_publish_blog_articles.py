@@ -699,11 +699,13 @@ def test_wrap_text_lines_respects_max_lines():
 
 
 def test_search_pexels_photo_returns_none_without_api_key():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     with mock.patch.object(m, "PEXELS_API_KEY", ""):
         assert m.search_pexels_photo("finance") is None
 
 
 def test_search_pexels_photo_returns_bytes_and_photographer_on_success():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     search_resp = _FakeResponse(200, "", {"photos": [{
         "src": {"large": "https://example.test/a.jpg"}, "photographer": "Jane Doe",
     }]})
@@ -715,6 +717,7 @@ def test_search_pexels_photo_returns_bytes_and_photographer_on_success():
 
 
 def test_search_pexels_photo_defaults_photographer_when_missing():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     search_resp = _FakeResponse(200, "", {"photos": [{"src": {"large": "https://example.test/a.jpg"}}]})
     photo_resp = _FakeResponse(200, "", content=b"fake-image-bytes")
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
@@ -724,6 +727,7 @@ def test_search_pexels_photo_defaults_photographer_when_missing():
 
 
 def test_search_pexels_photo_returns_none_when_no_results():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     search_resp = _FakeResponse(200, "", {"photos": []})
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch("requests.get", return_value=search_resp):
@@ -731,9 +735,70 @@ def test_search_pexels_photo_returns_none_when_no_results():
 
 
 def test_search_pexels_photo_returns_none_on_exception():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch("requests.get", side_effect=Exception("timeout")):
         assert m.search_pexels_photo("finance") is None
+
+
+def test_search_pexels_photo_picks_different_photos_for_different_seeds():
+    """同じ分類でも記事ごとに違う写真を引く（以前は常にphotos[0]で全記事が同じ写真だった）。"""
+    photos = [{"src": {"large": f"https://example.test/{i}.jpg"}, "photographer": f"p{i}"}
+              for i in range(20)]
+    picked = set()
+    for seed in ("A|X|2026-01-01", "B|Y|2026-01-02", "C|Z|2026-01-03"):
+        m._PEXELS_CANDIDATE_CACHE.clear()
+        with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+             mock.patch("requests.get", side_effect=[
+                 _FakeResponse(200, "", {"photos": photos}),
+                 _FakeResponse(200, "", content=b"img"),
+             ]):
+            picked.add(m.search_pexels_photo("finance", seed=seed)["photographer"])
+    assert len(picked) > 1
+
+
+def test_search_pexels_photo_is_stable_for_same_seed():
+    """同じ記事を再生成しても写真は入れ替わらない。"""
+    photos = [{"src": {"large": f"https://example.test/{i}.jpg"}, "photographer": f"p{i}"}
+              for i in range(20)]
+    results = []
+    for _ in range(2):
+        m._PEXELS_CANDIDATE_CACHE.clear()
+        with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+             mock.patch("requests.get", side_effect=[
+                 _FakeResponse(200, "", {"photos": photos}),
+                 _FakeResponse(200, "", content=b"img"),
+             ]):
+            results.append(m.search_pexels_photo("finance", seed="A|X|2026-01-01")["photographer"])
+    assert results[0] == results[1]
+
+
+def test_search_pexels_photo_caches_candidates_per_query():
+    """同じクエリの2記事目は検索APIを叩き直さない（Pexels無料枠200req/時を守るため）。"""
+    m._PEXELS_CANDIDATE_CACHE.clear()
+    photos = [{"src": {"large": "https://example.test/a.jpg"}, "photographer": "p"}]
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=[
+             _FakeResponse(200, "", {"photos": photos}),
+             _FakeResponse(200, "", content=b"img"),
+             _FakeResponse(200, "", content=b"img"),
+         ]) as g:
+        m.search_pexels_photo("finance", seed="a")
+        m.search_pexels_photo("finance", seed="b")
+    search_calls = [c for c in g.call_args_list if "api.pexels.com" in c.args[0]]
+    assert len(search_calls) == 1
+
+
+def test_wrap_text_lines_keeps_number_token_whole():
+    """「13.41%」が「13.」「41%」に割れて別の数字に読めないようにする。"""
+    lines = m._wrap_text_lines(_FakeDraw(), "あいうえお13.41%", font=None, max_width=70)
+    assert lines == ["あいうえお", "13.41%"]
+
+
+def test_wrap_text_lines_breaks_number_longer_than_line():
+    """1行に収まらない数字は無限に送れないのでその場で折る。"""
+    lines = m._wrap_text_lines(_FakeDraw(), "1234567890", font=None, max_width=50)
+    assert lines == ["12345", "67890"]
 
 
 def test_upload_eyecatch_returns_url_on_success():
@@ -1610,6 +1675,11 @@ if __name__ == "__main__":
     test_search_pexels_photo_defaults_photographer_when_missing()
     test_search_pexels_photo_returns_none_when_no_results()
     test_search_pexels_photo_returns_none_on_exception()
+    test_search_pexels_photo_picks_different_photos_for_different_seeds()
+    test_search_pexels_photo_is_stable_for_same_seed()
+    test_search_pexels_photo_caches_candidates_per_query()
+    test_wrap_text_lines_keeps_number_token_whole()
+    test_wrap_text_lines_breaks_number_longer_than_line()
     test_upload_eyecatch_returns_url_on_success()
     test_upload_eyecatch_returns_none_on_failure()
     test_build_eyecatch_for_article_none_without_pexels_key()
@@ -1673,4 +1743,4 @@ if __name__ == "__main__":
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
     test_build_and_publish_uses_disclosed_unit_price_over_market_estimate()
     test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive()
-    print("全テスト成功 (111件)")
+    print("全テスト成功 (116件)")

@@ -37,6 +37,7 @@ import re
 import sys
 import json
 import argparse
+import hashlib
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
@@ -170,8 +171,10 @@ def classify_filer(filer_name: str) -> dict:
 
 # 投資家分類ごとのPexels検索クエリ（英語の方がPexelsの検索精度が高い）。
 # 銘柄固有の写真は現実的に存在しないため、分類のイメージに合う汎用的な金融系写真を使う。
+# 「個人」は以前 confident businessperson office で人物ポートレートを引いていたが、
+# 実在の別人の顔写真が個人投資家の氏名と並んで出て本人の写真に見えるため、街並みに変更した。
 EYECATCH_QUERY_BY_CATEGORY = {
-    "個人": "confident businessperson office",
+    "個人": "tokyo business district street",
     "創業家の資産管理会社": "family business heritage",
     "公益/一般財団法人": "foundation charity building",
     "プライムブローカー": "wall street trading floor",
@@ -191,24 +194,38 @@ EYECATCH_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 EYECATCH_W, EYECATCH_H = 1200, 630
 
 
-def search_pexels_photo(query: str) -> "dict | None":
-    """Pexels検索APIで1枚選び、{"bytes": 画像本体, "photographer": 撮影者名} を返す。
+# 検索クエリ→候補写真リストのプロセス内キャッシュ。同じ分類の記事を連続で処理しても
+# Pexels検索APIは1クエリにつき1回しか叩かない（無料枠200req/時を使い切らないため）。
+_PEXELS_CANDIDATE_CACHE: dict = {}
+PEXELS_CANDIDATES = 80  # Pexels APIのper_page上限
+
+
+def search_pexels_photo(query: str, seed: "str | None" = None) -> "dict | None":
+    """Pexels検索APIの候補から1枚選び、{"bytes": 画像本体, "photographer": 撮影者名} を返す。
     未設定・取得失敗時はNone。撮影者名はPexelsのAPI利用ガイドラインが推奨するクレジット表記
-    （"Photo by <撮影者> on Pexels"）を画像に焼き込むために保持する。"""
+    （"Photo by <撮影者> on Pexels"）を画像に焼き込むために保持する。
+
+    seed（記事の識別子）で候補80枚から決定的に1枚を選ぶ。以前は常に photos[0] を使っており、
+    同じ分類の記事が全部同じ写真になっていた（実測40記事中8種類、1枚が25%を占有）。
+    seedを固定にしているのは、同じ記事を再生成したときに画像が入れ替わらないようにするため。"""
     if not PEXELS_API_KEY:
         return None
     try:
-        resp = requests.get(
-            "https://api.pexels.com/v1/search",
-            headers={"Authorization": PEXELS_API_KEY},
-            params={"query": query, "per_page": 5, "orientation": "landscape"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        photos = resp.json().get("photos", [])
+        photos = _PEXELS_CANDIDATE_CACHE.get(query)
+        if photos is None:
+            resp = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": query, "per_page": PEXELS_CANDIDATES, "orientation": "landscape"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            photos = resp.json().get("photos", [])
+            _PEXELS_CANDIDATE_CACHE[query] = photos
         if not photos:
             return None
-        photo = photos[0]
+        idx = int(hashlib.md5((seed or "").encode("utf-8")).hexdigest(), 16) % len(photos) if seed else 0
+        photo = photos[idx]
         photo_resp = requests.get(photo["src"]["large"], timeout=20)
         photo_resp.raise_for_status()
         return {"bytes": photo_resp.content, "photographer": photo.get("photographer") or "Pexels"}
@@ -217,14 +234,28 @@ def search_pexels_photo(query: str) -> "dict | None":
         return None
 
 
+# 折り返しで分断したくない文字（半角数字・小数点・カンマ・%）。
+# 「13.41%」が「13.」「41%」に割れて別の数字に読めるのを防ぐ。
+_UNBREAKABLE_CHARS = set("0123456789.,%")
+
+
 def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) -> list:
-    """1文字ずつ幅を測って折り返す（CJKは単語区切りが無いため文字単位で判定する）。"""
+    """1文字ずつ幅を測って折り返す（CJKは単語区切りが無いため文字単位で判定する）。
+    数値トークン（13.41% など）の途中では折り返さず、トークンごと次の行へ送る。"""
     lines, current = [], ""
     for ch in text:
         trial = current + ch
         if current and draw.textbbox((0, 0), trial, font=font)[2] > max_width:
-            lines.append(current)
-            current = ch
+            head, tail = current, ch
+            # 折り返し位置が数値トークンの内側なら、トークンの先頭まで戻して丸ごと次行へ送る
+            if ch in _UNBREAKABLE_CHARS:
+                cut = len(head)
+                while cut > 0 and head[cut - 1] in _UNBREAKABLE_CHARS:
+                    cut -= 1
+                if cut > 0:  # 行全体が数値のときは戻さない（無限に送れないため）
+                    head, tail = head[:cut], head[cut:] + ch
+            lines.append(head)
+            current = tail
             if len(lines) >= max_lines:
                 break
         else:
@@ -245,7 +276,9 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
     import io
 
     query = EYECATCH_QUERY_BY_CATEGORY.get(category, EYECATCH_DEFAULT_QUERY)
-    photo = search_pexels_photo(query)
+    # 記事ごとに候補から別の写真を引くためのseed。同じ記事なら常に同じ写真になる。
+    seed = f"{card.get('filer_name', '')}|{card.get('stock_name', '')}|{card.get('disc_date', '')}"
+    photo = search_pexels_photo(query, seed=seed)
     if not photo:
         return None
 
@@ -274,7 +307,10 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
             badge_label = badge_label.replace(emoji, symbol)
         badge_text = f"{badge_label}　{card['disc_date']}"
         filer_lines = _wrap_text_lines(draw, card["filer_name"], filer_font, max_text_width, max_lines=2)
-        stock_text = f"{card['stock_name']}　{card['holding_ratio']:.2f}%"
+        # 保有比率をSupabase・タイトルのどちらからも取れなかった記事は 0.0 が入ってくる。
+        # 「0.00%」と焼き込むと保有ゼロに見えるため、その場合は銘柄名だけにする。
+        ratio = card.get("holding_ratio")
+        stock_text = f"{card['stock_name']}　{ratio:.2f}%" if ratio else card["stock_name"]
         stock_lines = _wrap_text_lines(draw, stock_text, stock_font, max_text_width, max_lines=2)
 
         badge_h = int(30 * ss * 1.5)
