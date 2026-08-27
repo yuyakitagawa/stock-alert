@@ -1,5 +1,23 @@
 # Dev Log
 
+## 2026-08-27 backfill便が起動しない不具合（scheduleの遅延）を修正
+
+初回backfillを手動実行した後、当日のスケジュール便を確認したところ **backfillがスキップされていた**。
+
+  run 33095948515 / schedule / 2026-08-27T16:57:58Z 起動
+  → 「当日最終便（12:00 UTC）ではないためbackfillはスキップ」
+
+原因: ステップ内で `[ "$(date -u +%H)" = "12" ]` を見て「当日最終便か」を判定していたが、
+GitHubのscheduleは大きく遅延する。この日は 12:00 UTC の cron が **16:57 UTC** に起動しており、
+`date -u +%H` は 16 になる。遅延が常態なら backfill は永久に走らない。
+
+対策: 取りこぼしbackfill専用の cron `30 12 * * 1-5` を足し、ステップの `if:` を
+`github.event.schedule == '30 12 * * 1-5'`（＋workflow_dispatch）にした。
+`github.event.schedule` は**起動した cron 式そのもの**が入るので、何時間遅れて起動しても取り違えない。
+シェル側の時刻判定は削除。
+
+なお当日ぶんの15本は手動実行（run 33081747920）で消化済みなので、取りこぼしの積み残しは想定どおり。
+
 ## 2026-08-27 取りこぼしbackfillの初回実行（15本）とJSONパース失敗の修正
 
 `gh workflow run edinet_blog.yml`（workflow_dispatch）で初回のbackfillを実行。
