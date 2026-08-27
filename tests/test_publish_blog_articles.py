@@ -414,6 +414,60 @@ def test_is_backfill_target_drops_published_and_below_threshold():
     assert m.is_backfill_target(unknown, keys, amounts) is True
 
 
+def test_is_backfill_target_skips_disclosure_already_articled():
+    """microCMSに記事が無くても、過去に作ったことがある開示は作り直さない。
+    低品質・リライト不能・誤報として意図的に削除した記事（2026-08-18に129件・08-25に74件・
+    08-27に12件）を取りこぼしと誤認して復活させないため。"""
+    h = {"issuer_code": "6845", "disc_date": "2026-08-21", "filer_name": "野村證券株式会社",
+         "doc_id": "D1", "article_published_at": "2026-08-21T12:00:00+00:00"}
+    assert m.is_backfill_target(h, set(), {}) is False
+    assert m.is_backfill_target({**h, "article_published_at": None}, set(), {}) is True
+
+
+def test_build_and_publish_skips_disclosure_already_articled():
+    """通常運転（3日窓）でも台帳を尊重する。削除済み記事のある開示はmicroCMSを叩く前に落とす。"""
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書", "doc_id": "D1",
+                 "article_published_at": "2026-07-20T12:00:00+00:00"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "already_published") as ap:
+        assert m.build_and_publish(days=3, dry_run=False) == []
+    ap.assert_not_called()
+
+
+def test_build_and_publish_records_ledger_after_publishing():
+    """投稿に成功したら開示側へ記録する（記事を消しても残る重複生成の歯止め）。"""
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書", "doc_id": "S100ABCD"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid"), \
+         mock.patch.object(m, "mark_article_published") as mark:
+        results = m.build_and_publish(days=3, dry_run=False)
+    assert len(results) == 1
+    mark.assert_called_once_with("S100ABCD")
+
+
 def test_build_and_publish_backfill_aborts_when_index_unavailable():
     """既報一覧が引けないまま30日分を走らせると同じ開示を投稿し直すため、backfillごと中止する。"""
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
@@ -1865,4 +1919,7 @@ if __name__ == "__main__":
     test_build_and_publish_backfill_aborts_when_index_unavailable()
     test_build_and_publish_backfill_widens_window_and_takes_oldest_first()
     test_build_and_publish_backfill_caps_articles_by_default()
-    print("全テスト成功 (123件)")
+    test_is_backfill_target_skips_disclosure_already_articled()
+    test_build_and_publish_skips_disclosure_already_articled()
+    test_build_and_publish_records_ledger_after_publishing()
+    print("全テスト成功 (126件)")

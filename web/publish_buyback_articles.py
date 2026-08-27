@@ -132,6 +132,20 @@ def already_published(stock_code: str, disc_date: str) -> bool:
         return True
 
 
+def mark_article_published(row: dict) -> bool:
+    """この決定開示から記事を作ったことを tdnet_buybacks に記録する。
+
+    microCMSに記事があるかどうかだけで判定していると、意図的に削除した記事
+    （重複12件を2026-08-25に削除）を取りこぼしと誤認してbackfillが作り直してしまう。
+    記事を消してもこの列は消えないので「一度作った開示は二度と作らない」を保証できる。"""
+    # disclosed_at のタイムゾーン部「+00:00」はURLで空白に化けて400になるため秒までで切る
+    return sb.update(
+        "tdnet_buybacks",
+        f"code=eq.{row['code']}&disclosed_at=eq.{row['disclosed_at'][:19]}",
+        {"article_published_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
+    )
+
+
 def stock_name_of(code: str) -> str:
     """銘柄名。jpx_stock_list に無ければTDnetの会社名で補う。
 
@@ -388,7 +402,11 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
     candidates = fetch_candidates(days)
     print(f"[buyback_blog] 記事候補: {len(candidates)}件（上限{MIN_AMOUNT_OKU:g}億円以上 or 発行済{MIN_RATIO_PCT:g}%以上）")
     if backfill:
-        candidates = [c for c in candidates if (c["code"], c["disclosed_at"][:10]) not in known]
+        candidates = [
+            c for c in candidates
+            if not c.get("article_published_at")
+            and (c["code"], c["disclosed_at"][:10]) not in known
+        ]
         # 古い開示ほど窓（BACKFILL_DAYS）から外れて永久に失われるので先に消化する
         candidates.sort(key=lambda c: c["disclosed_at"])
         print(f"[buyback_blog] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
@@ -397,6 +415,9 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         if max_articles is not None and len(published) >= max_articles:
             break
         code, disc_date = row["code"], row["disclosed_at"][:10]
+        if row.get("article_published_at"):
+            # 既に記事を作った開示。microCMS上に無いのは意図的に削除したからなので作り直さない
+            continue
         if already_published(code, disc_date):
             continue
         f = build_fact_sheet(row)
@@ -447,6 +468,7 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
             break
         if content_id:
             print(f"    ✅ 投稿: {content_id}（図{figure_count}枚）")
+            mark_article_published(row)
             published.append({**payload, "id": content_id})
     return published
 

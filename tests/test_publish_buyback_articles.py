@@ -128,6 +128,42 @@ def test_build_and_publish_backfill_skips_known_and_takes_oldest_first():
     assert [o["stockCode"] for o in out] == ["6082", "8560"]
 
 
+def test_backfill_skips_disclosure_already_articled():
+    """microCMSに記事が無くても、過去に作ったことがある決定開示は作り直さない
+    （重複記事12件を2026-08-25に削除済み。取りこぼしと誤認して復活させないため）。"""
+    rows = [
+        {"code": "6574", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 10.0,
+         "ratio": 5.0, "max_amount_yen": 1_000_000_000,
+         "article_published_at": "2026-08-24T12:00:00+00:00"},
+        {"code": "6082", "disclosed_at": "2026-08-14T16:00:00+00:00", "amount_oku": 10.0,
+         "ratio": 12.8, "max_amount_yen": 1_000_000_000, "article_published_at": None},
+    ]
+    with mock.patch.object(m, "published_deal_keys", return_value=set()), \
+         mock.patch.object(m, "fetch_candidates", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "build_fact_sheet", side_effect=lambda r: {**FACT, "stock_code": r["code"]}), \
+         mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}):
+        out = m.build_and_publish(dry_run=True, backfill=True)
+    assert [o["stockCode"] for o in out] == ["6082"]
+
+
+def test_build_and_publish_records_ledger_after_publishing():
+    rows = [{"code": "6082", "disclosed_at": "2026-08-14T16:00:00+00:00", "amount_oku": 10.0,
+             "ratio": 12.8, "max_amount_yen": 1_000_000_000}]
+    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
+         mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "publish_article", return_value="fakeid"), \
+         mock.patch.object(m, "mark_article_published") as mark:
+        out = m.build_and_publish(days=7)
+    assert len(out) == 1
+    assert mark.call_args.args[0]["code"] == "6082"
+
+
 def test_stock_name_falls_back_to_tdnet_when_master_has_no_name():
     """jpx_stock_listはJPX（東証）の一覧なので福証・名証単独上場が載らない。
     銘柄名が引けないだけで決定開示を永久に取りこぼしていた（実例: 8560 宮崎太陽銀行）。"""

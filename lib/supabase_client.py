@@ -218,6 +218,25 @@ def delete(table: str, query: str) -> None:
     _request("DELETE", url, headers=_headers(), timeout=_TIMEOUT)
 
 
+def update(table: str, query: str, patch: dict) -> bool:
+    """PATCH（部分更新）。query に一致する行の patch に含まれる列だけを書き換える。
+
+    upsert() は使えない。PostgRESTのupsertはPOSTの本文に無い列をNULLで埋めるため、
+    1列だけ更新するつもりで他の列を全部消す（実測: doc_idとarticle_published_atだけの
+    upsertが issuer_code のNOT NULL制約で400になった）。
+    """
+    if not is_configured():
+        return False
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
+    resp = _request("PATCH", url, headers=_headers(prefer="return=minimal"),
+                    json=patch, timeout=_TIMEOUT)
+    if not resp.ok:
+        print(f"[supabase] {table} update failed: {resp.status_code} {resp.text[:200]}")
+        _record_write_failure(table, 1, f"HTTP {resp.status_code}")
+        return False
+    return True
+
+
 def rpc(fn_name: str, params: dict) -> list | dict | None:
     if not is_configured():
         return None

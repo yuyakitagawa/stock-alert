@@ -55,7 +55,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib import api_budget
-from lib.db import get_edinet_large_holdings_recent
+from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
@@ -508,10 +508,11 @@ MICROCMS_MAX_PAGES = 20
 BACKFILL_DAYS = 30
 
 # backfill 1回あたりの投稿上限（--max-articles 未指定時の既定値）。
-# 取りこぼしは数十〜数百件たまることがあり（2026-08-27の実測で大量保有report側に約270件）、
 # 上限なしで走らせるとAnthropic APIの月次上限に一撃で到達し、同じ日に大量の古い記事が並ぶ。
-# 1便あたり少しずつ消化する（古い開示＝窓から外れる寸前のものから順に拾う）。
-BACKFILL_MAX_ARTICLES = 5
+# 15件にしているのは 2026-08-27 の実測から: 直近30日の取りこぼしは約142件（60件サンプルで
+# 30件が「本物の取りこぼし」）で、1日1便×15件なら10日で窓（BACKFILL_DAYS=30日）から
+# 外れる前に消化しきれる。取りこぼしが解消した後の定常状態では数件しか残らず上限に当たらない。
+BACKFILL_MAX_ARTICLES = 15
 
 
 def fetch_published_index(since_date: str, extra_filter: str = "",
@@ -1611,12 +1612,17 @@ def estimated_amounts(days: int) -> dict:
 
 
 def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
-    """backfillの事前足切り。既報の開示と、推定金額ビューの時点で足切り基準に届かない開示を、
-    yfinance（発行済株式数・終値）とmicroCMSを叩く前に落とす。
+    """backfillの事前足切り。記事を作ったことがある開示と、推定金額ビューの時点で足切り基準に
+    届かない開示を、yfinance（発行済株式数・終値）とmicroCMSを叩く前に落とす。
 
     30日窓の候補は1,000件を超え、1件ずつ株数と終値を引くと1回の便では終わらない。
     ビューに行が無い開示（株数が取れない銘柄・ビュー更新前の開示）は判定できないので残し、
     従来どおりループ内で概算する。"""
+    # microCMSに記事が無くても、過去に作ったことがあるなら作り直さない。
+    # 低品質・リライト不能・誤報として意図的に削除した記事（2026-08-18に129件、08-25に74件、
+    # 08-27に12件）を、取りこぼしと誤認して復活させないため。
+    if h.get("article_published_at"):
+        return False
     key = (str(h["issuer_code"]), str(h["disc_date"])[:10], h.get("filer_name") or "")
     if key in published_keys:
         return False
@@ -1714,6 +1720,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
             continue
 
+        if h.get("article_published_at"):
+            # 既に記事を作った開示。microCMS上に無いのは意図的に削除したから（低品質・
+            # リライト不能・誤報）なので、作り直さない。
+            continue
         unique_filing = filing_counts[(code, disc_date, filer_name)] == 1
         if already_published(code, disc_date, deal_amount, filer_name, signed_change, unique_filing):
             continue
@@ -1831,6 +1841,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             break
         if content_id:
             print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} 図{figure_count}枚 → id={content_id}")
+            if h.get("doc_id"):
+                mark_article_published(h["doc_id"])
             published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")

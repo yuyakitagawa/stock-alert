@@ -3,7 +3,7 @@
 Migrated from SQLite. All reads/writes go to Supabase REST API.
 """
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import lib.supabase_client as sb
 
@@ -246,11 +246,27 @@ def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
     q += ("&select=doc_id,filer_name,doc_type_code,doc_description,submit_date,disc_date,"
-          "holding_ratio,holding_ratio_prior,issuer_code,issuer_name,short_term_transfers")
+          "holding_ratio,holding_ratio_prior,issuer_code,issuer_name,short_term_transfers,"
+          "article_published_at")
     if codes:
         code_list = ",".join(str(c) for c in codes)
         q += f"&issuer_code=in.({code_list})"
     return sb.select("edinet_large_holdings", q)
+
+
+def mark_article_published(doc_id: str, when: "str | None" = None) -> bool:
+    """この開示から記事を作ったことを開示側に記録する（重複生成の恒久的な歯止め）。
+
+    microCMSに記事があるかどうかだけで判定していると、**意図的に削除した記事**
+    （低品質・リライト不能・誤報。2026-08-18に129件、08-25に74件、08-27に12件）を
+    取りこぼしと誤認してbackfillが作り直してしまう。記事を消してもこの列は消えないので、
+    「一度作った開示は二度と作らない」を保証できる。
+
+    upsertではなくPATCHで書く（PostgRESTのupsertは本文に無い列をNULLで埋めるため）。
+    """
+    ts = when or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return sb.update("edinet_large_holdings", f"doc_id=eq.{doc_id}",
+                     {"article_published_at": ts})
 
 
 def get_edinet_all():
