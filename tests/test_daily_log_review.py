@@ -284,6 +284,7 @@ def _ga4_metrics():
         "days": 7, "start": "2026-08-21", "end": "2026-08-27",
         "now": {
             "pv": 651.0, "entrances": 225.0, "internal_per_session": 1.89,
+            "sessions": 232.0, "engaged_sessions": 148.0, "users": 167.0, "engagement_rate": 0.639,
             "groups": {
                 "データ/一覧ページ": {"pv": 271.0, "entrances": 22.0, "users": 30.0,
                                 "engagement": 1980.0, "bounced": 13.0, "clicks": 257.0},
@@ -293,17 +294,31 @@ def _ga4_metrics():
             "pages": {"/trending": [70.0]}, "clicks": {"/trending": [93.0]},
         },
         "prev": {"pv": 1280.0, "entrances": 216.0, "internal_per_session": 4.94,
-                 "groups": {}, "pages": {}, "clicks": {}},
+                 "sessions": 220.0, "engaged_sessions": 114.0, "users": 139.0,
+                 "engagement_rate": 0.519, "groups": {}, "pages": {}, "clicks": {}},
         "labels": {},
     }
 
 
 class SummarizeGa4Test(unittest.TestCase):
-    def test_reports_internal_moves_with_week_over_week(self):
-        """回遊の中心指標。前週比が無いと「増えたのか減ったのか」を判定できない。"""
+    def test_headline_is_engagement_rate_not_the_skewed_mean(self):
+        """内部移動回数は平均で、1人が何十ページも見た日に跳ねる（実測26人の日=10.20回 /
+        56人の日=0.19回）。見出しの指標は人数に引きずられない率にする。"""
+        md = dlr.summarize_ga4(_ga4_metrics())
+        headline = md.split("\n")[1]
+        self.assertIn("エンゲージセッション率 63.9%", headline)
+        self.assertIn("+23%", headline)
+
+    def test_internal_moves_carry_a_skew_warning(self):
+        """この数字だけで「回遊が悪化した」と書かせないための但し書き。"""
         md = dlr.summarize_ga4(_ga4_metrics())
         self.assertIn("1セッションあたりの内部移動 1.89回", md)
         self.assertIn("-62%", md)
+        self.assertIn("平均なので1人が何十ページも見た日に跳ねる", md)
+
+    def test_shows_visitor_count_alongside(self):
+        """内部移動の増減は訪問者数と一緒でないと読めない。"""
+        self.assertIn("訪問者 167", dlr.summarize_ga4(_ga4_metrics()))
 
     def test_lists_groups_with_entrance_and_internal_split(self):
         md = dlr.summarize_ga4(_ga4_metrics())
@@ -340,6 +355,9 @@ class Ga4PromptTest(unittest.TestCase):
     def test_system_prompt_requires_a_navigation_section(self):
         self.assertIn("## 回遊所見", dlr.SYSTEM_PROMPT)
         self.assertIn("内部移動回数", dlr.SYSTEM_PROMPT)
+
+    def test_system_prompt_forbids_judging_on_the_skewed_mean_alone(self):
+        self.assertIn("これ単独で「回遊が改善／悪化した」と書かない", dlr.SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

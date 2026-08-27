@@ -111,6 +111,11 @@ def collect_pdca_metrics(token: str, property_id: str, days: int) -> dict:
         return parse_rows(got) if not err else {}
 
     def period(s, e) -> dict:
+        # セッション単位の率も一緒に取る。内部移動回数は平均なので、1人が何十ページも見た日に
+        # 跳ね上がる（実測: 8/18は26人で10.20回、8/25は56人で0.19回）。率は人数に引きずられない
+        # ため、回遊が本当に良くなったかはこちらで判定する。
+        totals = rows([], ["sessions", "engagedSessions", "totalUsers"], s, e)
+        session_totals = next(iter(totals.values()), [0.0, 0.0, 0.0])
         views = rows(["pagePath"], ["screenPageViews", "totalUsers", "userEngagementDuration"], s, e)
         landings = rows(["landingPage"], ["sessions", "bounceRate"], s, e)
         clicks = rows(["pagePath"], ["eventCount"], s, e, _click_filter())
@@ -129,8 +134,11 @@ def collect_pdca_metrics(token: str, property_id: str, days: int) -> dict:
             g["bounced"] += v[0] * (v[1] if len(v) > 1 else 0)
         pv = sum(g["pv"] for g in groups.values())
         entrances = sum(g["entrances"] for g in groups.values())
+        sessions, engaged, users = (list(session_totals) + [0.0, 0.0, 0.0])[:3]
         return {"groups": groups, "pv": pv, "entrances": entrances,
                 "internal_per_session": (pv - entrances) / entrances if entrances else 0.0,
+                "sessions": sessions, "engaged_sessions": engaged, "users": users,
+                "engagement_rate": engaged / sessions if sessions else 0.0,
                 "pages": views, "clicks": clicks}
 
     now, before = period(start, end), period(prev_start, prev_end)
