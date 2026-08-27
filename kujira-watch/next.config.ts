@@ -29,15 +29,15 @@ const nextConfig: NextConfig = {
     ];
   },
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.microcms-assets.io",
-      },
-    ],
-    // 最適化済み画像のCDNキャッシュTTL(既定4時間)。microCMSは画像を差し替えると
-    // URL自体が変わる(実質immutable)ため、31日まで延ばして再最適化コストを削る。
-    minimumCacheTTL: 2678400,
+    // Vercelの画像最適化ではなくmicroCMSの画像API(imgix)でリサイズ・WebP変換する。
+    // 2026-08-27にVercelの最適化枠を使い切り、本番の全アイキャッチがHTTP 402
+    // (OPTIMIZED_IMAGE_REQUEST_PAYMENT_REQUIRED)になって表示できなくなったため。
+    // 記事は毎日増え、画像を差し替えるたびにURLが変わって最適化がやり直しになるので、
+    // 枠のある仕組みに載せ続けること自体が持たない。microCMS側の変換は転送量
+    // (Hobbyで20GB/月)にしか効かない。remotePatterns/minimumCacheTTLはVercelの
+    // 最適化にしか効かない設定なので、カスタムローダーへの切り替えと同時に外した。
+    loader: "custom",
+    loaderFile: "./src/lib/imageLoader.ts",
   },
 };
 
