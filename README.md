@@ -18,7 +18,7 @@ core/rf_train_v3.py（金曜 or モデル未存在時のみ）は配信より後
 【平日9:00-21:00 JST・毎時】EDINETブログパイプライン（edinet_blog.yml）
 tools/scan_large_holdings.py（EDINET大量保有スキャン）→ web/publish_blog_articles.py
 （ブログ記事自動生成・投稿＋X投稿）→ tools/enrich_buybacks.py → web/publish_buyback_articles.py
-（TDnet自社株買い決定の記事化。上限10億円以上 or 発行済3%以上）→ **取りこぼしのbackfill**（専用cron `30 12 * * 1-5` の便と手動実行のみ。GitHubのscheduleは大きく遅延することがあり（実測: 2026-08-27の12:00 UTCの便が16:57に起動）、実行時の`date -u +%H`で「当日最終便か」を判定するとbackfillが永久にスキップされるため、`github.event.schedule`＝起動したcron式そのもので分岐する。
+（TDnet自社株買い決定の記事化。上限10億円以上 or 発行済3%以上）→ **取りこぼしのbackfill**（専用cron `30 12 * * 1-5` の便と手動実行のみ。GitHubのscheduleは大きく遅延することがあり（実測: 2026-08-27の12:00 UTCの便が16:57に起動）、実行時の`date -u +%H`で「当日最終便か」を判定するとbackfillが永久にスキップされるため、`github.event.schedule`＝起動したcron式そのもので分岐する。手動実行の`backfill_max`入力で1便あたりの投稿上限を上書きできる（積み残しをまとめて消化する用。未指定なら`BACKFILL_MAX_ARTICLES`。シェルへの注入を避けるため環境変数で受けて整数か検証する）。ジョブの`timeout-minutes`は120（実測で1本あたり約40秒＝15本で16分）。
 両スクリプトを`--backfill`で走らせ、直近30日のうちまだ記事が無い開示だけを古い順に拾い直す。通常運転は直近3日しか見ないため、
 API上限やワークフロー障害で3日を超えて生成が止まるとその期間の開示が二度と記事化されなかった＝2026-08-13〜08-20の自社株買い決定12件を
 2026-08-27に手作業で復旧した）。株価更新パイプライン(daily_alert.yml)から完全に独立した
