@@ -11,7 +11,8 @@ tools/daily_log_review.py
   3. ログはそのままでは数万行あるので、エラー/警告/Traceback/HTTPエラー/スキップ通知の行と
      各ステップの先頭・末尾だけに圧縮する（condense_log）
   3b. Supabase から成果物スナップショット（X投稿と反応・フォロワー・人間推定PVと上位ページ・当日シグナル数）を付ける
-  3c. 前回レビュー（daily-review Issue の最新コメント）から「今週やる3件」「改善提案」だけを抜き出して付ける
+  3c. 対象期間に入らなかった週次ワークフロー（perf_check.yml）の最新runを、経過日数を注記して足す
+  3d. 前回レビュー（daily-review Issue の最新コメント）から「今週やる3件」「改善提案」だけを抜き出して付ける
       （同じ提案が何日も再掲されるのに消化されたか誰も追えない状態を防ぐ。取得失敗時は付けずに続行）
   4. Claude に SRE/クオンツ/プロダクト/SEO・GEO/UX・デザイン/バックエンド/フロントエンド/PdM の8観点で
      日本語Markdownのレビュー（健全性 / 前回提案の消化状況 / 異常 / SEO / UX / エンジニアリング / PdM /
@@ -51,9 +52,17 @@ JST = timezone(timedelta(hours=9))
 # ci.yml は成功runが大量にあるので失敗したものだけ対象にする（エンジニア観点のため）。
 EXCLUDE_WORKFLOWS = {"daily_log_review.yml"}
 FAILURE_ONLY_WORKFLOWS = {"ci.yml"}
+# 週次などで24時間の対象期間に入らないが、最新の結果は毎回見たいワークフロー。
+# perf_check.yml は月曜のみ実行のため、フロントエンド観点が毎日「ログから判断不可」に
+# なっていた（2026-08-27の3日連続で実測）。
+_REFERENCE_WORKFLOWS = {"perf_check.yml"}
 
 # このステップ名を含むログは圧縮せず全文を渡す（LINE送信本文など、UX観点で原文が必要なもの）
-_FULL_STEP_PATTERN = re.compile(r"マーケットタイミング|LINE")
+_FULL_STEP_PATTERN = re.compile(r"マーケットタイミング|LINE|market_timing_alert|perf_check")
+# gh run view --log がステップ名を解決できないと全行がこの値になる（gh 2.92で実測）。
+# そのときはログ本文の `##[group]Run <コマンド>` でステップを切り直す。
+_UNKNOWN_STEP = "UNKNOWN STEP"
+_STEP_MARKER = re.compile(r"^##\[group\]Run (.+)$")
 _FULL_STEP_MAX_CHARS = 12_000
 
 # 圧縮時に必ず残す行（エラー・警告・重要イベント）
@@ -111,8 +120,13 @@ GitHub Actionsで毎日回している）の運用レビュアーです。
    同じデータの二重取得（N+1）、冪等性（再実行で重複する処理）、タイムアウト・所要時間の偏り、
    Anthropic/X/microCMS の API 課金を無駄にしている呼び出し（再生成・再送信）。対象ファイルと関数名まで書く。
 7. フロントエンドエンジニア（kujira-watch / Next.js）: PVスナップショットの上位パス・アクセスされているのに
-   薄いページ・CIの失敗・perf_check の結果から、ページ構成・表示速度・計測上の問題を指摘する。
-   Actionsログにフロントのビルドログは無いので、無い情報は「ログから判断不可」と明記し推測で埋めない。
+   薄いページ・perf_check（表示速度の週次チェック。TTFB＝最初の1バイトが返るまでの時間／HTML・CSSの
+   転送量を計測）の結果から、ページ構成・表示速度・計測上の問題を指摘する。
+   perf_check は毎週月曜のみ実行するため、当日分が無い日は「※24時間の対象期間外」と注記された直近の
+   実行が添付される。**古い計測でも表示速度の評価には使えるので「判断不可」で片付けず、何日前の計測かを
+   明記した上で閾値超過ページ・前回からの傾向を評価する**（当日の前日比としては扱わない）。
+   Next.jsのビルドはVercel側で走りActionsログには原理的に含まれない（ci.ymlはPythonテストのみ）。
+   ビルドエラー・バンドルサイズ・デプロイ成否は「ログから判断不可」と明記し推測で埋めない。
 8. PdM: KPIスナップショット（PV・ユニーク訪問・フォロワー・X反応・記事数・💎シグナル数）の前日比/前週比を読み、
    当日の成果物が「初心者投資家が今日何をすべきか分かる」という価値に繋がったかを判定する。
    1〜7の改善提案を「ユーザー価値 × 実装コスト」で並べ直し、**今週やる3件／やらない事**を明示する。
@@ -240,11 +254,19 @@ def _strip_prefix(line: str) -> str:
     """`gh run view --log` の `job\\tstep\\ttimestamp message` 形式から message だけ取り出す。"""
     parts = line.split("\t", 2)
     if len(parts) == 3:
-        msg = parts[2]
+        msg = parts[2].lstrip("\ufeff")  # 各ジョブの1行目にBOMが付く
         # 先頭のISOタイムスタンプを落とす
         msg = re.sub(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z ?", "", msg)
         return parts[1], msg
     return "", line
+
+
+def _cut_middle(text: str, limit: int) -> str:
+    """前後を残して中央を落とす（末尾の失敗ステップを切らないため）。"""
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return text[:half] + f"\n\n… (中央 {len(text) - limit} 文字省略) …\n\n" + text[-half:]
 
 
 def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN, signal_only: bool = False) -> str:
@@ -257,21 +279,27 @@ def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN, signal_only: boo
     """
     by_step: dict[str, list[str]] = {}
     order: list[str] = []
+    current = ""  # ステップ名を解決できないときに `##[group]Run` から切り直した見出し
     for line in raw.splitlines():
         step, msg = _strip_prefix(line)
         if not msg.strip():
             continue
+        if step == _UNKNOWN_STEP or not step:
+            m = _STEP_MARKER.match(msg.strip())
+            if m:
+                current = m.group(1).strip()[:120]
+            step = current or step
         if step not in by_step:
             by_step[step] = []
             order.append(step)
         by_step[step].append(msg)
 
-    chunks = []
+    chunks: list[tuple[bool, str]] = []  # (全文保持か, 本文)
     for step in order:
         lines = by_step[step]
         if _FULL_STEP_PATTERN.search(step) and not signal_only:
             full = "\n".join(l[:400] for l in lines)[:_FULL_STEP_MAX_CHARS]
-            chunks.append(f"### step: {step} ({len(lines)}行・全文)\n" + full)
+            chunks.append((True, f"### step: {step} ({len(lines)}行・全文)\n" + full))
             continue
         keep_idx = {i for i, l in enumerate(lines) if _KEEP_PATTERN.search(l)}
         if not signal_only:
@@ -286,14 +314,22 @@ def condense_log(raw: str, max_chars: int = _MAX_CHARS_PER_RUN, signal_only: boo
                 kept.append(f"… ({i - last - 1}行省略) …")
             kept.append(lines[i][:400])
             last = i
-        chunks.append(f"### step: {step or '(unknown)'} ({len(lines)}行)\n" + "\n".join(kept))
+        chunks.append((False, f"### step: {step or '(unknown)'} ({len(lines)}行)\n" + "\n".join(kept)))
 
-    text = "\n\n".join(chunks)
-    if len(text) > max_chars:
-        # 前後を残して中央を落とす（末尾の失敗ステップを切らないため）
-        half = max_chars // 2
-        text = text[:half] + f"\n\n… (中央 {len(text) - max_chars} 文字省略) …\n\n" + text[-half:]
-    return text
+    text = "\n\n".join(t for _, t in chunks)
+    if len(text) <= max_chars:
+        return text
+    # 予算超過。全文保持ステップ（LINE本文・表示速度の計測結果）は中央省略で消したくないので、
+    # 先に通常ステップを縮めて予算を作る。ステップを切り直せるようになって1 runあたりの
+    # ステップ数が1→20前後に増えたため、一律の中央省略だと中盤のステップが丸ごと消える。
+    full_len = sum(len(t) for is_full, t in chunks if is_full)
+    normals = [i for i, (is_full, _) in enumerate(chunks) if not is_full]
+    if normals:
+        per = max(600, (max_chars - full_len) // len(normals))
+        for i in normals:
+            chunks[i] = (False, _cut_middle(chunks[i][1], per))
+        text = "\n\n".join(t for _, t in chunks)
+    return _cut_middle(text, max_chars)
 
 
 def format_jobs(jobs: list[dict]) -> str:
@@ -321,12 +357,48 @@ def build_review_input(runs_by_workflow: dict[str, list[dict]], date_label: str)
             parts.append(f"## {wf}\n（直近の実行なし）\n")
             continue
         for r in runs:
+            age = r.get("_age_days")
+            note = (f"\n（※24時間の対象期間外。{age}日前の最新実行を参考情報として添付。"
+                    f"当日の出来事としては扱わないこと）") if age is not None else ""
             parts.append(
                 f"## {wf} — run {r['databaseId']} ({r.get('event')}, {r.get('conclusion')}, "
-                f"開始 {r['createdAt']}, 終了 {r.get('updatedAt')})\n{r.get('url', '')}\n\n"
+                f"開始 {r['createdAt']}, 終了 {r.get('updatedAt')}){note}\n{r.get('url', '')}\n\n"
                 f"```\n{r['_jobs_text']}\n```\n\n{r['_log_text']}\n"
             )
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# 参考run: 対象期間外だが最新結果を見たい週次ワークフロー
+# ---------------------------------------------------------------------------
+def attach_reference_runs(runs_by_workflow: dict[str, list[dict]], repo: str, now: datetime) -> None:
+    """対象期間に実行が無かった週次ワークフローの最新runを、経過日数付きで足す（破壊的に更新）。
+
+    取得できなくても当日のレビューは続けたいので、例外は握って何もしない。
+    """
+    for wf in sorted(_REFERENCE_WORKFLOWS):
+        if runs_by_workflow.get(wf):
+            continue
+        try:
+            found = json.loads(_gh([
+                "run", "list", "--repo", repo, "--workflow", wf, "--limit", "1",
+                "--status", "completed", "--json",
+                "databaseId,conclusion,status,createdAt,updatedAt,displayTitle,url,event",
+            ]) or "[]")
+            if not found:
+                print(f"[ref] {wf}: 実行履歴なし")
+                continue
+            r = found[0]
+            created = datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
+            r["_age_days"] = max(0, (now - created).days)
+            jobs, log = fetch_run_detail(r["databaseId"], repo)
+            r["_jobs_text"] = format_jobs(jobs)
+            r["_log_text"] = condense_log(log, _MAX_CHARS_PER_SUCCESS_RUN)
+        except Exception as e:
+            print(f"[ref] ⚠ {wf} の最新runを取得できず（参考情報なしで続行）: {e}")
+            continue
+        runs_by_workflow[wf] = [r]
+        print(f"[ref] {wf}: 対象期間外の最新run（{r['_age_days']}日前）を参考情報として添付")
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +699,7 @@ def main() -> int:
         print("対象runが無いためレビューをスキップします")
         return 0
 
+    attach_reference_runs(runs_by_workflow, args.repo, now)
     snapshot = summarize_snapshot(fetch_snapshot_rows(now), now)
     prev = fetch_previous_review(args.repo)
     review_input = build_review_input(runs_by_workflow, date_label) + "\n\n" + snapshot
