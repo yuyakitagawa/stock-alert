@@ -119,6 +119,10 @@ export default async function RankingSlugPage({ params }: Props) {
   } else {
     const seenCodes = new Set<string>();
     relatedArticles = [...recentArticles]
+      // recentArticlesは分類を問わない全記事なので、ランキング本体(buildStockRows)と同じく
+      // アクティビストの記事だけに絞る（絞らないと「アクティビスト取引の解説記事」の見出しで
+      // 事業会社・外資系運用会社の記事が並ぶ）。
+      .filter((article) => article.dealType === "アクティビスト")
       .sort((a, b) => b.dealAmount - a.dealAmount)
       .filter((article) => {
         if (seenCodes.has(article.stockCode)) return false;
