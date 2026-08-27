@@ -1508,6 +1508,8 @@ def update_article(content_id: str, payload: dict) -> bool:
 # （2026-08-18のGSC「検出 - インデックス未登録」の主因）。
 # 表示側の判定は kujira-watch/src/lib/articleIndexability.ts にあり、しきい値は必ず揃えること
 # （ずれると「サイトマップに載っているのにnoindex」という矛盾した指示をGoogleに送る）。
+# この数値は kujira-watch/src/lib/faqData.tsx のFAQ「すべての大量保有報告書が記事に
+# なっていますか？」で読者にも公開している。変更時は3箇所すべてを同じコミットで直すこと。
 MIN_DEAL_AMOUNT_OKU = 3.0
 MIN_RATIO_CHANGE_PT = 1.0
 
