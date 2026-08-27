@@ -15,6 +15,10 @@ on:
     # github.event.schedule は起動した cron 式そのものなので、遅延しても取り違えない。
     - cron: '30 12 * * 1-5'
   workflow_dispatch:       # 手動実行ボタン
+    inputs:
+      backfill_max:
+        description: '取りこぼしbackfillの1便あたり投稿上限（空なら既定のBACKFILL_MAX_ARTICLES）'
+        required: false
 
 permissions:
   contents: read
@@ -28,7 +32,7 @@ concurrency:
 jobs:
   scan-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -99,10 +103,20 @@ jobs:
       - name: 取りこぼし記事のbackfill（1日1回・直近30日）
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 12 * * 1-5'
         continue-on-error: true
+        env:
+          # 直接 ${{ }} を run に埋めるとシェルへ注入されるため、環境変数で受けて整数か検証する
+          BACKFILL_MAX: ${{ inputs.backfill_max }}
         run: |
           cd ~/stock-alert
-          python web/publish_blog_articles.py --backfill
-          python web/publish_buyback_articles.py --backfill
+          ARG=""
+          if [ -n "$BACKFILL_MAX" ]; then
+            case "$BACKFILL_MAX" in ''|*[!0-9]*)
+              echo "backfill_max は整数で指定してください: $BACKFILL_MAX"; exit 1;;
+            esac
+            ARG="--max-articles $BACKFILL_MAX"
+          fi
+          python web/publish_blog_articles.py --backfill $ARG
+          python web/publish_buyback_articles.py --backfill $ARG
 
       # 概算金額の再計算ブレ等で重複判定をすり抜けた同一開示の二重記事を自動回収する
       # （同一銘柄・同一開示日・同一提出者の後発記事を削除。実例: 2026-08-17）

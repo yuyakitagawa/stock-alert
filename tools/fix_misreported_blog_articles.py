@@ -42,9 +42,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 import lib.supabase_client as sb
-from lib.edinet import disclosure_doc_label
+from lib.edinet import disclosure_doc_label, resolve_filer
 from tools.cleanup_duplicate_blog_articles import delete_article
-from tools.export_article_fact_cards import resolve_filer
 from tools.reclassify_blog_articles import fetch_all_articles
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.publish_blog_articles import (

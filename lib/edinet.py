@@ -22,6 +22,7 @@ docTypeCode:
 import os
 import re
 import io
+import unicodedata
 import html as html_lib
 import zipfile
 import requests
@@ -536,3 +537,52 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
         if sleep_sec:
             time.sleep(sleep_sec)
     return all_records
+
+
+# ---------------------------------------------------------------------------
+# 記事とEDINET開示の突合（提出者の一意化）
+# ---------------------------------------------------------------------------
+# 記事側のツール（事実カード書き出し・薄い記事のリライト・誤報の是正）が共通で使う。
+# tools配下に置くと、互いにimportし合って循環参照になるためここに集約している。
+
+def _norm(name: str) -> str:
+    """提出者名の突合用の正規化。EDINETのXBRLは提出者名を全角（Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…）で
+    保持する一方、記事側のfilerNameや本文は半角で入ることがあるため、NFKC正規化して空白を落とす。"""
+    return unicodedata.normalize("NFKC", name or "").replace(" ", "").replace("\u3000", "").lower()
+
+
+def resolve_filer(article: dict, rows: list) -> "str | None":
+    """同一銘柄・同一開示日に提出者が複数いる場合の一意化。
+
+    銘柄コード×開示日だけでは絞れない記事が全体の18%（実測2026-08-25: 999件中182件）あり、
+    そのままではリライトの材料が作れない。記事側が持つ情報で候補を絞る:
+      1. microCMSのfilerNameが候補と一致すればそれを採る（154件がこの経路で解決する）
+      2. 記事タイトルに候補の提出者名が含まれていればそれを採る
+    どちらでも決まらなければNone（＝材料を作らずスキップ）。誤った提出者で記事を書き直すと
+    別の投資家の取引として公開されることになるため、曖昧なままでは進めない。
+    """
+    names = {r["filer_name"] for r in rows if r.get("filer_name")}
+    if len(names) == 1:
+        return names.pop()
+    if not names:
+        return None
+
+    by_norm = {_norm(n): n for n in names}
+    filer_name = (article.get("filerName") or "").strip()
+    if filer_name:
+        hit = by_norm.get(_norm(filer_name))
+        if hit:
+            return hit
+
+    title = _norm(article.get("title") or "")
+    matches = [n for norm, n in by_norm.items() if norm and norm in title]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _load_ledger(path: str) -> set:
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
