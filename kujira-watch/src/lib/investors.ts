@@ -328,9 +328,8 @@ async function getHoldingAmountsInRangeUncached(from: string, to: string): Promi
       .lte("disc_date", to)
       .order("doc_id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
-    // 金額はランキングの並べ替え軸ではなく件数に添える情報なので、読み取りに失敗しても
-    // ページ自体は件数だけで成立させる（0件を「金額ゼロ」として焼き付けない代わりに、
-    // ここで投げてページを落とすことはしない）。
+    // 金額は/trendingの並べ替え軸だが、読み取りに失敗してもページ自体は成立させる
+    // （呼び出し側が増加件数順にフォールバックする）。ここで投げてページを落とすことはしない。
     if (error || !data || data.length === 0) break;
     for (const row of data) {
       if (row.deal_amount_oku === null) continue;
