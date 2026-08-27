@@ -1,5 +1,24 @@
 # Dev Log
 
+## 2026-08-27 取りこぼしbackfillの初回実行（15本）とJSONパース失敗の修正
+
+`gh workflow run edinet_blog.yml`（workflow_dispatch）で初回のbackfillを実行。
+未記事化候補284件のうち古い順に15本（すべて2026-07-28分）を公開した。図は各2〜4枚付いている。
+自社株買い側は候補0件（8560は amendment 判定で除外済み）。
+
+投稿内容の確認:
+- 少額（0.1〜0.3億円）の記事は保有比率の変化幅が1.01〜1.23ptあり `MIN_RATIO_CHANGE_PT` を満たす。
+  金額だけ見ると薄いが足切り基準どおり。
+- ＡＳＩＡＮ　ＳＴＡＲ(8946) が同日2本出ているが提出者が別（Sterling Oak 5.96% /
+  Hash Global Alpha 11.19%）で重複ではない。
+
+**JSONパース失敗を修正**: `generate_article_body()` の `json.loads(text)` に `strict=False` が
+無く、本文HTMLの中の生の改行で "Invalid control character" になっていた。実行ログでは
+**22回の生成のうち7回（32%）がこれで失敗**し、`generate_article_body_checked()` の再生成で
+拾い直していた（＝毎回API呼び出しを1回余計に払っていた。両方失敗すれば記事は消える）。
+`get_filer_profile()`（800〜1000字の地の文）と `classify_filer()` にも同じ問題があったので揃えた。
+事業内容の `get_company_description()` は元から `strict=False` だった。
+
 ## 2026-08-27 既存決議の「一部変更」を新規決議として記事化する誤報を塞ぐ
 
 別セッションからの指摘で発覚。取りこぼしbackfill（43d3b31e）で窓を30日に広げたことと、

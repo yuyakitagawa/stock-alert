@@ -78,6 +78,18 @@ def test_generate_article_body_strips_code_fence():
     assert result == {"body": "<p>本文</p>"}
 
 
+def test_generate_article_body_allows_raw_newlines_in_json():
+    """本文HTMLの中に生の改行が入ったJSONでも落ちずにパースできること。
+    既定の strict=True だと "Invalid control character" で丸ごと失敗し記事が1本消える
+    （2026-08-27のbackfill便で22回中7回が実際にこれで失敗していた）。"""
+    body = "<p>1段落目。</p>\n<h2>見出し</h2>\n<p>2段落目。</p>"
+    raw = '{"body": "' + body + '", "bodyEn": "<p>Body</p>", "stockNameEn": "Test"}'
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        out = m.generate_article_body(_fact_sheet())
+    assert out is not None and out["body"] == body
+
+
 def test_generate_article_body_none_on_empty_body():
     fact_sheet = _fact_sheet()
     raw = json.dumps({"body": ""})
@@ -1922,4 +1934,5 @@ if __name__ == "__main__":
     test_is_backfill_target_skips_disclosure_already_articled()
     test_build_and_publish_skips_disclosure_already_articled()
     test_build_and_publish_records_ledger_after_publishing()
-    print("全テスト成功 (126件)")
+    test_generate_article_body_allows_raw_newlines_in_json()
+    print("全テスト成功 (127件)")

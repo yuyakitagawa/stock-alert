@@ -150,7 +150,7 @@ def classify_filer(filer_name: str) -> dict:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        data = json.loads(text)
+        data = json.loads(text, strict=False)
         if data.get("category") not in FILER_DEAL_TYPES:
             data["category"] = "その他"
         result = {
@@ -941,7 +941,8 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        profile = json.loads(text).get("profile", "") or ""
+        # プロフィールは800〜1000字の地の文で生の改行が混じるため strict=False
+        profile = json.loads(text, strict=False).get("profile", "") or ""
     except Exception as e:
         if api_budget.note(e):
             print(api_budget.SKIP_MESSAGE)
@@ -1394,7 +1395,10 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        data = json.loads(text)
+        # strict=False は必須。本文はHTMLなのでモデルがJSON文字列の中に生の改行を入れてくる。
+        # 既定の strict=True だと "Invalid control character at ..." で丸ごと落ち、記事が1本消える
+        # （2026-08-27のbackfill便では22回の生成のうち7回がこれで失敗し、再生成で拾い直していた）。
+        data = json.loads(text, strict=False)
         if not data.get("body"):
             return None
         return data
