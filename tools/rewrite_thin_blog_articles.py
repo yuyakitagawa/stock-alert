@@ -57,6 +57,17 @@ load_dotenv()
 # HTMLタグと株価チャートの<figure>を除いた可視文字数で判定する。
 THIN_TEXT_THRESHOLD = 1000
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# tools/apply_rewritten_articles.py が反映のたびに追記する、書き直し済み記事の台帳。
+DONE_LEDGER = os.path.join(REPO_ROOT, "logs", "rewritten_article_ids.txt")
+
+
+def load_done_ids() -> set:
+    if not os.path.exists(DONE_LEDGER):
+        return set()
+    with open(DONE_LEDGER, encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
 _FIGURE_RE = re.compile(r"<figure>.*?</figure>", re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -115,8 +126,16 @@ def main():
             print(f"指定IDのうち記事が見つからないもの: {sorted(missing)}")
         print(f"指定ID対象: {len(candidates)}件\n")
     else:
-        candidates = [a for a in articles if visible_text_len(a.get("body", "")) < THIN_TEXT_THRESHOLD]
-        print(f"薄い記事（可視文字数 < {THIN_TEXT_THRESHOLD}）: {len(candidates)}件\n")
+        # 既に書き直した記事は対象外。閾値は1,000字だが、事実が少ない開示では手で書き直しても
+        # 700〜900字にしかならないものがあり、閾値だけで拾うと人が書いた本文をAIの再生成で
+        # 上書きしてしまう。tools/apply_rewritten_articles.py が追記する台帳で突き合わせる。
+        done = load_done_ids()
+        candidates = [
+            a for a in articles
+            if a["id"] not in done and visible_text_len(a.get("body", "")) < THIN_TEXT_THRESHOLD
+        ]
+        print(f"薄い記事（可視文字数 < {THIN_TEXT_THRESHOLD}、書き直し済み{len(done)}件を除く）: "
+              f"{len(candidates)}件\n")
 
     if args.limit is not None:
         candidates = candidates[: args.limit]
