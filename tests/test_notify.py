@@ -71,7 +71,7 @@ class ApiBudgetNotifyTest(unittest.TestCase):
 
 
 class HeartbeatTest(unittest.TestCase):
-    BASE = {"date": "2026-08-24", "holdings": 39, "buybacks": 2,
+    BASE = {"date": "2026-08-24", "holdings": 39, "buybacks": 2, "edinet_api": 39,
             "articles": 18, "x_posts": 2, "videos": 1}
 
     def test_healthy_day_has_no_problem(self):
@@ -82,8 +82,9 @@ class HeartbeatTest(unittest.TestCase):
         self.assertTrue(any("ブログ記事が0件" in p for p in problems))
 
     def test_quiet_day_without_material_is_not_flagged(self):
-        """開示が無い日（祝日等）は記事0件でも異常ではない。"""
-        problems = hb.judge({**self.BASE, "holdings": 0, "buybacks": 0,
+        """開示が無い日（祝日等）は記事0件でも異常ではない。
+        「静かな日」はEDINET側も0件であることまで確認する（DBだけ0件なら保存の故障）。"""
+        problems = hb.judge({**self.BASE, "edinet_api": 0, "holdings": 0, "buybacks": 0,
                              "articles": 0, "videos": 0})
         self.assertFalse(any("ブログ記事" in p for p in problems))
 
@@ -109,6 +110,29 @@ class HeartbeatTest(unittest.TestCase):
 
     def test_day_start_utc_is_jst_midnight(self):
         self.assertEqual(hb._day_start_utc("2026-08-24"), "2026-08-23T15:00:00.000Z")
+
+    def test_flags_db_zero_while_edinet_has_disclosures(self):
+        """保存が壊れてDBだけ0件になった日を名指しで検知する（2026-08-26〜27の実例）。"""
+        problems = hb.judge({**self.BASE, "holdings": 0, "articles": 0, "videos": 0})
+        self.assertTrue(any("DBは0件" in p for p in problems), problems)
+
+    def test_material_is_counted_from_edinet_not_db(self):
+        """DBが0件でもEDINETに開示があれば「記事0件」を異常として拾う。
+        素材をDBから数えていたため、保存が壊れた日が静かな日と区別できていなかった。"""
+        problems = hb.judge({**self.BASE, "holdings": 0, "buybacks": 0,
+                             "articles": 0, "videos": 0})
+        self.assertTrue(any("ブログ記事が0件" in p for p in problems), problems)
+
+    def test_edinet_unknown_falls_back_to_db_count(self):
+        """EDINETを引けなかった(-1)ときは従来どおりDBの件数で判定し、誤報も出さない。"""
+        self.assertEqual(hb.judge({**self.BASE, "edinet_api": -1}), [])
+        problems = hb.judge({**self.BASE, "edinet_api": -1, "holdings": 0,
+                             "buybacks": 0, "articles": 0, "videos": 0})
+        self.assertEqual(problems, [])
+
+    def test_message_shows_both_db_and_edinet_counts(self):
+        msg = hb.build_message({**self.BASE, "holdings": 0}, [])
+        self.assertIn("大量保有0件（EDINET 39件）", msg)
 
 
 if __name__ == "__main__":

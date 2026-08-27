@@ -208,9 +208,10 @@ def save_price_cache(code, df):
 
 # ── edinet_large_holdings（大量保有報告書・5%ルール）───────────────────────
 
-def upsert_edinet_large_holdings(records: list):
+def upsert_edinet_large_holdings(records: list) -> bool:
+    """全行を保存できたら True。1バッチでも落ちたら False（呼び出し側は必ず見ること）。"""
     if not records:
-        return
+        return False
     today_str = date.today().isoformat()
     seen = set()
     sb_rows = []
@@ -238,7 +239,7 @@ def upsert_edinet_large_holdings(records: list):
         if r.get("short_term_transfers"):
             row["short_term_transfers"] = r["short_term_transfers"]
         sb_rows.append(row)
-    sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
+    return sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
 
 def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):

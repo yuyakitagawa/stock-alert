@@ -73,6 +73,36 @@ def _dedup_batch(batch: list[dict], on_conflict: str) -> list[dict]:
     return [batch[i] for i in sorted(seen.values())]
 
 
+# 書き込みに失敗したテーブルと行数（プロセス内で累積）。呼び出し側が write_failures() で
+# 「保存できたつもりで進んでいないか」を確認できるようにする。
+_write_failures: dict[str, int] = {}
+# LINEはテーブルごとに1プロセス1回だけ。毎時のジョブで同じ障害を何十通も送らないため。
+_notified_tables: set[str] = set()
+
+
+def _record_write_failure(table: str, rows: int, detail: str) -> None:
+    """DB書き込みの失敗を記録し、初回だけLINEへ流す。
+
+    ワークフローの各ステップは continue-on-error で走っているため、書き込みが全滅しても
+    ジョブは緑のまま `if: failure()` の通知も鳴らない。実際に2026-08-26〜27、
+    edinet_large_holdings の upsert が毎便400で全滅したまま2日間気づけなかった。
+    見張りを「ジョブの成否」に依存させず、失敗したその場から直接鳴らす。"""
+    _write_failures[table] = _write_failures.get(table, 0) + rows
+    if table in _notified_tables:
+        return
+    _notified_tables.add(table)
+    try:
+        from lib import notify
+        notify.error("DB書き込み", f"{table} への保存に失敗しています（{rows}件）", detail=detail)
+    except Exception as e:            # 通知の失敗で本処理を止めない
+        print(f"[supabase] 通知に失敗: {e}")
+
+
+def write_failures() -> dict[str, int]:
+    """このプロセスで書き込みに失敗したテーブルと行数。正常なら空dict。"""
+    return dict(_write_failures)
+
+
 def _group_by_keys(batch: list[dict]) -> list[list[dict]]:
     """キー構成が同じ行どうしにまとめる。PostgRESTは1リクエスト内の全オブジェクトの
     キーが一致していないと PGRST102 "All object keys must match" で400を返し、
@@ -105,11 +135,14 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
                 resp = _request("POST", url, headers=_headers(), json=batch, timeout=_TIMEOUT)
             except Exception as e:
                 print(f"[supabase] {table} upsert exception ({len(batch)} rows): {e}")
+                _record_write_failure(table, len(batch), str(e))
                 ok_all = False
                 continue
             if not resp.ok:
                 print(f"[supabase] {table} upsert failed ({len(batch)} rows): "
                       f"{resp.status_code} {resp.text[:500]}")
+                _record_write_failure(table, len(batch),
+                                      f"HTTP {resp.status_code} {resp.text[:200]}")
                 ok_all = False
             else:
                 print(f"[supabase] {table} upsert OK ({len(batch)} rows)")
@@ -130,10 +163,13 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
                 resp = _request("POST", url, headers=headers, json=batch, timeout=_TIMEOUT)
             except Exception as e:
                 print(f"[supabase] {table} insert_ignore exception ({len(batch)} rows): {e}")
+                _record_write_failure(table, len(batch), str(e))
                 continue
             if not resp.ok:
                 print(f"[supabase] {table} insert_ignore failed ({len(batch)} rows): "
                       f"{resp.status_code} {resp.text[:300]}")
+                _record_write_failure(table, len(batch),
+                                      f"HTTP {resp.status_code} {resp.text[:200]}")
 
 
 def select(table: str, query: str = "", limit: int = 0) -> list[dict]:

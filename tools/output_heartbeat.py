@@ -12,6 +12,7 @@ tools/output_heartbeat.py
   API上限やモデル障害の最中でも動く。
 
 判定（平日想定。ops.yml から 13:00 UTC = 22:00 JST に実行）:
+  🚨 EDINETに大量保有の開示があるのにDB（edinet_large_holdings）が0件＝保存が壊れている
   🚨 素材（当日のEDINET大量保有開示 or 自社株買い決定）があるのにブログ記事が0件
   🚨 X投稿が0件
   ⚠️ ブログ記事は出ているのに動画のクロス投稿が0本
@@ -42,6 +43,7 @@ load_dotenv(REPO_ROOT / ".env")
 
 from lib import notify  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
+from lib.edinet import verify_api  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 
@@ -79,6 +81,22 @@ def count_blog_articles(date_str: str) -> int:
         return -1
 
 
+def count_edinet_disclosures(date_str: str) -> int:
+    """EDINET APIを直接叩いて当日の大量保有報告書の件数を数える。取得できなければ -1（不明）。
+
+    なぜDBではなくAPIを見るのか（2026-08-26〜27の無言停止）:
+      素材件数をSupabaseの edinet_large_holdings から数えていたため、保存側が壊れて全件
+      落ちたときに「素材0件＝開示が無い静かな日」と判定され、記事が出ていなくても正常扱いに
+      なっていた。故障の上流（EDINET）から数えれば、保存が壊れた日を「開示はあったのに
+      DBに入っていない」として名指しできる。
+    """
+    v = verify_api(date_str)
+    if not v["ok"]:
+        print(f"[heartbeat] ⚠ EDINET取得失敗: {v['reason']}")
+        return -1
+    return int(v["large"])
+
+
 def _count_rows(table: str, query: str) -> int:
     try:
         return len(sb.select(table, query))
@@ -94,6 +112,7 @@ def collect(date_str: str) -> dict:
         "date": date_str,
         "holdings": _count_rows("edinet_large_holdings",
                                 f"disc_date=eq.{date_str}&select=doc_id"),
+        "edinet_api": count_edinet_disclosures(date_str),
         "buybacks": _count_rows("tdnet_buybacks",
                                 f"disclosed_at=gte.{date_str}T00:00:00"
                                 f"&disclosed_at=lt.{date_str}T23:59:59&select=code"),
@@ -107,7 +126,15 @@ def collect(date_str: str) -> dict:
 def judge(counts: dict) -> list[str]:
     """異常メッセージのリスト（空なら正常）。件数不明(-1)は判定しない。"""
     problems = []
-    material = max(counts["holdings"], 0) + max(counts["buybacks"], 0)
+    # 素材はEDINET API（上流）を正とする。DB側が壊れて0件になっていても素材の有無を見誤らない。
+    api = counts.get("edinet_api", -1)
+    holdings = api if api >= 0 else counts["holdings"]
+    if api > 0 and counts["holdings"] == 0:
+        problems.append(
+            f"EDINETに大量保有{api}件の開示があるのにDBは0件"
+            "（Supabaseへの保存が壊れている可能性）"
+        )
+    material = max(holdings, 0) + max(counts["buybacks"], 0)
     if counts["articles"] == 0 and material > 0:
         problems.append(
             f"ブログ記事が0件（当日の素材: 大量保有{counts['holdings']}件 / "
@@ -128,7 +155,9 @@ def build_message(counts: dict, problems: list[str]) -> str:
     md = f"{int(counts['date'][5:7])}/{int(counts['date'][8:10])}"
     body = (f"ブログ{_n(counts['articles'])}件 / X{_n(counts['x_posts'])}件 / "
             f"動画{_n(counts['videos'])}本\n"
-            f"素材: 大量保有{_n(counts['holdings'])}件 / 自社株買い{_n(counts['buybacks'])}件")
+            f"素材: 大量保有{_n(counts['holdings'])}件"
+            f"（EDINET {_n(counts.get('edinet_api', -1))}件）"
+            f" / 自社株買い{_n(counts['buybacks'])}件")
     if not problems:
         return notify.build_message("✅", f"{md} 自動投稿", body)
     return notify.build_message("🚨", f"{md} 自動投稿が欠けています",

@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.edinet import scan_large_holdings, verify_api, _api_key, disclosure_kind_label
 from lib.db import get_edinet_large_holdings_recent
+from lib import supabase_client as sb
 
 
 def load_candidate_codes(path: str) -> dict:
@@ -187,7 +188,7 @@ def main():
         if args.no_fetch:
             pass
         else:
-            return
+            return 0
 
     if not args.no_fetch and _api_key():
         if args.start:
@@ -269,6 +270,15 @@ def main():
         w.writerows(matches)
     print(f"\n全{len(matches)}件を保存: {args.out}")
 
+    # 開示を1件も保存できていない状態で「成功」を返さない。ステップは continue-on-error だが、
+    # 終了コード1でActions上は赤く残り、LINEは lib.supabase_client が失敗時点で送っている。
+    failures = sb.write_failures()
+    if failures:
+        detail = " / ".join(f"{t}:{n}件" for t, n in failures.items())
+        print(f"\n❌ DBへ保存できなかった行があります（{detail}）")
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

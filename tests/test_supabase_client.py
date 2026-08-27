@@ -118,10 +118,60 @@ def test_insert_ignore_splits_rows_with_different_keys():
     assert len(bodies) == 2, bodies
 
 
+def test_write_failure_is_recorded_and_notified_once():
+    """書き込み失敗はテーブル別に記録し、LINEは1プロセス1回だけ送る。
+    ワークフローの各ステップは continue-on-error で緑のまま進むため、失敗した
+    その場から鳴らさないと誰も気づけない（2026-08-26〜27の実例）。"""
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    sb._write_failures.clear()
+    sb._notified_tables.clear()
+
+    class _Failing:
+        ok = False
+        status_code = 400
+        text = '{"code":"PGRST102"}'
+
+    try:
+        with mock.patch("lib.supabase_client.requests.request", return_value=_Failing()), \
+             mock.patch("lib.notify.error") as err:
+            ok1 = sb.upsert("some_table", [{"a": 1}], on_conflict="a")
+            ok2 = sb.upsert("some_table", [{"a": 2}], on_conflict="a")
+            assert ok1 is False and ok2 is False
+            assert err.call_count == 1, err.call_count
+        assert sb.write_failures() == {"some_table": 2}, sb.write_failures()
+    finally:
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+        sb._write_failures.clear()
+        sb._notified_tables.clear()
+
+
+def test_successful_write_records_no_failure():
+    """成功した書き込みは失敗として残らず、通知も出ない。"""
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    sb._write_failures.clear()
+    sb._notified_tables.clear()
+    try:
+        with mock.patch("lib.supabase_client.requests.request", return_value=_FakeResponse()), \
+             mock.patch("lib.notify.error") as err:
+            assert sb.upsert("some_table", [{"a": 1}], on_conflict="a") is True
+            err.assert_not_called()
+        assert sb.write_failures() == {}
+    finally:
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+        sb._write_failures.clear()
+        sb._notified_tables.clear()
+
+
 if __name__ == "__main__":
     test_request_retries_on_timeout_then_succeeds()
     test_request_raises_after_max_retries()
     test_insert_ignore_does_not_crash_on_persistent_network_failure()
     test_upsert_splits_rows_with_different_keys()
     test_insert_ignore_splits_rows_with_different_keys()
-    print("OK: test_supabase_client (5 tests)")
+    test_write_failure_is_recorded_and_notified_once()
+    test_successful_write_records_no_failure()
+    print("OK: test_supabase_client (7 tests)")
