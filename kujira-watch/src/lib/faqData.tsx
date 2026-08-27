@@ -2766,6 +2766,13 @@ export const FAQS: FaqItem[] = [
   },
 ];
 
+/** カテゴリ名を「〜について」「〜に関する」の前に置くときの整形。
+ * 「運営・データについて」のように末尾が「について」のラベルをそのまま繋ぐと
+ * 「運営・データについてについて」と重複するため、末尾の「について」を落とす。 */
+export function categoryTopic(label: string): string {
+  return label.endsWith("について") ? label.slice(0, -"について".length) : label;
+}
+
 export function faqsByCategory(categoryId: string): FaqItem[] {
   return FAQS.filter((faq) => faq.category === categoryId);
 }
