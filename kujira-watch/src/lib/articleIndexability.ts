@@ -10,6 +10,9 @@
 // EDINET(Supabase)の値を混ぜるとsitemapと記事ページで判定がずれ、
 // 「サイトマップに載っているのにnoindex」という自己矛盾をGoogleに送ることになる。
 
+// しきい値は web/publish_blog_articles.py（記事化の足切り）と faqData.tsx のFAQ
+// 「すべての大量保有報告書が記事になっていますか？」と同じ数値。変更時は3箇所そろえること。
+
 /** 推定取得金額の下限（億円）。これ以上なら比率変化が小さくてもインデックス対象。 */
 export const INDEXABLE_MIN_DEAL_AMOUNT_OKU = 3;
 /** 保有比率の変化幅の下限（ポイント）。金額が小さくても保有方針の変化は価値がある。 */

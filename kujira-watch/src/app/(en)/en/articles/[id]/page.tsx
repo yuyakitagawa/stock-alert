@@ -51,7 +51,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const article = await getArticleDetail(id).catch(() => null);
   if (!article || !article.titleEn || !article.bodyEn) return {};
 
-  const description = `${article.stockName}(${article.stockCode}) — ${DEAL_TYPE_EN[article.dealType].label}. ${excerptFromHtml(article.bodyEn)}`;
+  // dealTypeが空の記事でも落とさない。microCMSのdealTypeはセレクト型で選択肢に無い値を
+  // 落として保存するため、CMS側の設定漏れだけでここが undefined.label になり、
+  // generateMetadataが例外を投げてビルド全体が失敗する（実害: 2026-08-24〜25、
+  // 自社株買い記事のプリレンダリングで本番デプロイが24時間以上まるごと停止した）。
+  const dealTypeLabel = DEAL_TYPE_EN[article.dealType]?.label;
+  const description = [
+    `${article.stockName}(${article.stockCode})`,
+    dealTypeLabel ? ` — ${dealTypeLabel}` : "",
+    `. ${excerptFromHtml(article.bodyEn)}`,
+  ].join("");
   const url = `${SITE_URL}/en/articles/${id}`;
   const superseded = await isSupersededArticle(id, article.stockCode);
 

@@ -12,9 +12,10 @@ import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
 
-// 比較期間。週次(7日)だと開示の少ない週に振り回され、暦月だと月初は「数日 vs 1か月」の
-// 比較になってしまうため、常に同じ長さで比べられる30日固定にする。
-const WINDOW_DAYS = 30;
+// 比較期間。「今どの銘柄に大口の資金が入っているか」を今週の動きとして見せるため、
+// 直近7日 vs その前の7日で比べる（暦週ではなく常に同じ長さの7日固定にして、
+// 月初・週初でも「数日 vs 1週間」の歪んだ比較にならないようにする）。
+const WINDOW_DAYS = 7;
 
 // 構造化データに載せる件数。オートページャーで追加描画される分はクライアント側の
 // 処理なので、クロール時点でサーバーが返すHTML（TrendingTableのINITIAL_COUNT）に合わせる。
@@ -25,7 +26,7 @@ const title = "銘柄ランキング";
 
 export const metadata: Metadata = {
   title,
-  description: `直近${WINDOW_DAYS}日間で大量保有報告書の開示が増えた銘柄を、その前の${WINDOW_DAYS}日間と比べた増加件数順にランキング。開示の件数と推定売買金額を並べて表示し、買い・売り・両方で絞り込めます。EDINETの開示データをもとに毎日更新しています。`,
+  description: `直近${WINDOW_DAYS}日間で大量保有報告書の開示が増えた銘柄を、推定売買金額の大きい順にランキング。開示の件数と金額を並べて表示し、買い・売り・両方で絞り込めます。EDINETの開示データをもとに毎日更新しています。`,
   alternates: { canonical: url },
   openGraph: { title, url },
 };
@@ -43,14 +44,15 @@ export default async function TrendingPage() {
 
   const [rows, amountByDocId, listedCodes, { contents: recentArticles }] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
-    // 金額は件数に添えるだけの情報なので、取れなくてもランキング自体は成立させる。
+    // 金額はランキングの並べ替え軸だが、取れなかった場合も件数（増加件数順）にフォールバックして
+    // ページ自体は成立させる。金額が読めないことを理由に一覧を落とすほうが読者の損失が大きい。
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
     getAllListedCodes().catch(() => new Set<string>()),
     // ランキング銘柄の解説記事（アイキャッチ付きカード）用。取れなくてもページは成立させる。
     getArticleList({ limit: 30 }).catch(() => ({ contents: [] })),
   ]);
 
-  // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
+  // 件数制限なし。直近7日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
   const trendingIssuers = buildTrendingIssuers(rows, currentFrom, amountByDocId);
 
   // 社名と証券コードだけでは何の会社か分からないため、事業内容を1行添える。
@@ -99,7 +101,7 @@ export default async function TrendingPage() {
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    name: `買いの大量保有報告書の開示が増えた銘柄（直近${WINDOW_DAYS}日）`,
+    name: `買いの大量保有報告書の開示が増えた銘柄の推定売買金額ランキング（直近${WINDOW_DAYS}日）`,
     itemListElement: defaultViewItems
       .slice(0, JSON_LD_COUNT)
       .filter((entry) => entry.href !== null)
@@ -134,7 +136,7 @@ export default async function TrendingPage() {
           <InfoTip
             content={
               <>
-                前の{WINDOW_DAYS}日間と比べた増加件数順に並べています。保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
+前の{WINDOW_DAYS}日間より開示が増えた銘柄を、推定売買金額の大きい順に並べています（金額が同じなら増加件数順）。保有比率が増えた「買い」（初期表示）・減った「売り」・その両方で絞り込めます。
                 各銘柄の推定売買金額は「保有比率の変化幅×発行済株式数×開示日の終値」の概算です。
               </>
             }
@@ -156,7 +158,8 @@ export default async function TrendingPage() {
         <TrendingDirectionTable items={trendingItems} windowDays={WINDOW_DAYS} />
         <p className="mt-3 text-xs leading-relaxed text-foreground/40">
           ※金額はEDINET開示に取引金額の記載が無いための概算です。売買を伴わない訂正報告書や、
-          株価・発行済株式数が取れない銘柄は金額に含めていない（件数には含む）ため、件数と金額は必ずしも比例しません。
+          株価・発行済株式数が取れない銘柄は金額を推定できないため「金額不明」として一覧の下側に並びます
+          （件数には含みます）。
         </p>
       </section>
 

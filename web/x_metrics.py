@@ -42,12 +42,14 @@ BATCH = 100
 METRICS_WINDOW_DAYS = 30
 
 
-def fetch_target_tweet_ids() -> list:
+def fetch_targets() -> dict:
+    """{tweet_id: kind} を返す。kindも一緒に持ち帰るのは、更新時のupsertで
+    NOT NULLのkindを埋め直す必要があるため（save()のコメント参照）。"""
     # ISO文字列の "+00:00" はクエリ文字列上でそのまま渡すと空白に解釈されて
     # PostgRESTが400を返すため、値をURLエンコードしてから渡す。
     since = quote((datetime.now(timezone.utc) - timedelta(days=METRICS_WINDOW_DAYS)).isoformat(), safe="")
-    rows = sb.select("x_posts", f"posted_at=gte.{since}&select=tweet_id&order=posted_at.desc")
-    return [r["tweet_id"] for r in rows if r.get("tweet_id")]
+    rows = sb.select("x_posts", f"posted_at=gte.{since}&select=tweet_id,kind&order=posted_at.desc")
+    return {r["tweet_id"]: r.get("kind") for r in rows if r.get("tweet_id")}
 
 
 # 取得を諦めるしかない恒久的な失敗。リトライやコード修正では解消せず、プラン変更か
@@ -138,16 +140,33 @@ def save_followers(snapshot: dict) -> None:
     print(f"[x_metrics] フォロワー {snapshot.get('followers')}人を記録しました")
 
 
-def save(metrics: dict) -> int:
+# kindが取れなかった行に入れる値。NOT NULL制約を満たすためだけの穴埋めで、
+# 集計時は「種別不明」として扱う。
+UNKNOWN_KIND = "unknown"
+
+
+class SaveFailed(RuntimeError):
+    """Supabaseへ書けなかったときに投げる。ここを握り潰すと「毎日成功しているのに
+    数字が入っていない」状態になる（2026-08-24〜25の23502が2日気付かれなかった原因）。"""
+
+
+def save(metrics: dict, kinds: dict) -> int:
     if not metrics:
         return 0
     today = date.today().isoformat()
     now = datetime.now(timezone.utc).isoformat()
-    sb.upsert("x_posts", [{"tweet_id": tid, **m, "metrics_updated_at": now}
-                          for tid, m in metrics.items()], on_conflict="tweet_id")
-    sb.upsert("x_post_metrics", [{"tweet_id": tid, "measured_on": today, **m}
-                                 for tid, m in metrics.items()],
-              on_conflict="tweet_id,measured_on")
+    # PostgRESTのupsertはINSERT ... ON CONFLICT DO UPDATEで、既存行の更新でも
+    # 「INSERTしようとした行」に対してNOT NULL制約が先に評価される。kindを送らないと
+    # 全行まとめて23502で落ち、最新値が何日も欠測する（2026-08-24〜25に18行が全滅）。
+    ok_posts = sb.upsert("x_posts", [{"tweet_id": tid, "kind": kinds.get(tid) or UNKNOWN_KIND,
+                                      **m, "metrics_updated_at": now}
+                                     for tid, m in metrics.items()], on_conflict="tweet_id")
+    ok_daily = sb.upsert("x_post_metrics", [{"tweet_id": tid, "measured_on": today, **m}
+                                            for tid, m in metrics.items()],
+                         on_conflict="tweet_id,measured_on")
+    failed = [name for name, ok in (("x_posts", ok_posts), ("x_post_metrics", ok_daily)) if not ok]
+    if failed:
+        raise SaveFailed(f"{'/'.join(failed)} への保存に失敗しました（上のログのHTTPコードを参照）")
     return len(metrics)
 
 
@@ -202,20 +221,24 @@ def run(with_report: bool = False) -> int:
         print("[x_metrics] Supabase未設定のため実行しません")
         return 1
     save_followers(fetch_followers())
-    ids = fetch_target_tweet_ids()
+    kinds = fetch_targets()
+    ids = list(kinds)
     if not ids:
         print("[x_metrics] 対象の投稿がありません")
         if with_report:
             report()
         return 0
     try:
-        saved = save(fetch_metrics(ids))
+        saved = save(fetch_metrics(ids), kinds)
     except MetricsUnavailable as e:
         # 成功扱いにすると「毎日動いているのに数字が無い」状態が緑のまま続く。
         # 実際、402(credits depleted)で4日連続successのまま0件だった。
         print(f"[x_metrics] メトリクスを取得できません: {e}")
         print(f"[x_metrics] 対象{len(ids)}件は数字が空のままです。X APIのプラン/権限を確認してください")
         return 2
+    except SaveFailed as e:
+        print(f"[x_metrics] メトリクスを保存できません: {e}")
+        return 3
     print(f"[x_metrics] {saved}/{len(ids)}件のメトリクスを更新しました")
     if with_report:
         report()

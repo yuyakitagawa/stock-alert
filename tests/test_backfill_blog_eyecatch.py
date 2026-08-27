@@ -10,7 +10,8 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.backfill_blog_eyecatch import (
-    badge_label_for, build_card, ratio_from_title, resolve_holding_ratio, select_candidates,
+    badge_label_for, build_card, done_ids_from_logs, ratio_from_title, resolve_holding_ratio,
+    select_candidates,
 )
 
 
@@ -68,6 +69,31 @@ def test_build_card():
                     "badge_label": "📉 売却", "disc_date": "2026-08-01"}
 
 
+def test_done_ids_from_logs_picks_ok_lines():
+    """中断からの再開用に、実行ログの「→ OK」行から記事IDだけを拾う。
+    スキップ・失敗行と、まだ処理していない行は拾わない。"""
+    import tempfile
+    log = (
+        "画像あり記事(差し替え) 964件 → 対象 964件\n"
+        "[1/964] 東邦亜鉛(5707) 2026-08-27 xx7gqfbjx → OK https://images.example/a.jpg\n"
+        "[2/964] ヤギ(7460) 2026-08-21 h_7m1wxsa → OK https://images.example/b.jpg\n"
+        "[3/964] 某社(1234) 2026-08-20 zzz111 → スキップ（保有比率が取れない）\n"
+        "[4/964] 某社(1234) 2026-08-20 yyy222 → 失敗（アップロード）\n"
+        "完了: 成功 2 / スキップ 1 / 失敗 1\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".log", encoding="utf-8", delete=False) as f:
+        f.write(log)
+        path = f.name
+    try:
+        assert done_ids_from_logs([path]) == {"xx7gqfbjx", "h_7m1wxsa"}
+    finally:
+        os.unlink(path)
+
+
+def test_done_ids_from_logs_tolerates_missing_file():
+    assert done_ids_from_logs(["/nonexistent/path.log"]) == set()
+
+
 if __name__ == "__main__":
     test_badge_sell_from_tags()
     test_badge_correction_from_tags_or_title()
@@ -76,4 +102,6 @@ if __name__ == "__main__":
     test_select_candidates_days_index_only_limit_and_order()
     test_ratio_from_title_and_fallback()
     test_build_card()
+    test_done_ids_from_logs_picks_ok_lines()
+    test_done_ids_from_logs_tolerates_missing_file()
     print("OK")

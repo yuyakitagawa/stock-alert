@@ -4,7 +4,8 @@ import type { HoldingRow } from "./investors";
 // 記事(microCMS)ではなくEDINET開示(Supabase `edinet_large_holdings`)を数える。
 // 記事の蓄積は2026年7月に始まったばかりで前期間がほぼ空になり比較が成立しないのに対し、
 // 開示データは1年分あるため、今日時点でも意味のある「前期間比」を出せるため。
-// ランキングの軸は開示件数のまま。金額（推定売買金額）は件数に添えて規模を示すために持つ。
+// ランキングの軸は推定売買金額（2026-08-27に開示件数順から変更）。件数はどれだけの
+// クジラが動いたかを示す情報として金額に添える。
 // EDINET開示そのものに取引金額は無く、Supabase側のマテリアライズドビュー
 // edinet_holding_amounts が「保有比率の変化幅 × 発行済株式数 × 開示日終値」で概算する。
 // 訂正報告書や株価・株式数が取れない開示は金額不明＝0億円として扱う（件数には入る）ため、
@@ -85,9 +86,13 @@ function toCounts(bucket: Bucket): TrendingCounts {
   };
 }
 
-// 増加件数が同じなら直近期間の件数が多いほうを上に出す。
+// 直近期間の推定売買金額が大きい順。「今どこに大口の資金が入っているか」を見せるページなので、
+// 開示が何件出たかより投じられた金額のほうが規模を表す。7日窓では大半の銘柄が「+1件」で並び
+// （2026-08-27実測で増加179銘柄のうち151銘柄がdelta+1、うち146銘柄は直近件数も1件）、
+// 件数を先に見る並べ替えでは上位が実質ランダムになっていた。
+// 金額が同じ銘柄（多くは金額を推定できない＝0億円の銘柄）だけ増加件数→直近件数で並べる。
 function compareTrending(a: TrendingCounts, b: TrendingCounts): number {
-  return b.delta - a.delta || b.count - a.count;
+  return b.amount - a.amount || b.delta - a.delta || b.count - a.count;
 }
 
 // 選んだ方向の件数を実体化して、増えたものだけを並べ替えて返す。
@@ -101,7 +106,7 @@ export function selectDirection<T extends DirectionalTrendingEntry>(
     .sort(compareTrending);
 }
 
-// /trendingの銘柄一覧。件数制限なし＝直近30日で開示が増えた銘柄をすべて返す。
+// /trendingの銘柄一覧。件数制限なし＝直近7日で開示が増えた銘柄をすべて返す。
 // 並べ替えは絞り込みを切り替えるクライアント側（selectDirection）で行うため、
 // ここではどの方向でも増えていない銘柄を落とすだけにする。
 export function buildTrendingIssuers(

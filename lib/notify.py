@@ -25,6 +25,7 @@ CLIから（GitHub Actions の `if: failure()` ステップ用）:
 """
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -34,6 +35,9 @@ PUSH_URL = "https://api.line.me/v2/bot/message/push"
 MAX_CHARS = 4_000
 # エラー本文（スタックトレース等）はLINEでは読みにくいので先頭だけ載せる。
 DETAIL_MAX_CHARS = 400
+# 同じ原因の通知を抑制する既定の時間幅。毎時のワークフローが同じ理由で落ち続けても
+# 1日1通に収める（2026-08-24のAPI上限超過なら本来13通になっていた）。
+DEDUPE_WINDOW_HOURS = 20.0
 
 
 def is_configured() -> bool:
@@ -68,6 +72,57 @@ def push(text: str) -> bool:
         return False
 
 
+def _recent_send(dedupe_key: str, window_hours: float) -> "dict | None":
+    """window_hours以内に同じdedupe_keyで送っていればその行を返す。
+    判定できないとき（Supabase未設定・障害）は None＝送る側に倒す。
+    見張りの通知は「多い」より「来ない」ほうが致命的なため。"""
+    try:
+        from lib import supabase_client as sb
+
+        row = sb.select_one("notify_log", f"dedupe_key=eq.{dedupe_key}&select=*")
+        if not row or not row.get("last_sent_at"):
+            return None
+        last = datetime.fromisoformat(str(row["last_sent_at"]).replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) - last < timedelta(hours=window_hours):
+            return row
+        return None
+    except Exception as e:
+        print(f"[notify] ⚠ 重複判定に失敗したため送信します: {e}")
+        return None
+
+
+def _record_send(dedupe_key: str, text: str, prev: "dict | None") -> None:
+    try:
+        from lib import supabase_client as sb
+
+        sb.upsert("notify_log", [{
+            "dedupe_key": dedupe_key,
+            "last_sent_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "sent_count": int((prev or {}).get("sent_count") or 0) + 1,
+            "last_text": text[:1000],
+        }], on_conflict="dedupe_key")
+    except Exception as e:
+        print(f"[notify] ⚠ 送信履歴の記録に失敗（通知自体は送信済み）: {e}")
+
+
+def push_once(dedupe_key: str, text: str, window_hours: float = DEDUPE_WINDOW_HOURS) -> bool:
+    """同じdedupe_keyでwindow_hours以内に送っていなければ送る。
+
+    毎時のワークフローが同じ原因で失敗し続けるとき（API上限超過なら復旧まで最大13便）、
+    そのまま通知すると1日13通届いて通知疲れを起こす。抑制した回数は notify_log.sent_count に
+    積んでいくので、後から「何便ぶん黙ったか」は追える。
+    """
+    prev = _recent_send(dedupe_key, window_hours)
+    if prev is not None:
+        print(f"[notify] 直近{window_hours:g}時間に同じ通知（{dedupe_key}）を送信済みのため抑制します")
+        _record_send(dedupe_key, text, prev)  # 抑制した回数も数える
+        return False
+    if not push(text):
+        return False
+    _record_send(dedupe_key, text, None)
+    return True
+
+
 def build_message(mark: str, where: str, message: str, detail: str = "",
                   url: str = "") -> str:
     """通知本文。1行目で「どこが」「何が」起きたかが分かるようにする。"""
@@ -80,14 +135,18 @@ def build_message(mark: str, where: str, message: str, detail: str = "",
     return "\n".join(lines)
 
 
-def error(where: str, message: str, detail: str = "", url: str = "") -> bool:
-    """止まった・落ちたときの通知。"""
-    return push(build_message("🚨", where, message, detail, url))
+def error(where: str, message: str, detail: str = "", url: str = "",
+          dedupe_key: str = "") -> bool:
+    """止まった・落ちたときの通知。dedupe_keyを渡すと同じ原因の連投を抑える。"""
+    body = build_message("🚨", where, message, detail, url)
+    return push_once(dedupe_key, body) if dedupe_key else push(body)
 
 
-def warn(where: str, message: str, detail: str = "", url: str = "") -> bool:
+def warn(where: str, message: str, detail: str = "", url: str = "",
+         dedupe_key: str = "") -> bool:
     """落ちてはいないが期待どおりに出ていないときの通知。"""
-    return push(build_message("⚠️", where, message, detail, url))
+    body = build_message("⚠️", where, message, detail, url)
+    return push_once(dedupe_key, body) if dedupe_key else push(body)
 
 
 def main() -> int:
@@ -96,8 +155,16 @@ def main() -> int:
     p = argparse.ArgumentParser(description="LINEへ1通プッシュする")
     p.add_argument("text", help="送信する本文")
     p.add_argument("--url", default="", help="末尾に付けるURL（Actionsの実行ログ等）")
+    p.add_argument("--dedupe-key", default="",
+                   help="同じキーの通知を --dedupe-hours 以内は再送しない（毎時ワークフローの連投抑制）")
+    p.add_argument("--dedupe-hours", type=float, default=DEDUPE_WINDOW_HOURS,
+                   help=f"重複抑制の時間幅（既定{DEDUPE_WINDOW_HOURS:g}時間）")
     args = p.parse_args()
     body = args.text + (f"\n\n{args.url}" if args.url else "")
+    if args.dedupe_key:
+        # 抑制された場合も「送るべきものが無かった」だけなので正常終了にする
+        push_once(args.dedupe_key, body, args.dedupe_hours)
+        return 0
     return 0 if push(body) else 1
 
 

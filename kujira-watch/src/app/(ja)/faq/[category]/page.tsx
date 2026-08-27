@@ -6,7 +6,7 @@ import Typography from "@mui/material/Typography";
 import AdUnit from "@/components/AdUnit";
 import ActionButton from "@/components/ActionButton";
 import FaqAccordionList from "@/components/FaqAccordionList";
-import { FAQ_CATEGORIES, faqsByCategory, findCategory } from "@/lib/faqData";
+import { FAQ_CATEGORIES, categoryTopic, faqsByCategory, findCategory } from "@/lib/faqData";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 // カテゴリは固定9種でビルド時に全部わかるので事前生成する。
@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const faqs = faqsByCategory(categoryId);
   const title = `${category.label}｜よくある質問`;
-  const description = `${category.label}に関するよくある質問と回答${faqs.length}件。${SITE_NAME}が大量保有報告書（5%ルール）の解説とあわせてまとめています。`;
+  const description = `${categoryTopic(category.label)}に関するよくある質問と回答${faqs.length}件。${SITE_NAME}が大量保有報告書（5%ルール）の解説とあわせてまとめています。`;
   const url = `${SITE_URL}/faq/${categoryId}`;
 
   return {
@@ -88,7 +88,7 @@ export default async function FaqCategoryPage({ params }: Props) {
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{category.label}</h1>
       <p className="mb-6 text-sm leading-relaxed text-foreground/70">
-        {category.label}についてよく寄せられる質問と回答{faqs.length}件です。
+        {categoryTopic(category.label)}についてよく寄せられる質問と回答{faqs.length}件です。
         質問をタップすると回答が開きます。
       </p>
 

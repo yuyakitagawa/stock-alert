@@ -6,6 +6,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate, formatMonth } from "@/lib/format";
 import { getAllArticlesForSitemap, getArticlesByDealDate } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+import { isIndexableDatePage } from "@/lib/pageIndexability";
 import AdUnit from "@/components/AdUnit";
 
 // YYYY-MM-DD形式のみ受け付ける（それ以外はmicroCMSへの無駄な問い合わせをせず404にする）。
@@ -54,6 +55,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
+    // 開示が数件しかない日は記事へのリンクが数本並ぶだけで、記事本文と内容が重複する。
+    // 判定は lib/pageIndexability.ts に集約（サイトマップ側と条件を必ず一致させる）。
+    ...(isIndexableDatePage(contents.length) ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: url },
     openGraph: { title, description, url },
   };

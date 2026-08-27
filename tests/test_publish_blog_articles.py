@@ -78,6 +78,18 @@ def test_generate_article_body_strips_code_fence():
     assert result == {"body": "<p>本文</p>"}
 
 
+def test_generate_article_body_allows_raw_newlines_in_json():
+    """本文HTMLの中に生の改行が入ったJSONでも落ちずにパースできること。
+    既定の strict=True だと "Invalid control character" で丸ごと失敗し記事が1本消える
+    （2026-08-27のbackfill便で22回中7回が実際にこれで失敗していた）。"""
+    body = "<p>1段落目。</p>\n<h2>見出し</h2>\n<p>2段落目。</p>"
+    raw = '{"body": "' + body + '", "bodyEn": "<p>Body</p>", "stockNameEn": "Test"}'
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        out = m.generate_article_body(_fact_sheet())
+    assert out is not None and out["body"] == body
+
+
 def test_generate_article_body_none_on_empty_body():
     fact_sheet = _fact_sheet()
     raw = json.dumps({"body": ""})
@@ -197,6 +209,7 @@ def test_build_and_publish_includes_sell_and_tags_them():
          mock.patch.object(m, "generate_article_body_checked",
                             return_value={"body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=4, dry_run=False)
 
@@ -218,6 +231,73 @@ def test_build_and_publish_includes_sell_and_tags_them():
     # ratioChangePct: 買いは正、売りは負で送る
     assert by_code["7203"]["ratioChangePct"] == 8.5
     assert by_code["6502"]["ratioChangePct"] == -15.1
+
+
+def test_build_and_publish_uses_disclosed_unit_price_over_market_estimate():
+    """短期大量譲渡は開示された単価×株数の実額を使い、株価からの概算に上書きさせない
+    （実例: 日立製作所→日立建機は開示日終値ベースの概算1,274.9億円に対し実額1,121.8億円）。"""
+    holdings = [
+        {"issuer_code": "6305", "name": "日立建機", "filer_name": "株式会社日立製作所",
+         "holding_ratio": 0.0, "holding_ratio_prior": 9.98, "disc_date": "2026-08-25",
+         "doc_type_code": "350", "doc_description": "変更報告書（短期大量譲渡）",
+         "short_term_transfers": [
+             {"date": "2026-08-19", "security_type": "普通株式", "shares": 21462310,
+              "ratio": 9.98, "venue": "市場外", "action": "処分",
+              "counterparty": "SMBC日興証券株式会社", "unit_price": 5227.0,
+              "unit_price_note": None},
+         ]},
+    ]
+    captured = {}
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=9.98), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=1274.9), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "事業会社", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body_checked",
+                            side_effect=lambda fs: captured.update(fs) or {"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid6305"):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
+
+    assert results[0]["dealAmount"] == 1121.8  # 概算の1274.9ではなく開示単価ベースの実額
+    assert captured["deal_amount_label"] == "売却金額"  # 実額なので「推定」を付けない
+    assert captured["transfers"]["counterparties"] == ["SMBC日興証券株式会社"]
+
+
+def test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive():
+    """取得と処分が混在する60日間の記録からは差引きが復元できないため概算を使う。"""
+    holdings = [
+        {"issuer_code": "1234", "name": "混在テスト", "filer_name": "ファンド株式会社",
+         "holding_ratio": 3.0, "holding_ratio_prior": 8.09, "disc_date": "2026-08-25",
+         "doc_type_code": "360", "doc_description": "変更報告書（短期大量譲渡）",
+         "short_term_transfers": [
+             {"date": "2026-07-15", "shares": 453800, "ratio": 5.09, "venue": "市場外",
+              "action": "取得", "counterparty": None, "unit_price": 4730.0,
+              "security_type": "株券", "unit_price_note": None},
+             {"date": "2026-07-16", "shares": 10000, "ratio": 0.11, "venue": "市場内",
+              "action": "処分", "counterparty": "市場内取引のため不明", "unit_price": 4700.0,
+              "security_type": "株券", "unit_price_note": None},
+         ]},
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=5.09), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=99.9), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "その他", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid1234"):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
+
+    assert results[0]["dealAmount"] == 99.9
 
 
 def test_build_and_publish_skips_when_already_published():
@@ -301,6 +381,166 @@ def test_build_and_publish_skips_when_amount_unestimable():
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=None):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
     assert results == []
+
+
+def _index_page(contents, total):
+    resp = mock.MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"contents": contents, "totalCount": total}
+    return resp
+
+
+def test_fetch_published_index_pages_until_total_count():
+    """既報インデックスは totalCount に届くまでページを辿る（1ページ=100件）。"""
+    pages = [_index_page([{"stockCode": str(i)} for i in range(100)], 150),
+             _index_page([{"stockCode": str(i)} for i in range(100, 150)], 150)]
+    with mock.patch.object(m.requests, "get", side_effect=pages) as get:
+        rows = m.fetch_published_index("2026-07-28")
+    assert len(rows) == 150 and get.call_count == 2
+    assert get.call_args_list[1].kwargs["params"]["offset"] == 100
+
+
+def test_fetch_published_index_returns_none_on_http_error():
+    """取得できなかったら None。呼び出し側は backfill を中止して重複投稿を避ける。"""
+    resp = mock.MagicMock()
+    resp.status_code = 500
+    resp.text = "err"
+    with mock.patch.object(m.requests, "get", return_value=resp):
+        assert m.fetch_published_index("2026-07-28") is None
+
+
+def test_is_backfill_target_drops_published_and_below_threshold():
+    amounts = {
+        "D1": {"deal_amount_oku": 50.0, "ratio_change_pt": 0.2},   # 金額で基準超え
+        "D2": {"deal_amount_oku": 0.1, "ratio_change_pt": 0.1},    # どちらも基準未満
+    }
+    keys = {("7203", "2026-08-01", "個人 太郎")}
+    published = {"issuer_code": "7203", "disc_date": "2026-08-01", "filer_name": "個人 太郎", "doc_id": "D1"}
+    worth = {"issuer_code": "6502", "disc_date": "2026-08-01", "filer_name": "提出者B", "doc_id": "D1"}
+    tiny = {"issuer_code": "6503", "disc_date": "2026-08-01", "filer_name": "提出者C", "doc_id": "D2"}
+    unknown = {"issuer_code": "6504", "disc_date": "2026-08-01", "filer_name": "提出者D", "doc_id": "D9"}
+    assert m.is_backfill_target(published, keys, amounts) is False
+    assert m.is_backfill_target(worth, keys, amounts) is True
+    assert m.is_backfill_target(tiny, keys, amounts) is False
+    # ビューに行が無い開示は判定できないので残す（ループ内で従来どおり概算する）
+    assert m.is_backfill_target(unknown, keys, amounts) is True
+
+
+def test_is_backfill_target_skips_disclosure_already_articled():
+    """microCMSに記事が無くても、過去に作ったことがある開示は作り直さない。
+    低品質・リライト不能・誤報として意図的に削除した記事（2026-08-18に129件・08-25に74件・
+    08-27に12件）を取りこぼしと誤認して復活させないため。"""
+    h = {"issuer_code": "6845", "disc_date": "2026-08-21", "filer_name": "野村證券株式会社",
+         "doc_id": "D1", "article_published_at": "2026-08-21T12:00:00+00:00"}
+    assert m.is_backfill_target(h, set(), {}) is False
+    assert m.is_backfill_target({**h, "article_published_at": None}, set(), {}) is True
+
+
+def test_build_and_publish_skips_disclosure_already_articled():
+    """通常運転（3日窓）でも台帳を尊重する。削除済み記事のある開示はmicroCMSを叩く前に落とす。"""
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書", "doc_id": "D1",
+                 "article_published_at": "2026-07-20T12:00:00+00:00"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "already_published") as ap:
+        assert m.build_and_publish(days=3, dry_run=False) == []
+    ap.assert_not_called()
+
+
+def test_build_and_publish_records_ledger_after_publishing():
+    """投稿に成功したら開示側へ記録する（記事を消しても残る重複生成の歯止め）。"""
+    holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+                 "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+                 "doc_description": "大量保有報告書", "doc_id": "S100ABCD"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid"), \
+         mock.patch.object(m, "mark_article_published") as mark:
+        results = m.build_and_publish(days=3, dry_run=False)
+    assert len(results) == 1
+    mark.assert_called_once_with("S100ABCD")
+
+
+def test_build_and_publish_backfill_aborts_when_index_unavailable():
+    """既報一覧が引けないまま30日分を走らせると同じ開示を投稿し直すため、backfillごと中止する。"""
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=None), \
+         mock.patch.object(m, "get_recent_large_holdings") as holdings:
+        assert m.build_and_publish(backfill=True) == []
+    holdings.assert_not_called()
+
+
+def test_build_and_publish_backfill_widens_window_and_takes_oldest_first():
+    rows = [
+        {"issuer_code": "7203", "name": "新しい方", "filer_name": "個人 太郎", "holding_ratio": 8.5,
+         "disc_date": "2026-08-20", "doc_type_code": "350", "doc_description": "大量保有報告書", "doc_id": "D1"},
+        {"issuer_code": "6502", "name": "古い方", "filer_name": "個人 次郎", "holding_ratio": 9.5,
+         "disc_date": "2026-08-01", "doc_type_code": "350", "doc_description": "大量保有報告書", "doc_id": "D2"},
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=set()), \
+         mock.patch.object(m, "estimated_amounts", return_value={}), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows) as holdings, \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(max_articles=1, dry_run=True, backfill=True)
+    assert holdings.call_args.kwargs["days"] == m.BACKFILL_DAYS
+    # 窓から外れる寸前の古い開示を先に消化する
+    assert [r["stockCode"] for r in results] == ["6502"]
+
+
+def test_build_and_publish_backfill_caps_articles_by_default():
+    """--max-articles 未指定のbackfillは BACKFILL_MAX_ARTICLES 件で止まる（API課金の暴発防止）。"""
+    rows = [
+        {"issuer_code": f"{7000 + i}", "name": f"銘柄{i}", "filer_name": f"提出者{i}",
+         "holding_ratio": 8.5, "disc_date": "2026-08-01", "doc_type_code": "350",
+         "doc_description": "大量保有報告書", "doc_id": f"D{i}"}
+        for i in range(m.BACKFILL_MAX_ARTICLES + 3)
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=set()), \
+         mock.patch.object(m, "estimated_amounts", return_value={}), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(dry_run=True, backfill=True)
+    assert len(results) == m.BACKFILL_MAX_ARTICLES
 
 
 def test_ratio_change_pct_uses_disclosure_prior_ratio():
@@ -475,6 +715,7 @@ def test_build_and_publish_publishes_material_correction_without_amount():
          mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid999"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
@@ -630,11 +871,13 @@ def test_wrap_text_lines_respects_max_lines():
 
 
 def test_search_pexels_photo_returns_none_without_api_key():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     with mock.patch.object(m, "PEXELS_API_KEY", ""):
         assert m.search_pexels_photo("finance") is None
 
 
 def test_search_pexels_photo_returns_bytes_and_photographer_on_success():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     search_resp = _FakeResponse(200, "", {"photos": [{
         "src": {"large": "https://example.test/a.jpg"}, "photographer": "Jane Doe",
     }]})
@@ -646,6 +889,7 @@ def test_search_pexels_photo_returns_bytes_and_photographer_on_success():
 
 
 def test_search_pexels_photo_defaults_photographer_when_missing():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     search_resp = _FakeResponse(200, "", {"photos": [{"src": {"large": "https://example.test/a.jpg"}}]})
     photo_resp = _FakeResponse(200, "", content=b"fake-image-bytes")
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
@@ -655,6 +899,7 @@ def test_search_pexels_photo_defaults_photographer_when_missing():
 
 
 def test_search_pexels_photo_returns_none_when_no_results():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     search_resp = _FakeResponse(200, "", {"photos": []})
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch("requests.get", return_value=search_resp):
@@ -662,9 +907,79 @@ def test_search_pexels_photo_returns_none_when_no_results():
 
 
 def test_search_pexels_photo_returns_none_on_exception():
+    m._PEXELS_CANDIDATE_CACHE.clear()
     with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
          mock.patch("requests.get", side_effect=Exception("timeout")):
         assert m.search_pexels_photo("finance") is None
+
+
+def test_search_pexels_photo_picks_different_photos_for_different_seeds():
+    """同じ分類でも記事ごとに違う写真を引く（以前は常にphotos[0]で全記事が同じ写真だった）。"""
+    photos = [{"src": {"large": f"https://example.test/{i}.jpg"}, "photographer": f"p{i}"}
+              for i in range(20)]
+    picked = set()
+    for seed in ("A|X|2026-01-01", "B|Y|2026-01-02", "C|Z|2026-01-03"):
+        m._PEXELS_CANDIDATE_CACHE.clear()
+        with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+             mock.patch("requests.get", side_effect=[
+                 _FakeResponse(200, "", {"photos": photos}),
+                 _FakeResponse(200, "", content=b"img"),
+             ]):
+            picked.add(m.search_pexels_photo("finance", seed=seed)["photographer"])
+    assert len(picked) > 1
+
+
+def test_search_pexels_photo_is_stable_for_same_seed():
+    """同じ記事を再生成しても写真は入れ替わらない。"""
+    photos = [{"src": {"large": f"https://example.test/{i}.jpg"}, "photographer": f"p{i}"}
+              for i in range(20)]
+    results = []
+    for _ in range(2):
+        m._PEXELS_CANDIDATE_CACHE.clear()
+        with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+             mock.patch("requests.get", side_effect=[
+                 _FakeResponse(200, "", {"photos": photos}),
+                 _FakeResponse(200, "", content=b"img"),
+             ]):
+            results.append(m.search_pexels_photo("finance", seed="A|X|2026-01-01")["photographer"])
+    assert results[0] == results[1]
+
+
+def test_search_pexels_photo_caches_candidates_per_query():
+    """同じクエリの2記事目は検索APIを叩き直さない（Pexels無料枠200req/時を守るため）。"""
+    m._PEXELS_CANDIDATE_CACHE.clear()
+    photos = [{"src": {"large": "https://example.test/a.jpg"}, "photographer": "p"}]
+    with mock.patch.object(m, "PEXELS_API_KEY", "dummy"), \
+         mock.patch("requests.get", side_effect=[
+             _FakeResponse(200, "", {"photos": photos}),
+             _FakeResponse(200, "", content=b"img"),
+             _FakeResponse(200, "", content=b"img"),
+         ]) as g:
+        m.search_pexels_photo("finance", seed="a")
+        m.search_pexels_photo("finance", seed="b")
+    search_calls = [c for c in g.call_args_list if "api.pexels.com" in c.args[0]]
+    assert len(search_calls) == 1
+
+
+def test_wrap_text_lines_keeps_number_token_whole():
+    """「13.41%」が「13.」「41%」に割れて別の数字に読めないようにする。"""
+    lines = m._wrap_text_lines(_FakeDraw(), "あいうえお13.41%", font=None, max_width=70)
+    assert lines == ["あいうえお", "13.41%"]
+
+
+def test_wrap_text_lines_breaks_number_longer_than_line():
+    """1行に収まらない数字は無限に送れないのでその場で折る。"""
+    lines = m._wrap_text_lines(_FakeDraw(), "1234567890", font=None, max_width=50)
+    assert lines == ["12345", "67890"]
+
+
+def test_eyecatch_stock_line_variants():
+    """保有比率0%は全売却（売り記事）なら「全株売却」、それ以外は数字を出さない。
+    素の「0.00%」はデータ欠損に見えるので焼き込まない。"""
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": 13.41}, "▼ 売却") == "A　13.41%"
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": 0.0}, "▼ 売却") == "A　全株売却"
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": 0.0}, "🏦 自社株買い") == "A"
+    assert m._stock_line_text({"stock_name": "A", "holding_ratio": None}, "▲ 買い増し") == "A"
 
 
 def test_upload_eyecatch_returns_url_on_success():
@@ -733,6 +1048,7 @@ def test_build_and_publish_includes_eyecatch_when_available():
          mock.patch.object(m, "build_eyecatch_for_article",
                             return_value={"url": "https://images.microcms-assets.io/x.png"}) as eyecatch_mock, \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
@@ -793,6 +1109,7 @@ def test_build_and_publish_stops_early_on_permission_error():
                             return_value={"category": "その他", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body_checked", side_effect=_track_generate), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article",
                             side_effect=m.MicroCMSPermissionError("HTTP 400: forbidden")):
         results = m.build_and_publish(days=3, max_articles=3, dry_run=False)
@@ -807,20 +1124,12 @@ def _fact_sheet():
             "disc_date": "2026-07-20", "deal_amount_oku": 12.3}
 
 
-def test_dp_level_label_thresholds():
-    assert m.dp_level_label(35) == "高"
-    assert m.dp_level_label(25) == "やや高"
-    assert m.dp_level_label(18) == "中"
-    assert m.dp_level_label(10) == "やや低"
-    assert m.dp_level_label(3) == "低"
-
-
 def test_get_pit_ranking_snapshot_queries_as_of_disc_date():
     """記事公開時点(post-hoc)ではなく、開示日以前で直近のスナップショットを取る
     （先読みバイアス防止、CLAUDE.md PIT規律）。"""
-    with mock.patch.object(m.sb, "select_one", return_value={"close": 3000, "drop_prob": 12.0}) as select_mock:
+    with mock.patch.object(m.sb, "select_one", return_value={"close": 3000}) as select_mock:
         result = m.get_pit_ranking_snapshot("7203", "2026-07-20")
-    assert result == {"close": 3000, "drop_prob": 12.0}
+    assert result == {"close": 3000}
     query = select_mock.call_args.args[1]
     assert "code=eq.7203" in query
     assert "date=lte.2026-07-20" in query
@@ -853,29 +1162,32 @@ def _capturing_client(text):
     return _Client(), calls
 
 
-def test_generate_article_body_includes_context_when_available():
+def test_generate_article_body_includes_close_price_but_never_the_drop_model():
+    """開示日終値は開示原本と突き合わせられる事実なのでプロンプトに渡す。
+    一方で下落モデルの水準は渡さない（モデルの説明ページがサイトに無いまま
+    検証不能な独自指標をYMYLの判断材料として本文に書かせないため、2026-08-25に廃止）。"""
     fact_sheet = _fact_sheet()
     fact_sheet["context_close"] = 3000.0
-    fact_sheet["context_dp_level"] = "やや低"
     raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         m.generate_article_body(fact_sheet)
     prompt = calls[0]["messages"][0]["content"]
-    assert "やや低" in prompt
     assert "3,000円" in prompt
+    assert "下落リスク水準" not in prompt
+    assert "弊社モデル" not in prompt
 
 
 def test_generate_article_body_omits_context_when_unavailable():
-    fact_sheet = _fact_sheet()  # context_close/context_dp_level 無し
+    fact_sheet = _fact_sheet()  # context_close 無し
     raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         m.generate_article_body(fact_sheet)
     prompt = calls[0]["messages"][0]["content"]
-    assert "下落リスク水準" not in prompt
+    assert "開示日時点の株価" not in prompt
 
 
 def test_generate_article_body_includes_ratio_increase_when_available():
@@ -998,6 +1310,7 @@ def test_build_and_publish_includes_english_fields_when_generated():
                             return_value={"body": "<p>本文</p>", "bodyEn": "<p>Body</p>",
                                           "stockNameEn": "Test Motor", "filerNameEn": "Taro Kojin"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
     assert results[0]["titleEn"] == "Taro Kojin Takes 8.5% Stake in Test Motor (7203) | Large Shareholding Report"
@@ -1020,6 +1333,7 @@ def test_build_and_publish_omits_english_fields_when_not_generated():
          mock.patch.object(m, "generate_article_body_checked",
                             return_value={"title": "テストタイトル", "body": "<p>本文</p>"}), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
     assert "titleEn" not in results[0]
@@ -1435,7 +1749,7 @@ def test_build_and_publish_embeds_chart_image_in_body():
 
 def test_build_and_publish_includes_pit_context_in_fact_sheet():
     """本文へ渡す株価は金額の概算に使った開示日終値と同じ値（サイトの基準終値と同源）にする。
-    下落リスク水準だけをPITスナップショット（gen_rankings）から取る。"""
+    下落モデルの水準はfact_sheetに入れない（2026-08-25に記事から廃止）。"""
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書"}]
@@ -1451,17 +1765,18 @@ def test_build_and_publish_includes_pit_context_in_fact_sheet():
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
-         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 2900.0, "drop_prob": 25.0}), \
+         mock.patch.object(m, "get_pit_ranking_snapshot", return_value={"close": 2900.0}), \
          mock.patch.object(m, "disclosure_close_price", return_value=3000.0), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
          mock.patch.object(m, "generate_article_body", side_effect=_fake_generate), \
          mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         m.build_and_publish(days=3, max_articles=3, dry_run=False)
 
     assert captured["context_close"] == 3000.0
-    assert captured["context_dp_level"] == "やや高"
+    assert "context_dp_level" not in captured
     assert captured["ratio_change_pct"] == 8.5
 
 
@@ -1576,9 +1891,8 @@ if __name__ == "__main__":
     test_classify_filer_returns_cached_master_row_without_calling_claude()
     test_classify_filer_asks_claude_and_persists_when_not_cached()
     test_classify_filer_falls_back_to_sonota_on_invalid_category()
-    test_dp_level_label_thresholds()
     test_get_pit_ranking_snapshot_queries_as_of_disc_date()
-    test_generate_article_body_includes_context_when_available()
+    test_generate_article_body_includes_close_price_but_never_the_drop_model()
     test_generate_article_body_omits_context_when_unavailable()
     test_generate_article_body_includes_ratio_increase_when_available()
     test_generate_article_body_describes_new_position_when_change_equals_ratio()
@@ -1609,6 +1923,12 @@ if __name__ == "__main__":
     test_search_pexels_photo_defaults_photographer_when_missing()
     test_search_pexels_photo_returns_none_when_no_results()
     test_search_pexels_photo_returns_none_on_exception()
+    test_search_pexels_photo_picks_different_photos_for_different_seeds()
+    test_search_pexels_photo_is_stable_for_same_seed()
+    test_search_pexels_photo_caches_candidates_per_query()
+    test_wrap_text_lines_keeps_number_token_whole()
+    test_wrap_text_lines_breaks_number_longer_than_line()
+    test_eyecatch_stock_line_variants()
     test_upload_eyecatch_returns_url_on_success()
     test_upload_eyecatch_returns_none_on_failure()
     test_build_eyecatch_for_article_none_without_pexels_key()
@@ -1670,7 +1990,19 @@ if __name__ == "__main__":
     test_build_and_publish_defers_change_report_without_prior_ratio()
     test_build_and_publish_publishes_material_correction_without_amount()
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
+    test_build_and_publish_uses_disclosed_unit_price_over_market_estimate()
+    test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive()
+    test_fetch_published_index_pages_until_total_count()
+    test_fetch_published_index_returns_none_on_http_error()
+    test_is_backfill_target_drops_published_and_below_threshold()
+    test_build_and_publish_backfill_aborts_when_index_unavailable()
+    test_build_and_publish_backfill_widens_window_and_takes_oldest_first()
+    test_build_and_publish_backfill_caps_articles_by_default()
+    test_is_backfill_target_skips_disclosure_already_articled()
+    test_build_and_publish_skips_disclosure_already_articled()
+    test_build_and_publish_records_ledger_after_publishing()
+    test_generate_article_body_allows_raw_newlines_in_json()
     test_exit_code_for_run_distinguishes_failure_from_legitimate_zero()
     test_build_and_publish_counts_generation_attempts_when_all_fail()
     test_build_and_publish_reports_zero_attempts_when_filtered_out()
-    print("全テスト成功 (113件)")
+    print("全テスト成功 (130件)")

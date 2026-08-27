@@ -64,6 +64,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           MICROCMS_SERVICE_DOMAIN: ${{ secrets.MICROCMS_SERVICE_DOMAIN }}
           MICROCMS_API_KEY: ${{ secrets.MICROCMS_API_KEY }}
+          # 素材件数はDBではなくEDINET（上流）から数える。保存が壊れた日を見分けるため。
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python tools/output_heartbeat.py
@@ -75,7 +77,8 @@ jobs:
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
           python -m lib.notify "🚨 成果物ハートビートが失敗しました（当日の投稿状況を確認できていません）" \
-            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --dedupe-key "wf_ops_heartbeat_failed"
 
   watchdog:
     if: github.event.schedule == '30 14 * * 1-5' || inputs.job == 'watchdog'

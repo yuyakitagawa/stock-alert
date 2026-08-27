@@ -26,6 +26,7 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import { getAllArticlesForSitemap, getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+import { isIndexableStockPage } from "@/lib/pageIndexability";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
@@ -92,10 +93,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    // 解説記事が1本も無い銘柄は開示テーブルと会社情報だけの薄いページになるため、
+    // 解説記事が乏しい銘柄は開示テーブルと会社情報だけの薄いページになるため、
     // 検索エンジンには載せない（サイト全体の品質評価を落とさないための保険）。
-    // 記事が生成されればそのままindex対象に戻る。
-    ...(contents.length === 0 ? { robots: { index: false, follow: true } } : {}),
+    // 記事が増えるか事業内容の説明が入ればそのままindex対象に戻る。
+    // 判定は lib/pageIndexability.ts に集約（サイトマップ側と条件を必ず一致させる）。
+    ...(isIndexableStockPage({
+      articleCount: contents.length,
+      hasCompanyDescription: Boolean(companyInfo?.description),
+    })
+      ? {}
+      : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
       types: { "application/rss+xml": `${url}/feed.xml` },

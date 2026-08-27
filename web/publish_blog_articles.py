@@ -26,6 +26,17 @@ microCMS管理画面で修正する運用）。
           簡易な折れ線チャートPNGをPillowのみで描画し、microCMSへアップロードして
           本文HTML末尾に<img>タグとして埋め込む（失敗時はチャート無しで記事のみ投稿）。
 
+解説図: attach_figures が web.article_figures で保有比率の推移・株主構成・提出者の
+          ポートフォリオを図にし、本文のその話をしている段落の直後に差し込む
+          （文字だけの記事を減らす目的。Pillow直描画なのでAPI課金は発生しない）。
+
+取りこぼしのbackfill: 通常運転は直近LARGE_HOLDINGS_DAYS(3)日の開示しか見ないため、API上限や
+          ワークフロー障害で3日を超えて生成が止まると、その期間の開示は二度と記事化されない。
+          --backfill は BACKFILL_DAYS(30)日まで遡り、既報インデックス（fetch_published_index）に
+          無い＝まだ記事が無い開示だけを古い順に拾い直す。30日窓の候補は1,000件を超えるので、
+          推定売買金額ビュー(edinet_holding_amounts)で足切りしてから株価・発行済株式数を引く。
+          edinet_blog.yml の当日最終便が1日1回叩く。
+
 必要な環境変数: MICROCMS_SERVICE_DOMAIN, MICROCMS_API_KEY（書き込み権限）, ANTHROPIC_API_KEY
 """
 import os
@@ -33,6 +44,7 @@ import re
 import sys
 import json
 import argparse
+import hashlib
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
@@ -43,10 +55,11 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib import api_budget
-from lib.db import get_edinet_large_holdings_recent
-from lib.edinet import disclosure_doc_label, disclosure_kind_label
+from lib.db import get_edinet_large_holdings_recent, mark_article_published
+from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
+from web.article_figures import build_article_figures, figure_html, insert_figures_into_body
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
 
@@ -137,7 +150,7 @@ def classify_filer(filer_name: str) -> dict:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        data = json.loads(text)
+        data = json.loads(text, strict=False)
         if data.get("category") not in FILER_DEAL_TYPES:
             data["category"] = "その他"
         result = {
@@ -165,8 +178,10 @@ def classify_filer(filer_name: str) -> dict:
 
 # 投資家分類ごとのPexels検索クエリ（英語の方がPexelsの検索精度が高い）。
 # 銘柄固有の写真は現実的に存在しないため、分類のイメージに合う汎用的な金融系写真を使う。
+# 「個人」は以前 confident businessperson office で人物ポートレートを引いていたが、
+# 実在の別人の顔写真が個人投資家の氏名と並んで出て本人の写真に見えるため、街並みに変更した。
 EYECATCH_QUERY_BY_CATEGORY = {
-    "個人": "confident businessperson office",
+    "個人": "tokyo business district street",
     "創業家の資産管理会社": "family business heritage",
     "公益/一般財団法人": "foundation charity building",
     "プライムブローカー": "wall street trading floor",
@@ -186,24 +201,38 @@ EYECATCH_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 EYECATCH_W, EYECATCH_H = 1200, 630
 
 
-def search_pexels_photo(query: str) -> "dict | None":
-    """Pexels検索APIで1枚選び、{"bytes": 画像本体, "photographer": 撮影者名} を返す。
+# 検索クエリ→候補写真リストのプロセス内キャッシュ。同じ分類の記事を連続で処理しても
+# Pexels検索APIは1クエリにつき1回しか叩かない（無料枠200req/時を使い切らないため）。
+_PEXELS_CANDIDATE_CACHE: dict = {}
+PEXELS_CANDIDATES = 80  # Pexels APIのper_page上限
+
+
+def search_pexels_photo(query: str, seed: "str | None" = None) -> "dict | None":
+    """Pexels検索APIの候補から1枚選び、{"bytes": 画像本体, "photographer": 撮影者名} を返す。
     未設定・取得失敗時はNone。撮影者名はPexelsのAPI利用ガイドラインが推奨するクレジット表記
-    （"Photo by <撮影者> on Pexels"）を画像に焼き込むために保持する。"""
+    （"Photo by <撮影者> on Pexels"）を画像に焼き込むために保持する。
+
+    seed（記事の識別子）で候補80枚から決定的に1枚を選ぶ。以前は常に photos[0] を使っており、
+    同じ分類の記事が全部同じ写真になっていた（実測40記事中8種類、1枚が25%を占有）。
+    seedを固定にしているのは、同じ記事を再生成したときに画像が入れ替わらないようにするため。"""
     if not PEXELS_API_KEY:
         return None
     try:
-        resp = requests.get(
-            "https://api.pexels.com/v1/search",
-            headers={"Authorization": PEXELS_API_KEY},
-            params={"query": query, "per_page": 5, "orientation": "landscape"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        photos = resp.json().get("photos", [])
+        photos = _PEXELS_CANDIDATE_CACHE.get(query)
+        if photos is None:
+            resp = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": query, "per_page": PEXELS_CANDIDATES, "orientation": "landscape"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            photos = resp.json().get("photos", [])
+            _PEXELS_CANDIDATE_CACHE[query] = photos
         if not photos:
             return None
-        photo = photos[0]
+        idx = int(hashlib.md5((seed or "").encode("utf-8")).hexdigest(), 16) % len(photos) if seed else 0
+        photo = photos[idx]
         photo_resp = requests.get(photo["src"]["large"], timeout=20)
         photo_resp.raise_for_status()
         return {"bytes": photo_resp.content, "photographer": photo.get("photographer") or "Pexels"}
@@ -212,14 +241,28 @@ def search_pexels_photo(query: str) -> "dict | None":
         return None
 
 
+# 折り返しで分断したくない文字（半角数字・小数点・カンマ・%）。
+# 「13.41%」が「13.」「41%」に割れて別の数字に読めるのを防ぐ。
+_UNBREAKABLE_CHARS = set("0123456789.,%")
+
+
 def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) -> list:
-    """1文字ずつ幅を測って折り返す（CJKは単語区切りが無いため文字単位で判定する）。"""
+    """1文字ずつ幅を測って折り返す（CJKは単語区切りが無いため文字単位で判定する）。
+    数値トークン（13.41% など）の途中では折り返さず、トークンごと次の行へ送る。"""
     lines, current = [], ""
     for ch in text:
         trial = current + ch
         if current and draw.textbbox((0, 0), trial, font=font)[2] > max_width:
-            lines.append(current)
-            current = ch
+            head, tail = current, ch
+            # 折り返し位置が数値トークンの内側なら、トークンの先頭まで戻して丸ごと次行へ送る
+            if ch in _UNBREAKABLE_CHARS:
+                cut = len(head)
+                while cut > 0 and head[cut - 1] in _UNBREAKABLE_CHARS:
+                    cut -= 1
+                if cut > 0:  # 行全体が数値のときは戻さない（無限に送れないため）
+                    head, tail = head[:cut], head[cut:] + ch
+            lines.append(head)
+            current = tail
             if len(lines) >= max_lines:
                 break
         else:
@@ -228,6 +271,21 @@ def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) 
         if current:
             lines.append(current)
     return lines[:max_lines]
+
+
+def _stock_line_text(card: dict, badge_label: str) -> str:
+    """アイキャッチ2段目（銘柄名＋保有比率）の文字列を組み立てる。
+
+    保有比率0%は「全株売却して保有ゼロ」（実データ上ほとんどがこれ）と、自社株買い記事で
+    比率を取れなかった場合の既定値0.0の2通りがある。前者は事実として意味があるので
+    「全株売却」と書き、後者は数字を出さず銘柄名だけにする。素の「0.00%」はどちらも
+    データ欠損に見えるため焼き込まない。badge_labelは絵文字置換後の文字列を受け取る。"""
+    ratio = card.get("holding_ratio")
+    if ratio:
+        return f"{card['stock_name']}　{ratio:.2f}%"
+    if "売却" in badge_label:
+        return f"{card['stock_name']}　全株売却"
+    return card["stock_name"]
 
 
 def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
@@ -240,7 +298,9 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
     import io
 
     query = EYECATCH_QUERY_BY_CATEGORY.get(category, EYECATCH_DEFAULT_QUERY)
-    photo = search_pexels_photo(query)
+    # 記事ごとに候補から別の写真を引くためのseed。同じ記事なら常に同じ写真になる。
+    seed = f"{card.get('filer_name', '')}|{card.get('stock_name', '')}|{card.get('disc_date', '')}"
+    photo = search_pexels_photo(query, seed=seed)
     if not photo:
         return None
 
@@ -269,7 +329,7 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
             badge_label = badge_label.replace(emoji, symbol)
         badge_text = f"{badge_label}　{card['disc_date']}"
         filer_lines = _wrap_text_lines(draw, card["filer_name"], filer_font, max_text_width, max_lines=2)
-        stock_text = f"{card['stock_name']}　{card['holding_ratio']:.2f}%"
+        stock_text = _stock_line_text(card, badge_label)
         stock_lines = _wrap_text_lines(draw, stock_text, stock_font, max_text_width, max_lines=2)
 
         badge_h = int(30 * ss * 1.5)
@@ -434,6 +494,64 @@ def _microcms_base_url() -> str:
 
 def _microcms_headers() -> dict:
     return {"X-MICROCMS-API-KEY": MICROCMS_KEY, "Content-Type": "application/json"}
+
+
+# microCMSのlimit上限（1リクエストあたり100件）と、既報インデックスで辿るページ数の上限。
+# 100×20=2,000記事。30日ぶんの記事は500件前後なので通常は5〜6ページで終わる。
+MICROCMS_PAGE_LIMIT = 100
+MICROCMS_MAX_PAGES = 20
+
+# 稼働が止まっていた期間の取りこぼしを拾い直すときに遡る日数。
+# 通常運転の窓（LARGE_HOLDINGS_DAYS=3日）を超えて生成が止まると、その期間の開示は
+# 二度と記事化されない（実例: 2026-08-13〜08-20の自社株買い決定12件。API月次上限と
+# 機能の稼働開始前が重なり、2026-08-27に手作業でbackfillした）。
+BACKFILL_DAYS = 30
+
+# backfill 1回あたりの投稿上限（--max-articles 未指定時の既定値）。
+# 上限なしで走らせるとAnthropic APIの月次上限に一撃で到達し、同じ日に大量の古い記事が並ぶ。
+# 15件にしているのは 2026-08-27 の実測から: 直近30日の取りこぼしは約142件（60件サンプルで
+# 30件が「本物の取りこぼし」）で、1日1便×15件なら10日で窓（BACKFILL_DAYS=30日）から
+# 外れる前に消化しきれる。取りこぼしが解消した後の定常状態では数件しか残らず上限に当たらない。
+BACKFILL_MAX_ARTICLES = 15
+
+
+def fetch_published_index(since_date: str, extra_filter: str = "",
+                          fields: str = "stockCode,dealDate,filerName") -> "list[dict] | None":
+    """dealDateが since_date 以降の記事をまとめて取得する（取りこぼしbackfill用の既報一覧）。
+
+    already_published() は候補1件につきmicroCMSへ1リクエスト投げる。直近3日の通常運転
+    （候補100件強）なら問題ないが、取りこぼしを拾うために窓を30日へ広げると候補が1,000件を
+    超え、毎回それだけ叩くことになる。既報の一覧を先に1回だけ取り、既に記事がある開示は
+    リクエスト無しで落とす。
+
+    取得に失敗した／ページ上限で打ち切った場合は None を返す。呼び出し側は
+    「既報が分からないまま30日分を投稿し直す」ことを避けるため backfill 自体を中止すること
+    （dealTypeでの既報判定が常に0件を返して同一開示を13本投稿した 2026-08-25 の再発防止）。
+    """
+    filters = f"dealDate[greater_than]{since_date}T00:00:00.000Z"
+    if extra_filter:
+        filters = f"{extra_filter}[and]{filters}"
+    out: list[dict] = []
+    for page in range(MICROCMS_MAX_PAGES):
+        try:
+            resp = requests.get(
+                _microcms_base_url(), headers=_microcms_headers(),
+                params={"filters": filters, "fields": fields, "orders": "-dealDate",
+                        "limit": MICROCMS_PAGE_LIMIT, "offset": page * MICROCMS_PAGE_LIMIT},
+                timeout=30,
+            )
+        except Exception as e:
+            print(f"  ⚠ 既報インデックスの取得に失敗: {e}")
+            return None
+        if resp.status_code != 200:
+            print(f"  ⚠ 既報インデックスの取得に失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        body = resp.json()
+        out.extend(body.get("contents", []))
+        if len(out) >= body.get("totalCount", 0):
+            return out
+    print(f"  ⚠ 既報インデックスが{MICROCMS_MAX_PAGES}ページを超えました（{len(out)}件で打ち切り）")
+    return None
 
 
 # kujira-watch/src/lib/microcms.ts の FEATURED_POOL_SIZE/FEATURED_COUNT
@@ -663,6 +781,33 @@ def estimate_deal_amount_oku(code: str, ratio_change: float, disc_date: str) -> 
     return round(amount_yen / 1e8, 1)
 
 
+def deal_amount_label(is_sell: bool, is_exact: bool) -> str:
+    """金額の見出し語。短期大量譲渡で開示単価が取れたときだけ「推定」を外す。"""
+    verb = "売却" if is_sell else "取得"
+    return f"{verb}金額" if is_exact else f"推定{verb}金額"
+
+
+def format_transfer_facts(transfers: dict) -> str:
+    """短期大量譲渡の「譲渡の相手方・単価」をプロンプトの事実行にする。
+
+    EDINETは通常「誰に売ったか」を開示しないが、短期大量譲渡に該当する変更報告書だけは
+    相手方と単価が表で載る。記事の一次情報としての価値が最も高い部分なので必ず本文に出す。
+    """
+    if not transfers or not transfers.get("counterparties"):
+        return ""
+    names = "、".join(transfers["counterparties"][:3])
+    if len(transfers["counterparties"]) > 3:
+        names += f"ほか{len(transfers['counterparties']) - 3}者"
+    line = f"- 譲渡の相手方（開示された事実）: {names}\n"
+    unit_price = transfers.get("unit_price")
+    shares = transfers.get("shares")
+    if unit_price and shares:
+        line += f"- 譲渡の単価と数量（開示された事実）: 1株{unit_price:,.0f}円 × {shares:,}株\n"
+    if transfers.get("venue"):
+        line += f"- 取引の場: {transfers['venue']}（{'取引所外の相対取引' if transfers['venue'] == '市場外' else '取引所内'}）\n"
+    return line
+
+
 def checked_recently(checked_at: "str | None", days: int = RECHECK_DAYS) -> bool:
     """ネガティブキャッシュの判定。checked_at（ISO8601）が days 日以内なら True。
 
@@ -736,6 +881,10 @@ def get_company_description(code: str, name: str) -> str:
         # 説明文の途中に生の改行が入ったJSONを返すことがあり、strict=Falseでないと
         # "Invalid control character" で丸ごと落ちる（2026-08-18のバックフィルで8件発生）。
         description = json.loads(matches[-1], strict=False).get("description", "") if matches else ""
+        # web_searchの引用を伴う回答は本文に<cite index="7-1">…</cite>を挟んで返すことがあり、
+        # そのまま保存するとkujira-watchの銘柄ページ・/trendingにタグが文字として表示される
+        # （2026-08-25の点検で64銘柄が汚染。DB側はtools/strip_html_from_descriptions.pyで一括修正）。
+        description = re.sub(r"<[^>]+>", "", description)
         description = " ".join(description.split())
         description = description or ""
     except Exception as e:
@@ -792,7 +941,8 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        profile = json.loads(text).get("profile", "") or ""
+        # プロフィールは800〜1000字の地の文で生の改行が混じるため strict=False
+        profile = json.loads(text, strict=False).get("profile", "") or ""
     except Exception as e:
         if api_budget.note(e):
             print(api_budget.SKIP_MESSAGE)
@@ -816,29 +966,18 @@ def get_filer_profile(filer_name: str, category: str) -> str:
     return profile
 
 
-def dp_level_label(drop_prob: float) -> str:
-    """README記載の5段階表示（高30/やや高22/中14/やや低7）と同じ閾値でdrop_probを
-    ラベル化する。Isotonic較正の特性上、小数%そのままだと多数の銘柄が同値に見えるため、
-    Web/メール/LINEと同じ粒度で記事にも文脈を渡す。"""
-    if drop_prob >= 30:
-        return "高"
-    if drop_prob >= 22:
-        return "やや高"
-    if drop_prob >= 14:
-        return "中"
-    if drop_prob >= 7:
-        return "やや低"
-    return "低"
-
-
 def get_pit_ranking_snapshot(code: str, as_of: str) -> "dict | None":
-    """開示日(as_of)時点で直近のclose・drop_probをgen_rankingsから取得する。
+    """開示日(as_of)時点で直近のcloseをgen_rankingsから取得する。
     記事公開時点（post-hoc、開示後に株価が既に動いた後）のスナップショットを
     「開示当時の文脈」として出すと先読みバイアスになるため、as_of以前の最新行のみを見る
-    （CLAUDE.md PIT規律）。"""
+    （CLAUDE.md PIT規律）。
+
+    drop_prob（下落モデルの予測値）はかつてここから取って記事本文の「弊社モデルの
+    下落リスク水準」に使っていたが、モデルの説明ページがサイトに無いまま検証不能な
+    独自指標をYMYLの判断材料として提示する形になっていたため2026-08-25に取りやめた。"""
     return sb.select_one(
         "gen_rankings",
-        f"code=eq.{code}&date=lte.{as_of}&order=date.desc&select=close,drop_prob",
+        f"code=eq.{code}&date=lte.{as_of}&order=date.desc&select=close",
     )
 
 
@@ -915,6 +1054,173 @@ def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_e
     return {"title": title, "titleEn": title_en}
 
 
+# 記事に独自性を与える周辺事実。EDINET開示1件の数字だけを書くと、どの記事も
+# 「誰が何%取得・推定何億円・※推測」の3段落テンプレートになり（実測2026-08-24:
+# 全976記事が1,000字未満、中央値455字）、Googleの「質の低いコンテンツ」ガイドラインが
+# 挙げる cookie cutter pages に該当した。AdSense審査も同じ理由で不承認になっている。
+#
+# ここで集めるのは、EDINET原本を1件見ただけでは分からず、開示を全期間ぶん横断して
+# 初めて書ける事実（同じ提出者がその銘柄を何回に分けて買い進めたか、他に何を持っているか、
+# その銘柄の株主構成に他に誰がいるか）。競合の大量保有報告書データベースには無い切り口で、
+# 「独自性のある質の高いコンテンツ」の要件に直接効く。
+#
+# 重要: すべて point-in-time で取る（CLAUDE.mdのSQL PIT規律）。開示日より後のデータを
+# 混ぜると「その時点では知り得なかった事実」を記事に書くことになる。
+MAX_RELATED_ITEMS = 5
+
+
+def _latest_by(rows: list, key: str) -> list:
+    """開示日降順で渡された行から、keyごとに最初に出現した行（=最新の開示）だけを残す。"""
+    seen, out = set(), []
+    for row in rows:
+        value = row.get(key)
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(row)
+    return out
+
+
+def build_context_facts(code: str, filer_name: str, disc_date: str) -> dict:
+    """開示日時点で判明している周辺事実を集める。取得に失敗した項目は空で返す
+    （記事生成そのものは止めない）。"""
+    facts: dict = {}
+    if not filer_name:
+        return facts
+    try:
+        # 1. この提出者×この銘柄の開示履歴（何回目の開示か、いつから買い進めているか）
+        history = sb.select(
+            "edinet_large_holdings",
+            f"select=disc_date,holding_ratio&issuer_code=eq.{code}"
+            f"&filer_name=eq.{requests.utils.quote(filer_name)}&disc_date=lte.{disc_date}"
+            "&order=disc_date.asc",
+        )
+        if len(history) >= 2:
+            first = history[0]
+            facts["holding_history"] = {
+                "count": len(history),
+                "first_date": first.get("disc_date"),
+                "first_ratio": first.get("holding_ratio"),
+                # 本文用には初回と回数だけで足りるが、解説図（保有比率の推移）は各回の数字を使う
+                "points": [
+                    {"date": r.get("disc_date"), "ratio": r.get("holding_ratio")} for r in history
+                ],
+            }
+
+        # 2. 同じ提出者が同時点で持っている他の銘柄（保有比率の高い順）
+        others = sb.select(
+            "edinet_large_holdings",
+            f"select=issuer_code,issuer_name,holding_ratio,disc_date"
+            f"&filer_name=eq.{requests.utils.quote(filer_name)}&disc_date=lte.{disc_date}"
+            "&order=disc_date.desc",
+            limit=500,
+        )
+        latest_others = [
+            r for r in _latest_by(others, "issuer_code")
+            if str(r.get("issuer_code")) != str(code) and r.get("holding_ratio") is not None
+        ]
+        latest_others.sort(key=lambda r: r["holding_ratio"], reverse=True)
+        if latest_others:
+            top_others = latest_others[:MAX_RELATED_ITEMS]
+            # 業種は必ずマスターから引く。社名から推測させると事実に無い記述が混ざる。
+            codes = ",".join(str(r["issuer_code"]) for r in top_others if r.get("issuer_code"))
+            sectors = {}
+            if codes:
+                for row in sb.select("jpx_stock_list", f"select=code,sector&code=in.({codes})"):
+                    if row.get("sector"):
+                        sectors[str(row["code"])] = row["sector"]
+            facts["filer_other_holdings"] = [
+                {
+                    "name": r.get("issuer_name") or r.get("issuer_code"),
+                    "code": r.get("issuer_code"),
+                    "ratio": r["holding_ratio"],
+                    "sector": sectors.get(str(r.get("issuer_code"))) or "",
+                }
+                for r in top_others
+            ]
+            facts["filer_holding_total"] = len(latest_others) + 1
+
+        # 3. 同じ銘柄の他の大株主（この開示が株主構成の中でどの位置づけか）
+        peers = sb.select(
+            "edinet_large_holdings",
+            f"select=filer_name,holding_ratio,disc_date&issuer_code=eq.{code}"
+            f"&disc_date=lte.{disc_date}&order=disc_date.desc",
+            limit=500,
+        )
+        latest_peers = [
+            r for r in _latest_by(peers, "filer_name")
+            if r.get("filer_name") != filer_name and r.get("holding_ratio") is not None
+        ]
+        latest_peers.sort(key=lambda r: r["holding_ratio"], reverse=True)
+        if latest_peers:
+            facts["stock_other_filers"] = [
+                {"name": r["filer_name"], "ratio": r["holding_ratio"]}
+                for r in latest_peers[:MAX_RELATED_ITEMS]
+            ]
+
+        # 4. 銘柄の指標（開示日以前で最新の行。開示日より後の株価は使わない）
+        metrics = sb.select_one(
+            "gen_rankings",
+            f"select=date,per,pbr,pos52&code=eq.{code}&date=lte.{disc_date}"
+            "&order=date.desc",
+        )
+        if metrics:
+            facts["stock_metrics"] = {
+                k: metrics.get(k) for k in ("per", "pbr", "pos52") if metrics.get(k) is not None
+            }
+
+        # 5. 業種（同業の中での位置づけに触れられるようにする）
+        master = sb.select_one("jpx_stock_list", f"select=sector&code=eq.{code}")
+        if master and master.get("sector"):
+            facts["sector"] = master["sector"]
+    except Exception as e:  # 周辺事実は「あれば厚くなる」ものなので、失敗しても記事は出す
+        print(f"    ⚠ 周辺事実の取得に失敗（記事は続行）: {e}")
+    return facts
+
+
+def format_context_facts(facts: dict, stock_name: str, filer_name: str) -> str:
+    """build_context_facts()の結果をプロンプトの「事実」ブロックに足す行に整形する。"""
+    if not facts:
+        return ""
+    lines = []
+    history = facts.get("holding_history")
+    if history:
+        lines.append(
+            f"- 過去の開示: {filer_name}はこの銘柄について今回を含め{history['count']}回の開示を出しており、"
+            f"最初の開示は{history['first_date']}（保有比率{format_ratio(history['first_ratio'])}%）"
+        )
+    others = facts.get("filer_other_holdings")
+    if others:
+        listed = "、".join(
+            f"{o['name']}（{o['code']}、{o['sector'] + '、' if o.get('sector') else ''}"
+            f"{format_ratio(o['ratio'])}%）"
+            for o in others
+        )
+        total = facts.get("filer_holding_total")
+        lines.append(
+            f"- {filer_name}が同時点で5%以上を保有している他の銘柄（保有比率の高い順、全{total}銘柄のうち上位）: {listed}"
+        )
+    peers = facts.get("stock_other_filers")
+    if peers:
+        listed = "、".join(f"{p['name']}（{format_ratio(p['ratio'])}%）" for p in peers)
+        lines.append(f"- {stock_name}に大量保有報告書を出している他の投資家（保有比率の高い順）: {listed}")
+    sector = facts.get("sector")
+    if sector:
+        lines.append(f"- {stock_name}の業種: {sector}")
+    metrics = facts.get("stock_metrics") or {}
+    if metrics:
+        parts = []
+        if metrics.get("per") is not None:
+            parts.append(f"PER {metrics['per']:.1f}倍")
+        if metrics.get("pbr") is not None:
+            parts.append(f"PBR {metrics['pbr']:.2f}倍")
+        if metrics.get("pos52") is not None:
+            parts.append(f"52週レンジ内の位置 {metrics['pos52']*100:.0f}%（0%が安値、100%が高値）")
+        if parts:
+            lines.append(f"- 開示日時点の{stock_name}の指標: " + " / ".join(parts))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからbodyを生成させる。JSONで
     {"body", "bodyEn"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
@@ -934,22 +1240,14 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     is_sell = fact_sheet.get("direction") == "sell"
     is_correction = bool(fact_sheet.get("is_correction"))
     deal_verb = "訂正" if is_correction else ("売却" if is_sell else "取得")
-    deal_amount_label = fact_sheet.get("deal_amount_label") or (
-        "推定売却金額" if is_sell else "推定取得金額"
-    )
+    label = fact_sheet.get("deal_amount_label") or deal_amount_label(is_sell, False)
+    # 下落モデル（drop_prob）の水準は記事に出さない。モデルの説明ページがサイトに無いまま
+    # 「弊社モデルでは下落リスク水準を◯◯と評価」と書くと、YMYL（金融）で検証不能な独自指標を
+    # 判断材料として提示していることになり、AdSense/E-E-A-Tの信頼性評価で減点される
+    # （2026-08-25の再監査で全記事の30%が該当）。開示日時点の株価は開示原本と突き合わせ可能な
+    # 事実なので残す。
     context_close = fact_sheet.get("context_close")
-    context_dp_level = fact_sheet.get("context_dp_level")
-    if context_close is not None and context_dp_level is not None:
-        context_line = f"- 開示日時点の株価: {context_close:,.0f}円 / 弊社モデルの下落リスク水準: {context_dp_level}\n"
-        if is_correction:
-            risk_hint = "既報の保有比率を前提に取引していた市場参加者にとって何を意味するか、といった観点も交えつつ、"
-        elif is_sell:
-            risk_hint = "下落リスクが高まる局面でのリスク回避的な売却か、値上がり後の利益確定売りか、といった観点も交えつつ、"
-        else:
-            risk_hint = "下落リスクが低い局面での買い増しか、リスクが高い局面での打診買いか、といった観点も交えつつ、"
-    else:
-        context_line = ""
-        risk_hint = ""
+    context_line = f"- 開示日時点の株価: {context_close:,.0f}円\n" if context_close is not None else ""
     filer_description = fact_sheet.get("filer_description") or ""
     filer_description_line = f"- 提出者について: {filer_description}\n" if filer_description else ""
     company_description = fact_sheet.get("company_description") or ""
@@ -969,6 +1267,9 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
             change_line = f"- 変化: 保有比率はこれまでの開示から{ratio_change_pct:.2f}ポイント{'減少' if is_sell else '増加'}し、今回{fact_sheet['holding_ratio']}%になった\n"
     else:
         change_line = ""
+    context_facts_line = format_context_facts(
+        fact_sheet.get("context_facts") or {}, fact_sheet["stock_name"], fact_sheet["filer_name"]
+    )
     ratio_str = format_ratio(fact_sheet["holding_ratio"])
     if is_correction:
         answer_sentence = (
@@ -1001,12 +1302,27 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
             "訂正が起きた原因・理由（ポジション調整、計算誤り等）の推測は書かないでください。"
         )
     else:
+        transfers = fact_sheet.get("transfers") or {}
+        is_exact_amount = transfers.get("amount_oku") is not None
         nature_instruction = (
             f"この取引は保有比率が{'減少した売却（譲渡等を含む）' if is_sell else '増加した取得（買い増し・新規取得）'}です。\n"
-            f"金額が概算であることは見出しの「{deal_amount_label}」表記のみで十分伝わるため、本文中で改めて\n"
-            f"「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。\n"
         )
-        amount_fact_line = f"- {deal_amount_label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）\n"
+        if is_exact_amount:
+            # 開示に単価が載っている（短期大量譲渡）ケース。概算の注記を書かせない。
+            nature_instruction += (
+                "金額は開示された単価×株数から計算した実額です。「概算」「推定」とは書かないでください。\n"
+            )
+            amount_fact_line = (
+                f"- {label}: {fact_sheet['deal_amount_oku']}億円"
+                f"（開示された譲渡単価×株数から算出した実額）\n"
+            )
+        else:
+            nature_instruction += (
+                f"金額が概算であることは見出しの「{label}」表記のみで十分伝わるため、本文中で改めて\n"
+                f"「概算であり実際の{deal_verb}価格ではない」等の注記を繰り返さないでください。\n"
+            )
+            amount_fact_line = f"- {label}: {fact_sheet['deal_amount_oku']}億円（発行済株式数と株価からの概算）\n"
+        amount_fact_line += format_transfer_facts(transfers)
         speculation_scope = ""
 
     prompt = f"""以下は日本株の大量保有報告書（EDINET開示）に基づく事実です。この事実だけを根拠に、
@@ -1022,7 +1338,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 報告書種別: {fact_sheet['doc_type_label']}
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
-{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}
+{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}{context_facts_line}
 本文の1文目は、必ず次の文をそのまま使ってください（検索してきた読者への直答として最初に置く）:
 「{answer_sentence}」
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
@@ -1033,7 +1349,25 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 変化 の事実がある場合は、今回の保有比率が一回限りの数字ではなく前回からの推移であることが
 伝わるよう、1文で自然に触れてください。
 
-最後に1文だけ、{risk_hint}この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
+以下は、事実に該当する項目があるときだけ、それぞれ独立したセクションとして書いてください
+（無い項目は飛ばす。無理に触れて薄い文を足さないこと）。各セクションは<h2>見出し</h2>で始め、
+本文は3文以上・200字以上にしてください。見出しはその段落で何が分かるかを具体的に示す
+10〜20字の日本語にし、「まとめ」「考察」のような中身の無い語は使わないでください
+（例:「2019年からの保有推移」「サイバーエージェントが持つ他の銘柄」「株主構成での位置づけ」）。
+
+- 過去の開示: 今回の{deal_verb}が単発ではなく、いつから何回に分けて積み上げてきたポジションなのか。
+  初回開示時の保有比率から今回までで何ポイント動いたかを数字で示す。
+- 同時点で保有している他の銘柄: その投資家がどんな銘柄を選ぶ投資家なのか（どの業種に集中しているか、
+  保有比率の傾向）。必ず具体的な銘柄名・業種・比率を挙げて論じる。
+- 他の投資家: 今回の{deal_verb}が対象企業の株主構成の中でどういう位置づけか（筆頭級か、他の大株主と
+  比べてどれだけ大きいか）。具体名と比率を挙げて比較する。
+- 業種・指標: PER・PBR・52週レンジ内の位置がそれぞれ何を示しているか。ただし「割安だから買い」のような
+  投資判断の断定はしないでください。
+
+他社の業種・事業内容は、事実に業種が明記されている銘柄についてだけ言及してください。社名から業種を
+推測して書くことは禁止です（例: 事実に業種の無い銘柄を「電機メーカー」と決めつけない）。
+
+最後に1文だけ、この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
 加えてください。{speculation_scope}ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
 分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
@@ -1049,19 +1383,22 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
 テンプレートで組み立てるため出力しない）。stockNameEn/filerNameEnには英語タイトル用の
 ローマ字表記（例: "Ain Holdings", "Simplex Asset Management"）を短く書いてください:
-{{"body": "<p>...</p>形式のHTML本文（650〜900字程度、3〜4段落。最後の段落に※推測文を含む）", "bodyEn": "<p>...</p> HTML body in English, same structure as body", "stockNameEn": "...", "filerNameEn": "..."}}
+{{"body": "HTML本文（1,300〜1,700字。冒頭の直答段落は<p>で始め、以降は<h2>見出し</h2>と<p>本文</p>を3〜5セクション。最後に※推測文の<p>）", "bodyEn": "HTML body in English, same structure and same <h2> sections as body", "stockNameEn": "...", "filerNameEn": "..."}}
 """
     try:
         resp = client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=2400,
+            max_tokens=6000,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        data = json.loads(text)
+        # strict=False は必須。本文はHTMLなのでモデルがJSON文字列の中に生の改行を入れてくる。
+        # 既定の strict=True だと "Invalid control character at ..." で丸ごと落ち、記事が1本消える
+        # （2026-08-27のbackfill便では22回の生成のうち7回がこれで失敗し、再生成で拾い直していた）。
+        data = json.loads(text, strict=False)
         if not data.get("body"):
             return None
         return data
@@ -1115,6 +1452,26 @@ class MicroCMSPermissionError(Exception):
 
 
 _UNEXPECTED_TYPE_RE = re.compile(r"'(\w+)' has unexpected data type")
+
+
+def attach_figures(payload: dict, figures: list) -> int:
+    """web.article_figures が作った解説図をmicroCMSへアップロードし、本文（日本語・英語の
+    両方）の該当段落の直後に差し込む。差し込めた枚数を返す。アップロードに失敗した図は黙って
+    飛ばす（図が1枚も無くても記事は従来どおり公開する）。英語本文は段落と図の対応を語句で
+    探せないため、日本語と同じ順序で均等に配置する。"""
+    ja, en = [], []
+    for fig in figures:
+        url = _upload_media(fig["bytes"], fig["filename"])
+        if not url:
+            continue
+        ja.append({"html": figure_html(url, fig["alt"], fig["caption"]), "anchors": fig["anchors"]})
+        en.append({"html": figure_html(url, fig["alt_en"], fig["caption_en"]), "anchors": []})
+    if not ja:
+        return 0
+    payload["body"] = insert_figures_into_body(payload["body"], ja)
+    if payload.get("bodyEn"):
+        payload["bodyEn"] = insert_figures_into_body(payload["bodyEn"], en)
+    return len(ja)
 
 
 def _post_once(payload: dict) -> requests.Response:
@@ -1223,6 +1580,8 @@ def update_article(content_id: str, payload: dict) -> bool:
 # （2026-08-18のGSC「検出 - インデックス未登録」の主因）。
 # 表示側の判定は kujira-watch/src/lib/articleIndexability.ts にあり、しきい値は必ず揃えること
 # （ずれると「サイトマップに載っているのにnoindex」という矛盾した指示をGoogleに送る）。
+# この数値は kujira-watch/src/lib/faqData.tsx のFAQ「すべての大量保有報告書が記事に
+# なっていますか？」で読者にも公開している。変更時は3箇所すべてを同じコミットで直すこと。
 MIN_DEAL_AMOUNT_OKU = 3.0
 MIN_RATIO_CHANGE_PT = 1.0
 
@@ -1247,8 +1606,55 @@ def exit_code_for_run(generation_attempts: int, published_count: int) -> int:
     return 0
 
 
+def published_holding_keys(days: int) -> "set | None":
+    """直近days日ぶんの既報記事の (銘柄コード, 開示日, 提出者名) 集合。取得失敗時は None。"""
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = fetch_published_index(since, fields="stockCode,dealDate,filerName")
+    if rows is None:
+        return None
+    return {
+        (str(r.get("stockCode") or ""), str(r.get("dealDate") or "")[:10], r.get("filerName") or "")
+        for r in rows
+    }
+
+
+def estimated_amounts(days: int) -> dict:
+    """edinet_holding_amounts（開示1件ごとの推定売買金額ビュー）を doc_id 引きの dict で返す。
+    取得できなければ空dict（=足切りせずに全件見る）。"""
+    since = (date.today() - timedelta(days=days)).isoformat()
+    try:
+        rows = sb.select("edinet_holding_amounts",
+                         f"disc_date=gte.{since}&select=doc_id,deal_amount_oku,ratio_change_pt")
+    except Exception as e:
+        print(f"  ⚠ 推定金額ビューを取得できないため足切りなしで続行: {e}")
+        return {}
+    return {r["doc_id"]: r for r in rows}
+
+
+def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
+    """backfillの事前足切り。記事を作ったことがある開示と、推定金額ビューの時点で足切り基準に
+    届かない開示を、yfinance（発行済株式数・終値）とmicroCMSを叩く前に落とす。
+
+    30日窓の候補は1,000件を超え、1件ずつ株数と終値を引くと1回の便では終わらない。
+    ビューに行が無い開示（株数が取れない銘柄・ビュー更新前の開示）は判定できないので残し、
+    従来どおりループ内で概算する。"""
+    # microCMSに記事が無くても、過去に作ったことがあるなら作り直さない。
+    # 低品質・リライト不能・誤報として意図的に削除した記事（2026-08-18に129件、08-25に74件、
+    # 08-27に12件）を、取りこぼしと誤認して復活させないため。
+    if h.get("article_published_at"):
+        return False
+    key = (str(h["issuer_code"]), str(h["disc_date"])[:10], h.get("filer_name") or "")
+    if key in published_keys:
+        return False
+    v = amounts.get(h.get("doc_id"))
+    if v is None:
+        return True
+    return is_worth_publishing(v.get("deal_amount_oku") or 0.0, v.get("ratio_change_pt") or 0.0)
+
+
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
-                       dry_run: bool = False, stats: "dict | None" = None) -> list:
+                       dry_run: bool = False, backfill: bool = False,
+                       stats: "dict | None" = None) -> list:
     """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
     if stats is not None:
         stats["generation_attempts"] = 0
@@ -1256,12 +1662,29 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         print("[publish_blog_articles] MICROCMS_SERVICE_DOMAIN / MICROCMS_API_KEY 未設定のためスキップ")
         return []
 
+    published_keys, amounts = None, {}
+    if backfill:
+        days = max(days, BACKFILL_DAYS)
+        if max_articles is None:
+            max_articles = BACKFILL_MAX_ARTICLES
+        published_keys = published_holding_keys(days)
+        if published_keys is None:
+            print("[publish_blog_articles] 既報インデックスを取得できないため backfill を中止（重複投稿を避ける）")
+            return []
+        amounts = estimated_amounts(days)
+
     holdings = get_recent_large_holdings(days=days)
     candidates = [
         h for h in holdings
         if h.get("issuer_code") and h.get("holding_ratio") is not None
     ]
-    candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
+    if backfill:
+        candidates = [h for h in candidates if is_backfill_target(h, published_keys, amounts)]
+        # 古い開示ほど窓（BACKFILL_DAYS）から外れて永久に失われるので先に消化する
+        candidates.sort(key=lambda h: (h["disc_date"], -abs(h["holding_ratio"])))
+        print(f"[publish_blog_articles] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
+    else:
+        candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
     # 同一銘柄・同一開示日・同一提出者の開示が何件あるか（重複判定の緩和条件に使う）
     filing_counts = Counter(
         (str(h["issuer_code"]), h["disc_date"], h.get("filer_name", "")) for h in candidates
@@ -1294,9 +1717,15 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if change <= 0:
             print(f"  ⏭ {name}({code}): 前回開示から保有比率が変わっていないためスキップ")
             continue
+        # 短期大量譲渡の開示には「譲渡の相手方・単価」が載っており、単価×数量で実額が出せる。
+        # 実額が出せた開示では概算を使わない（実例: 日立製作所→日立建機は開示日終値ベースの
+        # 概算1,274.9億円に対し、開示単価5,227円ベースの実額は1,121.8億円）。
+        transfers = summarize_disposals(h.get("short_term_transfers") or [], change)
         if is_correction:
             # 訂正は売買を伴わないため推定金額を出さない（記事化の可否は比率変化幅で判断する）
             deal_amount = 0.0
+        elif transfers["amount_oku"] is not None:
+            deal_amount = transfers["amount_oku"]
         else:
             deal_amount = estimate_deal_amount_oku(code, change, disc_date)
             if deal_amount is None:
@@ -1316,15 +1745,16 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
             continue
 
+        if h.get("article_published_at"):
+            # 既に記事を作った開示。microCMS上に無いのは意図的に削除したから（低品質・
+            # リライト不能・誤報）なので、作り直さない。
+            continue
         unique_filing = filing_counts[(code, disc_date, filer_name)] == 1
         if already_published(code, disc_date, deal_amount, filer_name, signed_change, unique_filing):
             continue
 
-        snapshot = get_pit_ranking_snapshot(code, disc_date)
         # 株価は金額の概算に使ったものと同じ値を本文へ渡す（サイトの「基準終値」とも同じ源）。
-        # 下落リスク水準はモデル側の値なのでPITスナップショットから取る。
         context_close = disclosure_close_price(code, disc_date)
-        context_dp = snapshot.get("drop_prob") if snapshot else None
         filer_info = classify_filer(filer_name)
         company_description = get_company_description(code, name)
         get_filer_profile(filer_name, filer_info["category"])
@@ -1338,14 +1768,17 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "disc_date": disc_date,
             "deal_amount_oku": deal_amount,
             "direction": direction,
-            "deal_amount_label": "推定売却金額" if is_sell else "推定取得金額",
+            "deal_amount_label": deal_amount_label(is_sell, transfers["amount_oku"] is not None),
+            "transfers": transfers,
             "context_close": context_close,
-            "context_dp_level": dp_level_label(context_dp) if context_dp is not None else None,
             "filer_description": filer_info.get("description") or "",
             "company_description": company_description,
             "ratio_change_pct": change,
             "prior_ratio": prior_ratio,
             "is_correction": is_correction,
+            # 開示1件の数字だけでは記事がテンプレートになるため、開示を横断して初めて書ける
+            # 事実（保有の積み上げ履歴・他の保有銘柄・他の大株主・指標）を足す。
+            "context_facts": build_context_facts(code, filer_name, disc_date),
         }
         # 足切り・重複除外を通り抜けて記事化に到達した候補。ここから先で全滅したら
         # 相場やフィルタではなく生成・投稿の障害なので、exit_code_for_run が拾う。
@@ -1386,7 +1819,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             payload["bodyEn"] = article["bodyEn"]
 
         direction_mark = "📝訂正" if is_correction else ("📉売り" if is_sell else "📈買い")
-        amount_mark = f"{signed_change:+.2f}pt" if is_correction else f"推定{deal_amount}億円"
+        amount_estimated = transfers["amount_oku"] is None
+        amount_mark = (f"{signed_change:+.2f}pt" if is_correction
+                       else f"{'推定' if amount_estimated else '開示単価'}{deal_amount}億円")
         # holdingRatioはX投稿の1行目（「〇%まで買い増し」）と数字カード画像で使う。
         # microCMSのスキーマは変えたくないので、送信するpayloadではなく戻り値にだけ足す。
         if dry_run:
@@ -1412,9 +1847,20 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if eyecatch:
             payload["eyecatch"] = eyecatch
 
+        figure_count = attach_figures(payload, build_article_figures(fact_sheet))
+
         chart_url = build_price_chart_for_article(code, name)
         if chart_url:
-            payload["body"] += f'<p><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）"></p>'
+            payload["body"] += (
+                f'<figure><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）">'
+                f'<figcaption>{name}（{code}）の株価推移（直近3ヶ月・終値ベース）</figcaption></figure>'
+            )
+            if payload.get("bodyEn"):
+                payload["bodyEn"] += (
+                    f'<figure><img src="{chart_url}" alt="{name} ({code}) share price, last three months">'
+                    f'<figcaption>Share price of {name} ({code}) over the last three months (closing prices).</figcaption></figure>'
+                )
+            figure_count += 1
 
         try:
             content_id = publish_article(payload)
@@ -1422,7 +1868,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ✖ 権限エラーのため以降の候補もスキップして終了します: {e}")
             break
         if content_id:
-            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} → id={content_id}")
+            print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} 図{figure_count}枚 → id={content_id}")
+            if h.get("doc_id"):
+                mark_article_published(h["doc_id"])
             published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
@@ -1437,14 +1885,17 @@ def main():
     p.add_argument("--days", type=int, default=LARGE_HOLDINGS_DAYS, help="EDINET開示を見る直近日数")
     p.add_argument("--max-articles", type=int, default=None, help="1回の実行で投稿する上限件数（未指定なら上限なし）")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
+    p.add_argument("--backfill", action="store_true",
+                   help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない開示だけを拾い直す")
     args = p.parse_args()
 
     stats: dict = {}
     results = build_and_publish(days=args.days, max_articles=args.max_articles,
-                                dry_run=args.dry_run, stats=stats)
+                                dry_run=args.dry_run, backfill=args.backfill, stats=stats)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
-    if not args.dry_run:
+    # backfillは数日前の開示を拾い直す便なので、Xには流さない（タイムラインに古い開示が並ぶ）
+    if not args.dry_run and not args.backfill:
         from web.x_client import post_daily_summary, post_top_articles
         featured_ids = get_featured_article_ids()
         posted = post_top_articles(results, featured_ids)

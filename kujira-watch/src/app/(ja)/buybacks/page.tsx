@@ -13,10 +13,8 @@ import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const revalidate = 3600;
 
-// 集計窓（/activists・/trendingと同じ30日）。
+// 集計窓（30日。/trendingと/activistsは7日窓）。
 const WINDOW_DAYS = 30;
-// ランキングの表示件数。
-const RANK_LIMIT = 15;
 // 最新一覧の描画上限（30日で決定は100件前後。超えた分は件数を明記する）。
 const LIST_LIMIT = 100;
 
@@ -26,7 +24,7 @@ const title = "自社株買い注目銘柄";
 export const metadata: Metadata = {
   title,
   description:
-    "上場企業が取締役会で決議した自社株買い（自己株式取得）の取得枠を、TDnet適時開示の原文PDFから毎日抽出。直近30日の決定を発行済株式比率・上限金額の大きい順にランキングし、取得期間・方法・消却の有無つきで一覧します。",
+    "上場企業が取締役会で決議した自社株買い（自己株式取得）の取得枠を、TDnet適時開示の原文PDFから毎日抽出。直近30日の決定を開示日の新しい順に、上限金額・発行済株式比率・取得期間・方法・消却の有無つきで一覧します。",
   alternates: { canonical: url },
   openGraph: { title, url },
 };
@@ -68,7 +66,7 @@ const FAQS: FaqItem[] = [
     category: "自社株買い",
     question: "自社株買いの数字はどこから見ればよいですか？",
     answer:
-      "まず発行済株式比率から見ます。上限金額は会社の規模に比例するため、需給インパクトは発行済株式比率で比べるのが基本です。5%を超える枠は大きく、10%超は株主構成を変えるレベルです。上限金額ランキングは規模感の把握用として、比率ランキングと併せて見てください。",
+      "まず発行済株式比率から見ます。上限金額は会社の規模に比例するため、需給インパクトは発行済株式比率で比べるのが基本です。5%を超える枠は大きく、10%超は株主構成を変えるレベルです。上限金額は規模感の把握用として、比率と併せて見てください。",
   },
   {
     category: "自社株買い",
@@ -94,43 +92,6 @@ function Frame({ d }: { d: BuybackDecision }) {
   );
 }
 
-// 上限金額順の1本のランキング。発行済比率は金額の補足として併記する
-// （比率だけの別ランキングは「何の順位か」が伝わらなかったため2026-08-23に統合）。
-function RankingList({
-  items,
-  sectorOf,
-}: {
-  items: BuybackDecision[];
-  sectorOf: (code: string) => string | null | undefined;
-}) {
-  return (
-    <ol className="card-grid card-grid-wide">
-      {items.map((d, i) => (
-        <li key={`${d.code}-${d.disclosedAt}`} className="card">
-          <span className="flex items-start gap-2">
-            <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">{i + 1}</span>
-            <SectorIcon sector={sectorOf(d.code)} />
-            <Link
-              href={`/stocks/${d.code}`}
-              className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
-            >
-              {d.stockName}（{d.code}）
-            </Link>
-          </span>
-          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
-            <span>{formatDate(d.disclosedAt.slice(0, 10))}</span>
-            {d.willCancel && <span className="rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">消却</span>}
-            <span className="ml-auto whitespace-nowrap tabular-nums">
-              <span className="text-sm font-bold text-brand-navy">{formatAmountOku(d.maxAmountYen) ?? "-"}</span>
-              {d.ratioPct !== null && <span className="ml-1.5 text-foreground/50">発行済の{d.ratioPct}%</span>}
-            </span>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 export default async function BuybacksPage() {
   const [decisions, { contents: articles }] = await Promise.all([
     getRecentBuybackDecisions(WINDOW_DAYS).catch(() => [] as BuybackDecision[]),
@@ -143,10 +104,6 @@ export default async function BuybacksPage() {
   );
   const sectorOf = (code: string) => briefs.get(code)?.sector;
 
-  const byAmount = [...decisions]
-    .filter((d) => d.maxAmountYen !== null)
-    .sort((a, b) => (b.maxAmountYen ?? 0) - (a.maxAmountYen ?? 0))
-    .slice(0, RANK_LIMIT);
   const listed = decisions.slice(0, LIST_LIMIT);
 
   const breadcrumbJsonLd = {
@@ -183,23 +140,10 @@ export default async function BuybacksPage() {
           <span className="hidden sm:inline">
             上場企業が決議した自社株買いの取得枠を、TDnet開示の原文PDFから{SITE_NAME}が毎日抽出。
           </span>
-          直近{WINDOW_DAYS}日の決定を上限金額の大きい順に並べています（数字の見方は
+          直近{WINDOW_DAYS}日の決定を開示日の新しい順に並べています（数字の見方は
           <a href="#faq" className="text-brand-blue hover:underline">FAQ</a>）。
         </p>
       </div>
-
-      <section className="mb-10">
-        <h2 className="mb-1 text-xl font-bold text-brand-navy">上限金額ランキング</h2>
-        <p className="mb-3 text-xs text-foreground/60">
-          会社が決めた買い戻しの上限金額の大きい順。右の「発行済の○%」は市場に出回る株のうち何％まで買い戻すかで、
-          大きいほど株価を押し上げる力が強い（一般的には1〜3%、5%超は大型）。
-        </p>
-        {byAmount.length === 0 ? (
-          <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日に上限金額が開示された決定はありません。</p>
-        ) : (
-          <RankingList items={byAmount} sectorOf={sectorOf} />
-        )}
-      </section>
 
       <section className="mb-10">
         <h2 className="mb-1 text-xl font-bold text-brand-navy">最新の自社株買い決定</h2>

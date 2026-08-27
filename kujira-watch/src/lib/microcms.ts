@@ -27,11 +27,34 @@ export const REVALIDATE_SECONDS = 60;
 // 登録されており、そこから組み立てたタイトルも全角のまま）を半角へ寄せる。一覧・見出し・
 // metadata・共有テキストのどこで見ても同じ表記になるよう、受け取った時点で1か所で行う
 // （本文HTMLはlinkifyFilerNamesがDB上の正式表記と突合するため変換しない）。
+// 自社株買い記事の dealType は microCMS 上で必ず空になる。dealType はセレクト型で、
+// 選択肢に登録されていない値をPOSTしてもエラーにならず空配列で保存される仕様のため、
+// web/publish_buyback_articles.py が送る "自社株買い" は保存されずに落ちている。
+// テキスト型の tags には入っているので、そこから復元する。これを入れないと
+// /buybacks の記事一覧・/category/自社株買い・記事ページの「（上限）」表示が
+// すべて無言で壊れる（実害: 2026-08-25 まで /buybacks の関連記事が0件だった）。
+const BUYBACK_DEAL_TYPE: DealType = "自社株買い";
+
+function dealTypeFromTags(tags: unknown): DealType | undefined {
+  return typeof tags === "string" && tags.split(",").includes(BUYBACK_DEAL_TYPE)
+    ? BUYBACK_DEAL_TYPE
+    : undefined;
+}
+
+// 同じ理由で、サーバー側の絞り込みも自社株買いだけは tags を見る。
+function dealTypeFilter(dealType?: DealType): string | undefined {
+  if (!dealType) return undefined;
+  return dealType === BUYBACK_DEAL_TYPE
+    ? `tags[contains]${dealType}`
+    : `dealType[contains]${dealType}`;
+}
+
 function normalizeDealType<T extends { dealType: unknown }>(article: T): T {
-  const withTitle = article as T & { title?: unknown };
+  const withTitle = article as T & { title?: unknown; tags?: unknown };
+  const dealType = Array.isArray(article.dealType) ? article.dealType[0] : article.dealType;
   return {
     ...article,
-    dealType: Array.isArray(article.dealType) ? article.dealType[0] : article.dealType,
+    dealType: dealType || dealTypeFromTags(withTitle.tags),
     ...(typeof withTitle.title === "string" ? { title: displayText(withTitle.title) } : {}),
   };
 }
@@ -109,7 +132,7 @@ async function fetchAllArticles(dealType?: DealType): Promise<ArticleContent[]> 
     endpoint: "articles",
     queries: {
       orders: "-dealDate,-dealAmount",
-      filters: dealType ? `dealType[contains]${dealType}` : undefined,
+      filters: dealTypeFilter(dealType),
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
@@ -137,7 +160,7 @@ export async function getArticleList(params: {
       limit,
       // 取引日(dealDate)が新しい順、同じ日の中では金額規模(dealAmount)が大きい順。
       orders: "-dealDate,-dealAmount",
-      filters: dealType ? `dealType[contains]${dealType}` : undefined,
+      filters: dealTypeFilter(dealType),
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
@@ -342,7 +365,7 @@ export const getAllArticlesForSitemap = unstable_cache(
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,tags",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
@@ -423,7 +446,7 @@ export const getTranslatedArticlesForSitemap = unstable_cache(
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,titleEn,bodyEn",
+        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,titleEn,bodyEn,tags",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },

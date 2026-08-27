@@ -152,7 +152,7 @@ export type ActivistMove = {
 };
 
 // /activists（注目銘柄の集計）用。直近days日にアクティビストが提出した開示を新しい順に返す。
-// アクティビストの30日分は数十件規模なのでチャンクごとのページングは不要。
+// アクティビストの7日分は十数件規模なのでチャンクごとのページングは不要。
 export const getActivistRecentMoves = unstable_cache(
   async (days: number): Promise<ActivistMove[]> => {
     const supabase = getSupabaseServerClient();

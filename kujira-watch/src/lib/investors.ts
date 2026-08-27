@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache";
 // x-vercel-cache: MISS・cache-control: no-store で毎回サーバー実行、TTFB約2秒）。
 // クローラーは同じURLを何度も取りに来るので、これがそのままクロール速度の上限になっていた。
 // EDINET開示は日次更新なので1時間のキャッシュで十分。
+import { summarizeDisposals, type TransferSummary } from "@/lib/disclosures";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type { DealType } from "@/types/article";
 
@@ -143,6 +144,42 @@ export const getAllFilers = unstable_cache(
   ["all-filers"],
   { revalidate: 3600 }
 );
+
+// 解説文（edinet_filer_classification.profile）が入っている提出者名の集合。
+// 投資家ページのインデックス判定（lib/pageIndexability.ts）に使う。判定はページ側と
+// サイトマップ側の両方で必要なので、1回のクエリで全件取り切ってキャッシュする。
+// unstable_cache は戻り値をJSONで直列化して保存するため、Setを直接返してはいけない。
+// Setは JSON.stringify で {} になり、キャッシュから読み戻した値に .has() が生えていない。
+// noindex判定をビルド時のgenerateMetadataで呼ぶため、これは
+// 「TypeError: e.has is not a function」でプリレンダリングごと失敗し、
+// 本番デプロイが2026-08-24から24時間以上まるごと止まっていた（＝noindex対応が
+// 一度も本番に出ていなかった）。キャッシュには配列を入れ、Setは読み出し側で組み立てる。
+const getFilerNamesWithProfile = unstable_cache(
+  async (): Promise<string[]> => {
+    const supabase = getSupabaseServerClient();
+    const names: string[] = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const offset = page * PAGE_SIZE;
+      const { data } = await supabase
+        .from("edinet_filer_classification")
+        .select("filer_name, profile")
+        .not("profile", "is", null)
+        .neq("profile", "")
+        .order("filer_name", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      for (const row of data) names.push(row.filer_name);
+      if (data.length < PAGE_SIZE) break;
+    }
+    return names;
+  },
+  ["filers-with-profile"],
+  { revalidate: 3600 }
+);
+
+export async function getFilersWithProfile(): Promise<Set<string>> {
+  return new Set(await getFilerNamesWithProfile());
+}
 
 // /stocks/[code] からのクロスリンク用。この銘柄に大量保有報告書を提出したことがある
 // 投資家一覧（名称+分類+最新開示の保有比率）を返す。保有比率はその投資家の最新開示行の
@@ -291,9 +328,8 @@ async function getHoldingAmountsInRangeUncached(from: string, to: string): Promi
       .lte("disc_date", to)
       .order("doc_id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
-    // 金額はランキングの並べ替え軸ではなく件数に添える情報なので、読み取りに失敗しても
-    // ページ自体は件数だけで成立させる（0件を「金額ゼロ」として焼き付けない代わりに、
-    // ここで投げてページを落とすことはしない）。
+    // 金額は/trendingの並べ替え軸だが、読み取りに失敗してもページ自体は成立させる
+    // （呼び出し側が増加件数順にフォールバックする）。ここで投げてページを落とすことはしない。
     if (error || !data || data.length === 0) break;
     for (const row of data) {
       if (row.deal_amount_oku === null) continue;
@@ -419,11 +455,15 @@ async function getHoldingSnapshotUncached(
   stockCode: string,
   discDate: string,
   filerName: string
-): Promise<{ holdingRatio: number | null; holdingRatioPrior: number | null } | null> {
+): Promise<{
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+  transfers: TransferSummary | null;
+} | null> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
-    .select("holding_ratio, holding_ratio_prior")
+    .select("holding_ratio, holding_ratio_prior, short_term_transfers")
     .eq("issuer_code", stockCode)
     .eq("disc_date", discDate)
     .eq("filer_name", filerName)
@@ -431,7 +471,16 @@ async function getHoldingSnapshotUncached(
     .limit(1)
     .maybeSingle();
   if (!data) return null;
-  return { holdingRatio: data.holding_ratio, holdingRatioPrior: data.holding_ratio_prior };
+  // 短期大量譲渡の開示なら「誰にいくらで売ったか」が入っている（それ以外はnull）
+  const ratioChange =
+    data.holding_ratio !== null && data.holding_ratio_prior !== null
+      ? data.holding_ratio - data.holding_ratio_prior
+      : null;
+  return {
+    holdingRatio: data.holding_ratio,
+    holdingRatioPrior: data.holding_ratio_prior,
+    transfers: summarizeDisposals(data.short_term_transfers, ratioChange),
+  };
 }
 
 export const getHoldingSnapshot = unstable_cache(getHoldingSnapshotUncached, ["getHoldingSnapshot"], {

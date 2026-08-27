@@ -124,7 +124,7 @@ def test_run_returns_nonzero_when_metrics_unavailable():
     buf = io.StringIO()
     with mock.patch.object(m.sb, "is_configured", return_value=True), \
          mock.patch.object(m, "fetch_followers", return_value={}), \
-         mock.patch.object(m, "fetch_target_tweet_ids", return_value=["1", "2"]), \
+         mock.patch.object(m, "fetch_targets", return_value={"1": "article", "2": "article"}), \
          mock.patch.object(m, "fetch_metrics",
                            side_effect=m.MetricsUnavailable("HTTP 402（APIクレジットが尽きている）")), \
          redirect_stdout(buf):
@@ -133,6 +133,43 @@ def test_run_returns_nonzero_when_metrics_unavailable():
     out = buf.getvalue()
     assert "402" in out, out
     assert "対象2件" in out, out
+
+
+def test_save_sends_kind_so_the_upsert_does_not_violate_not_null():
+    """x_posts.kind は NOT NULL。更新のつもりでも kind を送らないと
+    INSERT側の制約評価で全行23502になり、最新値が丸ごと欠測する。"""
+    sent = {}
+    with mock.patch.object(m.sb, "upsert",
+                           side_effect=lambda table, rows, on_conflict="": sent.setdefault(table, rows)):
+        m.save({"1": {"likes": 3}, "2": {"likes": 0}}, {"1": "article", "2": None})
+    posts = {r["tweet_id"]: r for r in sent["x_posts"]}
+    assert posts["1"]["kind"] == "article", posts["1"]
+    assert posts["2"]["kind"] == m.UNKNOWN_KIND, posts["2"]
+
+
+def test_save_raises_when_supabase_rejects_the_rows():
+    """upsertが落ちても戻り値を見ていないと「成功しているのに数字が無い」状態が続く。"""
+    with mock.patch.object(m.sb, "upsert", return_value=False):
+        try:
+            m.save({"1": {"likes": 3}}, {"1": "article"})
+        except m.SaveFailed as e:
+            assert "x_posts" in str(e), e
+        else:
+            raise AssertionError("SaveFailedが投げられていない")
+
+
+def test_run_returns_nonzero_when_save_fails():
+    """保存に失敗した日はCIを緑にしない（失敗LINE通知の条件）。"""
+    buf = io.StringIO()
+    with mock.patch.object(m.sb, "is_configured", return_value=True), \
+         mock.patch.object(m, "fetch_followers", return_value={}), \
+         mock.patch.object(m, "fetch_targets", return_value={"1": "article"}), \
+         mock.patch.object(m, "fetch_metrics", return_value={"1": {"likes": 1}}), \
+         mock.patch.object(m.sb, "upsert", return_value=False), \
+         redirect_stdout(buf):
+        rc = m.run()
+    assert rc == 3, rc
+    assert "保存できません" in buf.getvalue(), buf.getvalue()
 
 
 if __name__ == "__main__":

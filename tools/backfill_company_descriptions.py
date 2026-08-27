@@ -12,7 +12,7 @@ kujira-watch.com の /stocks/[code] ページが「クロール済み-インデ�
 
 対象: edinet_large_holdings に提出実績があり（=/stocks/[code]ページが存在する）、
 jpx_stock_list.description が未設定の銘柄。--recent-days で直近に開示があった銘柄だけに
-絞れる（/trendingは直近30日の開示から出すため、全銘柄を回さずカバーできる）。
+絞れる（/trendingは直近7日の開示から出すため、全銘柄を回さずカバーできる）。
 
 Usage:
   python3 tools/backfill_company_descriptions.py --dry-run           # 対象件数の確認のみ

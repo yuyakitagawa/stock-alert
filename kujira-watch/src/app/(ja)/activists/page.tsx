@@ -18,9 +18,10 @@ import { getFilerIdMap, investorPath } from "@/lib/investors";
 
 export const revalidate = 3600;
 
-// 買い入れの集計期間（/ranking/activist・/trendingと同じ30日）。
-const MOVES_WINDOW_DAYS = 30;
-// アクティビスト注目銘柄の表示件数。全件を一度に並べるが、30日分を全部描画すると
+// 買い入れの集計期間（/trendingと同じ7日＝直近1週間。30日窓は毎日ほぼ同じ顔ぶれが並び
+// 「直近の動き」が見えなくなるため2026-08-27に短縮した。7日でも買い入れは20銘柄前後出る）。
+const MOVES_WINDOW_DAYS = 7;
+// アクティビスト注目銘柄の表示件数。全件を一度に並べるが、開示が集中した週に全部描画すると
 // ページのHTMLが重くなるため件数自体をここで打ち切る
 // （打ち切った件数は画面にも明記して、全件があるように見せない）。
 const ATTENTION_RENDER_LIMIT = 100;
@@ -31,7 +32,7 @@ const title = "アクティビスト注目銘柄";
 export const metadata: Metadata = {
   title,
   description:
-    "アクティビスト（物言う株主）が直近30日に大きく買い入れた注目銘柄を、EDINET大量保有報告書をもとに増加幅の大きい順で一覧。保有比率・開示日つきで毎日更新しています。",
+    "アクティビスト（物言う株主）が直近7日に大きく買い入れた注目銘柄を、EDINET大量保有報告書をもとに増加幅の大きい順で一覧。保有比率・開示日つきで毎日更新しています。",
   alternates: { canonical: url },
   openGraph: { title, url },
 };
@@ -61,7 +62,7 @@ export default async function ActivistsPage() {
       </span>
     );
 
-  // 注目銘柄=直近30日にアクティビストが保有比率を増やした（買い入れた）銘柄。
+  // 注目銘柄=直近7日にアクティビストが保有比率を増やした（買い入れた）銘柄。
   // 銘柄ごとに増加幅(pt)を合算し、大きい順に並べる。前回比率が無い開示は新規保有とみなし
   // 今回比率ぶんを増加として扱う。複数ファンドが同時保有中の銘柄にはバッジを添える。
   type AttentionRow = {
