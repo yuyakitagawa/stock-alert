@@ -164,5 +164,117 @@ class FormatAndSummaryTest(unittest.TestCase):
         self.assertIn("直近の実行なし", text)
 
 
+def _unknown_step_line(msg: str, ts: str = "2026-08-26T07:00:00.0000000Z") -> str:
+    """ステップ名を解決できなかったときの gh run view --log の実際の形式。"""
+    return f"run-pipeline\tUNKNOWN STEP\t{ts} {msg}"
+
+
+class StepSegmentationTest(unittest.TestCase):
+    """gh がステップ名を解決できない run（実測: daily_alert の996行すべて）の切り直し。"""
+
+    def _log(self) -> str:
+        lines = [_unknown_step_line("##[group]Run actions/checkout@v4")]
+        lines += [_unknown_step_line(f"checkout {i}") for i in range(120)]
+        lines.append(_unknown_step_line("##[group]Run cd ~/stock-alert && python core/rank_stocks.py"))
+        lines += [_unknown_step_line(f"rank {i}") for i in range(120)]
+        lines.append(_unknown_step_line("##[group]Run cd ~/stock-alert && python web/market_timing_alert.py"))
+        lines.append(_unknown_step_line("--- U249f138... ---"))
+        lines.append(_unknown_step_line("🐋 本日のクジラ｜8/26の大量保有報告書"))
+        lines.append(_unknown_step_line("[market_timing] LINE送信完了"))
+        lines.append(_unknown_step_line("##[group]Run actions/upload-artifact@v4"))
+        lines += [_unknown_step_line(f"upload {i}") for i in range(120)]
+        return "\n".join(lines)
+
+    def test_splits_by_group_run_marker(self):
+        out = dlr.condense_log(self._log())
+        self.assertEqual(out.count("### step:"), 4)
+        self.assertIn("core/rank_stocks.py", out)
+
+    def test_keeps_line_body_in_the_middle_of_the_run(self):
+        # 切り直し前は1 run＝1ステップに潰れ、中盤のLINE本文が必ず落ちていた
+        out = dlr.condense_log(self._log())
+        self.assertIn("🐋 本日のクジラ", out)
+        self.assertIn("・全文)", out)  # market_timing のステップは全文保持される
+
+    def test_full_step_survives_tight_budget(self):
+        out = dlr.condense_log(self._log(), max_chars=1500)
+        self.assertIn("🐋 本日のクジラ", out)
+        self.assertLessEqual(len(out), 1600)
+
+    def test_strip_prefix_removes_bom(self):
+        step, msg = dlr._strip_prefix("job\tUNKNOWN STEP\t\ufeff2026-08-26T07:00:00.0000000Z hello")
+        self.assertEqual(msg, "hello")
+
+
+class ReferenceRunTest(unittest.TestCase):
+    def test_review_input_marks_out_of_window_run(self):
+        runs = {"perf_check.yml": [{
+            "databaseId": 1, "event": "schedule", "conclusion": "success",
+            "createdAt": "2026-08-24T00:30:43Z", "updatedAt": "2026-08-24T00:31:13Z",
+            "url": "https://example.test/1", "_age_days": 3,
+            "_jobs_text": "job: perf-check → success", "_log_text": "| `/` | 0.23s |",
+        }]}
+        text = dlr.build_review_input(runs, "2026-08-27")
+        self.assertIn("24時間の対象期間外", text)
+        self.assertIn("3日前", text)
+        self.assertIn("当日の出来事としては扱わない", text)
+
+    def test_review_input_has_no_note_for_normal_runs(self):
+        runs = {"ops.yml": [{
+            "databaseId": 2, "event": "schedule", "conclusion": "success",
+            "createdAt": "2026-08-27T00:00:00Z", "updatedAt": "2026-08-27T00:01:00Z",
+            "url": "https://example.test/2", "_jobs_text": "job: ops → success", "_log_text": "ok",
+        }]}
+        self.assertNotIn("対象期間外", dlr.build_review_input(runs, "2026-08-27"))
+
+    def test_perf_check_is_a_reference_workflow(self):
+        self.assertIn("perf_check.yml", dlr._REFERENCE_WORKFLOWS)
+
+
+_PREV_REVIEW = """# 2026-08-26 日次ログレビュー
+
+## 健全性サマリー
+| ops.yml | ✅ | 正常 |
+
+## PdM所見（KPIと優先順位）
+**今週やる3件**
+1. x_posts の kind を埋める
+2. YouTubeトークン再発行
+
+**やらない事**
+- Node 20 対応
+
+## 改善提案
+- **[高] 提案: kind を必ず埋める / 対象: x_post.yml / 観点: BE**
+- **[中] 提案: リンクを必須化 / 対象: web/x_post_format.py / 観点: UX**
+
+## LINE要約
+🚨 まずい
+"""
+
+
+class PrevProposalsTest(unittest.TestCase):
+    def test_extracts_todo_and_proposals_only(self):
+        out = dlr.extract_prev_proposals(_PREV_REVIEW)
+        self.assertIn("2026-08-26", out)
+        self.assertIn("x_posts の kind を埋める", out)
+        self.assertIn("リンクを必須化", out)
+        self.assertNotIn("やらない事", out)       # 対象外の節は持ち込まない
+        self.assertNotIn("健全性サマリー", out)
+        self.assertNotIn("🚨 まずい", out)        # LINE要約も持ち込まない
+
+    def test_returns_empty_when_no_sections(self):
+        self.assertEqual(dlr.extract_prev_proposals("# 2026-08-26\n\n## 健全性サマリー\n✅\n"), "")
+
+    def test_caps_length(self):
+        md = _PREV_REVIEW.replace("- **[中] 提案: リンクを必須化", "- " + "あ" * 9000)
+        out = dlr.extract_prev_proposals(md)
+        self.assertEqual(len(out), dlr._PREV_REVIEW_MAX_CHARS)
+
+    def test_system_prompt_asks_for_disposal_section(self):
+        self.assertIn("## 前回提案の消化状況", dlr.SYSTEM_PROMPT)
+        self.assertIn("[再掲]", dlr.SYSTEM_PROMPT)
+
+
 if __name__ == "__main__":
     unittest.main()
