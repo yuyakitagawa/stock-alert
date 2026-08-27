@@ -12,9 +12,10 @@ import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 300;
 
-// 比較期間。週次(7日)だと開示の少ない週に振り回され、暦月だと月初は「数日 vs 1か月」の
-// 比較になってしまうため、常に同じ長さで比べられる30日固定にする。
-const WINDOW_DAYS = 30;
+// 比較期間。「今どの銘柄に大口の資金が入っているか」を今週の動きとして見せるため、
+// 直近7日 vs その前の7日で比べる（暦週ではなく常に同じ長さの7日固定にして、
+// 月初・週初でも「数日 vs 1週間」の歪んだ比較にならないようにする）。
+const WINDOW_DAYS = 7;
 
 // 構造化データに載せる件数。オートページャーで追加描画される分はクライアント側の
 // 処理なので、クロール時点でサーバーが返すHTML（TrendingTableのINITIAL_COUNT）に合わせる。
@@ -50,7 +51,7 @@ export default async function TrendingPage() {
     getArticleList({ limit: 30 }).catch(() => ({ contents: [] })),
   ]);
 
-  // 件数制限なし。直近30日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
+  // 件数制限なし。直近7日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
   const trendingIssuers = buildTrendingIssuers(rows, currentFrom, amountByDocId);
 
   // 社名と証券コードだけでは何の会社か分からないため、事業内容を1行添える。

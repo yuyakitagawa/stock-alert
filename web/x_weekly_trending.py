@@ -8,7 +8,7 @@ web/x_weekly_trending.py
 集計ロジックは kujira-watch の /trending ページ（src/lib/trendingStats.ts）のPython移植で、
 直近期間とその前の同じ長さの期間の大量保有・変更報告書の開示件数を Supabase
 `edinet_large_holdings` から数え、増加件数（delta）の多い順に銘柄・投資家を出す。
-比較窓だけは /trending の30日ではなく7日（前週比）にしている（WINDOW_DAYSのコメント参照）。
+比較窓は /trending と同じ7日（前週比）。
 開示データには推定取引金額が無いため、比較の軸は金額ではなく開示件数（/trendingと同じ理由）。
 
 Xの文字数は全角2単位換算の280単位制限があるため、本文を組んだあと
@@ -29,9 +29,9 @@ from lib import supabase_client as sb  # noqa: E402
 from web.x_client import PROFILE_CTA, TAGS, post_tweet, upload_media  # noqa: E402
 from web.x_post_format import POST_MAX_WEIGHTED, clean_name, label, weighted_len  # noqa: E402
 
-# 比較窓。/trendingページは30日窓だが、週次投稿で30日窓を使うと隣り合う日曜の投稿で
-# データが23日分重複してほぼ同じランキングが並んでしまうため、投稿は「直近7日 vs その前7日」
-# の前週比にする（毎週内容が入れ替わる。実データ確認: 7日窓でも上位は+12件等の見栄えが出る）。
+# 比較窓。「直近7日 vs その前7日」の前週比。週次投稿で30日窓を使うと隣り合う日曜の投稿で
+# データが23日分重複してほぼ同じランキングが並んでしまうため7日にしていたもので、
+# 2026-08-27に/trendingページ側も7日窓へ揃えたため現在は両者同じ窓。
 WINDOW_DAYS = 7
 
 # 投稿に載せる件数。文字数制限が厳しいため銘柄3・投資家2に絞る（全量は/trendingで見せる）。
@@ -59,7 +59,8 @@ def fetch_holdings(range_from: str, range_to: str) -> list:
 
 def build_trending(rows: list, current_from: str, key_of, label_of, limit: int) -> list:
     """trendingStats.ts の buildTrending() と同一ロジック。
-    delta（直近30日の件数 - その前30日の件数）が正のものを delta降順 → 件数降順で返す。"""
+    delta（直近WINDOW_DAYS日の件数 - その前の同じ日数の件数）が正のものを
+    delta降順 → 件数降順で返す。"""
     entries: dict = {}
     for row in rows:
         key = key_of(row)
@@ -139,7 +140,7 @@ def build_trending_media(issuers: list, filers: list) -> list:
 
 def run(dry_run: bool = False) -> int:
     # CIランナーはUTCで動くため、date.today()だと集計窓がJST基準から1日ずれる。
-    # サイトの/trendingや投稿文言（「直近30日」）と揃えるためJSTの今日を使う。
+    # サイトの/trendingや投稿文言と揃えるためJSTの今日を使う。
     today = (datetime.now(timezone.utc) + timedelta(hours=9)).date()
     current_from = (today - timedelta(days=WINDOW_DAYS - 1)).isoformat()
     range_from = (today - timedelta(days=WINDOW_DAYS * 2 - 1)).isoformat()

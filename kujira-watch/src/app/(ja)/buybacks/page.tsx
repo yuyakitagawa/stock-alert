@@ -13,7 +13,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const revalidate = 3600;
 
-// 集計窓（/activists・/trendingと同じ30日）。
+// 集計窓（/activistsと同じ30日。/trendingだけは7日窓）。
 const WINDOW_DAYS = 30;
 // ランキングの表示件数。
 const RANK_LIMIT = 15;

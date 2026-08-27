@@ -18,7 +18,8 @@ import { getFilerIdMap, investorPath } from "@/lib/investors";
 
 export const revalidate = 3600;
 
-// 買い入れの集計期間（/ranking/activist・/trendingと同じ30日）。
+// 買い入れの集計期間（/ranking/activistと同じ30日。アクティビストの開示は月に数十件しか
+// 出ないため、/trendingの7日窓と違ってここは30日のまま一覧が埋まる長さを取る）。
 const MOVES_WINDOW_DAYS = 30;
 // アクティビスト注目銘柄の表示件数。全件を一度に並べるが、30日分を全部描画すると
 // ページのHTMLが重くなるため件数自体をここで打ち切る

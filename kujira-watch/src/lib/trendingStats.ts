@@ -85,9 +85,11 @@ function toCounts(bucket: Bucket): TrendingCounts {
   };
 }
 
-// 増加件数が同じなら直近期間の件数が多いほうを上に出す。
+// 増加件数が同じなら直近期間の件数が多いほうを上に出し、それも同じなら推定売買金額の
+// 大きいほうを上に出す。7日窓では大半の銘柄が「+1件」で並ぶため（30日窓では件数だけで
+// ほぼ順位が決まっていた）、金額まで見ないと順位が実質ランダムになる。
 function compareTrending(a: TrendingCounts, b: TrendingCounts): number {
-  return b.delta - a.delta || b.count - a.count;
+  return b.delta - a.delta || b.count - a.count || b.amount - a.amount;
 }
 
 // 選んだ方向の件数を実体化して、増えたものだけを並べ替えて返す。
@@ -101,7 +103,7 @@ export function selectDirection<T extends DirectionalTrendingEntry>(
     .sort(compareTrending);
 }
 
-// /trendingの銘柄一覧。件数制限なし＝直近30日で開示が増えた銘柄をすべて返す。
+// /trendingの銘柄一覧。件数制限なし＝直近7日で開示が増えた銘柄をすべて返す。
 // 並べ替えは絞り込みを切り替えるクライアント側（selectDirection）で行うため、
 // ここではどの方向でも増えていない銘柄を落とすだけにする。
 export function buildTrendingIssuers(
