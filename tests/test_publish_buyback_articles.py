@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import web.publish_buyback_articles as m
 
+DECISION_TITLE = "自己株式取得に係る事項の決定に関するお知らせ"
+
 FACT = {
     "stock_code": "7966", "stock_name": "リンテック", "disc_date": "2026-08-20", "board_date": "2026-08-20",
     "amount_oku": 300.0, "max_amount_yen": 30_000_000_000, "max_shares": 6_910_000, "ratio": 10.55,
@@ -29,14 +31,33 @@ def test_is_worth_publishing_thresholds():
 
 def test_fetch_candidates_filters_by_scale():
     rows = [
-        {"code": "7966", "disclosed_at": "2026-08-20T16:00:00+00:00", "max_amount_yen": 30_000_000_000, "ratio_pct": "10.55"},
-        {"code": "2669", "disclosed_at": "2026-08-20T16:00:00+00:00", "max_amount_yen": 200_000_000, "ratio_pct": "0.5"},
-        {"code": "6082", "disclosed_at": "2026-08-14T16:00:00+00:00", "max_amount_yen": 1_000_000_000, "ratio_pct": "12.8"},
+        {"code": "7966", "disclosed_at": "2026-08-20T16:00:00+00:00", "max_amount_yen": 30_000_000_000, "ratio_pct": "10.55", "title": DECISION_TITLE},
+        {"code": "2669", "disclosed_at": "2026-08-20T16:00:00+00:00", "max_amount_yen": 200_000_000, "ratio_pct": "0.5", "title": DECISION_TITLE},
+        {"code": "6082", "disclosed_at": "2026-08-14T16:00:00+00:00", "max_amount_yen": 1_000_000_000, "ratio_pct": "12.8", "title": DECISION_TITLE},
+        # 既存決議の一部変更。閾値を超えても新規決議ではないので候補にしない（8560 2026-08-18の実例）
+        {"code": "8560", "disclosed_at": "2026-08-18T16:00:00+00:00", "max_amount_yen": 1_100_000_000, "ratio_pct": "9.12",
+         "title": "自己株式取得に係る事項の一部変更に関するお知らせ"},
     ]
     with mock.patch.object(m.sb, "select", return_value=rows):
         out = m.fetch_candidates(7)
     assert [c["code"] for c in out] == ["7966", "6082"]
     assert out[0]["amount_oku"] == 300.0 and out[0]["ratio"] == 10.55
+
+
+def test_fetch_candidates_excludes_amendment_of_existing_buyback():
+    """既存決議の「一部変更」「（訂正）」は閾値を超えても記事にしない。
+    tdnet_buybacksに取り込み済みの行は取り込み時の分類のまま残るため、ここでも分類を見る
+    （8560 2026-08-18は取締役会決議が2026-02-09なのに上限11億円・9.12%で閾値を超えており、
+    記事にすると「2026-08-18に決議した」という誤報になる）。"""
+    rows = [
+        {"code": "8560", "disclosed_at": "2026-08-18T16:00:00+00:00", "max_amount_yen": 1_100_000_000,
+         "ratio_pct": "9.12", "title": "自己株式取得に係る事項の一部変更に関するお知らせ"},
+        {"code": "4323", "disclosed_at": "2026-06-30T16:00:00+00:00", "max_amount_yen": 5_000_000_000,
+         "ratio_pct": "5.0",
+         "title": "（訂正）「自己株式取得に係る事項の決定に関するお知らせ」の一部訂正について"},
+    ]
+    with mock.patch.object(m.sb, "select", return_value=rows):
+        assert m.fetch_candidates(30) == []
 
 
 def test_build_titles_contains_search_terms_and_scale():

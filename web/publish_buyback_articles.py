@@ -35,6 +35,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 import requests  # noqa: E402
 
 from lib import api_budget  # noqa: E402
+from lib.buyback import classify_buyback_title  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
@@ -74,6 +75,10 @@ def is_worth_publishing(amount_oku: "float | None", ratio_pct: "float | None") -
 
 
 def fetch_candidates(days: int) -> list[dict]:
+    """記事化の対象になる決定開示。分類は取り込み時（lib.buyback.pending_decisions）だけでなく
+    ここでも見る。tdnet_buybacks に既に入っている行は取り込み時の分類のままなので、分類を直しても
+    過去分は残るため（実例: 8560 2026-08-18「自己株式取得に係る事項の一部変更」。取締役会決議は
+    2026-02-09なのに上限11億円・9.12%で閾値を超えており、記事にすると決議日が誤報になる）。"""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     rows = sb.select(
         "tdnet_buybacks",
@@ -81,6 +86,8 @@ def fetch_candidates(days: int) -> list[dict]:
     )
     out = []
     for r in rows:
+        if classify_buyback_title(r.get("title") or "") != "decision":
+            continue
         amount_oku = round(r["max_amount_yen"] / 1e8, 1) if r.get("max_amount_yen") else None
         ratio = float(r["ratio_pct"]) if r.get("ratio_pct") is not None else None
         if is_worth_publishing(amount_oku, ratio):
