@@ -85,6 +85,23 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_buyback_articles.py
 
+      # 稼働が止まっていた期間の取りこぼしを拾い直す（1日1回、当日最終便=12:00 UTCと手動実行のみ）。
+      # 通常運転は直近3日の開示しか見ないため、API上限やワークフロー障害で3日を超えて生成が
+      # 止まると、その期間の開示は二度と記事化されない（実例: 2026-08-13〜08-20の自社株買い
+      # 決定12件を2026-08-27に手作業でbackfillした）。--backfill は30日まで遡り、まだ記事の無い
+      # 開示だけを古い順に拾う。1便あたりの投稿数は BACKFILL_MAX_ARTICLES で絞る（API課金と
+      # 古い記事が一度に並ぶのを避けるため）。
+      - name: 取りこぼし記事のbackfill（1日1回・直近30日）
+        continue-on-error: true
+        run: |
+          cd ~/stock-alert
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$(date -u +%H)" = "12" ]; then
+            python web/publish_blog_articles.py --backfill
+            python web/publish_buyback_articles.py --backfill
+          else
+            echo "当日最終便（12:00 UTC）ではないためbackfillはスキップ"
+          fi
+
       # 概算金額の再計算ブレ等で重複判定をすり抜けた同一開示の二重記事を自動回収する
       # （同一銘柄・同一開示日・同一提出者の後発記事を削除。実例: 2026-08-17）
       - name: 重複記事クリーンアップ

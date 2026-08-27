@@ -371,6 +371,112 @@ def test_build_and_publish_skips_when_amount_unestimable():
     assert results == []
 
 
+def _index_page(contents, total):
+    resp = mock.MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"contents": contents, "totalCount": total}
+    return resp
+
+
+def test_fetch_published_index_pages_until_total_count():
+    """既報インデックスは totalCount に届くまでページを辿る（1ページ=100件）。"""
+    pages = [_index_page([{"stockCode": str(i)} for i in range(100)], 150),
+             _index_page([{"stockCode": str(i)} for i in range(100, 150)], 150)]
+    with mock.patch.object(m.requests, "get", side_effect=pages) as get:
+        rows = m.fetch_published_index("2026-07-28")
+    assert len(rows) == 150 and get.call_count == 2
+    assert get.call_args_list[1].kwargs["params"]["offset"] == 100
+
+
+def test_fetch_published_index_returns_none_on_http_error():
+    """取得できなかったら None。呼び出し側は backfill を中止して重複投稿を避ける。"""
+    resp = mock.MagicMock()
+    resp.status_code = 500
+    resp.text = "err"
+    with mock.patch.object(m.requests, "get", return_value=resp):
+        assert m.fetch_published_index("2026-07-28") is None
+
+
+def test_is_backfill_target_drops_published_and_below_threshold():
+    amounts = {
+        "D1": {"deal_amount_oku": 50.0, "ratio_change_pt": 0.2},   # 金額で基準超え
+        "D2": {"deal_amount_oku": 0.1, "ratio_change_pt": 0.1},    # どちらも基準未満
+    }
+    keys = {("7203", "2026-08-01", "個人 太郎")}
+    published = {"issuer_code": "7203", "disc_date": "2026-08-01", "filer_name": "個人 太郎", "doc_id": "D1"}
+    worth = {"issuer_code": "6502", "disc_date": "2026-08-01", "filer_name": "提出者B", "doc_id": "D1"}
+    tiny = {"issuer_code": "6503", "disc_date": "2026-08-01", "filer_name": "提出者C", "doc_id": "D2"}
+    unknown = {"issuer_code": "6504", "disc_date": "2026-08-01", "filer_name": "提出者D", "doc_id": "D9"}
+    assert m.is_backfill_target(published, keys, amounts) is False
+    assert m.is_backfill_target(worth, keys, amounts) is True
+    assert m.is_backfill_target(tiny, keys, amounts) is False
+    # ビューに行が無い開示は判定できないので残す（ループ内で従来どおり概算する）
+    assert m.is_backfill_target(unknown, keys, amounts) is True
+
+
+def test_build_and_publish_backfill_aborts_when_index_unavailable():
+    """既報一覧が引けないまま30日分を走らせると同じ開示を投稿し直すため、backfillごと中止する。"""
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=None), \
+         mock.patch.object(m, "get_recent_large_holdings") as holdings:
+        assert m.build_and_publish(backfill=True) == []
+    holdings.assert_not_called()
+
+
+def test_build_and_publish_backfill_widens_window_and_takes_oldest_first():
+    rows = [
+        {"issuer_code": "7203", "name": "新しい方", "filer_name": "個人 太郎", "holding_ratio": 8.5,
+         "disc_date": "2026-08-20", "doc_type_code": "350", "doc_description": "大量保有報告書", "doc_id": "D1"},
+        {"issuer_code": "6502", "name": "古い方", "filer_name": "個人 次郎", "holding_ratio": 9.5,
+         "disc_date": "2026-08-01", "doc_type_code": "350", "doc_description": "大量保有報告書", "doc_id": "D2"},
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=set()), \
+         mock.patch.object(m, "estimated_amounts", return_value={}), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows) as holdings, \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(max_articles=1, dry_run=True, backfill=True)
+    assert holdings.call_args.kwargs["days"] == m.BACKFILL_DAYS
+    # 窓から外れる寸前の古い開示を先に消化する
+    assert [r["stockCode"] for r in results] == ["6502"]
+
+
+def test_build_and_publish_backfill_caps_articles_by_default():
+    """--max-articles 未指定のbackfillは BACKFILL_MAX_ARTICLES 件で止まる（API課金の暴発防止）。"""
+    rows = [
+        {"issuer_code": f"{7000 + i}", "name": f"銘柄{i}", "filer_name": f"提出者{i}",
+         "holding_ratio": 8.5, "disc_date": "2026-08-01", "doc_type_code": "350",
+         "doc_description": "大量保有報告書", "doc_id": f"D{i}"}
+        for i in range(m.BACKFILL_MAX_ARTICLES + 3)
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=set()), \
+         mock.patch.object(m, "estimated_amounts", return_value={}), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(dry_run=True, backfill=True)
+    assert len(results) == m.BACKFILL_MAX_ARTICLES
+
+
 def test_ratio_change_pct_uses_disclosure_prior_ratio():
     """開示自体が直前保有割合を持つ場合はDB履歴を引かずにそれを使う。"""
     with mock.patch.object(m, "get_edinet_large_holdings_recent") as hist:
@@ -1753,4 +1859,10 @@ if __name__ == "__main__":
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
     test_build_and_publish_uses_disclosed_unit_price_over_market_estimate()
     test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive()
-    print("全テスト成功 (117件)")
+    test_fetch_published_index_pages_until_total_count()
+    test_fetch_published_index_returns_none_on_http_error()
+    test_is_backfill_target_drops_published_and_below_threshold()
+    test_build_and_publish_backfill_aborts_when_index_unavailable()
+    test_build_and_publish_backfill_widens_window_and_takes_oldest_first()
+    test_build_and_publish_backfill_caps_articles_by_default()
+    print("全テスト成功 (123件)")

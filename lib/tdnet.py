@@ -98,6 +98,33 @@ def fetch_disclosures(cond: str, limit: int = 100) -> list[dict]:
     return out
 
 
+def fetch_company_name(code: str) -> str:
+    """証券コードから会社名（TDnetの取引所略称。例: 8560 → "宮崎太銀"）を引く。失敗時は空文字。
+
+    jpx_stock_list はJPX（東証）の上場銘柄一覧から作っているため、福証・名証単独上場の
+    銘柄が載っていない（実例: 8560 宮崎太陽銀行、3066 JBイレブン）。TDnetはそれらの開示も
+    配信するので、記事化するときの銘柄名フォールバックに使う。
+
+    fetch_disclosures() の戻り値には会社名を含めない。あちらの dict はそのまま
+    ext_tdnet_disclosures へ upsert されるため、テーブルに無いキーを足すと保存が丸ごと落ちる。
+    """
+    url = f"{_API_BASE}/{code}.json"
+    try:
+        resp = requests.get(url, params={"limit": 1}, headers=_HEADERS, timeout=20)
+        if resp.status_code != 200:
+            print(f"[tdnet] 会社名の取得に失敗 HTTP {resp.status_code}: {code}")
+            return ""
+        items = resp.json().get("items", [])
+    except Exception as e:
+        print(f"[tdnet] 会社名の取得に失敗 ({code}): {e}")
+        return ""
+    for it in items:
+        name = ((it.get("Tdnet") or {}).get("company_name") or "").strip()
+        if name:
+            return name
+    return ""
+
+
 def scan_disclosures(days_back: int = 3, codes: list[str] | None = None,
                      persist: bool = True, sleep_sec: float = 1.0,
                      only_categorized: bool = False) -> list[dict]:

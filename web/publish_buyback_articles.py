@@ -14,6 +14,10 @@ web/publish_buyback_articles.py
   記事ページ側は dealType=自社株買い のとき「（上限）」「発行済比率（上限）」と表示を切り替える。
 - 本文は publish_blog_articles.py と同じく事実のみからHaikuに書かせ、推測は「※推測:」で分ける。
   X への個別投稿はしない（平日19:00の web/x_buyback.py「本日の自社株買い決定」が担う）。
+- --backfill: 通常運転の窓（DEFAULT_DAYS=3日）を超えて生成が止まると、その期間の決定開示は
+  二度と記事化されない（実例: 2026-08-13〜08-20の12件。API月次上限と稼働開始前が重なり
+  2026-08-27に手作業で拾った）。--backfill は BACKFILL_DAYS 日まで遡り、既報インデックスに
+  無い＝まだ記事が無い開示だけを古い順に拾い直す。edinet_blog.yml の当日最終便が1日1回叩く。
 """
 import argparse
 import json
@@ -35,6 +39,8 @@ from lib import supabase_client as sb  # noqa: E402
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
     ANTHROPIC_API_KEY,
+    BACKFILL_DAYS,
+    BACKFILL_MAX_ARTICLES,
     CLAUDE_MODEL,
     MAX_TITLE_LEN,
     MicroCMSPermissionError,
@@ -45,6 +51,7 @@ from web.publish_blog_articles import (  # noqa: E402
     body_quality_key,
     build_eyecatch_for_article,
     build_price_chart_for_article,
+    fetch_published_index,
     get_company_description,
     get_pit_ranking_snapshot,
     publish_article,
@@ -81,6 +88,17 @@ def fetch_candidates(days: int) -> list[dict]:
     return out
 
 
+def published_deal_keys(days: int) -> "set | None":
+    """直近days日ぶんの自社株買い記事の (銘柄コード, 開示日) 集合。取得失敗時は None。
+    backfillで候補1件ずつ already_published() を叩かずに済ませるための既報一覧。"""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = fetch_published_index(since, extra_filter=f"tags[contains]{DEAL_TYPE}",
+                                 fields="stockCode,dealDate")
+    if rows is None:
+        return None
+    return {(str(r.get("stockCode") or ""), str(r.get("dealDate") or "")[:10]) for r in rows}
+
+
 def already_published(stock_code: str, disc_date: str) -> bool:
     """同じ銘柄・同じ開示日の自社株買い記事が既にあればTrue。同日に同銘柄が決定開示を2本出す
     ことは実務上ない（取得枠と立会外買付を1本で出す）ので、銘柄×日付で十分。
@@ -115,8 +133,22 @@ def already_published(stock_code: str, disc_date: str) -> bool:
 
 
 def stock_name_of(code: str) -> str:
+    """銘柄名。jpx_stock_list に無ければTDnetの会社名で補う。
+
+    jpx_stock_list はJPX（東証）の上場銘柄一覧から作っているため、福証・名証単独上場の
+    銘柄が載っていない（実例: 8560 宮崎太陽銀行、3066 JBイレブン）。TDnetはそれらの決定開示も
+    配信するので、銘柄名が引けないというだけで記事化を永久に見送っていた
+    （2026-08-27のbackfillで8560をスキップ）。TDnet側の会社名は取引所の略称（「宮崎太銀」）だが、
+    開示を丸ごと落とすよりは略称で載せる。"""
     row = sb.select_one("jpx_stock_list", f"code=eq.{code}&select=name")
-    return (row or {}).get("name") or ""
+    name = (row or {}).get("name") or ""
+    if name:
+        return name
+    from lib.tdnet import fetch_company_name
+    name = fetch_company_name(code)
+    if name:
+        print(f"    ℹ {code}: jpx_stock_list に銘柄名が無いためTDnetの会社名「{name}」を使う")
+    return name
 
 
 def prior_buybacks(code: str, before: str) -> list[dict]:
@@ -343,9 +375,23 @@ def build_payload(f: dict, article: dict) -> dict:
 
 
 def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = None,
-                      dry_run: bool = False) -> list[dict]:
+                      dry_run: bool = False, backfill: bool = False) -> list[dict]:
+    known: "set | None" = None
+    if backfill:
+        days = max(days, BACKFILL_DAYS)
+        if max_articles is None:
+            max_articles = BACKFILL_MAX_ARTICLES
+        known = published_deal_keys(days)
+        if known is None:
+            print("[buyback_blog] 既報インデックスを取得できないため backfill を中止（重複投稿を避ける）")
+            return []
     candidates = fetch_candidates(days)
     print(f"[buyback_blog] 記事候補: {len(candidates)}件（上限{MIN_AMOUNT_OKU:g}億円以上 or 発行済{MIN_RATIO_PCT:g}%以上）")
+    if backfill:
+        candidates = [c for c in candidates if (c["code"], c["disclosed_at"][:10]) not in known]
+        # 古い開示ほど窓（BACKFILL_DAYS）から外れて永久に失われるので先に消化する
+        candidates.sort(key=lambda c: c["disclosed_at"])
+        print(f"[buyback_blog] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
     published: list[dict] = []
     for row in candidates:
         if max_articles is not None and len(published) >= max_articles:
@@ -410,8 +456,11 @@ def main():
     p.add_argument("--days", type=int, default=DEFAULT_DAYS, help="決定開示を見る直近日数")
     p.add_argument("--max-articles", type=int, default=None, help="1回の実行で投稿する上限件数")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
+    p.add_argument("--backfill", action="store_true",
+                   help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない決定開示だけを拾い直す")
     args = p.parse_args()
-    results = build_and_publish(days=args.days, max_articles=args.max_articles, dry_run=args.dry_run)
+    results = build_and_publish(days=args.days, max_articles=args.max_articles,
+                                dry_run=args.dry_run, backfill=args.backfill)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
 

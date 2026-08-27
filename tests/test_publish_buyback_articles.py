@@ -86,6 +86,64 @@ def test_generate_body_checked_retries_on_ai_tell():
     assert gen.call_count == 2
 
 
+def test_published_deal_keys_uses_tags_not_deal_type():
+    """既報判定に dealType（選択肢に無い値は空配列で保存され常に0件）を使わない。
+    実害: 2026-08-25、コンヴァノ6574の同一開示から13本の重複記事が公開された。"""
+    rows = [{"stockCode": "7966", "dealDate": "2026-08-20T00:00:00.000Z"}]
+    with mock.patch.object(m, "fetch_published_index", return_value=rows) as idx:
+        assert m.published_deal_keys(30) == {("7966", "2026-08-20")}
+    assert idx.call_args.kwargs["extra_filter"] == "tags[contains]自社株買い"
+
+
+def test_published_deal_keys_none_when_index_unavailable():
+    with mock.patch.object(m, "fetch_published_index", return_value=None):
+        assert m.published_deal_keys(30) is None
+
+
+def test_build_and_publish_backfill_aborts_when_index_unavailable():
+    """既報一覧が引けないまま30日分を走らせると同じ開示を投稿し直すため、backfillごと中止する。"""
+    with mock.patch.object(m, "published_deal_keys", return_value=None), \
+         mock.patch.object(m, "fetch_candidates") as fetch:
+        assert m.build_and_publish(backfill=True) == []
+    fetch.assert_not_called()
+
+
+def test_build_and_publish_backfill_skips_known_and_takes_oldest_first():
+    rows = [
+        {"code": "7966", "disclosed_at": "2026-08-20T16:00:00+00:00", "amount_oku": 300.0,
+         "ratio": 10.55, "max_amount_yen": 30_000_000_000},
+        {"code": "6082", "disclosed_at": "2026-08-14T16:00:00+00:00", "amount_oku": 10.0,
+         "ratio": 12.8, "max_amount_yen": 1_000_000_000},
+        {"code": "8560", "disclosed_at": "2026-08-18T16:00:00+00:00", "amount_oku": 11.0,
+         "ratio": 9.12, "max_amount_yen": 1_100_000_000},
+    ]
+    with mock.patch.object(m, "published_deal_keys", return_value={("7966", "2026-08-20")}), \
+         mock.patch.object(m, "fetch_candidates", return_value=rows) as fetch, \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "build_fact_sheet", side_effect=lambda r: {**FACT, "stock_code": r["code"]}), \
+         mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}):
+        out = m.build_and_publish(dry_run=True, backfill=True)
+    assert fetch.call_args.args[0] == m.BACKFILL_DAYS
+    # 既報の7966は落とし、残りは古い順（8/14 → 8/18）に消化する
+    assert [o["stockCode"] for o in out] == ["6082", "8560"]
+
+
+def test_stock_name_falls_back_to_tdnet_when_master_has_no_name():
+    """jpx_stock_listはJPX（東証）の一覧なので福証・名証単独上場が載らない。
+    銘柄名が引けないだけで決定開示を永久に取りこぼしていた（実例: 8560 宮崎太陽銀行）。"""
+    with mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch("lib.tdnet.fetch_company_name", return_value="宮崎太銀") as tdnet:
+        assert m.stock_name_of("8560") == "宮崎太銀"
+    tdnet.assert_called_once_with("8560")
+
+
+def test_stock_name_prefers_master_and_skips_tdnet():
+    with mock.patch.object(m.sb, "select_one", return_value={"name": "リンテック"}), \
+         mock.patch("lib.tdnet.fetch_company_name") as tdnet:
+        assert m.stock_name_of("7966") == "リンテック"
+    tdnet.assert_not_called()
+
+
 def test_build_and_publish_skips_published_and_respects_max():
     rows = [
         {"code": "7966", "disclosed_at": "2026-08-20T16:00:00+00:00", "amount_oku": 300.0, "ratio": 10.55, "max_amount_yen": 30_000_000_000},
