@@ -101,6 +101,27 @@ def select_candidates(articles: list, days: "int | None" = None, index_only: boo
     return out
 
 
+def done_ids_from_logs(paths: list) -> set:
+    """過去の実行ログから処理済みの記事IDを拾う。--replace は毎回microCMSから
+    「画像あり記事」を取り直すため、中断して再開すると先頭からやり直しになる。
+    やり直しても画像の中身は同じ（写真の選択が決定的）だが、microCMSに同じ画像の
+    メディアが二重に積まれるだけなので、済んだ分は飛ばす。"""
+    done = set()
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    if "→ OK " not in line:
+                        continue
+                    # 例: [12/964] 銘柄(1234) 2026-08-27 <article_id> → OK https://...
+                    head = line.split("→ OK ")[0].split()
+                    if head:
+                        done.add(head[-1])
+        except OSError as e:
+            print(f"⚠ スキップ用ログを読めません: {path} ({e})")
+    return done
+
+
 def fetch_articles_without_eyecatch(replace: bool = False) -> list:
     """microCMSから対象記事を新しい順に全件取得する（100件ずつページング）。
     既定は eyecatch 未設定の記事。replace=True では逆に eyecatch 設定済みの記事を返す
@@ -184,6 +205,11 @@ def run(args) -> int:
         return 1
 
     all_articles = fetch_articles_without_eyecatch(replace=args.replace)
+    done_ids = done_ids_from_logs(args.skip_log or [])
+    if done_ids:
+        before = len(all_articles)
+        all_articles = [a for a in all_articles if a.get("id") not in done_ids]
+        print(f"処理済み {len(done_ids)}件をログから除外（{before} → {len(all_articles)}件）")
     targets = select_candidates(all_articles, days=args.days, index_only=args.index_only, limit=args.limit)
     kind = "画像あり記事(差し替え)" if args.replace else "画像なし記事"
     print(f"{kind} {len(all_articles)}件 → 対象 {len(targets)}件"
@@ -247,6 +273,8 @@ def main():
                    help="画像が既に付いている記事を対象に画像を作り直す（写真重複バグの後始末）")
     # 候補リストをクエリ単位でキャッシュするようになったのでPexels検索APIは分類の数しか叩かない。
     # ここで律速しているのは写真CDNとmicroCMSへの連投なので、差し替え時は600程度まで上げてよい。
+    p.add_argument("--skip-log", action="append", metavar="PATH",
+                   help="過去の実行ログのパス。「→ OK」で終わった記事IDを対象から外す（中断からの再開用、複数指定可）")
     p.add_argument("--max-per-hour", type=int, default=180, help="画像生成の上限（件/時）")
     p.add_argument("--font", default=os.getenv("EYECATCH_FONT_PATH"),
                    help="日本語フォントのパス（既定: EYECATCH_FONT_PATH 環境変数）")
