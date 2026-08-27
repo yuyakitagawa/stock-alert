@@ -176,6 +176,33 @@ def test_classify_filer_falls_back_to_sonota_on_invalid_category():
     assert result["category"] == "その他"
 
 
+def test_classify_filer_drops_description_for_individuals():
+    """個人の提出者には説明文を持たせない。氏名だけを手がかりに書かせると同姓同名の
+    有名人と取り違えた経歴が生成され、実在の個人についての誤情報が記事に載るため
+    （2026-08-27に1,370件中45件・記事3本で発生）。分類とis_foreignは残す。"""
+    raw = json.dumps({"category": "個人", "is_foreign": False,
+                      "description": "立憲民主党の衆議院議員"})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert") as upsert_mock, \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.classify_filer("加藤公一レオ")
+    assert result == {"category": "個人", "is_foreign": False, "description": ""}
+    # 誤った経歴をマスターにも残さない
+    assert upsert_mock.call_args.args[1][0]["description"] == ""
+
+
+def test_classify_filer_keeps_description_for_non_individuals():
+    """個人以外（法人・ファンド）の説明文は従来どおり残す。"""
+    raw = json.dumps({"category": "事業会社", "is_foreign": False, "description": "国内の電機メーカー"})
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch.object(m.sb, "select_one", return_value=None), \
+         mock.patch.object(m.sb, "upsert"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.classify_filer("ソニーグループ株式会社")
+    assert result["description"] == "国内の電機メーカー"
+
+
 def test_build_and_publish_includes_sell_and_tags_them():
     """売り方向（概要のキーワード or 保有比率の減少で判定）も除外せず記事化し、
     tagsに"売り"を付与して買いと区別する（買い側はtagsを変えない後方互換）。"""
@@ -1824,6 +1851,8 @@ if __name__ == "__main__":
     test_classify_filer_returns_cached_master_row_without_calling_claude()
     test_classify_filer_asks_claude_and_persists_when_not_cached()
     test_classify_filer_falls_back_to_sonota_on_invalid_category()
+    test_classify_filer_drops_description_for_individuals()
+    test_classify_filer_keeps_description_for_non_individuals()
     test_get_pit_ranking_snapshot_queries_as_of_disc_date()
     test_generate_article_body_includes_close_price_but_never_the_drop_model()
     test_generate_article_body_omits_context_when_unavailable()
@@ -1935,4 +1964,4 @@ if __name__ == "__main__":
     test_build_and_publish_skips_disclosure_already_articled()
     test_build_and_publish_records_ledger_after_publishing()
     test_generate_article_body_allows_raw_newlines_in_json()
-    print("全テスト成功 (127件)")
+    print("全テスト成功 (129件)")
