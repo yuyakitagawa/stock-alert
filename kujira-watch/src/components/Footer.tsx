@@ -23,6 +23,7 @@ const JA_GROUPS: FooterGroup[] = [
   {
     heading: "一覧・アーカイブ",
     links: [
+      { href: "/articles", label: "記事一覧" },
       { href: "/investors", label: "投資家一覧" },
       { href: "/stocks", label: "銘柄一覧" },
       { href: "/monthly", label: "月別アーカイブ" },
