@@ -65,6 +65,9 @@ _TITLE_EN_RE = re.compile(
 # 変化幅の食い違いをこのポイント数以上で「誤り」とみなす（丸め差は無視する）。
 MISMATCH_TOLERANCE_PT = 0.01
 
+# (銘柄コード, 正規化した提出者名) → [(開示日, 保有比率)] 。fetch_disclosures()が組み立てる。
+HISTORY: dict = {}
+
 
 def normalize_filer(name: str) -> str:
     return (name or "").replace("　", "").replace(" ", "").strip()
@@ -85,13 +88,28 @@ def fetch_disclosures(codes: list) -> dict:
         )
     seen_docs = set()
     out = {}
+    HISTORY.clear()
     for r in rows:
         if r.get("doc_id") in seen_docs:
             continue
         seen_docs.add(r.get("doc_id"))
         key = (str(r.get("issuer_code")), r.get("disc_date"), normalize_filer(r.get("filer_name")))
         out.setdefault(key, []).append(r)
+        if r.get("holding_ratio") is not None:
+            HISTORY.setdefault(
+                (str(r.get("issuer_code")), normalize_filer(r.get("filer_name"))), []
+            ).append((r.get("disc_date"), float(r["holding_ratio"])))
+    for entries in HISTORY.values():
+        entries.sort()
     return out
+
+
+def previous_ratio(code: str, filer_name: str, disc_date: str) -> "float | None":
+    """直前保有割合を持たない開示のために、同一銘柄・同一提出者の1つ前の開示比率を返す。
+    fetch_disclosures()が作った履歴を引くだけなので追加クエリは発生しない。"""
+    entries = HISTORY.get((code, normalize_filer(filer_name))) or []
+    past = [ratio for d, ratio in entries if d and d[:10] < disc_date]
+    return past[-1] if past else None
 
 
 def find_disclosure(article: dict, by_key: dict) -> "dict | None":
@@ -113,9 +131,23 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
     """EDINET開示から、記事が持つべき変化幅・方向・金額を組み立てる。
     直前保有割合が取れない開示（新規の大量保有報告書など）は検証できないのでNoneを返す。"""
     ratio = row.get("holding_ratio")
-    prior = row.get("holding_ratio_prior")
-    if ratio is None or prior is None:
+    if ratio is None:
         return None
+    prior = row.get("holding_ratio_prior")
+    inferred_prior = False
+    if prior is None:
+        # 直前保有割合を持たない開示（特例報告に多い）。過去開示から前回比率を引く。
+        # これを引かずに記事化していた時期があり、その場合「今回比率の全量＝今回動いた分」と
+        # みなされて変化幅も推定金額も実態の数倍〜数十倍に膨らんでいる
+        # （実例: セリア2782の買い増し1.31ptが「推定取得金額300.9億円」＝保有総額として公開）。
+        prior = previous_ratio(
+            str(article.get("stockCode") or ""), row.get("filer_name") or "",
+            (article.get("dealDate") or "")[:10],
+        )
+        if prior is None:
+            # 過去開示も無い＝新規の大量保有報告書。全量が今回動いた分で正しいので是正しない。
+            return None
+        inferred_prior = True
     desc = row.get("doc_description") or ""
     is_correction = is_correction_report(desc)
     is_sell = is_sell_disclosure(desc, ratio, prior)
@@ -130,7 +162,20 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
     # 現在のテンプレと形が違うため作り直すと不必要な書き換えになる。対象にしない。
     field_mismatch = old_change is not None and abs(old_change - signed_change) >= MISMATCH_TOLERANCE_PT
     title_mismatch = prior > 0 and "新規保有" in (article.get("title") or "")
-    if not field_mismatch and not title_mismatch:
+    # (c) 前回比率を過去開示から補ったうえで、記事が保有比率の全量を変化幅として使った痕跡が
+    #     あるもの。ratioChangePctを保存していなかった時代の記事はこの経路でしか検出できない。
+    #     再計算した変化幅が保有比率と一致する場合は「全量が動いた」で正しいので対象外。
+    full_ratio_mismatch = (
+        inferred_prior and old_change is None
+        and abs(change - float(ratio)) >= MISMATCH_TOLERANCE_PT
+    )
+    # (d) 保有比率が前回と同一（変化幅0pt）なのに、記事が推定取得/売却金額を出しているもの。
+    #     担保契約や共同保有者の変更などで再提出された変更報告書で、売買は起きていない。
+    #     実例: 「Jトラスト、KeyHolderの約30%を取得—41.4億円」「日本レイが東テクの14.88%を
+    #     取得、240億円超を投下」。実在企業について起きていない取引を見出しで断定しており、
+    #     薄いどころか誤報にあたる（2026-08-27の全件照合で40本）。
+    no_move_mismatch = change == 0 and float(article.get("dealAmount") or 0) > 0
+    if not field_mismatch and not title_mismatch and not full_ratio_mismatch and not no_move_mismatch:
         return None
     if is_correction:
         deal_amount = 0.0
