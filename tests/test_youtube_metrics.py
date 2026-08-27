@@ -78,6 +78,26 @@ def test_fetch_videos_follows_pagination_and_sorts_oldest_first():
     assert videos[0]["duration_sec"] == 39 and videos[1]["views"] == 100
 
 
+def test_record_upload_writes_row_without_clobbering_metrics():
+    """投稿直後の記録。収集済みの再生数を潰さないよう insert_ignore で書く。"""
+    with mock.patch.object(y.sb, "is_configured", return_value=True), \
+            mock.patch.object(y.sb, "insert_ignore") as ins:
+        assert y.record_upload("vid1", "【日立建機】…") is True
+    table, rows = ins.call_args.args[0], ins.call_args.args[1]
+    assert table == "youtube_videos" and rows[0]["video_id"] == "vid1"
+    assert rows[0]["published_at"] and rows[0]["title"] == "【日立建機】…"
+    assert ins.call_args.kwargs["on_conflict"] == "video_id"
+
+
+def test_record_upload_skips_without_video_id_or_supabase():
+    with mock.patch.object(y.sb, "is_configured", return_value=True), \
+            mock.patch.object(y.sb, "insert_ignore") as ins:
+        assert y.record_upload("", "t") is False
+    with mock.patch.object(y.sb, "is_configured", return_value=False):
+        assert y.record_upload("vid1", "t") is False
+    ins.assert_not_called()
+
+
 def test_save_skips_when_supabase_not_configured():
     with mock.patch.object(y.sb, "is_configured", return_value=False), \
             mock.patch.object(y.sb, "upsert") as up, redirect_stdout(io.StringIO()):

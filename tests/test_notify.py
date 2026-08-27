@@ -5,6 +5,7 @@
 import os
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -110,6 +111,38 @@ class HeartbeatTest(unittest.TestCase):
 
     def test_day_start_utc_is_jst_midnight(self):
         self.assertEqual(hb._day_start_utc("2026-08-24"), "2026-08-23T15:00:00.000Z")
+
+    def test_day_end_utc_is_next_jst_midnight(self):
+        self.assertEqual(hb._day_end_utc("2026-08-24"), "2026-08-24T15:00:00.000Z")
+
+    def test_target_date_is_today_for_the_scheduled_evening_run(self):
+        run_at = datetime(2026, 8, 27, 22, 0, tzinfo=hb.JST)  # 予定どおり22:00 JST
+        self.assertEqual(hb.target_date(now=run_at), "2026-08-27")
+
+    def test_delayed_morning_run_judges_the_previous_day(self):
+        """13:00 UTCの便が翌朝に遅れて起動した実例（8/28 07:40 JST）。
+        始まったばかりの当日を見ると「X0件・動画0本」で毎朝誤報になる。"""
+        run_at = datetime(2026, 8, 28, 7, 40, tzinfo=hb.JST)
+        self.assertEqual(hb.target_date(now=run_at), "2026-08-27")
+
+    def test_explicit_date_wins(self):
+        self.assertEqual(hb.target_date("2026-08-24",
+                                        now=datetime(2026, 8, 28, 7, 40, tzinfo=hb.JST)),
+                         "2026-08-24")
+
+    def test_counts_are_bounded_to_the_target_day(self):
+        """上限が無いと、前日を見る便が当日ぶん（backfillの記事等）まで数えてしまう。
+        動画はXのクロス投稿ではなくYouTubeの公開実績から数える。"""
+        with mock.patch.object(hb, "count_edinet_disclosures", return_value=0), \
+                mock.patch.object(hb, "count_blog_articles", return_value=3), \
+                mock.patch.object(hb.sb, "select", return_value=[]) as sel:
+            hb.collect("2026-08-27")
+        queries = {c.args[0]: c.args[1] for c in sel.call_args_list}
+        self.assertIn("youtube_videos", queries)
+        self.assertNotIn("kind=eq.video", "".join(queries.values()))
+        for table in ("x_posts", "youtube_videos"):
+            self.assertIn("2026-08-26T15:00:00.000Z", queries[table])
+            self.assertIn("2026-08-27T15:00:00.000Z", queries[table])
 
     def test_flags_db_zero_while_edinet_has_disclosures(self):
         """保存が壊れてDBだけ0件になった日を名指しで検知する（2026-08-26〜27の実例）。"""

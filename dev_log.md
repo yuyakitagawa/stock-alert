@@ -1,5 +1,28 @@
 # Dev Log
 
+## 2026-08-28 ハートビートの誤報を止める（対象日のずれ・動画の数え先）
+
+朝7:40にLINEへ「🚨 8/28 自動投稿が欠けています／X投稿が0件／動画の投稿が0本（当日の記事は30件）」。
+8/28はまだ始まったばかりで、X投稿も動画も出ていなくて当たり前だった。
+
+原因1（対象日）: heartbeatは ops.yml の `0 13 * * 1-5`（22:00 JST）に予約しているが、
+この便は **22:40 UTC＝8/28 07:40 JST に起動**した（run 33123432725）。
+`jst_today()` が起動時刻のJST日付をそのまま返すため、出し切ったはずの8/27ではなく
+始まったばかりの8/28を判定していた。schedule遅延が常態である以上、毎回こうなる。
+→ `target_date()` にして、JSTの正午より前に起動した便は前日を見る。あわせて件数の集計を
+JSTの0時〜24時で必ず閉じた（上限が無いと、前日判定の便が当日ぶんのbackfill記事まで数えて
+「記事は出ている」と誤認する。今回の「記事30件」は8/28未明のbackfill便の実績だった）。
+
+原因2（動画）: 動画本数を `x_posts` の `kind='video'`＝**動画リンクのXクロス投稿**から数えていた。
+この行はこれまで1件も記録されたことがなく（x_postsのkindは article/correction/daily/followup/
+weekly_* /buyback_daily のみ）、Shortsを実際に公開した日でも常に0本＝記事が出た日は毎日誤報していた。
+→ 成果物である `youtube_videos`（Shortsの公開実績）から数える。統計の収集
+（`video/youtube_metrics.py`）は手動実行なので、`publish_video.py` が投稿直後に
+`record_upload()` で公開の事実だけ先に書く（既存行を潰さないよう insert_ignore）。
+
+テスト: test_notify 19→24件、test_youtube_metrics 13→15件、test_video_pipeline 97→98件。
+（日本語フォント未導入の環境では test_thumbnail_compose_writes_1280x720_png が落ちるが本変更と無関係）
+
 ## 2026-08-27 backfill便が起動しない不具合（scheduleの遅延）を修正
 
 初回backfillを手動実行した後、当日のスケジュール便を確認したところ **backfillがスキップされていた**。

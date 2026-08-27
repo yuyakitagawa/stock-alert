@@ -1,8 +1,8 @@
 """
 tools/output_heartbeat.py
 
-「今日、出るはずのものが出たか」を成果物そのもの（microCMSの記事・Supabaseのx_posts）で
-数え、欠けていればLINEへ通知する当日ハートビート。
+「その日、出るはずのものが出たか」を成果物そのもの（microCMSの記事・Supabaseのx_posts /
+youtube_videos）で数え、欠けていればLINEへ通知するハートビート。
 
 なぜワークフローの成否ではなく成果物を見るのか（2026-08-24の無言停止）:
   edinet_blog.yml は各ステップが continue-on-error のため、記事生成がAnthropic APIの
@@ -11,11 +11,17 @@ tools/output_heartbeat.py
   という状態を検知できるのは成果物側から数える見張りだけ。Claudeを一切使わないので、
   API上限やモデル障害の最中でも動く。
 
-判定（平日想定。ops.yml から 13:00 UTC = 22:00 JST に実行）:
+対象日（ops.yml から 13:00 UTC = 22:00 JST に実行）:
+  JSTの正午より前に起動した便は「前日」を見る。GitHubのscheduleは数時間遅れて起動する
+  ことがあり（実測: 8/27 13:00 UTCの便が 22:40 UTC＝8/28 07:40 JST に起動）、起動時刻の
+  JST日付をそのまま対象にすると、始まったばかりの当日を「X投稿0件・動画0本」と判定して
+  毎朝誤報になる（2026-08-28の実例）。
+
+判定（平日想定）:
   🚨 EDINETに大量保有の開示があるのにDB（edinet_large_holdings）が0件＝保存が壊れている
   🚨 素材（当日のEDINET大量保有開示 or 自社株買い決定）があるのにブログ記事が0件
   🚨 X投稿が0件
-  ⚠️ ブログ記事は出ているのに動画のクロス投稿が0本
+  ⚠️ ブログ記事は出ているのに動画（YouTube Shorts）が0本
   正常時は送らない（--always で毎日1通送る）
 
 終了コードは既定で常に0（異常は通知で伝える。集計自体に失敗したときだけ例外で落ちる →
@@ -47,15 +53,36 @@ from lib.edinet import verify_api  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 
+# この時刻より前（JST）に起動した便は前日を対象にする。予定は22:00 JSTで、当日の成果物は
+# 出し切っている前提。遅延で日付をまたいだ便が「始まったばかりの当日」を見ないための境界。
+MORNING_CUTOFF_HOUR = 12
 
-def jst_today(date_str: "str | None" = None) -> str:
-    return date_str or datetime.now(JST).date().isoformat()
+
+def target_date(date_str: "str | None" = None, now: "datetime | None" = None) -> str:
+    """判定対象のJST日付。--date 指定が最優先。正午より前の便は前日を見る。"""
+    if date_str:
+        return date_str
+    now = now or datetime.now(JST)
+    day = now.date()
+    if now.hour < MORNING_CUTOFF_HOUR:
+        day -= timedelta(days=1)
+    return day.isoformat()
 
 
 def _day_start_utc(date_str: str) -> str:
     """JSTのその日の0時をUTCのISO8601（末尾Z）で返す。"""
     start = datetime.fromisoformat(date_str).replace(tzinfo=JST)
     return start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _day_end_utc(date_str: str) -> str:
+    """JSTのその日の24時（＝翌日の0時）をUTCのISO8601（末尾Z）で返す。
+
+    上限を必ず付ける。前日を対象にする便で上限が無いと、当日ぶんの投稿（backfillの記事など）
+    まで前日に数え、本当に0件だった日を取りこぼす。
+    """
+    end = datetime.fromisoformat(date_str).replace(tzinfo=JST) + timedelta(days=1)
+    return end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def count_blog_articles(date_str: str) -> int:
@@ -69,7 +96,8 @@ def count_blog_articles(date_str: str) -> int:
             f"https://{domain}.microcms.io/api/v1/articles",
             headers={"X-MICROCMS-API-KEY": key},
             params={"limit": 0, "fields": "id",
-                    "filters": f"publishedAt[greater_than]{_day_start_utc(date_str)}"},
+                    "filters": f"publishedAt[greater_than]{_day_start_utc(date_str)}"
+                               f"[and]publishedAt[less_than]{_day_end_utc(date_str)}"},
             timeout=20,
         )
         if not resp.ok:
@@ -107,7 +135,7 @@ def _count_rows(table: str, query: str) -> int:
 
 def collect(date_str: str) -> dict:
     """当日の素材と成果物の件数を集める。取得できなかった項目は -1。"""
-    day_start = _day_start_utc(date_str)
+    day_start, day_end = _day_start_utc(date_str), _day_end_utc(date_str)
     return {
         "date": date_str,
         "holdings": _count_rows("edinet_large_holdings",
@@ -117,9 +145,15 @@ def collect(date_str: str) -> dict:
                                 f"disclosed_at=gte.{date_str}T00:00:00"
                                 f"&disclosed_at=lt.{date_str}T23:59:59&select=code"),
         "articles": count_blog_articles(date_str),
-        "x_posts": _count_rows("x_posts", f"posted_at=gte.{day_start}&select=tweet_id"),
-        "videos": _count_rows("x_posts",
-                              f"posted_at=gte.{day_start}&kind=eq.video&select=tweet_id"),
+        "x_posts": _count_rows("x_posts",
+                               f"posted_at=gte.{day_start}&posted_at=lt.{day_end}"
+                               f"&select=tweet_id"),
+        # 動画はYouTubeへの公開実績（youtube_videos）を数える。以前は x_posts の kind=video
+        # ＝「動画リンクのXクロス投稿」を見ていたが、これはX認証が切れていれば0になるうえ、
+        # 実際に1件も記録されたことがなく、Shortsを毎営業日出していても常に「動画0本」だった。
+        "videos": _count_rows("youtube_videos",
+                              f"published_at=gte.{day_start}&published_at=lt.{day_end}"
+                              f"&select=video_id"),
     }
 
 
@@ -166,13 +200,13 @@ def build_message(counts: dict, problems: list[str]) -> str:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--date", help="対象日（JST、YYYY-MM-DD。既定は今日）")
+    p.add_argument("--date", help="対象日（JST、YYYY-MM-DD。既定は今日。正午より前の実行は前日）")
     p.add_argument("--always", action="store_true", help="正常でもLINEに1通送る")
     p.add_argument("--dry-run", action="store_true", help="送らずに本文を表示する")
     p.add_argument("--strict", action="store_true", help="異常があれば終了コード1で終わる")
     args = p.parse_args()
 
-    counts = collect(jst_today(args.date))
+    counts = collect(target_date(args.date))
     problems = judge(counts)
     message = build_message(counts, problems)
     print(message)

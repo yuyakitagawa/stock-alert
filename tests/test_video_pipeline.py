@@ -955,6 +955,31 @@ def test_publish_aborts_before_rendering_when_youtube_token_is_dead():
     render_call.assert_not_called()
 
 
+def test_publish_records_the_upload_for_the_heartbeat(tmp_path):
+    """公開した事実をその場でyoutube_videosへ残す。統計収集は手動実行なので、
+    それ待ちだと当日のハートビートに「動画0本」と誤判定される。"""
+    import video.publish_video as pv
+    video_file = tmp_path / "out"
+    with mock.patch.object(pv, "OUT_DIR", str(video_file)), \
+         mock.patch.dict(os.environ, {"X_API_KEY": ""}), \
+         mock.patch.object(pv.build_script, "build", return_value={"scenes": [], "stockCode": "6501"}), \
+         mock.patch.object(pv.youtube_client, "is_configured", return_value=True), \
+         mock.patch.object(pv.youtube_client, "check_auth", return_value=True), \
+         mock.patch.object(pv.youtube_client, "build_title", return_value="【日立建機】…"), \
+         mock.patch.object(pv.youtube_client, "upload", return_value="vid1"), \
+         mock.patch.object(pv.youtube_client, "set_thumbnail"), \
+         mock.patch.object(pv.thumbnail, "compose", return_value=""), \
+         mock.patch.object(pv.tts, "narrate_sections", return_value=False), \
+         mock.patch.object(pv.background, "fetch_pool", return_value=[]), \
+         mock.patch.object(pv.background, "assign_backgrounds"), \
+         mock.patch.object(pv.render, "render", return_value=True), \
+         mock.patch.object(pv.line_notify, "notify"), \
+         mock.patch.object(pv.youtube_metrics, "record_upload") as rec:
+        rc = pv.run(keep_video=True)
+    assert rc == 0, rc
+    assert rec.call_args.args == ("vid1", "【日立建機】…"), rec.call_args
+
+
 def test_publish_renders_when_youtube_credentials_are_absent():
     """Secrets未登録の段階は動画の生成自体が目的なので止めない。"""
     import video.publish_video as pv

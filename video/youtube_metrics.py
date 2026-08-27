@@ -96,9 +96,28 @@ def fetch_channel(token: str) -> dict:
     }
 
 
+def record_upload(video_id: str, title: str = "") -> bool:
+    """投稿直後に1本ぶんを`youtube_videos`へ記録する（再生数などは後追いで埋まる）。
+
+    なぜ投稿側で書くのか（2026-08-28）:
+      統計の収集（main）は手動実行なので、それを待つと当日の成果物ハートビート
+      （tools/output_heartbeat.py）からは「今日は動画0本」に見える。実際、Shortsは
+      毎営業日出ているのにハートビートは毎日「動画0本」と鳴っていた。
+      既存行は上書きしない（insert_ignore）。収集済みの再生数を投稿側が潰さないため。
+    """
+    if not video_id or not sb.is_configured():
+        return False
+    sb.insert_ignore("youtube_videos",
+                     [{"video_id": video_id,
+                       "published_at": datetime.now(timezone.utc).isoformat(),
+                       "title": title}],
+                     on_conflict="video_id")
+    return True
+
+
 def fetch_videos(token: str, uploads_playlist: str) -> list[dict]:
-    """アップロード済み動画の統計。動画IDを保存していなくてもチャンネルから辿れるため、
-    投稿側（publish_video.py）に記録処理を足さずに後追いで集計できる。"""
+    """アップロード済み動画の統計。チャンネルのuploadsプレイリストから辿るので、
+    投稿側の記録（record_upload）が漏れた過去分も後追いで拾える。"""
     ids, page = [], None
     while uploads_playlist:
         params = {"part": "contentDetails", "playlistId": uploads_playlist, "maxResults": BATCH}
