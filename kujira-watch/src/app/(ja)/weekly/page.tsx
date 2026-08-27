@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import InfoTip from "@/components/InfoTip";
+import { siblingDataPages } from "@/lib/nav";
+import ListPageNextStep from "@/components/ListPageNextStep";
 import Box from "@mui/material/Box";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -315,6 +317,9 @@ export default async function WeeklyDigestPage() {
         articles={featuredArticles}
       />
 
+      {/* データページ同士の横移動。ヘッダータブはあるが、GA4実測でTOPへの内部到達398件＝
+          他ページからTOPへ戻る動きが多く、横に渡り歩けていなかった（2026-08-27）。 */}
+      <ListPageNextStep links={siblingDataPages("/weekly")} />
       <AdUnit placement="bottom" />
     </div>
   );
