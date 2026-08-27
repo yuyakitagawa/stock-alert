@@ -444,8 +444,15 @@ def main() -> None:
         holdings_msg = build_large_holdings_section(recent_holdings)
         fallback_parts = [p for p in (market_msg, compare_msg, holdings_msg) if p]
         if fallback_uid and fallback_parts:
+            message = "\n\n".join(fallback_parts)
             print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
-            send_line_push(fallback_uid, "\n\n".join(fallback_parts))
+            # 本文を標準出力に出す。日次ログレビュー(tools/daily_log_review.py)はこのステップの
+            # ログを全文保持してUX観点のレビュー材料にするが、この経路だけ本文を出しておらず
+            # 3日連続で「LINE本文がログに無いため判断不可」になっていた（2026-08-27）。
+            print(f"\n--- {fallback_uid[:8]}... ---\n{message}\n")
+            send_line_push(fallback_uid, message)
+        else:
+            print("[market_timing] フォールバック送信なし（LINE_USER_ID未設定 or 通知内容なし）。")
     else:
         all_watch_codes = {str(w["code"]) for wl in user_watchlists.values() for w in wl}
         try:

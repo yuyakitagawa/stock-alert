@@ -11,8 +11,11 @@ tools/daily_log_review.py
   3. ログはそのままでは数万行あるので、エラー/警告/Traceback/HTTPエラー/スキップ通知の行と
      各ステップの先頭・末尾だけに圧縮する（condense_log）
   3b. Supabase から成果物スナップショット（X投稿と反応・フォロワー・人間推定PVと上位ページ・当日シグナル数）を付ける
+  3c. 前回レビュー（daily-review Issue の最新コメント）から「今週やる3件」「改善提案」だけを抜き出して付ける
+      （同じ提案が何日も再掲されるのに消化されたか誰も追えない状態を防ぐ。取得失敗時は付けずに続行）
   4. Claude に SRE/クオンツ/プロダクト/SEO・GEO/UX・デザイン/バックエンド/フロントエンド/PdM の8観点で
-     日本語Markdownのレビュー（健全性 / 異常 / SEO / UX / エンジニアリング / PdM / 改善提案 / LINE要約）を書かせる
+     日本語Markdownのレビュー（健全性 / 前回提案の消化状況 / 異常 / SEO / UX / エンジニアリング / PdM /
+     改善提案 / LINE要約）を書かせる
   5. 全文: $GITHUB_STEP_SUMMARY と `daily-review` ラベルのIssue（1本を使い回してコメント追記）
      要約: LINE push（LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID）
 
@@ -75,6 +78,7 @@ _TAIL_LINES = 40
 _ISSUE_LABEL = "daily-review"
 _ISSUE_TITLE = "日次ログレビュー（AIフィードバック）"
 _LINE_MAX_CHARS = 1000
+_PREV_REVIEW_MAX_CHARS = 6_000  # 前回レビューから持ち込む提案テキストの上限
 
 SYSTEM_PROMPT = """あなたは個人開発の株式アラートシステム「stock-alert」（日本株の下落確率ランキングをXGBoostで算出し、
 LINE配信・ブログ自動生成（microCMS → kujira-watch.com「大口投資家の監視ブログ」）・X投稿・YouTube動画投稿を
@@ -119,10 +123,18 @@ GitHub Actionsで毎日回している）の運用レビュアーです。
 - 改善提案は「何を・どのファイル/ステップで・なぜ」まで具体的に。優先度を 高/中/低 で付け、
   大規模リファクタリングより小さなバグ修正・パラメータ調整・監視追加を優先する。
 - 略語（AUC、PIT など）は初出時にカッコで日本語説明を添える。
+- 入力の末尾に「## 前回レビューの提案」がある場合、その提案1件ごとに当日ログを根拠として
+  ✅消化（症状が消えた・該当コミットの効果が見える）／❌未消化（同じログ行がまだ出ている）／
+  ❓判定不可（当日ログに材料が無い）を判定する。❌未消化のものを「## 改善提案」に再び載せるときは
+  提案の先頭に「[再掲]」を付ける。消化済みの提案は改善提案に載せない。
 - 出力は日本語Markdown。必ず以下の見出し構成にする（見出し文字列は変えない）:
 
 ## 健全性サマリー
 （ワークフローごとに ✅/⚠️/❌ と1行コメント）
+
+## 前回提案の消化状況
+（前回の提案ごとに「✅消化 / ❌未消化 / ❓判定不可」＋根拠1行。入力に前回レビューが無い日は
+ 「前回レビューなし」とだけ書く）
 
 ## 異常・注意点
 （根拠となるログ行を短く引用しつつ箇条書き。無ければ「特になし」）
@@ -315,6 +327,69 @@ def build_review_input(runs_by_workflow: dict[str, list[dict]], date_label: str)
                 f"```\n{r['_jobs_text']}\n```\n\n{r['_log_text']}\n"
             )
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# 前回レビューの提案: 消化状況を判定させるための入力
+# ---------------------------------------------------------------------------
+def _slice_section(md: str, start_pattern: str, end_pattern: str) -> str:
+    """start_pattern の行の次から end_pattern の行の手前までを返す（見つからなければ空）。"""
+    m = re.search(start_pattern, md, re.M)
+    if not m:
+        return ""
+    rest = md[m.end():]
+    e = re.search(end_pattern, rest, re.M)
+    return (rest[: e.start()] if e else rest).strip()
+
+
+def extract_prev_proposals(prev_md: str, max_chars: int = _PREV_REVIEW_MAX_CHARS) -> str:
+    """前回レビュー本文から「今週やる3件」と「改善提案」だけを抜き出す。
+
+    レビュー全文を渡すと入力が倍近くになるうえ、当日ログの読解より前回の記述に引きずられる。
+    追跡したいのは提案の消化状況だけなので、その2節に絞る。
+    """
+    date_m = re.search(r"^#\s*(\d{4}-\d{2}-\d{2})", prev_md, re.M)
+    date_label = date_m.group(1) if date_m else "前回"
+    todo = _slice_section(prev_md, r"^\*\*今週やる3件\*\*\s*$", r"^\*\*やらない事\*\*")
+    proposals = _slice_section(prev_md, r"^## 改善提案\s*$", r"^## ")
+    if not todo and not proposals:
+        return ""
+    parts = [f"## 前回レビューの提案（{date_label}）",
+             "当日ログを根拠に、以下の提案それぞれが消化されたかを判定すること。"]
+    if todo:
+        parts.append(f"### 今週やる3件\n{todo}")
+    if proposals:
+        parts.append(f"### 改善提案\n{proposals}")
+    text = "\n\n".join(parts)
+    return text[: max_chars - 1] + "…" if len(text) > max_chars else text
+
+
+def fetch_previous_review(repo: str | None) -> str:
+    """daily-review Issue の最新レビュー（最後のコメント、無ければ本文）から提案を抜き出す。
+
+    取得に失敗しても当日のレビューは続けたいので、例外は握って空文字を返す。
+    """
+    repo_args = ["--repo", repo] if repo else []
+    try:
+        issues = json.loads(_gh(
+            ["issue", "list", *repo_args, "--state", "open", "--label", _ISSUE_LABEL,
+             "--limit", "1", "--json", "number"]
+        ) or "[]")
+        if not issues:
+            print("[prev] 前回レビューなし（Issue未作成）")
+            return ""
+        data = json.loads(_gh(
+            ["issue", "view", str(issues[0]["number"]), *repo_args, "--json", "body,comments"]
+        ) or "{}")
+    except Exception as e:
+        print(f"[prev] ⚠ 前回レビューの取得に失敗（前回比較なしで続行）: {e}")
+        return ""
+    comments = data.get("comments") or []
+    prev_md = (comments[-1].get("body") if comments else data.get("body")) or ""
+    text = extract_prev_proposals(prev_md)
+    print(f"[prev] 前回レビューの提案 {len(text):,}字を入力に追加" if text
+          else "[prev] 前回レビューから提案を抽出できず（前回比較なしで続行）")
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +628,10 @@ def main() -> int:
         return 0
 
     snapshot = summarize_snapshot(fetch_snapshot_rows(now), now)
+    prev = fetch_previous_review(args.repo)
     review_input = build_review_input(runs_by_workflow, date_label) + "\n\n" + snapshot
+    if prev:
+        review_input += "\n\n" + prev
     print(f"[review] 入力 {len(review_input):,} 文字")
     try:
         review_md = review_with_claude(review_input)

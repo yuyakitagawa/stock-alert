@@ -164,5 +164,50 @@ class FormatAndSummaryTest(unittest.TestCase):
         self.assertIn("直近の実行なし", text)
 
 
+_PREV_REVIEW = """# 2026-08-26 日次ログレビュー
+
+## 健全性サマリー
+| ops.yml | ✅ | 正常 |
+
+## PdM所見（KPIと優先順位）
+**今週やる3件**
+1. x_posts の kind を埋める
+2. YouTubeトークン再発行
+
+**やらない事**
+- Node 20 対応
+
+## 改善提案
+- **[高] 提案: kind を必ず埋める / 対象: x_post.yml / 観点: BE**
+- **[中] 提案: リンクを必須化 / 対象: web/x_post_format.py / 観点: UX**
+
+## LINE要約
+🚨 まずい
+"""
+
+
+class PrevProposalsTest(unittest.TestCase):
+    def test_extracts_todo_and_proposals_only(self):
+        out = dlr.extract_prev_proposals(_PREV_REVIEW)
+        self.assertIn("2026-08-26", out)
+        self.assertIn("x_posts の kind を埋める", out)
+        self.assertIn("リンクを必須化", out)
+        self.assertNotIn("やらない事", out)       # 対象外の節は持ち込まない
+        self.assertNotIn("健全性サマリー", out)
+        self.assertNotIn("🚨 まずい", out)        # LINE要約も持ち込まない
+
+    def test_returns_empty_when_no_sections(self):
+        self.assertEqual(dlr.extract_prev_proposals("# 2026-08-26\n\n## 健全性サマリー\n✅\n"), "")
+
+    def test_caps_length(self):
+        md = _PREV_REVIEW.replace("- **[中] 提案: リンクを必須化", "- " + "あ" * 9000)
+        out = dlr.extract_prev_proposals(md)
+        self.assertEqual(len(out), dlr._PREV_REVIEW_MAX_CHARS)
+
+    def test_system_prompt_asks_for_disposal_section(self):
+        self.assertIn("## 前回提案の消化状況", dlr.SYSTEM_PROMPT)
+        self.assertIn("[再掲]", dlr.SYSTEM_PROMPT)
+
+
 if __name__ == "__main__":
     unittest.main()
