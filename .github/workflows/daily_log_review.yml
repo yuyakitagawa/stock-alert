@@ -42,7 +42,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests python-dotenv anthropic
+        run: pip install requests python-dotenv anthropic google-auth
 
       - name: Review logs with Claude
         env:
@@ -52,6 +52,11 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          # クリックログ・回遊（GA4）。鍵ファイルは.gitignoreでリポジトリに入れていないため、
+          # CIではサービスアカウントJSONをSecretで渡す。未設定ならGA4節だけ「取得不可」になり
+          # レビュー自体は従来どおり動く。
+          GA4_PROPERTY_ID: ${{ secrets.GA4_PROPERTY_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
         run: |
           ARGS="--since-hours ${{ github.event.inputs.since_hours || '24' }}"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi

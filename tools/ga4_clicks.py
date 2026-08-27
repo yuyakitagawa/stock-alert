@@ -53,16 +53,90 @@ def credentials_path() -> str:
 
 
 def access_token() -> "str | None":
-    """サービスアカウントのアクセストークン。鍵が無ければNone。"""
-    path = credentials_path()
-    if not os.path.exists(path):
-        return None
+    """サービスアカウントのアクセストークン。鍵が無ければNone。
+
+    鍵はファイル（ローカルの`gcp_key.json`）と環境変数`GCP_SERVICE_ACCOUNT_JSON`（GitHub
+    Actions用。鍵ファイルは.gitignoreでリポジトリに入れていないため、CIではSecretの
+    JSON文字列を渡す）の両方から読む。"""
     from google.auth.transport.requests import Request
     from google.oauth2 import service_account
 
-    creds = service_account.Credentials.from_service_account_file(path, scopes=[SCOPE])
+    raw = os.getenv("GCP_SERVICE_ACCOUNT_JSON", "").strip()
+    if raw:
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(raw), scopes=[SCOPE])
+    else:
+        path = credentials_path()
+        if not os.path.exists(path):
+            return None
+        creds = service_account.Credentials.from_service_account_file(path, scopes=[SCOPE])
     creds.refresh(Request())
     return creds.token
+
+
+# 日次PDCAで見るページの束ね方。個別URLのままだと記事127本が並んで読めないため、
+# 「どの種類のページで回遊が起きているか」に畳む。
+PAGE_GROUPS = (
+    ("/articles/", "記事"),
+    ("/stocks/", "銘柄ページ"),
+    ("/investors/", "投資家ページ"),
+    ("/date/", "日付ページ"),
+    ("/category/", "カテゴリページ"),
+    ("/en", "英語版"),
+)
+
+
+def page_group(path: str) -> str:
+    if path == "/":
+        return "TOP"
+    for prefix, label in PAGE_GROUPS:
+        if path.startswith(prefix):
+            return label
+    return "データ/一覧ページ"
+
+
+def collect_pdca_metrics(token: str, property_id: str, days: int) -> dict:
+    """日次レビューに載せる回遊指標。失敗した部分は空にして、取れた分だけ返す。
+
+    回遊の中心指標は「1セッションあたりの内部移動回数」＝(全PV−入口セッション)÷入口セッション。
+    PV/セッションだと入口の1ページ目を含むため、導線を直した効果が薄まって見える。"""
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=days - 1)
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=days - 1)
+
+    def rows(dimensions, metrics, s, e, dimension_filter=None):
+        got, err = run_report(token, property_id,
+                              _period_body(dimensions, metrics, s, e, 1000, dimension_filter))
+        return parse_rows(got) if not err else {}
+
+    def period(s, e) -> dict:
+        views = rows(["pagePath"], ["screenPageViews", "totalUsers", "userEngagementDuration"], s, e)
+        landings = rows(["landingPage"], ["sessions", "bounceRate"], s, e)
+        clicks = rows(["pagePath"], ["eventCount"], s, e, _click_filter())
+        groups: dict = {}
+        for path, v in views.items():
+            g = groups.setdefault(page_group(path), {"pv": 0.0, "entrances": 0.0, "users": 0.0,
+                                                     "engagement": 0.0, "bounced": 0.0, "clicks": 0.0})
+            g["pv"] += v[0]
+            g["users"] += v[1]
+            g["engagement"] += v[2]
+            g["clicks"] += clicks.get(path, [0])[0]
+        for path, v in landings.items():
+            g = groups.setdefault(page_group(path), {"pv": 0.0, "entrances": 0.0, "users": 0.0,
+                                                     "engagement": 0.0, "bounced": 0.0, "clicks": 0.0})
+            g["entrances"] += v[0]
+            g["bounced"] += v[0] * (v[1] if len(v) > 1 else 0)
+        pv = sum(g["pv"] for g in groups.values())
+        entrances = sum(g["entrances"] for g in groups.values())
+        return {"groups": groups, "pv": pv, "entrances": entrances,
+                "internal_per_session": (pv - entrances) / entrances if entrances else 0.0,
+                "pages": views, "clicks": clicks}
+
+    now, before = period(start, end), period(prev_start, prev_end)
+    labels = rows(["customEvent:label"], ["eventCount"], start, end, _click_filter())
+    return {"days": days, "start": start.isoformat(), "end": end.isoformat(),
+            "now": now, "prev": before, "labels": labels}
 
 
 def explain_error(status: int, payload: dict, property_id: str) -> str:

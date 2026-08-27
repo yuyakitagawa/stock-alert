@@ -122,12 +122,18 @@ GitHub Actionsで毎日回している）の運用レビュアーです。
 7. フロントエンドエンジニア（kujira-watch / Next.js）: PVスナップショットの上位パス・アクセスされているのに
    薄いページ・perf_check（表示速度の週次チェック。TTFB＝最初の1バイトが返るまでの時間／HTML・CSSの
    転送量を計測）の結果から、ページ構成・表示速度・計測上の問題を指摘する。
+   あわせて**「クリックログ・回遊（GA4）」節を必ず読み、回遊が止まっている場所を1つ特定して具体的な
+   導線の直しを出す**。見るのは①1セッションあたりの内部移動回数の前週比 ②ページ種別ごとの
+   「入口・内部・直帰率・滞在時間」の食い違い（例: 入口は多いのに内部が少ない＝そこから先へ進めていない、
+   直帰100%＝完全に行き止まり）③押されたCTAの文言。**どのページのどの位置に何を置くかまで書く**。
+   GA4節が「取得不可」の日はその旨を1行書き、PVスナップショットだけで判断する。
    perf_check は毎週月曜のみ実行するため、当日分が無い日は「※24時間の対象期間外」と注記された直近の
    実行が添付される。**古い計測でも表示速度の評価には使えるので「判断不可」で片付けず、何日前の計測かを
    明記した上で閾値超過ページ・前回からの傾向を評価する**（当日の前日比としては扱わない）。
    Next.jsのビルドはVercel側で走りActionsログには原理的に含まれない（ci.ymlはPythonテストのみ）。
    ビルドエラー・バンドルサイズ・デプロイ成否は「ログから判断不可」と明記し推測で埋めない。
-8. PdM: KPIスナップショット（PV・ユニーク訪問・フォロワー・X反応・記事数・💎シグナル数）の前日比/前週比を読み、
+8. PdM: KPIスナップショット（PV・ユニーク訪問・**1セッションあたりの内部移動回数**・フォロワー・X反応・
+   記事数・💎シグナル数）の前日比/前週比を読み、
    当日の成果物が「初心者投資家が今日何をすべきか分かる」という価値に繋がったかを判定する。
    1〜7の改善提案を「ユーザー価値 × 実装コスト」で並べ直し、**今週やる3件／やらない事**を明示する。
 
@@ -159,6 +165,11 @@ GitHub Actionsで毎日回している）の運用レビュアーです。
 
 ## UX・デザイン所見
 （LINE本文・X投稿文の評価。良い点1〜2行＋直すべき点。書き換え案は before/after で示す）
+
+## 回遊所見
+（GA4の「クリックログ・回遊」節から、1セッションあたりの内部移動回数の推移を1行、
+回遊が止まっているページ種別を1つ挙げて根拠の数字を添え、置く場所まで指定した導線の直しを1件。
+GA4節が取得不可の日は「GA4未取得のため判断不可」と書く）
 
 ## エンジニアリング所見
 ### バックエンド
@@ -507,6 +518,79 @@ def fetch_snapshot_rows(now: datetime) -> dict:
     return out
 
 
+def fetch_ga4_metrics(days: int = 7) -> dict:
+    """GA4のクリックログと回遊指標。認証・プロパティIDが無い環境では空dictを返す。
+
+    サーバーログ(blog_crawler_log)ではクリックも回遊も測れない（30日206,678PVの86.7%が
+    1IPで100PV超の機械アクセス）。「どのページで何が押され、そこから次のページへ進んだか」は
+    GA4にしか無いので、日次レビューの判断材料として毎日ここに載せる。"""
+    from tools import ga4_clicks
+
+    property_id = os.getenv("GA4_PROPERTY_ID", "").strip()
+    if not property_id:
+        return {}
+    try:
+        token = ga4_clicks.access_token()
+        if not token:
+            return {}
+        return ga4_clicks.collect_pdca_metrics(token, property_id, days)
+    except Exception as e:
+        print(f"[ga4] 取得失敗（GA4節なしで続行）: {e}")
+        return {}
+
+
+def _delta(now: float, before: float) -> str:
+    if before == 0:
+        return "（前週0）" if now else ""
+    return f"（前週比 {(now - before) / before * 100:+.0f}%）"
+
+
+def summarize_ga4(m: dict) -> str:
+    """fetch_ga4_metrics の結果をレビュー入力用Markdownにする。"""
+    if not m:
+        return ("# クリックログ・回遊（GA4）\n"
+                "（取得不可: GA4_PROPERTY_ID もしくはサービスアカウント鍵が未設定。"
+                "CIでは Secret `GCP_SERVICE_ACCOUNT_JSON` と変数 `GA4_PROPERTY_ID` が要る）")
+    now, prev = m["now"], m["prev"]
+    lines = [f"# クリックログ・回遊（GA4 {m['start']}〜{m['end']}の{m['days']}日間、"
+             f"比較は直前の{m['days']}日間）"]
+    lines.append(f"- **1セッションあたりの内部移動 {now['internal_per_session']:.2f}回**"
+                 f"{_delta(now['internal_per_session'], prev['internal_per_session'])}"
+                 f"　※(全PV−入口セッション)÷入口セッション。回遊の中心指標")
+    lines.append(f"- 全PV {now['pv']:.0f}{_delta(now['pv'], prev['pv'])} / "
+                 f"入口セッション {now['entrances']:.0f}{_delta(now['entrances'], prev['entrances'])}")
+
+    lines.append("\n## ページ種別ごとの回遊（内部=入口以外から辿り着いたPV）")
+    lines.append("| 種別 | PV | 入口 | 内部 | 入口の直帰率 | 1人あたり滞在 | クリック |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for name, g in sorted(now["groups"].items(), key=lambda kv: -kv[1]["pv"]):
+        entrances = g["entrances"]
+        bounce = f"{g['bounced'] / entrances * 100:.1f}%" if entrances else "-"
+        stay = f"{g['engagement'] / g['users']:.0f}秒" if g["users"] else "-"
+        lines.append(f"| {name} | {g['pv']:.0f} | {entrances:.0f} | {g['pv'] - entrances:.0f} | "
+                     f"{bounce} | {stay} | {g['clicks']:.0f} |")
+
+    pages = now["pages"]
+    clicks = now["clicks"]
+    top = sorted(clicks.items(), key=lambda kv: -kv[1][0])[:8]
+    if top:
+        lines.append("\n## クリックの多いページ（クリック数 / そのページのPV）")
+        for path, v in top:
+            pv = (pages.get(path) or [0])[0]
+            lines.append(f"- {v[0]:.0f}回 / PV{pv:.0f}　{path}")
+
+    labels = m.get("labels") or {}
+    named = {k: v for k, v in labels.items() if k and k != "(not set)"}
+    lines.append("\n## 押されたCTA（ボタン文言）")
+    if named:
+        for label, v in sorted(named.items(), key=lambda kv: -kv[1][0])[:10]:
+            lines.append(f"- {v[0]:.0f}回　{label[:60]}")
+    else:
+        lines.append("- まだ集計できていない（labelカスタムディメンションは2026-08-27登録で、"
+                     "それ以前のクリックは全て(not set)に入る）")
+    return "\n".join(lines)
+
+
 def summarize_snapshot(rows: dict, now: datetime) -> str:
     """fetch_snapshot_rows の結果をレビュー入力用Markdownにする。"""
     if not rows:
@@ -701,8 +785,10 @@ def main() -> int:
 
     attach_reference_runs(runs_by_workflow, args.repo, now)
     snapshot = summarize_snapshot(fetch_snapshot_rows(now), now)
+    ga4 = summarize_ga4(fetch_ga4_metrics())
     prev = fetch_previous_review(args.repo)
-    review_input = build_review_input(runs_by_workflow, date_label) + "\n\n" + snapshot
+    review_input = (build_review_input(runs_by_workflow, date_label)
+                    + "\n\n" + snapshot + "\n\n" + ga4)
     if prev:
         review_input += "\n\n" + prev
     print(f"[review] 入力 {len(review_input):,} 文字")

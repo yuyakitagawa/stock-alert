@@ -1,6 +1,8 @@
 """tools/daily_log_review.py のユニットテスト（ネットワーク・ghコマンド不要）。"""
+import os
 import sys
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -274,6 +276,70 @@ class PrevProposalsTest(unittest.TestCase):
     def test_system_prompt_asks_for_disposal_section(self):
         self.assertIn("## 前回提案の消化状況", dlr.SYSTEM_PROMPT)
         self.assertIn("[再掲]", dlr.SYSTEM_PROMPT)
+
+
+def _ga4_metrics():
+    """summarize_ga4に渡す最小の実測形（2026-08-21〜27の実データを縮めたもの）。"""
+    return {
+        "days": 7, "start": "2026-08-21", "end": "2026-08-27",
+        "now": {
+            "pv": 651.0, "entrances": 225.0, "internal_per_session": 1.89,
+            "groups": {
+                "データ/一覧ページ": {"pv": 271.0, "entrances": 22.0, "users": 30.0,
+                                "engagement": 1980.0, "bounced": 13.0, "clicks": 257.0},
+                "カテゴリページ": {"pv": 4.0, "entrances": 2.0, "users": 2.0,
+                             "engagement": 0.0, "bounced": 2.0, "clicks": 0.0},
+            },
+            "pages": {"/trending": [70.0]}, "clicks": {"/trending": [93.0]},
+        },
+        "prev": {"pv": 1280.0, "entrances": 216.0, "internal_per_session": 4.94,
+                 "groups": {}, "pages": {}, "clicks": {}},
+        "labels": {},
+    }
+
+
+class SummarizeGa4Test(unittest.TestCase):
+    def test_reports_internal_moves_with_week_over_week(self):
+        """回遊の中心指標。前週比が無いと「増えたのか減ったのか」を判定できない。"""
+        md = dlr.summarize_ga4(_ga4_metrics())
+        self.assertIn("1セッションあたりの内部移動 1.89回", md)
+        self.assertIn("-62%", md)
+
+    def test_lists_groups_with_entrance_and_internal_split(self):
+        md = dlr.summarize_ga4(_ga4_metrics())
+        self.assertIn("| データ/一覧ページ | 271 | 22 | 249 |", md)
+        # 直帰100%＝行き止まりのページ種別が表から読めること
+        self.assertIn("| カテゴリページ | 4 | 2 | 2 | 100.0%", md)
+
+    def test_says_labels_not_ready_instead_of_empty_section(self):
+        """(not set)しか無い時期に空欄を出すと「押されていない」と誤読される。"""
+        md = dlr.summarize_ga4(_ga4_metrics())
+        self.assertIn("まだ集計できていない", md)
+
+    def test_shows_labels_when_available(self):
+        m = _ga4_metrics()
+        m["labels"] = {"この日の開示をすべて見る": [12.0], "(not set)": [999.0]}
+        md = dlr.summarize_ga4(m)
+        self.assertIn("この日の開示をすべて見る", md)
+        self.assertNotIn("(not set)", md)
+
+    def test_missing_metrics_explains_what_is_unset(self):
+        """取得できない日に黙って節ごと消すと、レビュー側が欠落に気付けない。"""
+        md = dlr.summarize_ga4({})
+        self.assertIn("取得不可", md)
+        self.assertIn("GCP_SERVICE_ACCOUNT_JSON", md)
+
+
+class FetchGa4MetricsTest(unittest.TestCase):
+    def test_returns_empty_without_property_id(self):
+        with mock.patch.dict(os.environ, {"GA4_PROPERTY_ID": ""}):
+            self.assertEqual(dlr.fetch_ga4_metrics(), {})
+
+
+class Ga4PromptTest(unittest.TestCase):
+    def test_system_prompt_requires_a_navigation_section(self):
+        self.assertIn("## 回遊所見", dlr.SYSTEM_PROMPT)
+        self.assertIn("内部移動回数", dlr.SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":
