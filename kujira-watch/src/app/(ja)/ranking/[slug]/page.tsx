@@ -19,7 +19,10 @@ import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 export const revalidate = 3600;
 
 // activist（記事ベース）の集計対象期間（暦日）と、両ランキング共通の表示件数。
-const RANKING_DAYS = 30;
+// 期間は/activists・/trendingと同じ7日（直近1週間）。30日窓は毎日ほぼ同じ顔ぶれが並び
+// 「直近の動き」が見えないため2026-08-27に短縮した（アクティビストの開示は7日で40件超あり
+// 表示上限30件は埋まる）。
+const RANKING_DAYS = 7;
 const RANKING_SIZE = 30;
 // returnsは分類での絞り込みをクライアント側で行うため全件（2026-08-22時点で198名）を渡す。
 // ビューはn>=3の投資家しか持たないので件数は増えても数百のオーダーに収まる。
@@ -97,7 +100,7 @@ export default async function RankingSlugPage({ params }: Props) {
   const rowCount = ranking.axis === "returns" ? returnRows.length : stockRows.length;
 
   // ランキングの文脈に合ったアイキャッチ付き記事カード。returnsはランキング上位投資家の
-  // 直近記事（新着順・1投資家1件まで）、activistは既に取得済みの直近30日の記事から
+  // 直近記事（新着順・1投資家1件まで）、activistは既に取得済みの直近7日の記事から
   // 金額規模の大きい取引（1銘柄1件まで）。取れなくてもランキング自体は成立させる。
   let relatedArticles: typeof recentArticles = [];
   if (ranking.axis === "returns") {
