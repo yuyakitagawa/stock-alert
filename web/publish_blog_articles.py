@@ -30,6 +30,13 @@ microCMS管理画面で修正する運用）。
           ポートフォリオを図にし、本文のその話をしている段落の直後に差し込む
           （文字だけの記事を減らす目的。Pillow直描画なのでAPI課金は発生しない）。
 
+取りこぼしのbackfill: 通常運転は直近LARGE_HOLDINGS_DAYS(3)日の開示しか見ないため、API上限や
+          ワークフロー障害で3日を超えて生成が止まると、その期間の開示は二度と記事化されない。
+          --backfill は BACKFILL_DAYS(30)日まで遡り、既報インデックス（fetch_published_index）に
+          無い＝まだ記事が無い開示だけを古い順に拾い直す。30日窓の候補は1,000件を超えるので、
+          推定売買金額ビュー(edinet_holding_amounts)で足切りしてから株価・発行済株式数を引く。
+          edinet_blog.yml の当日最終便が1日1回叩く。
+
 必要な環境変数: MICROCMS_SERVICE_DOMAIN, MICROCMS_API_KEY（書き込み権限）, ANTHROPIC_API_KEY
 """
 import os
@@ -48,7 +55,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib import api_budget
-from lib.db import get_edinet_large_holdings_recent
+from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
@@ -497,6 +504,64 @@ def _microcms_headers() -> dict:
     return {"X-MICROCMS-API-KEY": MICROCMS_KEY, "Content-Type": "application/json"}
 
 
+# microCMSのlimit上限（1リクエストあたり100件）と、既報インデックスで辿るページ数の上限。
+# 100×20=2,000記事。30日ぶんの記事は500件前後なので通常は5〜6ページで終わる。
+MICROCMS_PAGE_LIMIT = 100
+MICROCMS_MAX_PAGES = 20
+
+# 稼働が止まっていた期間の取りこぼしを拾い直すときに遡る日数。
+# 通常運転の窓（LARGE_HOLDINGS_DAYS=3日）を超えて生成が止まると、その期間の開示は
+# 二度と記事化されない（実例: 2026-08-13〜08-20の自社株買い決定12件。API月次上限と
+# 機能の稼働開始前が重なり、2026-08-27に手作業でbackfillした）。
+BACKFILL_DAYS = 30
+
+# backfill 1回あたりの投稿上限（--max-articles 未指定時の既定値）。
+# 上限なしで走らせるとAnthropic APIの月次上限に一撃で到達し、同じ日に大量の古い記事が並ぶ。
+# 15件にしているのは 2026-08-27 の実測から: 直近30日の取りこぼしは約142件（60件サンプルで
+# 30件が「本物の取りこぼし」）で、1日1便×15件なら10日で窓（BACKFILL_DAYS=30日）から
+# 外れる前に消化しきれる。取りこぼしが解消した後の定常状態では数件しか残らず上限に当たらない。
+BACKFILL_MAX_ARTICLES = 15
+
+
+def fetch_published_index(since_date: str, extra_filter: str = "",
+                          fields: str = "stockCode,dealDate,filerName") -> "list[dict] | None":
+    """dealDateが since_date 以降の記事をまとめて取得する（取りこぼしbackfill用の既報一覧）。
+
+    already_published() は候補1件につきmicroCMSへ1リクエスト投げる。直近3日の通常運転
+    （候補100件強）なら問題ないが、取りこぼしを拾うために窓を30日へ広げると候補が1,000件を
+    超え、毎回それだけ叩くことになる。既報の一覧を先に1回だけ取り、既に記事がある開示は
+    リクエスト無しで落とす。
+
+    取得に失敗した／ページ上限で打ち切った場合は None を返す。呼び出し側は
+    「既報が分からないまま30日分を投稿し直す」ことを避けるため backfill 自体を中止すること
+    （dealTypeでの既報判定が常に0件を返して同一開示を13本投稿した 2026-08-25 の再発防止）。
+    """
+    filters = f"dealDate[greater_than]{since_date}T00:00:00.000Z"
+    if extra_filter:
+        filters = f"{extra_filter}[and]{filters}"
+    out: list[dict] = []
+    for page in range(MICROCMS_MAX_PAGES):
+        try:
+            resp = requests.get(
+                _microcms_base_url(), headers=_microcms_headers(),
+                params={"filters": filters, "fields": fields, "orders": "-dealDate",
+                        "limit": MICROCMS_PAGE_LIMIT, "offset": page * MICROCMS_PAGE_LIMIT},
+                timeout=30,
+            )
+        except Exception as e:
+            print(f"  ⚠ 既報インデックスの取得に失敗: {e}")
+            return None
+        if resp.status_code != 200:
+            print(f"  ⚠ 既報インデックスの取得に失敗 HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        body = resp.json()
+        out.extend(body.get("contents", []))
+        if len(out) >= body.get("totalCount", 0):
+            return out
+    print(f"  ⚠ 既報インデックスが{MICROCMS_MAX_PAGES}ページを超えました（{len(out)}件で打ち切り）")
+    return None
+
+
 # kujira-watch/src/lib/microcms.ts の FEATURED_POOL_SIZE/FEATURED_COUNT
 # （ホームページ「注目」枠 getFeaturedArticles()）と同じ値。ここを変える場合は
 # あちらも合わせて変更すること。
@@ -884,6 +949,7 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
+        # プロフィールは800〜1000字の地の文で生の改行が混じるため strict=False
         profile = json.loads(text, strict=False).get("profile", "") or ""
     except Exception as e:
         if api_budget.note(e):
@@ -1337,9 +1403,9 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        # 本文HTMLの途中に生の改行が入ったJSONを返すことがあり、strict=Falseでないと
-        # "Invalid control character" で丸ごと落ちる（get_company_description()と同じ対策。
-        # 2026-08-27夜の既存記事リライトでは対象641件中100件＝16%がこれで生成失敗した）。
+        # strict=False は必須。本文はHTMLなのでモデルがJSON文字列の中に生の改行を入れてくる。
+        # 既定の strict=True だと "Invalid control character at ..." で丸ごと落ち、記事が1本消える
+        # （2026-08-27のbackfill便では22回の生成のうち7回がこれで失敗し、再生成で拾い直していた）。
         data = json.loads(text, strict=False)
         if not data.get("body"):
             return None
@@ -1535,18 +1601,81 @@ def is_worth_publishing(deal_amount_oku: float, ratio_change_pt: float) -> bool:
     return abs(ratio_change_pt) >= MIN_RATIO_CHANGE_PT
 
 
+def published_holding_keys(days: int) -> "set | None":
+    """直近days日ぶんの既報記事の (銘柄コード, 開示日, 提出者名) 集合。取得失敗時は None。"""
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = fetch_published_index(since, fields="stockCode,dealDate,filerName")
+    if rows is None:
+        return None
+    return {
+        (str(r.get("stockCode") or ""), str(r.get("dealDate") or "")[:10], r.get("filerName") or "")
+        for r in rows
+    }
+
+
+def estimated_amounts(days: int) -> dict:
+    """edinet_holding_amounts（開示1件ごとの推定売買金額ビュー）を doc_id 引きの dict で返す。
+    取得できなければ空dict（=足切りせずに全件見る）。"""
+    since = (date.today() - timedelta(days=days)).isoformat()
+    try:
+        rows = sb.select("edinet_holding_amounts",
+                         f"disc_date=gte.{since}&select=doc_id,deal_amount_oku,ratio_change_pt")
+    except Exception as e:
+        print(f"  ⚠ 推定金額ビューを取得できないため足切りなしで続行: {e}")
+        return {}
+    return {r["doc_id"]: r for r in rows}
+
+
+def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
+    """backfillの事前足切り。記事を作ったことがある開示と、推定金額ビューの時点で足切り基準に
+    届かない開示を、yfinance（発行済株式数・終値）とmicroCMSを叩く前に落とす。
+
+    30日窓の候補は1,000件を超え、1件ずつ株数と終値を引くと1回の便では終わらない。
+    ビューに行が無い開示（株数が取れない銘柄・ビュー更新前の開示）は判定できないので残し、
+    従来どおりループ内で概算する。"""
+    # microCMSに記事が無くても、過去に作ったことがあるなら作り直さない。
+    # 低品質・リライト不能・誤報として意図的に削除した記事（2026-08-18に129件、08-25に74件、
+    # 08-27に12件）を、取りこぼしと誤認して復活させないため。
+    if h.get("article_published_at"):
+        return False
+    key = (str(h["issuer_code"]), str(h["disc_date"])[:10], h.get("filer_name") or "")
+    if key in published_keys:
+        return False
+    v = amounts.get(h.get("doc_id"))
+    if v is None:
+        return True
+    return is_worth_publishing(v.get("deal_amount_oku") or 0.0, v.get("ratio_change_pt") or 0.0)
+
+
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
-                       dry_run: bool = False) -> list:
+                       dry_run: bool = False, backfill: bool = False) -> list:
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):
         print("[publish_blog_articles] MICROCMS_SERVICE_DOMAIN / MICROCMS_API_KEY 未設定のためスキップ")
         return []
+
+    published_keys, amounts = None, {}
+    if backfill:
+        days = max(days, BACKFILL_DAYS)
+        if max_articles is None:
+            max_articles = BACKFILL_MAX_ARTICLES
+        published_keys = published_holding_keys(days)
+        if published_keys is None:
+            print("[publish_blog_articles] 既報インデックスを取得できないため backfill を中止（重複投稿を避ける）")
+            return []
+        amounts = estimated_amounts(days)
 
     holdings = get_recent_large_holdings(days=days)
     candidates = [
         h for h in holdings
         if h.get("issuer_code") and h.get("holding_ratio") is not None
     ]
-    candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
+    if backfill:
+        candidates = [h for h in candidates if is_backfill_target(h, published_keys, amounts)]
+        # 古い開示ほど窓（BACKFILL_DAYS）から外れて永久に失われるので先に消化する
+        candidates.sort(key=lambda h: (h["disc_date"], -abs(h["holding_ratio"])))
+        print(f"[publish_blog_articles] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
+    else:
+        candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
     # 同一銘柄・同一開示日・同一提出者の開示が何件あるか（重複判定の緩和条件に使う）
     filing_counts = Counter(
         (str(h["issuer_code"]), h["disc_date"], h.get("filer_name", "")) for h in candidates
@@ -1606,6 +1735,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
             continue
 
+        if h.get("article_published_at"):
+            # 既に記事を作った開示。microCMS上に無いのは意図的に削除したから（低品質・
+            # リライト不能・誤報）なので、作り直さない。
+            continue
         unique_filing = filing_counts[(code, disc_date, filer_name)] == 1
         if already_published(code, disc_date, deal_amount, filer_name, signed_change, unique_filing):
             continue
@@ -1723,6 +1856,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             break
         if content_id:
             print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} 図{figure_count}枚 → id={content_id}")
+            if h.get("doc_id"):
+                mark_article_published(h["doc_id"])
             published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
@@ -1735,12 +1870,16 @@ def main():
     p.add_argument("--days", type=int, default=LARGE_HOLDINGS_DAYS, help="EDINET開示を見る直近日数")
     p.add_argument("--max-articles", type=int, default=None, help="1回の実行で投稿する上限件数（未指定なら上限なし）")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
+    p.add_argument("--backfill", action="store_true",
+                   help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない開示だけを拾い直す")
     args = p.parse_args()
 
-    results = build_and_publish(days=args.days, max_articles=args.max_articles, dry_run=args.dry_run)
+    results = build_and_publish(days=args.days, max_articles=args.max_articles,
+                                dry_run=args.dry_run, backfill=args.backfill)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
-    if not args.dry_run:
+    # backfillは数日前の開示を拾い直す便なので、Xには流さない（タイムラインに古い開示が並ぶ）
+    if not args.dry_run and not args.backfill:
         from web.x_client import post_daily_summary, post_top_articles
         featured_ids = get_featured_article_ids()
         posted = post_top_articles(results, featured_ids)

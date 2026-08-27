@@ -51,6 +51,19 @@ def test_classify_title():
     assert m.classify_buyback_title("自己株式の取得に関するご参考") == "other"
 
 
+def test_classify_buyback_title_amendment():
+    """既存決議に対する後追いの開示（一部変更・訂正・中止）は決定ではない。
+    _DECISION_REの「取得に係る事項」がこれらにもマッチするため、決定より先に弾く
+    （8560 2026-08-18を決定として記事化すると、実際の取締役会決議2026-02-09と食い違う誤報になる）。"""
+    assert m.classify_buyback_title("自己株式取得に係る事項の一部変更に関するお知らせ") == "amendment"
+    assert m.classify_buyback_title(
+        "（訂正）「自己株式取得に係る事項の決定に関するお知らせ」の一部訂正について") == "amendment"
+    assert m.classify_buyback_title("自己株式の取得の中止に関するお知らせ") == "amendment"
+    # 通常の決定・進捗の判定は変わらない
+    assert m.classify_buyback_title("自己株式取得に係る事項の決定に関するお知らせ") == "decision"
+    assert m.classify_buyback_title("自己株式の取得状況に関するお知らせ") == "progress"
+
+
 def test_direct_pdf_url_strips_redirector():
     assert m.direct_pdf_url("https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/1.pdf") == \
         "https://www.release.tdnet.info/inbs/1.pdf"
