@@ -143,7 +143,7 @@ def classify_filer(filer_name: str) -> dict:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        data = json.loads(text)
+        data = json.loads(text, strict=False)
         if data.get("category") not in FILER_DEAL_TYPES:
             data["category"] = "その他"
         result = {
@@ -151,6 +151,14 @@ def classify_filer(filer_name: str) -> dict:
             "is_foreign": bool(data.get("is_foreign", False)),
             "description": data.get("description", ""),
         }
+        # 個人の提出者に説明文を持たせない。氏名だけを手がかりにClaudeの一般知識で書かせると、
+        # 同姓同名や似た名前の有名人と取り違えた経歴が生成され、それが記事本文に載る。
+        # 実害（2026-08-27に発見・是正）: 加藤公一レオ氏（売れるネット広告社の創業者）を
+        # 「立憲民主党の衆議院議員」、仲暁子氏を「衆議院議員」、南部靖之氏を「セコム創業者」、
+        # 細川馨氏を「元首相」と記載した説明が1,370件中45件に保存され、記事3本に載っていた。
+        # 実在の個人についての誤った経歴であり、提出者名以上の情報は載せない。
+        if result["category"] == "個人":
+            result["description"] = ""
     except Exception as e:
         # API障害等の一時的な失敗まで「その他」として永続キャッシュすると誤分類が固定化される
         # （実運用で発生: 2026-08-14、課金切れでVC/個人の提出者が軒並み「その他」に上書きされた）。
@@ -876,7 +884,7 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        profile = json.loads(text).get("profile", "") or ""
+        profile = json.loads(text, strict=False).get("profile", "") or ""
     except Exception as e:
         if api_budget.note(e):
             print(api_budget.SKIP_MESSAGE)
@@ -1329,7 +1337,10 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
         if text.startswith("```"):
             text = text.strip("`")
             text = text[4:] if text.lower().startswith("json") else text
-        data = json.loads(text)
+        # 本文HTMLの途中に生の改行が入ったJSONを返すことがあり、strict=Falseでないと
+        # "Invalid control character" で丸ごと落ちる（get_company_description()と同じ対策。
+        # 2026-08-27夜の既存記事リライトでは対象641件中100件＝16%がこれで生成失敗した）。
+        data = json.loads(text, strict=False)
         if not data.get("body"):
             return None
         return data

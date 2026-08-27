@@ -59,6 +59,22 @@ def test_shares_outstanding_returns_none_after_exhausting_retries():
         assert m.shares_outstanding("7203") is None
 
 
+def test_generate_article_body_accepts_raw_newlines_in_json():
+    """本文HTMLの途中に生の改行が入ったJSONでも落ちずに取れること。
+
+    Claudeは本文が長いとHTMLの段落の切れ目に生の改行を混ぜてくることがあり、
+    strict=Falseでないと "Invalid control character" でJSON全体が解析できず記事が丸ごと
+    落ちる。2026-08-27夜の既存記事リライトでは対象641件中100件（16%）がこれで失敗した。
+    """
+    raw = '{"body": "<p>1段落目。</p>\n<h2>見出し</h2>\n<p>2段落目。</p>", "bodyEn": "<p>First.</p>\n<p>Second.</p>"}'
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        result = m.generate_article_body(_fact_sheet())
+    assert result is not None
+    assert "<h2>見出し</h2>" in result["body"]
+    assert "2段落目。" in result["body"]
+
+
 def test_generate_article_body_parses_plain_json():
     fact_sheet = _fact_sheet()
     raw = json.dumps({"body": "<p>本文</p>", "bodyEn": "<p>body</p>"})
@@ -1642,6 +1658,7 @@ if __name__ == "__main__":
     test_shares_outstanding_retries_then_succeeds()
     test_shares_outstanding_falls_back_to_implied_shares_outstanding()
     test_shares_outstanding_returns_none_after_exhausting_retries()
+    test_generate_article_body_accepts_raw_newlines_in_json()
     test_generate_article_body_parses_plain_json()
     test_generate_article_body_strips_code_fence()
     test_generate_article_body_none_on_empty_body()
@@ -1753,4 +1770,4 @@ if __name__ == "__main__":
     test_already_published_true_for_unique_filing_even_if_ratio_differs()
     test_build_and_publish_uses_disclosed_unit_price_over_market_estimate()
     test_build_and_publish_keeps_estimate_when_transfer_table_is_inconclusive()
-    print("全テスト成功 (117件)")
+    print("全テスト成功 (118件)")

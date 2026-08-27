@@ -42,7 +42,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from tools.reclassify_blog_articles import fetch_all_articles
-from lib.edinet import disclosure_doc_label
+from lib.edinet import disclosure_doc_label, resolve_filer
 from web.publish_blog_articles import (
     build_context_facts,
     MICROCMS_DOMAIN, MICROCMS_KEY,
@@ -157,13 +157,18 @@ def main():
 
         rows = find_filer_names(code, disc_date)
         filer_names = {r["filer_name"] for r in rows if r.get("filer_name")}
-        if len(filer_names) != 1:
-            if len(filer_names) > 1:
-                skipped_ambiguous.append((a["id"], code, disc_date, filer_names))
-            else:
-                skipped_no_match.append(a["id"])
+        if not filer_names:
+            skipped_no_match.append(a["id"])
             continue
-        filer_name = filer_names.pop()
+        # 同一銘柄・同一開示日に提出者が複数いる場合は、記事側のfilerName・タイトルから
+        # 一意化を試みる（事実カード書き出しと同じ resolve_filer）。銘柄×日付だけで諦めると
+        # 取りこぼしが大きい（2026-08-27夜の実行で対象641件中139件＝22%がこれでスキップされた）。
+        # それでも決まらなければスキップする。誤った提出者で書き直すと別の投資家の取引として
+        # 公開されることになるため、曖昧なままでは進めない。
+        filer_name = filer_names.pop() if len(filer_names) == 1 else resolve_filer(a, rows)
+        if not filer_name:
+            skipped_ambiguous.append((a["id"], code, disc_date, filer_names))
+            continue
         row = next(r for r in rows if r.get("filer_name") == filer_name)
 
         is_sell = "売り" in (a.get("tags") or "")
@@ -207,6 +212,11 @@ def main():
 
         try:
             ok = update_article(a["id"], build_patch_payload(new_body))
+            if ok:
+                # 書き直した記事は台帳へ。再実行で同じ記事をやり直さないため
+                # （生成し直すたびに本文が変わり、人が書いた分も含めて上書きしてしまう）。
+                with open(DONE_LEDGER, "a", encoding="utf-8") as ledger:
+                    ledger.write(a["id"] + "\n")
             if not ok:
                 print(f"  ⚠ {a['id']} の更新に失敗しました（詳細は上記ログ参照）")
         except MicroCMSPermissionError as e:
