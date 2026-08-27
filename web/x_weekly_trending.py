@@ -7,9 +7,11 @@ web/x_weekly_trending.py
 
 集計ロジックは kujira-watch の /trending ページ（src/lib/trendingStats.ts）のPython移植で、
 直近期間とその前の同じ長さの期間の大量保有・変更報告書の開示件数を Supabase
-`edinet_large_holdings` から数え、増加件数（delta）の多い順に銘柄・投資家を出す。
-比較窓は /trending と同じ7日（前週比）。
-開示データには推定取引金額が無いため、比較の軸は金額ではなく開示件数（/trendingと同じ理由）。
+`edinet_large_holdings` から数え、開示が増えた（delta>0）銘柄・投資家を推定売買金額の
+大きい順に出す。比較窓は /trending と同じ7日（前週比）。
+EDINET開示そのものに取引金額は無いため、金額はマテリアライズドビュー
+`edinet_holding_amounts`（保有比率の変化幅×発行済株式数×開示日終値の概算）から doc_id で
+引く。訂正報告書など金額を推定できない開示は0億円扱いで、件数には入るが金額には入らない。
 
 Xの文字数は全角2単位換算の280単位制限があるため、本文を組んだあと
 `weighted_len()` で実測し、超過する場合は投資家→銘柄の順で末尾の行を落とす。
@@ -41,9 +43,10 @@ FILER_LIMIT = 2
 # ラベルの表示上限（Xのカウント単位。全角=2・半角=1）。EDINETの正式名称は長い
 # （「〇〇ホールディングス株式会社」等）ため、行が2行に折り返す前に切り詰める。
 # 銘柄は末尾に証券コード（+12単位）が付き、投資家は半角の海外ファンド名が多いため
-# 投資家側を長めに取る。
-LABEL_MAX_UNITS = 28
-FILER_LABEL_MAX_UNITS = 48
+# 投資家側を長めに取る。2026-08-27に右側の数値を「+N件」（約5単位）から
+# 「推定1,274億円」（約13単位）へ変えたぶん、行の総単位数が変わらないよう上限を下げた。
+LABEL_MAX_UNITS = 22
+FILER_LABEL_MAX_UNITS = 42
 
 
 def fetch_holdings(range_from: str, range_to: str) -> list:
@@ -51,24 +54,47 @@ def fetch_holdings(range_from: str, range_to: str) -> list:
     集計に使えないため除外する（kujira-watch側 getHoldingsInRange() と同じ規律）。"""
     q = (
         f"disc_date=gte.{range_from}&disc_date=lte.{range_to}"
-        "&select=issuer_code,issuer_name,disc_date,filer_name"
+        "&select=doc_id,issuer_code,issuer_name,disc_date,filer_name"
     )
     rows = sb.select("edinet_large_holdings", q)
     return [r for r in rows if r.get("issuer_code") and r.get("disc_date") and r.get("filer_name")]
 
 
-def build_trending(rows: list, current_from: str, key_of, label_of, limit: int) -> list:
-    """trendingStats.ts の buildTrending() と同一ロジック。
-    delta（直近WINDOW_DAYS日の件数 - その前の同じ日数の件数）が正のものを
-    delta降順 → 件数降順で返す。"""
+def fetch_amounts(range_from: str, range_to: str) -> dict:
+    """期間内の開示1件ごとの推定売買金額（億円）を doc_id 引きで返す。
+    kujira-watch側 getHoldingAmountsInRange() と同じ集計元。"""
+    q = (
+        f"disc_date=gte.{range_from}&disc_date=lte.{range_to}"
+        "&select=doc_id,deal_amount_oku"
+    )
+    rows = sb.select("edinet_holding_amounts", q)
+    return {r["doc_id"]: float(r["deal_amount_oku"]) for r in rows if r.get("deal_amount_oku") is not None}
+
+
+def amount_label(oku: float) -> str:
+    """金額の表示。1兆円（1万億円）以上は兆円へ繰り上げる（kujira-watch側 formatAmountParts と同じ規律）。"""
+    if oku >= 10000:
+        return f"推定{oku / 10000:,.1f}兆円"
+    return f"推定{oku:,.0f}億円"
+
+
+def build_trending(rows: list, current_from: str, key_of, label_of, limit: int,
+                   amounts: "dict | None" = None) -> list:
+    """trendingStats.ts の buildTrendingIssuers()＋selectDirection() と同一ロジック。
+    delta（直近WINDOW_DAYS日の件数 - その前の同じ日数の件数）が正のものを、
+    直近WINDOW_DAYS日の推定売買金額の降順 → delta降順 → 件数降順で返す。"""
+    amounts = amounts or {}
     entries: dict = {}
     for row in rows:
         key = key_of(row)
         if not key:
             continue
-        entry = entries.setdefault(key, {"label": label_of(row), "count": 0, "prev_count": 0})
+        entry = entries.setdefault(
+            key, {"label": label_of(row), "count": 0, "prev_count": 0, "amount": 0.0}
+        )
         if row["disc_date"] >= current_from:
             entry["count"] += 1
+            entry["amount"] += amounts.get(row.get("doc_id"), 0.0)
         else:
             entry["prev_count"] += 1
 
@@ -79,12 +105,22 @@ def build_trending(rows: list, current_from: str, key_of, label_of, limit: int) 
             "count": e["count"],
             "prev_count": e["prev_count"],
             "delta": e["count"] - e["prev_count"],
+            # 億円未満は表示しないので丸めて浮動小数の誤差を持ち回さない（TS側 toCounts と同じ）。
+            "amount": round(e["amount"]),
         }
         for key, e in entries.items()
     ]
     result = [e for e in result if e["delta"] > 0]
-    result.sort(key=lambda e: (-e["delta"], -e["count"]))
+    result.sort(key=lambda e: (-e["amount"], -e["delta"], -e["count"]))
     return result[:limit]
+
+
+def entry_metric(entry: dict) -> str:
+    """ランキング行の右側に出す数値。並べ替えの軸である推定売買金額を出し、
+    金額を推定できない開示（訂正報告書・株価や発行済株式数が取れない銘柄）だけ
+    増加件数にフォールバックする（「推定0億円」は誤解を招くため出さない）。"""
+    amount = entry.get("amount") or 0
+    return amount_label(amount) if amount > 0 else f"+{entry['delta']}件"
 
 
 def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
@@ -96,11 +132,11 @@ def build_weekly_trending_text(issuers: list, filers: list) -> "str | None":
     def render(issuer_n: int, filer_n: int) -> str:
         lines = ["🐋 大口投資家の取引急増ランキング（前週比）", "", "📈 銘柄"]
         for i, e in enumerate(issuers[:issuer_n], 1):
-            lines.append(f"{i}. {label(e['label'], LABEL_MAX_UNITS)} +{e['delta']}件")
+            lines.append(f"{i}. {label(e['label'], LABEL_MAX_UNITS)} {entry_metric(e)}")
         if filers[:filer_n]:
             lines += ["", "👤 投資家"]
             for i, e in enumerate(filers[:filer_n], 1):
-                lines.append(f"{i}. {label(e['label'], FILER_LABEL_MAX_UNITS)} +{e['delta']}件")
+                lines.append(f"{i}. {label(e['label'], FILER_LABEL_MAX_UNITS)} {entry_metric(e)}")
         # ハッシュタグは母数のある2つだけ（`#社名` は実際には検索されないため付けない。
         # 銘柄は本文のランキング行に `社名（コード）` として素で載っている）
         # URLは入れない（リンク入り投稿は$0.20課金）。全ランキングへはプロフィール経由で誘導する
@@ -125,13 +161,13 @@ def build_trending_media(issuers: list, filers: list) -> list:
     """ランキングの一覧カードを作ってアップロードする（施策4。失敗時は空リスト＝画像なし）。"""
     from web.x_card_image import build_list_card
 
-    rows = [(e["label"], f"+{e['delta']}件", "buy") for e in issuers[:3]]
-    rows += [(e["label"], f"+{e['delta']}件", "none") for e in filers[:2]]
-    card = build_list_card("大口投資家の取引急増ランキング", "前週比（直近7日 vs その前7日）",
+    rows = [(e["label"], entry_metric(e), "buy") for e in issuers[:3]]
+    rows += [(e["label"], entry_metric(e), "none") for e in filers[:2]]
+    card = build_list_card("大口投資家の取引急増ランキング", "前週比（直近7日 vs その前7日）・推定売買金額順",
                            rows, "全ランキングは kujira-watch.com/trending")
     if not card:
         return []
-    alt = "大量保有報告書の提出が前週比で増えた銘柄と投資家のランキング。" + "。".join(
+    alt = "大量保有報告書の提出が前週比で増えた銘柄と投資家を推定売買金額の大きい順に並べたランキング。" + "。".join(
         f"{left} {right}" for left, right, _ in rows
     )
     media_id = upload_media(card, alt_text=alt)
@@ -151,17 +187,22 @@ def run(dry_run: bool = False) -> int:
         print("[x_weekly_trending] 開示データが取得できないため投稿しません")
         return 0
 
+    # 金額が取れなくても投稿自体は成立させる（全件0億円＝増加件数順にフォールバックする）。
+    amounts = fetch_amounts(current_from, range_to)
+
     issuers = build_trending(
         rows, current_from,
         key_of=lambda r: r["issuer_code"],
         label_of=lambda r: f"{clean_name(r.get('issuer_name')) or r['issuer_code']}（{r['issuer_code']}）",
         limit=ISSUER_LIMIT,
+        amounts=amounts,
     )
     filers = build_trending(
         rows, current_from,
         key_of=lambda r: r["filer_name"],
         label_of=lambda r: clean_name(r["filer_name"]) or r["filer_name"],
         limit=FILER_LIMIT,
+        amounts=amounts,
     )
 
     text = build_weekly_trending_text(issuers, filers)

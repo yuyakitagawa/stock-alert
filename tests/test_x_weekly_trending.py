@@ -15,8 +15,14 @@ import web.x_weekly_trending as m
 CURRENT_FROM = "2026-08-01"
 
 
-def _row(code, name, filer, disc_date):
-    return {"issuer_code": code, "issuer_name": name, "filer_name": filer, "disc_date": disc_date}
+def _row(code, name, filer, disc_date, doc_id=None):
+    return {
+        "doc_id": doc_id or f"{code}-{filer}-{disc_date}",
+        "issuer_code": code,
+        "issuer_name": name,
+        "filer_name": filer,
+        "disc_date": disc_date,
+    }
 
 
 def test_build_trending_counts_delta_and_sorts():
@@ -39,6 +45,7 @@ def test_build_trending_counts_delta_and_sorts():
         label_of=lambda r: f"{r['issuer_name']}（{r['issuer_code']}）",
         limit=10,
     )
+    # 金額を渡していない＝全件0億円なので、並べ替えはdelta降順にフォールバックする。
     assert [e["key"] for e in result] == ["1111", "2222"]
     assert result[0]["delta"] == 2 and result[0]["prev_count"] == 0
     assert result[1]["delta"] == 1 and result[1]["count"] == 3
@@ -60,6 +67,56 @@ def test_build_trending_same_delta_prefers_more_recent_count():
         key_of=lambda r: r["issuer_code"], label_of=lambda r: r["issuer_name"], limit=10,
     )
     assert [e["key"] for e in result] == ["2222", "1111"]
+
+
+def test_build_trending_sorts_by_amount_before_delta():
+    rows = [
+        # 銘柄A: 直近2件（delta+2）だが金額は合計30億円
+        _row("1111", "A社", "F1", "2026-08-05", doc_id="A1"),
+        _row("1111", "A社", "F2", "2026-08-06", doc_id="A2"),
+        # 銘柄B: 直近1件（delta+1）で金額500億円 → 金額順ではAより上
+        _row("2222", "B社", "F1", "2026-08-05", doc_id="B1"),
+        # 銘柄C: 直近1件（delta+1）で金額不明 → 最下位
+        _row("3333", "C社", "F1", "2026-08-05", doc_id="C1"),
+    ]
+    result = m.build_trending(
+        rows, CURRENT_FROM,
+        key_of=lambda r: r["issuer_code"], label_of=lambda r: r["issuer_name"], limit=10,
+        amounts={"A1": 20.0, "A2": 10.0, "B1": 500.0},
+    )
+    assert [e["key"] for e in result] == ["2222", "1111", "3333"]
+    assert result[0]["amount"] == 500 and result[1]["amount"] == 30 and result[2]["amount"] == 0
+
+
+def test_build_trending_ignores_amounts_outside_current_window():
+    rows = [
+        # 前期間の開示は金額に入れない（件数もprev_count側）。
+        _row("1111", "A社", "F1", "2026-07-10", doc_id="OLD"),
+        _row("1111", "A社", "F1", "2026-08-05", doc_id="NEW"),
+        _row("1111", "A社", "F2", "2026-08-06", doc_id="NEW2"),
+    ]
+    result = m.build_trending(
+        rows, CURRENT_FROM,
+        key_of=lambda r: r["issuer_code"], label_of=lambda r: r["issuer_name"], limit=10,
+        amounts={"OLD": 999.0, "NEW": 12.0, "NEW2": 8.0},
+    )
+    assert result[0]["amount"] == 20
+
+
+def test_entry_metric_shows_amount_and_falls_back_to_count():
+    assert m.entry_metric({"amount": 1274, "delta": 1}) == "推定1,274億円"
+    # 1兆円以上は兆円へ繰り上げ（kujira-watch側 formatAmountParts と同じ規律）
+    assert m.entry_metric({"amount": 12800, "delta": 3}) == "推定1.3兆円"
+    # 金額を推定できない開示だけ増加件数にフォールバックする
+    assert m.entry_metric({"amount": 0, "delta": 2}) == "+2件"
+
+
+def test_build_weekly_trending_text_shows_amount_in_lines():
+    issuers = [{"key": "1111", "label": "玉井商船（1111）", "delta": 1, "amount": 1274}]
+    filers = [{"key": "F1", "label": "テスト投資組合", "delta": 4, "amount": 0}]
+    text = m.build_weekly_trending_text(issuers, filers)
+    assert "1. 玉井商船（1111） 推定1,274億円" in text
+    assert "1. テスト投資組合 +4件" in text
 
 
 def test_build_weekly_trending_text_includes_entries_url_and_tags():
@@ -98,7 +155,7 @@ def test_clean_name_normalizes_fullwidth_and_strips_corporate_suffix():
 def test_build_weekly_trending_text_truncates_long_labels():
     issuers = [{"key": "1111", "label": "とても長い正式名称のホールディングス株式会社（1111）", "delta": 2}]
     text = m.build_weekly_trending_text(issuers, [])
-    assert "1. とても長い正式名称のホール… +2件" in text
+    assert "1. とても長い正式名称の… +2件" in text
 
 
 def test_build_weekly_trending_text_fits_weighted_limit_with_long_names():
@@ -117,16 +174,18 @@ def test_run_posts_text_built_from_fetched_rows():
     rows = [_row("1111", "A社", "F1", recent[0]), _row("1111", "A社", "F2", recent[1])]
     posted = []
     with mock.patch.object(m, "fetch_holdings", return_value=rows), \
+         mock.patch.object(m, "fetch_amounts", return_value={rows[0]["doc_id"]: 42.0}), \
          mock.patch.object(m, "build_trending_media", return_value=[]), \
          mock.patch.object(m, "post_tweet",
                            side_effect=lambda t, **kw: posted.append(t) or "1"):
         assert m.run(dry_run=False) == 0
     assert len(posted) == 1
-    assert "A社（1111）" in posted[0]
+    assert "A社（1111） 推定42億円" in posted[0]
 
 
 def test_run_skips_when_no_rows():
     with mock.patch.object(m, "fetch_holdings", return_value=[]), \
+         mock.patch.object(m, "fetch_amounts", return_value={}), \
          mock.patch.object(m, "post_tweet") as tweet_mock:
         assert m.run(dry_run=False) == 0
         tweet_mock.assert_not_called()
@@ -135,6 +194,7 @@ def test_run_skips_when_no_rows():
 def test_run_dry_run_does_not_post():
     rows = [_row("1111", "A社", "F1", "2026-08-05"), _row("1111", "A社", "F2", "2026-08-06")]
     with mock.patch.object(m, "fetch_holdings", return_value=rows), \
+         mock.patch.object(m, "fetch_amounts", return_value={}), \
          mock.patch.object(m, "post_tweet") as tweet_mock:
         assert m.run(dry_run=True) == 0
         tweet_mock.assert_not_called()

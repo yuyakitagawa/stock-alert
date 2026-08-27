@@ -44,11 +44,12 @@ from dotenv import load_dotenv
 import lib.supabase_client as sb
 from lib.edinet import disclosure_doc_label
 from tools.cleanup_duplicate_blog_articles import delete_article
+from tools.export_article_fact_cards import resolve_filer
 from tools.reclassify_blog_articles import fetch_all_articles
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, MicroCMSPermissionError,
-    build_article_titles, classify_filer, estimate_deal_amount_oku,
+    build_article_titles, build_context_facts, classify_filer, estimate_deal_amount_oku,
     disclosure_close_price, generate_article_body_checked, get_company_description,
     is_worth_publishing, update_article,
 )
@@ -113,8 +114,15 @@ def previous_ratio(code: str, filer_name: str, disc_date: str) -> "float | None"
 
 
 def find_disclosure(article: dict, by_key: dict) -> "dict | None":
-    """記事に対応するEDINET開示を1件に特定する。提出者名が保存されていない旧記事
-    （2026-08-15以前）は、同一銘柄・同一開示日の開示が1件のときだけ特定できたとみなす。"""
+    """記事に対応するEDINET開示を1件に特定する。
+
+    提出者名が保存されている記事はそれで引く。引けない場合（filerName未保存の旧記事、
+    表記ゆれ、同一銘柄・同一開示日に複数の提出者がいる開示）は、事実カード書き出しと
+    同じ resolve_filer() でタイトル等から一意化を試みる。ここを素通りさせると、金額が
+    保有総額のまま公開されている記事が是正されずに残る（2026-08-27の実測で、
+    一意化できなかった100本を標本検査したところ29%が過大なままだった）。
+    誤った提出者で是正すると別の投資家の取引として公開されるため、決まらなければNone。
+    """
     code = str(article.get("stockCode") or "")
     disc_date = (article.get("dealDate") or "")[:10]
     if not code or not disc_date:
@@ -122,8 +130,15 @@ def find_disclosure(article: dict, by_key: dict) -> "dict | None":
     filer = normalize_filer(article.get("filerName"))
     if filer:
         rows = by_key.get((code, disc_date, filer)) or []
-    else:
-        rows = [r for (c, d, _), rs in by_key.items() if c == code and d == disc_date for r in rs]
+        if len(rows) == 1:
+            return rows[0]
+    candidates = [r for (c, d, _), rs in by_key.items() if c == code and d == disc_date for r in rs]
+    if len(candidates) == 1:
+        return candidates[0]
+    name = resolve_filer(article, candidates)
+    if not name:
+        return None
+    rows = [r for r in candidates if r.get("filer_name") == name]
     return rows[0] if len(rows) == 1 else None
 
 
@@ -165,9 +180,12 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
     # (c) 前回比率を過去開示から補ったうえで、記事が保有比率の全量を変化幅として使った痕跡が
     #     あるもの。ratioChangePctを保存していなかった時代の記事はこの経路でしか検出できない。
     #     再計算した変化幅が保有比率と一致する場合は「全量が動いた」で正しいので対象外。
+    #     inferred_prior（前回比率をこちらで補ったか）は条件にしない。DBに前回比率が
+    #     後から埋まっていても、記事が公開された当時は取れておらず全量を使っていた例が
+    #     多数ある（実例: セリア2782の買い増し1.31ptが「推定取得金額300.9億円」＝保有総額。
+    #     DBには前回比率13.93%が入っている）。判定はDBの状態ではなく記事側の痕跡で行う。
     full_ratio_mismatch = (
-        inferred_prior and old_change is None
-        and abs(change - float(ratio)) >= MISMATCH_TOLERANCE_PT
+        old_change is None and abs(change - float(ratio)) >= MISMATCH_TOLERANCE_PT
     )
     # (d) 保有比率が前回と同一（変化幅0pt）なのに、記事が推定取得/売却金額を出しているもの。
     #     担保契約や共同保有者の変更などで再提出された変更報告書で、売買は起きていない。
@@ -228,6 +246,10 @@ def build_fact_sheet(article: dict, fix: dict, filer_name: str) -> dict:
         "company_description": get_company_description(code, name),
         "ratio_change_pct": fix["change"],
         "prior_ratio": fix["prior_ratio"],
+        # 是正のために本文を作り直すのだから、同じ回で厚みも取る。開示を横断して初めて書ける
+        # 周辺事実（保有の積み上げ履歴・その投資家の他の保有銘柄・その銘柄の他の大株主・
+        # 開示日時点の指標）を渡さないと、正しい数字の薄い記事に置き換わるだけになる。
+        "context_facts": build_context_facts(code, filer_name, disc_date),
         "is_correction": fix["is_correction"],
     }
 

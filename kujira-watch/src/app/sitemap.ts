@@ -58,6 +58,7 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
   const latestByEnCategory = latestDealDateBy(translatedArticles, (a) => a.dealType);
   return [
     { url: SITE_URL, lastModified: latestArticle },
+    { url: `${SITE_URL}/articles`, lastModified: latestArticle },
     { url: `${SITE_URL}/en`, lastModified: latestEnArticle },
     { url: `${SITE_URL}/en/investors`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/weekly`, lastModified: latestArticle },
@@ -69,6 +70,7 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/en/about` },
     { url: `${SITE_URL}/privacy` },
     { url: `${SITE_URL}/en/privacy` },
+    { url: `${SITE_URL}/terms` },
     { url: `${SITE_URL}/faq` },
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。

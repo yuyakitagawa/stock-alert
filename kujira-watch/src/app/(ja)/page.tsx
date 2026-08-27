@@ -3,6 +3,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TodayWhaleSummary from "@/components/TodayWhaleSummary";
+import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
 import { formatDate, isSellArticle } from "@/lib/format";
 import { areDisclosuresFixed } from "@/lib/jst";
@@ -78,6 +79,10 @@ export default async function HomePage() {
               disclosuresFixed={areDisclosuresFixed(latestDealDate)}
             />
           )}
+          {/* 記事一覧より先にランキングの中身を出す。TOPは押した人17.6%で全ページ中最低なのに、
+              /trendingは閲覧者全員が押している（2026-08-27のGA4実測）。ヘッダーに同じリンクは
+              あるので、足りないのはリンクではなく押す理由＝実際の銘柄名と金額。 */}
+          <TopTrendingPreview />
           {featuredArticles.length > 0 && (
             <div className="mb-8 space-y-4">
               {featuredArticles.map((article, i) => (
