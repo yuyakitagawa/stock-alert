@@ -67,8 +67,61 @@ def test_insert_ignore_does_not_crash_on_persistent_network_failure():
         sb.SUPABASE_SERVICE_KEY = ""
 
 
+def test_upsert_splits_rows_with_different_keys():
+    """キー構成が違う行が混ざっても、リクエストごとにキーを揃えて送る。
+    PostgRESTは1リクエスト内のキーが不一致だと PGRST102 で400を返し、
+    バッチ丸ごと保存されない（2026-08-26〜27にEDINET大量保有の全件が消えた実例）。"""
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    bodies = []
+
+    def capture(method, url, **kwargs):
+        bodies.append(kwargs["json"])
+        return _FakeResponse()
+
+    try:
+        with mock.patch("lib.supabase_client.requests.request", side_effect=capture):
+            ok = sb.upsert("some_table", [
+                {"doc_id": "a", "ratio": 1.0},
+                {"doc_id": "b", "ratio": 2.0, "transfers": [{"price": 100}]},
+                {"doc_id": "c", "ratio": 3.0},
+            ], on_conflict="doc_id")
+    finally:
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+
+    assert ok is True
+    assert len(bodies) == 2, bodies
+    for body in bodies:
+        assert len({tuple(sorted(row.keys())) for row in body}) == 1
+    assert sorted(r["doc_id"] for body in bodies for r in body) == ["a", "b", "c"]
+
+
+def test_insert_ignore_splits_rows_with_different_keys():
+    """insert_ignoreも同様にキー構成ごとに分割して送る。"""
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    bodies = []
+
+    def capture(method, url, **kwargs):
+        bodies.append(kwargs["json"])
+        return _FakeResponse()
+
+    try:
+        with mock.patch("lib.supabase_client.requests.request", side_effect=capture):
+            sb.insert_ignore("some_table",
+                             [{"a": 1}, {"a": 2, "b": 3}], on_conflict="a")
+    finally:
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+
+    assert len(bodies) == 2, bodies
+
+
 if __name__ == "__main__":
     test_request_retries_on_timeout_then_succeeds()
     test_request_raises_after_max_retries()
     test_insert_ignore_does_not_crash_on_persistent_network_failure()
-    print("OK: test_supabase_client (3 tests)")
+    test_upsert_splits_rows_with_different_keys()
+    test_insert_ignore_splits_rows_with_different_keys()
+    print("OK: test_supabase_client (5 tests)")

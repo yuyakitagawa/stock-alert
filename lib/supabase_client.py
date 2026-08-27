@@ -73,6 +73,18 @@ def _dedup_batch(batch: list[dict], on_conflict: str) -> list[dict]:
     return [batch[i] for i in sorted(seen.values())]
 
 
+def _group_by_keys(batch: list[dict]) -> list[list[dict]]:
+    """キー構成が同じ行どうしにまとめる。PostgRESTは1リクエスト内の全オブジェクトの
+    キーが一致していないと PGRST102 "All object keys must match" で400を返し、
+    バッチ丸ごと落ちる。「値があるときだけ送る」列（issuer_name, short_term_transfers等）が
+    混ざると必ず踏むため、送る直前に構成別に分割する。
+    （実例: 2026-08-26〜27、edinet_large_holdings の全70件が保存されずブログ記事が0件に）"""
+    groups: dict[tuple, list[dict]] = {}
+    for row in batch:
+        groups.setdefault(tuple(sorted(row.keys())), []).append(row)
+    return list(groups.values())
+
+
 def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
     """全バッチが書けたら True、1バッチでも落ちたら False を返す。
     呼び出し側が戻り値を無視すれば従来どおりの「失敗してもログだけ」の挙動になるが、
@@ -87,19 +99,20 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
     rows = _sanitize(rows)
     ok_all = True
     for i in range(0, len(rows), _BATCH_SIZE):
-        batch = _dedup_batch(rows[i: i + _BATCH_SIZE], on_conflict)
-        try:
-            resp = _request("POST", url, headers=_headers(), json=batch, timeout=_TIMEOUT)
-        except Exception as e:
-            print(f"[supabase] {table} upsert exception ({len(batch)} rows): {e}")
-            ok_all = False
-            continue
-        if not resp.ok:
-            print(f"[supabase] {table} upsert failed ({len(batch)} rows): "
-                  f"{resp.status_code} {resp.text[:500]}")
-            ok_all = False
-        else:
-            print(f"[supabase] {table} upsert OK ({len(batch)} rows)")
+        deduped = _dedup_batch(rows[i: i + _BATCH_SIZE], on_conflict)
+        for batch in _group_by_keys(deduped):
+            try:
+                resp = _request("POST", url, headers=_headers(), json=batch, timeout=_TIMEOUT)
+            except Exception as e:
+                print(f"[supabase] {table} upsert exception ({len(batch)} rows): {e}")
+                ok_all = False
+                continue
+            if not resp.ok:
+                print(f"[supabase] {table} upsert failed ({len(batch)} rows): "
+                      f"{resp.status_code} {resp.text[:500]}")
+                ok_all = False
+            else:
+                print(f"[supabase] {table} upsert OK ({len(batch)} rows)")
     return ok_all
 
 
@@ -112,15 +125,15 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
     headers = _headers(prefer="resolution=ignore-duplicates")
     rows = _sanitize(rows)
     for i in range(0, len(rows), _BATCH_SIZE):
-        batch = rows[i: i + _BATCH_SIZE]
-        try:
-            resp = _request("POST", url, headers=headers, json=batch, timeout=_TIMEOUT)
-        except Exception as e:
-            print(f"[supabase] {table} insert_ignore exception ({len(batch)} rows): {e}")
-            continue
-        if not resp.ok:
-            print(f"[supabase] {table} insert_ignore failed ({len(batch)} rows): "
-                  f"{resp.status_code} {resp.text[:300]}")
+        for batch in _group_by_keys(rows[i: i + _BATCH_SIZE]):
+            try:
+                resp = _request("POST", url, headers=headers, json=batch, timeout=_TIMEOUT)
+            except Exception as e:
+                print(f"[supabase] {table} insert_ignore exception ({len(batch)} rows): {e}")
+                continue
+            if not resp.ok:
+                print(f"[supabase] {table} insert_ignore failed ({len(batch)} rows): "
+                      f"{resp.status_code} {resp.text[:300]}")
 
 
 def select(table: str, query: str = "", limit: int = 0) -> list[dict]:
