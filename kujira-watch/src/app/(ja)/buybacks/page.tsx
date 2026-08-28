@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AdUnit from "@/components/AdUnit";
+import { siblingDataPages } from "@/lib/nav";
+import ListPageNextStep from "@/components/ListPageNextStep";
 import ArticleCard from "@/components/ArticleCard";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import SectorIcon from "@/components/SectorIcon";
@@ -223,6 +225,9 @@ export default async function BuybacksPage() {
         <FaqAccordionList faqs={FAQS} />
       </section>
 
+      {/* データページ同士の横移動。ヘッダータブはあるが、GA4実測でTOPへの内部到達398件＝
+          他ページからTOPへ戻る動きが多く、横に渡り歩けていなかった（2026-08-27）。 */}
+      <ListPageNextStep links={siblingDataPages("/buybacks")} />
       <AdUnit placement="bottom" />
     </div>
   );

@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import DealTypeIcon from "@/components/DealTypeIcon";
+import { siblingDataPages } from "@/lib/nav";
+import ListPageNextStep from "@/components/ListPageNextStep";
 import DealTypeLabel from "@/components/DealTypeLabel";
 import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
@@ -15,7 +17,12 @@ import AdUnit from "@/components/AdUnit";
 
 export const revalidate = 3600;
 
-const title = "投資家一覧";
+// H1・パンくずは短いラベル（title）のまま、検索結果に出す<title>だけ検索語を入れた形にする。
+// GA4の実測（28日）でデータ/一覧ページは940PVのうち889＝95%が内部到達で、入口はわずか51。
+// 滞在75秒と全種別で最も長いのに検索から直接来ていない。説明文には既に検索語が入っている
+// 一方で<title>が「銘柄ランキング」のような内部呼称のままだったため、そこを揃える（2026-08-27）。
+// ※SEOの反映には数日〜数週間かかるので、直後に順位で判定しないこと。
+const metaTitle = "大量保有報告書の提出者一覧";
 const description =
   "EDINET大量保有報告書（5%ルール）を提出した機関投資家・アクティビストファンド・創業家の資産管理会社などの一覧。投資家別に保有銘柄・保有比率の推移を確認できます。";
 
@@ -46,10 +53,10 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const suffix = [selected, pageNumber > 1 ? `${pageNumber}ページ目` : null].filter(Boolean).join("・");
 
   return {
-    title: suffix ? `${title}（${suffix}）` : title,
+    title: suffix ? `${metaTitle}（${suffix}）` : metaTitle,
     description,
     alternates: { canonical },
-    openGraph: { title, description, url: canonical },
+    openGraph: { title: metaTitle, description, url: canonical },
   };
 }
 
@@ -80,6 +87,9 @@ export default async function InvestorsPage({ searchParams }: Props) {
       <Suspense fallback={<ListFallback rows={12} />}>
         <InvestorsBody searchParams={searchParams} />
       </Suspense>
+      {/* データページ同士の横移動。ヘッダータブはあるが、GA4実測でTOPへの内部到達398件＝
+          他ページからTOPへ戻る動きが多く、横に渡り歩けていなかった（2026-08-27）。 */}
+      <ListPageNextStep links={siblingDataPages("/investors")} />
       <AdUnit placement="bottom" />
     </div>
   );

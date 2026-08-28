@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleCard from "@/components/ArticleCard";
+import ListPageNextStep from "@/components/ListPageNextStep";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate, formatMonth } from "@/lib/format";
 import { getAllArticlesForSitemap, getArticlesByDealDate } from "@/lib/microcms";
@@ -143,6 +144,15 @@ export default async function DateArchivePage({ params }: Props) {
           </>
         );
       })()}
+      {/* 入口の直帰率100%＝この日の記事を見て終わっていた（2026-08-27のGA4実測）。
+          同じ月の他の日と、開示を横断して見るページへ送る。 */}
+      <ListPageNextStep
+        links={[
+          { href: `/monthly/${month}`, label: `${monthLabel}の開示一覧` },
+          { href: "/trending", label: "銘柄ランキング" },
+          { href: "/activists", label: "アクティビスト注目銘柄" },
+        ]}
+      />
       <AdUnit placement="bottom" />
     </div>
   );
