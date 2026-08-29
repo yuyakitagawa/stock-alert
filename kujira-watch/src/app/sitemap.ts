@@ -60,6 +60,7 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/monthly`, lastModified: latestArticle },
     { url: `${SITE_URL}/trending`, lastModified: latestArticle },
     { url: `${SITE_URL}/about`, lastModified: aboutUpdatedAt },
+    { url: `${SITE_URL}/contact` },
     { url: `${SITE_URL}/privacy` },
     { url: `${SITE_URL}/terms` },
     { url: `${SITE_URL}/faq` },

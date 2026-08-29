@@ -35,6 +35,7 @@ export default function HeaderMenu() {
       links: [
         { href: "/about", label: "このサイトについて" },
         { href: "/faq", label: "よくある質問" },
+        { href: "/contact", label: "お問い合わせ" },
         { href: "/privacy", label: t.privacyMenuLabel },
         { href: "/terms", label: "利用規約" },
       ],

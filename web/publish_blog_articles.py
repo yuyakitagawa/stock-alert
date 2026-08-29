@@ -919,7 +919,18 @@ def get_filer_profile(filer_name: str, category: str) -> str:
     返す。edinet_filer_classification.profileにキャッシュがあればそれを使い、無ければClaudeの
     一般知識で生成してキャッシュする（get_company_descriptionと同じ方針。設立時期・運用方針・
     著名な投資事例など、確信が持てる範囲のみ記述させ、役員名や具体的な運用資産額等の検証不能な
-    事実は創作させない。一般個人など公開情報が乏しい提出者は空文字を返す想定）。"""
+    事実は創作させない）。
+
+    ただし分類が「個人」の提出者にはプロフィールを持たせない。氏名だけを手がかりに
+    Claudeの一般知識で書かせると、同姓同名や似た名前の有名人と取り違えた経歴が生成され、
+    それが実在の個人の紹介文として /investors/[filer] に表示される。
+    実害（2026-08-29に発見・是正）: 138件のうち、永守重信氏の会社名を「ニッドー」と書いたもの、
+    藤巻米隆氏について別人の名前を挙げて迷う文章、正垣泰彦氏（サイゼリヤ創業者）を
+    「すかいらーくグループの創業者」と書いたものなどが保存され、投資家ページに出ていた。
+    個人については提出者名と開示の事実だけを載せる（解説文が無い投資家ページは
+    kujira-watch側の pageIndexability が noindex にする）。"""
+    if category == "個人":
+        return ""
     cached = sb.select_one(
         "edinet_filer_classification",
         f"filer_name=eq.{requests.utils.quote(filer_name)}&select=profile,profile_checked_at",
@@ -1572,19 +1583,38 @@ def update_article(content_id: str, payload: dict) -> bool:
 # 実質ニュース価値の無い開示が大量に含まれ、これを記事化するとGoogleに /articles/
 # テンプレート全体を低品質と判断され、新規記事がクロールすらされなくなる
 # （2026-08-18のGSC「検出 - インデックス未登録」の主因）。
-# 表示側の判定は kujira-watch/src/lib/articleIndexability.ts にあり、しきい値は必ず揃えること
-# （ずれると「サイトマップに載っているのにnoindex」という矛盾した指示をGoogleに送る）。
 # この数値は kujira-watch/src/lib/faqData.tsx のFAQ「すべての大量保有報告書が記事に
-# なっていますか？」で読者にも公開している。変更時は3箇所すべてを同じコミットで直すこと。
-MIN_DEAL_AMOUNT_OKU = 3.0
-MIN_RATIO_CHANGE_PT = 1.0
+# なっていますか？」で読者にも公開している。変更時は両方を同じコミットで直すこと。
+# 2026-08-29に 3.0億円/1.0pt から引き上げ（Anthropic APIの消化削減。直近30日の開示851件で
+# 通過が693件→529件＝-24%。記事1本あたり約$0.013なので月-$2.2）。
+MIN_DEAL_AMOUNT_OKU = 5.0
+MIN_RATIO_CHANGE_PT = 1.5
+
+# **公開済み記事**をindexするか・掃除で消すかの基準。表示側 kujira-watch/src/lib/
+# articleIndexability.ts の INDEXABLE_MIN_* と必ず同じ値にすること（ずれると
+# 「サイトマップに載っているのにnoindex」という矛盾した指示をGoogleに送る）。
+# 新規記事の足切り(MIN_*)を2026-08-29に引き上げた後も、こちらは据え置く。
+# 引き上げに合わせて下げると、既に順位が付いている既存記事の24%をnoindexに落とすことになり、
+# 節約する月$2.2に対して失うものが大きすぎる。新規記事は必ずMIN_*≥INDEXABLE_MIN_*なので
+# 「出したのにnoindex」は起きない。
+INDEXABLE_MIN_DEAL_AMOUNT_OKU = 3.0
+INDEXABLE_MIN_RATIO_CHANGE_PT = 1.0
 
 
 def is_worth_publishing(deal_amount_oku: float, ratio_change_pt: float) -> bool:
-    """推定金額か保有比率の変化幅のどちらかが基準を超える開示だけを記事にする。"""
+    """推定金額か保有比率の変化幅のどちらかが基準を超える開示だけを記事にする（新規記事用）。"""
     if deal_amount_oku >= MIN_DEAL_AMOUNT_OKU:
         return True
     return abs(ratio_change_pt) >= MIN_RATIO_CHANGE_PT
+
+
+def is_indexable_article(deal_amount_oku: float, ratio_change_pt: float) -> bool:
+    """公開済み記事がインデックス対象か（＝サイトに残す価値があるか）。
+    既存記事の掃除・アイキャッチ補完はこちらで判定する。新規記事の足切りは
+    is_worth_publishing() で、こちらより厳しい。"""
+    if deal_amount_oku >= INDEXABLE_MIN_DEAL_AMOUNT_OKU:
+        return True
+    return abs(ratio_change_pt) >= INDEXABLE_MIN_RATIO_CHANGE_PT
 
 
 def exit_code_for_run(generation_attempts: int, published_count: int) -> int:
