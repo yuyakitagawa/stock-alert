@@ -5,7 +5,7 @@ import ListPageNextStep from "@/components/ListPageNextStep";
 import { siblingDataPages } from "@/lib/nav";
 import { notFound } from "next/navigation";
 import { displayFilerName, formatDate, formatDealAmount } from "@/lib/format";
-import { getArticleList, getRecentArticles } from "@/lib/microcms";
+import { getArticlesByFilerNames, getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { getInvestorReturns, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
 import { buildStockRows } from "@/lib/rankingStats";
@@ -113,14 +113,17 @@ export default async function RankingSlugPage({ params }: Props) {
   // 金額規模の大きい取引（1銘柄1件まで）。取れなくてもランキング自体は成立させる。
   let relatedArticles: typeof recentArticles = [];
   if (ranking.axis === "returns") {
-    const topFilers = new Set(returnRows.slice(0, RANKING_SIZE).map((row) => row.filerName));
-    const { contents: latest } = await getArticleList({ limit: 50 }).catch(() => ({ contents: [] }));
+    // 上位30名の名前でmicroCMS側を絞ってから取る。以前は最新50件を取ってから上位30名で
+    // 絞っていたが、記事は1日25本前後あり50件＝直近2日ぶんしか見ないため該当0件になり、
+    // セクションごと消えていた（2026-08-29に本番で確認）。
+    const topFilers = returnRows.slice(0, RANKING_SIZE).map((row) => row.filerName);
+    const { contents: latest } = await getArticlesByFilerNames(topFilers).catch(() => ({
+      contents: [],
+    }));
     const seenFilers = new Set<string>();
     relatedArticles = latest
       .filter((article) => {
-        if (!article.filerName || !topFilers.has(article.filerName) || seenFilers.has(article.filerName)) {
-          return false;
-        }
+        if (!article.filerName || seenFilers.has(article.filerName)) return false;
         seenFilers.add(article.filerName);
         return true;
       })
