@@ -1993,3 +1993,16 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   本文出力自体は残す（実行ログだけで送信内容を追えるため）。
 - 残: `tools/ga4_clicks.collect_pdca_metrics()` は定期呼び出し元が無くなった（手動集計とテストのみ）。
 - テスト: 602 passed（削除前は629、うち27件が本ツールのテスト）。
+
+## 2026-08-29 APIで本文を書かせるリライトを廃止（オーナー判断）
+- 経緯: 8/28に `tools/rewrite_thin_blog_articles.py` で610本（夜間385＋朝225）をリライトし、
+  再生成412回と合わせて本文生成1,022回・推計$11のAPI課金が出た。再生成の理由は348回がAI常套句、
+  うち335回は「文末単調（「ます。」が4連続）」のみ。残り64回は本文が下限650字に届かず。
+  `docs/progress_adsense_content_quality.md` に「APIバッチではなくClaude Codeが直接執筆」と
+  記録済みだったにもかかわらず、APIバッチ側が使われていた。
+- 削除: `tools/rewrite_thin_blog_articles.py` / `tests/test_rewrite_thin_blog_articles.py`（6件）。
+- 移設: 共有ヘルパー（`visible_text_len` / `FIGURE_RE` / `THIN_TEXT_THRESHOLD` / `find_filer_names`）を
+  `lib/article_text.py` へ。APIを使わない `tools/export_article_fact_cards.py` と
+  `tools/apply_rewritten_articles.py` はこちらを参照する（両ツールは残す＝リライト自体は続けられる）。
+- 残: 薄い記事（可視文字数1,000未満）は約30件が未処理。今後は事実カード→Claude Code執筆→PATCH反映の経路。
+- テスト: 596 passed（削除前602、うち6件が本ツールのテスト）。

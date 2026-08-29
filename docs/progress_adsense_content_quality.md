@@ -36,8 +36,11 @@ Google のポリシー3本（コンテンツの最小要件 / 独自性のある
   - [x] `tools/export_article_fact_cards.py`: 記事1本ぶんの事実をJSONで書き出す
   - [x] `tools/apply_rewritten_articles.py`: 書いた本文をPATCHで反映（反映前にlogs/へバックアップ、
         既存より短い本文は弾く）
-  - [x] `tools/rewrite_thin_blog_articles.py`（APIで書かせる版）も周辺事実を渡すよう修正済み。
-        今回は使わないが、将来まとめて流したくなったときのために残す
+  - [x] `tools/rewrite_thin_blog_articles.py`（APIで書かせる版）は**2026-08-29に削除**。
+        「今回は使わないが将来のために残す」としていたが、2026-08-28に夜間385本＋朝225本＝
+        610本をこのツールで流し、再生成412回と合わせて本文生成1,022回・推計$11のAPI課金が
+        発生した（オーナー指示の「APIバッチではなくClaude Codeが直接執筆」から外れた実行）。
+        オーナー判断で経路ごと廃止。共通ヘルパーは `lib/article_text.py` へ移設済み
   - [x] **72件完了**（取引日の新しい順）。実測 352〜697字 → 554〜1,177字
   - 反映済みIDは `logs/rewritten_article_ids.txt` に追記され、事実カードの書き出し側が
     それを読んで候補から外す（中断しても再開できる）

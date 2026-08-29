@@ -102,7 +102,7 @@
 ### 未対応（判断待ち・API制限待ち）
 - 英語版911本の扱い（機械翻訳の全記事横展開を続けるか、価値の高い記事に絞るか）はユーザー判断待ち。
 - 既存記事の本文リライト（450字→650字以上）は`ANTHROPIC_API_KEY`が2026-09-01まで停止中のため実行不可。
-  復帰後に`tools/rewrite_thin_blog_articles.py`で実行する。
+  ~~復帰後に`tools/rewrite_thin_blog_articles.py`で実行する。~~ 2026-08-29に同ツールは削除（API課金を止めるオーナー判断）。以後の本文差し替えは `tools/export_article_fact_cards.py` → Claude Codeが執筆 → `tools/apply_rewritten_articles.py` の経路で行う。
 - 同一銘柄の連投記事の統合（402Aに17本、8783に10本など12銘柄）は既存URLの整理を伴うため未着手。
 - `kujira-watch/README.md`への反映は、並行セッションが同ファイルを編集中のため保留。
 
