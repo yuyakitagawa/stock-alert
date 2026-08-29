@@ -23,6 +23,12 @@ const WINDOW_DAYS = 7;
 // 処理なので、クロール時点でサーバーが返すHTML（TrendingTableのINITIAL_COUNT）に合わせる。
 const JSON_LD_COUNT = 30;
 
+// 一覧の下に添えるアイキャッチ付き記事カードの件数。先頭1件は2列ぶんの幅で出る
+// （`RelatedArticles`）。データページは画像が最下部にしか無く見た目が弱かったため
+// 2026-08-29に4→8へ増やした。8件を埋めるには「ランキング入りした銘柄の記事」で
+// 絞り込んだ後に8件残る必要があるので、取得元の新着記事も30→60件に広げている。
+const RELATED_ARTICLE_SIZE = 8;
+
 const url = `${SITE_URL}/trending`;
 const title = "銘柄ランキング";
 // H1・パンくずは短いラベル（title）のまま、検索結果に出す<title>だけ検索語を入れた形にする。
@@ -57,7 +63,7 @@ export default async function TrendingPage() {
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
     getAllListedCodes().catch(() => new Set<string>()),
     // ランキング銘柄の解説記事（アイキャッチ付きカード）用。取れなくてもページは成立させる。
-    getArticleList({ limit: 30 }).catch(() => ({ contents: [] })),
+    getArticleList({ limit: 60 }).catch(() => ({ contents: [] })),
   ]);
 
   // 件数制限なし。直近7日で開示が増えた銘柄をすべて出す（買い・売り・両方のいずれかで増えたもの）。
@@ -92,7 +98,7 @@ export default async function TrendingPage() {
     if (!trendingCodes.has(article.stockCode) || seenCodes.has(article.stockCode)) return false;
     seenCodes.add(article.stockCode);
     return true;
-  }).slice(0, 4);
+  }).slice(0, RELATED_ARTICLE_SIZE);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",

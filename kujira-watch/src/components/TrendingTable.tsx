@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { displayFilerName, formatAmountParts } from "@/lib/format";
 import type { TrendingCounts } from "@/lib/trendingStats";
 import SectorIcon from "./SectorIcon";
+import MagnitudeBar from "./MagnitudeBar";
 
 // 表示に必要なものはサーバー側で解決して渡す。hrefやnoteを関数propsで受け取ると
 // クライアントコンポーネントの境界を越えられないため。
@@ -50,6 +51,12 @@ export default function TrendingTable({
   windowDays: number;
 }) {
   const [shown, setShown] = useState(INITIAL_COUNT);
+  // 量感バーの基準。itemsは推定売買金額の降順で渡ってくるが、
+  // 先頭が金額不明（0）のこともあるので最大値を取り直す。
+  const maxAmount = useMemo(
+    () => items.reduce((max, entry) => Math.max(max, entry.amount), 0),
+    [items]
+  );
   const sentinelRef = useRef<HTMLDivElement>(null);
   const hasMore = shown < items.length;
 
@@ -86,7 +93,7 @@ export default function TrendingTable({
           const prevAmount = amountLabel(entry.prevAmount);
           const label = (
             <span className="flex items-start gap-2">
-              <SectorIcon sector={entry.sector} />
+              <SectorIcon sector={entry.sector} size="lg" />
               <span className="min-w-0">
                 {displayFilerName(entry.label)}
                 {entry.isNew && <span className="kicker ml-2 whitespace-nowrap text-brand-gold">NEW</span>}
@@ -110,6 +117,12 @@ export default function TrendingTable({
                 </span>
                 <span className="text-xs text-brand-gold">増加 +{entry.delta}件</span>
               </span>
+              {/* 推定売買金額の量感バー。1位だけ金色にして先頭が読み取れるようにする。 */}
+              <MagnitudeBar
+                value={entry.amount}
+                max={maxAmount}
+                tone={entry.amount === maxAmount ? "gold" : "navy"}
+              />
             </>
           );
           return (

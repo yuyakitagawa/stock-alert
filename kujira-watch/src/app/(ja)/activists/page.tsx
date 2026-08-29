@@ -14,6 +14,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
 import RelatedArticles from "@/components/RelatedArticles";
 import SectorIcon from "@/components/SectorIcon";
+import MagnitudeBar from "@/components/MagnitudeBar";
 import AdUnit from "@/components/AdUnit";
 import { getAllListedCodes, getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
@@ -46,7 +47,7 @@ export default async function ActivistsPage() {
     getAllListedCodes().catch(() => new Set<string>()),
     getFilerIdMap().catch(() => ({}) as Record<string, number>),
     // アイキャッチ付き記事カード用のアクティビスト分類の最新記事。取れなくてもページは成立させる。
-    getArticleList({ dealType: "アクティビスト", limit: 4 }).catch(() => ({ contents: [] })),
+    getArticleList({ dealType: "アクティビスト", limit: 8 }).catch(() => ({ contents: [] })),
   ]);
 
   // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
@@ -97,6 +98,8 @@ export default async function ActivistsPage() {
   const attentionStocksAll = [...byIssuer.values()].sort((a, b) => b.totalDelta - a.totalDelta);
   const attentionStocks = attentionStocksAll.slice(0, ATTENTION_RENDER_LIMIT);
   const attentionOmitted = attentionStocksAll.length - attentionStocks.length;
+  // 買い入れ幅の量感バーの基準（表示分の最大増加幅）。
+  const maxDelta = attentionStocks.reduce((max, row) => Math.max(max, row.totalDelta), 0);
 
   // 銘柄カードの業種アイコン用（会社ロゴは持てないため業種で代替）。表示分だけ一括取得。
   const briefs = await getCompanyBriefs(attentionStocks.map((row) => row.issuerCode)).catch(
@@ -107,7 +110,7 @@ export default async function ActivistsPage() {
     <li key={row.issuerCode} className="card text-sm">
       {/* 1行目=アイコン＋銘柄名、2行目以降=明細をカード左端から（アイコン分の字下げはしない）。 */}
       <div className="flex items-start gap-2">
-        <SectorIcon sector={briefs.get(row.issuerCode)?.sector} />
+        <SectorIcon sector={briefs.get(row.issuerCode)?.sector} size="lg" />
         <div className="min-w-0">
           <span className="font-medium">{stockLabel(row.issuerName, row.issuerCode)}</span>
           <span className="ml-2 whitespace-nowrap text-xs font-bold text-gain">▲{row.totalDelta}pt買い入れ</span>
@@ -116,6 +119,12 @@ export default async function ActivistsPage() {
           )}
         </div>
       </div>
+      {/* 買い入れ幅の量感バー。1位だけ金色にして先頭が読み取れるようにする。 */}
+      <MagnitudeBar
+        value={row.totalDelta}
+        max={maxDelta}
+        tone={row.totalDelta === maxDelta ? "gold" : "gain"}
+      />
       <ul className="mt-1 space-y-0.5 text-xs text-foreground/60">
         {row.buys.map((move) => (
           <li key={move.docId}>

@@ -263,9 +263,66 @@ const FALLBACK_GLYPH: ReactNode = (
   </>
 );
 
+// 業種グループごとの色。33業種すべてに固有色を割り当てても見分けがつかないため、
+// 4グループにまとめてブランドカラー（紺・青・金・濃紺）を割り当てる。カードを縦に
+// 並べたとき左端に色の列ができるので、スクロールしただけで業種の偏りが読み取れる
+// （2026-08-29追加。新しい色は足さず、既存のブランドトークンだけで構成している）。
+const SECTOR_GROUP: Record<string, "material" | "maker" | "consumer" | "finance"> = {
+  // 資源・素材
+  "水産・農林業": "material",
+  鉱業: "material",
+  "石油・石炭製品": "material",
+  化学: "material",
+  鉄鋼: "material",
+  非鉄金属: "material",
+  "ガラス・土石製品": "material",
+  "パルプ・紙": "material",
+  繊維製品: "material",
+  ゴム製品: "material",
+  金属製品: "material",
+  // ものづくり
+  建設業: "maker",
+  機械: "maker",
+  電気機器: "maker",
+  輸送用機器: "maker",
+  精密機器: "maker",
+  その他製品: "maker",
+  // 生活・商業・サービス
+  食料品: "consumer",
+  医薬品: "consumer",
+  小売業: "consumer",
+  卸売業: "consumer",
+  サービス業: "consumer",
+  "情報・通信業": "consumer",
+  // 金融・インフラ・運輸
+  銀行業: "finance",
+  "証券、商品先物取引業": "finance",
+  保険業: "finance",
+  その他金融業: "finance",
+  不動産業: "finance",
+  "電気・ガス業": "finance",
+  陸運業: "finance",
+  海運業: "finance",
+  空運業: "finance",
+  "倉庫・運輸関連業": "finance",
+};
+
+// lg（チップ）用の塗り。地色に業種グループの色を敷き、グリフは紙色で抜く。
+const GROUP_CHIP: Record<string, string> = {
+  material: "bg-brand-navy text-paper",
+  maker: "bg-brand-blue text-paper",
+  consumer: "bg-brand-gold text-paper",
+  finance: "bg-brand-blue-dark text-paper",
+};
+// 業種が取れない銘柄（上場銘柄マスターに無い等）は色を持たせない。
+const FALLBACK_CHIP = "bg-brand-navy/10 text-brand-navy/70";
+
 const SIZES = {
-  sm: { circle: "h-5 w-5", svg: 12 },
-  md: { circle: "h-7 w-7", svg: 16 },
+  sm: { circle: "h-5 w-5 rounded-full", svg: 12, chip: false },
+  md: { circle: "h-7 w-7 rounded-full", svg: 16, chip: false },
+  // 一覧カード用の大型チップ。16pxの線画はカードの中でほぼ見えておらず、33業種ぶん
+  // 自作したSVGが効いていなかったため、40px・角丸・業種グループ色で出す。
+  lg: { circle: "h-10 w-10 rounded-xl", svg: 21, chip: true },
 } as const;
 
 export default function SectorIcon({
@@ -275,13 +332,17 @@ export default function SectorIcon({
   sector?: string | null;
   size?: keyof typeof SIZES;
 }) {
+  const known = Boolean(sector && SECTOR_GLYPHS[sector]);
   const glyph = (sector && SECTOR_GLYPHS[sector]) || FALLBACK_GLYPH;
-  const { circle, svg } = SIZES[size];
+  const { circle, svg, chip } = SIZES[size];
+  const paint = chip
+    ? (sector && GROUP_CHIP[SECTOR_GROUP[sector]]) || FALLBACK_CHIP
+    : "bg-brand-navy/10 text-brand-navy/80";
   return (
     <span
       aria-hidden
-      title={sector && SECTOR_GLYPHS[sector] ? sector : undefined}
-      className={`flex shrink-0 select-none items-center justify-center rounded-full bg-brand-navy/10 text-brand-navy/80 ${circle}`}
+      title={known ? (sector as string) : undefined}
+      className={`flex shrink-0 select-none items-center justify-center ${paint} ${circle}`}
     >
       <svg
         viewBox="0 0 24 24"
@@ -289,7 +350,7 @@ export default function SectorIcon({
         height={svg}
         fill="none"
         stroke="currentColor"
-        strokeWidth={2}
+        strokeWidth={chip ? 1.8 : 2}
         strokeLinecap="round"
         strokeLinejoin="round"
       >

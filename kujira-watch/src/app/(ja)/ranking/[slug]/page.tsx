@@ -14,6 +14,7 @@ import AdUnit from "@/components/AdUnit";
 import InvestorReturnRanking from "@/components/InvestorReturnRanking";
 import RelatedArticles from "@/components/RelatedArticles";
 import SectorIcon from "@/components/SectorIcon";
+import MagnitudeBar from "@/components/MagnitudeBar";
 import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 
 // activistの元データ（記事）は毎時更新、returnsの元データ（Supabaseのマテリアライズド
@@ -29,6 +30,10 @@ const RANKING_SIZE = 30;
 // returnsは分類での絞り込みをクライアント側で行うため全件（2026-08-22時点で198名）を渡す。
 // ビューはn>=3の投資家しか持たないので件数は増えても数百のオーダーに収まる。
 const RANKING_FETCH_LIMIT = 1000;
+// ランキング下に添えるアイキャッチ付き記事カードの件数。先頭1件は2列ぶんの幅で出る
+// （`RelatedArticles`）。データページは画像が最下部にしか無く見た目が弱かったため
+// 2026-08-29に4→8へ増やした。
+const RELATED_ARTICLE_SIZE = 8;
 
 export type RankingSlug = "returns" | "activist";
 
@@ -100,6 +105,8 @@ export default async function RankingSlugPage({ params }: Props) {
         )
       : new Map<string, CompanyBrief>();
   const rowCount = ranking.axis === "returns" ? returnRows.length : stockRows.length;
+  // 銘柄軸（activist）の量感バーの基準。推定金額の落差を数字を読まずに見せる。
+  const maxStockAmount = stockRows.reduce((max, row) => Math.max(max, row.amount), 0);
 
   // ランキングの文脈に合ったアイキャッチ付き記事カード。returnsはランキング上位投資家の
   // 直近記事（新着順・1投資家1件まで）、activistは既に取得済みの直近7日の記事から
@@ -117,7 +124,7 @@ export default async function RankingSlugPage({ params }: Props) {
         seenFilers.add(article.filerName);
         return true;
       })
-      .slice(0, 4);
+      .slice(0, RELATED_ARTICLE_SIZE);
   } else {
     const seenCodes = new Set<string>();
     relatedArticles = [...recentArticles]
@@ -131,7 +138,7 @@ export default async function RankingSlugPage({ params }: Props) {
         seenCodes.add(article.stockCode);
         return true;
       })
-      .slice(0, 4);
+      .slice(0, RELATED_ARTICLE_SIZE);
   }
 
   const breadcrumbJsonLd = {
@@ -226,7 +233,7 @@ export default async function RankingSlugPage({ params }: Props) {
                 <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
                   {index + 1}
                 </span>
-                <SectorIcon sector={stockBriefs.get(row.stockCode)?.sector} />
+                <SectorIcon sector={stockBriefs.get(row.stockCode)?.sector} size="lg" />
                 <Link
                   href={`/stocks/${row.stockCode}`}
                   className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
@@ -252,6 +259,12 @@ export default async function RankingSlugPage({ params }: Props) {
                   {formatDealAmount(row.amount)}
                 </span>
               </span>
+              {/* 推定金額の量感バー。1位だけ金色にして先頭が読み取れるようにする。 */}
+              <MagnitudeBar
+                value={row.amount}
+                max={maxStockAmount}
+                tone={index === 0 ? "gold" : "navy"}
+              />
             </li>
           ))}
         </ul>

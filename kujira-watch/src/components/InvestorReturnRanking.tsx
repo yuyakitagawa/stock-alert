@@ -5,6 +5,7 @@ import Link from "next/link";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import DealTypeIcon from "./DealTypeIcon";
+import MagnitudeBar from "./MagnitudeBar";
 import DealTypeLabel from "./DealTypeLabel";
 import { displayFilerName, formatDate } from "@/lib/format";
 import {
@@ -55,6 +56,11 @@ export default function InvestorReturnRanking({
   );
   const shown = filtered.slice(0, size);
   const filtering = selected !== ALL;
+  // 量感バーの基準。マイナスの投資家も同じ長さの物差しで比べられるよう絶対値の最大を取る。
+  const maxReturn = useMemo(
+    () => shown.reduce((max, row) => Math.max(max, Math.abs(row.avgReturn)), 0),
+    [shown]
+  );
 
   return (
     <>
@@ -135,6 +141,12 @@ export default function InvestorReturnRanking({
                 <span className="kicker ml-1 font-normal text-foreground/40">3ヶ月平均</span>
               </span>
             </span>
+            {/* 平均リターンの量感バー。1位だけ金色にして先頭が読み取れるようにする。 */}
+            <MagnitudeBar
+              value={Math.abs(row.avgReturn)}
+              max={maxReturn}
+              tone={index === 0 && row.avgReturn >= 0 ? "gold" : row.avgReturn >= 0 ? "gain" : "loss"}
+            />
           </li>
         ))}
       </ul>

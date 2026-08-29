@@ -3,9 +3,10 @@ import Link from "next/link";
 import AdUnit from "@/components/AdUnit";
 import { siblingDataPages } from "@/lib/nav";
 import ListPageNextStep from "@/components/ListPageNextStep";
-import ArticleCard from "@/components/ArticleCard";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import SectorIcon from "@/components/SectorIcon";
+import MagnitudeBar from "@/components/MagnitudeBar";
+import RelatedArticles from "@/components/RelatedArticles";
 import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { formatAmountOku, getRecentBuybackDecisions, type BuybackDecision } from "@/lib/buybacks";
 import type { FaqItem } from "@/lib/faqData";
@@ -97,7 +98,7 @@ function Frame({ d }: { d: BuybackDecision }) {
 export default async function BuybacksPage() {
   const [decisions, { contents: articles }] = await Promise.all([
     getRecentBuybackDecisions(WINDOW_DAYS).catch(() => [] as BuybackDecision[]),
-    getArticleList({ dealType: "自社株買い", limit: 6 }).catch(() => ({ contents: [] })),
+    getArticleList({ dealType: "自社株買い", limit: 8 }).catch(() => ({ contents: [] })),
   ]);
 
   // 銘柄の業種アイコン用（会社ロゴは持てないため業種で代替）。決定一覧の銘柄ぶんを一括取得。
@@ -107,6 +108,9 @@ export default async function BuybacksPage() {
   const sectorOf = (code: string) => briefs.get(code)?.sector;
 
   const listed = decisions.slice(0, LIST_LIMIT);
+  // 発行済株式比率の量感バーの基準。一覧は開示日の新しい順なので、
+  // 需給インパクトの大小（＝比率）は数字を読まないと分からなかった。
+  const maxRatio = listed.reduce((max, d) => Math.max(max, d.ratioPct ?? 0), 0);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -169,7 +173,7 @@ export default async function BuybacksPage() {
               return (
                 <li key={`${d.code}-${d.disclosedAt}-${d.title}`} className="card">
                   <div className="flex items-start gap-2">
-                    <SectorIcon sector={sectorOf(d.code)} />
+                    <SectorIcon sector={sectorOf(d.code)} size="lg" />
                     <div className="min-w-0 grow">
                       <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         <Link href={`/stocks/${d.code}`} className="font-medium text-brand-blue hover:underline">
@@ -200,6 +204,12 @@ export default async function BuybacksPage() {
                           </a>
                         )}
                       </span>
+                      {/* 発行済株式比率の量感バー。枠が最大の銘柄だけ金色にする。 */}
+                      <MagnitudeBar
+                        value={d.ratioPct ?? 0}
+                        max={maxRatio}
+                        tone={d.ratioPct !== null && d.ratioPct === maxRatio ? "gold" : "navy"}
+                      />
                     </div>
                   </div>
                 </li>
@@ -209,16 +219,12 @@ export default async function BuybacksPage() {
         )}
       </section>
 
-      {articles.length > 0 && (
-        <section className="mb-10">
-          <h2 className="mb-3 text-xl font-bold text-brand-navy">自社株買いの解説記事</h2>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {articles.map((article) => (
-              <ArticleCard key={article.id} article={article} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* 他のデータページと同じ「先頭1件を大きく＋最大8件」のアイキャッチ帯に統一（2026-08-29）。 */}
+      <RelatedArticles
+        title="自社株買いの解説記事"
+        lead="直近の自社株買い決議を、取引ごとの解説記事で読めます。"
+        articles={articles}
+      />
 
       <section id="faq" className="mb-8 border-t border-rule pt-4">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>
