@@ -2093,3 +2093,24 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - テスト: `tests/test_api_usage.py` 11→17件、`tests/test_notify.py` 19→23件。全28ファイル通過。
 - 残: 実データはまだ0件。EDINET Blog Hourly は平日9:00-21:00 JSTのため、
   2026-08-31(月)の稼働後に `tools/api_usage_report.py` を回して1日あたりの定常コストを確定する。
+
+## 2026-08-29 Search Consoleを定点観測できるようにした（`tools/gsc_report.py`）
+- 背景: SEO施策はバックテスト不能で判定材料はGSCの前後比較しかない（CLAUDE.md §4）のに、
+  数値はユーザーのスクリーンショット共有頼みだった。結果、`progress_seo_aio_30day_plan.md` も
+  `progress_growth_top10.md` #1/#4 も効果判定が「GSC反映待ち」のまま止まっていた。
+- 実測（先に現状を測った。GA4 2026-08-01〜08-28）: 自然検索171セッション/28日
+  （Google 127・Yahoo 43・Bing 1）。着地ページはTOPの25件が最大で、記事・銘柄ページは
+  1〜4件ずつに分散。ページ数6,000超に対して流入が桁で小さい完全な長尾。
+- 追加: `tools/gsc_report.py`。Search Analytics APIから ①全体（CTR・平均掲載順位は**表示回数で加重**。
+  行ごとの単純平均だと表示1回のクエリが上位ページと同じ重みになる）②ページ種別の内訳
+  ③上位クエリ ④**CTR改善候補**（10位以内・表示20回以上・CTRがサイト平均未満。「平均CTRなら
+  +Nクリック」の取りこぼし順）⑤**あと一歩**（11〜20位）⑥上位ページと表示のあったURL数
+  （インデックスされて検索に出ているページ数の下限）を前期間比つきで出す。
+  集計が2〜3日遅れるため既定の期間は3日前まで。
+- 追加: `lib/gcp_auth.py`。サービスアカウントのトークン取得をGA4（`tools/ga4_clicks.py`）と共用し、
+  スコープだけ引数で切り替える。`ga4_clicks.credentials_path/access_token` は薄い委譲に変更（挙動は同じ）。
+- 未完（ユーザー作業2つ。どちらも1回だけ）: GCPで Search Console API を有効化 /
+  GSC > 設定 > ユーザーと権限 で `stock-alert-bot@stock-alert-493722.iam.gserviceaccount.com` を
+  「制限付き」で追加。現時点では実データ未取得（API無効の403を確認済み＝案内文が出ることは確認できた）。
+- テスト: `tests/test_gsc_report.py` 15件を追加。全36ファイル通過（`tests/test_ga4_clicks.py` 含め失敗なし）。
+- 進捗ファイル: `docs/progress_seo_traffic.md` を新設（現状の実測値と、計測が通ってから決める施策）。

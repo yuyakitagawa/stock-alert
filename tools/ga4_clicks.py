@@ -37,6 +37,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 from dotenv import load_dotenv
 
+from lib import gcp_auth
+
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 API_ROOT = "https://analyticsdata.googleapis.com/v1beta"
@@ -48,30 +50,12 @@ CLICK_EVENT = "click"
 
 
 def credentials_path() -> str:
-    return os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gcp_key.json")
+    return gcp_auth.credentials_path()
 
 
 def access_token() -> "str | None":
-    """サービスアカウントのアクセストークン。鍵が無ければNone。
-
-    鍵はファイル（ローカルの`gcp_key.json`）と環境変数`GCP_SERVICE_ACCOUNT_JSON`（GitHub
-    Actions用。鍵ファイルは.gitignoreでリポジトリに入れていないため、CIではSecretの
-    JSON文字列を渡す）の両方から読む。"""
-    from google.auth.transport.requests import Request
-    from google.oauth2 import service_account
-
-    raw = os.getenv("GCP_SERVICE_ACCOUNT_JSON", "").strip()
-    if raw:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(raw), scopes=[SCOPE])
-    else:
-        path = credentials_path()
-        if not os.path.exists(path):
-            return None
-        creds = service_account.Credentials.from_service_account_file(path, scopes=[SCOPE])
-    creds.refresh(Request())
-    return creds.token
+    """サービスアカウントのアクセストークン。鍵が無ければNone。"""
+    return gcp_auth.access_token(SCOPE)
 
 
 # 日次PDCAで見るページの束ね方。個別URLのままだと記事127本が並んで読めないため、
@@ -154,12 +138,7 @@ def explain_error(status: int, payload: dict, property_id: str) -> str:
     reason = ""
     for d in err.get("details") or []:
         reason = d.get("reason") or reason
-    email = ""
-    try:
-        with open(credentials_path()) as f:
-            email = json.load(f).get("client_email", "")
-    except Exception:
-        pass
+    email = gcp_auth.client_email()
 
     if reason == "SERVICE_DISABLED":
         return ("Google Analytics Data API がGCPプロジェクトで無効です。\n"
