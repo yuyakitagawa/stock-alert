@@ -55,6 +55,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib import api_budget
+from lib import api_usage
 from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
@@ -146,6 +147,7 @@ def classify_filer(filer_name: str) -> dict:
         resp = client.messages.create(
             model=CLAUDE_MODEL, max_tokens=300, messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="classify_filer")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -882,6 +884,7 @@ def get_company_description(code: str, name: str) -> str:
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="company_description")
         # web_search使用時は検索結果ブロックとテキストブロックが交互に並ぶため、
         # 全テキストを連結して末尾のJSONだけを取り出す。
         text = "\n".join(b.text for b in resp.content if b.type == "text")
@@ -945,6 +948,7 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         resp = client.messages.create(
             model=CLAUDE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="filer_profile")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -1399,6 +1403,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
             max_tokens=6000,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="blog_body")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")

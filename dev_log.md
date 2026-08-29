@@ -2006,3 +2006,25 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   `tools/apply_rewritten_articles.py` はこちらを参照する（両ツールは残す＝リライト自体は続けられる）。
 - 残: 薄い記事（可視文字数1,000未満）は約30件が未処理。今後は事実カード→Claude Code執筆→PATCH反映の経路。
 - テスト: 596 passed（削除前602、うち6件が本ツールのテスト）。
+
+## 2026-08-29 API利用量をDBに記録（`api_usage`）＋利用実績レポート
+- 背景: 「APIの利用報告が欲しい」に対し、**用途別の実績がどこにも残っていない**ことが分かった。
+  2026-08-23の月次上限到達時も、バックフィルのログを後からgrepして犯人（会社説明バックフィル）を
+  推定するしかなかった。`lib/api_budget.py` は上限に**到達してから**止めるだけで、量は測っていない。
+- 追加: `lib/api_usage.py`。`record(resp, task=...)` が `messages.create()` のレスポンスから
+  入出力トークン・キャッシュ書込/読出・`server_tool_use.web_search_requests` を拾い、
+  (UTC日付, ジョブ, タスク, モデル) 単位でプロセス内に集計。プロセス終了時(atexit)に
+  `api_usage` テーブルへ**追記**する（上書きにすると毎時ジョブとバックフィルが同時に走ったとき
+  片方の消費が消える）。1呼び出しごとにHTTPを足さないので既存の処理時間に影響しない。
+- 計測点（9箇所、Python側の `messages.create()` 全件）: `classify_filer` / `company_description` /
+  `filer_profile` / `blog_body`（web/publish_blog_articles.py）、`buyback_body`、`buyback_facts`、
+  `video_script`、`translate_article`、`earnings_sentiment`。
+- コストは公開単価表からの**推定値**（Haiku 4.5 = 入力$1.00/出力$5.00 per 1Mトークン、
+  キャッシュ書込×1.25・読出×0.1、web_search $10/1,000検索）。請求額そのものではない。
+- 追加: `tools/api_usage_report.py`（日別・タスク別・ジョブ別・モデル別／`--days`／`--by`）。
+  月次上限はUTC月初に戻るためJSTではなくUTCで集計する。
+- DB: `api_usage` テーブルを作成（`usage_date` / `job` / `task` / `model` / `calls` /
+  各トークン列 / `web_search_requests` / `cost_usd`、RLS有効・service key経由のみ）。
+- 未計測: `supabase/functions/line-webhook/index.ts` の Haiku 呼び出し2箇所（Deno Edge Function、
+  手動デプロイのため今回は触っていない）。LINE Botの消費はレポートに出ない。
+- テスト: `tests/test_api_usage.py` 11件を追加。全28ファイル通過。
