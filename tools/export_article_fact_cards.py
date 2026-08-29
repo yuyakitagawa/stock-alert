@@ -47,6 +47,13 @@ DONE_LEDGER = os.path.join(REPO_ROOT, "logs", "rewritten_article_ids.txt")
 UNWRITABLE_LEDGER = os.path.join(REPO_ROOT, "logs", "unwritable_article_ids.txt")
 
 
+def _load_ledger(path: str) -> set:
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
+
 def load_done_ids() -> set:
     """候補から外す記事ID（リライト済み＋書き直せないと判断済み）。"""
     return _load_ledger(DONE_LEDGER) | _load_ledger(UNWRITABLE_LEDGER)
