@@ -8,6 +8,15 @@ name: Ops (keepalive + watchdog)
 #                               continue-on-error で緑のまま無言停止した実例: 2026-08-24）。
 #                               この便自体も数時間遅れて起動する（実測: 22:40 UTC＝翌07:40 JST）。
 #                               対象日はスクリプト側で決める（正午JSTより前の起動なら前日）。
+#   平日 08:00 UTC  watchdog_blog : edinet_blog.yml が今日1本も起動していなければ再実行する。
+#                               記事が0件で終わる障害は publish 側のゲート（候補ありで投稿0件なら
+#                               ジョブを赤にする）とLINE通知が数分で拾うが、cron自体が不発で
+#                               「1本も走らない」ケースはどのワークフローも赤にならず、
+#                               22:00 JSTのheartbeatまで13時間気づけなかった。9:00 JSTの初便から
+#                               8時間空けた17:00 JSTに置く（scheduleの遅延は実測で最大5時間のため、
+#                               これより早いと遅延を不発と誤判定して余計なAPI課金を生む）。
+#                               成否ではなく「起動したか」だけを見る（赤で終わった便は上の経路が
+#                               既に通知済みで、再実行しても同じ理由で落ちるだけ）。
 #   平日 14:30 UTC  watchdog  : daily_alert.yml が今日成功していなければ再実行する。
 #                               daily_alertのschedule実行は遅延が多く、実測では予定より最大2〜3時間遅れて
 #                               開始する。早い時刻に監視すると「まだ成功していない」と誤判定して二重起動
@@ -16,6 +25,7 @@ name: Ops (keepalive + watchdog)
 on:
   schedule:
     - cron: '0 6 * * 1-5'   # keepalive
+    - cron: '0 8 * * 1-5'   # watchdog_blog
     - cron: '0 13 * * 1-5'  # heartbeat
     - cron: '30 14 * * 1-5' # watchdog
   workflow_dispatch:
@@ -23,7 +33,7 @@ on:
       job:
         description: 'どれを実行するか'
         type: choice
-        options: [watchdog, keepalive, heartbeat]
+        options: [watchdog, watchdog_blog, keepalive, heartbeat]
         default: watchdog
 
 jobs:
@@ -43,6 +53,49 @@ jobs:
           git config user.name  "GitHub Actions"
           git commit --allow-empty -m "chore: keepalive [skip ci]"
           git push
+
+  watchdog_blog:
+    if: github.event.schedule == '0 8 * * 1-5' || inputs.job == 'watchdog_blog'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Check if edinet blog ran today
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          # 起動の有無だけを見る。conclusion は問わない（赤で終わった便は publish 側のゲートと
+          # LINE通知が既に拾っており、同じ理由でもう一度落とすだけになるため）。
+          RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/edinet_blog.yml/runs?per_page=20" \
+            --jq "[.workflow_runs[] | select(.created_at | startswith(\"$TODAY\"))] | length")
+          echo "Runs started today: $RUNS"
+          if [ "${RUNS:-0}" -gt 0 ]; then
+            echo "needs_trigger=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_trigger=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger edinet blog if it never ran today
+        if: steps.check.outputs.needs_trigger == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "edinet_blog did not start today. Triggering..."
+          gh workflow run edinet_blog.yml --repo "${{ github.repository }}"
+
+      - name: 不発をLINE通知
+        if: steps.check.outputs.needs_trigger == 'true'
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          pip install --quiet requests
+          python -m lib.notify \
+            "⚠️ EDINET Blog Hourly が本日1本も起動していません（cron不発の疑い）。手動起動しました" \
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/edinet_blog.yml" \
+            --dedupe-key "wf_edinet_blog_never_started"
 
   heartbeat:
     if: github.event.schedule == '0 13 * * 1-5' || inputs.job == 'heartbeat'

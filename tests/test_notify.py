@@ -46,9 +46,12 @@ class NotifyTest(unittest.TestCase):
             with mock.patch("lib.supabase_client.is_configured", return_value=True), \
                     mock.patch("lib.supabase_client.select_one",
                                return_value={"dedupe_key": "k"}), \
+                    mock.patch("lib.supabase_client.upsert") as up, \
                     mock.patch("lib.notify.push") as push:
                 self.assertFalse(notify.once("k", "本文"))
                 push.assert_not_called()
+        # 抑制した回数も数える（何回ぶん黙ったかを後から追えるように）
+        self.assertEqual(up.call_args.args[1][0]["sent_count"], 1)
 
     def test_once_sends_and_records_the_first_time(self):
         with mock.patch.dict(os.environ, CREDS, clear=True):
