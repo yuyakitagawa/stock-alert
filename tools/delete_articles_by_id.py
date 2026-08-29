@@ -33,6 +33,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
+from lib import article_redirects
 from tools.reclassify_blog_articles import fetch_all_articles
 from tools.cleanup_duplicate_blog_articles import delete_article
 
@@ -77,13 +78,20 @@ def main():
         json.dump(targets, f, ensure_ascii=False, indent=1)
     print(f"\n削除前の全フィールドを保存: {backup}")
 
-    deleted = 0
+    deleted, redirects = 0, []
     for a in targets:
         if delete_article(a["id"]):
             deleted += 1
+            target = article_redirects.stock_target(a)
+            if target:
+                redirects.append({"article_id": a["id"], "target_path": target,
+                                  "reason": "deleted_by_id"})
         else:
             print(f"  ⚠ {a['id']} の削除に失敗しました")
         time.sleep(0.3)
+    if redirects:
+        article_redirects.record_many(redirects)
+        print(f"リダイレクト登録: {len(redirects)}件（削除したURLは銘柄ページへ引き継ぐ）")
     print(f"削除: {deleted}/{len(targets)}件")
 
 

@@ -116,25 +116,50 @@ def test_report_returns_1_and_prints_fix_when_api_fails():
     assert rc == 1 and "権限がありません" in buf.getvalue()
 
 
+def _fake_search_analytics(overall, queries, pages):
+    def fake_sa(token, site, start, end, dimensions, limit=1000):
+        if not dimensions:
+            return overall, ""
+        return (queries if dimensions == ["query"] else pages), ""
+    return fake_sa
+
+
 def test_report_prints_all_sections_from_api_rows():
-    queries = [_row("大量保有報告書 とは", 30, 500, 4.0), _row("アクティビスト 一覧", 0, 300, 12.0)]
+    overall = [{"clicks": 139, "impressions": 3475, "ctr": 0.04, "position": 9.8}]
+    queries = [_row("大量保有報告書 とは", 10, 100, 4.0), _row("アクティビスト 一覧", 0, 30, 12.0)]
     pages = [_row("https://kujira-watch.com/articles/a", 20, 400, 5.0),
              _row("https://kujira-watch.com/stocks/6976", 10, 400, 8.0)]
 
-    def fake_sa(token, site, start, end, dimensions, limit=1000):
-        return (queries if dimensions == ["query"] else pages), ""
-
     with mock.patch.object(g.gcp_auth, "access_token", return_value="tok"), \
-            mock.patch.object(g, "search_analytics", side_effect=fake_sa):
+            mock.patch.object(g, "search_analytics",
+                              side_effect=_fake_search_analytics(overall, queries, pages)):
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = g.report(28, 10)
     out = buf.getvalue()
     assert rc == 0
-    for section in ("■ 全体", "■ ページ種別", "■ 上位クエリ", "■ CTR改善候補", "■ あと一歩", "■ 上位ページ"):
+    for section in ("■ 全体", "■ ページ種別", "■ 上位クエリ", "■ CTR改善候補・ページ別",
+                    "■ あと一歩・ページ別", "■ CTR改善候補・クエリ別", "■ 上位ページ"):
         assert section in out
-    assert "アクティビスト 一覧" in out          # あと一歩（12位）に出る
+    assert "アクティビスト 一覧" in out          # あと一歩・クエリ別（12位）に出る
     assert "/stocks/6976" in out                  # 上位ページはパス表示
+
+
+def test_report_takes_totals_from_dimensionless_call_not_query_rows():
+    """クエリ別の合計を全体として出すと、GSCの匿名化で落ちた行のぶんだけ実態より小さくなる
+    （実測でクリック139のうちクエリ別に見えたのは14＝10%）。"""
+    overall = [{"clicks": 139, "impressions": 3475, "ctr": 0.04, "position": 9.8}]
+    queries = [_row("見えているクエリ", 14, 295, 22.0)]
+
+    with mock.patch.object(g.gcp_auth, "access_token", return_value="tok"), \
+            mock.patch.object(g, "search_analytics",
+                              side_effect=_fake_search_analytics(overall, queries, [])):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            g.report(28, 10)
+    out = buf.getvalue()
+    assert "クリック           139" in out
+    assert "10.1%（14/139クリック）" in out       # クエリ別に見えている割合も出す
 
 
 def test_show_sites_reports_missing_permission():

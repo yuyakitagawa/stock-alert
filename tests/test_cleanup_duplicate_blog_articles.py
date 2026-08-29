@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.cleanup_duplicate_blog_articles import find_duplicates
+from tools.cleanup_duplicate_blog_articles import find_duplicate_pairs, find_duplicates
 
 
 def test_find_duplicates_keeps_earliest_and_deletes_later():
@@ -130,6 +130,19 @@ def test_find_duplicates_keeps_buyback_articles_of_different_stock_or_date():
     assert find_duplicates(articles) == []
 
 
+def test_find_duplicate_pairs_returns_survivor_for_each_deleted_article():
+    """削除した記事URLは残した方の記事へリダイレクトするため、組で返す必要がある
+    （tools/cleanup_duplicate_blog_articles が lib/article_redirects に渡す）。"""
+    articles = [
+        {"id": "late", "stockCode": "4812", "dealDate": "2026-08-17T00:00:00.000Z",
+         "filerName": "Oasis", "ratioChangePct": 1.2, "createdAt": "2026-08-17T09:30:00.000Z"},
+        {"id": "early", "stockCode": "4812", "dealDate": "2026-08-17T00:00:00.000Z",
+         "filerName": "Oasis", "ratioChangePct": 1.2, "createdAt": "2026-08-17T08:10:00.000Z"},
+    ]
+    pairs = find_duplicate_pairs(articles)
+    assert [(s["id"], d["id"]) for s, d in pairs] == [("early", "late")]
+
+
 if __name__ == "__main__":
     test_find_duplicates_keeps_earliest_and_deletes_later()
     test_find_duplicates_ignores_different_filer_or_date()
@@ -139,4 +152,5 @@ if __name__ == "__main__":
     test_find_duplicates_keeps_same_filer_with_different_ratio_change()
     test_find_duplicates_catches_buyback_articles_without_filer_name()
     test_find_duplicates_keeps_buyback_articles_of_different_stock_or_date()
-    print("全テスト成功 (8件)")
+    test_find_duplicate_pairs_returns_survivor_for_each_deleted_article()
+    print("全テスト成功 (9件)")

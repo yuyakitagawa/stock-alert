@@ -139,7 +139,7 @@ export async function getCompanyInfo(code: string): Promise<CompanyInfo | null> 
   try {
     const supabase = getSupabaseServerClient();
 
-    const [{ data: meta }, { data: rankingRows }] = await Promise.all([
+    const [metaResult, rankingResult] = await Promise.all([
       supabase
         .from("jpx_stock_list")
         .select("name, sector, description, has_yutai, yutai_month")
@@ -152,6 +152,18 @@ export async function getCompanyInfo(code: string): Promise<CompanyInfo | null> 
         .order("date", { ascending: false })
         .limit(PRICE_HISTORY_DAYS),
     ]);
+
+    // supabase-jsは失敗を例外ではなく error で返すため、握り潰すと「原因がログに残らないまま
+    // 銘柄ページが404になる」ことが起きる（2026-08-29、本番だけ47ページが404だった調査）。
+    // 片方が落ちても、もう片方が取れていればページは成立させる。
+    if (metaResult.error) {
+      console.error(`[getCompanyInfo] code=${code} jpx_stock_list 取得失敗`, metaResult.error.message);
+    }
+    if (rankingResult.error) {
+      console.error(`[getCompanyInfo] code=${code} gen_rankings 取得失敗`, rankingResult.error.message);
+    }
+    const meta = metaResult.data;
+    const rankingRows = rankingResult.data;
 
     const latest = rankingRows?.[0];
     if (!meta && !latest) return null;
@@ -197,12 +209,15 @@ export async function searchStockMaster(
 
   try {
     const supabase = getSupabaseServerClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("jpx_stock_list")
       .select("code, name")
       .or(`code.ilike.${q}%,name.ilike.%${q}%`)
       .order("code")
       .limit(MASTER_SEARCH_LIMIT);
+    if (error) {
+      console.error(`[searchStockMaster] q=${keyword} 取得失敗`, error.message);
+    }
     return (data ?? [])
       .filter((r) => r.code && r.name)
       .map((r) => ({ stockCode: String(r.code), stockName: r.name }));
