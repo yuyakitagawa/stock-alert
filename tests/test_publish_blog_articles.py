@@ -336,6 +336,31 @@ def _already_published_response(contents):
     return resp
 
 
+def test_already_published_skips_when_lookup_fails():
+    """既報確認がHTTPエラー・例外で判定不能なときは既報扱い(True)にして投稿を見送る。
+    判定不能のまま投稿すると重複記事が恒久的に残り、filerNameを持たない世代では回収も
+    できない（実例: 9706に同一記事が11件）。本スクリプトは毎時走り直近数日の開示を
+    毎回見直すので、見送っても次の便で取り直せる。"""
+    error_resp = mock.MagicMock()
+    error_resp.status_code = 500
+    with mock.patch.object(m.requests, "get", return_value=error_resp):
+        assert m.already_published("9706", "2025-10-07", 120.0, "みずほ銀行", 0.5) is True
+
+    with mock.patch.object(m.requests, "get", side_effect=RuntimeError("boom")):
+        assert m.already_published("9706", "2025-10-07", 120.0, "みずほ銀行", 0.5) is True
+
+
+def test_already_published_narrows_query_to_the_disclosure_date():
+    """照会を開示日まで絞り込む。銘柄コードだけで引いてlimitを被せていた頃は、
+    記事が多い銘柄で既報が応答に入らず重複と判定できない穴があった。"""
+    with mock.patch.object(m.requests, "get",
+                           return_value=_already_published_response([])) as get:
+        m.already_published("9706", "2025-10-07", 120.0, "みずほ銀行", 0.5)
+    filters = get.call_args.kwargs["params"]["filters"]
+    assert "stockCode[equals]9706" in filters
+    assert "dealDate[begins_with]2025-10-07" in filters
+
+
 def test_already_published_true_when_filer_and_ratio_change_match():
     # 株価キャッシュ更新でdealAmountが大きくズレても、提出者名＋比率変化幅が一致すれば重複と判定する
     # （2026-08-17の17件重複投稿の再発防止）
@@ -2039,4 +2064,6 @@ if __name__ == "__main__":
     test_exit_code_for_run_distinguishes_failure_from_legitimate_zero()
     test_build_and_publish_counts_generation_attempts_when_all_fail()
     test_build_and_publish_reports_zero_attempts_when_filtered_out()
-    print("全テスト成功 (133件)")
+    test_already_published_skips_when_lookup_fails()
+    test_already_published_narrows_query_to_the_disclosure_date()
+    print("全テスト成功 (135件)")
