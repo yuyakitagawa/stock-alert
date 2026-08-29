@@ -114,6 +114,30 @@ def test_unknown_reason_is_treated_as_an_anomaly():
     assert led.has_anomaly() is True
 
 
+def test_notification_is_deduped_by_cause():
+    """同じ原因で毎便鳴らさない（毎時13便＝13通を防ぐ）。原因が変われば別キーで鳴らし直す。"""
+    led = PublishLedger("publish_blog_articles")
+    led.start(1)
+    led.skip(pl.FAIL_GENERATION, "A(1111)")
+    with mock.patch("lib.publish_ledger.notify.error") as err:
+        led.finish()
+    key = err.call_args.kwargs["dedupe_key"]
+    assert key == "publish_ledger:publish_blog_articles:generation_failed"
+
+    # 同じ原因なら件数が違ってもキーは同じ（窓の内側なら notify 側が抑える）
+    again = PublishLedger("publish_blog_articles")
+    again.start(2)
+    again.skip(pl.FAIL_GENERATION, "B(2222)")
+    again.skip(pl.FAIL_GENERATION, "C(3333)")
+    assert again.dedupe_key() == key
+
+    # 別の原因が乗ったら鳴らし直す
+    other = PublishLedger("publish_blog_articles")
+    other.start(1)
+    other.skip(pl.FAIL_PUBLISH, "D(4444)")
+    assert other.dedupe_key() != key
+
+
 if __name__ == "__main__":
     test_all_expected_skips_is_not_an_anomaly()
     test_generation_failure_is_an_anomaly()
@@ -123,4 +147,5 @@ if __name__ == "__main__":
     test_permission_error_stop_is_an_anomaly()
     test_summary_shows_the_breakdown()
     test_unknown_reason_is_treated_as_an_anomaly()
-    print("OK: test_publish_ledger (8 tests)")
+    test_notification_is_deduped_by_cause()
+    print("OK: test_publish_ledger (9 tests)")
