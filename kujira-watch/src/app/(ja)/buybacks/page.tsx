@@ -12,6 +12,7 @@ import { formatAmountOku, getRecentBuybackDecisions, type BuybackDecision } from
 import type { FaqItem } from "@/lib/faqData";
 import { formatDate } from "@/lib/format";
 import { getArticleList } from "@/lib/microcms";
+import { getPublishedStockCodes } from "@/lib/publishedPages";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const revalidate = 3600;
@@ -96,9 +97,11 @@ function Frame({ d }: { d: BuybackDecision }) {
 }
 
 export default async function BuybacksPage() {
-  const [decisions, { contents: articles }] = await Promise.all([
+  const [decisions, { contents: articles }, publishedCodes] = await Promise.all([
     getRecentBuybackDecisions(WINDOW_DAYS).catch(() => [] as BuybackDecision[]),
     getArticleList({ dealType: "自社株買い", limit: 8 }).catch(() => ({ contents: [] })),
+    // 銘柄ページは公開しているものだけリンクにする（lib/publishedPages.ts）。
+    getPublishedStockCodes().catch(() => new Set<string>()),
   ]);
 
   // 銘柄の業種アイコン用（会社ロゴは持てないため業種で代替）。決定一覧の銘柄ぶんを一括取得。
@@ -176,9 +179,15 @@ export default async function BuybacksPage() {
                     <SectorIcon sector={sectorOf(d.code)} size="lg" />
                     <div className="min-w-0 grow">
                       <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <Link href={`/stocks/${d.code}`} className="font-medium text-brand-blue hover:underline">
-                          {d.stockName}（{d.code}）
-                        </Link>
+                        {publishedCodes.has(d.code) ? (
+                          <Link href={`/stocks/${d.code}`} className="font-medium text-brand-blue hover:underline">
+                            {d.stockName}（{d.code}）
+                          </Link>
+                        ) : (
+                          <span className="font-medium">
+                            {d.stockName}（{d.code}）
+                          </span>
+                        )}
                         {d.willCancel && (
                           <span className="rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">
                             消却

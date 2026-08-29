@@ -23,6 +23,7 @@ import {
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { isIndexableInvestorPage } from "@/lib/pageIndexability";
+import { getPublishedStockCodes } from "@/lib/publishedPages";
 import AdUnit from "@/components/AdUnit";
 import FilerReturnRecord from "@/components/FilerReturnRecord";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
@@ -89,10 +90,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     getFilersWithProfile(),
   ]);
   if (holdings.length === 0) return {};
-  const indexable = isIndexableInvestorPage({
-    holdingCount: holdings.length,
-    hasProfile: filersWithProfile.has(filerName),
-  });
+  if (
+    !isIndexableInvestorPage({
+      holdingCount: holdings.length,
+      hasProfile: filersWithProfile.has(filerName),
+    })
+  ) {
+    return {};
+  }
 
   const title = `${filerName}の大量保有報告書・保有銘柄一覧`;
   const description = `${filerName}がEDINET大量保有報告書（5%ルール）で開示した保有銘柄・保有比率の推移を${holdings.length}件まとめました。`;
@@ -101,9 +106,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    // 解説文が無く開示も1件だけの投資家は、EDINETの1行を表に起こしただけのページになる。
-    // 判定は lib/pageIndexability.ts に集約（サイトマップ側と条件を必ず一致させる）。
-    ...(indexable ? {} : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
       types: { "application/rss+xml": `${url}/feed.xml` },
@@ -118,14 +120,28 @@ export default async function InvestorPage({ params }: Props) {
   if (!resolved) notFound();
   const { filerName } = resolved;
 
-  const [holdings, classification, returnPositions] = await Promise.all([
+  const [holdings, classification, returnPositions, filersWithProfile] = await Promise.all([
     getFilerHoldings(filerName),
     getFilerClassification(filerName),
     // 開示テーブルの「3ヶ月後」列。買い開示のうち3ヶ月が経過したものだけ値が入る。
     getFilerReturnPositions(filerName),
+    getFilersWithProfile(),
   ]);
+  // 銘柄ページは公開しているものだけリンクにする（薄いものは404。lib/publishedPages.ts）。
+  const publishedCodes = await getPublishedStockCodes().catch(() => new Set<string>());
 
   if (holdings.length === 0) {
+    notFound();
+  }
+
+  // 解説文が無く開示も1件だけの投資家は、EDINETの1行を表に起こしただけのページになるため
+  // 公開しない（2026-08-29にnoindexから404へ変更。判定は lib/publishedPages.ts と共通）。
+  if (
+    !isIndexableInvestorPage({
+      holdingCount: holdings.length,
+      hasProfile: filersWithProfile.has(filerName),
+    })
+  ) {
     notFound();
   }
 
@@ -165,7 +181,9 @@ export default async function InvestorPage({ params }: Props) {
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: `${filerName}の保有銘柄一覧`,
-    itemListElement: holdings.map((h, index) => ({
+    itemListElement: holdings
+      .filter((h) => publishedCodes.has(h.issuerCode))
+      .map((h, index) => ({
       "@type": "ListItem",
       position: index + 1,
       name: `${h.issuerName}（${h.issuerCode}）`,
@@ -234,9 +252,7 @@ export default async function InvestorPage({ params }: Props) {
           <ul className="space-y-2 text-sm">
             {majorHoldings.map((h) => (
               <li key={h.issuerCode}>
-                <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
-                  {h.issuerName}（{h.issuerCode}）
-                </Link>
+                <StockCell code={h.issuerCode} name={h.issuerName} published={publishedCodes} />
                 {h.holdingRatio !== null && (
                   <span className="ml-2 text-xs text-foreground/40">保有比率{h.holdingRatio}%</span>
                 )}
@@ -253,9 +269,7 @@ export default async function InvestorPage({ params }: Props) {
               <ul className="space-y-2 text-sm">
                 {recentBuys.map((h) => (
                   <li key={h.issuerCode}>
-                    <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
-                      {h.issuerName}（{h.issuerCode}）
-                    </Link>
+                    <StockCell code={h.issuerCode} name={h.issuerName} published={publishedCodes} />
                     <span className="ml-2 text-xs">
                       <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
                     </span>
@@ -270,9 +284,7 @@ export default async function InvestorPage({ params }: Props) {
               <ul className="space-y-2 text-sm">
                 {recentSells.map((h) => (
                   <li key={h.issuerCode}>
-                    <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
-                      {h.issuerName}（{h.issuerCode}）
-                    </Link>
+                    <StockCell code={h.issuerCode} name={h.issuerName} published={publishedCodes} />
                     <span className="ml-2 text-xs">
                       <RatioTransition ratio={h.holdingRatio} prior={h.holdingRatioPrior} />
                     </span>
@@ -311,9 +323,7 @@ export default async function InvestorPage({ params }: Props) {
                   {formatDate(h.discDate)}
                 </TableCell>
                 <TableCell>
-                  <Link href={`/stocks/${h.issuerCode}`} className="text-brand-blue hover:underline">
-                    {h.issuerName}（{h.issuerCode}）
-                  </Link>
+<StockCell code={h.issuerCode} name={h.issuerName} published={publishedCodes} />
                 </TableCell>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                   {disclosureDocLabel(h)}
@@ -374,5 +384,30 @@ export default async function InvestorPage({ params }: Props) {
       )}
       <AdUnit placement="bottom" />
     </div>
+  );
+}
+
+// 保有銘柄の表示。解説記事も事業内容の説明も無い銘柄のページは公開していない（404）ため、
+// その銘柄はリンクにせず名前だけ出す（lib/publishedPages.ts の判定に合わせる）。
+function StockCell({
+  code,
+  name,
+  published,
+}: {
+  code: string;
+  name: string;
+  published: Set<string>;
+}) {
+  if (!published.has(code)) {
+    return (
+      <span>
+        {name}（{code}）
+      </span>
+    );
+  }
+  return (
+    <Link href={`/stocks/${code}`} className="text-brand-blue hover:underline">
+      {name}（{code}）
+    </Link>
   );
 }

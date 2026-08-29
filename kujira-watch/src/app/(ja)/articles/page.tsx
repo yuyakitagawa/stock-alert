@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import { getArticleList } from "@/lib/microcms";
+import { getPublishedDates } from "@/lib/publishedPages";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 // 記事の通覧ページ。/articles/[id] は800本以上あるのに一覧が無く、読者は
@@ -25,6 +26,8 @@ export const revalidate = 60;
 
 export default async function ArticlesPage() {
   const { contents, totalCount } = await getArticleList({ limit: INITIAL_ARTICLES_COUNT });
+  // 開示が少ない日の取引日ページは公開していない（404）ので、その日はリンクを出さない。
+  const publishedDates = [...(await getPublishedDates().catch(() => new Set<string>()))];
   const url = `${SITE_URL}/articles`;
 
   const breadcrumbJsonLd = {
@@ -76,7 +79,11 @@ export default async function ArticlesPage() {
       {contents.length === 0 ? (
         <p className="text-foreground/50">記事がまだありません。</p>
       ) : (
-        <InfiniteArticleList initialArticles={contents} totalCount={totalCount} />
+        <InfiniteArticleList
+          initialArticles={contents}
+          totalCount={totalCount}
+          publishedDates={publishedDates}
+        />
       )}
     </div>
   );

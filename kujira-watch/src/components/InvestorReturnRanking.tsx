@@ -31,11 +31,20 @@ type Selection = typeof ALL | DealType;
 export default function InvestorReturnRanking({
   rows,
   size,
+  publishedFilerNames,
+  publishedStockCodes,
 }: {
   rows: InvestorReturnRow[];
   size: number;
+  /** 公開している投資家ページの提出者名。ここに無い投資家はリンクにしない（404を作らない）。 */
+  publishedFilerNames: string[];
+  /** 公開している銘柄ページのコード。 */
+  publishedStockCodes: string[];
 }) {
   const [selected, setSelected] = useState<Selection>(ALL);
+  // Setはサーバー→クライアントの境界を越えられないため配列で受け取ってここで組み立てる。
+  const publishedFilers = useMemo(() => new Set(publishedFilerNames), [publishedFilerNames]);
+  const publishedCodes = useMemo(() => new Set(publishedStockCodes), [publishedStockCodes]);
 
   // 該当0名の分類はボタンごと出さない（押しても空になるボタンを並べない）。
   const options = useMemo(() => {
@@ -110,12 +119,18 @@ export default function InvestorReturnRanking({
               </span>
               {/* 投資家のロゴは持てないため、分類の絵文字＋分類色のアイコンで代替する。 */}
               <DealTypeIcon dealType={row.category} />
-              <Link
-                href={investorPath(row.filerId, row.filerName)}
-                className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
-              >
-                {displayFilerName(row.filerName)}
-              </Link>
+              {publishedFilers.has(row.filerName) ? (
+                <Link
+                  href={investorPath(row.filerId, row.filerName)}
+                  className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
+                >
+                  {displayFilerName(row.filerName)}
+                </Link>
+              ) : (
+                <span className="min-w-0 grow font-medium [overflow-wrap:anywhere]">
+                  {displayFilerName(row.filerName)}
+                </span>
+              )}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
               {/* 分類で絞り込んでいる間は全行が同じ分類なのでラベルを繰り返さない。 */}
@@ -127,9 +142,15 @@ export default function InvestorReturnRanking({
               )}
               <span className="flex items-center gap-1">
                 最高
-                <Link href={`/stocks/${row.bestStockCode}`} className="text-brand-blue hover:underline">
-                  {row.bestStockName}（{formatSignedPercent(row.bestReturn, 0)}）
-                </Link>
+                {publishedCodes.has(row.bestStockCode) ? (
+                  <Link href={`/stocks/${row.bestStockCode}`} className="text-brand-blue hover:underline">
+                    {row.bestStockName}（{formatSignedPercent(row.bestReturn, 0)}）
+                  </Link>
+                ) : (
+                  <span>
+                    {row.bestStockName}（{formatSignedPercent(row.bestReturn, 0)}）
+                  </span>
+                )}
               </span>
               <span>最終買い{formatDate(row.latestBuyDate)}</span>
               <span
