@@ -16,6 +16,7 @@ import RelatedArticles from "@/components/RelatedArticles";
 import SectorIcon from "@/components/SectorIcon";
 import MagnitudeBar from "@/components/MagnitudeBar";
 import AdUnit from "@/components/AdUnit";
+import FactBox from "@/components/FactBox";
 import { getAllListedCodes, getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
 
@@ -145,6 +146,23 @@ export default async function ActivistsPage() {
     </li>
   );
 
+  // 冒頭の直答文とファクトボックス用の数値。「アクティビストは今どの銘柄を狙っているか」という
+  // 包括クエリにページの1文目で答えるため（GEO=生成AI検索での引用最適化）。数値はすべて
+  // 同じページで表示している集計そのもので、LLM生成は挟まない。
+  const topAttention = attentionStocksAll[0] ?? null;
+  const latestMoveDate = recentMoves.reduce(
+    (latest, move) => (move.discDate > latest ? move.discDate : latest),
+    ""
+  );
+
+  const leadSentence =
+    `アクティビスト（物言う株主）は直近${MOVES_WINDOW_DAYS}日間に${attentionStocksAll.length}銘柄を買い入れました。` +
+    (topAttention
+      ? `買い入れ幅が最も大きいのは${topAttention.issuerName}（${topAttention.issuerCode}）の${topAttention.totalDelta}ptです。`
+      : "") +
+    `現在アクティビストが大量保有（5%以上）を開示している銘柄は${summary.stockCount}銘柄で、` +
+    `うち${summary.multiHolderStocks.length}銘柄は複数のファンドが同時に保有しています。`;
+
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -168,8 +186,12 @@ export default async function ActivistsPage() {
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
+        {/* 1文目で「今どこを狙っているか」に数字で答える。見出し直下の短い断定文はAI検索・
+            強調スニペットが最も抜き出しやすい位置。JSXの改行が余分な半角スペースになって
+            日本語の文中に入るため、文は文字列として組み立ててから流し込む。 */}
+        <p className="mt-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
         <p className="mt-2 text-sm leading-relaxed text-foreground/70">
-          アクティビスト（物言う株主）が直近{MOVES_WINDOW_DAYS}日に買い入れた銘柄を、増加幅の大きい順に表示しています。
+          下の一覧は直近{MOVES_WINDOW_DAYS}日に買い入れた銘柄を、増加幅の大きい順に並べたものです。
           <InfoTip
             content={
               <>
@@ -182,6 +204,23 @@ export default async function ActivistsPage() {
           {attentionOmitted > 0 && `（増加幅の大きい上位${ATTENTION_RENDER_LIMIT}銘柄を表示。ほか${attentionOmitted}銘柄は各銘柄ページでご確認ください）`}
         </p>
       </div>
+
+      <FactBox
+        facts={[
+          { label: `直近${MOVES_WINDOW_DAYS}日の買い入れ`, value: `${attentionStocksAll.length}銘柄`, tone: "gain" },
+          {
+            label: "最大の買い入れ幅",
+            value: topAttention ? `${topAttention.totalDelta}pt` : "—",
+            note: topAttention?.issuerName,
+            tone: topAttention ? "gain" : undefined,
+          },
+          { label: "保有中の銘柄", value: `${summary.stockCount}銘柄`, note: `開示${summary.holdingCount}件` },
+          { label: "複数ファンドが保有", value: `${summary.multiHolderStocks.length}銘柄` },
+        ]}
+        caption={`出典はEDINETの大量保有報告書。買い入れは提出者の保有比率の増加分（新規保有は今回比率）を銘柄ごとに合算した値です。${
+          latestMoveDate ? `直近の開示日は${formatDate(latestMoveDate)}。` : ""
+        }保有中の銘柄数は、売却で5%を下回った銘柄を除いた現在の保有です。`}
+      />
 
       <section className="mb-10">
         {attentionStocks.length === 0 ? (

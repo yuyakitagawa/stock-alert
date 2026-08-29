@@ -1,5 +1,6 @@
 import type { ArticleContent } from "@/types/article";
-import { formatDate, formatDealAmount, isSellArticle } from "./format";
+import type { StockFiler } from "./investors";
+import { displayFilerName, formatDate, formatDealAmount, isSellArticle } from "./format";
 
 export type StockDealSummary = {
   investorCount: number;
@@ -69,5 +70,35 @@ export function formatStockDealSummary(
   }
   if (buyCount > 0 || sellCount > 0) text += "です。";
   if (topCategory) text += `提出者の分類では「${topCategory}」による届出が最も多くなっています。`;
+  return text;
+}
+
+/**
+ * 銘柄ページの見出し直下に置く直答文。h1（「◯◯の大株主・株主構成」）＝想定クエリに、
+ * ページの1文目でそのまま答えるためのもの（GEO=生成AI検索での引用最適化）。
+ * 一覧・表を読まないと分からなかった「誰が何%持っているか」を文章にする。
+ * filersは保有比率の降順で渡ってくる前提（getFilersByStockCode）。
+ * 保有比率は開示のたびに変わるので、必ず開示日を添える（日付の無い数字を引用させない）。
+ */
+export function formatStockHolderLead(
+  stockName: string,
+  code: string,
+  filers: StockFiler[]
+): string {
+  if (filers.length === 0) return "";
+  const [top, second] = filers;
+  let text =
+    `${stockName}（${code}）の株式について大量保有報告書（5%ルール）を提出している投資家は` +
+    `${filers.length}者です。`;
+  if (top.latestRatio !== null) {
+    text +=
+      `保有比率が最も高いのは${displayFilerName(top.filerName)}（${top.category}）の` +
+      `${top.latestRatio}%` +
+      (top.latestDiscDate ? `（${formatDate(top.latestDiscDate)}の開示時点）` : "") +
+      "です。";
+    if (second && second.latestRatio !== null) {
+      text += `次いで${displayFilerName(second.filerName)}が${second.latestRatio}%を保有しています。`;
+    }
+  }
   return text;
 }

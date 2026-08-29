@@ -28,6 +28,8 @@ import FilerReturnRecord from "@/components/FilerReturnRecord";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildInvestorFaqItems } from "@/lib/investorFaq";
+import FactBox from "@/components/FactBox";
+import { buildInvestorSummary, formatInvestorSummary } from "@/lib/investorSummary";
 import { getFilerReturnPositions, formatSignedPercent } from "@/lib/investorReturns";
 
 // データ源はEDINETの日次開示。5分周期の再検証はクローラーのアクセスがほぼ毎回
@@ -173,6 +175,11 @@ export default async function InvestorPage({ params }: Props) {
     })),
   };
 
+  // ページ冒頭の直答文とファクトボックス。AI検索は「見出し直下の短い断定文」と
+  // 定義リストの数値を抜くため、プロフィール（microCMSの手書き解説、無い投資家も多い）より
+  // 先に、必ず全投資家で出せるDB由来の事実を置く。
+  const summary = buildInvestorSummary(holdings, majorHoldings, recentBuys, recentSells);
+
   const faqItems = buildInvestorFaqItems(filerName, majorHoldings, recentBuys);
   const faqJsonLd =
     faqItems.length > 0
@@ -217,6 +224,26 @@ export default async function InvestorPage({ params }: Props) {
           <p className="text-sm text-foreground/60">{classification.description}</p>
         )}
       </div>
+      {summary && (
+        <>
+          <p className="mb-4 text-sm leading-relaxed text-foreground/80">
+            {formatInvestorSummary(filerName, category, summary)}
+          </p>
+          <FactBox
+            facts={[
+              { label: "投資家の分類", value: category },
+              { label: "保有を開示した銘柄", value: `${summary.stockCount}銘柄`, note: `開示${summary.disclosureCount}件` },
+              {
+                label: "最大の保有比率",
+                value: summary.topHolding ? `${summary.topHolding.holdingRatio}%` : "—",
+                note: summary.topHolding?.issuerName,
+              },
+              { label: "直近の開示日", value: formatDate(summary.latestDiscDate) },
+            ]}
+            caption={`集計対象はEDINETに提出された大量保有報告書・変更報告書${summary.disclosureCount}件（${formatDate(summary.firstDiscDate)}〜${formatDate(summary.latestDiscDate)}）です。保有比率は各銘柄の最新の開示時点の値で、その後の売買は反映していません。`}
+          />
+        </>
+      )}
       {classification?.profile && (
         <div className="mb-8 border-t border-rule pt-4">
           <h2 className="mb-2 text-sm font-bold text-brand-navy">{displayFilerName(filerName)}について</h2>

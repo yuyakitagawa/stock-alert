@@ -21,6 +21,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { formatDealAmount, isSellArticle } from "@/lib/format";
 import type { DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
+import FactBox from "@/components/FactBox";
 
 // 「大口投資家の動きを教えて」等の包括的な検索・LLMクエリに直答するための集約ページ。
 // 週ごとの推移（売買金額・投資家分類別）のグラフを主役にして「今が多いのか少ないのか・
@@ -140,6 +141,62 @@ function buildCategoryTrendRows(digests: ArticleDigest[], weekStarts: string[]):
   return [...byCategory.values()].sort((a, b) => b.buyTotal + b.sellTotal - (a.buyTotal + a.sellTotal));
 }
 
+// 冒頭の直答文・ファクトボックス用に直近7日を集計する。「大口投資家は今どう動いているか」という
+// 包括クエリにページの1文目で数字入りで答えるため（GEO=生成AI検索での引用最適化）。
+// 買いと売りは打ち消し合わないようグラフ・表と同じく別々に持つ（2026-08-22に削除した
+// 「取得と売却を合算した規模」のタイルと違い、方向が読める形にする）。
+const RECENT_SUMMARY_DAYS = 7;
+
+type RecentSummary = {
+  from: string;
+  to: string;
+  count: number;
+  buyAmount: number;
+  sellAmount: number;
+  topCategory: { dealType: DealType; buyAmount: number } | null;
+};
+
+function buildRecentSummary(digests: ArticleDigest[], days: number): RecentSummary | null {
+  const to = todayJst();
+  const fromDate = new Date(`${to}T00:00:00Z`);
+  fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
+  const from = fromDate.toISOString().slice(0, 10);
+
+  let count = 0;
+  let buyAmount = 0;
+  let sellAmount = 0;
+  const byCategory = new Map<DealType, number>();
+  for (const digest of digests) {
+    const date = digest.dealDate.slice(0, 10);
+    if (date < from || date > to) continue;
+    count += 1;
+    if (isSellArticle(digest.tags)) {
+      sellAmount += digest.dealAmount;
+    } else {
+      buyAmount += digest.dealAmount;
+      if (digest.dealType) {
+        byCategory.set(digest.dealType, (byCategory.get(digest.dealType) ?? 0) + digest.dealAmount);
+      }
+    }
+  }
+  if (count === 0) return null;
+  const top = [...byCategory.entries()].sort((a, b) => b[1] - a[1])[0];
+  return {
+    from,
+    to,
+    count,
+    buyAmount,
+    sellAmount,
+    topCategory: top ? { dealType: top[0], buyAmount: top[1] } : null,
+  };
+}
+
+// "8/23" 形式の短い日付（週ラベルと表記を揃える）。
+function shortDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+
 export function generateMetadata(): Metadata {
   const title = "大口投資家の週次トレンド";
   const description =
@@ -175,6 +232,20 @@ export default async function WeeklyDigestPage() {
     })
     .slice(0, 4);
 
+  const recentSummary = buildRecentSummary(digests, RECENT_SUMMARY_DAYS);
+  // JSXの改行はレンダリング時に半角スペースになり、日本語の文の途中に入ってしまう。
+  // 直答文は文字列として組み立ててから流し込む。
+  const leadSentence = recentSummary
+    ? `直近${RECENT_SUMMARY_DAYS}日間（${shortDate(recentSummary.from)}〜${shortDate(recentSummary.to)}）に` +
+      `大口投資家の開示（大量保有報告書・自社株買いなど）は${recentSummary.count}件で、` +
+      `買いが${formatDealAmount(recentSummary.buyAmount)}、売りが${formatDealAmount(recentSummary.sellAmount)}、` +
+      `差し引き${recentSummary.buyAmount >= recentSummary.sellAmount ? "買い越し" : "売り越し"}` +
+      `${formatDealAmount(Math.abs(recentSummary.buyAmount - recentSummary.sellAmount))}でした。` +
+      (recentSummary.topCategory
+        ? `買いの金額が最も大きい投資家分類は「${recentSummary.topCategory.dealType}」` +
+          `（${formatDealAmount(recentSummary.topCategory.buyAmount)}）です。`
+        : "")
+    : "";
   const amountRows = buildWeeklyAmountRows(digests, AMOUNT_TREND_WEEKS);
   // 分類別トレンドは金額トレンドの週枠の新しい方から必要数だけ切り出す（古い週→新しい週）。
   // グラフと違い表では空の列に意味が無いため、記事データが無い最古側の週は列ごと落とす。
@@ -212,11 +283,33 @@ export default async function WeeklyDigestPage() {
       </nav>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の週次トレンド</h1>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-          大口投資家の週ごとの動きをグラフで掲載しています。
+        {/* 1文目で「今どれくらい動いているか」に数字で答える。見出し直下の短い断定文は
+            AI検索・強調スニペットが最も抜き出しやすい位置。 */}
+        {leadSentence && (
+          <p className="mt-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
+        )}
+        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+          週ごとの推移は下のグラフで確認できます。
           <InfoTip content={`${SITE_NAME}がEDINET大量保有報告書をもとに集計。週別の売買金額（買い/売り）と投資家分類別の推移を示します。`} />
         </p>
       </div>
+
+      {recentSummary && (
+        <FactBox
+          facts={[
+            { label: `直近${RECENT_SUMMARY_DAYS}日の開示`, value: `${recentSummary.count}件` },
+            { label: "買い（推定）", value: formatDealAmount(recentSummary.buyAmount), tone: "gain" },
+            { label: "売り（推定）", value: formatDealAmount(recentSummary.sellAmount), tone: "loss" },
+            {
+              label: "差し引き",
+              value: formatDealAmount(Math.abs(recentSummary.buyAmount - recentSummary.sellAmount)),
+              note: recentSummary.buyAmount >= recentSummary.sellAmount ? "買い越し" : "売り越し",
+              tone: recentSummary.buyAmount >= recentSummary.sellAmount ? "gain" : "loss",
+            },
+          ]}
+          caption="出典はEDINETの大量保有報告書と適時開示（自社株買い）。金額は発行済株式数×株価×保有比率の変化からの推定値で、開示書類に記載された金額ではありません。取引日（開示の対象となった売買日）で集計しています。"
+        />
+      )}
 
       {amountRows.length < 2 && (
         <p className="mb-10 text-sm leading-relaxed text-foreground/70">

@@ -27,7 +27,7 @@ import TableRow from "@mui/material/TableRow";
 import { getAllArticlesForSitemap, getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { isIndexableStockPage } from "@/lib/pageIndexability";
-import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
+import { buildStockDealSummary, formatStockDealSummary, formatStockHolderLead } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
@@ -130,6 +130,9 @@ export default async function StockPage({ params }: Props) {
 
   const url = `${SITE_URL}/stocks/${code}`;
   const dealSummary = buildStockDealSummary(contents);
+  // 見出し直下の直答文。AI検索・強調スニペットは「タイトルに対する答えの1文」を抜くため、
+  // 大株主の一覧・表より前に文章で置く。数字はすべて下の一覧と同じEDINET開示から作る。
+  const holderLead = formatStockHolderLead(stockName, code, filers);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -184,9 +187,12 @@ export default async function StockPage({ params }: Props) {
         {" / "}
         <span className="text-foreground/70">{stockName}（{code}）</span>
       </nav>
-      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${companyInfo?.description ? "mb-2" : "mb-6"}`}>
+      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${holderLead || companyInfo?.description ? "mb-2" : "mb-6"}`}>
         {stockName}（{code}）の大株主・株主構成
       </h1>
+      {holderLead && (
+        <p className="mb-3 text-sm leading-relaxed text-foreground/80">{holderLead}</p>
+      )}
       {companyInfo?.description && (
         <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>
       )}
