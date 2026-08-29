@@ -58,6 +58,8 @@ from lib import api_budget
 from lib import api_usage
 from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
+from lib.publish_ledger import PublishLedger  # noqa: E402
+from lib import publish_ledger as pl  # noqa: E402
 from lib.utils import get_price_at_date
 from lib.writing_style import JA_STYLE_RULES, find_ai_tells
 from web.article_figures import build_article_figures, figure_html, insert_figures_into_body
@@ -1631,19 +1633,6 @@ def is_indexable_article(deal_amount_oku: float, ratio_change_pt: float) -> bool
     return abs(ratio_change_pt) >= INDEXABLE_MIN_RATIO_CHANGE_PT
 
 
-def exit_code_for_run(generation_attempts: int, published_count: int) -> int:
-    """記事化まで到達した候補があったのに1件も投稿できなかった便を異常として1を返す。
-
-    Claude APIの上限超過やmicroCMS障害では、候補は毎回そろっているのに記事だけが全滅する。
-    それでもスクリプトは正常終了しGitHub Actionsも緑のままだったため、丸1日気付けなかった
-    （2026-08-24: ANTHROPIC_API_KEYの月間上限に達し、全便が「0件処理しました」でsuccess）。
-    足切り・重複除外で候補が全部落ちた「正常な0件」はgeneration_attempts=0なので区別できる。
-    """
-    if generation_attempts > 0 and published_count == 0:
-        return 1
-    return 0
-
-
 def published_holding_keys(days: int) -> "set | None":
     """直近days日ぶんの既報記事の (銘柄コード, 開示日, 提出者名) 集合。取得失敗時は None。"""
     since = (date.today() - timedelta(days=days)).isoformat()
@@ -1692,10 +1681,10 @@ def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
 
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
                        dry_run: bool = False, backfill: bool = False,
-                       stats: "dict | None" = None) -> list:
-    """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
-    if stats is not None:
-        stats["generation_attempts"] = 0
+                       ledger: "PublishLedger | None" = None) -> list:
+    # ledger は候補1件ごとの結末を記録する台帳。「候補はあったのに公開0件」の原因
+    # （正常な見送りか、生成・投稿の失敗か）を分類して終了コードに出す。
+    ledger = ledger if ledger is not None else PublishLedger("publish_blog_articles")
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):
         print("[publish_blog_articles] MICROCMS_SERVICE_DOMAIN / MICROCMS_API_KEY 未設定のためスキップ")
         return []
@@ -1723,15 +1712,16 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         print(f"[publish_blog_articles] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
     else:
         candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
+    ledger.start(len(candidates))
     # 同一銘柄・同一開示日・同一提出者の開示が何件あるか（重複判定の緩和条件に使う）
     filing_counts = Counter(
         (str(h["issuer_code"]), h["disc_date"], h.get("filer_name", "")) for h in candidates
     )
 
     published = []
-    generation_attempts = 0
     for h in candidates:
         if max_articles is not None and len(published) >= max_articles:
+            ledger.stop_early(pl.SKIP_MAX_ARTICLES)
             break
         code = str(h["issuer_code"])
         disc_date = h["disc_date"]
@@ -1742,6 +1732,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         is_correction = is_correction_report(h.get("doc_description") or "")
         if should_wait_for_prior_ratio(h.get("doc_description") or "", prior_ratio, disc_date):
             print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合が未取得のため次の便へ持ち越し")
+            ledger.skip(pl.SKIP_WAIT_NEXT_RUN, f"{name}({code})")
             continue
         change = ratio_change_pct(
             code, filer_name, h["holding_ratio"], disc_date, prior_ratio,
@@ -1751,9 +1742,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             # 待っても直前保有割合が入らなかった変更報告書。全量を動いたとみなすと
             # 「X%を新規保有」＋過大な推定金額になるため記事化しない。
             print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合を取得できず変化幅を確定できないためスキップ")
+            ledger.skip(pl.SKIP_NO_PRIOR_RATIO, f"{name}({code})")
             continue
         if change <= 0:
             print(f"  ⏭ {name}({code}): 前回開示から保有比率が変わっていないためスキップ")
+            ledger.skip(pl.SKIP_NO_RATIO_CHANGE, f"{name}({code})")
             continue
         # 短期大量譲渡の開示には「譲渡の相手方・単価」が載っており、単価×数量で実額が出せる。
         # 実額が出せた開示では概算を使わない（実例: 日立製作所→日立建機は開示日終値ベースの
@@ -1768,6 +1761,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             deal_amount = estimate_deal_amount_oku(code, change, disc_date)
             if deal_amount is None:
                 print(f"  ⏭ {name}({code}): 株価または発行済株式数を取得できず金額を概算できないためスキップ")
+                ledger.skip(pl.SKIP_NO_AMOUNT, f"{name}({code})")
                 continue
 
         is_sell = is_sell_disclosure(
@@ -1781,14 +1775,17 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         # 足切りはClaude呼び出し（事業内容・本文生成）より前に置く。API費用も同時に減る。
         if not is_worth_publishing(deal_amount, signed_change):
             print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
+            ledger.skip(pl.SKIP_BELOW_THRESHOLD, f"{name}({code})")
             continue
 
         if h.get("article_published_at"):
             # 既に記事を作った開示。microCMS上に無いのは意図的に削除したから（低品質・
             # リライト不能・誤報）なので、作り直さない。
+            ledger.skip(pl.SKIP_ALREADY_ARTICLED, f"{name}({code})")
             continue
         unique_filing = filing_counts[(code, disc_date, filer_name)] == 1
         if already_published(code, disc_date, deal_amount, filer_name, signed_change, unique_filing):
+            ledger.skip(pl.SKIP_ALREADY_PUBLISHED, f"{name}({code})")
             continue
 
         # 株価は金額の概算に使ったものと同じ値を本文へ渡す（サイトの「基準終値」とも同じ源）。
@@ -1818,12 +1815,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             # 事実（保有の積み上げ履歴・他の保有銘柄・他の大株主・指標）を足す。
             "context_facts": build_context_facts(code, filer_name, disc_date),
         }
-        # 足切り・重複除外を通り抜けて記事化に到達した候補。ここから先で全滅したら
-        # 相場やフィルタではなく生成・投稿の障害なので、exit_code_for_run が拾う。
-        generation_attempts += 1
         article = generate_article_body_checked(fact_sheet)
         if article is None:
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
+            ledger.skip(pl.FAIL_GENERATION, f"{name}({code})")
             continue
         titles = build_article_titles(fact_sheet)
 
@@ -1858,6 +1853,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if dry_run:
             print(f"  [dry-run] {direction_mark} {name}({code}) {disc_date} {amount_mark}\n    title: {payload['title']}")
             published.append({**payload, "id": None, "holdingRatio": h["holding_ratio"]})
+            ledger.publish(f"{name}({code})")
             continue
 
         if is_correction:
@@ -1892,17 +1888,18 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             content_id = publish_article(payload)
         except MicroCMSPermissionError as e:
             print(f"  ✖ 権限エラーのため以降の候補もスキップして終了します: {e}")
+            ledger.stop_early(pl.FAIL_PERMISSION, f"{name}({code})")
             break
         if content_id:
             print(f"  ✅ 投稿: {direction_mark} {name}({code}) {disc_date} {amount_mark} 図{figure_count}枚 → id={content_id}")
             if h.get("doc_id"):
                 mark_article_published(h["doc_id"])
             published.append({**payload, "id": content_id, "holdingRatio": h["holding_ratio"]})
+            ledger.publish(f"{name}({code})")
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
+            ledger.skip(pl.FAIL_PUBLISH, f"{name}({code})")
 
-    if stats is not None:
-        stats["generation_attempts"] = generation_attempts
     return published
 
 
@@ -1915,9 +1912,9 @@ def main():
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない開示だけを拾い直す")
     args = p.parse_args()
 
-    stats: dict = {}
+    ledger = PublishLedger("publish_blog_articles")
     results = build_and_publish(days=args.days, max_articles=args.max_articles,
-                                dry_run=args.dry_run, backfill=args.backfill, stats=stats)
+                                dry_run=args.dry_run, backfill=args.backfill, ledger=ledger)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
     # backfillは数日前の開示を拾い直す便なので、Xには流さない（タイムラインに古い開示が並ぶ）
@@ -1930,13 +1927,10 @@ def main():
         # 「本日のクジラ」日次サマリー(21時JSTの最終便のみ投稿される。時刻ガードはx_client側)
         post_daily_summary()
 
-    attempts = stats.get("generation_attempts", 0)
-    code = exit_code_for_run(attempts, len(results))
-    if code:
-        print(f"::error::記事化に到達した候補{attempts}件に対し投稿0件。"
-              f"Claude APIの上限超過かmicroCMSの障害を確認すること。")
-    sys.exit(code)
+    # 内訳は毎回出す（日次ログレビューが「候補はあったが全部基準未満」を読めるように）。
+    # 生成・投稿の失敗があったときだけLINE通知＋終了コード4でワークフローを赤くする。
+    return ledger.finish()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

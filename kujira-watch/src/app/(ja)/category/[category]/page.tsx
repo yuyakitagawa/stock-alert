@@ -5,6 +5,7 @@ import InfiniteArticleList from "@/components/InfiniteArticleList";
 import CategoryFilterDetails from "@/components/CategoryFilterDetails";
 import ListPageNextStep from "@/components/ListPageNextStep";
 import { getArticleList } from "@/lib/microcms";
+import { getPublishedDates } from "@/lib/publishedPages";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
 
@@ -51,6 +52,8 @@ export default async function CategoryPage({
     dealType,
     limit: INITIAL_ARTICLES_COUNT,
   });
+  // 開示が少ない日の取引日ページは公開していない（404）ので、その日はリンクを出さない。
+  const publishedDates = [...(await getPublishedDates().catch(() => new Set<string>()))];
   const url = `${SITE_URL}/category/${category}`;
 
   const breadcrumbJsonLd = {
@@ -99,6 +102,7 @@ export default async function CategoryPage({
           initialArticles={contents}
           totalCount={totalCount}
           dealType={dealType}
+          publishedDates={publishedDates}
         />
       )}
       {/* 入口10セッションで直帰100%・滞在0秒＝記事一覧を出して終わりで、次へ進む導線が

@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseServerClient } from "@/lib/supabase";
+import { stockHref } from "@/lib/publishedPages";
 
 // 削除した記事URLの引き継ぎ先（Supabase `deleted_article_redirects`。書き込みは
 // lib/article_redirects.py＝記事を消す3つのツール）。
@@ -34,3 +35,18 @@ export const getArticleRedirect = unstable_cache(
   ["getArticleRedirect"],
   { revalidate: 3600 },
 );
+
+// 引き継ぎ先が「いま公開されているページ」かを確かめてから返す。
+//
+// なぜ要るか: 引き継ぎ先の既定は `/stocks/<code>` だが、銘柄ページは記事数などの条件を
+// 満たすものだけを公開している（lib/pageIndexability.ts）。記事を消すと残り記事数が減るため、
+// 「記事を消した結果その銘柄ページも非公開になる」組み合わせが起きる。そのまま308を返すと
+// 308→404の二段になり、素の404より悪い（クロール枠を食い、リンク先も壊れる）。
+// 行き先が無いときは null を返し、呼び出し側は素直に404にする。
+export async function resolveArticleRedirect(id: string): Promise<string | null> {
+  const target = await getArticleRedirect(id);
+  if (!target) return null;
+  const stockCode = /^\/stocks\/([^/?#]+)$/.exec(target)?.[1];
+  if (stockCode) return await stockHref(stockCode);
+  return target;
+}

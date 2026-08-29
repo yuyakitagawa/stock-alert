@@ -10,6 +10,7 @@ import { SITE_URL } from "@/lib/site";
 import { getInvestorReturns, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
 import { buildStockRows } from "@/lib/rankingStats";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
+import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
 import AdUnit from "@/components/AdUnit";
 import InvestorReturnRanking from "@/components/InvestorReturnRanking";
 import RelatedArticles from "@/components/RelatedArticles";
@@ -97,6 +98,11 @@ export default async function RankingSlugPage({ params }: Props) {
     ranking.axis === "stock" ? (await getRecentArticles(RANKING_DAYS)).contents : [];
   const stockRows = ranking.axis === "stock" ? buildStockRows(recentArticles, RANKING_SIZE) : [];
   const filerIds = ranking.axis === "stock" ? await getFilerIdMap() : {};
+  // 集約ページは公開しているものだけリンクにする（薄いものは404。lib/publishedPages.ts）。
+  const [publishedCodes, publishedFilers] = await Promise.all([
+    getPublishedStockCodes().catch(() => new Set<string>()),
+    getPublishedFilerNames().catch(() => new Set<string>()),
+  ]);
   // 銘柄カードの業種アイコン用（会社ロゴは持てないため業種で代替）。
   const stockBriefs =
     ranking.axis === "stock"
@@ -162,18 +168,23 @@ export default async function RankingSlugPage({ params }: Props) {
     itemListElement:
       ranking.axis === "returns"
         ? // 構造化データは初期表示（絞り込みなしの上位30名）に揃える。
-          returnRows.slice(0, RANKING_SIZE).map((row, index) => ({
-            "@type": "ListItem",
-            position: index + 1,
-            name: displayFilerName(row.filerName),
-            url: `${SITE_URL}${investorPath(row.filerId, row.filerName)}`,
-          }))
-        : stockRows.map((row, index) => ({
-            "@type": "ListItem",
-            position: index + 1,
-            name: `${row.stockName}（${row.stockCode}）`,
-            url: `${SITE_URL}/stocks/${row.stockCode}`,
-          })),
+          returnRows
+            .slice(0, RANKING_SIZE)
+            .filter((row) => publishedFilers.has(row.filerName))
+            .map((row, index) => ({
+              "@type": "ListItem",
+              position: index + 1,
+              name: displayFilerName(row.filerName),
+              url: `${SITE_URL}${investorPath(row.filerId, row.filerName)}`,
+            }))
+        : stockRows
+            .filter((row) => publishedCodes.has(row.stockCode))
+            .map((row, index) => ({
+              "@type": "ListItem",
+              position: index + 1,
+              name: `${row.stockName}（${row.stockCode}）`,
+              url: `${SITE_URL}/stocks/${row.stockCode}`,
+            })),
   };
 
   return (
@@ -221,7 +232,12 @@ export default async function RankingSlugPage({ params }: Props) {
         </p>
       ) : ranking.axis === "returns" ? (
         <>
-          <InvestorReturnRanking rows={returnRows} size={RANKING_SIZE} />
+          <InvestorReturnRanking
+            rows={returnRows}
+            size={RANKING_SIZE}
+            publishedFilerNames={[...publishedFilers]}
+            publishedStockCodes={[...publishedCodes]}
+          />
           <p className="mt-2 text-xs leading-relaxed text-foreground/40">
             集計対象は買い開示{MIN_POSITIONS}件以上の投資家です。リターンは開示日（休場なら直後の営業日）の終値を基準に
             {RETURN_TRADING_DAYS}営業日後の終値までを計算したもので、実際の取得単価・売却時期は反映していません。
@@ -237,23 +253,32 @@ export default async function RankingSlugPage({ params }: Props) {
                   {index + 1}
                 </span>
                 <SectorIcon sector={stockBriefs.get(row.stockCode)?.sector} size="lg" />
-                <Link
-                  href={`/stocks/${row.stockCode}`}
-                  className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
-                >
-                  {row.stockName}（{row.stockCode}）
-                </Link>
+                {publishedCodes.has(row.stockCode) ? (
+                  <Link
+                    href={`/stocks/${row.stockCode}`}
+                    className="min-w-0 grow font-medium text-brand-blue [overflow-wrap:anywhere] hover:underline"
+                  >
+                    {row.stockName}（{row.stockCode}）
+                  </Link>
+                ) : (
+                  <span className="min-w-0 grow font-medium [overflow-wrap:anywhere]">
+                    {row.stockName}（{row.stockCode}）
+                  </span>
+                )}
               </span>
               <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
                 <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
-                {row.filerName && (
-                  <Link
-                    href={investorPath(filerIds[row.filerName], row.filerName)}
-                    className="text-brand-blue hover:underline"
-                  >
-                    {row.filerName}
-                  </Link>
-                )}
+                {row.filerName &&
+                  (publishedFilers.has(row.filerName) ? (
+                    <Link
+                      href={investorPath(filerIds[row.filerName], row.filerName)}
+                      className="text-brand-blue hover:underline"
+                    >
+                      {row.filerName}
+                    </Link>
+                  ) : (
+                    <span>{row.filerName}</span>
+                  ))}
                 <span>{formatDate(row.dealDate)}</span>
                 <Link href={`/articles/${row.articleId}`} className="text-brand-blue hover:underline">
                   解説記事

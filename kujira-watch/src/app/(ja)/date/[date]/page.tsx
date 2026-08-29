@@ -47,6 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const { contents } = await getArticlesByDealDate(date);
   if (contents.length === 0) return {};
+  if (!isIndexableDatePage(contents.length)) return {};
 
   const label = formatDate(date);
   const title = `${label}の大口投資家の動き`;
@@ -56,9 +57,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    // 開示が数件しかない日は記事へのリンクが数本並ぶだけで、記事本文と内容が重複する。
-    // 判定は lib/pageIndexability.ts に集約（サイトマップ側と条件を必ず一致させる）。
-    ...(isIndexableDatePage(contents.length) ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: url },
     openGraph: { title, description, url },
   };
@@ -73,6 +71,12 @@ export default async function DateArchivePage({ params }: Props) {
   const { contents } = await getArticlesByDealDate(date);
 
   if (contents.length === 0) {
+    notFound();
+  }
+
+  // 開示が数件しかない日は記事へのリンクが数本並ぶだけで記事本文と内容が重複するため、
+  // ページ自体を公開しない（2026-08-29にnoindexから404へ変更。lib/publishedPages.ts）。
+  if (!isIndexableDatePage(contents.length)) {
     notFound();
   }
 
