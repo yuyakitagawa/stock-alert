@@ -33,3 +33,22 @@ def find_filer_names(code: str, disc_date: str) -> list:
         f"issuer_code=eq.{code}&disc_date=eq.{disc_date}"
         "&select=filer_name,doc_type_code,doc_description,holding_ratio",
     )
+
+
+def restore_figures(new_body: str, old_body: str) -> str:
+    """旧本文の<figure>を新本文へ付け替える。株価チャートは末尾のまま、解説図（保有比率の
+    推移・株主構成・ポートフォリオ）は本文中に戻す。図は作り直さない（同じ図を再アップロード
+    するとメディアが二重に増えるため）。
+
+    単純に「最初の1枚を末尾に足す」実装だと、解説図を持つ2026-08-25以降の記事で
+    保有比率推移の図だけが末尾に移り、株価チャートと株主構成の図が消える。
+    """
+    from web.article_figures import insert_figures_into_body
+
+    figures = FIGURE_RE.findall(old_body or "")
+    if not figures:
+        return new_body
+    charts = [f for f in figures if "株価推移" in f]
+    others = [f for f in figures if f not in charts]
+    body = insert_figures_into_body(new_body, [{"html": h, "anchors": []} for h in others])
+    return body + "".join(charts)
