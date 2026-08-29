@@ -35,6 +35,14 @@ const nextConfig: NextConfig = {
       // 個別に振り分けず、分類の一覧が並ぶトップへ寄せる。
       { source: "/en/category/:slug", destination: "/", permanent: true },
       { source: "/en/:path*", destination: "/", permanent: true },
+      // /disclosures（開示速報の全件一覧）は2026-08-18に廃止（TOPの記事一覧と役割が重複）。
+      // リダイレクトを置いていなかったため404のまま残っていたが、サーバーログ実測で
+      // AIクローラーが直近30日に58回・GA4のPVも28日で63件あり、いずれも404に当たっていた。
+      // 役割が最も近いTOP（新着開示の日付降順一覧）へ恒久リダイレクトする。
+      { source: "/disclosures", destination: "/", permanent: true },
+      // 記事一覧の入口を /articles と推測して取りに来るクローラーが居る（実測: AIクローラーが
+      // 14日で18回）。記事一覧はTOPそのものなので、404にせずTOPへ寄せる。
+      { source: "/articles", destination: "/", permanent: true },
       { source: "/ranking", destination: "/ranking/returns", permanent: true },
       { source: "/ranking/buys", destination: "/ranking/returns", permanent: true },
       { source: "/ranking/sells", destination: "/ranking/returns", permanent: true },
