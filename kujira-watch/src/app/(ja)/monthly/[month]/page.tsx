@@ -13,6 +13,11 @@ import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { formatDealAmount, formatMonth } from "@/lib/format";
 import { getAllMonthsForIndex, getArticlesByMonth, MONTH_PATTERN } from "@/lib/microcms";
 import { getFilerIdMap, getFilerNamesByStockAndDate, investorPath } from "@/lib/investors";
+import {
+  getPublishedDates,
+  getPublishedFilerNames,
+  getPublishedStockCodes,
+} from "@/lib/publishedPages";
 import { SITE_URL } from "@/lib/site";
 import { buildFilerRanking, buildStockRanking, buildWeeklySummary } from "@/lib/weeklyStats";
 import AdUnit from "@/components/AdUnit";
@@ -67,13 +72,18 @@ export default async function MonthlyArchivePage({ params }: Props) {
     notFound();
   }
 
-  const [{ contents }, months, filerByKey, filerIds] = await Promise.all([
-    getArticlesByMonth(month),
-    getAllMonthsForIndex(),
-    // disc_dateはtext型のYYYY-MM-DDなので、月末日は31日固定の文字列比較で足りる。
-    getFilerNamesByStockAndDate(`${month}-01`, `${month}-31`),
-    getFilerIdMap(),
-  ]);
+  const [{ contents }, months, filerByKey, filerIds, publishedCodes, publishedFilers, publishedDates] =
+    await Promise.all([
+      getArticlesByMonth(month),
+      getAllMonthsForIndex(),
+      // disc_dateはtext型のYYYY-MM-DDなので、月末日は31日固定の文字列比較で足りる。
+      getFilerNamesByStockAndDate(`${month}-01`, `${month}-31`),
+      getFilerIdMap(),
+      // 集約ページは公開しているものだけリンクにする（薄いものは404。lib/publishedPages.ts）。
+      getPublishedStockCodes().catch(() => new Set<string>()),
+      getPublishedFilerNames().catch(() => new Set<string>()),
+      getPublishedDates().catch(() => new Set<string>()),
+    ]);
 
   if (contents.length === 0) {
     notFound();
@@ -124,12 +134,14 @@ export default async function MonthlyArchivePage({ params }: Props) {
         name: article.title,
         url: `${SITE_URL}/articles/${article.id}`,
       })),
-      ...dateGroups.map((group, index) => ({
-        "@type": "ListItem",
-        position: featured.length + index + 1,
-        name: `${group.label}の大口投資家の動き`,
-        url: `${SITE_URL}/date/${group.date}`,
-      })),
+      ...dateGroups
+        .filter((group) => publishedDates.has(group.date))
+        .map((group, index) => ({
+          "@type": "ListItem",
+          position: featured.length + index + 1,
+          name: `${group.label}の大口投資家の動き`,
+          url: `${SITE_URL}/date/${group.date}`,
+        })),
     ],
   };
 
@@ -186,12 +198,16 @@ export default async function MonthlyArchivePage({ params }: Props) {
                 {topFilers.map((filer) => (
                   <TableRow key={filer.filerName}>
                     <TableCell>
-                      <Link
-                        href={investorPath(filerIds[filer.filerName], filer.filerName)}
-                        className="text-brand-blue hover:underline"
-                      >
-                        {filer.filerName}
-                      </Link>
+                      {publishedFilers.has(filer.filerName) ? (
+                        <Link
+                          href={investorPath(filerIds[filer.filerName], filer.filerName)}
+                          className="text-brand-blue hover:underline"
+                        >
+                          {filer.filerName}
+                        </Link>
+                      ) : (
+                        filer.filerName
+                      )}
                     </TableCell>
                     <TableCell align="right" sx={{ color: "text.secondary" }}>{filer.count}件</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
@@ -224,9 +240,15 @@ export default async function MonthlyArchivePage({ params }: Props) {
                 {topStocks.map((stock) => (
                   <TableRow key={stock.stockCode}>
                     <TableCell>
-                      <Link href={`/stocks/${stock.stockCode}`} className="text-brand-blue hover:underline">
-                        {stock.stockName}（{stock.stockCode}）
-                      </Link>
+                      {publishedCodes.has(stock.stockCode) ? (
+                        <Link href={`/stocks/${stock.stockCode}`} className="text-brand-blue hover:underline">
+                          {stock.stockName}（{stock.stockCode}）
+                        </Link>
+                      ) : (
+                        <>
+                          {stock.stockName}（{stock.stockCode}）
+                        </>
+                      )}
                     </TableCell>
                     <TableCell align="right" sx={{ color: "text.secondary" }}>{stock.count}件</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700, color: "primary.main" }}>
@@ -257,10 +279,9 @@ export default async function MonthlyArchivePage({ params }: Props) {
           {dateGroups.map((group) => {
             const dayAmount = group.articles.reduce((sum, a) => sum + a.dealAmount, 0);
             return (
-              <Link
+              <DateGroupRow
                 key={group.date}
-                href={`/date/${group.date}`}
-                className="group flex items-center justify-between gap-4 py-4 transition-colors hover:bg-section-tint"
+                href={publishedDates.has(group.date) ? `/date/${group.date}` : null}
               >
                 <div>
                   <p className="font-bold text-brand-navy">{group.label}</p>
@@ -268,10 +289,12 @@ export default async function MonthlyArchivePage({ params }: Props) {
                     {group.articles.length}件・{formatDealAmount(dayAmount)}
                   </p>
                 </div>
-                <span className="kicker shrink-0 text-brand-blue transition-colors group-hover:text-brand-navy">
-                  この日の記事を見る ›
-                </span>
-              </Link>
+                {publishedDates.has(group.date) && (
+                  <span className="kicker shrink-0 text-brand-blue transition-colors group-hover:text-brand-navy">
+                    この日の記事を見る ›
+                  </span>
+                )}
+              </DateGroupRow>
             );
           })}
         </div>
@@ -296,5 +319,23 @@ export default async function MonthlyArchivePage({ params }: Props) {
       </nav>
       <AdUnit placement="bottom" />
     </div>
+  );
+}
+
+// 日別の行。開示が少ない日の取引日ページは公開していない（404）ため、その日は
+// リンクではなくただの行として出す（lib/publishedPages.ts の判定に合わせる）。
+function DateGroupRow({
+  href,
+  children,
+}: {
+  href: string | null;
+  children: React.ReactNode;
+}) {
+  const base = "group flex items-center justify-between gap-4 py-4 transition-colors";
+  if (!href) return <div className={base}>{children}</div>;
+  return (
+    <Link href={href} className={`${base} hover:bg-section-tint`}>
+      {children}
+    </Link>
   );
 }

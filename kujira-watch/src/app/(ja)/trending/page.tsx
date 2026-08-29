@@ -4,7 +4,8 @@ import InfoTip from "@/components/InfoTip";
 import { siblingDataPages } from "@/lib/nav";
 import ListPageNextStep from "@/components/ListPageNextStep";
 import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
-import { getAllListedCodes, getCompanyBriefs } from "@/lib/companyInfo";
+import { getCompanyBriefs } from "@/lib/companyInfo";
+import { getPublishedStockCodes } from "@/lib/publishedPages";
 import RelatedArticles from "@/components/RelatedArticles";
 import TrendingDirectionTable from "@/components/TrendingDirectionTable";
 import { getArticleList } from "@/lib/microcms";
@@ -56,12 +57,12 @@ export default async function TrendingPage() {
   const rangeFrom = daysAgo(WINDOW_DAYS * 2 - 1);
   const rangeTo = daysAgo(0);
 
-  const [rows, amountByDocId, listedCodes, { contents: recentArticles }] = await Promise.all([
+  const [rows, amountByDocId, publishedCodes, { contents: recentArticles }] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo),
     // 金額はランキングの並べ替え軸だが、取れなかった場合も件数（増加件数順）にフォールバックして
     // ページ自体は成立させる。金額が読めないことを理由に一覧を落とすほうが読者の損失が大きい。
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
-    getAllListedCodes().catch(() => new Set<string>()),
+    getPublishedStockCodes().catch(() => new Set<string>()),
     // ランキング銘柄の解説記事（アイキャッチ付きカード）用。取れなくてもページは成立させる。
     getArticleList({ limit: 60 }).catch(() => ({ contents: [] })),
   ]);
@@ -77,15 +78,15 @@ export default async function TrendingPage() {
     return brief?.description ?? brief?.sector ?? null;
   };
 
-  // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
-  // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
-  // リンクにせずテキストのまま出す（404へのリンクを作らない）。
+  // 銘柄ページ(/stocks/[code])は解説記事か事業内容の説明があるものだけ公開している。
+  // 公開していないコードはリンクにせずテキストのまま出す（404へのリンクを作らない。
+  // 判定は lib/publishedPages.ts でページ側・サイトマップ側と共通）。
 
   // href・noteはサーバー側で解決してから渡す（TrendingDirectionTableはクライアント
   // コンポーネントなので関数propsを境界を越えて渡せない）。
   const trendingItems = trendingIssuers.map((entry) => ({
     ...entry,
-    href: listedCodes.has(entry.key) ? `/stocks/${entry.key}` : null,
+    href: publishedCodes.has(entry.key) ? `/stocks/${entry.key}` : null,
     note: noteOf(entry.key),
     sector: briefs.get(entry.key)?.sector ?? null,
   }));

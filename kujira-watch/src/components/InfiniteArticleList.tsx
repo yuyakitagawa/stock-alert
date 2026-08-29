@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent, DealType } from "@/types/article";
@@ -20,14 +20,19 @@ export default function InfiniteArticleList({
   totalCount,
   dealType,
   excludeIds,
+  publishedDates,
 }: {
   initialArticles: ArticleContent[];
   totalCount: number;
   dealType?: DealType;
   // ページ上部の「注目」枠に既に表示済みの記事IDを一覧から除外する（重複表示防止）。
   excludeIds?: Set<string>;
+  // 取引日ページを公開している日（YYYY-MM-DD）。ここに無い日は「この日の記事を見る」を出さない。
+  // 追加読み込みで後から出てくる日も判定できるよう、全件をまとめて受け取る。
+  publishedDates?: string[];
 }) {
   const [articles, setArticles] = useState(initialArticles);
+  const publishedDateSet = useMemo(() => new Set(publishedDates ?? []), [publishedDates]);
   const [loading, setLoading] = useState(false);
   const loadingRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -89,7 +94,9 @@ export default function InfiniteArticleList({
                 <ArticleCard key={article.id} article={article} />
               ))}
             </div>
-            <DealDateSeeMoreLink date={group.date} />
+            <DealDateSeeMoreLink
+              href={publishedDateSet.has(group.date) ? `/date/${group.date}` : null}
+            />
           </div>
           {withAd && <AdUnit placement="infeed" />}
         </Fragment>

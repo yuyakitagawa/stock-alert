@@ -16,7 +16,8 @@ import RelatedArticles from "@/components/RelatedArticles";
 import SectorIcon from "@/components/SectorIcon";
 import MagnitudeBar from "@/components/MagnitudeBar";
 import AdUnit from "@/components/AdUnit";
-import { getAllListedCodes, getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
+import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
+import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
 
 export const revalidate = 3600;
@@ -41,21 +42,22 @@ export const metadata: Metadata = {
 };
 
 export default async function ActivistsPage() {
-  const [summary, recentMoves, listedCodes, filerIds, { contents: activistArticles }] = await Promise.all([
+  const [summary, recentMoves, publishedCodes, filerIds, { contents: activistArticles }, publishedFilers] = await Promise.all([
     getActivistHoldingsSummary(),
     getActivistRecentMoves(MOVES_WINDOW_DAYS).catch(() => []),
-    getAllListedCodes().catch(() => new Set<string>()),
+    getPublishedStockCodes().catch(() => new Set<string>()),
     getFilerIdMap().catch(() => ({}) as Record<string, number>),
     // アイキャッチ付き記事カード用のアクティビスト分類の最新記事。取れなくてもページは成立させる。
     getArticleList({ dealType: "アクティビスト", limit: 8 }).catch(() => ({ contents: [] })),
+    getPublishedFilerNames().catch(() => new Set<string>()),
   ]);
 
-  // 銘柄ページ(/stocks/[code])は上場銘柄マスターに載っていれば解説記事が無くても
-  // 開示履歴＋会社情報で成立する。マスターに無いコード（上場廃止等）だけ
-  // リンクにせずテキストのまま出す（404へのリンクを作らない。/trendingと同じ規律）。
+  // 銘柄ページ(/stocks/[code])は解説記事か事業内容の説明があるものだけ公開している。
+  // 公開していないコードはリンクにせずテキストのまま出す（404へのリンクを作らない。
+  // /trendingと同じ規律。判定は lib/publishedPages.ts）。
 
   const stockLabel = (issuerName: string, issuerCode: string) =>
-    listedCodes.has(issuerCode) ? (
+    publishedCodes.has(issuerCode) ? (
       <Link href={`/stocks/${issuerCode}`} className="text-brand-blue hover:underline">
         {issuerName}（{issuerCode}）
       </Link>
@@ -128,12 +130,16 @@ export default async function ActivistsPage() {
       <ul className="mt-1 space-y-0.5 text-xs text-foreground/60">
         {row.buys.map((move) => (
           <li key={move.docId}>
-            <Link
-              href={investorPath(filerIds[move.filerName], move.filerName)}
-              className="text-brand-blue hover:underline"
-            >
-              {displayFilerName(move.filerName)}
-            </Link>
+            {publishedFilers.has(move.filerName) ? (
+              <Link
+                href={investorPath(filerIds[move.filerName], move.filerName)}
+                className="text-brand-blue hover:underline"
+              >
+                {displayFilerName(move.filerName)}
+              </Link>
+            ) : (
+              <span className="text-foreground/80">{displayFilerName(move.filerName)}</span>
+            )}
             <span className="ml-2">
               {move.holdingRatioPrior === null && "新規 "}
               <RatioTransition ratio={move.holdingRatio} prior={move.holdingRatioPrior} />

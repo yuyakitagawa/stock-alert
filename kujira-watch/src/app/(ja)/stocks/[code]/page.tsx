@@ -27,6 +27,7 @@ import TableRow from "@mui/material/TableRow";
 import { getAllArticlesForSitemap, getArticlesByStockCode } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { isIndexableStockPage } from "@/lib/pageIndexability";
+import { getPublishedDates, getPublishedFilerNames } from "@/lib/publishedPages";
 import { buildStockDealSummary, formatStockDealSummary } from "@/lib/stockSummary";
 import AdUnit from "@/components/AdUnit";
 import FollowUpdatesCta from "@/components/FollowUpdatesCta";
@@ -91,16 +92,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    // 解説記事が乏しい銘柄は開示テーブルと会社情報だけの薄いページになるため、
-    // 検索エンジンには載せない（サイト全体の品質評価を落とさないための保険）。
-    // 記事が増えるか事業内容の説明が入ればそのままindex対象に戻る。
-    // 判定は lib/pageIndexability.ts に集約（サイトマップ側と条件を必ず一致させる）。
-    ...(isIndexableStockPage({
-      articleCount: contents.length,
-      hasCompanyDescription: Boolean(companyInfo?.description),
-    })
-      ? {}
-      : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
       types: { "application/rss+xml": `${url}/feed.xml` },
@@ -111,20 +102,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers, holdings, buybacks, filerIds] = await Promise.all([
-    getArticlesByStockCode(code),
-    getCompanyInfo(code),
-    getFilersByStockCode(code),
-    getHoldingsByStockCode(code),
-    getBuybacksByStockCode(code),
-    getFilerIdMap(),
-  ]);
+  const [{ contents }, companyInfo, filers, holdings, buybacks, filerIds, publishedFilers] =
+    await Promise.all([
+      getArticlesByStockCode(code),
+      getCompanyInfo(code),
+      getFilersByStockCode(code),
+      getHoldingsByStockCode(code),
+      getBuybacksByStockCode(code),
+      getFilerIdMap(),
+      // 投資家ページは公開しているものだけリンクにする（lib/publishedPages.ts）。
+      getPublishedFilerNames().catch(() => new Set<string>()),
+    ]);
+  const publishedDates = await getPublishedDates().catch(() => new Set<string>());
 
   // 解説記事が無くてもEDINET開示・会社情報があれば銘柄ページとして成立させる
   // （記事化は保有比率上位から順に行うため、開示はあるが記事が無い銘柄が大半を占める）。
   // 上場銘柄マスターにも開示にも無いコードだけ404にする。
   const stockName = contents[0]?.stockName ?? companyInfo?.name;
   if (!stockName) {
+    notFound();
+  }
+
+  // 解説記事も事業内容の説明も無い銘柄は、開示テーブルと株価だけの薄いページになるため
+  // 公開しない（2026-08-29にnoindexから404へ変更。判定は lib/publishedPages.ts と共通）。
+  if (
+    !isIndexableStockPage({
+      articleCount: contents.length,
+      hasCompanyDescription: Boolean(companyInfo?.description),
+    })
+  ) {
     notFound();
   }
 
@@ -199,12 +205,16 @@ export default async function StockPage({ params }: Props) {
           <List disablePadding dense>
             {filers.map((filer) => (
               <ListItem key={filer.filerName} disableGutters sx={{ py: 0.5, gap: 1, flexWrap: "wrap" }}>
-                <Link
-                  href={investorPath(filer.filerId, filer.filerName)}
-                  className="text-brand-blue hover:underline"
-                >
-                  {filer.filerName}
-                </Link>
+                {publishedFilers.has(filer.filerName) ? (
+                  <Link
+                    href={investorPath(filer.filerId, filer.filerName)}
+                    className="text-brand-blue hover:underline"
+                  >
+                    {filer.filerName}
+                  </Link>
+                ) : (
+                  <span>{filer.filerName}</span>
+                )}
                 <DealTypeBadge dealType={filer.category} />
                 {filer.latestRatio !== null && filer.latestDiscDate && (
                   <Typography component="span" variant="caption" sx={{ color: "text.secondary" }}>
@@ -239,12 +249,16 @@ export default async function StockPage({ params }: Props) {
                       {formatDate(h.discDate)}
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={investorPath(filerIds[h.filerName], h.filerName)}
-                        className="text-brand-blue hover:underline"
-                      >
-                        {h.filerName}
-                      </Link>
+                      {publishedFilers.has(h.filerName) ? (
+                        <Link
+                          href={investorPath(filerIds[h.filerName], h.filerName)}
+                          className="text-brand-blue hover:underline"
+                        >
+                          {h.filerName}
+                        </Link>
+                      ) : (
+                        h.filerName
+                      )}
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
                       {disclosureDocLabel(h)}
@@ -288,7 +302,7 @@ export default async function StockPage({ params }: Props) {
                   <ArticleCard key={article.id} article={article} />
                 ))}
               </div>
-              <DealDateSeeMoreLink date={group.date} />
+              <DealDateSeeMoreLink href={publishedDates.has(group.date) ? `/date/${group.date}` : null} />
             </div>
           ))}
         </>
