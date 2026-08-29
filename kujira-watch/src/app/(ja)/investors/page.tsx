@@ -15,6 +15,7 @@ import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
+import FactBox from "@/components/FactBox";
 
 export const revalidate = 3600;
 
@@ -31,6 +32,21 @@ const description =
 // 悪化していた。1ページあたりの件数を絞り、クロール可能な素のリンクで前後ページを辿れるようにする
 // （各投資家ページのURLはサイトマップにも全件載せている）。
 const PER_PAGE = 100;
+
+// 冒頭の直答文で「直近◯日に動いた投資家」を数える窓（他のデータページと同じ7日）。
+const RECENT_DAYS = 7;
+
+// 「今日」は日本時間で判定する（UTCのままだとJSTの朝9時までが前日扱いになる）。
+function todayJst(): string {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
+// 直近RECENT_DAYS日の開始日（YYYY-MM-DD）。
+function recentSince(days: number): string {
+  const d = new Date(`${todayJst()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
+}
 
 type Props = {
   searchParams: Promise<{ category?: string; page?: string }>;
@@ -122,8 +138,60 @@ async function InvestorsBody({ searchParams }: Props) {
   const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
   const visibleFilers = matchedFilers.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
 
+  // 見出し直下の直答文とファクトボックス（GEO=生成AI検索での引用最適化）。
+  // 「日本株で大量保有報告書を出しているのはどんな投資家か」「アクティビストは何者いるか」
+  // といった包括クエリに、一覧を読ませずに1文で答える。数値はこのページが既に持っている
+  // 集計そのもので、LLM呼び出しはしない。2ページ目以降は同じ文が並ぶだけなので出さない。
+  const since = recentSince(RECENT_DAYS);
+  const recentFilers = matchedFilers.filter((f) => f.latestDiscDate >= since);
+  const latestDiscDate = matchedFilers.reduce(
+    (latest, f) => (f.latestDiscDate > latest ? f.latestDiscDate : latest),
+    ""
+  );
+  const topCategories = activeCategories
+    .map((c) => ({ category: c, count: counts.get(c) ?? 0 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+  // JSXの改行はレンダリング時に半角スペースになり日本語の文中に入るため、文字列で組み立てる。
+  const leadSentence = selectedCategory
+    ? `「${selectedCategory}」に分類される投資家は${matchedFilers.length}者です` +
+      `（掲載している投資家${filers.length}者のうち）。` +
+      `直近${RECENT_DAYS}日間に新しい開示があったのは${recentFilers.length}者で、` +
+      `この分類の最新の開示日は${formatDate(latestDiscDate)}です。`
+    : `このページには、EDINETに大量保有報告書（5%ルール）を提出した投資家を${filers.length}者掲載しています。` +
+      `分類別では${topCategories.map((c) => `${c.category}が${c.count}者`).join("、")}の順に多く、` +
+      `直近${RECENT_DAYS}日間に新しい開示があったのは${recentFilers.length}者です` +
+      `（最新の開示日は${formatDate(latestDiscDate)}）。`;
+
   return (
     <>
+      {currentPage === 1 && matchedFilers.length > 0 && (
+        <>
+          <p className="mb-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
+          <FactBox
+            facts={
+              selectedCategory
+                ? [
+                    { label: `分類「${selectedCategory}」`, value: `${matchedFilers.length}者` },
+                    { label: "掲載している投資家（全体）", value: `${filers.length}者` },
+                    { label: `直近${RECENT_DAYS}日に開示`, value: `${recentFilers.length}者` },
+                    { label: "最新の開示日", value: formatDate(latestDiscDate) },
+                  ]
+                : [
+                    { label: "掲載している投資家", value: `${filers.length}者` },
+                    {
+                      label: "最も多い分類",
+                      value: topCategories[0]?.category ?? "—",
+                      note: topCategories[0] ? `${topCategories[0].count}者` : undefined,
+                    },
+                    { label: `直近${RECENT_DAYS}日に開示`, value: `${recentFilers.length}者` },
+                    { label: "最新の開示日", value: formatDate(latestDiscDate) },
+                  ]
+            }
+            caption="出典はEDINETの大量保有報告書・変更報告書。分類は当サイトが提出者ごとに判定したものです。解説も無く開示1件だけの提出者はページを公開していないため、この一覧にも載せていません。"
+          />
+        </>
+      )}
       <p className="mb-4 text-sm text-foreground/50">
         EDINET大量保有報告書に登場した投資家{filers.length}件。最終開示日が新しい順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
