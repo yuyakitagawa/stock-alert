@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.strip_drop_model_mentions import (
-    EN_PATTERN, JA_PATTERN, is_subset, rewrite_ja_sentence, split_en, split_ja,
+    JA_PATTERN, is_subset, rewrite_ja_sentence, split_ja,
     strip_html_block, text_of,
 )
 
@@ -63,23 +63,6 @@ def test_text_of_separates_paragraphs():
     assert text_of("<p>前段。</p><p>*Speculation: X.</p>") == "前段。 *Speculation: X."
 
 
-def test_split_en_handles_missing_space_after_period():
-    """英訳本文にはピリオド直後に空白が無い箇所がある（実データ由来）。"""
-    assert split_en("Price was 70 yen.From a risk perspective, X.") == [
-        "Price was 70 yen.",
-        "From a risk perspective, X.",
-    ]
-
-
-def test_english_sentence_is_removed_whole():
-    html = ("<p>The stake reached 8.5%. Additionally, our risk assessment model suggests "
-            "a moderate downside risk. The filing was made on August 4.</p>")
-    out, removed, _ = strip_html_block(html, EN_PATTERN, split_en, None)
-    assert removed == 1
-    assert "downside risk" not in out
-    assert "The stake reached 8.5%." in out and "The filing was made on August 4." in out
-
-
 def test_is_subset_rejects_invented_text():
     original = "<p>A。B。</p>"
     assert is_subset(original, "<p>A。</p>", split_ja)
@@ -94,7 +77,5 @@ if __name__ == "__main__":
     test_drops_paragraph_that_becomes_empty()
     test_leaves_sentences_containing_tags_untouched()
     test_text_of_separates_paragraphs()
-    test_split_en_handles_missing_space_after_period()
-    test_english_sentence_is_removed_whole()
     test_is_subset_rejects_invented_text()
     print("全テスト成功 (10件)")

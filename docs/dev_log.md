@@ -246,3 +246,77 @@ LINE投稿上位はウォッチ銘柄の2026-07-21付開示に占拠されてい
 - LINE送信本文を含むステップ（マーケットタイミング）は圧縮せず全文を渡す（UX観点の原文評価用）。ci.yml は失敗runのみ対象。
 - 検証中に判明: Anthropic API が月次上限到達（9/1 00:00 UTC まで400）。ブログ生成・動画台本・本レビューは上限引き上げまで停止。
   X Metrics は 8/20〜22 の 402 で impressions 全件None・フォロワー0記録（失敗時に0を書く副作用あり）。クレジット回復後に metrics を手動再実行。
+
+## 2026-08-29: Anthropic API消化の削減（英語版廃止・web_search半減・日次予算）
+オーナー指示「もう少し消化を抑えたい」→ A（web_search削減）・C（英語版の全除却）・D（日次予算）を実施。
+Bの足切り引き上げ（3億/1.0pt→5億/1.5pt）は記事数が24%減るため見送り。
+
+**現状の実測（削減前）**: 平日 約$0.5〜0.6/日、月$13。内訳は blog_body $9/月・
+company_description $2.4/月・その他$1.6/月。`api_usage`の記録開始が当日のため単価×実測本数の推定。
+
+- **A. `get_company_description()` の `web_search` を `max_uses` 2→1**。1社$0.034→$0.017（月-$1.1）。
+- **C. 英語版（`bodyEn`/`titleEn`／kujira-watchの`/en`）を全除却**。判断材料は
+  `blog_crawler_log`直近14日の実測: EN記事1,046本にブラウザPV1,544（中央値1・最大7・10PV以上0本）に対し、
+  日本語版は最大73PV・10PV以上42本。英語面に検索流入の山が無い一方、英訳は記事1本の出力トークンを
+  約1.3倍にしていた（microCMS直近50本の実測: JA本文1,193字＋EN本文2,574字）。月-$2.0。
+  - `publish_blog_articles.py` / `publish_buyback_articles.py`: プロンプト・payload・タイトル生成から英語を削除。
+  - `lib/writing_style.py`の`EN_STYLE_RULES`、`web/article_figures.py`の`alt_en`/`caption_en`、
+    `tools/translate_blog_articles_en.py`（ファイルごと）、各ツールの`bodyEn`分岐を削除。
+  - kujira-watch: `src/app/(en)`削除、hreflang・`/en`サイトマップ（`articles-en`分割ごと）・
+    言語切替UI・`Locale`/`UI.en`の多言語プラミングを削除し、`/en/*`は日本語ページへ301。
+  - microCMSに保存済みの`bodyEn`/`titleEn`データは消していない（表示しないだけ）。
+- **D. 日次予算$1.2で打ち切り**（`ANTHROPIC_DAILY_BUDGET_USD`、0で無効）。`api_usage.record()`のたびに
+  当日(UTC)の記録済み＋未送信の合計を見て、超えたら`flush()`→`api_budget.stop_for_daily_cap()`で
+  その日の残りをスキップしLINEへ1通。月次上限に当たると復旧まで1ヶ月止まる（2026-08-23の実例）が、
+  日次なら翌日UTC 0時に自動復帰する。定常$0.45/日に対し2.5倍の余裕を持たせ通常運転は止めない。
+
+**見込み**: 月$13 → 約$9.9（-24%）。効果の実測は`tools/api_usage_report.py --days 7`で9月上旬に確認する。
+
+## 2026-08-29: アクセスログのbot除外を強化（"Browser"判定の9割超が機械だった）
+8/28（JST）のログ集計で、`bot_name="Browser"` 3,573PVのうち人の候補は50〜100PVしか無いことが判明。
+同日の全リクエストは19,658件で、うち81.8%はUAでbotと自己申告している（最大はGoogleOther 13,497件）。
+
+**"Browser" 3,573PVの内訳（除外を4段階に分けて実測）**
+| 分類 | PV | 中身 |
+|---|---|---|
+| self（`::1`） | 187 | 自サイトからの自己リクエスト |
+| bot_ua | 1,384 | meta-externalagent 1,031 / Amazonbot 337 / AdsBot-Google-Mobile 9 |
+| heavy_ip（>30PV/日） | 1,421 | 単一IPで最大645PV |
+| cookieless_ua | 525 | 汎用Chrome/148が OVH 62IPから327PV（visitor_id 312個）、iPhone OS 13_2_3固定UAが Alibaba/Tencent 137IPから180PV（visitor_id 180個） |
+| 残り | 約56 | 2PV以上見た訪問者は17人/48PV |
+
+**対応**
+- `kujira-watch/src/lib/crawlers.ts`: `BOT_PATTERNS`に `meta-externalagent` / `meta-externalfetcher` /
+  `AdsBot-Google` / `Amazonbot` / `Bytespider` を追加。UAに自己申告があるのに"Browser"として
+  記録されていた分（"Browser"の39%）がログの時点で正しく分類される。
+- `tools/traffic_report.py`: 除外をIP閾値だけの1段階から上表の4段階に変更。
+  - `bot_ua`: UAに `bot|crawler|spider|externalagent|externalfetcher|+URL` を含むものを、名前を知らなくても除外。
+    除外したクローラー名を集計表示するので、`BOT_PATTERNS`への登録漏れに次回から気づける。
+  - `cookieless_ua`: 同一UAで20PV以上あるのに visitor_id がPVとほぼ1:1（比0.9以上）＝クッキー不保持。
+    IP閾値では取れないOVH/Alibaba/Tencentの分散スクレイパーがこれで落ちる。母数20未満は
+    「全員が1ページで離脱した実在の人間」と区別できないため判定しない。
+  - `heavy_ip`の判定は self/bot_ua を除いた残りで数える（機械のPVで底上げされたIPを共有する人間を巻き込まない）。
+  - 出力に「2PV以上見た訪問者数」を追加。最も人間らしい層の規模が一目で分かる。
+- `tests/test_traffic_report.py`: 9件→15件。
+
+**判断**: GoogleOther（全体の69%）は robots.txt で止めない。Geminiのグラウンディング経由の露出を
+自分で消すことになるため。帯域はVercelの無料枠内に収まっている。
+
+**AdSense導入判定への影響**: 「月間PVが現状の5倍」の基準は、bot込みのPVで測ると永遠に達したように見える。
+本除外後の人のPV（現状 日50〜100）で判定すること。
+
+## 2026-08-29: 記事化の足切りを 3億円/1.0pt → 5億円/1.5pt へ引き上げ（案B）
+- `web/publish_blog_articles.py` の `MIN_DEAL_AMOUNT_OKU` / `MIN_RATIO_CHANGE_PT` を引き上げ。
+  直近30日の開示851件のうち通過が693件→529件（-24%）。記事1本約$0.013なので月-$2.2。
+- **公開済み記事のindex基準は据え置き**（新設 `INDEXABLE_MIN_DEAL_AMOUNT_OKU`=3.0 /
+  `INDEXABLE_MIN_RATIO_CHANGE_PT`=1.0、`is_indexable_article()`）。足切りに合わせて上げると
+  既に順位が付いている既存記事の24%をnoindex＋sitemap除外に落とすことになり、
+  節約する月$2.2に対して失うものが大きすぎる。新規記事は必ず足切り≧index基準なので
+  「サイトマップに載っているのにnoindex」は起きない。
+- 既存記事を消す/補完するツールは index 基準を見るように変更（`delete_low_value_blog_articles.py`・
+  `fix_misreported_blog_articles.py --delete`・`backfill_blog_eyecatch.py --index-only`）。
+  引き上げた足切りで判定させると、掃除のたびに既存記事の24%が削除対象になる。
+- 読者向けFAQ（`kujira-watch/src/lib/faqData.tsx`「すべての大量保有報告書が記事に
+  なっていますか？」）の数字も5億円/1.5ptへ更新。
+
+これでA+B+C+Dが揃い、見込みは月$13 → 約$7.7（-41%）。

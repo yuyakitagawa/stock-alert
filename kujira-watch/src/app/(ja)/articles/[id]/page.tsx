@@ -25,7 +25,7 @@ import {
 import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot, investorPath } from "@/lib/investors";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
-import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -112,9 +112,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // 詳細はlib/articleIndexability.tsのsupersededArticleIds()を参照）。
   const superseded = await isSupersededArticle(id, article.stockCode);
   const indexable = isIndexableArticle(article) && !superseded;
-  // 英語版がnoindexの記事にhreflangを張るとnoindexページを代替言語として宣言することになるため、
-  // 英語版を出す基準を満たす記事だけ相互参照する。
-  const hasEn = Boolean(article.titleEn && article.bodyEn) && isIndexableEnArticle(article) && !superseded;
 
   return {
     title: article.title,
@@ -126,7 +123,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ...(indexable ? {} : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
-      ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/articles/${id}` } } : {}),
     },
     openGraph: {
       type: "article",

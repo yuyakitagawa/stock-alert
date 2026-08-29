@@ -56,10 +56,6 @@ export const DEAL_TYPE_BY_CATEGORY: Record<string, DealType> = Object.fromEntrie
 export type Article = {
   title: string;
   body: string;
-  // 英語版（/en）用の翻訳フィールド。未設定の記事はEN側の一覧・詳細には出さない
-  // （日英混在ページを検索エンジンに出さないため）。
-  titleEn?: string;
-  bodyEn?: string;
   stockName: string;
   stockCode: string;
   dealType: DealType;

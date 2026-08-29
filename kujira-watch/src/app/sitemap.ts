@@ -2,19 +2,17 @@ import type { MetadataRoute } from "next";
 import {
   getAboutUpdatedAtForSitemap,
   getAllArticlesForSitemap,
-  getTranslatedArticlesForSitemap,
 } from "@/lib/microcms";
 import { getAllFilers, getFilersWithProfile, investorPath } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
-import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import {
   isIndexableDatePage,
   isIndexableInvestorPage,
   isIndexableStockPage,
 } from "@/lib/pageIndexability";
 import { getStockDescriptionCodes } from "@/lib/companyInfo";
-import { CATEGORIES, DEAL_TYPES } from "@/types/article";
-import { DEAL_TYPE_EN } from "@/lib/dealTypeInfo";
+import { CATEGORIES } from "@/types/article";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
 
 // microCMSの一時的な障害時にビルド自体が失敗しないよう、ビルド時の事前生成を行わず
@@ -39,37 +37,31 @@ function maxDate(dates: string[]): string | undefined {
 
 // 固定ページ・カテゴリ・FAQ・ランキングなど。<lastmod>は「そのページの内容が実際に変わる
 // データ源」から厳密に取る（不正確なlastmodはGoogleに信用されなくなるため）:
-// - 記事一覧系ハブ: 表示対象の記事群の最新取引日（日本語ハブ=全記事、/en系=英訳記事）
+// - 記事一覧系ハブ: 表示対象の記事群の最新取引日
 // - カテゴリ: そのカテゴリの記事の最新取引日
 // - EDINET開示系（/activists・/investors）: 最新開示日
 // - /about: microCMSのaboutオブジェクトの実updatedAt
-// - 静的コンテンツ（/privacy・/en/about・/en/privacy・FAQ）: 更新日を追跡できないため省略
+// - 静的コンテンツ（/privacy・FAQ）: 更新日を追跡できないため省略
 async function pageEntries(): Promise<MetadataRoute.Sitemap> {
-  const [articles, translatedArticles, filers, aboutUpdatedAt] = await Promise.all([
+  const [articles, filers, aboutUpdatedAt] = await Promise.all([
     getAllArticlesForSitemap(),
-    getTranslatedArticlesForSitemap(),
     getAllFilers(),
     getAboutUpdatedAtForSitemap(),
   ]);
   const latestArticle = maxDate(articles.map((a) => a.dealDate));
-  const latestEnArticle = maxDate(translatedArticles.map((a) => a.dealDate));
   const latestDisclosure = maxDate(filers.map((f) => f.latestDiscDate));
   const latestByCategory = latestDealDateBy(articles, (a) => a.dealType);
-  const latestByEnCategory = latestDealDateBy(translatedArticles, (a) => a.dealType);
   return [
     { url: SITE_URL, lastModified: latestArticle },
     { url: `${SITE_URL}/articles`, lastModified: latestArticle },
-    { url: `${SITE_URL}/en`, lastModified: latestEnArticle },
-    { url: `${SITE_URL}/en/investors`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/weekly`, lastModified: latestArticle },
     { url: `${SITE_URL}/activists`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/buybacks`, lastModified: latestDisclosure },
     { url: `${SITE_URL}/monthly`, lastModified: latestArticle },
     { url: `${SITE_URL}/trending`, lastModified: latestArticle },
     { url: `${SITE_URL}/about`, lastModified: aboutUpdatedAt },
-    { url: `${SITE_URL}/en/about` },
+    { url: `${SITE_URL}/contact` },
     { url: `${SITE_URL}/privacy` },
-    { url: `${SITE_URL}/en/privacy` },
     { url: `${SITE_URL}/terms` },
     { url: `${SITE_URL}/faq` },
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
@@ -85,10 +77,6 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     ...CATEGORIES.map((category) => ({
       url: `${SITE_URL}/category/${encodeURIComponent(category)}`,
       lastModified: latestByCategory.get(category),
-    })),
-    ...DEAL_TYPES.map((dealType) => ({
-      url: `${SITE_URL}/en/category/${DEAL_TYPE_EN[dealType].slug}`,
-      lastModified: latestByEnCategory.get(dealType),
     })),
   ];
 }
@@ -121,15 +109,12 @@ function latestDealDateBy<T extends { dealDate: string }>(
 }
 
 async function stockEntries(): Promise<MetadataRoute.Sitemap> {
-  const [articles, translatedArticles, describedCodes] = await Promise.all([
+  const [articles, describedCodes] = await Promise.all([
     getAllArticlesForSitemap(),
-    getTranslatedArticlesForSitemap(),
     getStockDescriptionCodes(),
   ]);
   const latestByStock = latestDealDateBy(articles, (a) => a.stockCode);
-  const latestByEnStock = latestDealDateBy(translatedArticles, (a) => a.stockCode);
   const countByStock = countBy(articles, (a) => a.stockCode);
-  const countByEnStock = countBy(translatedArticles, (a) => a.stockCode);
   // 記事が乏しい銘柄はページ側でnoindexにしているのでサイトマップからも外す。
   const indexable = (code: string, counts: Map<string, number>) =>
     isIndexableStockPage({
@@ -141,12 +126,6 @@ async function stockEntries(): Promise<MetadataRoute.Sitemap> {
       .filter(([code]) => indexable(code, countByStock))
       .map(([code, lastModified]) => ({
         url: `${SITE_URL}/stocks/${code}`,
-        lastModified,
-      })),
-    ...[...latestByEnStock.entries()]
-      .filter(([code]) => indexable(code, countByEnStock))
-      .map(([code, lastModified]) => ({
-        url: `${SITE_URL}/en/stocks/${code}`,
         lastModified,
       })),
   ];
@@ -194,9 +173,8 @@ async function investorEntries(): Promise<MetadataRoute.Sitemap> {
     }));
 }
 
-// 日英の相互参照(hreflang)は各ページのHTML <head>で宣言済みのため、サイトマップ側には
-// 載せない（Googleはどちらか一方の方法で足りる）。changefreq/priorityはGoogleが公式に
-// 「無視する」と明言している値なので出さない。全子サイトマップはloc/lastmodの統一形式。
+// changefreq/priorityはGoogleが公式に「無視する」と明言している値なので出さない。
+// 全子サイトマップはloc/lastmodの統一形式。
 async function articleEntries(): Promise<MetadataRoute.Sitemap> {
   const articles = await getAllArticlesForSitemap();
   // 同一「銘柄×提出者」で最新の1本以外はnoindexにしているため、サイトマップからも外す
@@ -206,23 +184,6 @@ async function articleEntries(): Promise<MetadataRoute.Sitemap> {
     .filter((article) => isIndexableArticle(article) && !superseded.has(article.id))
     .map((article) => ({
       url: `${SITE_URL}/articles/${article.id}`,
-      lastModified: article.dealDate,
-    }));
-}
-
-async function enArticleEntries(): Promise<MetadataRoute.Sitemap> {
-  // カニバリ判定は全記事（英訳の有無に関わらず）で行う。英訳済みの記事だけでグループを
-  // 作ると、記事詳細ページ側（同一銘柄の全記事で判定）と結果がずれる。
-  const [translatedArticles, allArticles] = await Promise.all([
-    getTranslatedArticlesForSitemap(),
-    getAllArticlesForSitemap(),
-  ]);
-  const superseded = supersededArticleIds(allArticles);
-  // 英語版は日本語版より厳しい基準（lib/articleIndexability.tsの注記を参照）。
-  return translatedArticles
-    .filter((article) => isIndexableEnArticle(article) && !superseded.has(article.id))
-    .map((article) => ({
-      url: `${SITE_URL}/en/articles/${article.id}`,
       lastModified: article.dealDate,
     }));
 }
@@ -242,7 +203,5 @@ export default async function sitemap(props: {
       return investorEntries();
     case "articles":
       return articleEntries();
-    case "articles-en":
-      return enArticleEntries();
   }
 }

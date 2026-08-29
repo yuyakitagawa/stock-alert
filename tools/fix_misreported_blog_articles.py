@@ -16,12 +16,12 @@ ratio_change_pct() が「今回比率の全量＝新規取得」とみなし、
 是正内容（EDINET開示 = 正）:
   ratioChangePct → holding_ratio - holding_ratio_prior（売りは負値）
   dealAmount     → 正しい変化幅で再概算（訂正記事は0のまま）
-  title/titleEn  → 決定的テンプレで組み直し（「新規保有」→「引き上げ/引き下げ」）
+  title          → 決定的テンプレで組み直し（「新規保有」→「引き上げ/引き下げ」）
   tags           → 方向（売り）を付け直す
   body           → 誤った変化幅・金額・「実質的な新規保有」という記述を含むため既定で再生成
                    （--keep-body で据え置き。本文末尾の株価チャート<figure>は引き継ぐ）
 
-是正後に is_worth_publishing() の基準（推定3億円以上 または 変化1pt以上）を割る記事は、
+是正後に is_indexable_article() の基準（推定3億円以上 または 変化1pt以上＝表示側のindex基準）を割る記事は、
 そもそも記事化すべきでなかったもの。--delete 指定時のみ、全フィールドをlogsへバックアップして
 削除する（指定が無ければ一覧を表示するだけ）。
 
@@ -50,18 +50,12 @@ from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, MicroCMSPermissionError,
     build_article_titles, build_context_facts, classify_filer, estimate_deal_amount_oku,
     disclosure_close_price, generate_article_body_checked, get_company_description,
-    is_worth_publishing, update_article,
+    is_indexable_article, update_article,
 )
 
 load_dotenv()
 
 _FIGURE_RE = re.compile(r"<figure>.*?</figure>", re.S)
-# 英語タイトルのテンプレから提出者名・銘柄名のローマ字表記を回収する
-# （再生成時に英語名を作り直さず、既存記事の表記を引き継ぐため）。
-_TITLE_EN_RE = re.compile(
-    r"^(?P<filer>.+?) (?:Takes .+? Stake in|Cuts Stake in|Raises Stake in|Corrects Reported Stake in) "
-    r"(?P<stock>.+?) \(\d+\)"
-)
 # 変化幅の食い違いをこのポイント数以上で「誤り」とみなす（丸め差は無視する）。
 MISMATCH_TOLERANCE_PT = 0.01
 
@@ -217,11 +211,6 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
     }
 
 
-def english_names(title_en: str) -> tuple:
-    match = _TITLE_EN_RE.match(title_en or "")
-    return (match.group("stock"), match.group("filer")) if match else ("", "")
-
-
 def build_fact_sheet(article: dict, fix: dict, filer_name: str) -> dict:
     code = str(article["stockCode"])
     name = article.get("stockName") or code
@@ -309,23 +298,20 @@ def main():
             failed.append(a["id"])
             continue
 
-        if not is_worth_publishing(fix["deal_amount"], fix["signed_change"]):
+        if not is_indexable_article(fix["deal_amount"], fix["signed_change"]):
             print(f"  🗑 {a['id']}: {name}({code}) 是正後 {fix['deal_amount']}億円 / "
                   f"{fix['signed_change']}pt で基準未満 — 記事化すべきでなかった開示")
             to_delete.append(a)
             continue
 
         fact_sheet = build_fact_sheet(a, fix, filer_name)
-        stock_en, filer_en = english_names(a.get("titleEn") or "")
-        titles = build_article_titles(fact_sheet, stock_name_en=stock_en, filer_name_en=filer_en)
+        titles = build_article_titles(fact_sheet)
         payload = {
             "title": titles["title"],
             "dealAmount": fix["deal_amount"],
             "ratioChangePct": fix["signed_change"],
             "tags": build_tags(a, fix),
         }
-        if a.get("titleEn"):
-            payload["titleEn"] = titles["titleEn"]
 
         print(f"  {a['id']}: {name}({code}) {a.get('ratioChangePct')}pt→{fix['signed_change']}pt / "
               f"{a.get('dealAmount')}億円→{fix['deal_amount']}億円")
@@ -341,8 +327,6 @@ def main():
                 if figure:
                     new_body += figure.group(0)
                 payload["body"] = new_body
-                if generated.get("bodyEn"):
-                    payload["bodyEn"] = generated["bodyEn"]
 
         if not args.apply:
             continue

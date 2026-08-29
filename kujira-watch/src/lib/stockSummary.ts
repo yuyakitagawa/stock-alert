@@ -1,6 +1,5 @@
 import type { ArticleContent } from "@/types/article";
 import { formatDate, formatDealAmount, isSellArticle } from "./format";
-import type { Locale } from "./i18n";
 
 export type StockDealSummary = {
   investorCount: number;
@@ -56,29 +55,17 @@ export function buildStockDealSummary(articles: ArticleContent[]): StockDealSumm
 export function formatStockDealSummary(
   summary: StockDealSummary,
   stockName: string,
-  code: string,
-  locale: Locale = "ja"
+  code: string
 ): string {
   const { investorCount, buyCount, sellCount, totalBuyAmount, totalSellAmount, firstDealDate, latestDealDate, topCategory } =
     summary;
 
-  if (locale === "en") {
-    const parts = [`${stockName} (${code}) has ${buyCount + sellCount} large shareholding disclosure(s)`];
-    if (investorCount > 0) parts.push(`from ${investorCount} investor(s)`);
-    parts.push(`between ${formatDate(firstDealDate, locale)} and ${formatDate(latestDealDate, locale)}.`);
-    let text = parts.join(" ");
-    if (buyCount > 0) text += ` Buy-side: ${buyCount} (est. ${formatDealAmount(totalBuyAmount, locale)}).`;
-    if (sellCount > 0) text += ` Sell-side: ${sellCount} (est. ${formatDealAmount(totalSellAmount, locale)}).`;
-    if (topCategory) text += ` Most active category: ${topCategory}.`;
-    return text;
-  }
-
-  let text = `${stockName}（${code}）は、${formatDate(firstDealDate, locale)}〜${formatDate(latestDealDate, locale)}の間に${
+  let text = `${stockName}（${code}）は、${formatDate(firstDealDate)}〜${formatDate(latestDealDate)}の間に${
     investorCount > 0 ? `${investorCount}者の投資家から` : ""
   }大量保有・変更報告書が${buyCount + sellCount}件提出されています。`;
-  if (buyCount > 0) text += `うち買い方向（取得）が${buyCount}件（推定合計${formatDealAmount(totalBuyAmount, locale)}）`;
+  if (buyCount > 0) text += `うち買い方向（取得）が${buyCount}件（推定合計${formatDealAmount(totalBuyAmount)}）`;
   if (sellCount > 0) {
-    text += `${buyCount > 0 ? "、" : "うち"}売り方向（譲渡・売却）が${sellCount}件（推定合計${formatDealAmount(totalSellAmount, locale)}）`;
+    text += `${buyCount > 0 ? "、" : "うち"}売り方向（譲渡・売却）が${sellCount}件（推定合計${formatDealAmount(totalSellAmount)}）`;
   }
   if (buyCount > 0 || sellCount > 0) text += "です。";
   if (topCategory) text += `提出者の分類では「${topCategory}」による届出が最も多くなっています。`;

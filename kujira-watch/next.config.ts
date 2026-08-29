@@ -19,8 +19,22 @@ const nextConfig: NextConfig = {
   // - /ranking/trending（開示急増投資家ランキング）: 2026-08-21に廃止。開示件数の「増加分」順は
   //   変更報告書を大量に出す常連が上位に来るだけで、買いか売りか・対象銘柄が分からず
   //   次の行動につながらなかった。投資家軸のランキングは成績で並べる/ranking/returnsに一本化。
+  // 英語版(/en)は2026-08-29に廃止。GSC実測でも/en配下は検索流入の山が無く
+  // （直近14日: EN記事1,046本にブラウザPV1,544・最大7PV、日本語版は最大73PV）、
+  // 英訳のために記事1本あたり約3割多い出力トークンを払い続ける形になっていた。
+  // 既にインデックス済みのURLがあるので404にはせず、対応する日本語ページへ恒久リダイレクトする。
   async redirects() {
     return [
+      { source: "/en", destination: "/", permanent: true },
+      { source: "/en/articles/:id", destination: "/articles/:id", permanent: true },
+      { source: "/en/stocks/:code", destination: "/stocks/:code", permanent: true },
+      { source: "/en/about", destination: "/about", permanent: true },
+      { source: "/en/privacy", destination: "/privacy", permanent: true },
+      { source: "/en/investors", destination: "/investors", permanent: true },
+      // 英語カテゴリはslug（activist等）で、日本語カテゴリ名との対応表は廃止済み。
+      // 個別に振り分けず、分類の一覧が並ぶトップへ寄せる。
+      { source: "/en/category/:slug", destination: "/", permanent: true },
+      { source: "/en/:path*", destination: "/", permanent: true },
       { source: "/ranking", destination: "/ranking/returns", permanent: true },
       { source: "/ranking/buys", destination: "/ranking/returns", permanent: true },
       { source: "/ranking/sells", destination: "/ranking/returns", permanent: true },

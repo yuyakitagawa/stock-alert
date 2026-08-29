@@ -44,9 +44,11 @@ load_dotenv()
 import lib.supabase_client as sb
 import web.publish_blog_articles as pb
 
-# kujira-watch/src/lib/articleIndexability.ts と同じ基準（--index-only）
-INDEXABLE_MIN_DEAL_AMOUNT_OKU = pb.MIN_DEAL_AMOUNT_OKU
-INDEXABLE_MIN_RATIO_CHANGE_PT = pb.MIN_RATIO_CHANGE_PT
+# kujira-watch/src/lib/articleIndexability.ts と同じ基準（--index-only）。
+# 新規記事の足切り(pb.MIN_*)は2026-08-29に引き上げたが、index基準は据え置きなので
+# そちらを参照する（引き上げた方を見ると、indexされている既存記事のアイキャッチを飛ばす）。
+INDEXABLE_MIN_DEAL_AMOUNT_OKU = pb.INDEXABLE_MIN_DEAL_AMOUNT_OKU
+INDEXABLE_MIN_RATIO_CHANGE_PT = pb.INDEXABLE_MIN_RATIO_CHANGE_PT
 
 ARTICLE_FIELDS = "id,title,stockCode,stockName,dealType,dealDate,dealAmount,ratioChangePct,tags,filerName"
 

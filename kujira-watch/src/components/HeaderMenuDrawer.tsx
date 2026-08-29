@@ -11,8 +11,7 @@ import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
 import CloseIcon from "@mui/icons-material/Close";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
-import { UI, type Locale } from "@/lib/i18n";
+import { SITE_NAME } from "@/lib/site";
 import VisitCounter from "./VisitCounter";
 
 // external: 外部サイト（公式Xなど）へのリンク。next/linkではなく素のaで別タブに開く。
@@ -27,21 +26,14 @@ export type MenuGroup = { heading: string; links: MenuLink[] };
 export default function HeaderMenuDrawer({
   open,
   onClose,
-  locale,
   menuGroups,
-  jaHref,
-  enHref,
   year,
 }: {
   open: boolean;
   onClose: () => void;
-  locale: Locale;
   menuGroups: MenuGroup[];
-  jaHref: string;
-  enHref: string;
   year: number;
 }) {
-  const t = UI[locale];
   const close = onClose;
 
   return (
@@ -52,10 +44,10 @@ export default function HeaderMenuDrawer({
               <Box component="span" aria-hidden>
                 🐋
               </Box>
-              {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+              {SITE_NAME}
             </Typography>
             <IconButton
-              aria-label={locale === "en" ? "Close menu" : "メニューを閉じる"}
+              aria-label="メニューを閉じる"
               onClick={close}
               size="small"
               sx={{ color: "primary.main" }}
@@ -64,25 +56,6 @@ export default function HeaderMenuDrawer({
             </IconButton>
           </Box>
 
-          <Typography variant="overline" sx={{ display: "block", bgcolor: "action.hover", px: 2, py: 0.75, color: "text.secondary" }}>
-            {t.langSectionLabel}
-          </Typography>
-          <List component="nav" aria-label={t.langSectionLabel} disablePadding>
-            <ListItemButton component={Link} href={jaHref} onClick={close} divider selected={locale === "ja"}>
-              <ListItemText
-                primary="日本語"
-                slotProps={{ primary: { sx: { fontWeight: locale === "ja" ? 700 : 400, color: locale === "ja" ? "brand.blue" : "primary.main" } } }}
-              />
-              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-            </ListItemButton>
-            <ListItemButton component={Link} href={enHref} onClick={close} divider selected={locale === "en"}>
-              <ListItemText
-                primary="English"
-                slotProps={{ primary: { sx: { fontWeight: locale === "en" ? 700 : 400, color: locale === "en" ? "brand.blue" : "primary.main" } } }}
-              />
-              <ChevronRightIcon fontSize="small" sx={{ color: "action.disabled" }} />
-            </ListItemButton>
-          </List>
 
           {menuGroups.map((group) => (
             <Box key={group.heading}>
@@ -116,17 +89,15 @@ export default function HeaderMenuDrawer({
           ))}
 
           <Typography variant="caption" sx={{ display: "block", mt: 1.5, px: 2, lineHeight: 1.6, color: "text.secondary" }}>
-            {locale === "en"
-              ? "This site is commentary based on public EDINET large-shareholding filings and is not investment advice."
-              : "本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。"}
+            本サイトはEDINET大量保有報告書等の公開情報をもとにした解説であり、投資助言ではありません。
           </Typography>
           <Divider sx={{ my: 1 }} />
           <Typography variant="caption" sx={{ display: "block", px: 2, color: "text.disabled" }}>
-            © {year} {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+            © {year} {SITE_NAME}
           </Typography>
           {/* ヘッダーの訪問者数はスマホでは非表示のため、メニュー最下部にも置く（加算はしない）。 */}
           <Box sx={{ px: 2, pb: 2, pt: 0.5 }}>
-            <VisitCounter locale={locale} increment={false} />
+            <VisitCounter increment={false} />
           </Box>
         </Box>
       </Drawer>

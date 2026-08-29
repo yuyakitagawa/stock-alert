@@ -10,22 +10,21 @@ import Tab from "@mui/material/Tab";
 import HeaderMenu from "./HeaderMenu";
 import StockSearch from "./StockSearch";
 import VisitCounter from "./VisitCounter";
-import { SITE_NAME, SITE_NAME_EN } from "@/lib/site";
+import { SITE_NAME } from "@/lib/site";
 import { mainNavLinks } from "@/lib/nav";
-import type { Locale } from "@/lib/i18n";
 
 // タブが「今どのページを開いているか」を示せるよう、現在のパスと一致する
 // (または配下にある)リンクだけをアクティブ表示する。
 function isActiveTab(pathname: string, href: string): boolean {
-  if (href === "/" || href === "/en") return pathname === href;
+  if (href === "/") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function Header({ locale = "ja" }: { locale?: Locale }) {
-  const homeHref = locale === "en" ? "/en" : "/";
+export default function Header() {
+  const homeHref = "/";
   const pathname = usePathname() ?? homeHref;
 
-  const navLinks = mainNavLinks(locale);
+  const navLinks = mainNavLinks();
 
   // MUI TabsのvalueはchildのTabのvalueと厳密一致する必要があるため、
   // サブページ(配下URL)では一致する先頭リンクのhrefを採用する。どれにも
@@ -87,26 +86,24 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {locale === "en" ? SITE_NAME_EN : SITE_NAME}
+                  {SITE_NAME}
                 </Box>
                 <Box
                   component="span"
                   className="kicker"
                   sx={{ display: { xs: "none", sm: "block" }, mt: 0.25, color: "brand.blue" }}
                 >
-                  {locale === "en"
-                    ? "Tracking Japan's Market \"Whales\" from Large-Holding Filings"
-                    : "EDINET大量保有報告書から読む大口投資家の動き"}
+                  EDINET大量保有報告書から読む大口投資家の動き
                 </Box>
               </Box>
             </Box>
             <Box sx={{ display: "flex", flexShrink: 0, alignItems: "center", gap: 1 }}>
-              <StockSearch locale={locale} />
+              <StockSearch />
               {/* モバイルではロゴの横幅を優先し、訪問者数はsm以上でのみ表示する。 */}
               <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center" }}>
-                <VisitCounter locale={locale} />
+                <VisitCounter />
               </Box>
-              <HeaderMenu locale={locale} />
+              <HeaderMenu />
             </Box>
           </Box>
           <Tabs
@@ -114,7 +111,7 @@ export default function Header({ locale = "ja" }: { locale?: Locale }) {
             variant="scrollable"
             scrollButtons="auto"
             allowScrollButtonsMobile
-            aria-label={locale === "en" ? "Categories" : "主要ページ"}
+            aria-label="主要ページ"
             sx={{
               mt: 1,
               borderTop: 1,

@@ -1,15 +1,7 @@
 import { investorPath } from "@/lib/investorPath";
-import type { Locale } from "@/lib/i18n";
 
-export function formatDate(dateString: string, locale: Locale = "ja"): string {
+export function formatDate(dateString: string): string {
   const date = new Date(dateString);
-  if (locale === "en") {
-    return new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-    }).format(date);
-  }
   return new Intl.DateTimeFormat("ja-JP", {
     year: "numeric",
     month: "2-digit",
@@ -19,24 +11,13 @@ export function formatDate(dateString: string, locale: Locale = "ja"): string {
 
 // "YYYY-MM" を「2026年8月」形式にする（/monthly の見出し・パンくず用）。
 // Dateを介すとタイムゾーンで前月にずれる余地があるため、文字列のまま組み立てる。
-export function formatMonth(month: string, locale: Locale = "ja"): string {
+export function formatMonth(month: string): string {
   const [year, mon] = month.split("-");
-  if (locale === "en") {
-    const label = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", timeZone: "UTC" })
-      .format(new Date(`${month}-01T00:00:00Z`));
-    return label;
-  }
   return `${year}年${Number(mon)}月`;
 }
 
-// amount は億円(100,000,000円)単位。英語版は短縮表記(¥X.XB / ¥XXXM)に変換する。
-export function formatDealAmount(amount: number, locale: Locale = "ja"): string {
-  if (locale === "en") {
-    const millionYen = amount * 100;
-    return millionYen >= 1000
-      ? `¥${(millionYen / 1000).toFixed(1)}B`
-      : `¥${millionYen.toFixed(0)}M`;
-  }
+// amount は億円(100,000,000円)単位。
+export function formatDealAmount(amount: number): string {
   return `${amount.toLocaleString("ja-JP")}億円`;
 }
 
@@ -122,12 +103,9 @@ export function isCorrectionArticle(tags?: string): boolean {
 // 訂正報告書の記事は売買を伴わないため推定金額を持たない（web/publish_blog_articles.pyが
 // dealAmount=0で投稿する）。金額の代わりに「訂正」と表示し、0億円の取引があったように
 // 見せない。集計値（週次・月次の合計）は0が加算されるだけなので影響しない。
-export function formatDealAmountOrCorrection(
-  article: { dealAmount: number; tags?: string },
-  locale: Locale = "ja"
-): string {
-  if (isCorrectionArticle(article.tags)) return locale === "en" ? "Correction" : "訂正";
-  return formatDealAmount(article.dealAmount, locale);
+export function formatDealAmountOrCorrection(article: { dealAmount: number; tags?: string }): string {
+  if (isCorrectionArticle(article.tags)) return "訂正";
+  return formatDealAmount(article.dealAmount);
 }
 
 // DBの正式名（例:「シンフォニー・フィナンシャル・パートナーズ（シンガポール）ピーティーイー・

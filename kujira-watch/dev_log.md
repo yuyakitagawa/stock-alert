@@ -808,3 +808,17 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
   判読しづらかった鉱業（つるはし）・繊維製品（Tシャツに変更）・海運業（コンテナ船に変更）・
   VC（ロケット）を描き直した。一時ページは確認後に削除済み。
 - `tsc --noEmit`・`eslint` パス。
+
+## 2026-08-29 英語版(/en)を全除却
+- `src/app/(en)` 配下（TOP・記事・銘柄・カテゴリ・investors・about・privacy・OGP）を削除。
+  `/en/*` は `next.config.ts` の redirects で対応する日本語ページ（カテゴリ等はトップ）へ301。
+- 判断材料: `blog_crawler_log` 直近14日で EN記事1,046本にブラウザPV1,544（中央値1・最大7・
+  10PV以上は0本）。日本語版は最大73PV・10PV以上が42本あり、EN側だけ検索流入の山が無い。
+  英訳のために記事1本あたり約3割多い出力トークンを払い続ける形だったため生成ごと停止した。
+- 併せて削除: hreflang（layout/about/privacy/記事/銘柄）、サイトマップの`/en`エントリと
+  `articles-en`分割（`SITEMAP_IDS`は6→5種）、`getTranslatedArticlesForSitemap()`と`translatedOnly`、
+  `isIndexableEnArticle()`、`Article.titleEn`/`bodyEn`、`DEAL_TYPE_EN`/`EN_SLUG_TO_DEAL_TYPE`、
+  `SITE_NAME_EN`/`SITE_DESCRIPTION_EN`、言語切替UI（ヘッダーメニュー・フッター）、
+  `Locale`型と`UI.en`辞書（未使用になった文言キー33件も削除）。
+- Organizationの`alternateName`から "Big Investor Watch" を外した（対応するページが無くなったため）。
+- `tsc --noEmit`・`eslint`・`next build` パス。

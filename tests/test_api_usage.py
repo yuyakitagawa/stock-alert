@@ -11,6 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from lib import api_budget  # noqa: E402
 from lib import api_usage  # noqa: E402
 
 
@@ -29,9 +30,16 @@ def _resp(model="claude-haiku-4-5-20251001", **usage):
 class ApiUsageTest(unittest.TestCase):
     def setUp(self):
         api_usage.reset()
+        api_budget.reset()
+        # 記録の単体テストでは日次上限を切る。切らないと record() の中の判定が
+        # Supabaseを見に行き、閾値を跨いだテストだけバッファをflushして落ちる。
+        self._env = mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "0"})
+        self._env.start()
 
     def tearDown(self):
+        self._env.stop()
         api_usage.reset()
+        api_budget.reset()
 
     def test_records_tokens_and_cost(self):
         api_usage.record(_resp(input_tokens=1_000_000, output_tokens=200_000),
@@ -107,11 +115,79 @@ class ApiUsageTest(unittest.TestCase):
         up.assert_not_called()
 
 
+class DailyCapTest(unittest.TestCase):
+    """日次上限。月次上限に当たって1ヶ月止まる前に、1日ぶんで打ち切る。"""
+
+    def setUp(self):
+        api_usage.reset()
+        api_budget.reset()
+
+    def tearDown(self):
+        api_usage.reset()
+        api_budget.reset()
+
+    def test_env_var_overrides_default_daily_budget(self):
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "3"}):
+            self.assertEqual(api_usage.daily_budget_usd(), 3.0)
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "x"}):
+            self.assertEqual(api_usage.daily_budget_usd(), api_usage.DEFAULT_DAILY_BUDGET_USD)
+
+    def test_zero_budget_never_stops(self):
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "0"}), \
+                mock.patch("lib.api_usage.day_usage", return_value=99.0):
+            self.assertFalse(api_usage.check_daily_cap())
+        self.assertFalse(api_budget.reached())
+
+    def test_under_budget_keeps_going(self):
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "1.2"}), \
+                mock.patch("lib.api_usage.day_usage", return_value=0.5):
+            api_usage.record(_resp(input_tokens=1000), task="blog_body")
+            self.assertFalse(api_usage.check_daily_cap())
+        self.assertFalse(api_budget.reached())
+
+    def test_over_budget_stops_and_notifies_once(self):
+        """当日の記録済み＋未送信の合計で判定し、超えたら以降の呼び出しを止める。"""
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "1.2"}), \
+                mock.patch("lib.api_usage.day_usage", return_value=1.0), \
+                mock.patch("lib.supabase_client.upsert", return_value=True), \
+                mock.patch("lib.api_usage.check_budget"), \
+                mock.patch("lib.notify.error", return_value=True) as err:
+            # 入力0.3M トークン = $0.30。記録済み$1.00と合わせて$1.30で上限超え。
+            api_usage.record(_resp(input_tokens=300_000), task="blog_body")
+            self.assertTrue(api_budget.reached())
+            # 2件目以降は呼ぶ前に弾かれる想定なので、通知は増えない
+            self.assertFalse(api_usage.check_daily_cap())
+        self.assertEqual(err.call_count, 1)
+        self.assertEqual(err.call_args.kwargs["dedupe_key"], api_budget.DAILY_DEDUPE_KEY)
+
+    def test_stop_saves_what_it_measured(self):
+        """打ち切り時にflushしないと、次の便が「まだ予算内」と誤認して走ってしまう。"""
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "1.2"}), \
+                mock.patch("lib.api_usage.day_usage", return_value=1.0), \
+                mock.patch("lib.supabase_client.upsert", return_value=True) as up, \
+                mock.patch("lib.api_usage.check_budget"), \
+                mock.patch("lib.notify.error", return_value=True):
+            api_usage.record(_resp(input_tokens=300_000), task="blog_body")
+        up.assert_called_once()
+        self.assertEqual(api_usage.pending(), [])
+
+    def test_cap_check_survives_a_db_failure(self):
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "1.2"}), \
+                mock.patch("lib.api_usage.day_usage", side_effect=Exception("boom")):
+            self.assertFalse(api_usage.check_daily_cap())
+        self.assertFalse(api_budget.reached())
+
+
 class BudgetAlertTest(unittest.TestCase):
     """残枠監視。上限に「到達してから」止める api_budget.py の手前で鳴らす。"""
 
     def setUp(self):
         api_usage.reset()
+        api_budget.reset()
+
+    def tearDown(self):
+        api_usage.reset()
+        api_budget.reset()
 
     def test_alert_level_returns_highest_crossed_threshold(self):
         self.assertEqual(api_usage.alert_level(7.4, 15.0), 0)

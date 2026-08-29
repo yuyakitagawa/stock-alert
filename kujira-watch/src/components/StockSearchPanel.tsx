@@ -6,7 +6,7 @@ import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
 import CircularProgress from "@mui/material/CircularProgress";
 import type { SearchOption } from "./StockSearch";
-import { UI, type Locale } from "@/lib/i18n";
+import { UI } from "@/lib/i18n";
 
 // 検索パネルの中身。虫眼鏡をタップするまで表示されないので、StockSearch側から
 // next/dynamicで遅延読み込みする。MUIのAutocomplete/TextFieldはMUIの中でも重い部類で、
@@ -16,7 +16,6 @@ export default function StockSearchPanel({
   query,
   results,
   loading,
-  locale,
   onQueryChange,
   onSelect,
   onReady,
@@ -24,13 +23,12 @@ export default function StockSearchPanel({
   query: string;
   results: SearchOption[];
   loading: boolean;
-  locale: Locale;
   onQueryChange: (value: string) => void;
   onSelect: (option: SearchOption) => void;
   // 読み込み完了の合図。呼び出し側は平常時の素のinputをこのタイミングで引っ込める。
   onReady?: () => void;
 }) {
-  const t = UI[locale];
+  const t = UI;
 
   useEffect(() => {
     onReady?.();

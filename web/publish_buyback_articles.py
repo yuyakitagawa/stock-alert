@@ -38,7 +38,7 @@ from lib import api_budget  # noqa: E402
 from lib import api_usage  # noqa: E402
 from lib.buyback import classify_buyback_title  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
-from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
+from lib.writing_style import JA_STYLE_RULES, find_ai_tells  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
     ANTHROPIC_API_KEY,
     BACKFILL_DAYS,
@@ -191,8 +191,8 @@ def format_amount(amount_oku: "float | None") -> str:
     return f"{amount_oku:,.0f}億円" if amount_oku >= 100 else f"{amount_oku:.1f}".rstrip("0").rstrip(".") + "億円"
 
 
-def build_titles(fact: dict, stock_name_en: str = "") -> dict:
-    """検索クエリ型タイトル（ja/en）。「銘柄名（コード） 自社株買い」で検索されるため
+def build_titles(fact: dict) -> dict:
+    """検索クエリ型タイトル。「銘柄名（コード） 自社株買い」で検索されるため
     その語を必ず含め、規模（上限金額・比率）を続ける。publish_blog_articles.build_article_titles と同じく
     LLMに任せず決定的に組む。"""
     name, code = fact["stock_name"], fact["stock_code"]
@@ -208,16 +208,7 @@ def build_titles(fact: dict, stock_name_en: str = "") -> dict:
     if len(title) > MAX_TITLE_LEN:
         title = f"{name}（{code}）、{scale}の自社株買いを決定"
 
-    name_en = stock_name_en or name
-    yen = fact.get("max_amount_yen")
-    if yen:
-        amount_en = f"¥{yen/1e9:.1f} billion" if yen >= 1e9 else f"¥{yen/1e6:.0f} million"
-        title_en = f"{name_en} ({code}) Approves Share Buyback of Up to {amount_en}"
-        if ratio is not None:
-            title_en += f" ({ratio:g}% of Shares Outstanding)"
-    else:
-        title_en = f"{name_en} ({code}) Approves Share Buyback of Up to {ratio:g}% of Shares Outstanding"
-    return {"title": title, "titleEn": title_en + " | TDnet Disclosure"}
+    return {"title": title}
 
 
 def build_fact_sheet(row: dict) -> dict:
@@ -269,7 +260,7 @@ def _answer_sentence(f: dict) -> str:
 
 
 def generate_body(f: dict) -> "dict | None":
-    """事実だけからHaikuに本文（ja/en）を書かせる。JSON {body, bodyEn, stockNameEn}。失敗時None。"""
+    """事実だけからHaikuに本文を書かせる。JSON {body}。失敗時None。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY:
@@ -330,14 +321,9 @@ ToSTNeT-3（立会外買付）の場合は、翌営業日の取引開始前に�
 最後に1文だけ、この自社株買いが今後の同社株や株主にとってどんな意味を持ちうるかの推測を加えてください。
 必ず文頭に「※推測:」を付けて事実の記述と明確に分け、上記の事実から自然に読み取れる範囲に留めてください。
 
-bodyEnには、上と同じ事実・トーンを保った自然な英語訳を書いてください（英語ネイティブの投資ニュース記事として
-自然な文章。1文目は日本語の1文目と同じ内容の直答で始める。※推測の文は "*Speculation:" で始める。
-金額は円建てのまま、例 "¥30 billion"）。
-{EN_STYLE_RULES}
-
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途テンプレートで
-組み立てるため出力しない）。stockNameEnには英語タイトル用のローマ字表記（例: "Lintec"）を短く書いてください:
-{{"body": "<p>...</p>形式のHTML本文（600〜900字程度、3〜4段落。最後の段落に※推測文を含む）", "bodyEn": "<p>...</p> HTML body in English, same structure as body", "stockNameEn": "..."}}
+組み立てるため出力しない）:
+{{"body": "<p>...</p>形式のHTML本文（600〜900字程度、3〜4段落。最後の段落に※推測文を含む）"}}
 """
     try:
         resp = client.messages.create(
@@ -377,7 +363,7 @@ def generate_body_checked(f: dict) -> "dict | None":
 
 
 def build_payload(f: dict, article: dict) -> dict:
-    titles = build_titles(f, article.get("stockNameEn") or "")
+    titles = build_titles(f)
     tags = ["自社株買い"] + (["消却"] if f["will_cancel"] else [])
     payload = {
         "title": titles["title"],
@@ -393,9 +379,6 @@ def build_payload(f: dict, article: dict) -> dict:
         payload["ratioChangePct"] = f["ratio"]
     if f.get("doc_url"):
         payload["sourceUrl"] = f["doc_url"]
-    if article.get("bodyEn"):
-        payload["titleEn"] = titles["titleEn"]
-        payload["bodyEn"] = article["bodyEn"]
     return payload
 
 
@@ -471,11 +454,6 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
                 f'<figure><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）">'
                 f'<figcaption>{name}（{code}）の株価推移（直近3ヶ月・終値ベース）</figcaption></figure>'
             )
-            if payload.get("bodyEn"):
-                payload["bodyEn"] += (
-                    f'<figure><img src="{chart_url}" alt="{name} ({code}) share price, last three months">'
-                    f'<figcaption>Share price of {name} ({code}) over the last three months (closing prices).</figcaption></figure>'
-                )
             figure_count += 1
         try:
             content_id = publish_article(payload)

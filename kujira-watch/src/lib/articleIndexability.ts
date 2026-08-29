@@ -10,8 +10,13 @@
 // EDINET(Supabase)の値を混ぜるとsitemapと記事ページで判定がずれ、
 // 「サイトマップに載っているのにnoindex」という自己矛盾をGoogleに送ることになる。
 
-// しきい値は web/publish_blog_articles.py（記事化の足切り）と faqData.tsx のFAQ
-// 「すべての大量保有報告書が記事になっていますか？」と同じ数値。変更時は3箇所そろえること。
+// しきい値は web/publish_blog_articles.py の INDEXABLE_MIN_*（公開済み記事のindex基準）と
+// 同じ数値。変更時は両方そろえること。
+//
+// 新規記事の足切り（同ファイルの MIN_DEAL_AMOUNT_OKU / MIN_RATIO_CHANGE_PT、FAQで
+// 読者に公開している数字）は2026-08-29に5億円/1.5ptへ引き上げたが、**こちらは3億円/1.0ptで
+// 据え置き**。合わせて上げると既に順位が付いている既存記事の24%をnoindexに落とすことになる。
+// 新規記事は必ず足切り≧index基準なので「サイトマップに載っているのにnoindex」は起きない。
 
 /** 推定取得金額の下限（億円）。これ以上なら比率変化が小さくてもインデックス対象。 */
 export const INDEXABLE_MIN_DEAL_AMOUNT_OKU = 3;
@@ -88,38 +93,4 @@ export function supersededArticleIds(articles: SupersedableArticle[]): Set<strin
     superseded.add(articleWins ? current.id : article.id);
   }
   return superseded;
-}
-
-// 英語版(/en)の対象判定。日本語版より明確に厳しくする。
-//
-// GSCの実測（2026-08-18・直近3か月・ページ`/en/`）は 表示33回・クリック0・平均掲載順位23.3で、
-// 需要はゼロではないが極小。一方で英訳は全911記事に自動展開されており、日本語版と同じだけの
-// URLがクロール枠を食っていた。英語圏の読者が実際に探すのは「アクティビストの動き」
-// 「大型案件」「新規の5%取得」なので、その3つに絞って残りは英訳しない（既存分はnoindex）。
-// この基準を緩める/広げる判断は、GSCの`/en/`の表示回数の推移を見てから行う。
-
-/** 大型案件とみなす推定取得金額（億円）。 */
-export const EN_MIN_DEAL_AMOUNT_OKU = 100;
-/** 新規の5%取得とみなす保有比率の変化幅（ポイント）。5%ルールの新規保有は変化幅=保有比率になる。 */
-export const EN_NEW_POSITION_RATIO_PT = 5;
-/** 新規5%取得でも、規模が小さいものは英語版を作らない（億円）。 */
-export const EN_NEW_POSITION_MIN_AMOUNT_OKU = 20;
-/** 英語圏の関心が最も高い投資家分類。 */
-export const EN_ALWAYS_DEAL_TYPE = "アクティビスト";
-
-export type EnArticleIndexabilityInput = ArticleIndexabilityInput & {
-  dealType?: string | string[] | null;
-};
-
-export function isIndexableEnArticle(article: EnArticleIndexabilityInput): boolean {
-  const dealTypes = Array.isArray(article.dealType)
-    ? article.dealType
-    : article.dealType
-      ? [article.dealType]
-      : [];
-  if (dealTypes.includes(EN_ALWAYS_DEAL_TYPE)) return true;
-  const amount = article.dealAmount ?? 0;
-  if (amount >= EN_MIN_DEAL_AMOUNT_OKU) return true;
-  const ratioChange = Math.abs(article.ratioChangePct ?? 0);
-  return ratioChange >= EN_NEW_POSITION_RATIO_PT && amount >= EN_NEW_POSITION_MIN_AMOUNT_OKU;
 }

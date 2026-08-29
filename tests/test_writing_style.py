@@ -8,7 +8,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.writing_style import (
-    EN_STYLE_RULES,
     JA_STYLE_RULES,
     NARRATION_STYLE_RULES,
     find_ai_tells,
@@ -75,10 +74,10 @@ def test_find_ai_tells_empty_input():
 
 
 def test_style_rules_are_nonempty_prompt_blocks():
-    for block in (JA_STYLE_RULES, EN_STYLE_RULES, NARRATION_STYLE_RULES):
+    for block in (JA_STYLE_RULES, NARRATION_STYLE_RULES):
         assert isinstance(block, str) and len(block) > 50
     # プロンプトに埋め込むため、f-string を壊す波括弧を含まないこと
-    for block in (JA_STYLE_RULES, EN_STYLE_RULES, NARRATION_STYLE_RULES):
+    for block in (JA_STYLE_RULES, NARRATION_STYLE_RULES):
         assert "{" not in block and "}" not in block
 
 

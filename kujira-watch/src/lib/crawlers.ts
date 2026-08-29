@@ -15,6 +15,8 @@ const BOT_PATTERNS: [RegExp, string][] = [
   [/anthropic-ai/i, "anthropic-ai"],
   [/PerplexityBot/i, "PerplexityBot"],
   [/facebookexternalhit/i, "facebookexternalhit"],
+  [/meta-externalagent/i, "meta-externalagent"],
+  [/meta-externalfetcher/i, "meta-externalfetcher"],
   [/Twitterbot/i, "Twitterbot"],
   [/LinkedInBot/i, "LinkedInBot"],
   [/Slackbot/i, "Slackbot"],
@@ -23,6 +25,9 @@ const BOT_PATTERNS: [RegExp, string][] = [
   [/SemrushBot/i, "SemrushBot"],
   [/MJ12bot/i, "MJ12bot"],
   [/GoogleOther/i, "GoogleOther"],
+  [/AdsBot-Google/i, "AdsBot-Google"],
+  [/Amazonbot/i, "Amazonbot"],
+  [/Bytespider/i, "Bytespider"],
 ];
 
 export function detectBot(userAgent: string): string | null {

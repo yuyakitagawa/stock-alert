@@ -17,7 +17,6 @@ export const metadata: Metadata = {
   description,
   alternates: {
     canonical: `${SITE_URL}/about`,
-    languages: { ja: `${SITE_URL}/about`, en: `${SITE_URL}/en/about` },
   },
 };
 

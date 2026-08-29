@@ -1,8 +1,12 @@
 """ニュース価値の無い開示の記事をmicroCMSから削除する。
 
-web.publish_blog_articles.is_worth_publishing()（推定金額3億円以上 または
-保有比率の変化1pt以上）を満たさない記事が対象。2026-08-18に生成側の足切りを入れる前に
-公開された分（保有比率0.04%・推定額0億円の変更報告書など）を回収する。
+web.publish_blog_articles.is_indexable_article()（推定金額3億円以上 または
+保有比率の変化1pt以上＝表示側のindex基準）を満たさない記事が対象。2026-08-18に生成側の
+足切りを入れる前に公開された分（保有比率0.04%・推定額0億円の変更報告書など）を回収する。
+
+**新規記事の足切り(is_worth_publishing、2026-08-29に5億円/1.5ptへ引き上げ)ではなく
+index基準で判定する**。新しい足切りで消すと、既に順位が付いている既存記事まで
+巻き込んで24%削ることになるため。
 
 Googleに「/articles/テンプレートは低品質」と学習されるとテンプレート全体の新規記事が
 クロールされなくなるため（GSC「検出 - インデックス未登録」の主因）、サイトから消す。
@@ -24,7 +28,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from web.publish_blog_articles import (
-    _microcms_base_url, _microcms_headers, is_worth_publishing,
+    _microcms_base_url, _microcms_headers, is_indexable_article,
     MICROCMS_DOMAIN, MICROCMS_KEY,
 )
 from tools.cleanup_duplicate_blog_articles import delete_article
@@ -49,10 +53,10 @@ def fetch_all_articles() -> list:
 
 
 def find_low_value(articles: list) -> list:
-    """生成側と同じ基準で足切りに掛かる記事を返す。"""
+    """表示側のindex基準に掛からない記事を返す。"""
     return [
         a for a in articles
-        if not is_worth_publishing(a.get("dealAmount") or 0, a.get("ratioChangePct") or 0)
+        if not is_indexable_article(a.get("dealAmount") or 0, a.get("ratioChangePct") or 0)
     ]
 
 

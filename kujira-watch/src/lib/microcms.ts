@@ -119,39 +119,12 @@ async function fetchAllArticlesByFilter(filters: string): Promise<ArticleContent
   return [first, ...restPages].flatMap((page) => page.contents.map(normalizeDealType));
 }
 
-// microCMSの`titleEn[exists]true`フィルタは実データがあってもヒットしない既知不具合が
-// あるため（2026-08-14確認、begins_with等の他演算子は正常に動く一方でexistsだけ0件を返す。
-// 原因はmicroCMS側未特定）、EN側の絞り込みはこのフィルタに頼らず、dealType等の
-// 信頼できる条件でサーバー側フィルタした後、titleEn/bodyEnの有無をクライアント側で判定する。
-function isTranslated(article: Pick<Article, "titleEn" | "bodyEn">): boolean {
-  return Boolean(article.titleEn && article.bodyEn);
-}
-
-async function fetchAllArticles(dealType?: DealType): Promise<ArticleContent[]> {
-  const contents = await client.getAllContents<Article>({
-    endpoint: "articles",
-    queries: {
-      orders: "-dealDate,-dealAmount",
-      filters: dealTypeFilter(dealType),
-    },
-    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-  });
-  return contents.map(normalizeDealType);
-}
-
 export async function getArticleList(params: {
   offset?: number;
   limit?: number;
   dealType?: DealType;
-  translatedOnly?: boolean;
 } = {}) {
-  const { offset = 0, limit = ARTICLES_PER_PAGE, dealType, translatedOnly = false } = params;
-
-  if (translatedOnly) {
-    const all = await fetchAllArticles(dealType);
-    const translated = all.filter(isTranslated);
-    return { totalCount: translated.length, contents: translated.slice(offset, offset + limit) };
-  }
+  const { offset = 0, limit = ARTICLES_PER_PAGE, dealType } = params;
 
   const result = await client.getList<Article>({
     endpoint: "articles",
@@ -209,13 +182,8 @@ function pickFeatured(pool: ArticleContent[], count: number): ArticleContent[] {
 
 export async function getFeaturedArticles(
   poolSize = FEATURED_POOL_SIZE,
-  count = FEATURED_COUNT,
-  translatedOnly = false
+  count = FEATURED_COUNT
 ) {
-  if (translatedOnly) {
-    const all = await fetchAllArticles();
-    return pickFeatured(all.filter(isTranslated).slice(0, poolSize), count);
-  }
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
@@ -227,8 +195,7 @@ export async function getFeaturedArticles(
   return pickFeatured(result.contents.map(normalizeDealType), count);
 }
 
-export async function getArticlesByStockCode(stockCode: string, params: { translatedOnly?: boolean } = {}) {
-  const { translatedOnly = false } = params;
+export async function getArticlesByStockCode(stockCode: string) {
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
@@ -238,8 +205,7 @@ export async function getArticlesByStockCode(stockCode: string, params: { transl
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  let contents = result.contents.map(normalizeDealType);
-  if (translatedOnly) contents = contents.filter(isTranslated);
+  const contents = result.contents.map(normalizeDealType);
   return { ...result, totalCount: contents.length, contents };
 }
 
@@ -451,48 +417,6 @@ export async function getAboutPage() {
   });
 }
 
-// EN側サイトマップ用。titleEn/bodyEn両方がある記事のみ（日英混在ページを出さないため）。
-// titleEn[exists]true フィルタが機能しないため、全件取得してクライアント側で絞り込む。
-// bodyEn全文を含む重い取得（実測でsitemap応答9秒超の主因）なので、存在判定に使った後は
-// 捨てて軽量な参照だけをunstable_cacheに1時間載せる。
-export const getTranslatedArticlesForSitemap = unstable_cache(
-  async (): Promise<SitemapArticleRef[]> => {
-    const contents = await client.getAllContents<
-      Pick<
-        Article,
-        | "stockCode"
-        | "dealDate"
-        | "dealType"
-        | "dealAmount"
-        | "ratioChangePct"
-        | "filerName"
-        | "titleEn"
-        | "bodyEn"
-      >
-    >({
-      endpoint: "articles",
-      queries: {
-        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,titleEn,bodyEn,tags",
-        orders: "-publishedAt",
-      },
-      customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
-    });
-    return contents
-      .filter((a) => a.titleEn && a.bodyEn)
-      .map(normalizeDealType)
-      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct, filerName }) => ({
-        id,
-        stockCode,
-        dealDate,
-        dealType,
-        dealAmount,
-        ratioChangePct,
-        filerName,
-      }));
-  },
-  ["sitemap-translated-articles"],
-  { revalidate: 3600 }
-);
 
 // /aboutの<lastmod>用。microCMSのaboutオブジェクト自体の更新日時だけを取る
 // （本文フィールドは不要なのでupdatedAtのみ要求）。

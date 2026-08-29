@@ -7,7 +7,7 @@ import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import SearchIcon from "@mui/icons-material/Search";
 import type { StockSearchResult } from "@/lib/microcms";
-import { UI, type Locale } from "@/lib/i18n";
+import { UI } from "@/lib/i18n";
 import { investorPath } from "@/lib/investorPath";
 
 // 企業名・証券コード・投資家名で検索し、選択(またはEnter)で /stocks/[code] または
@@ -25,8 +25,8 @@ export type SearchOption =
 // ssr:false なのは、閉じている状態のHTMLにパネルの分の出力を含める意味が無いため。
 const StockSearchPanel = dynamic(() => import("./StockSearchPanel"), { ssr: false });
 
-export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
-  const t = UI[locale];
+export default function StockSearch() {
+  const t = UI;
   const router = useRouter();
   const [open, setOpen] = useState(false);
   // Autocompleteは遅延読み込みなので、読み込み終わるまでの数十msは平常時の素のinputを
@@ -79,15 +79,9 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
           const stocks: SearchOption[] = ((data.results ?? []) as StockSearchResult[]).map(
             (r) => ({ type: "stock", ...r })
           );
-          // 英語版には投資家ページ(/investors)が無いため、投資家の結果は日本語版のみ表示する。
-          const investors: SearchOption[] =
-            locale === "en"
-              ? []
-              : ((data.investors ?? []) as { filerName: string; filerId: number | null }[]).map((i) => ({
-                  type: "investor",
-                  filerName: i.filerName,
-                  filerId: i.filerId,
-                }));
+          const investors: SearchOption[] = (
+            (data.investors ?? []) as { filerName: string; filerId: number | null }[]
+          ).map((i) => ({ type: "investor", filerName: i.filerName, filerId: i.filerId }));
           setResults([...stocks, ...investors]);
         })
         .catch(() => setResults([]))
@@ -95,12 +89,12 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [trimmedQuery, locale]);
+  }, [trimmedQuery]);
 
   const goTo = (option: SearchOption) => {
     close();
     if (option.type === "stock") {
-      router.push(locale === "en" ? `/en/stocks/${option.stockCode}` : `/stocks/${option.stockCode}`);
+      router.push(`/stocks/${option.stockCode}`);
     } else {
       router.push(investorPath(option.filerId, option.filerName));
     }
@@ -178,7 +172,6 @@ export default function StockSearch({ locale = "ja" }: { locale?: Locale }) {
             query={query}
             results={results}
             loading={loading}
-            locale={locale}
             onQueryChange={setQuery}
             onSelect={goTo}
             onReady={handlePanelReady}

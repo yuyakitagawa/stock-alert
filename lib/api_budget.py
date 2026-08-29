@@ -28,9 +28,13 @@ import re
 
 # 上限超過は復旧まで毎便同じ理由で失敗するため、通知は dedupe_key で1日1通に抑える。
 DEDUPE_KEY = "anthropic_usage_limit"
+DAILY_DEDUPE_KEY = "anthropic_daily_cap"
 
 SKIP_MESSAGE = (
     "    ⚠ Anthropic APIの利用上限に到達したため、以降のClaude呼び出しをスキップします"
+)
+DAILY_SKIP_MESSAGE = (
+    "    ⚠ 本日のAPI予算に達したため、以降のClaude呼び出しをスキップします"
 )
 
 # 400のメッセージ本文に現れる目印。文言の揺れに備えて複数持つ。
@@ -43,6 +47,7 @@ _MARKERS = (
 
 _reached = False
 _notified = False
+_daily_notified = False
 
 
 def is_usage_limit_error(exc: BaseException) -> bool:
@@ -123,13 +128,54 @@ def _notify_once(exc: BaseException) -> None:
         print(f"[api_budget] ⚠ LINE通知に失敗: {e}")
 
 
+def stop_for_daily_cap(spent_usd: float, budget_usd: float) -> None:
+    """当日の推定コストが日次予算に達したので、以降のClaude呼び出しを打ち切る。
+
+    月次上限（Anthropic側の設定）に当たってから止まるのでは遅い。2026-08-23の停止は
+    バックフィルが1日で月の予算を焼いたのが原因で、月次の50/80%通知が出た時には
+    もう手遅れだった。1日ぶんの上限で先に止めれば、被害は翌日UTC 0時までに限定される。
+    """
+    global _reached
+    if _reached:
+        return
+    _reached = True
+    _notify_daily_once(spent_usd, budget_usd)
+
+
+def _notify_daily_once(spent_usd: float, budget_usd: float) -> None:
+    """日次予算での打ち切りを1回だけLINEへ流す。通知の失敗で本処理は止めない。"""
+    global _daily_notified
+    if _daily_notified:
+        return
+    _daily_notified = True
+    try:
+        from lib import notify
+
+        notify.error(
+            "Anthropic API 日次予算",
+            "\n".join([
+                f"本日の推定コストが日次予算に達したため、以降の生成を止めました"
+                f"（${spent_usd:.2f} / ${budget_usd:.2f}）。",
+                "",
+                "記事・動画はUTC 0時（JST 9時）で自動的に再開します。",
+                "想定外に増えている場合はバックフィルの走らせすぎを疑ってください",
+                "（内訳: python3 tools/api_usage_report.py --days 3 --by task）。",
+                "予算を変えるには環境変数 ANTHROPIC_DAILY_BUDGET_USD。",
+            ]),
+            dedupe_key=DAILY_DEDUPE_KEY,
+        )
+    except Exception as e:
+        print(f"[api_budget] ⚠ LINE通知に失敗: {e}")
+
+
 def reached() -> bool:
-    """このプロセスで既に利用上限に到達しているなら True。"""
+    """このプロセスで既に利用上限（月次上限 or 日次予算）に達しているなら True。"""
     return _reached
 
 
 def reset() -> None:
     """フラグを戻す（テスト用）。"""
-    global _reached, _notified
+    global _reached, _notified, _daily_notified
     _reached = False
     _notified = False
+    _daily_notified = False
