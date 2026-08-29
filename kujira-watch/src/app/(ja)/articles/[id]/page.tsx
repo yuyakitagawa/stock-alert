@@ -115,7 +115,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const indexable = isIndexableArticle(article) && !superseded;
 
   return {
-    title: article.title,
+    // サイト名サフィックス（｜大口投資家の監視ブログ＝全角12字）を付けない。記事タイトルは
+    // 銘柄名・提出者名・保有比率だけで既に40字前後あり、検索結果に出る約32字にサイト名は
+    // 入らない。入る場合も本文側の情報を押し出すだけで、人名・銘柄名で探している読者には
+    // 何の手がかりにもならない。一覧・ハブページのtitleにはサイト名を残す。
+    title: { absolute: article.title },
     description,
     // 金額も保有比率の変化も小さい開示（例: 保有比率0.04%・推定額0億円の変更報告書）と、
     // 同一「銘柄×提出者」で最新に置き換わった記事は、検索意図を満たさず
