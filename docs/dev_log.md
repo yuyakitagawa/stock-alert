@@ -304,3 +304,19 @@ company_description $2.4/月・その他$1.6/月。`api_usage`の記録開始が
 
 **AdSense導入判定への影響**: 「月間PVが現状の5倍」の基準は、bot込みのPVで測ると永遠に達したように見える。
 本除外後の人のPV（現状 日50〜100）で判定すること。
+
+## 2026-08-29: 記事化の足切りを 3億円/1.0pt → 5億円/1.5pt へ引き上げ（案B）
+- `web/publish_blog_articles.py` の `MIN_DEAL_AMOUNT_OKU` / `MIN_RATIO_CHANGE_PT` を引き上げ。
+  直近30日の開示851件のうち通過が693件→529件（-24%）。記事1本約$0.013なので月-$2.2。
+- **公開済み記事のindex基準は据え置き**（新設 `INDEXABLE_MIN_DEAL_AMOUNT_OKU`=3.0 /
+  `INDEXABLE_MIN_RATIO_CHANGE_PT`=1.0、`is_indexable_article()`）。足切りに合わせて上げると
+  既に順位が付いている既存記事の24%をnoindex＋sitemap除外に落とすことになり、
+  節約する月$2.2に対して失うものが大きすぎる。新規記事は必ず足切り≧index基準なので
+  「サイトマップに載っているのにnoindex」は起きない。
+- 既存記事を消す/補完するツールは index 基準を見るように変更（`delete_low_value_blog_articles.py`・
+  `fix_misreported_blog_articles.py --delete`・`backfill_blog_eyecatch.py --index-only`）。
+  引き上げた足切りで判定させると、掃除のたびに既存記事の24%が削除対象になる。
+- 読者向けFAQ（`kujira-watch/src/lib/faqData.tsx`「すべての大量保有報告書が記事に
+  なっていますか？」）の数字も5億円/1.5ptへ更新。
+
+これでA+B+C+Dが揃い、見込みは月$13 → 約$7.7（-41%）。

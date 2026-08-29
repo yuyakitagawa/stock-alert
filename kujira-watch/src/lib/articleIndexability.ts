@@ -10,8 +10,13 @@
 // EDINET(Supabase)の値を混ぜるとsitemapと記事ページで判定がずれ、
 // 「サイトマップに載っているのにnoindex」という自己矛盾をGoogleに送ることになる。
 
-// しきい値は web/publish_blog_articles.py（記事化の足切り）と faqData.tsx のFAQ
-// 「すべての大量保有報告書が記事になっていますか？」と同じ数値。変更時は3箇所そろえること。
+// しきい値は web/publish_blog_articles.py の INDEXABLE_MIN_*（公開済み記事のindex基準）と
+// 同じ数値。変更時は両方そろえること。
+//
+// 新規記事の足切り（同ファイルの MIN_DEAL_AMOUNT_OKU / MIN_RATIO_CHANGE_PT、FAQで
+// 読者に公開している数字）は2026-08-29に5億円/1.5ptへ引き上げたが、**こちらは3億円/1.0ptで
+// 据え置き**。合わせて上げると既に順位が付いている既存記事の24%をnoindexに落とすことになる。
+// 新規記事は必ず足切り≧index基準なので「サイトマップに載っているのにnoindex」は起きない。
 
 /** 推定取得金額の下限（億円）。これ以上なら比率変化が小さくてもインデックス対象。 */
 export const INDEXABLE_MIN_DEAL_AMOUNT_OKU = 3;

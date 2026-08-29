@@ -21,7 +21,7 @@ ratio_change_pct() が「今回比率の全量＝新規取得」とみなし、
   body           → 誤った変化幅・金額・「実質的な新規保有」という記述を含むため既定で再生成
                    （--keep-body で据え置き。本文末尾の株価チャート<figure>は引き継ぐ）
 
-是正後に is_worth_publishing() の基準（推定3億円以上 または 変化1pt以上）を割る記事は、
+是正後に is_indexable_article() の基準（推定3億円以上 または 変化1pt以上＝表示側のindex基準）を割る記事は、
 そもそも記事化すべきでなかったもの。--delete 指定時のみ、全フィールドをlogsへバックアップして
 削除する（指定が無ければ一覧を表示するだけ）。
 
@@ -50,7 +50,7 @@ from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, MicroCMSPermissionError,
     build_article_titles, build_context_facts, classify_filer, estimate_deal_amount_oku,
     disclosure_close_price, generate_article_body_checked, get_company_description,
-    is_worth_publishing, update_article,
+    is_indexable_article, update_article,
 )
 
 load_dotenv()
@@ -298,7 +298,7 @@ def main():
             failed.append(a["id"])
             continue
 
-        if not is_worth_publishing(fix["deal_amount"], fix["signed_change"]):
+        if not is_indexable_article(fix["deal_amount"], fix["signed_change"]):
             print(f"  🗑 {a['id']}: {name}({code}) 是正後 {fix['deal_amount']}億円 / "
                   f"{fix['signed_change']}pt で基準未満 — 記事化すべきでなかった開示")
             to_delete.append(a)

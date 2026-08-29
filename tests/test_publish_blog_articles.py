@@ -1571,17 +1571,34 @@ def test_checked_recently_handles_missing_and_malformed_values():
 
 def test_is_worth_publishing_accepts_large_amount():
     # 金額が基準以上なら比率変化が小さくても記事にする
-    assert m.is_worth_publishing(3.0, 0.02) is True
+    assert m.is_worth_publishing(5.0, 0.02) is True
 
 
 def test_is_worth_publishing_accepts_large_ratio_change():
     # 金額が小さくても保有方針が動いた開示は記事にする（売りの負値も絶対値で判定）
-    assert m.is_worth_publishing(0.5, -1.2) is True
+    assert m.is_worth_publishing(0.5, -1.7) is True
 
 
 def test_is_worth_publishing_rejects_trivial_disclosure():
     # 保有比率0.04%・推定0億円のような実質ニュース価値の無い変更報告書は落とす
     assert m.is_worth_publishing(0.0, 0.01) is False
+
+
+def test_is_worth_publishing_rejects_below_raised_threshold():
+    """2026-08-29に 3億円/1.0pt → 5億円/1.5pt へ引き上げた足切り。旧基準は通さない。"""
+    assert m.is_worth_publishing(3.0, 0.02) is False
+    assert m.is_worth_publishing(0.5, -1.2) is False
+
+
+def test_index_basis_stays_looser_than_publish_basis():
+    """公開済み記事のindex基準(3億円/1.0pt)は据え置き。足切り引き上げに引きずられて
+    既存記事をnoindexに落とさないこと（表示側 articleIndexability.ts と同じ数値）。"""
+    assert m.is_indexable_article(3.0, 0.02) is True
+    assert m.is_indexable_article(0.5, -1.2) is True
+    assert m.is_indexable_article(0.0, 0.01) is False
+    # 新規記事は必ず両方を通る＝「出したのにnoindex」は起きない
+    assert m.MIN_DEAL_AMOUNT_OKU >= m.INDEXABLE_MIN_DEAL_AMOUNT_OKU
+    assert m.MIN_RATIO_CHANGE_PT >= m.INDEXABLE_MIN_RATIO_CHANGE_PT
 
 
 def test_body_char_count_excludes_tags_and_whitespace():
@@ -1687,7 +1704,7 @@ def test_get_filer_profile_returns_empty_when_claude_returns_blank():
          mock.patch.object(m.sb, "select_one", return_value=None), \
          mock.patch.object(m.sb, "upsert") as upsert_mock, \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
-        result = m.get_filer_profile("個人 太郎", "個人")
+        result = m.get_filer_profile("テストファンド", "独立系ブティックAM")
     assert result == ""
     upsert_mock.assert_called_once()
     saved = upsert_mock.call_args.args[1][0]
@@ -1701,7 +1718,7 @@ def test_get_filer_profile_skips_claude_when_checked_recently():
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch.object(m.sb, "select_one", return_value=cached), \
          mock.patch("anthropic.Anthropic") as client_mock:
-        assert m.get_filer_profile("個人 太郎", "個人") == ""
+        assert m.get_filer_profile("テストファンド", "独立系ブティックAM") == ""
     client_mock.assert_not_called()
 
 
@@ -1982,6 +1999,8 @@ if __name__ == "__main__":
     test_is_worth_publishing_accepts_large_amount()
     test_is_worth_publishing_accepts_large_ratio_change()
     test_is_worth_publishing_rejects_trivial_disclosure()
+    test_is_worth_publishing_rejects_below_raised_threshold()
+    test_index_basis_stays_looser_than_publish_basis()
     test_body_char_count_excludes_tags_and_whitespace()
     test_generate_article_body_checked_retries_when_body_too_short()
     test_generate_article_body_checked_keeps_longer_of_two_attempts()
@@ -2020,4 +2039,4 @@ if __name__ == "__main__":
     test_exit_code_for_run_distinguishes_failure_from_legitimate_zero()
     test_build_and_publish_counts_generation_attempts_when_all_fail()
     test_build_and_publish_reports_zero_attempts_when_filtered_out()
-    print("全テスト成功 (132件)")
+    print("全テスト成功 (133件)")
