@@ -1,5 +1,31 @@
 # Dev Log
 
+## 2026-08-28 CIの1件失敗を直す（夜のAIレビューの入力が2.6倍に膨らんでいた）
+
+CIが 2026-08-27 のpush 5本すべてで赤。落ちていたのは1件だけ。
+
+    FAILED tests/test_ga4_clicks.py::test_access_token_prefers_env_json_over_file
+    AttributeError: module 'google' has no attribute 'oauth2'
+    1 failed, 638 passed
+
+原因: ci.yml が `google-auth` を入れていない。`tools/ga4_clicks.access_token()` は
+`google.oauth2` を関数内で遅延importするだけなので他のテストは緑のまま通るが、
+このテストは `mock.patch("google.oauth2.service_account...")` の解決で実物のモジュールを
+要求する。CIには protobuf 由来の `google` 名前空間だけがあり、`google.oauth2` が無いため
+`import_module` が失敗して getattr にフォールバックし AttributeError になっていた。
+
+**放置するとAPI課金が増える**。daily_log_review は成功runのログ本文を捨てるが、失敗runは
+全文（最大40,000字）を入力に載せる。8/28のレビューの実測:
+
+    入力 210,845字 / tokens in=116,518 out=9,080 → opus-5 で $0.81
+      うち ci.yml 6 runs = 122,401字（58%）
+
+削減後の設計値は81,798字・$0.3前後なので、CIが赤いだけで1晩あたり2.6倍・月$10前後を
+余計に払っていた。
+
+対策: ci.yml の pip install に `google-auth` を追加（daily_log_review.yml は元から入れている）。
+検証: 手元で google-auth 無し→1 failed / 有り→**18 passed** を再現・確認した。
+
 ## 2026-08-27 取りこぼし記事148本を消化完了（積み残しの解消）
 
 backfill専用cronの修正（24fe02a2）と1便あたり上限の手動指定（workflow_dispatch入力

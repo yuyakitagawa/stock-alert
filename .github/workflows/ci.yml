@@ -16,11 +16,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      # google-auth は本番コード(tools/ga4_clicks.access_token)が遅延importするだけで
+      # requirements には現れないが、test_ga4_clicks が mock.patch の解決に実物の
+      # google.oauth2 を要求する。入れないと google 名前空間(protobuf由来)はあるのに
+      # google.oauth2 が無く AttributeError で1件落ちる（2026-08-27からCIが赤だった）
       - name: Install dependencies
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost \
-            yfinance pytest anthropic Pillow requests-oauthlib
+            yfinance pytest anthropic Pillow requests-oauthlib google-auth
 
       # サムネイル生成テスト(test_video_pipeline.py)は日本語フォントが無いと
       # thumbnail.compose() が None を返して落ちる。edinet_blog.yml / video_post.yml と
