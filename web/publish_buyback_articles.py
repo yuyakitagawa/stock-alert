@@ -361,11 +361,12 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 
 def generate_body_checked(f: dict) -> "dict | None":
     """本文が短すぎる・AI常套句（lib/writing_style.py）を含む場合は1回だけ再生成し、
-    マシな方を採用する（publish_blog_articles.generate_article_body_checked と同じ方針）。"""
+    マシな方を採用する（publish_blog_articles.generate_article_body_checked と同じ方針。
+    文末の単調さを再生成のきっかけにしない点も同じ）。"""
     first = generate_body(f)
     if first is None:
         return None
-    if body_char_count(first["body"]) >= MIN_BODY_CHARS and not find_ai_tells(first["body"]):
+    if body_char_count(first["body"]) >= MIN_BODY_CHARS and not find_ai_tells(first["body"], include_monotone=False):
         return first
     second = generate_body(f)
     if second is None:

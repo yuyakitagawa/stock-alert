@@ -1442,13 +1442,21 @@ def body_quality_key(body: str, min_chars: int) -> tuple:
 
 def generate_article_body_checked(fact_sheet: dict) -> "dict | None":
     """generate_article_body()の結果が短すぎる・AI常套句（lib/writing_style.py）を含む場合は
-    1回だけ再生成する。2回目も直らなければマシな方を採用する（記事を落とすよりは公開する）。"""
+    1回だけ再生成する。2回目も直らなければマシな方を採用する（記事を落とすよりは公開する）。
+
+    文末の単調さ（「ます。」4連続など）は再生成のきっかけにしない（find_ai_tells の
+    include_monotone=False）。2026-08-28の実測で再生成412回中335回がこれだけを理由にしており、
+    引き直しても164記事中63記事で解消していなかった。検出は残してログに出し、抑制は
+    プロンプト（JA_STYLE_RULES）側で行う。"""
     first = generate_article_body(fact_sheet)
     if first is None:
         return None
     first_len = body_char_count(first.get("body", ""))
-    tells = find_ai_tells(first.get("body", ""))
+    tells = find_ai_tells(first.get("body", ""), include_monotone=False)
     if first_len >= MIN_BODY_CHARS and not tells:
+        monotone = [t for t in find_ai_tells(first.get("body", "")) if t.startswith("文末単調")]
+        if monotone:
+            print(f"    ・{monotone[0]}（再生成はしない）")
         return first
     reason = f"本文{first_len}字（下限{MIN_BODY_CHARS}字）" if first_len < MIN_BODY_CHARS else f"AI常套句{tells}"
     print(f"    ↻ {reason}のため再生成")
