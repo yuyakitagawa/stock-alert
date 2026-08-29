@@ -24,6 +24,7 @@ lib/notify.py
 CLIから（GitHub Actions の `if: failure()` ステップ用）:
     python -m lib.notify "🚨 EDINET Blog Hourly が失敗しました" --url "$RUN_URL"
 """
+import math
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -81,7 +82,12 @@ def _recent_send(dedupe_key: str, window_hours: float) -> "dict | None":
         from lib import supabase_client as sb
 
         row = sb.select_one("notify_log", f"dedupe_key=eq.{dedupe_key}&select=*")
-        if not row or not row.get("last_sent_at"):
+        if not row:
+            return None
+        # 窓が無限（once）なら行があること自体が「送信済み」。last_sent_at は見ない。
+        if window_hours == math.inf:
+            return row
+        if not row.get("last_sent_at"):
             return None
         last = datetime.fromisoformat(str(row["last_sent_at"]).replace("Z", "+00:00"))
         if datetime.now(timezone.utc) - last < timedelta(hours=window_hours):
@@ -115,7 +121,8 @@ def push_once(dedupe_key: str, text: str, window_hours: float = DEDUPE_WINDOW_HO
     """
     prev = _recent_send(dedupe_key, window_hours)
     if prev is not None:
-        print(f"[notify] 直近{window_hours:g}時間に同じ通知（{dedupe_key}）を送信済みのため抑制します")
+        span = "既に" if window_hours == math.inf else f"直近{window_hours:g}時間に"
+        print(f"[notify] {span}同じ通知（{dedupe_key}）を送信済みのため抑制します")
         _record_send(dedupe_key, text, prev)  # 抑制した回数も数える
         return False
     if not push(text):
@@ -151,38 +158,17 @@ def warn(where: str, message: str, detail: str = "", url: str = "",
 
 
 def once(dedupe_key: str, text: str) -> bool:
-    """同じ `dedupe_key` では一度しか送らない通知。送ったら True。
+    """同じ `dedupe_key` では二度と送らない通知。送ったら True。
 
-    毎時のジョブから残枠警告のような「状態」を鳴らすと、同じ内容が1日に何十通も届いて
-    かえって見なくなる。送信済みかどうかは Supabase の `notify_log` に残す
+    残枠50/80/100%のような「一度きりの状態」を毎時のジョブから鳴らすと、同じ内容が
+    1日に何十通も届いてかえって見なくなる。窓を持たない `push_once`（=窓が無限）として
+    実装しており、送信済みかどうかは同じ `notify_log` に残る
     （プロセス内フラグでは毎時の別プロセスをまたげない）。
 
-    DBが引けないときは送る側に倒す。通知が重複する不便より、鳴らないほうが危険。
+    DBが引けないときは `push_once` と同じく送る側に倒す。通知が重複する不便より、
+    鳴らないほうが危険。
     """
-    from lib import supabase_client as sb
-
-    key = str(dedupe_key)
-    if sb.is_configured():
-        try:
-            if sb.select_one("notify_log", f"dedupe_key=eq.{key}"):
-                return False
-        except Exception as e:
-            print(f"[notify] ⚠ 送信済み確認に失敗（送信は続行）: {e}")
-    if not push(text):
-        return False
-    try:
-        sb.upsert("notify_log",
-                  [{"dedupe_key": key, "last_sent_at": _now_iso(), "sent_count": 1,
-                    "last_text": text[:DETAIL_MAX_CHARS]}],
-                  on_conflict="dedupe_key")
-    except Exception as e:
-        print(f"[notify] ⚠ 送信記録に失敗: {e}")
-    return True
-
-
-def _now_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    return push_once(str(dedupe_key), text, window_hours=math.inf)
 
 
 def main() -> int:
