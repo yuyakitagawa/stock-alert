@@ -42,7 +42,6 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   alternates: {
     canonical: "/",
-    languages: { ja: "/", en: "/en" },
     types: {
       "application/rss+xml": `${SITE_URL}/feed.xml`,
     },
@@ -61,7 +60,6 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "ja_JP",
-    alternateLocale: "en_US",
     url: SITE_URL,
     siteName: SITE_NAME,
     title: SITE_NAME,

@@ -246,3 +246,28 @@ LINE投稿上位はウォッチ銘柄の2026-07-21付開示に占拠されてい
 - LINE送信本文を含むステップ（マーケットタイミング）は圧縮せず全文を渡す（UX観点の原文評価用）。ci.yml は失敗runのみ対象。
 - 検証中に判明: Anthropic API が月次上限到達（9/1 00:00 UTC まで400）。ブログ生成・動画台本・本レビューは上限引き上げまで停止。
   X Metrics は 8/20〜22 の 402 で impressions 全件None・フォロワー0記録（失敗時に0を書く副作用あり）。クレジット回復後に metrics を手動再実行。
+
+## 2026-08-29: Anthropic API消化の削減（英語版廃止・web_search半減・日次予算）
+オーナー指示「もう少し消化を抑えたい」→ A（web_search削減）・C（英語版の全除却）・D（日次予算）を実施。
+Bの足切り引き上げ（3億/1.0pt→5億/1.5pt）は記事数が24%減るため見送り。
+
+**現状の実測（削減前）**: 平日 約$0.5〜0.6/日、月$13。内訳は blog_body $9/月・
+company_description $2.4/月・その他$1.6/月。`api_usage`の記録開始が当日のため単価×実測本数の推定。
+
+- **A. `get_company_description()` の `web_search` を `max_uses` 2→1**。1社$0.034→$0.017（月-$1.1）。
+- **C. 英語版（`bodyEn`/`titleEn`／kujira-watchの`/en`）を全除却**。判断材料は
+  `blog_crawler_log`直近14日の実測: EN記事1,046本にブラウザPV1,544（中央値1・最大7・10PV以上0本）に対し、
+  日本語版は最大73PV・10PV以上42本。英語面に検索流入の山が無い一方、英訳は記事1本の出力トークンを
+  約1.3倍にしていた（microCMS直近50本の実測: JA本文1,193字＋EN本文2,574字）。月-$2.0。
+  - `publish_blog_articles.py` / `publish_buyback_articles.py`: プロンプト・payload・タイトル生成から英語を削除。
+  - `lib/writing_style.py`の`EN_STYLE_RULES`、`web/article_figures.py`の`alt_en`/`caption_en`、
+    `tools/translate_blog_articles_en.py`（ファイルごと）、各ツールの`bodyEn`分岐を削除。
+  - kujira-watch: `src/app/(en)`削除、hreflang・`/en`サイトマップ（`articles-en`分割ごと）・
+    言語切替UI・`Locale`/`UI.en`の多言語プラミングを削除し、`/en/*`は日本語ページへ301。
+  - microCMSに保存済みの`bodyEn`/`titleEn`データは消していない（表示しないだけ）。
+- **D. 日次予算$1.2で打ち切り**（`ANTHROPIC_DAILY_BUDGET_USD`、0で無効）。`api_usage.record()`のたびに
+  当日(UTC)の記録済み＋未送信の合計を見て、超えたら`flush()`→`api_budget.stop_for_daily_cap()`で
+  その日の残りをスキップしLINEへ1通。月次上限に当たると復旧まで1ヶ月止まる（2026-08-23の実例）が、
+  日次なら翌日UTC 0時に自動復帰する。定常$0.45/日に対し2.5倍の余裕を持たせ通常運転は止めない。
+
+**見込み**: 月$13 → 約$9.9（-24%）。効果の実測は`tools/api_usage_report.py --days 7`で9月上旬に確認する。

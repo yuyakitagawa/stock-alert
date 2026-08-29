@@ -9,24 +9,22 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent } from "@/types/article";
 import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
-import { UI, type Locale } from "@/lib/i18n";
+import { UI } from "@/lib/i18n";
 import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
 
 export default function FeaturedArticleCard({
   article,
   rank,
-  locale = "ja",
 }: {
   article: ArticleContent;
   rank: number;
-  locale?: Locale;
 }) {
-  const t = UI[locale];
+  const t = UI;
   const hasImage = Boolean(article.eyecatch);
-  const href = locale === "en" ? `/en/articles/${article.id}` : `/articles/${article.id}`;
-  const title = locale === "en" ? article.titleEn ?? article.title : article.title;
-  const body = locale === "en" ? article.bodyEn ?? article.body : article.body;
+  const href = `/articles/${article.id}`;
+  const title = article.title;
+  const body = article.body;
   return (
     <Card
       elevation={4}
@@ -82,19 +80,17 @@ export default function FeaturedArticleCard({
             <Typography variant="overline" sx={{ color: "brand.goldBright" }}>
               {t.featuredRankLabels[rank] ?? t.featuredFallback}
             </Typography>
-            <DealTypeBadge dealType={article.dealType} locale={locale} onDark />
-            <DealDirectionBadge tags={article.tags} locale={locale} onDark />
+            <DealTypeBadge dealType={article.dealType} onDark />
+            <DealDirectionBadge tags={article.tags} onDark />
             <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.6)" }}>
-              {formatDate(article.dealDate, locale)}
+              {formatDate(article.dealDate)}
             </Typography>
           </Stack>
           <Typography variant="h4" component="h2" sx={{ fontWeight: 700, lineHeight: 1.3, fontSize: { xs: "1.25rem", sm: "1.5rem" } }}>
             {title}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1.5, color: "rgba(255,255,255,0.8)" }}>
-            {locale === "en"
-              ? `${article.stockName} (${article.stockCode}) · ${formatDealAmountOrCorrection(article, locale)}`
-              : `${article.stockName}（${article.stockCode}） ・ ${formatDealAmountOrCorrection(article, locale)}`}
+            {`${article.stockName}（${article.stockCode}） ・ ${formatDealAmountOrCorrection(article)}`}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1.5, maxWidth: 640, color: "rgba(255,255,255,0.7)" }}>
             {excerptFromHtml(body, 90)}

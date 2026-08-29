@@ -61,9 +61,9 @@ def test_fetch_candidates_excludes_amendment_of_existing_buyback():
 
 
 def test_build_titles_contains_search_terms_and_scale():
-    t = m.build_titles(FACT, "Lintec")
+    t = m.build_titles(FACT)
     assert t["title"] == "リンテック（7966）、上限300億円・発行済の10.55%の自社株買いを決定｜TDnet適時開示"
-    assert t["titleEn"].startswith("Lintec (7966) Approves Share Buyback of Up to ¥30.0 billion (10.55% of Shares Outstanding)")
+    assert "titleEn" not in t
 
 
 def test_build_titles_without_ratio_or_amount():
@@ -71,18 +71,18 @@ def test_build_titles_without_ratio_or_amount():
     assert "発行済" not in m.build_titles(f)["title"]
     f2 = {**FACT, "amount_oku": None, "max_amount_yen": None, "ratio": 5.0}
     assert m.build_titles(f2)["title"].startswith("リンテック（7966）、発行済の5%の自社株買いを決定")
-    assert "5% of Shares Outstanding" in m.build_titles(f2)["titleEn"]
 
 
 def test_build_payload_uses_buyback_deal_type_and_no_filer():
-    payload = m.build_payload(FACT, {"body": "<p>本文</p>", "bodyEn": "<p>Body</p>", "stockNameEn": "Lintec"})
+    payload = m.build_payload(FACT, {"body": "<p>本文</p>", "bodyEn": "<p>Body</p>"})
     assert payload["dealType"] == ["自社株買い"]
     assert payload["dealAmount"] == 300.0
     assert payload["ratioChangePct"] == 10.55
     assert payload["sourceUrl"] == FACT["doc_url"]
     assert payload["tags"] == "自社株買い"
     assert "filerName" not in payload      # 記事ページのEDINET保有比率ブロックを出させない
-    assert payload["titleEn"] and payload["bodyEn"] == "<p>Body</p>"
+    # 英語版（/en）は2026-08-29に廃止。生成が英語を返してもpayloadへは入れない
+    assert "titleEn" not in payload and "bodyEn" not in payload
     assert payload["dealDate"] == "2026-08-20T00:00:00.000Z"
 
 

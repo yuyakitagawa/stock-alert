@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import { ADSENSE_CLIENT, ADSENSE_SLOTS, type AdPlacement } from "@/lib/adsense";
-import { UI, type Locale } from "@/lib/i18n";
+import { UI } from "@/lib/i18n";
 
 declare global {
   interface Window {
@@ -21,10 +21,8 @@ declare global {
 // 記事と見分けが付かない置き方はAdSenseのポリシー違反になるため、必ず「広告」ラベルを添える。
 export default function AdUnit({
   placement,
-  locale = "ja",
 }: {
   placement: AdPlacement;
-  locale?: Locale;
 }) {
   const insRef = useRef<HTMLModElement>(null);
   const slot = ADSENSE_SLOTS[placement];
@@ -53,7 +51,7 @@ export default function AdUnit({
         component="p"
         sx={{ mb: 0.5, color: "text.disabled", lineHeight: 1.2 }}
       >
-        {UI[locale].adLabel}
+        {UI.adLabel}
       </Typography>
       <ins
         ref={insRef}

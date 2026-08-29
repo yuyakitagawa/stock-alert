@@ -3,15 +3,15 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import type { CompanyInfo, PricePoint } from "@/lib/companyInfo";
 import { formatDate } from "@/lib/format";
-import { UI, type Locale } from "@/lib/i18n";
+import { UI } from "@/lib/i18n";
 
 const CHART_WIDTH = 600;
 const CHART_HEIGHT = 120;
 const CHART_PADDING = 4;
 
-function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale }) {
+function PriceChart({ history }: { history: PricePoint[] }) {
   if (history.length < 2) return null;
-  const t = UI[locale];
+  const t = UI;
 
   const closes = history.map((point) => point.close);
   const min = Math.min(...closes);
@@ -29,16 +29,13 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
 
   const first = history[0];
   const last = history[history.length - 1];
-  const localeCode = locale === "en" ? "en-US" : "ja-JP";
 
   return (
     <Box sx={{ mb: 2 }}>
       {/* 線だけだと水準感が読めないため、期間高値・安値をキャプションと点線ガイドで示す。
           文字はSVG内に置くとpreserveAspectRatio="none"の伸縮で歪むため、HTML側に出す。 */}
       <Typography variant="caption" sx={{ display: "block", textAlign: "right", color: "text.disabled" }}>
-        {locale === "en"
-          ? `High ¥${max.toLocaleString(localeCode)} / Low ¥${min.toLocaleString(localeCode)}`
-          : `期間高値 ${max.toLocaleString(localeCode)}円 ・ 安値 ${min.toLocaleString(localeCode)}円`}
+        {`期間高値 ${max.toLocaleString("ja-JP")}円 ・ 安値 ${min.toLocaleString("ja-JP")}円`}
       </Typography>
       <Box
         component="svg"
@@ -47,10 +44,10 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
         sx={{ height: { xs: 96, sm: 112 }, width: "100%" }}
         role="img"
         aria-label={t.priceChartAlt(
-          formatDate(first.date, locale),
-          formatDate(last.date, locale),
-          first.close.toLocaleString(localeCode),
-          last.close.toLocaleString(localeCode)
+          formatDate(first.date),
+          formatDate(last.date),
+          first.close.toLocaleString("ja-JP"),
+          last.close.toLocaleString("ja-JP")
         )}
       >
         <line
@@ -76,16 +73,12 @@ function PriceChart({ history, locale }: { history: PricePoint[]; locale: Locale
       </Box>
       <Box sx={{ mt: 0.5, display: "flex", justifyContent: "space-between" }}>
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
-          {formatDate(first.date, locale)}
-          {locale === "en"
-            ? ` (¥${first.close.toLocaleString(localeCode)})`
-            : `（${first.close.toLocaleString(localeCode)}円）`}
+          {formatDate(first.date)}
+          {`（${first.close.toLocaleString("ja-JP")}円）`}
         </Typography>
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
-          {formatDate(last.date, locale)}
-          {locale === "en"
-            ? ` (¥${last.close.toLocaleString(localeCode)})`
-            : `（${last.close.toLocaleString(localeCode)}円）`}
+          {formatDate(last.date)}
+          {`（${last.close.toLocaleString("ja-JP")}円）`}
         </Typography>
       </Box>
     </Box>
@@ -105,15 +98,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function CompanyInfoCard({ info, locale = "ja" }: { info: CompanyInfo; locale?: Locale }) {
-  const t = UI[locale];
-  const localeCode = locale === "en" ? "en-US" : "ja-JP";
+export default function CompanyInfoCard({ info }: { info: CompanyInfo }) {
+  const t = UI;
   const stats: { label: string; value: string }[] = [];
 
   if (info.sector) stats.push({ label: t.companySectorLabel, value: info.sector });
   if (info.close !== null) {
-    const closeValue = info.close.toLocaleString(localeCode);
-    stats.push({ label: t.companyCloseLabel, value: locale === "en" ? `¥${closeValue}` : `${closeValue}円` });
+    stats.push({ label: t.companyCloseLabel, value: `${info.close.toLocaleString("ja-JP")}円` });
   }
   if (info.per !== null) stats.push({ label: t.companyPerLabel, value: `${info.per}x` });
   if (info.pbr !== null) stats.push({ label: t.companyPbrLabel, value: `${info.pbr}x` });
@@ -129,7 +120,7 @@ export default function CompanyInfoCard({ info, locale = "ja" }: { info: Company
 
   return (
     <Card variant="outlined" sx={{ mb: 3, p: { xs: 2, sm: 2.5 }, borderColor: "divider" }}>
-      <PriceChart history={info.priceHistory} locale={locale} />
+      <PriceChart history={info.priceHistory} />
       {stats.length > 0 && (
         <Box
           component="dl"
@@ -147,7 +138,7 @@ export default function CompanyInfoCard({ info, locale = "ja" }: { info: Company
       )}
       {info.closeDate && (
         <Typography variant="caption" sx={{ display: "block", mt: 1.5, color: "text.disabled" }}>
-          {t.companyAsOf(formatDate(info.closeDate, locale))}
+          {t.companyAsOf(formatDate(info.closeDate))}
         </Typography>
       )}
     </Card>

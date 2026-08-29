@@ -5,7 +5,7 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent, DealType } from "@/types/article";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { UI, type Locale } from "@/lib/i18n";
+import { UI } from "@/lib/i18n";
 import ArticleCard from "./ArticleCard";
 import DealDateHeading from "./DealDateHeading";
 import DealDateSeeMoreLink from "./DealDateSeeMoreLink";
@@ -20,21 +20,19 @@ export default function InfiniteArticleList({
   totalCount,
   dealType,
   excludeIds,
-  locale = "ja",
 }: {
   initialArticles: ArticleContent[];
   totalCount: number;
   dealType?: DealType;
   // ページ上部の「注目」枠に既に表示済みの記事IDを一覧から除外する（重複表示防止）。
   excludeIds?: Set<string>;
-  locale?: Locale;
 }) {
   const [articles, setArticles] = useState(initialArticles);
   const [loading, setLoading] = useState(false);
   const loadingRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const hasMore = articles.length < totalCount;
-  const t = UI[locale];
+  const t = UI;
 
   const loadMore = useCallback(async () => {
     if (loadingRef.current) return;
@@ -43,14 +41,13 @@ export default function InfiniteArticleList({
 
     const params = new URLSearchParams({ offset: String(articles.length) });
     if (dealType) params.set("dealType", dealType);
-    if (locale === "en") params.set("translatedOnly", "1");
     const res = await fetch(`/api/articles?${params.toString()}`);
     const data: { contents: ArticleContent[] } = await res.json();
 
     setArticles((prev) => [...prev, ...data.contents]);
     loadingRef.current = false;
     setLoading(false);
-  }, [articles.length, dealType, locale]);
+  }, [articles.length, dealType]);
 
   // 画面下端のsentinelが見えたら次のページを自動取得する（ページネーションの代わり）。
   useEffect(() => {
@@ -68,7 +65,7 @@ export default function InfiniteArticleList({
   }, [hasMore, loadMore]);
 
   const rest = excludeIds ? articles.filter((a) => !excludeIds.has(a.id)) : articles;
-  const groups = groupArticlesByDealDate(rest, locale);
+  const groups = groupArticlesByDealDate(rest);
 
   // 記事カードの間ではなく取引日グループの区切りに広告を置く（記事と広告が地続きに
   // 見えないようにするため）。最後のグループの後ろは読み込み中のsentinelが続くので置かない。
@@ -89,12 +86,12 @@ export default function InfiniteArticleList({
             <DealDateHeading label={group.label} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               {group.articles.map((article) => (
-                <ArticleCard key={article.id} article={article} locale={locale} />
+                <ArticleCard key={article.id} article={article} />
               ))}
             </div>
-            <DealDateSeeMoreLink date={group.date} locale={locale} />
+            <DealDateSeeMoreLink date={group.date} />
           </div>
-          {withAd && <AdUnit placement="infeed" locale={locale} />}
+          {withAd && <AdUnit placement="infeed" />}
         </Fragment>
       ))}
       {hasMore && (

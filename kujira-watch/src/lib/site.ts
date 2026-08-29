@@ -11,23 +11,17 @@ export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "大口投資家�
 export const SITE_DESCRIPTION =
   "誰がどの日本株を買い増したか、毎日わかる。5%超の株主に開示が義務づけられた大量保有報告書（EDINET）を集計し、機関投資家・アクティビスト・自社株買いの動きを解説します。";
 
-// 英語版（/en）用。ブランド名（日本語「大口投資家の監視ブログ」）とドメイン(kujira-watch.com)は
-// 別物として管理されているため、英語ブランド名も直訳ではなく既存のクジラ文脈に合わせる。
-export const SITE_NAME_EN = "Big Investor Watch";
-
 // Organization構造化データの alternateName。サイトは「大口投資家の監視ブログ」（ブランド名）・
 // 「クジラウォッチ」（/aboutの自称）・「kujira-watch」（ドメイン）の3表記で呼ばれており、
 // AI検索エンジンが別エンティティと誤認しないよう、正式名以外の呼び名をここで1つに束ねる。
-export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "クジラウォッチ", "kujira-watch", "Big Investor Watch"];
-
-export const SITE_DESCRIPTION_EN =
-  "A blog tracking Japanese-market \"whales\" — institutional investors, insiders, and buybacks — based on EDINET large-shareholding filings.";
-
+// 英語名 "Big Investor Watch" は英語版(/en)の廃止（2026-08-29）に伴い外した。
+// 対応するページが無い呼び名を宣言すると、エンティティを増やすだけで得が無い。
+export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "クジラウォッチ", "kujira-watch"];
 // generateSitemapsで分割した子サイトマップのID一覧。/sitemap/<id>.xml のURLになる。
 // app/sitemap.ts（子の生成）と app/sitemap.xml/route.ts（sitemapindex）の両方から参照する。
 // app/sitemap.tsから直接exportしないのは、metadata routeのnamed exportは
 // Next.jsのローダーがroute configとして再exportしてしまうため。
-export const SITEMAP_IDS = ["pages", "stocks", "dates", "investors", "articles", "articles-en"] as const;
+export const SITEMAP_IDS = ["pages", "stocks", "dates", "investors", "articles"] as const;
 export type SitemapId = (typeof SITEMAP_IDS)[number];
 
 // 公式Xアカウント。フォロー導線（記事末尾CTA・フッター）で使用する。

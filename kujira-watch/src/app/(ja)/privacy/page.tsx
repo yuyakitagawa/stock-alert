@@ -11,7 +11,6 @@ export const metadata: Metadata = {
   description,
   alternates: {
     canonical: `${SITE_URL}/privacy`,
-    languages: { ja: `${SITE_URL}/privacy`, en: `${SITE_URL}/en/privacy` },
   },
 };
 

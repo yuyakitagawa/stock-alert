@@ -55,27 +55,6 @@ def _fmt(value: float) -> str:
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
-def replace_amount_en(body_en: str, old_amount: float, new_amount: float) -> "str | None":
-    """英語版本文（bodyEn）の金額を実額へ置換する。
-
-    英文は「¥13.68 billion」「¥470 million」のように億円を10で割った十億円単位、または
-    100倍した百万円単位で書かれる。旧金額がどちらの単位で1箇所だけ出てくる場合のみ、
-    同じ単位のまま数字を差し替える。
-    """
-    if not body_en:
-        return None
-    for unit, factor in (("billion", 0.1), ("million", 100.0)):
-        value = old_amount * factor
-        # 「19 billion」「19.0 billion」のような小数点以下の書き方ゆれを両方試す
-        for form in dict.fromkeys([_fmt(value), f"{value:,.1f}"]):
-            needle = f"{form} {unit}"
-            # 「1.9 billion」が「11.9 billion」の一部として当たらないよう直前が数字でないことを確認
-            pattern = r"(?<![0-9.,])" + re.escape(needle)
-            if len(re.findall(pattern, body_en)) == 1:
-                return re.sub(pattern, f"{_fmt(new_amount * factor)} {unit}", body_en)
-    return None
-
-
 def build_targets() -> list:
     articles = fetch_all_articles()
     rows = sb.select(
@@ -113,14 +92,12 @@ def build_targets() -> list:
             if abs(a["dealAmount"] - s["amount_oku"]) < 0.05:
                 continue
             new_body = replace_amount(a.get("body") or "", a["dealAmount"], s["amount_oku"])
-            new_body_en = replace_amount_en(a.get("bodyEn") or "", a["dealAmount"], s["amount_oku"])
             targets.append({
                 "id": a["id"], "stockCode": a.get("stockCode"), "stockName": a.get("stockName"),
                 "dealDate": (a.get("dealDate") or "")[:10], "filerName": a.get("filerName"),
                 "old_amount": a["dealAmount"], "new_amount": s["amount_oku"],
                 "counterparty": (s["counterparties"] or [None])[0],
                 "old_body": a.get("body") or "", "new_body": new_body,
-                "old_body_en": a.get("bodyEn") or "", "new_body_en": new_body_en,
             })
             break
     return targets
@@ -148,10 +125,6 @@ def main():
         if args.dry_run:
             continue
         payload = {"body": t["new_body"], "dealAmount": t["new_amount"]}
-        if t["new_body_en"]:
-            payload["bodyEn"] = t["new_body_en"]
-        elif t["old_body_en"]:
-            print("    ⚠ 英語版は金額表記を特定できずJAのみ更新")
         if update_article(t["id"], payload):
             updated.append(t["id"])
         else:

@@ -59,7 +59,7 @@ from lib import api_usage
 from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
-from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells
+from lib.writing_style import JA_STYLE_RULES, find_ai_tells
 from web.article_figures import build_article_figures, figure_html, insert_figures_into_body
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.market_timing_alert import get_recent_large_holdings, LARGE_HOLDINGS_DAYS
@@ -880,8 +880,9 @@ def get_company_description(code: str, name: str) -> str:
             model=CLAUDE_MODEL,
             max_tokens=2000,
             # max_usesは検索料（$10/1,000検索）と入力トークン（1検索≒6,000トークン）に
-            # 直結する。会社四季報【特色】相当の一文に3検索は過剰なので2に抑える。
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
+            # 直結する。会社四季報【特色】相当の一文に複数回の検索は過剰なので1に抑える
+            # （2026-08-29に2→1。1件あたり約$0.034→$0.017）。
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 1}],
             messages=[{"role": "user", "content": prompt}],
         )
         api_usage.record(resp, task="company_description")
@@ -1022,17 +1023,13 @@ def is_new_holding(fact_sheet: dict) -> bool:
 MAX_TITLE_LEN = 60
 
 
-def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_en: str = "") -> dict:
-    """検索クエリ型の記事タイトル（ja/en）を決定的テンプレートで組み立てる（LLM不使用）。
+def build_article_titles(fact_sheet: dict) -> dict:
+    """検索クエリ型の記事タイトルを決定的テンプレートで組み立てる（LLM不使用）。
     「銘柄名（コード）」「保有比率」「大量保有報告書」という検索語が必ずタイトルに入ることを
-    保証するため、LLMの自由生成をやめてテンプレ化した（SEO/AIO 30日計画 P1）。
-    stock_name_en/filer_name_enは英語タイトル用のローマ字名（generate_article_body()が
-    本文英訳と一緒に返す。空なら日本語名のまま使う）。"""
+    保証するため、LLMの自由生成をやめてテンプレ化した（SEO/AIO 30日計画 P1）。"""
     name = fact_sheet["stock_name"]
     code = fact_sheet["stock_code"]
     filer = fact_sheet["filer_name"]
-    name_en = stock_name_en or name
-    filer_en = filer_name_en or filer
     ratio = format_ratio(fact_sheet["holding_ratio"])
     is_sell = fact_sheet.get("direction") == "sell"
     is_correction = bool(fact_sheet.get("is_correction"))
@@ -1052,18 +1049,7 @@ def build_article_titles(fact_sheet: dict, stock_name_en: str = "", filer_name_e
         keep = max(4, len(filer) - excess - 1)
         title = ja_title(filer[:keep] + "…")
 
-    if is_correction:
-        title_en = (
-            f"{filer_en} Corrects Reported Stake in {name_en} ({code}) to {ratio}% "
-            "| Amended Large Shareholding Report"
-        )
-    elif is_new_holding(fact_sheet):
-        title_en = f"{filer_en} Takes {ratio}% Stake in {name_en} ({code}) | Large Shareholding Report"
-    elif is_sell:
-        title_en = f"{filer_en} Cuts Stake in {name_en} ({code}) to {ratio}% | Large Shareholding Report"
-    else:
-        title_en = f"{filer_en} Raises Stake in {name_en} ({code}) to {ratio}% | Large Shareholding Report"
-    return {"title": title, "titleEn": title_en}
+    return {"title": title}
 
 
 # 記事に独自性を与える周辺事実。EDINET開示1件の数字だけを書くと、どの記事も
@@ -1235,15 +1221,13 @@ def format_context_facts(facts: dict, stock_name: str, filer_name: str) -> str:
 
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからbodyを生成させる。JSONで
-    {"body", "bodyEn"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
+    {"body"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
     本文の1文目は検索クエリへの直答文（銘柄名・コード・提出者・保有比率を含む）に固定する。
     パース失敗時はNone（記事は投稿しない）。
     投資家分類（dealType）は事前にclassify_filer()で判定済み（edinet_filer_classification
     マスター参照＋未登録時のみClaude判定、記事本文生成とは別の呼び出しに分離してキャッシュ
     可能にした）で、その分類の一言説明がfact_sheet['filer_description']としてあれば本文に
-    自然に織り込む。titleEn/bodyEnはkujira-watch（/en）の英語版用の英訳で、日本語版と同じ
-    事実・トーンを保った自然な英語にする（1回のClaude呼び出しでJA/EN両方を生成し、
-    翻訳による事実のズレとAPI呼び出し回数の増加を防ぐ）。"""
+    自然に織り込む。"""
     import anthropic
 
     if not ANTHROPIC_API_KEY or api_budget.reached():
@@ -1385,17 +1369,9 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
 事実として存在しない具体的な計画やコメントの引用は創作しないでください。
 
-bodyEnには、上と同じ事実・トーンを保った自然な英語訳を書いてください（直訳調は避け、
-英語ネイティブの投資ニュース記事として自然な文章にする）。英語も1文目は日本語の1文目と同じ内容の
-直答（例: "A large shareholding report (EDINET filing) shows that ... raised its stake in ... to ...%."）で
-始めてください。※推測の文はEnglishでは
-"*Speculation:" という接頭辞で始めてください。金額は円建てのまま（例: "¥3.34 billion"）でよいです。
-{EN_STYLE_RULES}
-
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
-テンプレートで組み立てるため出力しない）。stockNameEn/filerNameEnには英語タイトル用の
-ローマ字表記（例: "Ain Holdings", "Simplex Asset Management"）を短く書いてください:
-{{"body": "HTML本文（1,300〜1,700字。冒頭の直答段落は<p>で始め、以降は<h2>見出し</h2>と<p>本文</p>を3〜5セクション。最後に※推測文の<p>）", "bodyEn": "HTML body in English, same structure and same <h2> sections as body", "stockNameEn": "...", "filerNameEn": "..."}}
+テンプレートで組み立てるため出力しない）:
+{{"body": "HTML本文（1,300〜1,700字。冒頭の直答段落は<p>で始め、以降は<h2>見出し</h2>と<p>本文</p>を3〜5セクション。最後に※推測文の<p>）"}}
 """
     try:
         resp = client.messages.create(
@@ -1480,18 +1456,15 @@ def attach_figures(payload: dict, figures: list) -> int:
     両方）の該当段落の直後に差し込む。差し込めた枚数を返す。アップロードに失敗した図は黙って
     飛ばす（図が1枚も無くても記事は従来どおり公開する）。英語本文は段落と図の対応を語句で
     探せないため、日本語と同じ順序で均等に配置する。"""
-    ja, en = [], []
+    ja = []
     for fig in figures:
         url = _upload_media(fig["bytes"], fig["filename"])
         if not url:
             continue
         ja.append({"html": figure_html(url, fig["alt"], fig["caption"]), "anchors": fig["anchors"]})
-        en.append({"html": figure_html(url, fig["alt_en"], fig["caption_en"]), "anchors": []})
     if not ja:
         return 0
     payload["body"] = insert_figures_into_body(payload["body"], ja)
-    if payload.get("bodyEn"):
-        payload["bodyEn"] = insert_figures_into_body(payload["bodyEn"], en)
     return len(ja)
 
 
@@ -1808,11 +1781,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         if article is None:
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
             continue
-        titles = build_article_titles(
-            fact_sheet,
-            stock_name_en=article.get("stockNameEn") or "",
-            filer_name_en=article.get("filerNameEn") or "",
-        )
+        titles = build_article_titles(fact_sheet)
 
         deal_type = filer_info["category"]
         # 訂正記事はフロント側（isCorrectionArticle）で金額の代わりに「訂正」と表示するため、
@@ -1835,9 +1804,6 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "tags": tags,
             "filerName": filer_name,
         }
-        if article.get("bodyEn"):
-            payload["titleEn"] = titles["titleEn"]
-            payload["bodyEn"] = article["bodyEn"]
 
         direction_mark = "📝訂正" if is_correction else ("📉売り" if is_sell else "📈買い")
         amount_estimated = transfers["amount_oku"] is None
@@ -1876,11 +1842,6 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
                 f'<figure><img src="{chart_url}" alt="{name}（{code}）株価推移（直近3ヶ月）">'
                 f'<figcaption>{name}（{code}）の株価推移（直近3ヶ月・終値ベース）</figcaption></figure>'
             )
-            if payload.get("bodyEn"):
-                payload["bodyEn"] += (
-                    f'<figure><img src="{chart_url}" alt="{name} ({code}) share price, last three months">'
-                    f'<figcaption>Share price of {name} ({code}) over the last three months (closing prices).</figcaption></figure>'
-                )
             figure_count += 1
 
         try:

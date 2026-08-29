@@ -66,9 +66,8 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code } = await params;
-  const [{ contents }, { contents: enContents }, companyInfo] = await Promise.all([
+  const [{ contents }, companyInfo] = await Promise.all([
     getArticlesByStockCode(code),
-    getArticlesByStockCode(code, { translatedOnly: true }),
     getCompanyInfo(code),
   ]);
   const stockName = contents[0]?.stockName ?? companyInfo?.name;
@@ -88,7 +87,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ? `${companyInfo.description.replace(/。+$/, "")}。${dealSummaryText}`
     : dealSummaryText;
   const url = `${SITE_URL}/stocks/${code}`;
-  const hasEn = enContents.length > 0;
 
   return {
     title,
@@ -106,7 +104,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     alternates: {
       canonical: url,
       types: { "application/rss+xml": `${url}/feed.xml` },
-      ...(hasEn ? { languages: { ja: url, en: `${SITE_URL}/en/stocks/${code}` } } : {}),
     },
     openGraph: { title, description, url },
   };

@@ -43,18 +43,6 @@ JA_PATTERN = re.compile(
     r"弊社モデル|当社モデル|弊社のリスク評価|当社のリスク評価|弊社リスク評価|当社リスク評価"
     r"|下落リスク水準|下落リスク局面|下落リスクが(?:低|高)い局面|下落リスクを(?:低|中程度|高)"
 )
-# 「downside risk」だけを条件にすると、モデルとは無関係な一般的な言い回し
-# （*Speculation: ... amid heightened downside risks ...）まで巻き込んで、事実に基づく
-# 推測文まで消えてしまう。自社のモデル・評価を根拠として示している形だけを拾う。
-EN_PATTERN = re.compile(
-    r"\b(?:our|the\s+company'?s)\s+(?:\w+\s+){0,2}"
-    r"(?:models?|modeling|modelling|risk\s+assessment|assessment\s+model)\b"
-    r"|\bproprietary\s+(?:risk\s+)?models?\b"
-    r"|\bon\s+our\s+modell?ing\b"
-    r"|\brisk[- ]assessment\s+perspective\b",
-    re.IGNORECASE,
-)
-
 # 「（前置き）株価は1,234円で、」の形で始まる文から株価の節だけを残すためのパターン。
 JA_PRICE_LEAD = re.compile(r"^(.{0,40}?株価は[\d,]+円)(?:で[、,]|と[、,]|であり[、,]|であった[、,])")
 
@@ -70,15 +58,6 @@ def text_of(html: str) -> str:
 def split_ja(text: str) -> list:
     """句点で文に分割する（区切り文字は各文の末尾に残す）。"""
     return [s for s in re.split(r"(?<=。)", text) if s]
-
-
-def split_en(text: str) -> list:
-    """ピリオドで文に分割する（区切り文字は各文の末尾に残す）。
-
-    英訳本文には「...acquisition price.From a risk assessment...」のようにピリオドの直後に
-    空白が無い箇所があるため、空白だけを手掛かりにすると複数の文が1つに繋がったまま扱われ、
-    削除対象が必要以上に大きくなる。大文字や「*」が続く場合も区切りとして扱う。"""
-    return [s for s in re.split(r"(?<=[.!?])(?=\s*(?:\*|[A-Z]))", text) if s]
 
 
 def polite_style(text: str) -> bool:
@@ -146,7 +125,6 @@ def process(article: dict) -> "dict | None":
     patch, stats = {}, {"removed": 0, "skipped": 0}
     for field, pattern, splitter, rewriter in (
         ("body", JA_PATTERN, split_ja, rewrite_ja_sentence),
-        ("bodyEn", EN_PATTERN, split_en, None),
     ):
         html = article.get(field) or ""
         if not html or not pattern.search(text_of(html)):
@@ -187,8 +165,8 @@ def main():
                 before = text_of(by_id[t["id"]][field])
                 after = text_of(t["patch"][field])
                 print(f"  [{field}] {len(before)}字 → {len(after)}字")
-                for sentence in (split_ja if field == "body" else split_en)(before):
-                    if (JA_PATTERN if field == "body" else EN_PATTERN).search(sentence):
+                for sentence in split_ja(before):
+                    if JA_PATTERN.search(sentence):
                         print(f"    − {sentence.strip()[:150]}")
 
     if not args.apply:

@@ -29,13 +29,6 @@ JA_STYLE_RULES = """文体の規則（機械的な文章のパターンを避け
 - 「また、」「さらに、」「一方、」「なお、」で始まる文は全体で2回まで。接続詞ではなく事実の順序で文をつなぐ。
 - 段落の締めは抽象的な感想ではなく、具体的な数字か事実にする。"""
 
-# 英語本文（bodyEn・英訳）向け。
-EN_STYLE_RULES = """English style rules (avoid patterns that read as machine-written):
-- Never use: "It is worth noting", "notably", "underscores", "highlights", "signals a", \
-"landscape", "testament to", "pivotal", "poised to", "delve", "furthermore", "moreover".
-- No em dashes.
-- Vary sentence length and structure. Do not open consecutive sentences with the same word."""
-
 # 動画ナレーション（話し言葉）向け。
 NARRATION_STYLE_RULES = """- 「注目です」「要チェック」「〜と言えるでしょう」「気になりますね」\
 などの決まり文句は使わない。事実と数字だけで話を進める。

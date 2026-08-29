@@ -47,12 +47,20 @@ _TABLE = "api_usage"
 # Anthropic側で設定している月次利用上限(USD)。超過の手前で鳴らすためだけに使う。
 # 上限を変えたら環境変数 ANTHROPIC_MONTHLY_BUDGET_USD で上書きする（0なら監視しない）。
 DEFAULT_MONTHLY_BUDGET_USD = 15.0
+# 1日ぶんの上限(USD)。これを超えたら以降のClaude呼び出しをその日は打ち切る
+# （環境変数 ANTHROPIC_DAILY_BUDGET_USD で上書き、0なら打ち切らない）。
+# 平日の定常消費は約$0.45（記事26本＋会社説明3件）。開示が多い日とバックフィル便が
+# 重なっても$0.8前後なので、通常運転を止めずに暴走だけ捕まえられる水準として1.2にした。
+DEFAULT_DAILY_BUDGET_USD = 1.2
 # 当月の推定コストがこの割合(%)を超えたら通知する。100%はもう止まっている可能性がある。
 _ALERT_LEVELS = (50, 80, 100)
 
 # key: (usage_date, job, task, model) -> 集計値
 _buffer: dict[tuple, dict] = {}
 _atexit_registered = False
+# 当日ぶんの「このプロセスが動き出す前までの」消費(USD)。日次上限の判定で使う。
+# プロセス内で1回だけSupabaseから読む（(日付, 金額) で保持し、日付が変わったら読み直す）。
+_day_base: "tuple[str, float] | None" = None
 
 
 def _model_key(model: str) -> str:
@@ -122,6 +130,7 @@ def record(resp, *, task: str, model: str = "") -> None:
             row[k] += v
         row["cost_usd"] += estimate_cost(model_name, **counts)
         _register_atexit()
+        check_daily_cap()
     except Exception as e:                      # 計測の失敗で本処理を止めない
         print(f"[api_usage] ⚠ 記録に失敗: {e}")
 
@@ -165,7 +174,9 @@ def flush() -> bool:
 
 def reset() -> None:
     """バッファを捨てる（テスト用）。"""
+    global _day_base
     _buffer.clear()
+    _day_base = None
 
 
 def monthly_budget_usd() -> float:
@@ -197,6 +208,74 @@ def month_usage(month: str = "") -> tuple[float, dict]:
             continue
         by_task[r["task"]] = by_task.get(r["task"], 0.0) + float(r.get("cost_usd") or 0)
     return sum(by_task.values()), by_task
+
+
+def daily_budget_usd() -> float:
+    """1日ぶんの上限(USD)。0以下なら日次の打ち切りをしない。"""
+    try:
+        return float(os.getenv("ANTHROPIC_DAILY_BUDGET_USD") or DEFAULT_DAILY_BUDGET_USD)
+    except ValueError:
+        return DEFAULT_DAILY_BUDGET_USD
+
+
+def day_usage(day: str = "") -> float:
+    """指定日(UTC)にSupabaseへ記録済みの推定コスト合計。"""
+    from lib import supabase_client as sb
+
+    day = day or datetime.now(timezone.utc).date().isoformat()
+    rows = sb.select(_TABLE, f"usage_date=eq.{day}&select=cost_usd")
+    return sum(float(r.get("cost_usd") or 0) for r in rows)
+
+
+def _pending_cost(day: str) -> float:
+    """まだSupabaseへ送っていない、当日ぶんのバッファ内コスト。"""
+    return sum(v["cost_usd"] for (d, _, _, _), v in _buffer.items() if d == day)
+
+
+def today_cost() -> float:
+    """当日(UTC)の推定コスト。記録済み＋未送信のバッファ。
+
+    記録済みぶんはプロセス内で1回だけ読む。毎回読み直すとClaude 1回につきSupabaseへ
+    1クエリ増え、記事26本の便で26往復になる。
+    """
+    global _day_base
+    day = datetime.now(timezone.utc).date().isoformat()
+    if _day_base is None or _day_base[0] != day:
+        try:
+            _day_base = (day, day_usage(day))
+        except Exception as e:                  # 読めない日は0扱い（本処理は止めない）
+            print(f"[api_usage] ⚠ 当日消費の取得に失敗: {e}")
+            _day_base = (day, 0.0)
+    return _day_base[1] + _pending_cost(day)
+
+
+def check_daily_cap() -> bool:
+    """当日の推定コストが日次上限に達していたら以降の呼び出しを止める。止めたらTrue。
+
+    月次上限（Anthropic側の設定）に当たってからでは、その月の残りが丸ごと止まる。
+    1日ぶんで先に止めれば被害は当日中に収まる。判定を record() の中に置くのは、
+    呼び出し側それぞれに書かせると必ず付け忘れるため。
+    """
+    from lib import api_budget
+
+    budget = daily_budget_usd()
+    if budget <= 0 or api_budget.reached():
+        return False
+    try:
+        spent = today_cost()
+    except Exception as e:                      # 監視の失敗で本処理を止めない
+        print(f"[api_usage] ⚠ 日次上限チェックに失敗: {e}")
+        return False
+    if spent < budget:
+        return False
+    # 打ち切りの判断材料になった消費を先に保存する。ここで落とすと、次の便が
+    # 「まだ予算内」と誤認して同じ日にもう一度走ってしまう。
+    global _day_base
+    flush()
+    _day_base = (datetime.now(timezone.utc).date().isoformat(), spent)
+    api_budget.stop_for_daily_cap(spent, budget)
+    print(api_budget.DAILY_SKIP_MESSAGE)
+    return True
 
 
 def check_budget() -> int:

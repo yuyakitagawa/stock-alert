@@ -230,8 +230,8 @@ def portfolio_figure(filer_name: str, stock_name: str, stock_code: str, holding_
 
 
 def build_article_figures(fact_sheet: dict) -> list:
-    """fact_sheetから作れる解説図を作り、[{bytes, filename, alt, caption, alt_en,
-    caption_en, anchors}] を本文での登場順に返す。anchorsは「この図を差し込む段落」を
+    """fact_sheetから作れる解説図を作り、[{bytes, filename, alt, caption, anchors}] を
+    本文での登場順に返す。anchorsは「この図を差し込む段落」を
     本文から探すための手掛かり語（見つからなければ均等配置にフォールバックする）。"""
     facts = fact_sheet.get("context_facts") or {}
     stock_name = fact_sheet.get("stock_name") or ""
@@ -253,8 +253,6 @@ def build_article_figures(fact_sheet: dict) -> list:
             "filename": "holding-history.png",
             "alt": f"{filer_name}による{stock_name}の保有比率の推移",
             "caption": f"{filer_name}が{stock_name}について提出した大量保有報告書の保有比率推移（EDINET開示ベース）",
-            "alt_en": f"{stock_name}: reported stake held by {filer_name} over time",
-            "caption_en": f"Reported stake in {stock_name} held by {filer_name}, by EDINET filing date.",
             "anchors": anchors,
         })
 
@@ -266,8 +264,6 @@ def build_article_figures(fact_sheet: dict) -> list:
             "filename": "shareholders.png",
             "alt": f"{stock_name}に大量保有報告書を出している投資家の保有比率比較",
             "caption": f"{stock_name}に大量保有報告書を出している投資家の保有比率（今回の{filer_name}を強調）",
-            "alt_en": f"Large shareholders of {stock_name} by reported stake",
-            "caption_en": f"Investors that have filed large shareholding reports on {stock_name} ({filer_name} highlighted).",
             "anchors": ["大株主", "株主構成", "筆頭"] + [p.get("name", "") for p in peers[:3]],
         })
 
@@ -280,8 +276,6 @@ def build_article_figures(fact_sheet: dict) -> list:
             "filename": "filer-portfolio.png",
             "alt": f"{filer_name}が5%以上を保有する主な銘柄",
             "caption": f"{filer_name}が同時点で5%以上を保有している主な銘柄（今回の{stock_name}を強調）",
-            "alt_en": f"Other Japanese equities in which {filer_name} reports a stake above 5%",
-            "caption_en": f"Other holdings where {filer_name} reports a stake above 5% ({stock_name} highlighted).",
             "anchors": ["他の銘柄", "ポートフォリオ", "保有銘柄"] + [o.get("name", "") for o in others[:3]],
         })
 
@@ -312,8 +306,6 @@ def buyback_article_figures(fact: dict) -> list:
         "filename": "buyback-history.png",
         "alt": f"{stock_name}の自社株買い（取得上限金額）の推移",
         "caption": f"{stock_name}が決議した自己株式取得の上限金額の推移（適時開示ベース、今回の決定を強調）",
-        "alt_en": f"{stock_name}: announced share buyback ceilings over time",
-        "caption_en": f"Buyback ceilings announced by {stock_name} (latest announcement highlighted).",
         "anchors": anchors,
     }]
 

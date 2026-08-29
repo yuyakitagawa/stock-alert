@@ -112,7 +112,7 @@ def test_build_article_figures_makes_three_png_figures():
     ]
     for f in figures:
         assert f["bytes"][:8] == b"\x89PNG\r\n\x1a\n"
-        assert f["alt"] and f["caption"] and f["alt_en"] and f["caption_en"] and f["anchors"]
+        assert f["alt"] and f["caption"] and f["anchors"]
 
 
 def test_buyback_article_figures_empty_without_prior():

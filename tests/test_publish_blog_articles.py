@@ -61,11 +61,11 @@ def test_shares_outstanding_returns_none_after_exhausting_retries():
 
 def test_generate_article_body_parses_plain_json():
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"body": "<p>本文</p>", "bodyEn": "<p>body</p>"})
+    raw = json.dumps({"body": "<p>本文</p>"})
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         result = m.generate_article_body(fact_sheet)
-    assert result == {"body": "<p>本文</p>", "bodyEn": "<p>body</p>"}
+    assert result == {"body": "<p>本文</p>"}
 
 
 def test_generate_article_body_strips_code_fence():
@@ -83,7 +83,7 @@ def test_generate_article_body_allows_raw_newlines_in_json():
     既定の strict=True だと "Invalid control character" で丸ごと失敗し記事が1本消える
     （2026-08-27のbackfill便で22回中7回が実際にこれで失敗していた）。"""
     body = "<p>1段落目。</p>\n<h2>見出し</h2>\n<p>2段落目。</p>"
-    raw = '{"body": "' + body + '", "bodyEn": "<p>Body</p>", "stockNameEn": "Test"}'
+    raw = '{"body": "' + body + '"}'
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
         out = m.generate_article_body(_fact_sheet())
@@ -127,16 +127,6 @@ def test_build_article_titles_truncates_long_filer_name():
     assert len(result["title"]) <= m.MAX_TITLE_LEN
     assert "…" in result["title"]
     assert result["title"].endswith("｜大量保有報告書")
-
-
-def test_build_article_titles_uses_english_names_when_given():
-    fs = {"stock_name": "テスト自動車", "stock_code": "7203", "filer_name": "テストファンド",
-          "holding_ratio": 8.5, "direction": "buy", "ratio_change_pct": 1.2}
-    result = m.build_article_titles(fs, stock_name_en="Test Motor", filer_name_en="Test Fund")
-    assert result["titleEn"] == "Test Fund Raises Stake in Test Motor (7203) to 8.5% | Large Shareholding Report"
-    # 英語名が無ければ日本語名のまま
-    fallback = m.build_article_titles(fs)
-    assert "テスト自動車 (7203)" in fallback["titleEn"]
 
 
 def test_classify_filer_returns_cached_master_row_without_calling_claude():
@@ -630,7 +620,6 @@ def test_build_article_titles_amendment_without_prior_is_not_new_holding():
     title = m.build_article_titles(fs)["title"]
     assert "新規保有" not in title
     assert "テストファンドが保有比率7.6%に引き上げ" in title
-    assert "Takes 7.6% Stake" not in m.build_article_titles(fs)["titleEn"]
 
 
 def test_build_and_publish_skips_amendment_with_unknown_change():
@@ -1300,28 +1289,26 @@ def test_generate_article_body_always_requests_labelled_speculation():
     assert "創作しないでください" in prompt
 
 
-def test_generate_article_body_prompt_requests_english_translation():
-    """kujira-watch(/en)向けにbodyEnと英語タイトル用のローマ字名もJSONに含めるよう
-    1回の呼び出しでプロンプトに要求する（JA/ENを別々に生成すると事実がズレたり
-    API呼び出しが倍になるため）。冒頭アンサー文の指定もプロンプトに含める。"""
+def test_generate_article_body_prompt_asks_for_japanese_only():
+    """英語版（/en）は2026-08-29に廃止した。英訳を求めると出力トークンが約1.3倍になり、
+    読まれないページのために課金し続けることになるため、プロンプトから消えていること。"""
     fact_sheet = _fact_sheet()
-    raw = json.dumps({"body": "<p>本文</p>", "bodyEn": "<p>Body</p>",
-                      "stockNameEn": "Test", "filerNameEn": "X Fund"})
+    raw = json.dumps({"body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
     with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
          mock.patch("anthropic.Anthropic", return_value=client):
         result = m.generate_article_body(fact_sheet)
     prompt = calls[0]["messages"][0]["content"]
-    assert "bodyEn" in prompt
-    assert "stockNameEn" in prompt
+    assert "bodyEn" not in prompt
+    assert "stockNameEn" not in prompt
+    assert "English" not in prompt
     assert "本文の1文目は、必ず次の文をそのまま使ってください" in prompt
     assert "大量保有報告書（EDINET）で分かりました" in prompt
-    assert result["bodyEn"] == "<p>Body</p>"
-    assert result["stockNameEn"] == "Test"
+    assert result == {"body": "<p>本文</p>"}
 
 
-def test_build_and_publish_includes_english_fields_when_generated():
-    """generate_article_body()がtitleEn/bodyEnを返した場合、publish_article()へのpayloadに含める。"""
+def test_build_and_publish_never_sends_english_fields():
+    """英語版の廃止後は、生成が英語を返してもmicroCMSへ送るpayloadに入れないこと。"""
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書"}]
@@ -1340,12 +1327,12 @@ def test_build_and_publish_includes_english_fields_when_generated():
          mock.patch.object(m, "attach_figures", return_value=0), \
          mock.patch.object(m, "publish_article", return_value="fakeid123"):
         results = m.build_and_publish(days=3, max_articles=1, dry_run=False)
-    assert results[0]["titleEn"] == "Taro Kojin Takes 8.5% Stake in Test Motor (7203) | Large Shareholding Report"
-    assert results[0]["bodyEn"] == "<p>Body</p>"
+    assert "titleEn" not in results[0]
+    assert "bodyEn" not in results[0]
 
 
 def test_build_and_publish_omits_english_fields_when_not_generated():
-    """titleEn/bodyEnが無い（部分失敗・後方互換ケース）場合はpayloadにキー自体を含めない。"""
+    """titleEn/bodyEnが無い場合もpayloadにキー自体を含めない。"""
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書"}]
@@ -1500,7 +1487,7 @@ def test_get_company_description_caps_web_search_uses():
          mock.patch.object(m.sb, "upsert"), \
          mock.patch("anthropic.Anthropic", return_value=_Client()):
         m.get_company_description("9439", "エム・エイチ・グループ")
-    assert captured["tools"][0]["max_uses"] == 2
+    assert captured["tools"][0]["max_uses"] == 1
 
 
 def _usage_limit_error() -> Exception:
@@ -1914,7 +1901,6 @@ if __name__ == "__main__":
     test_build_article_titles_buy_and_sell_templates()
     test_build_article_titles_new_holding_uses_ratio_change_heuristic()
     test_build_article_titles_truncates_long_filer_name()
-    test_build_article_titles_uses_english_names_when_given()
     test_classify_filer_returns_cached_master_row_without_calling_claude()
     test_classify_filer_asks_claude_and_persists_when_not_cached()
     test_classify_filer_falls_back_to_sonota_on_invalid_category()
@@ -1927,8 +1913,8 @@ if __name__ == "__main__":
     test_generate_article_body_describes_new_position_when_change_equals_ratio()
     test_generate_article_body_uses_buy_wording_by_default()
     test_generate_article_body_uses_sell_wording_when_direction_is_sell()
-    test_generate_article_body_prompt_requests_english_translation()
-    test_build_and_publish_includes_english_fields_when_generated()
+    test_generate_article_body_prompt_asks_for_japanese_only()
+    test_build_and_publish_never_sends_english_fields()
     test_build_and_publish_omits_english_fields_when_not_generated()
     test_build_and_publish_includes_pit_context_in_fact_sheet()
     test_build_and_publish_includes_sell_and_tags_them()
