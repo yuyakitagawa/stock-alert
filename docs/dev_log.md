@@ -271,3 +271,36 @@ company_description $2.4/月・その他$1.6/月。`api_usage`の記録開始が
   日次なら翌日UTC 0時に自動復帰する。定常$0.45/日に対し2.5倍の余裕を持たせ通常運転は止めない。
 
 **見込み**: 月$13 → 約$9.9（-24%）。効果の実測は`tools/api_usage_report.py --days 7`で9月上旬に確認する。
+
+## 2026-08-29: アクセスログのbot除外を強化（"Browser"判定の9割超が機械だった）
+8/28（JST）のログ集計で、`bot_name="Browser"` 3,573PVのうち人の候補は50〜100PVしか無いことが判明。
+同日の全リクエストは19,658件で、うち81.8%はUAでbotと自己申告している（最大はGoogleOther 13,497件）。
+
+**"Browser" 3,573PVの内訳（除外を4段階に分けて実測）**
+| 分類 | PV | 中身 |
+|---|---|---|
+| self（`::1`） | 187 | 自サイトからの自己リクエスト |
+| bot_ua | 1,384 | meta-externalagent 1,031 / Amazonbot 337 / AdsBot-Google-Mobile 9 |
+| heavy_ip（>30PV/日） | 1,421 | 単一IPで最大645PV |
+| cookieless_ua | 525 | 汎用Chrome/148が OVH 62IPから327PV（visitor_id 312個）、iPhone OS 13_2_3固定UAが Alibaba/Tencent 137IPから180PV（visitor_id 180個） |
+| 残り | 約56 | 2PV以上見た訪問者は17人/48PV |
+
+**対応**
+- `kujira-watch/src/lib/crawlers.ts`: `BOT_PATTERNS`に `meta-externalagent` / `meta-externalfetcher` /
+  `AdsBot-Google` / `Amazonbot` / `Bytespider` を追加。UAに自己申告があるのに"Browser"として
+  記録されていた分（"Browser"の39%）がログの時点で正しく分類される。
+- `tools/traffic_report.py`: 除外をIP閾値だけの1段階から上表の4段階に変更。
+  - `bot_ua`: UAに `bot|crawler|spider|externalagent|externalfetcher|+URL` を含むものを、名前を知らなくても除外。
+    除外したクローラー名を集計表示するので、`BOT_PATTERNS`への登録漏れに次回から気づける。
+  - `cookieless_ua`: 同一UAで20PV以上あるのに visitor_id がPVとほぼ1:1（比0.9以上）＝クッキー不保持。
+    IP閾値では取れないOVH/Alibaba/Tencentの分散スクレイパーがこれで落ちる。母数20未満は
+    「全員が1ページで離脱した実在の人間」と区別できないため判定しない。
+  - `heavy_ip`の判定は self/bot_ua を除いた残りで数える（機械のPVで底上げされたIPを共有する人間を巻き込まない）。
+  - 出力に「2PV以上見た訪問者数」を追加。最も人間らしい層の規模が一目で分かる。
+- `tests/test_traffic_report.py`: 9件→15件。
+
+**判断**: GoogleOther（全体の69%）は robots.txt で止めない。Geminiのグラウンディング経由の露出を
+自分で消すことになるため。帯域はVercelの無料枠内に収まっている。
+
+**AdSense導入判定への影響**: 「月間PVが現状の5倍」の基準は、bot込みのPVで測ると永遠に達したように見える。
+本除外後の人のPV（現状 日50〜100）で判定すること。
