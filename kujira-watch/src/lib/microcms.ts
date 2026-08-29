@@ -142,6 +142,32 @@ export async function getArticleList(params: {
   return { ...result, totalCount: result.totalCount ?? 0, contents: result.contents.map(normalizeDealType) };
 }
 
+// /ranking/returns の「上位投資家の最新記事」用。渡した提出者名のいずれかに一致する記事を
+// 取引日の新しい順で返す。
+// 以前はページ側で「最新50件を取ってからランキング上位30名で絞る」形にしていたが、記事は
+// 1日25本前後あり50件＝直近2日ぶんしか見ていなかったため、上位投資家の記事が1件も入らず
+// セクションごと消えていた（2026-08-29に本番で0件を確認。上位30名の直近記事は実際には
+// 9日前などにあり、条件を満たす記事自体は24本あった）。提出者名でmicroCMS側を絞れば
+// 何日前の記事でも拾える。
+// 呼び出し側で「1投資家1件」に間引くため1ページの上限(100件)まで取ってから渡す。
+// filtersはfilerNameの[or]連結なので名前の数だけURLが伸びる（30名で約5KB）。
+// ランキングの表示件数(30名)を超える数を渡さないこと。
+export async function getArticlesByFilerNames(
+  filerNames: string[]
+): Promise<{ contents: ArticleContent[] }> {
+  if (filerNames.length === 0) return { contents: [] };
+  const result = await client.getList<Article>({
+    endpoint: "articles",
+    queries: {
+      limit: MAX_PAGE_SIZE,
+      orders: "-dealDate,-dealAmount",
+      filters: filerNames.map((name) => `filerName[equals]${name}`).join("[or]"),
+    },
+    customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
+  });
+  return { contents: result.contents.map(normalizeDealType) };
+}
+
 export const FEATURED_POOL_SIZE = 20;
 export const FEATURED_COUNT = 3;
 
