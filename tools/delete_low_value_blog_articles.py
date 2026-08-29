@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from lib import article_redirects
 from web.publish_blog_articles import (
     _microcms_base_url, _microcms_headers, is_indexable_article,
     MICROCMS_DOMAIN, MICROCMS_KEY,
@@ -96,12 +97,19 @@ def main():
         json.dump(targets, f, ensure_ascii=False, indent=2)
     print(f"バックアップ: {backup_path}")
 
-    deleted, failed = 0, []
+    deleted, failed, redirects = 0, [], []
     for a in targets:
         if delete_article(a["id"]):
             deleted += 1
+            target = article_redirects.stock_target(a)
+            if target:
+                redirects.append({"article_id": a["id"], "target_path": target,
+                                  "reason": "low_value"})
         else:
             failed.append(a["id"])
+    if redirects:
+        article_redirects.record_many(redirects)
+        print(f"リダイレクト登録: {len(redirects)}件（削除したURLは銘柄ページへ引き継ぐ）")
     print(f"削除完了: {deleted}件" + (f" / 失敗: {len(failed)}件 {failed}" if failed else ""))
 
 

@@ -120,6 +120,13 @@ npm run dev
   `bodyEn`/`titleEn`のデータは消していない（表示しないだけ）。
 - 廃止したランキングURL（`/ranking`・`/ranking/buys`ほか）は`/ranking/returns`へ301。
 - **`/disclosures`（2026-08-18に廃止）→ `/` へ301（2026-08-29追加）**: 廃止時にリダイレクトを置き忘れて404のまま残っていた。`tools/geo_report.py`の実測でAIクローラーが直近30日に58回・GA4のPVも28日で63件当たっており、AI側に残った参照が全部404を踏んでいた。役割が最も近いTOP（新着開示の日付降順一覧）へ寄せる。
+- **削除した記事URL（Supabase `deleted_article_redirects` 経由で308）**: `next.config.ts`ではなく
+  記事詳細ページ（`(ja)/articles/[id]/page.tsx`）がmicroCMSで404だったときにだけ
+  `src/lib/articleRedirects.ts`で引き当て、`permanentRedirect`する。行き先は重複削除なら
+  「残した方の記事」、それ以外は「その銘柄のページ」。低価値・重複・誤報の記事は今後も消すが、
+  順位の付いたURLを404で捨てないため。2026-08-29のGSC実測で、検索結果に出ているURL924件のうち
+  194件が404を返し、そこに28日で25クリック（全体の18%）が着地していた（うち124件が削除済み記事）。
+  登録は削除ツール側（`lib/article_redirects.py`）。過去分257件は`tools/backfill_article_redirects.py`で復元済み。
 - **`/articles`（記事一覧の入口としてクローラーが推測してくるURL）→ `/` へ301**: 実在したことは無いが、AIクローラーが14日で18回取りに来ていた（同上の実測）。記事一覧はTOPそのものなので404にせず寄せる。
 
 ## 計測・ログ
@@ -145,7 +152,7 @@ npm run dev
 
 ## SEO/AIO対策
 
-- **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`${SITE_NAME}｜%s` の順。記事タイトルが長いとブラウザタブで末尾が切れるため、サイト名を先頭に置いている）・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
+- **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`%s｜${SITE_NAME}` の順＝固有名を先頭にする。全ページのtitleが同じ11字で始まると検索結果で見分けがつかず、Googleにタイトルを書き換えられやすいため）。**記事詳細だけはサイト名サフィックスを付けない**（`title: { absolute: article.title }`）。記事タイトルは銘柄名・提出者名・保有比率だけで既に40〜60字あり、検索結果に出る約32字にサイト名は入らない。2026-08-29のGSC実測で、8位前後・表示10〜53回でクリック0の記事が16本あった・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
 - **アイコン/OGP画像/ロゴ**: `src/app/icon.tsx`（ファビコン。`generateImageMetadata`で32/192/512pxの3サイズを`/icon/32`等として生成し、HTMLページの`<head>`にのみ`<link rel="icon">`として注入される。Next 16では`id`がPromiseで渡るので`await`する）・`src/app/apple-icon.tsx`（iOS「ホーム画面に追加」用の180x180、`<link rel="apple-touch-icon">`。2026-08-23追加＝それまで32pxのiconしか無くホーム追加時に引き伸ばされてぼやけていた。iOS側で角丸が付くので正方形で塗る）・`src/app/manifest.ts`（`/manifest.webmanifest`。Android Chromeやアプリ内ブラウザは manifest が無いと「ホーム画面に追加」を出さない／失敗するため2026-08-23追加。`display: standalone`、アイコンは`/icon/192`・`/icon/512`・`/apple-icon`を指す）・`src/app/(ja)/opengraph-image.tsx`（SNSシェア用1200x630。**appルート直下に置くと`(ja)`ルートグループ内ページの`<head>`に`og:image`/`twitter:image`が一切注入されない**＝Xカードのサムネが出ない不具合が実際に起きたため、必ずルートグループ内に置くこと。`icon.tsx`はルート直下でも全ページに効くが、OGP画像はルートレイアウトを持つルートグループの境界を越えない）・`src/app/logo/route.ts`（構造化データ用の正方形512x512ロゴ、`/logo`）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドネイビー背景に合成して動的生成（画像アセット不要）。`logo`はOGP画像と違い横長ではなく正方形にしてある（構造化データの`logo`にはOGP用の横長比率ではなく正方形〜近い比率の画像を指定するのがGoogleの推奨のため）。加えて`src/app/favicon.ico`（同デザインの静的PNG内蔵ICO、16/32/48/64px）を配置している。Next.jsは`favicon`をコードから生成できず画像ファイルが必須なため、`icon.tsx`だけでは`/sitemap.xml`・`/robots.txt`・`/feed.xml`のような`<head>`を持たないルートを直接開いたときにブラウザが`/favicon.ico`にフォールバックし、ファイルが無いとVercelの既定favicon（三角ロゴ）が表示されてしまう。静的ファイルを置くことでサイト全体のフォールバック先を統一している。
 - **運営者情報（E-E-A-T）**: 運営者は実名を公開しない方針（2026-08-23決定）。代わりに`/about`の「運営者について」セクションに個人運営・X（`X_HANDLE`）・AI生成＋運営者確認の体制・連絡窓口（XのDM/リプライ）を書き、`Organization`構造化データに`contactPoint`（`ORGANIZATION_CONTACT_POINT`＝公式X）を宣言する。記事の`author`は実態どおり`Organization`のまま（`Person`は併記しない）。
 - **フッターの見出し**: 各リンク群の見出し（主要ページ／一覧・アーカイブ／サイト情報／フォロー）は`<p class="kicker">`で、`h2`にしない。本文にH2の無い一覧ページでフッターがページの見出し構造として拾われるため（2026-08-23）。

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import Box from "@mui/material/Box";
@@ -27,6 +27,7 @@ import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { dateHref, getPublishedFilerNames, stockHref } from "@/lib/publishedPages";
+import { getArticleRedirect } from "@/lib/articleRedirects";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -37,6 +38,9 @@ import AdUnit from "@/components/AdUnit";
 // 実測TTFBが1.8〜2.8秒まで悪化していたため1日に延ばす。記事をリライトした場合は
 // 最大1日反映が遅れるが、リライト自体が稀なので許容する。
 export const revalidate = 86400;
+
+// 削除済み記事の引き継ぎ先が銘柄ページかどうかの判定に使う。
+const STOCK_PATH_PREFIX = "/stocks/";
 
 // 直近の記事はビルド時に静的生成する。Next 16では generateStaticParams の無い動的セグメントは
 // リクエストごとのSSR（実測: x-vercel-cache: MISS / cache-control: no-store）になり、
@@ -115,7 +119,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const indexable = isIndexableArticle(article) && !superseded;
 
   return {
-    title: article.title,
+    // サイト名サフィックス（｜大口投資家の監視ブログ＝全角12字）を付けない。記事タイトルは
+    // 銘柄名・提出者名・保有比率だけで既に40字前後あり、検索結果に出る約32字にサイト名は
+    // 入らない。入る場合も本文側の情報を押し出すだけで、人名・銘柄名で探している読者には
+    // 何の手がかりにもならない。一覧・ハブページのtitleにはサイト名を残す。
+    title: { absolute: article.title },
     description,
     // 金額も保有比率の変化も小さい開示（例: 保有比率0.04%・推定額0億円の変更報告書）と、
     // 同一「銘柄×提出者」で最新に置き換わった記事は、検索意図を満たさず
@@ -153,10 +161,23 @@ export default async function ArticleDetailPage({ params }: Props) {
 
   const article = await getArticleDetail(id).catch((error: unknown) => {
     if (error instanceof Error && error.message.includes("status: 404")) {
-      notFound();
+      return null;
     }
     throw error;
   });
+
+  // 削除済みの記事URLは404にせず、引き継ぎ先（銘柄ページ／重複で残した方の記事）へ
+  // 恒久リダイレクトする。順位の付いたURLを404で捨てないための処理。
+  // ただし引き継ぎ先の銘柄ページが公開対象でない場合（薄い集約ページは404。
+  // lib/publishedPages.ts）は、308で404へ送ることになるのでリダイレクトしない。
+  if (!article) {
+    const target = await getArticleRedirect(id);
+    const resolved = target?.startsWith(STOCK_PATH_PREFIX)
+      ? await stockHref(target.slice(STOCK_PATH_PREFIX.length))
+      : target;
+    if (resolved) permanentRedirect(resolved);
+    notFound();
+  }
 
   // 「自動生成」は運用側の内部フラグ（web/publish_blog_articles.pyがtagsに立てる）で、
   // 読者に見せると記事の信頼性を落とすだけなので表示しない。方向・訂正のタグは残す。

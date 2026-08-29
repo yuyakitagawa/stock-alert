@@ -54,8 +54,10 @@ DEFAULT_LIMIT = 20
 DATA_LAG_DAYS = 3
 # APIの1リクエストあたりの上限。ページ数の集計はこの上限に当たると頭打ちになる。
 MAX_ROWS = 25000
-# CTR改善候補・あと一歩の足切り。表示回数が一桁のクエリはCTRがぶれて判断材料にならない。
+# CTR改善候補・あと一歩の足切り。表示回数が一桁だとCTRがぶれて判断材料にならない。
+# クエリ別はGSCの匿名化で表示回数が小さく出るため、ページ別より低くする。
 MIN_IMPRESSIONS = 20
+MIN_IMPRESSIONS_QUERY = 5
 
 # ページ種別。ga4_clicks.PAGE_GROUPS と似ているが、SEOではランキング・週次などの
 # ハブページを一覧と分けて見たいので別に持つ。
@@ -182,6 +184,32 @@ def _row_line(label: str, r: dict, width: int = 44) -> str:
             f"CTR{r['ctr'] * 100:5.1f}%  {r['position']:5.1f}位  {label[:width]}")
 
 
+def _path_label(row: dict) -> str:
+    return urllib.parse.unquote(urllib.parse.urlsplit(row["keys"][0]).path)
+
+
+def _opportunity_sections(kind: str, rows: list, label_fn, site_ctr: float,
+                          limit: int, min_impressions: int) -> None:
+    """「1ページ目に居るのに押されていない」「あと一歩」の2節を出す。
+    ページ別とクエリ別で同じ見方をするので共通化する（直す対象はページなのでページ別が本命）。"""
+    print(f"\n■ CTR改善候補・{kind}別（10位以内・表示{min_impressions}回以上・"
+          f"CTRがサイト平均{site_ctr * 100:.1f}%未満）→ titleとdescriptionの書き換え対象")
+    picked = ctr_opportunities(rows, site_ctr, min_impressions)[:limit]
+    for r in picked:
+        print(_row_line(label_fn(r), r)
+              + f"  → 平均CTRなら+{r['impressions'] * (site_ctr - r['ctr']):.0f}クリック")
+    if not picked:
+        print("  該当なし")
+
+    print(f"\n■ あと一歩・{kind}別（11〜20位・表示回数順・上位{limit}）"
+          "→ 加筆・内部リンクで1ページ目を狙う")
+    nearly = almost_first_page(rows, min_impressions)[:limit]
+    for r in nearly:
+        print(_row_line(label_fn(r), r))
+    if not nearly:
+        print("  該当なし")
+
+
 def report(days: int, limit: int) -> int:
     site = os.getenv("GSC_SITE_URL", "").strip() or DEFAULT_SITE
     try:
@@ -199,15 +227,19 @@ def report(days: int, limit: int) -> int:
     prev_start = prev_end - timedelta(days=days - 1)
     print(f"GSC 検索パフォーマンス: {start}〜{end}（比較: {prev_start}〜{prev_end}） site: {site}")
 
-    queries, err = search_analytics(token, site, start, end, ["query"], MAX_ROWS)
+    # 全体はディメンション無しで取る。dimensions=["query"] の合計は使えない
+    # （GSCは希少クエリを匿名化して行ごと落とすため、実測でクリックの1割しか映らなかった）。
+    overall, err = search_analytics(token, site, start, end, [], 1)
     if err:
         print(f"[gsc] {err}")
         return 1
+    prev_overall, _ = search_analytics(token, site, prev_start, prev_end, [], 1)
+    queries, _ = search_analytics(token, site, start, end, ["query"], MAX_ROWS)
     prev_queries, _ = search_analytics(token, site, prev_start, prev_end, ["query"], MAX_ROWS)
     pages, _ = search_analytics(token, site, start, end, ["page"], MAX_ROWS)
     prev_pages, _ = search_analytics(token, site, prev_start, prev_end, ["page"], MAX_ROWS)
 
-    now, before = totals(queries), totals(prev_queries)
+    now, before = totals(overall), totals(prev_overall)
     print("\n■ 全体")
     print(f"  クリック      {now['clicks']:8,.0f}{delta(now['clicks'], before['clicks'])}")
     print(f"  表示回数      {now['impressions']:8,.0f}{delta(now['impressions'], before['impressions'])}")
@@ -216,6 +248,10 @@ def report(days: int, limit: int) -> int:
     print(f"  表示のあったURL数 {len(pages):6,}{delta(len(pages), len(prev_pages))}"
           "  ※インデックスされて検索に出ているページ数の下限"
           + ("（API上限に到達。実数はこれ以上）" if len(pages) >= MAX_ROWS else ""))
+    q_total = totals(queries)
+    coverage = q_total["clicks"] / now["clicks"] if now["clicks"] else 0
+    print(f"  クエリ別に見える範囲 {coverage * 100:5.1f}%（{q_total['clicks']:,.0f}/{now['clicks']:,.0f}クリック）"
+          "  ※GSCは希少クエリを匿名化する。クエリの節はこの範囲の話")
 
     print("\n■ ページ種別")
     prev_groups = group_totals(prev_pages)
@@ -227,27 +263,14 @@ def report(days: int, limit: int) -> int:
     for r in sorted(queries, key=lambda r: (-r["clicks"], -r["impressions"]))[:limit]:
         print(_row_line(r["keys"][0], r) + delta(r["clicks"], (prev_q.get(r["keys"][0]) or {}).get("clicks", 0)))
 
-    print(f"\n■ CTR改善候補（10位以内・表示{MIN_IMPRESSIONS}回以上・CTRがサイト平均{now['ctr'] * 100:.1f}%未満）"
-          "→ titleとdescriptionの書き換え対象")
-    opportunities = ctr_opportunities(queries, now["ctr"])[:limit]
-    for r in opportunities:
-        gain = r["impressions"] * (now["ctr"] - r["ctr"])
-        print(_row_line(r["keys"][0], r) + f"  → 平均CTRなら+{gain:.0f}クリック")
-    if not opportunities:
-        print("  該当なし")
-
-    print(f"\n■ あと一歩（11〜20位・表示回数順・上位{limit}）→ 加筆・内部リンクで1ページ目を狙う")
-    nearly = almost_first_page(queries)[:limit]
-    for r in nearly:
-        print(_row_line(r["keys"][0], r))
-    if not nearly:
-        print("  該当なし")
+    _opportunity_sections("ページ", pages, _path_label, now["ctr"], limit, MIN_IMPRESSIONS)
+    _opportunity_sections("クエリ", queries, lambda r: r["keys"][0], now["ctr"], limit,
+                          MIN_IMPRESSIONS_QUERY)
 
     print(f"\n■ 上位ページ（クリック順・上位{limit}）")
     prev_p = {r["keys"][0]: r for r in prev_pages}
     for r in sorted(pages, key=lambda r: (-r["clicks"], -r["impressions"]))[:limit]:
-        url = urllib.parse.unquote(urllib.parse.urlsplit(r["keys"][0]).path)
-        print(_row_line(url, r) + delta(r["clicks"], (prev_p.get(r["keys"][0]) or {}).get("clicks", 0)))
+        print(_row_line(_path_label(r), r) + delta(r["clicks"], (prev_p.get(r["keys"][0]) or {}).get("clicks", 0)))
     return 0
 
 
