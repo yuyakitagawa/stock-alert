@@ -1,5 +1,6 @@
 import { displayFilerName, formatDate } from "@/lib/format";
 import { getFilerHoldings, getFilerIdByName, getFilerNameById, investorPath } from "@/lib/investors";
+import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
 import { buildRss, rssResponse } from "@/lib/rss";
 import { SITE_URL } from "@/lib/site";
 
@@ -17,7 +18,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ fil
     filerId !== null ? await getFilerNameById(filerId).catch(() => null) : decodeURIComponent(filer);
   if (!filerName) return new Response("Not Found", { status: 404 });
   const resolvedId = filerId ?? (await getFilerIdByName(filerName).catch(() => null));
-  const holdings = await getFilerHoldings(filerName).catch(() => []);
+  const [holdings, publishedFilers, publishedCodes] = await Promise.all([
+    getFilerHoldings(filerName).catch(() => []),
+    getPublishedFilerNames().catch(() => new Set<string>()),
+    getPublishedStockCodes().catch(() => new Set<string>()),
+  ]);
+  // 投資家ページ自体を公開していない提出者はRSSも配信しない（lib/publishedPages.ts）。
+  if (!publishedFilers.has(filerName)) return new Response("Not Found", { status: 404 });
   const pageUrl = `${SITE_URL}${investorPath(resolvedId, filerName)}`;
   const label = displayFilerName(filerName);
 
@@ -31,7 +38,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ fil
       const prior = h.holdingRatioPrior === null ? "" : `（前回 ${h.holdingRatioPrior}%）`;
       return {
         title: `${h.issuerName}（${h.issuerCode}）${ratio}${prior}`,
-        link: `${SITE_URL}/stocks/${h.issuerCode}`,
+        link: publishedCodes.has(h.issuerCode)
+          ? `${SITE_URL}/stocks/${h.issuerCode}`
+          : pageUrl,
         guid: h.docId,
         pubDate: new Date(`${h.discDate}T00:00:00+09:00`).toUTCString(),
         description: `${formatDate(h.discDate)}にEDINETで開示。${label}の${h.issuerName}（${h.issuerCode}）に対する${ratio}${prior}。`,

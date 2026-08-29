@@ -216,42 +216,62 @@ def test_build_and_publish_skips_published_and_respects_max():
     publish.assert_not_called()
 
 
-def test_build_and_publish_counts_generation_attempts_when_all_fail():
-    """記事候補が残っているのに生成が全滅した便は attempts>0 / 投稿0件になり、
-    exit_code_for_run が異常(1)を返すこと（2026-08-24のAPI上限超過と同じ形）。"""
-    rows = [
-        {"code": "9706", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 150.0, "ratio": 3.8, "max_amount_yen": 15_000_000_000},
-        {"code": "6574", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 45.0, "ratio": 7.33, "max_amount_yen": 4_500_000_000},
-    ]
-    stats = {}
-    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
-         mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "build_fact_sheet", return_value=FACT), \
-         mock.patch.object(m, "generate_body_checked", return_value=None), \
-         mock.patch.object(m, "publish_article") as publish:
-        out = m.build_and_publish(days=2, dry_run=False, stats=stats)
-
-    assert out == []
-    assert stats["generation_attempts"] == 2
-    publish.assert_not_called()
-    assert m.exit_code_for_run(stats["generation_attempts"], len(out)) == 1
+_TWO_CANDIDATES = [
+    {"code": "7966", "disclosed_at": "2026-08-26T16:00:00+00:00", "amount_oku": 300.0,
+     "ratio": 10.55, "max_amount_yen": 30_000_000_000},
+    {"code": "6082", "disclosed_at": "2026-08-26T16:00:00+00:00", "amount_oku": 10.0,
+     "ratio": 12.8, "max_amount_yen": 1_000_000_000},
+]
 
 
-def test_build_and_publish_reports_zero_attempts_when_all_already_published():
-    """既出で全部スキップされた便は attempts=0。記事0件でもジョブは緑のままにする。"""
-    rows = [
-        {"code": "9706", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 150.0, "ratio": 3.8, "max_amount_yen": 15_000_000_000},
-    ]
-    stats = {}
-    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
+def test_ledger_treats_all_already_published_as_healthy():
+    """候補2件が両方とも既報で公開0件になるのは正常（2026-08-26の21時便の実態）。
+
+    ログには「記事候補: 2件」→「0件処理しました。」しか出ておらず、正常な既報スキップと
+    生成失敗の区別が付かなかった。台帳はここを「既報2」と記録して鳴らさない。
+    """
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    with mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
          mock.patch.object(m, "already_published", return_value=True), \
-         mock.patch.object(m, "generate_body_checked") as gen:
-        out = m.build_and_publish(days=2, dry_run=False, stats=stats)
-
+         mock.patch.object(m, "publish_article") as publish:
+        out = m.build_and_publish(days=7, dry_run=True, ledger=led)
     assert out == []
-    assert stats["generation_attempts"] == 0
-    gen.assert_not_called()
-    assert m.exit_code_for_run(stats["generation_attempts"], len(out)) == 0
+    publish.assert_not_called()
+    assert led.has_anomaly() is False, led.summary()
+    assert "既報2" in led.summary()
+
+
+def test_ledger_flags_generation_failure_as_anomaly():
+    """同じ「候補2件→公開0件」でも、本文生成が失敗しているなら異常として鳴らす。"""
+    from lib import publish_ledger as pl
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    with mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
+         mock.patch.object(m, "generate_body_checked", return_value=None), \
+         mock.patch.object(m, "publish_article"):
+        out = m.build_and_publish(days=7, dry_run=True, ledger=led)
+    assert out == []
+    assert led.anomaly_counts() == {pl.FAIL_GENERATION: 2}
+    with mock.patch("lib.publish_ledger.notify.error"):
+        assert led.finish() == pl.EXIT_ANOMALY
+
+
+def test_ledger_counts_every_candidate():
+    """公開できた候補・見送った候補の合計が候補数と一致する（未分類が残らない）。"""
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    with mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
+         mock.patch.object(m, "already_published", side_effect=[True, False]), \
+         mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
+         mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}), \
+         mock.patch.object(m, "publish_article"):
+        m.build_and_publish(days=7, dry_run=True, ledger=led)
+    assert led.published_count == 1
+    assert led.unclassified == 0
+    assert led.has_anomaly() is False
 
 
 if __name__ == "__main__":

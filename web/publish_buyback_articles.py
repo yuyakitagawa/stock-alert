@@ -37,7 +37,9 @@ import requests  # noqa: E402
 from lib import api_budget  # noqa: E402
 from lib import api_usage  # noqa: E402
 from lib.buyback import classify_buyback_title  # noqa: E402
+from lib import publish_ledger as pl  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
+from lib.publish_ledger import PublishLedger  # noqa: E402
 from lib.writing_style import JA_STYLE_RULES, find_ai_tells  # noqa: E402
 from web.publish_blog_articles import (  # noqa: E402
     ANTHROPIC_API_KEY,
@@ -53,7 +55,6 @@ from web.publish_blog_articles import (  # noqa: E402
     body_quality_key,
     build_eyecatch_for_article,
     build_price_chart_for_article,
-    exit_code_for_run,
     fetch_published_index,
     get_company_description,
     get_pit_ranking_snapshot,
@@ -384,8 +385,9 @@ def build_payload(f: dict, article: dict) -> dict:
 
 def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = None,
                       dry_run: bool = False, backfill: bool = False,
-                      stats: "dict | None" = None) -> list[dict]:
-    """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
+                      ledger: "PublishLedger | None" = None) -> list[dict]:
+    # ledger については lib/publish_ledger.py を参照（候補>0・公開0の原因を終了コードに出す）
+    ledger = ledger if ledger is not None else PublishLedger("publish_buyback_articles")
     known: "set | None" = None
     if backfill:
         days = max(days, BACKFILL_DAYS)
@@ -406,34 +408,39 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         # 古い開示ほど窓（BACKFILL_DAYS）から外れて永久に失われるので先に消化する
         candidates.sort(key=lambda c: c["disclosed_at"])
         print(f"[buyback_blog] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
+    ledger.start(len(candidates))
     published: list[dict] = []
-    generation_attempts = 0
     for row in candidates:
         if max_articles is not None and len(published) >= max_articles:
+            ledger.stop_early(pl.SKIP_MAX_ARTICLES)
             break
         code, disc_date = row["code"], row["disclosed_at"][:10]
         if row.get("article_published_at"):
             # 既に記事を作った開示。microCMS上に無いのは意図的に削除したからなので作り直さない
+            ledger.skip(pl.SKIP_ALREADY_ARTICLED, f"{code} {disc_date}")
             continue
         if already_published(code, disc_date):
+            ledger.skip(pl.SKIP_ALREADY_PUBLISHED, f"{code} {disc_date}")
             continue
         f = build_fact_sheet(row)
         if not f["stock_name"]:
             print(f"  - {code} {disc_date}: 銘柄名が取れないためスキップ")
+            ledger.skip(pl.SKIP_NO_STOCK_NAME, f"{code} {disc_date}")
             continue
         amount_label = format_amount(f["amount_oku"]) or "-"
         ratio_label = f"{f['ratio']:g}%" if f["ratio"] is not None else "-"
         print(f"  🏦 {f['stock_name']}({code}) {disc_date} 上限{amount_label} / {ratio_label}")
 
-        # 重複除外を通り抜けて記事化に到達した候補（exit_code_for_run の判定材料）
-        generation_attempts += 1
         article = generate_body_checked(f)
         if not article:
+            print(f"    ⏭ {f['stock_name']}({code}): 記事生成に失敗したためスキップ")
+            ledger.skip(pl.FAIL_GENERATION, f"{f['stock_name']}({code})")
             continue
         payload = build_payload(f, article)
         if dry_run:
             print(f"    [dry-run] title: {payload['title']}\n    {re.sub('<[^>]+>', '', payload['body'])[:200]}…")
             published.append({**payload, "id": None})
+            ledger.publish(f"{f['stock_name']}({code})")
             continue
 
         eyecatch = build_eyecatch_for_article(DEAL_TYPE, {
@@ -459,13 +466,16 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
             content_id = publish_article(payload)
         except MicroCMSPermissionError as e:
             print(f"    ⚠ microCMSの権限エラーのため以降の候補をスキップ: {e}")
+            ledger.stop_early(pl.FAIL_PERMISSION, f"{f['stock_name']}({code})")
             break
         if content_id:
             print(f"    ✅ 投稿: {content_id}（図{figure_count}枚）")
             mark_article_published(row)
             published.append({**payload, "id": content_id})
-    if stats is not None:
-        stats["generation_attempts"] = generation_attempts
+            ledger.publish(f"{f['stock_name']}({code})")
+        else:
+            print(f"    ⚠ {f['stock_name']}({code}): 投稿に失敗")
+            ledger.skip(pl.FAIL_PUBLISH, f"{f['stock_name']}({code})")
     return published
 
 
@@ -477,18 +487,13 @@ def main():
     p.add_argument("--backfill", action="store_true",
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない決定開示だけを拾い直す")
     args = p.parse_args()
-    stats: dict = {}
+    ledger = PublishLedger("publish_buyback_articles")
     results = build_and_publish(days=args.days, max_articles=args.max_articles,
-                                dry_run=args.dry_run, backfill=args.backfill, stats=stats)
+                                dry_run=args.dry_run, backfill=args.backfill, ledger=ledger)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
-
-    attempts = stats.get("generation_attempts", 0)
-    code = exit_code_for_run(attempts, len(results))
-    if code:
-        print(f"::error::記事化に到達した候補{attempts}件に対し投稿0件。"
-              f"Claude APIの上限超過かmicroCMSの障害を確認すること。")
-    sys.exit(code)
+    # 内訳を毎回1行出し、生成・投稿の失敗があったときだけLINE通知＋終了コード4を返す
+    return ledger.finish()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

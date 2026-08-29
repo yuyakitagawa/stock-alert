@@ -26,6 +26,7 @@ import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, ge
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { dateHref, getPublishedFilerNames, stockHref } from "@/lib/publishedPages";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -205,6 +206,15 @@ export default async function ArticleDetailPage({ params }: Props) {
   // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
   const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
   const filerId = filerName ? await getFilerIdByName(filerName) : null;
+  // 薄い集約ページは公開していない（404）ので、リンクも同じ判定で出し分ける。
+  // nullならリンクにせず素のテキストで出す（lib/publishedPages.ts）。
+  const [stockPageHref, datePageHref, publishedFilers] = await Promise.all([
+    stockHref(article.stockCode),
+    dateHref(dealDateOnly),
+    getPublishedFilerNames(),
+  ]);
+  const filerPageHref =
+    filerName && publishedFilers.has(filerName) ? investorPath(filerId, filerName) : null;
   // 前回比はEDINET開示（今回比率 − 直前保有割合）を正とし、取れないときだけCMSの
   // ratioChangePctへフォールバックする。CMS側の値は記事生成時にXBRLの直前保有割合が
   // まだ取れていないと「今回比率の全量」で入ってしまい、同じ画面に
@@ -218,7 +228,10 @@ export default async function ArticleDetailPage({ params }: Props) {
     value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 
   const linkedBody = frameSpeculation(
-    linkifyFilerNames(article.body, filers)
+    linkifyFilerNames(
+      article.body,
+      filers.filter((f) => publishedFilers.has(f.filerName))
+    )
   );
 
   const articleJsonLd = {
@@ -256,13 +269,18 @@ export default async function ArticleDetailPage({ params }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      {
-        "@type": "ListItem",
-        position: 2,
-        name: formatDate(article.dealDate),
-        item: `${SITE_URL}/date/${dealDateOnly}`,
-      },
-      { "@type": "ListItem", position: 3, name: article.title, item: url },
+      // 取引日ページを公開していない日は階層から外す（存在しないURLを構造化データに出さない）。
+      ...(datePageHref
+        ? [
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: formatDate(article.dealDate),
+              item: `${SITE_URL}${datePageHref}`,
+            },
+          ]
+        : []),
+      { "@type": "ListItem", position: datePageHref ? 3 : 2, name: article.title, item: url },
     ],
   };
 
@@ -281,9 +299,13 @@ export default async function ArticleDetailPage({ params }: Props) {
       <nav aria-label="パンくずリスト" className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-foreground/50">
         <Link href="/" className="flex-none hover:text-brand-blue">トップ</Link>
         <span aria-hidden>/</span>
-        <Link href={`/date/${dealDateOnly}`} className="flex-none hover:text-brand-blue">
-          {formatDate(article.dealDate)}
-        </Link>
+        {datePageHref ? (
+          <Link href={datePageHref} className="flex-none hover:text-brand-blue">
+            {formatDate(article.dealDate)}
+          </Link>
+        ) : (
+          <span className="flex-none">{formatDate(article.dealDate)}</span>
+        )}
         <span aria-hidden>/</span>
         <span className="min-w-0 truncate text-foreground/70">{article.title}</span>
       </nav>
@@ -329,12 +351,18 @@ export default async function ArticleDetailPage({ params }: Props) {
           <Box sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>銘柄</Typography>
             <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
-              <Link
-                href={`/stocks/${article.stockCode}`}
-                className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
-              >
-                {article.stockName}（{article.stockCode}）
-              </Link>
+              {stockPageHref ? (
+                <Link
+                  href={stockPageHref}
+                  className="text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
+                >
+                  {article.stockName}（{article.stockCode}）
+                </Link>
+              ) : (
+                <>
+                  {article.stockName}（{article.stockCode}）
+                </>
+              )}
             </Typography>
           </Box>
           <Box>
@@ -445,11 +473,12 @@ export default async function ArticleDetailPage({ params }: Props) {
         {/* 記事は入口160セッション（TOPに次ぐ2位）なのに滞在16秒で、本文下の回遊導線までは
             到達していない（2026-08-27のGA4実測）。要点を読んだ直後に次のページを出す。 */}
         <ArticleNextStep
-          stockCode={article.stockCode}
           stockName={article.stockName}
+          stockHref={stockPageHref}
           filerName={filerName ?? undefined}
-          filerHref={filerName ? investorPath(filerId, filerName) : undefined}
+          filerHref={filerPageHref}
           dealDate={article.dealDate}
+          dateHref={datePageHref}
         />
         {/* 全記事で同一の説明文（提出期限のズレ・免責・分類の定義）はここに書かず、
             FAQと/aboutへのリンクに寄せる。同じ定型文が全記事の本文比率を押し上げると
@@ -544,11 +573,13 @@ export default async function ArticleDetailPage({ params }: Props) {
               {article.stockName}（{article.stockCode}）の他の記事
             </h2>
             <RelatedArticleLinks articles={relatedStockArticles} />
-            <div className="mt-3">
-              <ActionButton href={`/stocks/${article.stockCode}`}>
-                この銘柄の大量保有・自社株買い履歴をすべて見る
-              </ActionButton>
-            </div>
+            {stockPageHref && (
+              <div className="mt-3">
+                <ActionButton href={stockPageHref}>
+                  この銘柄の大量保有・自社株買い履歴をすべて見る
+                </ActionButton>
+              </div>
+            )}
           </div>
         )}
         {filerName && (
@@ -562,9 +593,11 @@ export default async function ArticleDetailPage({ params }: Props) {
                 {DEAL_TYPE_DESCRIPTIONS[article.dealType]}
               </p>
             )}
-            <ActionButton href={investorPath(filerId, filerName)}>
-              {displayFilerName(filerName)}の保有銘柄・比率推移を見る
-            </ActionButton>
+            {filerPageHref && (
+              <ActionButton href={filerPageHref}>
+                {displayFilerName(filerName)}の保有銘柄・比率推移を見る
+              </ActionButton>
+            )}
           </div>
         )}
         <div className="mt-10 border-t border-rule pt-6">
@@ -572,9 +605,11 @@ export default async function ArticleDetailPage({ params }: Props) {
           <nav aria-label="関連ランキング" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <Link href="/ranking/returns" className="text-brand-blue hover:underline">3ヶ月リターンランキング</Link>
             <Link href="/trending" className="text-brand-blue hover:underline">銘柄ランキング</Link>
-            <Link href={`/date/${dealDateOnly}`} className="text-brand-blue hover:underline">
-              {formatDate(article.dealDate)}の全開示
-            </Link>
+            {datePageHref && (
+              <Link href={datePageHref} className="text-brand-blue hover:underline">
+                {formatDate(article.dealDate)}の全開示
+              </Link>
+            )}
           </nav>
         </div>
         {relatedArticles.length > 0 && (

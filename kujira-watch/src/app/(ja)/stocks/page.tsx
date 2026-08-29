@@ -9,6 +9,7 @@ import RelatedArticles from "@/components/RelatedArticles";
 import SectorIcon from "@/components/SectorIcon";
 import { getAllStocksForIndex, getArticleList } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
+import { getPublishedStockCodes } from "@/lib/publishedPages";
 import { formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
@@ -93,13 +94,17 @@ export default async function StocksIndexPage({ searchParams }: Props) {
 }
 
 async function StocksBody({ searchParams }: Props) {
-  const [{ sector, page }, stocks, sectorByCode, { contents: latestArticles }] = await Promise.all([
-    searchParams,
-    getAllStocksForIndex(),
-    getAllSectorsByCode(),
-    // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
-    getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
-  ]);
+  const [{ sector, page }, allStocks, sectorByCode, { contents: latestArticles }, publishedCodes] =
+    await Promise.all([
+      searchParams,
+      getAllStocksForIndex(),
+      getAllSectorsByCode(),
+      // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
+      getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
+      getPublishedStockCodes(),
+    ]);
+  // 解説記事も事業内容の説明も無い銘柄のページは公開していない（404）ので一覧にも出さない。
+  const stocks = allStocks.filter((s) => publishedCodes.has(s.stockCode));
 
   const counts = new Map<string, number>();
   for (const s of stocks) {
