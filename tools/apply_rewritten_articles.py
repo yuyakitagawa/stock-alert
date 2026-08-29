@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 from tools.reclassify_blog_articles import fetch_all_articles
-from lib.article_text import visible_text_len, FIGURE_RE
+from lib.article_text import visible_text_len, restore_figures
 from web.publish_blog_articles import update_article, MicroCMSPermissionError
 
 load_dotenv()
@@ -72,9 +72,8 @@ def main():
         if new_len <= old_len:
             problems.append((aid, f"新本文が既存より短い({old_len}→{new_len}字)"))
             continue
-        # 既存の株価チャートを引き継ぐ
-        figure = FIGURE_RE.search(old.get("body") or "")
-        body = new_body + (figure.group(0) if figure else "")
+        # 既存の図を引き継ぐ（解説図は本文中へ、株価チャートは末尾へ）
+        body = restore_figures(new_body, old.get("body") or "")
         targets.append((aid, old, body, old_len, new_len, new_title))
 
     for aid, old, _, old_len, new_len, new_title in targets:
