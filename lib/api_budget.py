@@ -24,6 +24,11 @@ Anthropic APIの月次利用上限に達したことを検知し、以降の呼�
             print(f"    ⚠ 失敗: {e}")
 """
 
+import re
+
+# 上限超過は復旧まで毎便同じ理由で失敗するため、通知は dedupe_key で1日1通に抑える。
+DEDUPE_KEY = "anthropic_usage_limit"
+
 SKIP_MESSAGE = (
     "    ⚠ Anthropic APIの利用上限に到達したため、以降のClaude呼び出しをスキップします"
 )
@@ -61,8 +66,46 @@ def note(exc: BaseException) -> bool:
     return True
 
 
+def regain_access_at(exc: BaseException) -> str:
+    """エラー本文から復旧予定日時（"You will regain access on 2026-09-01 at 00:00 UTC."）を抜く。
+    取れなければ空文字。通知に「いつ戻るか」を書くために使う。"""
+    m = re.search(
+        r"regain access on\s+(\d{4}-\d{2}-\d{2})(?:\s+at\s+(\d{2}:\d{2})\s*(\w+)?)?",
+        str(exc), re.IGNORECASE,
+    )
+    if not m:
+        return ""
+    date_s, time_s, tz_s = m.group(1), m.group(2) or "", (m.group(3) or "").upper()
+    return f"{date_s}{' ' + time_s if time_s else ''}{' ' + tz_s if tz_s else ''}"
+
+
+def _build_message(exc: BaseException) -> str:
+    """何が起きて、何をすれば直り、放置すると何が止まるかまで書く。
+
+    「失敗しました」だけだと結局ログを見に行くことになる。特にこの障害は
+    **クレジットを追加しても直らない**（残高不足ではなく設定した使用上限に当たっている）。
+    2026-08-24は実際にチャージで復旧を試みて空振りし、上限引き上げに気づくまで時間を要した。
+    """
+    when = regain_access_at(exc)
+    lines = [
+        "上限に到達したため、ブログ記事・動画・日次レビューの生成を停止します。",
+        "",
+        "対処: Anthropic Consoleで月間の使用上限（usage limit）を引き上げてください。",
+        "※クレジットの追加では解除されません（残高不足ではなく上限設定に当たっています）",
+        "https://console.anthropic.com/settings/limits",
+    ]
+    if when:
+        lines += ["", f"未対応の場合、自動復旧は {when} です。それまで記事は出ません。"]
+    return "\n".join(lines)
+
+
 def _notify_once(exc: BaseException) -> None:
-    """同一プロセスで1回だけLINE通知する。通知の失敗で本処理は止めない。"""
+    """1回だけLINE通知する。通知の失敗で本処理は止めない。
+
+    同一プロセス内は _notified で、プロセスを跨ぐ連投は notify.push_once の
+    dedupe_key で抑える。毎時のワークフローが上限超過で失敗し続けると、抑制が無ければ
+    9:00〜21:00の13便ぶん同じ通知が届く。
+    """
     global _notified
     if _notified:
         return
@@ -72,8 +115,9 @@ def _notify_once(exc: BaseException) -> None:
 
         notify.error(
             "Anthropic API 利用上限",
-            "上限に到達したため、ブログ記事・動画・日次レビューの生成を停止します。",
+            _build_message(exc),
             detail=str(exc),
+            dedupe_key=DEDUPE_KEY,
         )
     except Exception as e:
         print(f"[api_budget] ⚠ LINE通知に失敗: {e}")

@@ -446,9 +446,8 @@ def main() -> None:
         if fallback_uid and fallback_parts:
             message = "\n\n".join(fallback_parts)
             print(f"[market_timing] ウォッチリスト未登録。フォールバック送信。")
-            # 本文を標準出力に出す。日次ログレビュー(tools/daily_log_review.py)はこのステップの
-            # ログを全文保持してUX観点のレビュー材料にするが、この経路だけ本文を出しておらず
-            # 3日連続で「LINE本文がログに無いため判断不可」になっていた（2026-08-27）。
+            # 本文を標準出力に出す。通常送信の経路と揃えて、実行ログだけで実際に何を
+            # 送ったか追えるようにするため（この経路だけ本文が無かった。2026-08-27）。
             print(f"\n--- {fallback_uid[:8]}... ---\n{message}\n")
             send_line_push(fallback_uid, message)
         else:

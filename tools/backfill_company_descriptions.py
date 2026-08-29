@@ -8,7 +8,7 @@ kujira-watch.com の /stocks/[code] ページが「クロール済み-インデ�
 （jpx_stock_list.descriptionにキャッシュ）、対象銘柄の記事が生成された時点より前から
 存在する銘柄には遡って入らないため、このツールで一括バックフィルする。
 プロンプト・「不明なら空文字」ガードは新規記事生成時と完全に同一のものを流用する
-（tools/rewrite_thin_blog_articles.pyと同じ方針）。
+（新規記事生成と同じ方針）。
 
 対象: edinet_large_holdings に提出実績があり（=/stocks/[code]ページが存在する）、
 jpx_stock_list.description が未設定の銘柄。--recent-days で直近に開示があった銘柄だけに

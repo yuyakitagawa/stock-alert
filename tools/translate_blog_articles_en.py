@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 import requests
 
 from lib import api_budget
+from lib import api_usage
 from lib.writing_style import EN_STYLE_RULES
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, ANTHROPIC_API_KEY, CLAUDE_MODEL,
@@ -112,6 +113,7 @@ def translate_article(title: str, body: str) -> "dict | None":
             max_tokens=1600,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="translate_article")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")

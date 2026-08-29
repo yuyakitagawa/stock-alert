@@ -39,6 +39,25 @@ def test_find_ai_tells_detects_monotone_endings():
     assert any("文末単調" in h for h in hits)
 
 
+def test_find_ai_tells_skips_monotone_when_disabled():
+    """include_monotone=False は文末の単調さを見ない（再生成の判定用）。"""
+    text = "株式を取得します。比率が上がります。開示が続きます。規模も増えます。"
+    assert find_ai_tells(text, include_monotone=False) == []
+
+
+def test_find_ai_tells_keeps_phrases_when_monotone_disabled():
+    """単調さを外しても常套句は拾う（こちらは再生成する価値がある）。"""
+    text = "株式を取得します。非常に大きな動きです。注目が集まっています。"
+    hits = find_ai_tells(text, include_monotone=False)
+    assert "非常に" in hits and "注目が集まって" in hits
+    assert not any("文末単調" in h for h in hits)
+
+
+def test_ja_style_rules_name_the_masu_ending():
+    """です・ます調で最も偏る「ます。」の連続をプロンプトが名指ししている。"""
+    assert "ます。" in JA_STYLE_RULES
+
+
 def test_find_ai_tells_allows_varied_endings():
     text = "株式を取得しました。比率は5.1%です。開示は12件目になります。規模も大きい水準でした。"
     assert find_ai_tells(text) == []

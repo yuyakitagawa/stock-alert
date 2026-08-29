@@ -4,8 +4,9 @@ tools/export_article_fact_cards.py
 既存ブログ記事のリライト用に、1記事ぶんの「事実カード」をJSONで書き出す。
 
 AdSense審査の不承認（2026-08-24「有用性の低いコンテンツ」）を受けた既存976記事の
-リライトで使う。tools/rewrite_thin_blog_articles.py がAnthropic APIに書かせるのに対し、
-こちらは事実の収集だけを行い、本文は人間（またはClaude Code）が書く運用のための入口。
+リライトで使う。このツールは事実の収集だけを行い、本文は人間（またはClaude Code）が書く。
+Anthropic APIに本文を書かせる版は2026-08-29に廃止した（1本あたり本文生成1〜2回の課金が
+リライト610本で$10超になったため）。
 
 書き出す内容は web/publish_blog_articles.py の fact_sheet と同じ事実（銘柄・提出者・
 保有比率・変化幅・推定金額・事業内容）に、build_context_facts() が集める開示横断の
@@ -26,9 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 from tools.reclassify_blog_articles import fetch_all_articles
-from tools.rewrite_thin_blog_articles import (
-    THIN_TEXT_THRESHOLD, visible_text_len, find_filer_names,
-)
+from lib.article_text import THIN_TEXT_THRESHOLD, visible_text_len, find_filer_names
 from lib.edinet import disclosure_doc_label, resolve_filer
 from web.publish_blog_articles import (
     build_context_facts, format_context_facts, classify_filer,

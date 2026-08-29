@@ -27,6 +27,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import api_budget  # noqa: E402
+from lib import api_usage  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
@@ -224,6 +225,7 @@ def extract_facts_llm(text: str, code: str, title: str) -> dict:
             model=CLAUDE_MODEL, max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="buyback_facts")
         raw = resp.content[0].text.strip()
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         data = json.loads(m.group(0), strict=False) if m else {}

@@ -35,6 +35,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 import requests  # noqa: E402
 
 from lib import api_budget  # noqa: E402
+from lib import api_usage  # noqa: E402
 from lib.buyback import classify_buyback_title  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
@@ -52,6 +53,7 @@ from web.publish_blog_articles import (  # noqa: E402
     body_quality_key,
     build_eyecatch_for_article,
     build_price_chart_for_article,
+    exit_code_for_run,
     fetch_published_index,
     get_company_description,
     get_pit_ranking_snapshot,
@@ -342,6 +344,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
             model=CLAUDE_MODEL, max_tokens=2400,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="buyback_body")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -358,11 +361,12 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
 
 def generate_body_checked(f: dict) -> "dict | None":
     """本文が短すぎる・AI常套句（lib/writing_style.py）を含む場合は1回だけ再生成し、
-    マシな方を採用する（publish_blog_articles.generate_article_body_checked と同じ方針）。"""
+    マシな方を採用する（publish_blog_articles.generate_article_body_checked と同じ方針。
+    文末の単調さを再生成のきっかけにしない点も同じ）。"""
     first = generate_body(f)
     if first is None:
         return None
-    if body_char_count(first["body"]) >= MIN_BODY_CHARS and not find_ai_tells(first["body"]):
+    if body_char_count(first["body"]) >= MIN_BODY_CHARS and not find_ai_tells(first["body"], include_monotone=False):
         return first
     second = generate_body(f)
     if second is None:
@@ -396,7 +400,9 @@ def build_payload(f: dict, article: dict) -> dict:
 
 
 def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = None,
-                      dry_run: bool = False, backfill: bool = False) -> list[dict]:
+                      dry_run: bool = False, backfill: bool = False,
+                      stats: "dict | None" = None) -> list[dict]:
+    """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
     known: "set | None" = None
     if backfill:
         days = max(days, BACKFILL_DAYS)
@@ -418,6 +424,7 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         candidates.sort(key=lambda c: c["disclosed_at"])
         print(f"[buyback_blog] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
     published: list[dict] = []
+    generation_attempts = 0
     for row in candidates:
         if max_articles is not None and len(published) >= max_articles:
             break
@@ -435,6 +442,8 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         ratio_label = f"{f['ratio']:g}%" if f["ratio"] is not None else "-"
         print(f"  🏦 {f['stock_name']}({code}) {disc_date} 上限{amount_label} / {ratio_label}")
 
+        # 重複除外を通り抜けて記事化に到達した候補（exit_code_for_run の判定材料）
+        generation_attempts += 1
         article = generate_body_checked(f)
         if not article:
             continue
@@ -477,6 +486,8 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
             print(f"    ✅ 投稿: {content_id}（図{figure_count}枚）")
             mark_article_published(row)
             published.append({**payload, "id": content_id})
+    if stats is not None:
+        stats["generation_attempts"] = generation_attempts
     return published
 
 
@@ -488,9 +499,17 @@ def main():
     p.add_argument("--backfill", action="store_true",
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない決定開示だけを拾い直す")
     args = p.parse_args()
+    stats: dict = {}
     results = build_and_publish(days=args.days, max_articles=args.max_articles,
-                                dry_run=args.dry_run, backfill=args.backfill)
+                                dry_run=args.dry_run, backfill=args.backfill, stats=stats)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
+
+    attempts = stats.get("generation_attempts", 0)
+    code = exit_code_for_run(attempts, len(results))
+    if code:
+        print(f"::error::記事化に到達した候補{attempts}件に対し投稿0件。"
+              f"Claude APIの上限超過かmicroCMSの障害を確認すること。")
+    sys.exit(code)
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib import api_budget
+from lib import api_usage
 from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
@@ -146,6 +147,7 @@ def classify_filer(filer_name: str) -> dict:
         resp = client.messages.create(
             model=CLAUDE_MODEL, max_tokens=300, messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="classify_filer")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -882,6 +884,7 @@ def get_company_description(code: str, name: str) -> str:
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="company_description")
         # web_search使用時は検索結果ブロックとテキストブロックが交互に並ぶため、
         # 全テキストを連結して末尾のJSONだけを取り出す。
         text = "\n".join(b.text for b in resp.content if b.type == "text")
@@ -945,6 +948,7 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         resp = client.messages.create(
             model=CLAUDE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="filer_profile")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -1399,6 +1403,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
             max_tokens=6000,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="blog_body")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -1437,13 +1442,21 @@ def body_quality_key(body: str, min_chars: int) -> tuple:
 
 def generate_article_body_checked(fact_sheet: dict) -> "dict | None":
     """generate_article_body()の結果が短すぎる・AI常套句（lib/writing_style.py）を含む場合は
-    1回だけ再生成する。2回目も直らなければマシな方を採用する（記事を落とすよりは公開する）。"""
+    1回だけ再生成する。2回目も直らなければマシな方を採用する（記事を落とすよりは公開する）。
+
+    文末の単調さ（「ます。」4連続など）は再生成のきっかけにしない（find_ai_tells の
+    include_monotone=False）。2026-08-28の実測で再生成412回中335回がこれだけを理由にしており、
+    引き直しても164記事中63記事で解消していなかった。検出は残してログに出し、抑制は
+    プロンプト（JA_STYLE_RULES）側で行う。"""
     first = generate_article_body(fact_sheet)
     if first is None:
         return None
     first_len = body_char_count(first.get("body", ""))
-    tells = find_ai_tells(first.get("body", ""))
+    tells = find_ai_tells(first.get("body", ""), include_monotone=False)
     if first_len >= MIN_BODY_CHARS and not tells:
+        monotone = [t for t in find_ai_tells(first.get("body", "")) if t.startswith("文末単調")]
+        if monotone:
+            print(f"    ・{monotone[0]}（再生成はしない）")
         return first
     reason = f"本文{first_len}字（下限{MIN_BODY_CHARS}字）" if first_len < MIN_BODY_CHARS else f"AI常套句{tells}"
     print(f"    ↻ {reason}のため再生成")
@@ -1543,8 +1556,8 @@ def _patch_once(content_id: str, payload: dict) -> requests.Response:
 
 def update_article(content_id: str, payload: dict) -> bool:
     """既存記事をPATCHで更新する（publish_article()と同じ型不一致リトライを流用）。
-    tools/reclassify_blog_articles.py の一括再分類・tools/rewrite_thin_blog_articles.py の
-    本文リライトで使う。以前はPATCH権限が無いAPIキーでも動くようPUTを使っていたが、
+    tools/reclassify_blog_articles.py の一括再分類・tools/apply_rewritten_articles.py の
+    本文差し替えで使う。以前はPATCH権限が無いAPIキーでも動くようPUTを使っていたが、
     2026-08-14にAPIキーの権限が変わりPUTが「Content is already exists. If you want update,
     please use PATCH request.」で拒否されるようになったため切り替えた。PATCHは差分更新のため、
     呼び出し側は変更したいフィールドだけをpayloadに含めればよい（全フィールド送付でも問題ない）。"""
@@ -1601,6 +1614,19 @@ def is_worth_publishing(deal_amount_oku: float, ratio_change_pt: float) -> bool:
     return abs(ratio_change_pt) >= MIN_RATIO_CHANGE_PT
 
 
+def exit_code_for_run(generation_attempts: int, published_count: int) -> int:
+    """記事化まで到達した候補があったのに1件も投稿できなかった便を異常として1を返す。
+
+    Claude APIの上限超過やmicroCMS障害では、候補は毎回そろっているのに記事だけが全滅する。
+    それでもスクリプトは正常終了しGitHub Actionsも緑のままだったため、丸1日気付けなかった
+    （2026-08-24: ANTHROPIC_API_KEYの月間上限に達し、全便が「0件処理しました」でsuccess）。
+    足切り・重複除外で候補が全部落ちた「正常な0件」はgeneration_attempts=0なので区別できる。
+    """
+    if generation_attempts > 0 and published_count == 0:
+        return 1
+    return 0
+
+
 def published_holding_keys(days: int) -> "set | None":
     """直近days日ぶんの既報記事の (銘柄コード, 開示日, 提出者名) 集合。取得失敗時は None。"""
     since = (date.today() - timedelta(days=days)).isoformat()
@@ -1648,7 +1674,11 @@ def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
 
 
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
-                       dry_run: bool = False, backfill: bool = False) -> list:
+                       dry_run: bool = False, backfill: bool = False,
+                       stats: "dict | None" = None) -> list:
+    """statsを渡すと generation_attempts（記事生成を試みた候補数）を書き戻す。"""
+    if stats is not None:
+        stats["generation_attempts"] = 0
     if not dry_run and (not MICROCMS_DOMAIN or not MICROCMS_KEY):
         print("[publish_blog_articles] MICROCMS_SERVICE_DOMAIN / MICROCMS_API_KEY 未設定のためスキップ")
         return []
@@ -1682,6 +1712,7 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
     )
 
     published = []
+    generation_attempts = 0
     for h in candidates:
         if max_articles is not None and len(published) >= max_articles:
             break
@@ -1770,6 +1801,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             # 事実（保有の積み上げ履歴・他の保有銘柄・他の大株主・指標）を足す。
             "context_facts": build_context_facts(code, filer_name, disc_date),
         }
+        # 足切り・重複除外を通り抜けて記事化に到達した候補。ここから先で全滅したら
+        # 相場やフィルタではなく生成・投稿の障害なので、exit_code_for_run が拾う。
+        generation_attempts += 1
         article = generate_article_body_checked(fact_sheet)
         if article is None:
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
@@ -1862,6 +1896,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         else:
             print(f"  ⚠ {name}({code}): 投稿に失敗")
 
+    if stats is not None:
+        stats["generation_attempts"] = generation_attempts
     return published
 
 
@@ -1874,8 +1910,9 @@ def main():
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない開示だけを拾い直す")
     args = p.parse_args()
 
+    stats: dict = {}
     results = build_and_publish(days=args.days, max_articles=args.max_articles,
-                                dry_run=args.dry_run, backfill=args.backfill)
+                                dry_run=args.dry_run, backfill=args.backfill, stats=stats)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
     # backfillは数日前の開示を拾い直す便なので、Xには流さない（タイムラインに古い開示が並ぶ）
@@ -1887,6 +1924,13 @@ def main():
             print(f"🐦 X投稿: {posted}件")
         # 「本日のクジラ」日次サマリー(21時JSTの最終便のみ投稿される。時刻ガードはx_client側)
         post_daily_summary()
+
+    attempts = stats.get("generation_attempts", 0)
+    code = exit_code_for_run(attempts, len(results))
+    if code:
+        print(f"::error::記事化に到達した候補{attempts}件に対し投稿0件。"
+              f"Claude APIの上限超過かmicroCMSの障害を確認すること。")
+    sys.exit(code)
 
 
 if __name__ == "__main__":

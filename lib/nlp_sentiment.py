@@ -13,6 +13,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib import api_budget  # noqa: E402
+from lib import api_usage  # noqa: E402
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -70,6 +71,7 @@ def _score_with_claude(headlines: list, code: str) -> float:
             max_tokens=10,
             messages=[{"role": "user", "content": prompt}]
         )
+        api_usage.record(msg, task="earnings_sentiment")
         text = msg.content[0].text.strip()
         m = re.search(r'-?\d+\.?\d*', text)
         if m:

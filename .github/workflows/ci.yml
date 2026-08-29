@@ -20,7 +20,7 @@ jobs:
         run: |
           pip install requests pandas numpy scikit-learn joblib \
             python-dotenv openpyxl xlrd xgboost \
-            yfinance pytest anthropic Pillow requests-oauthlib
+            yfinance pytest anthropic Pillow requests-oauthlib google-auth
 
       # サムネイル生成テスト(test_video_pipeline.py)は日本語フォントが無いと
       # thumbnail.compose() が None を返して落ちる。edinet_blog.yml / video_post.yml と

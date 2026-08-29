@@ -23,6 +23,30 @@ weekly_* /buyback_daily のみ）、Shortsを実際に公開した日でも常�
 テスト: test_notify 19→24件、test_youtube_metrics 13→15件、test_video_pipeline 97→98件。
 （日本語フォント未導入の環境では test_thumbnail_compose_writes_1280x720_png が落ちるが本変更と無関係）
 
+## 2026-08-28 未記事化開示の調査 → 真の取りこぼしは1件（`article_published_at` のNULLは取りこぼしではない）
+
+`edinet_large_holdings` に `article_published_at` が NULL の開示が大量に残っているのを見て
+「通常運転が毎日取りこぼしている」と疑ったが、**実測では取りこぼしはほぼ無い**。
+同じ疑いで調査をやり直さないために結論を残す。
+
+- 直近30日 1,183件 → 入口フィルタ（自己申告4・過半数29・訂正109）で142件除外 → 対象1,041件。
+  うち未記事化252件。その内訳は「基準未満で正しく除外195件 / 基準を満たすのに未記事化32件 /
+  比率欠損で判定不能25件」。
+- 基準を満たす32件をパイプラインの分岐に1件ずつ通した結果:
+  真の既報（比率まで一致）15件 / 既報扱い（旧記事のフィールド欠損）7件 /
+  既報扱い（unique_filingによる意図的な緩和）6件 / 実測では基準未満2件 / 持ち越し1件 /
+  **真の取りこぼし1件**（4526 小林光夫 2026-08-07 97.1億円・-10.6pt。窓落ちのため未記事化のまま）。
+- **`article_published_at` が NULL でも記事は存在する**。この台帳は
+  `tools/backfill_article_publish_ledger.py` が実績から後追いでシードしたもので、
+  シードしきれていない開示が多い。NULL を根拠に取りこぼしと判定してはいけない。
+  記事の有無は microCMS 側（`already_published()`）で確かめること。
+- 副次的な発見: `already_published()` は 2026-08-16 以前の旧記事に `ratioChangePct` が無く
+  `None` に当たると無条件で既報を返すため、同一銘柄・同日・同一提出者の**別の開示**まで
+  抑止される（実例: 1787 三井金属が2026-08-07に出した2本のうち1本のみ記事化。30日で7件）。
+  ただしこのフォールバックはコンヴァノ13本重複・2026-08-17の17件重複を止めるために入れたもので、
+  緩めると重複が復活する。実損7件/30日に対しリスクが釣り合わないため**意図的に直していない**。
+  直すなら旧記事の `ratioChangePct` を埋め直す方が安全。
+
 ## 2026-08-27 取りこぼし記事148本を消化完了（積み残しの解消）
 
 backfill専用cronの修正（24fe02a2）と1便あたり上限の手動指定（workflow_dispatch入力
@@ -2006,3 +2030,66 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   解説図が0枚なのは `buyback_article_figures()` が過去の決議1件以上を要求する仕様どおり（11社とも初回）。
 - 残課題: `DEFAULT_DAYS = 3` のままだと同じ取りこぼしが再発する。稼働停止（API上限・障害）を跨いだ日の
   取りこぼしを拾う仕組みが無い。
+
+## 2026-08-29 日次ログレビュー（AIフィードバック）を削除
+- 削除: `tools/daily_log_review.py` / `tests/test_daily_log_review.py`（27件）/ `.github/workflows/daily_log_review.yml`。
+  Claude API を使うフローのうち唯一 opus-5 を毎営業日16,000トークンで回しており（1回$0.3前後）、
+  かつ `lib/api_budget` の予算ガードが効かない唯一のPython経路だった。
+- 参照の更新: README（ワークフロー一覧・ファイル表2行・`tools/ga4_clicks.collect_pdca_metrics()` の呼び出し元の記述）、
+  `lib/notify.py` の経緯コメント、`web/market_timing_alert.py` のフォールバック送信で本文を標準出力に出す理由。
+  本文出力自体は残す（実行ログだけで送信内容を追えるため）。
+- 残: `tools/ga4_clicks.collect_pdca_metrics()` は定期呼び出し元が無くなった（手動集計とテストのみ）。
+- テスト: 602 passed（削除前は629、うち27件が本ツールのテスト）。
+
+## 2026-08-29 APIで本文を書かせるリライトを廃止（オーナー判断）
+- 経緯: 8/28に `tools/rewrite_thin_blog_articles.py` で610本（夜間385＋朝225）をリライトし、
+  再生成412回と合わせて本文生成1,022回・推計$11のAPI課金が出た。再生成の理由は348回がAI常套句、
+  うち335回は「文末単調（「ます。」が4連続）」のみ。残り64回は本文が下限650字に届かず。
+  `docs/progress_adsense_content_quality.md` に「APIバッチではなくClaude Codeが直接執筆」と
+  記録済みだったにもかかわらず、APIバッチ側が使われていた。
+- 削除: `tools/rewrite_thin_blog_articles.py` / `tests/test_rewrite_thin_blog_articles.py`（6件）。
+- 移設: 共有ヘルパー（`visible_text_len` / `FIGURE_RE` / `THIN_TEXT_THRESHOLD` / `find_filer_names`）を
+  `lib/article_text.py` へ。APIを使わない `tools/export_article_fact_cards.py` と
+  `tools/apply_rewritten_articles.py` はこちらを参照する（両ツールは残す＝リライト自体は続けられる）。
+- 残: 薄い記事（可視文字数1,000未満）は約30件が未処理。今後は事実カード→Claude Code執筆→PATCH反映の経路。
+- テスト: 596 passed（削除前602、うち6件が本ツールのテスト）。
+
+## 2026-08-29 API利用量をDBに記録（`api_usage`）＋利用実績レポート
+- 背景: 「APIの利用報告が欲しい」に対し、**用途別の実績がどこにも残っていない**ことが分かった。
+  2026-08-23の月次上限到達時も、バックフィルのログを後からgrepして犯人（会社説明バックフィル）を
+  推定するしかなかった。`lib/api_budget.py` は上限に**到達してから**止めるだけで、量は測っていない。
+- 追加: `lib/api_usage.py`。`record(resp, task=...)` が `messages.create()` のレスポンスから
+  入出力トークン・キャッシュ書込/読出・`server_tool_use.web_search_requests` を拾い、
+  (UTC日付, ジョブ, タスク, モデル) 単位でプロセス内に集計。プロセス終了時(atexit)に
+  `api_usage` テーブルへ**追記**する（上書きにすると毎時ジョブとバックフィルが同時に走ったとき
+  片方の消費が消える）。1呼び出しごとにHTTPを足さないので既存の処理時間に影響しない。
+- 計測点（9箇所、Python側の `messages.create()` 全件）: `classify_filer` / `company_description` /
+  `filer_profile` / `blog_body`（web/publish_blog_articles.py）、`buyback_body`、`buyback_facts`、
+  `video_script`、`translate_article`、`earnings_sentiment`。
+- コストは公開単価表からの**推定値**（Haiku 4.5 = 入力$1.00/出力$5.00 per 1Mトークン、
+  キャッシュ書込×1.25・読出×0.1、web_search $10/1,000検索）。請求額そのものではない。
+- 追加: `tools/api_usage_report.py`（日別・タスク別・ジョブ別・モデル別／`--days`／`--by`）。
+  月次上限はUTC月初に戻るためJSTではなくUTCで集計する。
+- DB: `api_usage` テーブルを作成（`usage_date` / `job` / `task` / `model` / `calls` /
+  各トークン列 / `web_search_requests` / `cost_usd`、RLS有効・service key経由のみ）。
+- 未計測: `supabase/functions/line-webhook/index.ts` の Haiku 呼び出し2箇所（Deno Edge Function、
+  手動デプロイのため今回は触っていない）。LINE Botの消費はレポートに出ない。
+- テスト: `tests/test_api_usage.py` 11件を追加。全28ファイル通過。
+
+## 2026-08-29 API残枠の事前警告（上限の50/80/100%でLINE）
+- 背景: `lib/api_budget.py` は上限に**到達してから**打ち切るだけで、手前で気づく仕組みが無かった。
+  月次上限は $15（オーナー設定値）。
+- 追加: `lib/api_usage.check_budget()`。`flush()` の書き込み直後に当月(UTC)の推定コストを集計し、
+  上限の50%/80%/100%を超えていたらLINEへ流す。本文にコスト上位3タスクを入れる
+  （「何を止めれば効くか」がその場で分かるようにするため）。
+- 追加: `lib/notify.once(dedupe_key, text)`。送信済みかどうかを既存の空テーブル `notify_log`
+  （`dedupe_key`がPK）に残し、同じ (月, 水準) の警告を1回しか送らない。プロセス内フラグでは
+  毎時の別プロセスをまたげない。DBが引けないときは**送る側に倒す**（沈黙のほうが危険）。
+- 上限額は `DEFAULT_MONTHLY_BUDGET_USD`=15.0、環境変数 `ANTHROPIC_MONTHLY_BUDGET_USD` で上書き、
+  `0` で監視オフ。Secretを足さなくてもCIで効くよう既定値をコードに持たせている。
+- `tools/api_usage_report.py` に当月の消化率・残枠の行を追加。
+- 検証: ダミー行（$12.30／上限$15）で 80% を検知し、本文と重複排除キー
+  `api_budget_2026-08_80` の生成までLINE送信をモックして確認。ダミー行は削除済み。
+- テスト: `tests/test_api_usage.py` 11→17件、`tests/test_notify.py` 19→23件。全28ファイル通過。
+- 残: 実データはまだ0件。EDINET Blog Hourly は平日9:00-21:00 JSTのため、
+  2026-08-31(月)の稼働後に `tools/api_usage_report.py` を回して1日あたりの定常コストを確定する。
