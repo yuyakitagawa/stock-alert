@@ -42,18 +42,6 @@ export const revalidate = 86400;
 // 削除済み記事の引き継ぎ先が銘柄ページかどうかの判定に使う。
 const STOCK_PATH_PREFIX = "/stocks/";
 
-/** 削除済み記事の引き継ぎ先（銘柄）を、実際に開けるURLに解決する。
- * 銘柄ページが公開対象ならそこへ、そうでなければ同じ銘柄の生存記事へ、
- * どちらも無ければnull（404のまま）。薄い集約ページは404を返すので
- * （lib/publishedPages.ts）、そこへ308で送ると読者もクローラーも404に着地する。
- * 実測2026-08-29: 検索表示のある削除済み記事124件のうち、銘柄ページが公開中なのは52件だけ。 */
-async function resolveStockTarget(code: string): Promise<string | null> {
-  const href = await stockHref(code);
-  if (href) return href;
-  const { contents } = await getArticlesByStockCode(code);
-  return contents[0] ? `/articles/${contents[0].id}` : null;
-}
-
 // 直近の記事はビルド時に静的生成する。Next 16では generateStaticParams の無い動的セグメントは
 // リクエストごとのSSR（実測: x-vercel-cache: MISS / cache-control: no-store）になり、
 // クローラーが同じURLを取りに来るたびにサーバー実行になる。新着記事ほどクロールされる頻度が
@@ -185,7 +173,7 @@ export default async function ArticleDetailPage({ params }: Props) {
   if (!article) {
     const target = await getArticleRedirect(id);
     const resolved = target?.startsWith(STOCK_PATH_PREFIX)
-      ? await resolveStockTarget(target.slice(STOCK_PATH_PREFIX.length))
+      ? await stockHref(target.slice(STOCK_PATH_PREFIX.length))
       : target;
     if (resolved) permanentRedirect(resolved);
     notFound();
