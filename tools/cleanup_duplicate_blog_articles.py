@@ -43,6 +43,7 @@ import requests
 BUYBACK_TAG = "自社株買い"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from lib import article_redirects
 from web.publish_blog_articles import _microcms_base_url, _microcms_headers, MICROCMS_DOMAIN, MICROCMS_KEY
 
 
@@ -103,8 +104,9 @@ def duplicate_key(article: dict) -> tuple:
     return ("legacy", stock_code, deal_date, (article.get("title") or "").strip())
 
 
-def find_duplicates(articles: list) -> list:
-    """重複判定キーごとにグループ化し、各グループの先発1件を除いた削除対象リストを返す。
+def find_duplicate_pairs(articles: list) -> list:
+    """重複ごとに (残す記事, 消す記事) の組を返す。残す方はリダイレクト先に使う
+    （同じ開示を扱っているので、消した記事のURLは残った記事へ引き継げる）。
     キーの一部が欠けている記事（銘柄コードか開示日が空）は突き合わせできないため対象外。"""
     groups = {}
     for a in articles:
@@ -114,13 +116,18 @@ def find_duplicates(articles: list) -> list:
         if key[0] == "legacy" and not key[3]:
             continue
         groups.setdefault(key, []).append(a)
-    to_delete = []
+    pairs = []
     for members in groups.values():
         if len(members) < 2:
             continue
         members.sort(key=lambda a: a.get("createdAt", ""))
-        to_delete.extend(members[1:])
-    return to_delete
+        pairs.extend((members[0], dup) for dup in members[1:])
+    return pairs
+
+
+def find_duplicates(articles: list) -> list:
+    """削除対象の記事だけを返す（重複の組は find_duplicate_pairs）。"""
+    return [dup for _, dup in find_duplicate_pairs(articles)]
 
 
 def delete_article(content_id: str) -> bool:
@@ -147,11 +154,13 @@ def main():
         scope += f"・{args.code}のみ"
 
     articles = fetch_articles(days, args.code)
-    dups = find_duplicates(articles)
+    pairs = find_duplicate_pairs(articles)
+    dups = [dup for _, dup in pairs]
     if not dups:
         print(f"重複なし（{scope}・{len(articles)}記事を確認）")
         return
-    for a in dups:
+    redirects = []
+    for survivor, a in pairs:
         filer = a.get("filerName") or f"（旧記事・提出者未保存）{a.get('title', '')}"
         label = (f"{a.get('stockCode')} {str(a.get('dealDate', ''))[:10]} {filer} "
                  f"({a.get('ratioChangePct')}pt) → id={a['id']}")
@@ -159,8 +168,15 @@ def main():
             print(f"  [dry-run] 削除対象: {label}")
         elif delete_article(a["id"]):
             print(f"  🗑 削除: {label}")
+            # 消したURLは残した方の記事へ引き継ぐ（404にすると順位ごと捨てることになる）。
+            redirects.append({"article_id": a["id"],
+                              "target_path": article_redirects.article_target(survivor["id"]),
+                              "reason": "duplicate"})
         else:
             print(f"  ⚠ 削除失敗: {label}")
+    if redirects:
+        article_redirects.record_many(redirects)
+        print(f"  ↪ リダイレクトを登録: {len(redirects)}件")
     print(f"重複{len(dups)}件（{scope}・{len(articles)}記事中）"
           f"{'を削除しました' if args.delete else '。--delete で削除実行'}")
 

@@ -2114,3 +2114,26 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   「制限付き」で追加。現時点では実データ未取得（API無効の403を確認済み＝案内文が出ることは確認できた）。
 - テスト: `tests/test_gsc_report.py` 15件を追加。全36ファイル通過（`tests/test_ga4_clicks.py` 含め失敗なし）。
 - 進捗ファイル: `docs/progress_seo_traffic.md` を新設（現状の実測値と、計測が通ってから決める施策）。
+
+## 2026-08-29 検索結果に出ているURLの404を潰す（削除済み記事の引き継ぎ）
+- 実測: GSCの「表示のあったURL」924件（/en除く）に本番のHTTPステータスを突き合わせたところ、
+  **194件が404**で、そこに28日で**表示698・クリック25（全クリックの18%）**が着地していた。
+  内訳は削除済み記事124件（表示526・クリック20）、記事の無い銘柄ページ47件（表示106・クリック5、
+  本番だけ404＝別件）、旧・日本語URLの投資家ページ23件ほか。
+- 原因: 低価値129本（8/18）・重複・誤報の記事を消すたびに、順位の付いたURLが404になっていた。
+  削除自体は続けるべき（薄い記事はテンプレート全体の評価を下げる）だが、**URLを捨てていた**。
+- 追加: `deleted_article_redirects` テーブル（`supabase/create_deleted_article_redirects.sql`、
+  RLS有効・service_role のみ）と `lib/article_redirects.py`。記事を消す3ツールが削除成功時に
+  引き継ぎ先を登録する（重複削除＝残した方の記事、それ以外＝その銘柄ページ）。
+  A→B の後にBを消すと A→B→C の2ホップになるため、消した記事を指していた既存行は新しい行き先へ
+  付け替える（Googleは多段リダイレクトで評価を減衰させる）。
+- 表示側: `kujira-watch/src/lib/articleRedirects.ts` を追加し、記事詳細ページがmicroCMSで404だった
+  ときだけ引いて `permanentRedirect`（308）。通常表示ではSupabaseの往復は増えない。
+  検証: ローカルで `/articles/88eecs9gms` → 308 → `/stocks/4425`、未登録idは404のままを確認。
+- 過去分: `tools/backfill_article_redirects.py` で `logs/deleted_*.json` から**257件**を復元・登録済み。
+- 併せて: `getCompanyInfo` / `searchStockMaster` が supabase-js の `error`（例外ではない）を
+  握り潰していたのをログに出すよう変更。**本番だけ銘柄ページ47件が404**（ローカルは200）の
+  原因がログに残らない状態だったため。`getCompanyInfo`は片方のクエリが落ちても、
+  もう片方が取れていればページを成立させるようにした。
+- テスト: `tests/test_article_redirects.py` 10件を追加、`tests/test_cleanup_duplicate_blog_articles.py`
+  8→9件（`find_duplicate_pairs`）。全38ファイル通過。`npx tsc --noEmit` / `npm run lint` 成功。

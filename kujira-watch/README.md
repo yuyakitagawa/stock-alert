@@ -120,6 +120,13 @@ npm run dev
   `bodyEn`/`titleEn`のデータは消していない（表示しないだけ）。
 - 廃止したランキングURL（`/ranking`・`/ranking/buys`ほか）は`/ranking/returns`へ301。
 - **`/disclosures`（2026-08-18に廃止）→ `/` へ301（2026-08-29追加）**: 廃止時にリダイレクトを置き忘れて404のまま残っていた。`tools/geo_report.py`の実測でAIクローラーが直近30日に58回・GA4のPVも28日で63件当たっており、AI側に残った参照が全部404を踏んでいた。役割が最も近いTOP（新着開示の日付降順一覧）へ寄せる。
+- **削除した記事URL（Supabase `deleted_article_redirects` 経由で308）**: `next.config.ts`ではなく
+  記事詳細ページ（`(ja)/articles/[id]/page.tsx`）がmicroCMSで404だったときにだけ
+  `src/lib/articleRedirects.ts`で引き当て、`permanentRedirect`する。行き先は重複削除なら
+  「残した方の記事」、それ以外は「その銘柄のページ」。低価値・重複・誤報の記事は今後も消すが、
+  順位の付いたURLを404で捨てないため。2026-08-29のGSC実測で、検索結果に出ているURL924件のうち
+  194件が404を返し、そこに28日で25クリック（全体の18%）が着地していた（うち124件が削除済み記事）。
+  登録は削除ツール側（`lib/article_redirects.py`）。過去分257件は`tools/backfill_article_redirects.py`で復元済み。
 - **`/articles`（記事一覧の入口としてクローラーが推測してくるURL）→ `/` へ301**: 実在したことは無いが、AIクローラーが14日で18回取りに来ていた（同上の実測）。記事一覧はTOPそのものなので404にせず寄せる。
 
 ## 計測・ログ

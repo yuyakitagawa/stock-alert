@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import Box from "@mui/material/Box";
@@ -26,6 +26,7 @@ import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, ge
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { getArticleRedirect } from "@/lib/articleRedirects";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -152,10 +153,18 @@ export default async function ArticleDetailPage({ params }: Props) {
 
   const article = await getArticleDetail(id).catch((error: unknown) => {
     if (error instanceof Error && error.message.includes("status: 404")) {
-      notFound();
+      return null;
     }
     throw error;
   });
+
+  // 削除済みの記事URLは404にせず、引き継ぎ先（銘柄ページ／重複で残した方の記事）へ
+  // 恒久リダイレクトする。順位の付いたURLを404で捨てないための処理。
+  if (!article) {
+    const target = await getArticleRedirect(id);
+    if (target) permanentRedirect(target);
+    notFound();
+  }
 
   // 「自動生成」は運用側の内部フラグ（web/publish_blog_articles.pyがtagsに立てる）で、
   // 読者に見せると記事の信頼性を落とすだけなので表示しない。方向・訂正のタグは残す。
