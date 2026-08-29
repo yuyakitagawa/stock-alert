@@ -91,6 +91,41 @@ def warn(where: str, message: str, detail: str = "", url: str = "") -> bool:
     return push(build_message("⚠️", where, message, detail, url))
 
 
+def once(dedupe_key: str, text: str) -> bool:
+    """同じ `dedupe_key` では一度しか送らない通知。送ったら True。
+
+    毎時のジョブから残枠警告のような「状態」を鳴らすと、同じ内容が1日に何十通も届いて
+    かえって見なくなる。送信済みかどうかは Supabase の `notify_log` に残す
+    （プロセス内フラグでは毎時の別プロセスをまたげない）。
+
+    DBが引けないときは送る側に倒す。通知が重複する不便より、鳴らないほうが危険。
+    """
+    from lib import supabase_client as sb
+
+    key = str(dedupe_key)
+    if sb.is_configured():
+        try:
+            if sb.select_one("notify_log", f"dedupe_key=eq.{key}"):
+                return False
+        except Exception as e:
+            print(f"[notify] ⚠ 送信済み確認に失敗（送信は続行）: {e}")
+    if not push(text):
+        return False
+    try:
+        sb.upsert("notify_log",
+                  [{"dedupe_key": key, "last_sent_at": _now_iso(), "sent_count": 1,
+                    "last_text": text[:DETAIL_MAX_CHARS]}],
+                  on_conflict="dedupe_key")
+    except Exception as e:
+        print(f"[notify] ⚠ 送信記録に失敗: {e}")
+    return True
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
 def main() -> int:
     import argparse
 

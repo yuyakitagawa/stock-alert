@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from lib import api_usage  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 
 DEFAULT_DAYS = 30
@@ -86,7 +87,15 @@ def main() -> int:
     print(f"=== Anthropic API 利用実績（直近{args.days}日 / UTC）===")
     print(f"呼び出し {total['calls']:,}回 / 入力 {total['input_tokens']:,}tk / "
           f"出力 {total['output_tokens']:,}tk / Web検索 {total['web_search_requests']:,}回")
-    print(f"推定コスト 合計 ${total['cost_usd']:.2f}（うち{month}月分 ${month_cost:.2f}）")
+    print(f"推定コスト 合計 ${total['cost_usd']:.2f}")
+    budget = api_usage.monthly_budget_usd()
+    if budget > 0:
+        pct = month_cost / budget * 100
+        print(f"{month}（当月）${month_cost:.2f} / 上限 ${budget:.2f}"
+              f"（{pct:.0f}%、残 ${max(budget - month_cost, 0):.2f}）"
+              f"{'  ⚠ 警告水準' if api_usage.alert_level(month_cost, budget) else ''}")
+    else:
+        print(f"{month}（当月）${month_cost:.2f}（上限は未設定）")
     if total["cache_read_tokens"]:
         print(f"キャッシュ 書込 {total['cache_write_tokens']:,}tk / "
               f"読出 {total['cache_read_tokens']:,}tk")

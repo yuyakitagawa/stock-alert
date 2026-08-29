@@ -20,6 +20,9 @@ Anthropic APIの利用量（トークン・Web検索回数・推定コスト）�
 
 月次上限はUTC月初に戻る（"You will regain access on 2026-09-01 at 00:00 UTC."）ため、
 日付はJSTではなくUTCで持つ。
+
+書き込みのついでに当月の累計を上限（MONTHLY_BUDGET_USD）と突き合わせ、50/80/100%を
+超えたらLINEへ1回だけ流す。上限に「到達してから」止める api_budget.py の手前で気づくため。
 """
 import atexit
 import os
@@ -40,6 +43,12 @@ _CACHE_READ_RATE = 0.10
 _WEB_SEARCH_USD = 0.01
 
 _TABLE = "api_usage"
+
+# Anthropic側で設定している月次利用上限(USD)。超過の手前で鳴らすためだけに使う。
+# 上限を変えたら環境変数 ANTHROPIC_MONTHLY_BUDGET_USD で上書きする（0なら監視しない）。
+DEFAULT_MONTHLY_BUDGET_USD = 15.0
+# 当月の推定コストがこの割合(%)を超えたら通知する。100%はもう止まっている可能性がある。
+_ALERT_LEVELS = (50, 80, 100)
 
 # key: (usage_date, job, task, model) -> 集計値
 _buffer: dict[tuple, dict] = {}
@@ -146,12 +155,73 @@ def flush() -> bool:
         r["cost_usd"] = round(r["cost_usd"], 6)
     try:
         from lib import supabase_client as sb
-        return sb.upsert(_TABLE, rows)
+        ok = sb.upsert(_TABLE, rows)
     except Exception as e:
         print(f"[api_usage] ⚠ 保存に失敗: {e}")
         return False
+    check_budget()
+    return ok
 
 
 def reset() -> None:
     """バッファを捨てる（テスト用）。"""
     _buffer.clear()
+
+
+def monthly_budget_usd() -> float:
+    """監視に使う月次上限(USD)。0以下なら残枠監視をしない。"""
+    try:
+        return float(os.getenv("ANTHROPIC_MONTHLY_BUDGET_USD") or DEFAULT_MONTHLY_BUDGET_USD)
+    except ValueError:
+        return DEFAULT_MONTHLY_BUDGET_USD
+
+
+def alert_level(spent_usd: float, budget_usd: float) -> int:
+    """超えている警告水準(%)を返す。どれも超えていなければ0。"""
+    if budget_usd <= 0:
+        return 0
+    pct = spent_usd / budget_usd * 100
+    crossed = [lv for lv in _ALERT_LEVELS if pct >= lv]
+    return max(crossed) if crossed else 0
+
+
+def month_usage(month: str = "") -> tuple[float, dict]:
+    """当月(UTC)の推定コスト合計と、タスク別の内訳を返す。"""
+    from lib import supabase_client as sb
+
+    month = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    rows = sb.select(_TABLE, f"usage_date=gte.{month}-01&select=usage_date,task,cost_usd")
+    by_task: dict[str, float] = {}
+    for r in rows:
+        if not str(r.get("usage_date", "")).startswith(month):
+            continue
+        by_task[r["task"]] = by_task.get(r["task"], 0.0) + float(r.get("cost_usd") or 0)
+    return sum(by_task.values()), by_task
+
+
+def check_budget() -> int:
+    """当月の消費が上限の何割かを超えていたらLINEへ1回だけ通知し、その水準を返す。
+
+    通知は (月, 水準) 単位で重複排除する（notify.once）。毎時のジョブが同じ警告を
+    何十通も送ると、本当に見てほしい1通が埋もれる。失敗しても本処理は止めない。
+    """
+    budget = monthly_budget_usd()
+    if budget <= 0:
+        return 0
+    try:
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        spent, by_task = month_usage(month)
+        level = alert_level(spent, budget)
+        if not level:
+            return 0
+        top = sorted(by_task.items(), key=lambda kv: -kv[1])[:3]
+        detail = " / ".join(f"{t} ${c:.2f}" for t, c in top)
+        text = (f"{'🚨' if level >= 100 else '⚠️'} Anthropic API残枠\n"
+                f"{month}の推定コストが上限の{level}%に達しました"
+                f"（${spent:.2f} / ${budget:.2f}）\n\n内訳上位: {detail}")
+        from lib import notify
+        notify.once(f"api_budget_{month}_{level}", text)
+        return level
+    except Exception as e:                      # 監視の失敗で本処理を止めない
+        print(f"[api_usage] ⚠ 残枠チェックに失敗: {e}")
+        return 0

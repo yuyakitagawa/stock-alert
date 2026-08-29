@@ -2028,3 +2028,21 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - 未計測: `supabase/functions/line-webhook/index.ts` の Haiku 呼び出し2箇所（Deno Edge Function、
   手動デプロイのため今回は触っていない）。LINE Botの消費はレポートに出ない。
 - テスト: `tests/test_api_usage.py` 11件を追加。全28ファイル通過。
+
+## 2026-08-29 API残枠の事前警告（上限の50/80/100%でLINE）
+- 背景: `lib/api_budget.py` は上限に**到達してから**打ち切るだけで、手前で気づく仕組みが無かった。
+  月次上限は $15（オーナー設定値）。
+- 追加: `lib/api_usage.check_budget()`。`flush()` の書き込み直後に当月(UTC)の推定コストを集計し、
+  上限の50%/80%/100%を超えていたらLINEへ流す。本文にコスト上位3タスクを入れる
+  （「何を止めれば効くか」がその場で分かるようにするため）。
+- 追加: `lib/notify.once(dedupe_key, text)`。送信済みかどうかを既存の空テーブル `notify_log`
+  （`dedupe_key`がPK）に残し、同じ (月, 水準) の警告を1回しか送らない。プロセス内フラグでは
+  毎時の別プロセスをまたげない。DBが引けないときは**送る側に倒す**（沈黙のほうが危険）。
+- 上限額は `DEFAULT_MONTHLY_BUDGET_USD`=15.0、環境変数 `ANTHROPIC_MONTHLY_BUDGET_USD` で上書き、
+  `0` で監視オフ。Secretを足さなくてもCIで効くよう既定値をコードに持たせている。
+- `tools/api_usage_report.py` に当月の消化率・残枠の行を追加。
+- 検証: ダミー行（$12.30／上限$15）で 80% を検知し、本文と重複排除キー
+  `api_budget_2026-08_80` の生成までLINE送信をモックして確認。ダミー行は削除済み。
+- テスト: `tests/test_api_usage.py` 11→17件、`tests/test_notify.py` 19→23件。全28ファイル通過。
+- 残: 実データはまだ0件。EDINET Blog Hourly は平日9:00-21:00 JSTのため、
+  2026-08-31(月)の稼働後に `tools/api_usage_report.py` を回して1日あたりの定常コストを確定する。

@@ -39,6 +39,45 @@ class NotifyTest(unittest.TestCase):
             with mock.patch("lib.notify.requests.post", side_effect=OSError("boom")):
                 self.assertFalse(notify.push("テスト"))
 
+    def test_once_skips_when_already_sent(self):
+        """同じキーの警告を毎時ジョブが何十通も送らないこと。"""
+        with mock.patch.dict(os.environ, CREDS, clear=True):
+            with mock.patch("lib.supabase_client.is_configured", return_value=True), \
+                    mock.patch("lib.supabase_client.select_one",
+                               return_value={"dedupe_key": "k"}), \
+                    mock.patch("lib.notify.push") as push:
+                self.assertFalse(notify.once("k", "本文"))
+                push.assert_not_called()
+
+    def test_once_sends_and_records_the_first_time(self):
+        with mock.patch.dict(os.environ, CREDS, clear=True):
+            with mock.patch("lib.supabase_client.is_configured", return_value=True), \
+                    mock.patch("lib.supabase_client.select_one", return_value=None), \
+                    mock.patch("lib.supabase_client.upsert") as up, \
+                    mock.patch("lib.notify.push", return_value=True):
+                self.assertTrue(notify.once("k", "本文"))
+        table, rows = up.call_args.args
+        self.assertEqual(table, "notify_log")
+        self.assertEqual(rows[0]["dedupe_key"], "k")
+
+    def test_once_sends_when_the_dedup_lookup_fails(self):
+        """送信済みか分からないときは鳴らす側に倒す（沈黙のほうが危険）。"""
+        with mock.patch.dict(os.environ, CREDS, clear=True):
+            with mock.patch("lib.supabase_client.is_configured", return_value=True), \
+                    mock.patch("lib.supabase_client.select_one",
+                               side_effect=Exception("boom")), \
+                    mock.patch("lib.supabase_client.upsert"), \
+                    mock.patch("lib.notify.push", return_value=True) as push:
+                self.assertTrue(notify.once("k", "本文"))
+                push.assert_called_once()
+
+    def test_once_does_not_record_when_the_push_failed(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("lib.supabase_client.is_configured", return_value=False), \
+                    mock.patch("lib.supabase_client.upsert") as up:
+                self.assertFalse(notify.once("k", "本文"))
+                up.assert_not_called()
+
     def test_long_text_is_truncated(self):
         with mock.patch.dict(os.environ, CREDS, clear=True):
             with mock.patch("lib.notify.requests.post") as post:
