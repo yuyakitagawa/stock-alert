@@ -7,6 +7,7 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Typography from "@mui/material/Typography";
 import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
+import ArticleNextStep from "@/components/ArticleNextStep";
 import HoldingRatioChart from "@/components/HoldingRatioChart";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
@@ -445,6 +446,15 @@ export default async function ArticleDetailPage({ params }: Props) {
             </Box>
           )}
         </Box>
+        {/* 記事は入口160セッション（TOPに次ぐ2位）なのに滞在16秒で、本文下の回遊導線までは
+            到達していない（2026-08-27のGA4実測）。要点を読んだ直後に次のページを出す。 */}
+        <ArticleNextStep
+          stockCode={article.stockCode}
+          stockName={article.stockName}
+          filerName={filerName ?? undefined}
+          filerHref={filerName ? investorPath(filerId, filerName) : undefined}
+          dealDate={article.dealDate}
+        />
         {/* 全記事で同一の説明文（提出期限のズレ・免責・分類の定義）はここに書かず、
             FAQと/aboutへのリンクに寄せる。同じ定型文が全記事の本文比率を押し上げると
             「他ページと内容が酷似」と判定されるため（GSCのクロール済み-未登録の主因）。 */}

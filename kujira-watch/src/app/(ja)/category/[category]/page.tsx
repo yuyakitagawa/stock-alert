@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
+import CategoryFilterDetails from "@/components/CategoryFilterDetails";
+import ListPageNextStep from "@/components/ListPageNextStep";
 import { getArticleList } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
@@ -99,6 +101,18 @@ export default async function CategoryPage({
           dealType={dealType}
         />
       )}
+      {/* 入口10セッションで直帰100%・滞在0秒＝記事一覧を出して終わりで、次へ進む導線が
+          1つも無かった（2026-08-27のGA4実測）。他の分類への乗り換えとデータページを置く。 */}
+      <div className="mt-10 border-t border-rule pt-4">
+        <CategoryFilterDetails />
+      </div>
+      <ListPageNextStep
+        links={[
+          { href: "/investors", label: "投資家一覧" },
+          { href: "/trending", label: "銘柄ランキング" },
+          { href: "/ranking/returns", label: "投資家ランキング" },
+        ]}
+      />
     </div>
   );
 }

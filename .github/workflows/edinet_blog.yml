@@ -9,7 +9,16 @@ on:
     # （x_client.DAILY_SUMMARY_UTC_HOUR=12）の投稿便で、19時JSTより21時JSTのほうが
     # タイムラインが厚いため2026-08-19に移した。
     - cron: '0 0-12 * * 1-5'
+    # 取りこぼしbackfill専用の便（1日1回）。時刻ではなく cron 式そのもので分岐させる。
+    # GitHubのscheduleは大きく遅延することがあり（実測: 2026-08-27の12:00 UTCの便が16:57に起動）、
+    # 実行時の `date -u +%H` で「当日最終便か」を判定するとbackfillが永久にスキップされる。
+    # github.event.schedule は起動した cron 式そのものなので、遅延しても取り違えない。
+    - cron: '30 12 * * 1-5'
   workflow_dispatch:       # 手動実行ボタン
+    inputs:
+      backfill_max:
+        description: '取りこぼしbackfillの1便あたり投稿上限（空なら既定のBACKFILL_MAX_ARTICLES）'
+        required: false
 
 permissions:
   contents: read
@@ -23,7 +32,7 @@ concurrency:
 jobs:
   scan-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -87,22 +96,29 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_buyback_articles.py
 
-      # 稼働が止まっていた期間の取りこぼしを拾い直す（1日1回、当日最終便=12:00 UTCと手動実行のみ）。
+      # 稼働が止まっていた期間の取りこぼしを拾い直す（専用cron '30 12 * * 1-5' の便と手動実行のみ）。
       # 通常運転は直近3日の開示しか見ないため、API上限やワークフロー障害で3日を超えて生成が
       # 止まると、その期間の開示は二度と記事化されない（実例: 2026-08-13〜08-20の自社株買い
       # 決定12件を2026-08-27に手作業でbackfillした）。--backfill は30日まで遡り、まだ記事の無い
       # 開示だけを古い順に拾う。1便あたりの投稿数は BACKFILL_MAX_ARTICLES で絞る（API課金と
       # 古い記事が一度に並ぶのを避けるため）。
       - name: 取りこぼし記事のbackfill（1日1回・直近30日）
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 12 * * 1-5'
         continue-on-error: true
+        env:
+          # 直接 ${{ }} を run に埋めるとシェルへ注入されるため、環境変数で受けて整数か検証する
+          BACKFILL_MAX: ${{ inputs.backfill_max }}
         run: |
           cd ~/stock-alert
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$(date -u +%H)" = "12" ]; then
-            python web/publish_blog_articles.py --backfill
-            python web/publish_buyback_articles.py --backfill
-          else
-            echo "当日最終便（12:00 UTC）ではないためbackfillはスキップ"
+          ARG=""
+          if [ -n "$BACKFILL_MAX" ]; then
+            case "$BACKFILL_MAX" in ''|*[!0-9]*)
+              echo "backfill_max は整数で指定してください: $BACKFILL_MAX"; exit 1;;
+            esac
+            ARG="--max-articles $BACKFILL_MAX"
           fi
+          python web/publish_blog_articles.py --backfill $ARG
+          python web/publish_buyback_articles.py --backfill $ARG
 
       # 概算金額の再計算ブレ等で重複判定をすり抜けた同一開示の二重記事を自動回収する
       # （同一銘柄・同一開示日・同一提出者の後発記事を削除。実例: 2026-08-17）

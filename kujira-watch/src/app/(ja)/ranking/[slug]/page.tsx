@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import InfoTip from "@/components/InfoTip";
+import ListPageNextStep from "@/components/ListPageNextStep";
+import { siblingDataPages } from "@/lib/nav";
 import { notFound } from "next/navigation";
 import { displayFilerName, formatDate, formatDealAmount } from "@/lib/format";
 import { getArticleList, getRecentArticles } from "@/lib/microcms";
@@ -265,6 +267,9 @@ export default async function RankingSlugPage({ params }: Props) {
           articles={relatedArticles}
         />
       </div>
+      {/* データページ同士の横移動。ヘッダータブはあるが、GA4実測でTOPへの内部到達398件＝
+          他ページからTOPへ戻る動きが多く、横に渡り歩けていなかった（2026-08-27）。 */}
+      <ListPageNextStep links={siblingDataPages("/ranking/returns")} />
       <AdUnit placement="bottom" />
     </div>
   );

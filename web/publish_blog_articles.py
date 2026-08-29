@@ -55,6 +55,7 @@ from dotenv import load_dotenv
 
 import lib.supabase_client as sb
 from lib import api_budget
+from lib import api_usage
 from lib.db import get_edinet_large_holdings_recent, mark_article_published
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, summarize_disposals
 from lib.utils import get_price_at_date
@@ -146,6 +147,7 @@ def classify_filer(filer_name: str) -> dict:
         resp = client.messages.create(
             model=CLAUDE_MODEL, max_tokens=300, messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="classify_filer")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -158,6 +160,14 @@ def classify_filer(filer_name: str) -> dict:
             "is_foreign": bool(data.get("is_foreign", False)),
             "description": data.get("description", ""),
         }
+        # 個人の提出者に説明文を持たせない。氏名だけを手がかりにClaudeの一般知識で書かせると、
+        # 同姓同名や似た名前の有名人と取り違えた経歴が生成され、それが記事本文に載る。
+        # 実害（2026-08-27に発見・是正）: 加藤公一レオ氏（売れるネット広告社の創業者）を
+        # 「立憲民主党の衆議院議員」、仲暁子氏を「衆議院議員」、南部靖之氏を「セコム創業者」、
+        # 細川馨氏を「元首相」と記載した説明が1,370件中45件に保存され、記事3本に載っていた。
+        # 実在の個人についての誤った経歴であり、提出者名以上の情報は載せない。
+        if result["category"] == "個人":
+            result["description"] = ""
     except Exception as e:
         # API障害等の一時的な失敗まで「その他」として永続キャッシュすると誤分類が固定化される
         # （実運用で発生: 2026-08-14、課金切れでVC/個人の提出者が軒並み「その他」に上書きされた）。
@@ -874,6 +884,7 @@ def get_company_description(code: str, name: str) -> str:
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="company_description")
         # web_search使用時は検索結果ブロックとテキストブロックが交互に並ぶため、
         # 全テキストを連結して末尾のJSONだけを取り出す。
         text = "\n".join(b.text for b in resp.content if b.type == "text")
@@ -937,6 +948,7 @@ def get_filer_profile(filer_name: str, category: str) -> str:
         resp = client.messages.create(
             model=CLAUDE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="filer_profile")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -1391,6 +1403,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
             max_tokens=6000,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="blog_body")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -1535,8 +1548,8 @@ def _patch_once(content_id: str, payload: dict) -> requests.Response:
 
 def update_article(content_id: str, payload: dict) -> bool:
     """既存記事をPATCHで更新する（publish_article()と同じ型不一致リトライを流用）。
-    tools/reclassify_blog_articles.py の一括再分類・tools/rewrite_thin_blog_articles.py の
-    本文リライトで使う。以前はPATCH権限が無いAPIキーでも動くようPUTを使っていたが、
+    tools/reclassify_blog_articles.py の一括再分類・tools/apply_rewritten_articles.py の
+    本文差し替えで使う。以前はPATCH権限が無いAPIキーでも動くようPUTを使っていたが、
     2026-08-14にAPIキーの権限が変わりPUTが「Content is already exists. If you want update,
     please use PATCH request.」で拒否されるようになったため切り替えた。PATCHは差分更新のため、
     呼び出し側は変更したいフィールドだけをpayloadに含めればよい（全フィールド送付でも問題ない）。"""

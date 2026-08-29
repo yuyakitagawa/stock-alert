@@ -118,6 +118,15 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mb-6">
+        <h2 className="mb-2 text-xl font-bold text-brand-navy">制定日・改定日</h2>
+        <p className="text-sm leading-relaxed text-foreground/70">
+          制定日: 2026年8月15日
+          <br />
+          最終改定日: 2026年8月26日（お問い合わせ窓口の明記）
+        </p>
+      </section>
+
+      <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">お問い合わせ</h2>
         <p className="text-sm leading-relaxed text-foreground/70">
           本サイトへのご連絡は、公式X（旧Twitter）

@@ -35,6 +35,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 import requests  # noqa: E402
 
 from lib import api_budget  # noqa: E402
+from lib import api_usage  # noqa: E402
 from lib.buyback import classify_buyback_title  # noqa: E402
 from lib import supabase_client as sb  # noqa: E402
 from lib.writing_style import EN_STYLE_RULES, JA_STYLE_RULES, find_ai_tells  # noqa: E402
@@ -343,6 +344,7 @@ bodyEnには、上と同じ事実・トーンを保った自然な英語訳を�
             model=CLAUDE_MODEL, max_tokens=2400,
             messages=[{"role": "user", "content": prompt}],
         )
+        api_usage.record(resp, task="buyback_body")
         text = resp.content[0].text.strip()
         if text.startswith("```"):
             text = text.strip("`")

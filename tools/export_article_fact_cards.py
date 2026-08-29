@@ -4,8 +4,9 @@ tools/export_article_fact_cards.py
 既存ブログ記事のリライト用に、1記事ぶんの「事実カード」をJSONで書き出す。
 
 AdSense審査の不承認（2026-08-24「有用性の低いコンテンツ」）を受けた既存976記事の
-リライトで使う。tools/rewrite_thin_blog_articles.py がAnthropic APIに書かせるのに対し、
-こちらは事実の収集だけを行い、本文は人間（またはClaude Code）が書く運用のための入口。
+リライトで使う。このツールは事実の収集だけを行い、本文は人間（またはClaude Code）が書く。
+Anthropic APIに本文を書かせる版は2026-08-29に廃止した（1本あたり本文生成1〜2回の課金が
+リライト610本で$10超になったため）。
 
 書き出す内容は web/publish_blog_articles.py の fact_sheet と同じ事実（銘柄・提出者・
 保有比率・変化幅・推定金額・事業内容）に、build_context_facts() が集める開示横断の
@@ -21,16 +22,13 @@ import os
 import sys
 import json
 import argparse
-import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 from tools.reclassify_blog_articles import fetch_all_articles
-from tools.rewrite_thin_blog_articles import (
-    THIN_TEXT_THRESHOLD, visible_text_len, find_filer_names,
-)
-from lib.edinet import disclosure_doc_label
+from lib.article_text import THIN_TEXT_THRESHOLD, visible_text_len, find_filer_names
+from lib.edinet import disclosure_doc_label, resolve_filer
 from web.publish_blog_articles import (
     build_context_facts, format_context_facts, classify_filer,
     get_company_description, get_pit_ranking_snapshot, ratio_change_pct,
@@ -43,49 +41,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 書き直した本文も1,000字未満に収まることが多く、可視文字数の閾値だけでは
 # 「もう直した記事」を候補から外せないため、IDで突き合わせて除外する。
 DONE_LEDGER = os.path.join(REPO_ROOT, "logs", "rewritten_article_ids.txt")
-
-
-def _norm(name: str) -> str:
-    """提出者名の突合用の正規化。EDINETのXBRLは提出者名を全角（Ｏａｓｉｓ　Ｍａｎａｇｅｍｅｎｔ…）で
-    保持する一方、記事側のfilerNameや本文は半角で入ることがあるため、NFKC正規化して空白を落とす。"""
-    return unicodedata.normalize("NFKC", name or "").replace(" ", "").replace("\u3000", "").lower()
-
-
-def resolve_filer(article: dict, rows: list) -> "str | None":
-    """同一銘柄・同一開示日に提出者が複数いる場合の一意化。
-
-    銘柄コード×開示日だけでは絞れない記事が全体の18%（実測2026-08-25: 999件中182件）あり、
-    そのままではリライトの材料が作れない。記事側が持つ情報で候補を絞る:
-      1. microCMSのfilerNameが候補と一致すればそれを採る（154件がこの経路で解決する）
-      2. 記事タイトルに候補の提出者名が含まれていればそれを採る
-    どちらでも決まらなければNone（＝材料を作らずスキップ）。誤った提出者で記事を書き直すと
-    別の投資家の取引として公開されることになるため、曖昧なままでは進めない。
-    """
-    names = {r["filer_name"] for r in rows if r.get("filer_name")}
-    if len(names) == 1:
-        return names.pop()
-    if not names:
-        return None
-
-    by_norm = {_norm(n): n for n in names}
-    filer_name = (article.get("filerName") or "").strip()
-    if filer_name:
-        hit = by_norm.get(_norm(filer_name))
-        if hit:
-            return hit
-
-    title = _norm(article.get("title") or "")
-    matches = [n for norm, n in by_norm.items() if norm and norm in title]
-    if len(matches) == 1:
-        return matches[0]
-    return None
+# 事実が足りず書き直せない記事の台帳（変化幅が実質ゼロの訂正報告書、同一開示の重複など）。
+# 候補に残っていると毎回先頭に出てきて手が止まるため、台帳に入れた時点で候補から外す。
+# 最終的にまとめて noindex か削除かを判断する。
+UNWRITABLE_LEDGER = os.path.join(REPO_ROOT, "logs", "unwritable_article_ids.txt")
 
 
 def load_done_ids() -> set:
-    if not os.path.exists(DONE_LEDGER):
-        return set()
-    with open(DONE_LEDGER, encoding="utf-8") as f:
-        return {line.strip() for line in f if line.strip()}
+    """候補から外す記事ID（リライト済み＋書き直せないと判断済み）。"""
+    return _load_ledger(DONE_LEDGER) | _load_ledger(UNWRITABLE_LEDGER)
 
 
 def main():
@@ -106,7 +70,7 @@ def main():
             a for a in articles
             if a["id"] not in done and visible_text_len(a.get("body")) < THIN_TEXT_THRESHOLD
         ]
-        print(f"リライト済み（台帳）: {len(done)}件 / 残り候補: {len(targets)}件")
+        print(f"台帳で除外: {len(done)}件（リライト済み＋書き直し不能）/ 残り候補: {len(targets)}件")
     # 取引日の新しい順（読者が最初に見る記事から直す）
     targets.sort(key=lambda a: a.get("dealDate") or "", reverse=True)
     targets = targets[args.skip:]
@@ -145,6 +109,11 @@ def main():
             "holding_ratio": row["holding_ratio"],
             "prior_ratio": row.get("holding_ratio_prior"),
             "ratio_change_pct": change,
+            # 記事が公開時に保存した変化幅。EDINETの holding_ratio_prior 由来で、2026-08-27の
+            # 全件再照合を通っている。上の ratio_change_pct() は過去開示から前回比率を引き直すため、
+            # 自社のDBに前回開示が無い提出者では「今回比率の全量」を返してしまう。
+            # 両者が食い違い、かつ計算値が holding_ratio と一致する場合はこちらを正とする。
+            "article_ratio_change_pct": a.get("ratioChangePct"),
             "disc_date": disc_date,
             "direction": "sell" if is_sell else "buy",
             "deal_amount_oku": a.get("dealAmount"),

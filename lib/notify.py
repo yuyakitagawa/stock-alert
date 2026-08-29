@@ -7,8 +7,9 @@ lib/notify.py
   Anthropic APIが月次上限（HTTP 400 invalid_request_error）に達した状態で edinet_blog.yml が
   毎時回り続け、記事生成が全件失敗しても各ステップが continue-on-error のためワークフローは緑。
   記事が0件なので video_post.yml も「投稿対象がないため終了」で無言終了し、ブログも動画も
-  丸一日止まっているのに通知は一切出なかった。唯一の見張りである日次ログレビュー
-  （tools/daily_log_review.py）はClaude自身を使うため、同じ上限で一緒に落ちていた。
+  丸一日止まっているのに通知は一切出なかった。唯一の見張りだった日次ログレビュー
+  （当時の tools/daily_log_review.py。2026-08-29に削除）はClaude自身を使うため、同じ上限で
+  一緒に落ちていた。
 
 設計（見張りは壊れたものに依存させない）:
   - Claude・GitHub Actionsの成否判定に依存せず、LINE Messaging APIを直接叩くだけ。
@@ -147,6 +148,41 @@ def warn(where: str, message: str, detail: str = "", url: str = "",
     """落ちてはいないが期待どおりに出ていないときの通知。"""
     body = build_message("⚠️", where, message, detail, url)
     return push_once(dedupe_key, body) if dedupe_key else push(body)
+
+
+def once(dedupe_key: str, text: str) -> bool:
+    """同じ `dedupe_key` では一度しか送らない通知。送ったら True。
+
+    毎時のジョブから残枠警告のような「状態」を鳴らすと、同じ内容が1日に何十通も届いて
+    かえって見なくなる。送信済みかどうかは Supabase の `notify_log` に残す
+    （プロセス内フラグでは毎時の別プロセスをまたげない）。
+
+    DBが引けないときは送る側に倒す。通知が重複する不便より、鳴らないほうが危険。
+    """
+    from lib import supabase_client as sb
+
+    key = str(dedupe_key)
+    if sb.is_configured():
+        try:
+            if sb.select_one("notify_log", f"dedupe_key=eq.{key}"):
+                return False
+        except Exception as e:
+            print(f"[notify] ⚠ 送信済み確認に失敗（送信は続行）: {e}")
+    if not push(text):
+        return False
+    try:
+        sb.upsert("notify_log",
+                  [{"dedupe_key": key, "last_sent_at": _now_iso(), "sent_count": 1,
+                    "last_text": text[:DETAIL_MAX_CHARS]}],
+                  on_conflict="dedupe_key")
+    except Exception as e:
+        print(f"[notify] ⚠ 送信記録に失敗: {e}")
+    return True
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 def main() -> int:
