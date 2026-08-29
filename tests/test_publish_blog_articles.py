@@ -1834,6 +1834,73 @@ def _fake_client(text):
     return _Client(text)
 
 
+def test_exit_code_for_run_distinguishes_failure_from_legitimate_zero():
+    """候補が記事化まで到達したのに投稿0件なら異常(1)。足切りで候補が全部落ちた
+    「正常な0件」(attempts=0)と、1件でも投稿できた便は0を返す。"""
+    # ANTHROPIC_API_KEYの上限超過で全滅したときの形（2026-08-24の実例）
+    assert m.exit_code_for_run(12, 0) == 1
+    # 候補が金額・比率の足切りで全部落ちただけの日は正常
+    assert m.exit_code_for_run(0, 0) == 0
+    # 一部失敗しても1件でも出ていれば正常扱い（部分失敗でジョブを赤にしない）
+    assert m.exit_code_for_run(12, 1) == 0
+
+
+def test_build_and_publish_counts_generation_attempts_when_all_fail():
+    """記事生成が全滅した便でも、statsには記事化に到達した候補数が残ること。
+    これが0のままだと exit_code_for_run が異常を検知できない。"""
+    holdings = [
+        {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+         "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+         "doc_description": "大量保有報告書"},
+        {"issuer_code": "9999", "name": "テスト商事", "filer_name": "アセット株式会社",
+         "holding_ratio": 6.0, "disc_date": "2026-07-20", "doc_type_code": "350",
+         "doc_description": "大量保有報告書"},
+    ]
+    stats = {}
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "classify_filer",
+                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=None), \
+         mock.patch.object(m, "get_pit_ranking_snapshot", return_value=None), \
+         mock.patch.object(m, "disclosure_close_price", return_value=None), \
+         mock.patch.object(m, "generate_article_body_checked", return_value=None), \
+         mock.patch.object(m, "publish_article") as publish:
+        results = m.build_and_publish(days=3, max_articles=5, dry_run=False, stats=stats)
+
+    assert results == []
+    assert stats["generation_attempts"] == 2  # 2件とも記事化に到達して生成で落ちた
+    publish.assert_not_called()
+    assert m.exit_code_for_run(stats["generation_attempts"], len(results)) == 1
+
+
+def test_build_and_publish_reports_zero_attempts_when_filtered_out():
+    """足切りで候補が全部落ちた日は attempts=0 になり、ジョブは緑のままであること。"""
+    holdings = [
+        {"issuer_code": "7203", "name": "小口テスト", "filer_name": "個人 太郎",
+         "holding_ratio": 5.02, "holding_ratio_prior": 5.0, "disc_date": "2026-07-20",
+         "doc_type_code": "360", "doc_description": "変更報告書"},
+    ]
+    stats = {}
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=0.1), \
+         mock.patch.object(m, "generate_article_body_checked") as gen:
+        results = m.build_and_publish(days=3, max_articles=5, dry_run=False, stats=stats)
+
+    assert results == []
+    assert stats["generation_attempts"] == 0
+    gen.assert_not_called()  # 足切りはClaude呼び出しより前
+    assert m.exit_code_for_run(stats["generation_attempts"], len(results)) == 0
+
+
 if __name__ == "__main__":
     test_estimate_deal_amount_oku_calculation()
     test_estimate_deal_amount_oku_none_when_no_change()
@@ -1964,4 +2031,7 @@ if __name__ == "__main__":
     test_build_and_publish_skips_disclosure_already_articled()
     test_build_and_publish_records_ledger_after_publishing()
     test_generate_article_body_allows_raw_newlines_in_json()
-    print("全テスト成功 (129件)")
+    test_exit_code_for_run_distinguishes_failure_from_legitimate_zero()
+    test_build_and_publish_counts_generation_attempts_when_all_fail()
+    test_build_and_publish_reports_zero_attempts_when_filtered_out()
+    print("全テスト成功 (132件)")

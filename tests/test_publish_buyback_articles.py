@@ -216,6 +216,44 @@ def test_build_and_publish_skips_published_and_respects_max():
     publish.assert_not_called()
 
 
+def test_build_and_publish_counts_generation_attempts_when_all_fail():
+    """記事候補が残っているのに生成が全滅した便は attempts>0 / 投稿0件になり、
+    exit_code_for_run が異常(1)を返すこと（2026-08-24のAPI上限超過と同じ形）。"""
+    rows = [
+        {"code": "9706", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 150.0, "ratio": 3.8, "max_amount_yen": 15_000_000_000},
+        {"code": "6574", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 45.0, "ratio": 7.33, "max_amount_yen": 4_500_000_000},
+    ]
+    stats = {}
+    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "build_fact_sheet", return_value=FACT), \
+         mock.patch.object(m, "generate_body_checked", return_value=None), \
+         mock.patch.object(m, "publish_article") as publish:
+        out = m.build_and_publish(days=2, dry_run=False, stats=stats)
+
+    assert out == []
+    assert stats["generation_attempts"] == 2
+    publish.assert_not_called()
+    assert m.exit_code_for_run(stats["generation_attempts"], len(out)) == 1
+
+
+def test_build_and_publish_reports_zero_attempts_when_all_already_published():
+    """既出で全部スキップされた便は attempts=0。記事0件でもジョブは緑のままにする。"""
+    rows = [
+        {"code": "9706", "disclosed_at": "2026-08-24T16:00:00+00:00", "amount_oku": 150.0, "ratio": 3.8, "max_amount_yen": 15_000_000_000},
+    ]
+    stats = {}
+    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=True), \
+         mock.patch.object(m, "generate_body_checked") as gen:
+        out = m.build_and_publish(days=2, dry_run=False, stats=stats)
+
+    assert out == []
+    assert stats["generation_attempts"] == 0
+    gen.assert_not_called()
+    assert m.exit_code_for_run(stats["generation_attempts"], len(out)) == 0
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

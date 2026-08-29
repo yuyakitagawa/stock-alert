@@ -174,5 +174,91 @@ class HeartbeatTest(unittest.TestCase):
         self.assertIn("大量保有0件（EDINET 39件）", msg)
 
 
+class PushOnceTest(unittest.TestCase):
+    """同じ原因の通知を連投しない（P1）。毎時13便が同じ理由で落ちても1日1通に収める。"""
+
+    def setUp(self):
+        self.now = notify.datetime.now(notify.timezone.utc)
+
+    def _row(self, hours_ago: float, count: int = 1) -> dict:
+        sent = self.now - notify.timedelta(hours=hours_ago)
+        return {"dedupe_key": "k", "last_sent_at": sent.isoformat(), "sent_count": count}
+
+    def test_suppresses_within_window(self):
+        with mock.patch.dict(os.environ, CREDS), \
+             mock.patch("lib.supabase_client.select_one", return_value=self._row(2)), \
+             mock.patch("lib.supabase_client.upsert") as up, \
+             mock.patch("lib.notify.push") as push:
+            self.assertFalse(notify.push_once("k", "本文", window_hours=20))
+            push.assert_not_called()
+        # 抑制した回数も数える（何便ぶん黙ったかを後から追えるように）
+        self.assertEqual(up.call_args[0][1][0]["sent_count"], 2)
+
+    def test_sends_after_window_expires(self):
+        with mock.patch.dict(os.environ, CREDS), \
+             mock.patch("lib.supabase_client.select_one", return_value=self._row(21)), \
+             mock.patch("lib.supabase_client.upsert"), \
+             mock.patch("lib.notify.push", return_value=True) as push:
+            self.assertTrue(notify.push_once("k", "本文", window_hours=20))
+            push.assert_called_once()
+
+    def test_sends_when_never_sent(self):
+        with mock.patch.dict(os.environ, CREDS), \
+             mock.patch("lib.supabase_client.select_one", return_value=None), \
+             mock.patch("lib.supabase_client.upsert"), \
+             mock.patch("lib.notify.push", return_value=True) as push:
+            self.assertTrue(notify.push_once("k", "本文"))
+            push.assert_called_once()
+
+    def test_sends_when_dedupe_lookup_fails(self):
+        """重複判定ができないときは送る側に倒す（通知は多いより来ないほうが致命的）。"""
+        with mock.patch.dict(os.environ, CREDS), \
+             mock.patch("lib.supabase_client.select_one", side_effect=RuntimeError("db down")), \
+             mock.patch("lib.supabase_client.upsert"), \
+             mock.patch("lib.notify.push", return_value=True) as push:
+            self.assertTrue(notify.push_once("k", "本文"))
+            push.assert_called_once()
+
+    def test_error_without_dedupe_key_always_pushes(self):
+        """既存の呼び出し（dedupe_key無し）は従来どおり毎回送る。"""
+        with mock.patch.dict(os.environ, CREDS), \
+             mock.patch("lib.notify.push", return_value=True) as push, \
+             mock.patch("lib.notify.push_once") as once:
+            notify.error("どこか", "何か")
+            push.assert_called_once()
+            once.assert_not_called()
+
+
+class UsageLimitMessageTest(unittest.TestCase):
+    """通知本文に原因と復旧条件を載せる（P2）。"""
+
+    ERR = ("Error code: 400 - {'message': 'You have reached your specified API usage limits. "
+           "You will regain access on 2026-09-01 at 00:00 UTC.'}")
+
+    def test_extracts_regain_access_datetime(self):
+        self.assertEqual(api_budget.regain_access_at(Exception(self.ERR)),
+                         "2026-09-01 00:00 UTC")
+        self.assertEqual(api_budget.regain_access_at(Exception("usage limit")), "")
+
+    def test_message_tells_how_to_fix_and_that_credits_do_not_help(self):
+        msg = api_budget._build_message(Exception(self.ERR))
+        # チャージでの復旧を試みて空振りした実例（2026-08-24）への対処
+        self.assertIn("クレジットの追加では解除されません", msg)
+        self.assertIn("使用上限", msg)
+        self.assertIn("console.anthropic.com/settings/limits", msg)
+        self.assertIn("2026-09-01 00:00 UTC", msg)
+
+    def test_message_omits_recovery_line_when_date_unknown(self):
+        msg = api_budget._build_message(Exception("api usage limits reached"))
+        self.assertNotIn("自動復旧", msg)
+
+    def test_notifies_with_dedupe_key(self):
+        api_budget.reset()
+        with mock.patch("lib.notify.error", return_value=True) as err:
+            api_budget.note(Exception(self.ERR))
+        self.assertEqual(err.call_args.kwargs["dedupe_key"], api_budget.DEDUPE_KEY)
+        api_budget.reset()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

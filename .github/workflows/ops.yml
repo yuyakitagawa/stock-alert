@@ -77,7 +77,8 @@ jobs:
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
           python -m lib.notify "🚨 成果物ハートビートが失敗しました（当日の投稿状況を確認できていません）" \
-            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --dedupe-key "wf_ops_heartbeat_failed"
 
   watchdog:
     if: github.event.schedule == '30 14 * * 1-5' || inputs.job == 'watchdog'

@@ -163,4 +163,5 @@ jobs:
         run: |
           pip install --quiet requests
           python -m lib.notify "🚨 Daily Stock Alert（ランキング・LINE配信）が失敗しました" \
-            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --dedupe-key "wf_daily_alert_failed"

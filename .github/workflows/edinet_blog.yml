@@ -81,6 +81,7 @@ jobs:
         run: cd ~/stock-alert && python tools/refresh_holding_amounts.py
 
       - name: ブログ記事自動生成・投稿（EDINET大口取引解説「大口投資家の監視ブログ」）
+        id: publish_edinet
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_blog_articles.py
 
@@ -91,6 +92,7 @@ jobs:
         run: cd ~/stock-alert && python tools/fetch_tdnet.py --days 1 --catalyst-only && python tools/enrich_buybacks.py --days 2
 
       - name: ブログ記事自動生成・投稿（自社株買い決定・上限10億円以上 or 発行済3%以上）
+        id: publish_buyback
         continue-on-error: true
         run: cd ~/stock-alert && python web/publish_buyback_articles.py
 
@@ -124,6 +126,24 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/cleanup_duplicate_blog_articles.py --delete
 
+      # 各投稿ステップは continue-on-error で後続を止めないようにしてあるが、そのままだと
+      # 記事が1件も出ていない便もジョブは緑で終わる（2026-08-24: ANTHROPIC_API_KEYの月間上限に
+      # 達し、全便が「0件処理しました」でsuccessのまま丸1日気付けなかった）。
+      # クリーンアップまで走らせた後にoutcomeを集約し、ジョブ自体を失敗させる。
+      - name: 記事化の失敗を検知（候補ありで投稿0件ならジョブを失敗させる）
+        if: always()
+        run: |
+          FAILED=0
+          if [ "${{ steps.publish_edinet.outcome }}" = "failure" ]; then
+            echo "::error::EDINET記事の生成・投稿が失敗しています（記事化に到達した候補があるのに投稿0件）"
+            FAILED=1
+          fi
+          if [ "${{ steps.publish_buyback.outcome }}" = "failure" ]; then
+            echo "::error::自社株買い記事の生成・投稿が失敗しています（記事化に到達した候補があるのに投稿0件）"
+            FAILED=1
+          fi
+          exit $FAILED
+
       # ジョブが落ちたら必ずLINEへ。ワークフローの赤は誰も見ていないという前提で運用する。
       - name: 失敗をLINE通知
         if: failure()
@@ -133,4 +153,5 @@ jobs:
         run: |
           pip install --quiet requests
           python -m lib.notify "🚨 EDINET Blog Hourly（ブログ生成）が失敗しました" \
-            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --dedupe-key "wf_edinet_blog_failed"
