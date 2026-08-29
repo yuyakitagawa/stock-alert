@@ -43,8 +43,14 @@ JA_PATTERN = re.compile(
     r"弊社モデル|当社モデル|弊社のリスク評価|当社のリスク評価|弊社リスク評価|当社リスク評価"
     r"|下落リスク水準|下落リスク局面|下落リスクが(?:低|高)い局面|下落リスクを(?:低|中程度|高)"
 )
+# 「downside risk」だけを条件にすると、モデルとは無関係な一般的な言い回し
+# （*Speculation: ... amid heightened downside risks ...）まで巻き込んで、事実に基づく
+# 推測文まで消えてしまう。自社のモデル・評価を根拠として示している形だけを拾う。
 EN_PATTERN = re.compile(
-    r"\b(?:our|proprietary)\s+(?:risk\s+)?models?\b|\bdownside\s+risk\b"
+    r"\b(?:our|the\s+company'?s)\s+(?:\w+\s+){0,2}"
+    r"(?:models?|modeling|modelling|risk\s+assessment|assessment\s+model)\b"
+    r"|\bproprietary\s+(?:risk\s+)?models?\b"
+    r"|\bon\s+our\s+modell?ing\b"
     r"|\brisk[- ]assessment\s+perspective\b",
     re.IGNORECASE,
 )
