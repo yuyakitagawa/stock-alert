@@ -336,6 +336,31 @@ def _already_published_response(contents):
     return resp
 
 
+def test_already_published_skips_when_lookup_fails():
+    """既報確認がHTTPエラー・例外で判定不能なときは既報扱い(True)にして投稿を見送る。
+    判定不能のまま投稿すると重複記事が恒久的に残り、filerNameを持たない世代では回収も
+    できない（実例: 9706に同一記事が11件）。本スクリプトは毎時走り直近数日の開示を
+    毎回見直すので、見送っても次の便で取り直せる。"""
+    error_resp = mock.MagicMock()
+    error_resp.status_code = 500
+    with mock.patch.object(m.requests, "get", return_value=error_resp):
+        assert m.already_published("9706", "2025-10-07", 120.0, "みずほ銀行", 0.5) is True
+
+    with mock.patch.object(m.requests, "get", side_effect=RuntimeError("boom")):
+        assert m.already_published("9706", "2025-10-07", 120.0, "みずほ銀行", 0.5) is True
+
+
+def test_already_published_narrows_query_to_the_disclosure_date():
+    """照会を開示日まで絞り込む。銘柄コードだけで引いてlimitを被せていた頃は、
+    記事が多い銘柄で既報が応答に入らず重複と判定できない穴があった。"""
+    with mock.patch.object(m.requests, "get",
+                           return_value=_already_published_response([])) as get:
+        m.already_published("9706", "2025-10-07", 120.0, "みずほ銀行", 0.5)
+    filters = get.call_args.kwargs["params"]["filters"]
+    assert "stockCode[equals]9706" in filters
+    assert "dealDate[begins_with]2025-10-07" in filters
+
+
 def test_already_published_true_when_filer_and_ratio_change_match():
     # 株価キャッシュ更新でdealAmountが大きくズレても、提出者名＋比率変化幅が一致すれば重複と判定する
     # （2026-08-17の17件重複投稿の再発防止）
@@ -558,6 +583,87 @@ def test_build_and_publish_backfill_caps_articles_by_default():
          mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
         results = m.build_and_publish(dry_run=True, backfill=True)
     assert len(results) == m.BACKFILL_MAX_ARTICLES
+
+# ── 「候補>0なのに公開0」の監視（lib/publish_ledger との結線）─────────────
+
+_LEDGER_HOLDINGS = [
+    {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+     "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+     "doc_description": "大量保有報告書"},
+]
+
+
+def _run_with_ledger(**overrides):
+    """build_and_publish を台帳つきで回して ledger を返す。"""
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    patches = {
+        "get_recent_large_holdings": _LEDGER_HOLDINGS,
+        "already_published": False,
+        "ratio_change_pct": 8.5,
+        "estimate_deal_amount_oku": 12.3,
+        "classify_filer": {"category": "個人", "is_foreign": False, "description": ""},
+        "generate_article_body_checked": {"body": "<p>本文</p>"},
+        "build_price_chart_for_article": None,
+        "attach_figures": 0,
+        "publish_article": "fakeid123",
+    }
+    patches.update(overrides)
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=None), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "disclosure_close_price", return_value=None):
+        stack = []
+        for name, val in patches.items():
+            ctx = mock.patch.object(m, name, return_value=val)
+            stack.append(ctx)
+            ctx.start()
+        try:
+            m.build_and_publish(days=3, max_articles=3, dry_run=False, ledger=led)
+        finally:
+            for ctx in reversed(stack):
+                ctx.stop()
+    return led
+
+
+def test_ledger_marks_below_threshold_run_as_healthy():
+    """候補が基準未満で0件公開なのは正常。ワークフローを赤くしない。"""
+    # 金額も比率変化も基準未満（is_worth_publishing はどちらかを超えれば通す）
+    led = _run_with_ledger(estimate_deal_amount_oku=0.01, ratio_change_pct=0.01)
+    assert led.published_count == 0
+    assert led.has_anomaly() is False, led.summary()
+    assert "基準未満" in led.summary()
+
+
+def test_ledger_flags_generation_failure_as_anomaly():
+    """本文生成が失敗した候補は異常として記録され、終了コードに出る。
+
+    2026-08-24のAnthropic API上限では、これが全候補で起きても run は success だった。
+    """
+    from lib import publish_ledger as pl
+    led = _run_with_ledger(generate_article_body_checked=None)
+    assert led.published_count == 0
+    assert led.anomaly_counts() == {pl.FAIL_GENERATION: 1}
+    with mock.patch("lib.publish_ledger.notify.error"):
+        assert led.finish() == pl.EXIT_ANOMALY
+
+
+def test_ledger_flags_publish_failure_as_anomaly():
+    """microCMSがidを返さなかった候補も異常。"""
+    from lib import publish_ledger as pl
+    led = _run_with_ledger(publish_article=None)
+    assert led.anomaly_counts() == {pl.FAIL_PUBLISH: 1}
+
+
+def test_ledger_counts_every_candidate():
+    """公開できた候補は台帳にも1件として乗る（未分類が残らない）。"""
+    led = _run_with_ledger()
+    assert led.published_count == 1
+    assert led.unclassified == 0
+    assert led.has_anomaly() is False
 
 
 def test_ratio_change_pct_uses_disclosure_prior_ratio():
@@ -1838,73 +1944,6 @@ def _fake_client(text):
     return _Client(text)
 
 
-def test_exit_code_for_run_distinguishes_failure_from_legitimate_zero():
-    """候補が記事化まで到達したのに投稿0件なら異常(1)。足切りで候補が全部落ちた
-    「正常な0件」(attempts=0)と、1件でも投稿できた便は0を返す。"""
-    # ANTHROPIC_API_KEYの上限超過で全滅したときの形（2026-08-24の実例）
-    assert m.exit_code_for_run(12, 0) == 1
-    # 候補が金額・比率の足切りで全部落ちただけの日は正常
-    assert m.exit_code_for_run(0, 0) == 0
-    # 一部失敗しても1件でも出ていれば正常扱い（部分失敗でジョブを赤にしない）
-    assert m.exit_code_for_run(12, 1) == 0
-
-
-def test_build_and_publish_counts_generation_attempts_when_all_fail():
-    """記事生成が全滅した便でも、statsには記事化に到達した候補数が残ること。
-    これが0のままだと exit_code_for_run が異常を検知できない。"""
-    holdings = [
-        {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
-         "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
-         "doc_description": "大量保有報告書"},
-        {"issuer_code": "9999", "name": "テスト商事", "filer_name": "アセット株式会社",
-         "holding_ratio": 6.0, "disc_date": "2026-07-20", "doc_type_code": "350",
-         "doc_description": "大量保有報告書"},
-    ]
-    stats = {}
-    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
-         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
-         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
-         mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
-         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
-         mock.patch.object(m, "classify_filer",
-                            return_value={"category": "個人", "is_foreign": False, "description": ""}), \
-         mock.patch.object(m, "get_company_description", return_value=""), \
-         mock.patch.object(m, "get_filer_profile", return_value=None), \
-         mock.patch.object(m, "get_pit_ranking_snapshot", return_value=None), \
-         mock.patch.object(m, "disclosure_close_price", return_value=None), \
-         mock.patch.object(m, "generate_article_body_checked", return_value=None), \
-         mock.patch.object(m, "publish_article") as publish:
-        results = m.build_and_publish(days=3, max_articles=5, dry_run=False, stats=stats)
-
-    assert results == []
-    assert stats["generation_attempts"] == 2  # 2件とも記事化に到達して生成で落ちた
-    publish.assert_not_called()
-    assert m.exit_code_for_run(stats["generation_attempts"], len(results)) == 1
-
-
-def test_build_and_publish_reports_zero_attempts_when_filtered_out():
-    """足切りで候補が全部落ちた日は attempts=0 になり、ジョブは緑のままであること。"""
-    holdings = [
-        {"issuer_code": "7203", "name": "小口テスト", "filer_name": "個人 太郎",
-         "holding_ratio": 5.02, "holding_ratio_prior": 5.0, "disc_date": "2026-07-20",
-         "doc_type_code": "360", "doc_description": "変更報告書"},
-    ]
-    stats = {}
-    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
-         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
-         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
-         mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "estimate_deal_amount_oku", return_value=0.1), \
-         mock.patch.object(m, "generate_article_body_checked") as gen:
-        results = m.build_and_publish(days=3, max_articles=5, dry_run=False, stats=stats)
-
-    assert results == []
-    assert stats["generation_attempts"] == 0
-    gen.assert_not_called()  # 足切りはClaude呼び出しより前
-    assert m.exit_code_for_run(stats["generation_attempts"], len(results)) == 0
-
-
 if __name__ == "__main__":
     test_estimate_deal_amount_oku_calculation()
     test_estimate_deal_amount_oku_none_when_no_change()
@@ -1942,6 +1981,10 @@ if __name__ == "__main__":
     test_already_published_falls_back_to_deal_amount_for_legacy_articles()
     test_build_and_publish_passes_dedup_keys_to_already_published()
     test_build_and_publish_skips_when_amount_unestimable()
+    test_ledger_marks_below_threshold_run_as_healthy()
+    test_ledger_flags_generation_failure_as_anomaly()
+    test_ledger_flags_publish_failure_as_anomaly()
+    test_ledger_counts_every_candidate()
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_drops_non_string_field_on_type_mismatch()
@@ -2036,7 +2079,10 @@ if __name__ == "__main__":
     test_build_and_publish_skips_disclosure_already_articled()
     test_build_and_publish_records_ledger_after_publishing()
     test_generate_article_body_allows_raw_newlines_in_json()
-    test_exit_code_for_run_distinguishes_failure_from_legitimate_zero()
-    test_build_and_publish_counts_generation_attempts_when_all_fail()
-    test_build_and_publish_reports_zero_attempts_when_filtered_out()
-    print("全テスト成功 (133件)")
+    test_already_published_skips_when_lookup_fails()
+    test_already_published_narrows_query_to_the_disclosure_date()
+    test_ledger_marks_below_threshold_run_as_healthy()
+    test_ledger_flags_generation_failure_as_anomaly()
+    test_ledger_flags_publish_failure_as_anomaly()
+    test_ledger_counts_every_candidate()
+    print("全テスト成功 (136件)")

@@ -37,12 +37,52 @@ def test_find_duplicates_ignores_different_filer_or_date():
     assert find_duplicates(articles) == []
 
 
-def test_find_duplicates_skips_articles_without_filer_name():
-    """filerName送信開始(2026-08-15)前の旧記事は突き合わせできないため対象外。"""
+def test_find_duplicates_matches_legacy_articles_by_title():
+    """filerName送信開始(2026-08-15)前の旧記事は、同一銘柄・同一開示日でタイトルまで
+    一致すれば同一開示の重複と見なす。旧記事は概算金額でしか突き合わせておらず、
+    株価キャッシュの更新のたびに同じ開示が再投稿された（実例: 9706に同一記事が11件）。"""
+    articles = [
+        {"id": "a", "stockCode": "9706", "dealDate": "2025-10-07T00:00:00.000Z",
+         "title": "みずほ銀行が日本空港ビルデングを3.54%保有", "dealAmount": 120.0,
+         "createdAt": "2025-10-07T08:00:00.000Z"},
+        {"id": "b", "stockCode": "9706", "dealDate": "2025-10-07T00:00:00.000Z",
+         "title": "みずほ銀行が日本空港ビルデングを3.54%保有", "dealAmount": 121.4,
+         "createdAt": "2025-10-07T09:00:00.000Z"},
+        {"id": "c", "stockCode": "9706", "dealDate": "2025-10-07T00:00:00.000Z",
+         "title": "みずほ銀行が日本空港ビルデングを3.54%保有", "dealAmount": 119.2,
+         "createdAt": "2025-10-07T10:00:00.000Z"},
+    ]
+    assert [a["id"] for a in find_duplicates(articles)] == ["b", "c"]
+
+
+def test_find_duplicates_keeps_legacy_articles_with_different_titles():
+    """旧記事でもタイトルが違えば別の開示なので削除しない。"""
+    articles = [
+        {"id": "a", "stockCode": "9706", "dealDate": "2025-10-07T00:00:00.000Z",
+         "title": "みずほ銀行が日本空港ビルデングを3.54%保有",
+         "createdAt": "2025-10-07T08:00:00.000Z"},
+        {"id": "b", "stockCode": "9706", "dealDate": "2025-10-07T00:00:00.000Z",
+         "title": "ブラックロックが日本空港ビルデングを1.17%に減らす",
+         "createdAt": "2025-10-07T09:00:00.000Z"},
+    ]
+    assert find_duplicates(articles) == []
+
+
+def test_find_duplicates_skips_articles_without_matchable_key():
+    """タイトルも提出者も無い記事、銘柄コードや開示日が欠けた記事は突き合わせ不能。
+    誤って別開示を消さないよう対象外にする。"""
     articles = [
         {"id": "a", "stockCode": "7203", "dealDate": "2026-08-14T00:00:00.000Z",
-         "filerName": "", "createdAt": "2026-08-14T08:00:00.000Z"},
+         "title": "", "createdAt": "2026-08-14T08:00:00.000Z"},
         {"id": "b", "stockCode": "7203", "dealDate": "2026-08-14T00:00:00.000Z",
+         "createdAt": "2026-08-14T09:00:00.000Z"},
+        {"id": "c", "stockCode": "", "dealDate": "2026-08-14T00:00:00.000Z",
+         "title": "同じタイトル", "createdAt": "2026-08-14T08:00:00.000Z"},
+        {"id": "d", "stockCode": "", "dealDate": "2026-08-14T00:00:00.000Z",
+         "title": "同じタイトル", "createdAt": "2026-08-14T09:00:00.000Z"},
+        {"id": "e", "stockCode": "7203", "title": "開示日なし",
+         "createdAt": "2026-08-14T08:00:00.000Z"},
+        {"id": "f", "stockCode": "7203", "title": "開示日なし",
          "createdAt": "2026-08-14T09:00:00.000Z"},
     ]
     assert find_duplicates(articles) == []
@@ -93,8 +133,10 @@ def test_find_duplicates_keeps_buyback_articles_of_different_stock_or_date():
 if __name__ == "__main__":
     test_find_duplicates_keeps_earliest_and_deletes_later()
     test_find_duplicates_ignores_different_filer_or_date()
-    test_find_duplicates_skips_articles_without_filer_name()
+    test_find_duplicates_matches_legacy_articles_by_title()
+    test_find_duplicates_keeps_legacy_articles_with_different_titles()
+    test_find_duplicates_skips_articles_without_matchable_key()
     test_find_duplicates_keeps_same_filer_with_different_ratio_change()
     test_find_duplicates_catches_buyback_articles_without_filer_name()
     test_find_duplicates_keeps_buyback_articles_of_different_stock_or_date()
-    print("全テスト成功 (6件)")
+    print("全テスト成功 (8件)")
