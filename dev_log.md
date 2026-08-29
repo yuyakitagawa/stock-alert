@@ -1983,3 +1983,13 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   解説図が0枚なのは `buyback_article_figures()` が過去の決議1件以上を要求する仕様どおり（11社とも初回）。
 - 残課題: `DEFAULT_DAYS = 3` のままだと同じ取りこぼしが再発する。稼働停止（API上限・障害）を跨いだ日の
   取りこぼしを拾う仕組みが無い。
+
+## 2026-08-29 日次ログレビュー（AIフィードバック）を削除
+- 削除: `tools/daily_log_review.py` / `tests/test_daily_log_review.py`（27件）/ `.github/workflows/daily_log_review.yml`。
+  Claude API を使うフローのうち唯一 opus-5 を毎営業日16,000トークンで回しており（1回$0.3前後）、
+  かつ `lib/api_budget` の予算ガードが効かない唯一のPython経路だった。
+- 参照の更新: README（ワークフロー一覧・ファイル表2行・`tools/ga4_clicks.collect_pdca_metrics()` の呼び出し元の記述）、
+  `lib/notify.py` の経緯コメント、`web/market_timing_alert.py` のフォールバック送信で本文を標準出力に出す理由。
+  本文出力自体は残す（実行ログだけで送信内容を追えるため）。
+- 残: `tools/ga4_clicks.collect_pdca_metrics()` は定期呼び出し元が無くなった（手動集計とテストのみ）。
+- テスト: 602 passed（削除前は629、うち27件が本ツールのテスト）。

@@ -7,8 +7,9 @@ lib/notify.py
   Anthropic APIが月次上限（HTTP 400 invalid_request_error）に達した状態で edinet_blog.yml が
   毎時回り続け、記事生成が全件失敗しても各ステップが continue-on-error のためワークフローは緑。
   記事が0件なので video_post.yml も「投稿対象がないため終了」で無言終了し、ブログも動画も
-  丸一日止まっているのに通知は一切出なかった。唯一の見張りである日次ログレビュー
-  （tools/daily_log_review.py）はClaude自身を使うため、同じ上限で一緒に落ちていた。
+  丸一日止まっているのに通知は一切出なかった。唯一の見張りだった日次ログレビュー
+  （当時の tools/daily_log_review.py。2026-08-29に削除）はClaude自身を使うため、同じ上限で
+  一緒に落ちていた。
 
 設計（見張りは壊れたものに依存させない）:
   - Claude・GitHub Actionsの成否判定に依存せず、LINE Messaging APIを直接叩くだけ。
