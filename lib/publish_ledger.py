@@ -158,10 +158,17 @@ class PublishLedger:
             lines.append(f"・{self._label(reason)}: {n}件{tail}")
         return "\n".join(lines)
 
+    def dedupe_key(self) -> str:
+        """同じ原因の連投を抑えるキー。理由の組み合わせが変わったときだけ鳴らし直す。
+
+        edinet_blog.ymlは平日13便回るので、API上限のように復旧まで直らない原因だと
+        そのまま13通届く（notify側の窓は20時間）。通知疲れで無視されれば検知の意味が無い。"""
+        return f"publish_ledger:{self.source}:{'|'.join(sorted(self.anomaly_counts()))}"
+
     def finish(self) -> int:
         """内訳を出し、異常があればLINE通知して終了コードを返す。"""
         self.report()
         if not self.has_anomaly():
             return 0
-        notify.error(self.source, self.notify_message())
+        notify.error(self.source, self.notify_message(), dedupe_key=self.dedupe_key())
         return EXIT_ANOMALY

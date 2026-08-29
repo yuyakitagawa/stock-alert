@@ -1,5 +1,16 @@
 # Dev Log
 
+## 2026-08-29 台帳のLINE通知に dedupe_key を付ける（通知疲れの穴を塞ぐ）
+
+`PublishLedger.finish()` が `notify.error()` を dedupe_key 無しで呼んでいた。
+`edinet_blog.yml` は平日13便回るので、API上限のように復旧まで直らない原因だと
+ブログ13通＋自社株買い13通が同じ日に届く。台帳自体が「毎便鳴らして誰も見なくなる」のを
+避けるために作ったものなので、これでは目的を外していた。
+
+異常の理由の組み合わせ（`generation_failed|publish_failed` 等）をキーにして
+`notify.push_once()` の20時間窓に載せる。件数が変わっても同じ原因なら鳴らし直さず、
+別の理由が乗ったときだけ改めて鳴る。test_publish_ledger 8→9件。
+
 ## 2026-08-29 「候補>0なのに公開0」を正常/異常で切り分ける（PublishLedger）
 
 PR #285 の積み残しの取り込み。同PRの①開示保存の全滅検知（`_group_by_keys` ＋
