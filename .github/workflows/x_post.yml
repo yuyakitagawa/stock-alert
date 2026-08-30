@@ -16,10 +16,6 @@ name: X Post
 #                               follow_execute がONのときだけ実際にフォローする。Xの自動化
 #                               ポリシーは大量・無差別な自動フォローを禁止しているため、
 #                               cronには載せず対象は毎回手で渡す。
-#   木曜08:00 JST filer_record: 提出者ごとの3ヶ月後リターン実績（web/x_filer_record.py）
-#                               速報botには書けない「その投資家の通算成績」を出す枠。
-#                               朝に置いたのは、同ジャンル879投稿の実測で朝7-11時JSTの
-#                               中央値インプレッションが2,080と、夕16-19時の710より高かったため。
 #   手動のみ        benchmark : 同ジャンルのアカウントの投稿を集めて伸びる型を見る
 #                               （読み取りのみ。tools/x_benchmark.py）
 on:
@@ -29,16 +25,15 @@ on:
     - cron: '0 12 * * 3'  # followup
     - cron: '0 10 * * 1-5' # buyback
     - cron: '0 1 * * *'   # metrics
-    - cron: '0 23 * * 3'  # filer_record（木曜08:00 JST）
   workflow_dispatch:
     inputs:
       target:
         description: 'どれを実行するか'
         type: choice
-        options: [trending, activists, followup, buyback, metrics, verify, discover, follow, benchmark, filer_record]
+        options: [trending, activists, followup, buyback, metrics, verify, discover, follow, benchmark]
         default: trending
       dry_run:
-        description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback/filer_record）'
+        description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback）'
         type: boolean
         default: false
       usernames:
@@ -67,7 +62,6 @@ jobs:
           || (github.event.schedule == '0 12 * * 3' && 'followup')
           || (github.event.schedule == '0 10 * * 1-5' && 'buyback')
           || (github.event.schedule == '0 1 * * *' && 'metrics')
-          || (github.event.schedule == '0 23 * * 3' && 'filer_record')
           || '' }}
       DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
 
@@ -136,10 +130,6 @@ jobs:
           USERNAMES: ${{ inputs.usernames }}
           EXECUTE: ${{ inputs.follow_execute && '--execute' || '' }}
         run: cd ~/stock-alert && python tools/x_follow.py follow --usernames "$USERNAMES" $EXECUTE
-
-      - name: Post filer track record (木曜)
-        if: env.TARGET == 'filer_record'
-        run: cd ~/stock-alert && python web/x_filer_record.py $DRY_RUN
 
       - name: Benchmark same-genre accounts (手動)
         if: env.TARGET == 'benchmark'
