@@ -14,6 +14,7 @@ EDINETのAPIは無料なので課金は発生しないが、1行につきXBRLの
   python3 tools/backfill_holding_details.py --all            # 全行（比率の直し込み用）
   python3 tools/backfill_holding_details.py --all --since 2025-06-18
   python3 tools/backfill_holding_details.py --all --dry-run  # 書き込まずに差分だけ数える
+  python3 tools/backfill_holding_details.py --all --with-article  # 記事になった開示だけ先に直す
 """
 import argparse
 import os
@@ -37,7 +38,8 @@ WRITE_BATCH = 200
 RATIO_EPS = 0.05
 
 
-def fetch_targets(only_missing: bool, since: str, limit: int) -> list:
+def fetch_targets(only_missing: bool, since: str, limit: int,
+                  with_article: bool = False) -> list:
     # issuer_code も必ず取る。PostgRESTのupsertは INSERT ... ON CONFLICT DO UPDATE なので、
     # 実際にはUPDATEになる行でも「INSERTしようとしたタプル」に対してNOT NULL制約が評価される。
     # payloadに issuer_code を含めないと、既存行の更新のはずが
@@ -49,6 +51,8 @@ def fetch_targets(only_missing: bool, since: str, limit: int) -> list:
         query += "&xbrl_detail_fetched_date=is.null"
     if since:
         query += f"&disc_date=gte.{since}"
+    if with_article:
+        query += "&article_published_at=not.is.null"
     return sb.select("edinet_large_holdings", query, limit=limit)
 
 
@@ -60,14 +64,18 @@ def main() -> int:
     group.add_argument("--all", action="store_true",
                        help="全行を対象にする（保有割合の直し込みはこちら）")
     p.add_argument("--since", type=str, default="", help="対象の開示日の下限 YYYY-MM-DD")
+    p.add_argument("--with-article", action="store_true",
+                   help="記事になった開示だけを対象にする（公開記事の是正を全件スイープの完走前に"
+                        "始めるため。記事のある開示は2026-01-05以降しかないので数十分で終わる）")
     p.add_argument("--limit", type=int, default=0, help="対象行数の上限（0=無制限）")
     p.add_argument("--sleep", type=float, default=0.1, help="1件ごとの待機秒（EDINETへの配慮）")
     p.add_argument("--dry-run", action="store_true", help="書き込まずに差分だけ数える")
     args = p.parse_args()
 
-    rows = fetch_targets(args.only_missing, args.since, args.limit)
+    rows = fetch_targets(args.only_missing, args.since, args.limit, args.with_article)
     print(f"対象 {len(rows)}件"
           f"（{'未取得のみ' if args.only_missing else '全行'}"
+          f"{'・記事のある開示のみ' if args.with_article else ''}"
           f"{'・' + args.since + '以降' if args.since else ''}"
           f"{'・dry-run' if args.dry_run else ''}）")
     if not rows:
