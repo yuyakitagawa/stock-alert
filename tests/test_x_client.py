@@ -345,13 +345,13 @@ def test_build_daily_summary_text_includes_count_total_and_extremes():
         {"stockName": "小型買い", "dealAmount": 5.5, "tags": "EDINET,自動生成", "filerName": ""},
     ]
     text = m.build_daily_summary_text(articles, "2026-08-15")
-    assert "🐋 本日のクジラ｜8/15の大量保有報告書" in text
+    assert "🐋 8/15のクジラ｜大量保有報告書" in text
     assert "3件・合計75.5億円" in text
     assert "大型買い +40.0億円（買いファンド）" in text
     assert "大型売り -30.0億円（売りファンド）" in text
     assert text.endswith("#日本株 #大量保有報告書")
     assert "http" not in text  # リンク入り投稿は$0.20課金なのでURLは入れない
-    assert "今日の全3件はプロフィールのリンクから" in text
+    assert "この日の全3件はプロフィールのリンクから" in text
 
 
 def test_build_daily_summary_text_none_when_no_articles():
@@ -364,23 +364,34 @@ def test_build_daily_summary_text_uses_total_count_when_truncated():
     assert "120件" in text
 
 
-def test_post_daily_summary_only_fires_at_the_21jst_run():
-    """21時JST(12時UTC)の便以外では投稿しない（1日1回の重複ガード）。"""
+def test_summary_target_date_is_the_previous_business_day():
+    """朝9時JSTの便では当日の開示がまだ無いので、対象は前営業日になる。
+    月曜の便は日曜・土曜を飛ばして金曜を対象にする。"""
+    from datetime import datetime as _dt
+    # 2026-08-31(月) 00:00 UTC = 09:00 JST → 前営業日は 8/28(金)
+    assert m.summary_target_date(_dt(2026, 8, 31, 0, 0, tzinfo=timezone.utc)) == "2026-08-28"
+    # 2026-08-27(木) 00:00 UTC → 前営業日は 8/26(水)
+    assert m.summary_target_date(_dt(2026, 8, 27, 0, 0, tzinfo=timezone.utc)) == "2026-08-26"
+
+
+def test_post_daily_summary_only_fires_at_the_9jst_run():
+    """9時JST(0時UTC)の便以外では投稿しない（1日1回の重複ガード）。"""
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date") as fetch_mock:
-        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc)) is False
+        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)) is False
         fetch_mock.assert_not_called()
 
 
-def test_post_daily_summary_posts_at_the_final_run():
+def test_post_daily_summary_posts_at_the_morning_run():
     articles = [{"stockName": "A", "stockCode": "1234", "dealAmount": 10.0, "tags": "", "filerName": ""}]
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=(articles, 1)), \
          mock.patch.object(m, "build_daily_summary_media", return_value=["m1"]), \
          mock.patch.object(m, "post_tweet", return_value="1") as publish_mock:
-        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc))
+        # 2026-08-15(土) 00:00 UTC = 09:00 JST → 対象は前営業日の 8/14(金)
+        ok = m.post_daily_summary(now_utc=datetime(2026, 8, 15, 0, 30, tzinfo=timezone.utc))
     assert ok is True
-    assert "8/15" in publish_mock.call_args.args[0]
+    assert "8/14" in publish_mock.call_args.args[0]
     assert publish_mock.call_args.kwargs["media_ids"] == ["m1"]
 
 
@@ -388,7 +399,7 @@ def test_post_daily_summary_skips_when_no_articles():
     with mock.patch.dict(os.environ, X_ENV, clear=True), \
          mock.patch.object(m, "fetch_articles_by_deal_date", return_value=([], 0)), \
          mock.patch.object(m, "post_tweet") as publish_mock:
-        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)) is False
+        assert m.post_daily_summary(now_utc=datetime(2026, 8, 15, 0, 0, tzinfo=timezone.utc)) is False
     publish_mock.assert_not_called()
 
 
