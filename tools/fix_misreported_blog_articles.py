@@ -464,6 +464,18 @@ def main():
     updated, deleted, failed = 0, 0, []
     to_delete = []
     body_missed, body_conflicts = [], []
+    # 更新前のフィールドを1行1JSONで退避してから送る。まとめて最後に書くと、
+    # 途中で落ちたときに「書き換えたのにバックアップが無い記事」が残る。
+    backup_file = None
+    if args.apply:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        backup_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "logs", f"fixed_articles_backup_{stamp}.jsonl",
+        )
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        backup_file = open(backup_path, "w", encoding="utf-8")
+        print(f"更新前の内容を退避します: {backup_path}")
     for a, fix, filer_name in targets:
         code = str(a["stockCode"])
         name = a.get("stockName") or code
@@ -540,6 +552,16 @@ def main():
 
         if not args.apply:
             continue
+        # PATCHを送る直前に、書き換わるフィールドの現在値を退避する。
+        backup_file.write(json.dumps({
+            "id": a["id"],
+            "title": a.get("title"),
+            "body": a.get("body"),
+            "dealAmount": a.get("dealAmount"),
+            "ratioChangePct": a.get("ratioChangePct"),
+            "tags": a.get("tags"),
+        }, ensure_ascii=False) + "\n")
+        backup_file.flush()
         try:
             if update_article(a["id"], payload):
                 updated += 1
@@ -548,6 +570,9 @@ def main():
         except MicroCMSPermissionError as e:
             print(f"      ⚠ 権限エラーのため中断: {e}")
             break
+
+    if backup_file:
+        backup_file.close()
 
     if args.fix_body_numbers:
         print(f"\n本文の数字置換: 旧値が本文に無く置換なし{len(body_missed)}件 / "
