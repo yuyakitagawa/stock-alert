@@ -16,6 +16,8 @@ name: X Post
 #                               follow_execute がONのときだけ実際にフォローする。Xの自動化
 #                               ポリシーは大量・無差別な自動フォローを禁止しているため、
 #                               cronには載せず対象は毎回手で渡す。
+#   手動のみ        benchmark : 同ジャンルのアカウントの投稿を集めて伸びる型を見る
+#                               （読み取りのみ。tools/x_benchmark.py）
 on:
   schedule:
     - cron: '0 9 * * 6'   # trending
@@ -28,7 +30,7 @@ on:
       target:
         description: 'どれを実行するか'
         type: choice
-        options: [trending, activists, followup, buyback, metrics, verify, discover, follow]
+        options: [trending, activists, followup, buyback, metrics, verify, discover, follow, benchmark]
         default: trending
       dry_run:
         description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback）'
@@ -128,6 +130,10 @@ jobs:
           USERNAMES: ${{ inputs.usernames }}
           EXECUTE: ${{ inputs.follow_execute && '--execute' || '' }}
         run: cd ~/stock-alert && python tools/x_follow.py follow --usernames "$USERNAMES" $EXECUTE
+
+      - name: Benchmark same-genre accounts (手動)
+        if: env.TARGET == 'benchmark'
+        run: cd ~/stock-alert && python tools/x_benchmark.py
 
       # ジョブが落ちたら必ずLINEへ。ワークフローの赤は誰も見ていないという前提で運用する。
       - name: 失敗をLINE通知
