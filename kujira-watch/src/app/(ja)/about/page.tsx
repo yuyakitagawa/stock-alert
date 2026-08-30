@@ -38,8 +38,11 @@ export default async function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">Xで最新情報をチェック</h2>
+        {/* 発信内容は実態に合わせること。2026-08-30に自動投稿を週1本（土曜の急増ランキング）へ
+            絞ったため、「新着記事の速報」から週次まとめの案内へ書き換えた。運営者情報の記述が
+            実態と食い違うのはE-E-A-Tの減点要因になる。 */}
         <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
-          新着記事や注目の大量保有報告書の速報は
+          毎週土曜に「大口投資家の取引急増ランキング（前週比）」を
           <a
             href="https://x.com/kujira_watch"
             target="_blank"
@@ -48,7 +51,7 @@ export default async function AboutPage() {
           >
             公式X（@kujira_watch）
           </a>
-          でも発信しています。
+          で発信しています。ご質問・記事内容へのご指摘もこちらで受け付けています。
         </p>
       </section>
 

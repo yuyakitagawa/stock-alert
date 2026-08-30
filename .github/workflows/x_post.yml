@@ -1,13 +1,19 @@
 name: X Post
 
-# X（旧Twitter）関連の処理をまとめた1本。**定期実行は2026-08-30に全て停止した**ので、
-# 走るのは手動実行（target 入力）のときだけ。停止の根拠は実測（2026-08-19〜08-29）で、
+# X（旧Twitter）関連の処理をまとめた1本。**2026-08-30に定期実行をほぼ全て停止**し、
+# 残したのは土曜の trending 1枠だけ。停止の根拠は実測（2026-08-19〜08-29）で、
 # 34投稿・総インプレッション43・いいね0・リポスト0・URLクリック1・フォロワーは10日連続0。
 # docs/x_operation_rules.md が自ら「リーチの経路は3つだけ」と書いているが、その3つ
 # （フォロワーTL / X内検索 / 他チャネルからの流入）が全て塞がっており、時間では解決しない。
-# 再開条件は docs/x_operation_rules.md を参照（サイトの自然検索が伸びてX以外からXへ人を
-# 送れるようになったら検討する）。アカウントと既存投稿は消さない。
-#   手動のみ        trending  : 大口投資家の取引急増ランキング（web/x_weekly_trending.py）
+#
+# 週1枠だけ残す理由（E-E-A-T）: Xはサイトの Organization スキーマの sameAs と
+# contactPoint（kujira-watch/src/lib/site.ts）に入っており、実名・メールを公開しない
+# 運営方針の下では**唯一の連絡窓口**。/about も「速報は公式Xでも発信しています」と
+# 書いているので、投稿を完全に止めるとサイトの運営者情報が実態と食い違う。
+# URL無しの投稿は $0.015/本なので週1本＝月約$0.06で、日次予算にも当たらない。
+# 全面再開の条件は docs/x_operation_rules.md（サイトの自然検索が伸びて、X以外から
+# Xへ人を送れるようになったら検討する）。アカウントと既存投稿は消さない。
+#   土曜 18:00 JST  trending  : 大口投資家の取引急増ランキング（web/x_weekly_trending.py）
 #   手動のみ        activists : 今週のアクティビストの動き（web/x_weekly_activists.py）
 #   手動のみ        followup  : 3ヶ月前の大量保有報告の答え合わせ（web/x_followup.py）
 #   手動のみ        buyback   : 本日の自社株買い決定（web/x_buyback.py。投稿前にTDnet取得＋取得枠抽出）
@@ -27,7 +33,9 @@ name: X Post
 #   手動のみ        benchmark : 同ジャンルのアカウントの投稿を集めて伸びる型を見る
 #                               （読み取りのみ。tools/x_benchmark.py）
 on:
-  # schedule は置かない（2026-08-30にX定期投稿を停止。理由と再開条件は上のコメント）。
+  schedule:
+    # 唯一残した定期投稿（週1本）。他の5枠は2026-08-30に停止した（理由は上のコメント）。
+    - cron: '0 9 * * 6'   # trending（土曜18:00 JST）
   workflow_dispatch:
     inputs:
       target:
@@ -56,8 +64,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # 手動実行のみになったので target 入力がそのまま TARGET になる。
-      TARGET: ${{ inputs.target || '' }}
+      # scheduleイベントでは inputs.* が空、workflow_dispatchでは github.event.schedule が
+      # 空になるため、両者をここで1つの TARGET に正規化して各ステップの if を単純にする。
+      TARGET: >-
+        ${{ inputs.target
+          || (github.event.schedule == '0 9 * * 6' && 'trending')
+          || '' }}
       DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
 
     steps:

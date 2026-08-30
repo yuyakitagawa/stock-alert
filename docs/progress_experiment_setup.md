@@ -32,9 +32,13 @@
       大量保有・自社株買いでそれぞれ日2本。`--max-articles` と `--backfill` は従来どおり優先。
 - [x] 3. `edinet_blog.yml` の便数を 13 → 3（`0 0,6,9 * * 1-5`。backfill便 `30 12 * * 1-5` は据え置き）
       EDINET収集（`scan_large_holdings.py`）のステップは残した。
-- [x] 4. X投稿を停止（`x_post.yml` の6スケジュール削除＋`publish_blog_articles.main()` の
-      `post_top_articles`/`post_daily_summary` 呼び出し削除。手動実行は残す）
-      再開条件を `docs/x_operation_rules.md` の0章に追記。アカウント・既存投稿は削除しない。
+- [x] 4. X投稿を週1本へ削減（`publish_blog_articles.main()` の
+      `post_top_articles`/`post_daily_summary` 呼び出し削除＝記事1本ごとの投稿と日次サマリーを停止。
+      `x_post.yml` は土曜18:00 JSTの「1週間のまとめ」（`x_weekly_trending.py`＝急増ランキング）
+      1枠だけ残し、他5枠は削除して手動実行のみに）
+      週1本を残すのはE-E-A-T（Xが `sameAs` / `contactPoint` の唯一の連絡窓口）。
+      `/about` の文言も週次まとめの案内へ書き換えた（実態と食い違う記述を残さない）。
+      全面再開の条件を `docs/x_operation_rules.md` の0章に追記。アカウント・既存投稿は削除しない。
 - [x] 5. `video_post.yml` の schedule を停止（手動実行のみ。コードは残す）
 - [x] 6. 日次予算 `DEFAULT_DAILY_BUDGET_USD` を 1.2 → 0.15
 - [x] 7. `tools/output_heartbeat.py` からX・動画の監視を外す
@@ -49,4 +53,6 @@
 
 ## 記録
 
-- 2026-08-30: ステップ1〜8を実施。テストは全件（48ファイル）通過。
+- 2026-08-30: ステップ1〜8を実施。テストは全件（796件）通過。
+- 2026-08-31: Xを完全停止から**週1本（土曜の週次まとめ）**へ戻した。E-E-A-Tの連絡窓口が
+  Xしか無く、投稿ゼロだと `/about` の記述が実態と食い違うため。コストは月約$0.06。
