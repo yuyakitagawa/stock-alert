@@ -16,6 +16,9 @@ name: X Post
 #                               follow_execute がONのときだけ実際にフォローする。Xの自動化
 #                               ポリシーは大量・無差別な自動フォローを禁止しているため、
 #                               cronには載せず対象は毎回手で渡す。
+#   火曜09:00 JST facts     : 開示原文にしか無い事実の投稿（web/x_disclosure_facts.py）
+#                               全額借入での取得・30日超の遅延開示。該当が無い週は投稿しない。
+#                               株価を使わないので騰落率のような不確実性が入らない。
 #   手動のみ        benchmark : 同ジャンルのアカウントの投稿を集めて伸びる型を見る
 #                               （読み取りのみ。tools/x_benchmark.py）
 on:
@@ -25,15 +28,24 @@ on:
     - cron: '0 12 * * 3'  # followup
     - cron: '0 10 * * 1-5' # buyback
     - cron: '0 1 * * *'   # metrics
+    - cron: '0 0 * * 2'   # facts（火曜09:00 JST）
   workflow_dispatch:
     inputs:
       target:
         description: 'どれを実行するか'
         type: choice
-        options: [trending, activists, followup, buyback, metrics, verify, discover, follow, benchmark]
+        options: [trending, activists, followup, buyback, metrics, verify, discover, follow, benchmark, facts]
         default: trending
       dry_run:
-        description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback）'
+        description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback/facts）'
+        type: boolean
+        default: false
+      usernames:
+        description: 'follow用。フォローするユーザー名をカンマ区切りで（@は不要）'
+        type: string
+        default: ''
+      follow_execute:
+        description: 'follow用。ONのときだけ実際にフォローする（OFFなら対象を表示するだけ）'
         type: boolean
         default: false
       usernames:
@@ -62,6 +74,7 @@ jobs:
           || (github.event.schedule == '0 12 * * 3' && 'followup')
           || (github.event.schedule == '0 10 * * 1-5' && 'buyback')
           || (github.event.schedule == '0 1 * * *' && 'metrics')
+          || (github.event.schedule == '0 0 * * 2' && 'facts')
           || '' }}
       DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
 
@@ -130,6 +143,10 @@ jobs:
           USERNAMES: ${{ inputs.usernames }}
           EXECUTE: ${{ inputs.follow_execute && '--execute' || '' }}
         run: cd ~/stock-alert && python tools/x_follow.py follow --usernames "$USERNAMES" $EXECUTE
+
+      - name: Post disclosure facts (火曜)
+        if: env.TARGET == 'facts'
+        run: cd ~/stock-alert && python web/x_disclosure_facts.py $DRY_RUN
 
       - name: Benchmark same-genre accounts (手動)
         if: env.TARGET == 'benchmark'
