@@ -77,9 +77,13 @@ def fetch_events(today: date = None) -> list:
     until = (today - timedelta(days=HORIZON_DAYS)).isoformat()
     rows = sb.select(
         "edinet_large_holdings",
+        # limit はここで指定しない。supabase_client.select() が limit/offset を付けて
+        # ページングするため、クエリ側にも limit を書くと1つのURLに limit が2つ並び、
+        # 1ページ目が1000行を超えて終了条件に当たらず、同じ行を何度も取り込んでしまう
+        # （実測: 同じ日に3回走らせて全開示平均が +4.9% / +6.3% / +6.7% とブレていた）。
         "select=filer_name,issuer_code,issuer_name,disc_date,doc_description"
         f"&disc_date=gte.{since}&disc_date=lte.{until}"
-        "&issuer_code=not.is.null&limit=50000",
+        "&issuer_code=not.is.null",
     )
     return [r for r in rows or [] if "変更報告書" not in (r.get("doc_description") or "")
             and "訂正" not in (r.get("doc_description") or "")]
@@ -93,7 +97,7 @@ def fetch_prices(codes: list) -> dict:
         rows = sb.select(
             "yahoo_price_cache",
             "select=code,date,close&code=in.(" + ",".join(chunk) + ")"
-            "&order=date.asc&limit=200000",
+            "&order=date.asc",
         )
         for r in rows or []:
             if r.get("close"):
