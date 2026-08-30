@@ -221,7 +221,7 @@ TTFB 1.9秒まで悪化した経緯。dev_log 2026-08-15）。`.card-grid` / `.c
 python3 tools/check_design_system.py
 ```
 
-`kujira-watch/src` を走査し、次を違反として落とす。CI（`ci.yml`）でも同じものが走る。
+`kujira-watch/src` を走査し、次を違反として落とす。CI（`ci.yml`）の `design` ジョブが **PRとmainへのpushの両方**で同じものを走らせるので、違反はマージ前に止まる。標準ライブラリだけで動く（pip install もフォントも不要）ので数秒で終わる。テスト本体（pytest全件＋画像生成）は重いので main への push のときだけ走る。
 
 | 検出するもの | 直し方 |
 |---|---|

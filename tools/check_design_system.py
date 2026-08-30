@@ -49,6 +49,13 @@ EXEMPT = {"theme.ts"}
 
 
 def main() -> int:
+    # ディレクトリが無いと rglob が空を返して「違反なし」で通ってしまう。
+    # 移動・改名で検査が黙って無効化されるのを防ぐ。
+    if not SRC.is_dir():
+        print(f"検査対象が見つかりません: {SRC}")
+        print(f"移動・改名したなら tools/check_design_system.py の SRC を直すこと。台帳: {LEDGER}")
+        return 1
+
     violations = []
     for pattern, message, globs in RULES:
         for g in globs:

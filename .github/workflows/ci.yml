@@ -3,10 +3,29 @@ name: CI
 on:
   push:
     branches: [ main ]
+  pull_request:
 
 jobs:
+  # デザインシステム検査だけを別ジョブに切り出してPRでも走らせる。
+  # check_design_system.py は標準ライブラリだけで動くので pip install もフォントも要らず
+  # 数秒で終わる。テスト本体（pytest全件＋画像生成）はPRごとに回すと重いので push のみ。
+  design:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: デザインシステム検査（kujira-watch）
+        run: python3 tools/check_design_system.py
+
   test:
     runs-on: ubuntu-latest
+    # PRでは design ジョブだけを回す（テスト本体は main への push で走る）。
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
@@ -27,12 +46,6 @@ jobs:
       # 同じフォントを入れて、画像生成まで含めて検証する（2026-08-23からCIが赤だった）
       - name: Install Noto Sans CJK (サムネイル生成テスト用フォント)
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
-
-      # トークンを用意しても、コンポーネント側で場当たりの値を書けば意味が無い。
-      # 導入直後に任意値サイズ15箇所・Tailwind標準色6箇所・bg-foreground/10が4箇所
-      # 残っていた（2026-08-30）ので機械で落とす。台帳は kujira-watch/docs/design_system.md。
-      - name: デザインシステム検査（kujira-watch）
-        run: python3 tools/check_design_system.py
 
       - name: Run tests
         run: |
