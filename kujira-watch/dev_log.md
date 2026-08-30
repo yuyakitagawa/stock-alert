@@ -822,3 +822,26 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
   `Locale`型と`UI.en`辞書（未使用になった文言キー33件も削除）。
 - Organizationの`alternateName`から "Big Investor Watch" を外した（対応するページが無くなったため）。
 - `tsc --noEmit`・`eslint`・`next build` パス。
+
+## 2026-08-30 記事ページに保有目的・平均取得単価・借入比率を出した（競合対抗）
+- 発端: 競合アプリ「アクティビストウォッチャー」(@activistw_app、月300円/年3000円)の
+  **プレミアム機能**が①保有比率推移グラフ ②平均取得単価（参考値）③保有目的の自動分類。
+  ①は`HoldingRatioChart`で実装済みだったが、②③は当方にデータが無かった。
+- データ側: EDINETのXBRLに全部入っていた（`lib/edinet.py`の`parse_holding_details()`、
+  同日のstock-alert側コミット）。追加のAPIコストはゼロ。
+- 表示: 記事詳細のファクトボックスに4項目を追加。
+  - **保有目的**: 開示原文＋`classifyPurpose()`の5区分バッジ（`HoldingPurposeBadge.tsx`）。
+    分類は自由記述からの機械判定なので原文を必ず併記する。
+  - **平均取得単価（開示ベース）**: 取得資金の総額÷保有株数。EDINETは比率しか出さないため
+    このサイトの金額は基本すべて概算だが、取得原価だけは実額で出せる。
+  - **借入比率**: 借入金÷取得資金。競合が出していない切り口で、自己資金0＝全額借入の買いが実在する
+    （成成→東京コスモス電機9.05億円、DOE5パーセント→日本フエルト14.2億円）。50%以上は警告色。
+  - **報告義務発生日**: 提出まで30日超のときだけ。法定は5営業日以内で、大幅に遅れた開示は
+    「株価が動いた後に出てきた開示」として読む必要がある。
+- `classifyPurpose()`/`averageAcquisitionPrice()`/`borrowingRatio()`/`filingLagDays()`は
+  `src/lib/disclosures.ts`。判定ロジックは`lib/edinet.py`と同一で、片方だけ直すと
+  記事本文（Python生成）とサイト表示がずれる（`summarizeDisposals`と同じ運用）。
+- 踏んだ点: supabase-jsの`.select()`は文字列**リテラル**から戻り値の型を推論するため、
+  列が増えて長くなったからと`"..." + "..."`で連結すると型が`GenericStringError`に落ちて
+  全プロパティがエラーになる。1行のリテラルで渡すこと。
+- 検証: `npx tsc --noEmit` 成功。

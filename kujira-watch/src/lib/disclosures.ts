@@ -133,3 +133,83 @@ export function summarizeDisposals(
     rows,
   };
 }
+
+// ---- 保有目的・取得資金（大量保有報告書XBRLの本表）----
+// EDINETのXBRLには保有割合のほかに保有目的・取得資金の内訳・保有株数が入っており、
+// lib/edinet.py の parse_holding_details() が edinet_large_holdings に保存している。
+// 判定ロジックは lib/edinet.py の classify_purpose() / average_acquisition_price() と同一。
+// 片方だけ直すと記事本文（Python生成）とサイト表示（ここ）がずれるので必ず両方直すこと。
+
+export type HoldingPurpose =
+  | "重要提案行為等"
+  | "経営参加"
+  | "政策保有"
+  | "安定株主"
+  | "純投資";
+
+// 株主としての姿勢が強い順に判定する。「純投資及び状況に応じて重要提案行為なども行う」
+// のような留保付きの記載も、経営へ関与しうる立場を宣言している点で純投資とは区別する。
+const PURPOSE_RULES: [HoldingPurpose, RegExp][] = [
+  ["重要提案行為等", /重要提案行為|重要な提案|株主提案|企業価値の向上を目的として/],
+  ["経営参加", /経営参加|経営に参画|経営権|子会社化|完全子会社|経営支援|役員として/],
+  ["政策保有", /政策投資|政策保有|取引関係|業務提携|資本提携|関係強化/],
+  ["安定株主", /安定株主|長期保有|長期安定/],
+  ["純投資", /純投資|投資収益|値上がり|運用を目的|商品在庫|信託契約/],
+];
+
+export function classifyPurpose(purposeText: string | null): HoldingPurpose | null {
+  if (!purposeText) return null;
+  for (const [label, pattern] of PURPOSE_RULES) {
+    if (pattern.test(purposeText)) return label;
+  }
+  return null;
+}
+
+// バッジの色。経営に関与する側ほど強い色にして、一覧で目が留まるようにする。
+export const PURPOSE_COLORS: Record<HoldingPurpose, string> = {
+  重要提案行為等: "#e11d48",
+  経営参加: "#c2410c",
+  政策保有: "#0f766e",
+  安定株主: "#2563eb",
+  純投資: "#6b7280",
+};
+
+export const PURPOSE_DESCRIPTIONS: Record<HoldingPurpose, string> = {
+  重要提案行為等: "経営陣の選解任や事業方針への関与を目的に含む保有。実際に提案するかは別として、その立場を報告書で宣言している。",
+  経営参加: "経営支援・子会社化など、経営そのものに関わることを目的とする保有。",
+  政策保有: "取引関係の維持・強化など事業上の目的による保有。売買を目的としていない。",
+  安定株主: "創業家・役員・取引先などが長期保有を明言している保有。",
+  純投資: "値上がり益や運用収益を目的とする保有。経営への関与は目的に含まない。",
+};
+
+// 開示ベースの平均取得単価（円/株）= 取得資金の総額 ÷ 保有株数。
+// 「現在保有している分」の取得原価なので、政策保有株のように保有が古いほど
+// 現在株価から乖離する（それ自体が含み損益の手がかりになる）。
+export function averageAcquisitionPrice(
+  fundingTotal: number | null,
+  sharesHeld: number | null
+): number | null {
+  if (!fundingTotal || !sharesHeld || sharesHeld <= 0) return null;
+  return Math.round((fundingTotal / sharesHeld) * 10) / 10;
+}
+
+// 取得資金に占める借入金の割合（%）。自己資金0＝全額借入の買いが実在し、
+// 返済圧力がある分だけ同じ保有比率でも意味が違う。
+export function borrowingRatio(
+  fundingBorrowings: number | null,
+  fundingTotal: number | null
+): number | null {
+  if (!fundingTotal || fundingTotal <= 0 || fundingBorrowings === null) return null;
+  // 借入金が取得資金の総額を上回る開示が実在する（LEOMO,inc→日本製麻は借入6.30億円に対し
+  // 取得資金の総額6.23億円。総額が処分ぶんを差し引いた残高で、借入は総額で書かれるため）。
+  // 「101.2%」は読み手にはサイトのバグに見えるので、比率としては100%＝全額借入に丸める。
+  return Math.min(100, Math.round((fundingBorrowings / fundingTotal) * 1000) / 10);
+}
+
+// 報告義務発生日（実際に5%を超えた日）から提出日までの日数。
+// 法定は5営業日以内だが、実際には数ヶ月〜1年遅れる開示がある。
+export function filingLagDays(obligationDate: string | null, discDate: string | null): number | null {
+  if (!obligationDate || !discDate) return null;
+  const lag = Math.round((Date.parse(discDate) - Date.parse(obligationDate)) / 86400000);
+  return Number.isFinite(lag) && lag >= 0 ? lag : null;
+}

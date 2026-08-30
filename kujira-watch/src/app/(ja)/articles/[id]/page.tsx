@@ -9,6 +9,7 @@ import Typography from "@mui/material/Typography";
 import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
 import ArticleNextStep from "@/components/ArticleNextStep";
 import HoldingRatioChart from "@/components/HoldingRatioChart";
+import HoldingPurposeBadge from "@/components/HoldingPurposeBadge";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ActionButton from "@/components/ActionButton";
@@ -24,6 +25,7 @@ import {
 } from "@/lib/microcms";
 import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot, investorPath } from "@/lib/investors";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import { averageAcquisitionPrice, borrowingRatio, classifyPurpose, filingLagDays } from "@/lib/disclosures";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import { getArticleRedirect } from "@/lib/articleRedirects";
@@ -215,6 +217,22 @@ export default async function ArticleDetailPage({ params }: Props) {
   // EDINETが金額を出さないこのサイトで、概算でない実額を出せる唯一のケース。
   const transfers = snapshot?.transfers ?? null;
   const exactAmountOku = transfers?.amountOku ?? null;
+  // 大量保有報告書XBRLの本表から取れる、EDINETの原文にしか載っていない事実。
+  // 保有目的はほぼ全開示にあるが、取得資金・保有株数は記載の無い開示や
+  // 全部売却した変更報告書では欠けるので、それぞれ取れたものだけ出す。
+  const purpose = classifyPurpose(snapshot?.purposeOfHolding ?? null);
+  const unitPrice = averageAcquisitionPrice(snapshot?.fundingTotal ?? null, snapshot?.sharesHeld ?? null);
+  const leverage = borrowingRatio(snapshot?.fundingBorrowings ?? null, snapshot?.fundingTotal ?? null);
+  const filingLag = filingLagDays(snapshot?.obligationDate ?? null, dealDateOnly);
+  // 法定は報告義務発生日から5営業日以内。1ヶ月を超える遅れは「今さら出てきた開示」で、
+  // 株価が既に動いた後という読み方が要るため、そのときだけ出す。
+  const isLateFiling = filingLag !== null && filingLag > 30;
+  // formatDealAmountは億円単位を受ける。0.05億円未満は「0億円」になって金額が無いように
+  // 見えるので出さない（短期大量譲渡の実額と同じ足切り）。
+  const fundingOku =
+    snapshot?.fundingTotal && snapshot.fundingTotal >= 5e6
+      ? Math.round((snapshot.fundingTotal / 1e8) * 10) / 10
+      : null;
   // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
   const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
   const filerId = filerName ? await getFilerIdByName(filerName) : null;
@@ -412,6 +430,93 @@ export default async function ArticleDetailPage({ params }: Props) {
                 >
                   {displayFilerName(filerName)}
                 </Link>
+              </Typography>
+            </Box>
+          )}
+          {snapshot?.purposeOfHolding && (
+            <Box sx={{ gridColumn: "1 / -1" }}>
+              {/* 保有目的は大量保有報告書の必須記載項目で、EDINETのXBRLからほぼ全開示で取れる。
+                  同じ「5%取得」でも純投資と重要提案行為等では意味が違うため、分類バッジと
+                  原文を併記する（分類はあくまで自由記述からの機械判定）。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                保有目的（開示原文より）
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5 }}>
+                {purpose && (
+                  <Box component="span" sx={{ mr: 0.75, verticalAlign: "middle" }}>
+                    <HoldingPurposeBadge purpose={purpose} />
+                  </Box>
+                )}
+                {/* 原文が「純投資」だけの開示ではバッジと同じ文字が2つ並ぶので原文側を省く。 */}
+                {snapshot.purposeOfHolding !== purpose && (
+                  <Typography component="span" variant="body2" sx={{ whiteSpace: "pre-line" }}>
+                    {snapshot.purposeOfHolding}
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
+          )}
+          {snapshot?.importantProposal && !/該当(事項)?(なし|ありません)/.test(snapshot.importantProposal) && (
+            <Box sx={{ gridColumn: "1 / -1" }}>
+              {/* 「重要提案行為等」欄に具体的な記載がある開示だけ出す（大半は「該当事項なし」）。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                重要提案行為等（開示原文より）
+              </Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0, mt: 0.5, whiteSpace: "pre-line" }}>
+                {snapshot.importantProposal}
+              </Typography>
+            </Box>
+          )}
+          {unitPrice !== null && (
+            <Box>
+              {/* 取得資金の総額÷保有株数。EDINETは通常「比率」しか出さないが、取得資金は
+                  本表に金額で載っているので取得原価が出せる。保有が古いほど現在株価から
+                  離れる（政策保有株は特に）ため参考値として扱う。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                平均取得単価（開示ベース）
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
+                {unitPrice.toLocaleString("ja-JP")}円
+                {snapshot?.sharesHeld ? (
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                    （{snapshot.sharesHeld.toLocaleString("ja-JP")}株）
+                  </Typography>
+                ) : null}
+              </Typography>
+            </Box>
+          )}
+          {leverage !== null && leverage > 0 && (
+            <Box>
+              {/* 取得資金に占める借入金の割合。自己資金0＝全額借入の買いが実在し、
+                  返済圧力がある分だけ同じ保有比率でも意味が違う。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                借入比率
+              </Typography>
+              <Typography
+                component="dd"
+                sx={{ m: 0, mt: 0.5, fontWeight: 500, color: leverage >= 50 ? "warning.main" : undefined }}
+              >
+                {leverage}%
+                {fundingOku !== null && (
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                    （取得資金{formatDealAmount(fundingOku)}のうち借入）
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
+          )}
+          {isLateFiling && snapshot?.obligationDate && (
+            <Box>
+              {/* 法定は報告義務発生日から5営業日以内。1ヶ月超の遅れは「株価が動いた後に
+                  出てきた開示」なので、そのときだけ出す。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                報告義務発生日
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
+                {formatDate(snapshot.obligationDate)}
+                <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                  （提出まで{filingLag}日）
+                </Typography>
               </Typography>
             </Box>
           )}
