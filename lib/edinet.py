@@ -205,34 +205,33 @@ def fetch_xbrl_details(doc_id: str) -> dict:
             result["issuer_name"] = m.group(1).strip()
             break
 
-    # 保有割合（提出後）
-    # PerLastReport（前回割合）や Notes（注記）を除外し、現在の保有割合のみ取得
-    # 値は小数（0.0778 = 7.78%）またはパーセント（7.78）の両方がありうる
-    ratio_patterns = [
-        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?[\s>](?:(?!PerLastReport)[^>])*>\s*([0-9]*\.?[0-9]+)\s*<',
-        r'<[^>]*:HoldingRatioOfShareCertificatesEtc[\s>][^>]*>\s*([0-9]*\.?[0-9]+)\s*<',
-    ]
-    for pat in ratio_patterns:
-        m = re.search(pat, xbrl_text)
-        if m:
-            val = float(m.group(1))
-            if val < 1.0:
-                val *= 100
-            result["holding_ratio"] = round(val, 2)
-            break
+    # 保有割合（提出後）と直前報告時の保有割合。
+    # 共同保有の報告書では、メンバー無しの合算context（FilingDateInstant）が
+    # 「提出者＋共同保有者の合計」＝報告書の見出しに出る数値。保有者ごとのcontextを
+    # 先に拾うと筆頭保有者の1枠だけを保有割合として出してしまう。
+    # 実測（2026-08-30・1,101件）で656件＝60%がこのズレを起こしていた。
+    # 例: 野村證券→トリケミカル研究所を0.46%（実際は10.41%）、
+    #     細沼順人→成友興業を23.61%（実際は78.66%）と出していた。
+    result["holding_ratio"] = _aggregate_ratio(
+        xbrl_text, "HoldingRatioOfShareCertificatesEtc")
+    result["holding_ratio_prior"] = _aggregate_ratio(
+        xbrl_text, "HoldingRatioOfShareCertificatesEtcPerLastReport")
 
-    # 直前報告時の保有割合（PerLastReportタグ。変更報告書のみ存在）
-    prior_patterns = [
-        r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?PerLastReport[^>]*>\s*([0-9]*\.?[0-9]+)\s*<',
-    ]
-    for pat in prior_patterns:
-        m = re.search(pat, xbrl_text)
+    # 上のcontext方式は `jplvh_cor:` 名前空間のタグだけを見る。名前空間や様式が違って
+    # 1件も取れなかった開示のために、従来の素の正規表現を残しておく（比率はサイトの
+    # 主要数値なので、精度を上げる変更で取得できる件数を減らしてはいけない）。
+    if result["holding_ratio"] is None:
+        m = re.search(
+            r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?[\s>](?:(?!PerLastReport)[^>])*>'
+            r'\s*([0-9]*\.?[0-9]+)\s*<', xbrl_text)
         if m:
-            val = float(m.group(1))
-            if val < 1.0:
-                val *= 100
-            result["holding_ratio_prior"] = round(val, 2)
-            break
+            result["holding_ratio"] = _normalize_ratio(m.group(1))
+    if result["holding_ratio_prior"] is None:
+        m = re.search(
+            r'<[^>]*HoldingRatioOfShareCertificatesEtc(?:DEI)?PerLastReport[^>]*>'
+            r'\s*([0-9]*\.?[0-9]+)\s*<', xbrl_text)
+        if m:
+            result["holding_ratio_prior"] = _normalize_ratio(m.group(1))
 
     # 短期大量譲渡の「譲渡の相手方・単価」（該当しない開示では空リスト）
     result["short_term_transfers"] = parse_short_term_transfers(xbrl_text)
@@ -309,6 +308,39 @@ def _aggregate_or_sum(by_context: dict) -> "int | None":
             except ValueError:
                 pass
     return _sum_over_members(by_context)
+
+
+def _normalize_ratio(value: str) -> "float | None":
+    """保有割合は小数（0.0778 = 7.78%）とパーセント（7.78）の両方の書き方がある。"""
+    try:
+        val = float(value)
+    except ValueError:
+        return None
+    if val < 1.0:
+        val *= 100
+    return round(val, 2)
+
+
+def _aggregate_ratio(xbrl_text: str, name: str) -> "float | None":
+    """保有割合をメンバー無しの合算context優先で取る。
+
+    合算contextが無い様式では保有者ごとの割合を足し上げる（単独保有なら1件なのでそのまま）。
+    株数（_aggregate_or_sum）と同じ方針だが、戻り値がintではなくパーセントの小数なので分けている。
+    """
+    by_context = _tag_by_context(xbrl_text, name)
+    for ctx, value in by_context.items():
+        if not _MEMBER_RE.search(ctx):
+            ratio = _normalize_ratio(value)
+            if ratio is not None:
+                return ratio
+    total = None
+    for ctx, value in by_context.items():
+        if not _MEMBER_RE.search(ctx):
+            continue
+        ratio = _normalize_ratio(value)
+        if ratio is not None:
+            total = (total or 0) + ratio
+    return round(total, 2) if total is not None else None
 
 
 def _join_member_texts(by_context: dict, limit: int = 3) -> "str | None":
