@@ -9,6 +9,9 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from unittest import mock
+
+import tools.backfill_blog_eyecatch as bf
 from tools.backfill_blog_eyecatch import (
     badge_label_for, build_card, done_ids_from_logs, ratio_from_title, resolve_holding_ratio,
     select_candidates,
@@ -94,6 +97,21 @@ def test_done_ids_from_logs_tolerates_missing_file():
     assert done_ids_from_logs(["/nonexistent/path.log"]) == set()
 
 
+def test_patch_eyecatch_retries_once_then_succeeds():
+    """アップロード直後のメディアURLが弾かれることがあるので1回だけ貼り直す。"""
+    with mock.patch.object(bf.pb, "update_article", side_effect=[False, True]) as m, \
+         mock.patch.object(bf.time, "sleep"):
+        assert bf.patch_eyecatch("aid", "https://x/eyecatch.jpg") is True
+    assert m.call_count == 2
+
+
+def test_patch_eyecatch_gives_up_after_retry():
+    with mock.patch.object(bf.pb, "update_article", side_effect=[False, False]) as m, \
+         mock.patch.object(bf.time, "sleep"):
+        assert bf.patch_eyecatch("aid", "https://x/eyecatch.jpg") is False
+    assert m.call_count == 2
+
+
 if __name__ == "__main__":
     test_badge_sell_from_tags()
     test_badge_correction_from_tags_or_title()
@@ -104,4 +122,6 @@ if __name__ == "__main__":
     test_build_card()
     test_done_ids_from_logs_picks_ok_lines()
     test_done_ids_from_logs_tolerates_missing_file()
+    test_patch_eyecatch_retries_once_then_succeeds()
+    test_patch_eyecatch_gives_up_after_retry()
     print("OK")

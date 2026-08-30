@@ -253,15 +253,32 @@ def run(args) -> int:
             print(f"{label} → 失敗（アップロード）")
             failed += 1
             continue
-        if pb.update_article(a["id"], {"eyecatch": url}):
+        if patch_eyecatch(a["id"], url):
             print(f"{label} → OK {url}")
             done += 1
         else:
-            print(f"{label} → 失敗（PATCH）")
+            # 失敗したURLを必ず出す。以前は出しておらず、50件中2件のHTTP 400を
+            # ログから追えなかった（2026-08-30）。
+            print(f"{label} → 失敗（PATCH） url={url}")
             failed += 1
 
     print(f"完了: 成功 {done} / スキップ {skipped} / 失敗 {failed}")
     return 0 if failed == 0 else 2
+
+
+def patch_eyecatch(article_id: str, url: str, retries: int = 1, wait: float = 3.0) -> bool:
+    """記事のeyecatchにメディアURLを貼る。1回だけリトライする。
+
+    アップロード直後のメディアURLをコンテンツ側の検証が拒み
+    HTTP 400 "'eyecatch' field invalid. Please set a valid URL." になることがある
+    （2026-08-30の50件実行で2件。記事は旧画像のまま無傷で、再実行すると通った）。
+    アップロードからPATCHまでの反映待ちと見て、作り直さず同じURLを貼り直す。"""
+    for attempt in range(retries + 1):
+        if pb.update_article(article_id, {"eyecatch": url}):
+            return True
+        if attempt < retries:
+            time.sleep(wait)
+    return False
 
 
 def main():

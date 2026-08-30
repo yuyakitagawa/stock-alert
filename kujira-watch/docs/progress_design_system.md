@@ -88,8 +88,13 @@
 ### 残件（2026-08-30 更新）
 - [x] 既存記事のアイキャッチを一括で作り直すための実行経路を用意（`.github/workflows/backfill.yml` に
   `eyecatch` ターゲットを追加）。`eyecatch_mode`=replace/missing・`eyecatch_limit` 既定50・全件は0。
-- [ ] 実行そのものは未実施。**対象1,118件**（`--replace --dry-run` で確認済み）。
-  まず `eyecatch_limit=50` で出来上がりを確認してから全件に上げること。
+- [x] 1本目を `eyecatch_limit=50` で実行（run 33308279449）。**成功48 / 失敗2**。
+  失敗2件（いすゞ自動車 2l679mx9yzgs / 東邦亜鉛 xx7gqfbjx）はPATCHが
+  `HTTP 400 'eyecatch' field invalid. Please set a valid URL.` を返したもの。
+  記事は**旧画像のまま無傷**（GETで確認済み）。アップロード直後のメディアURLを
+  コンテンツ側の検証が拒む反映待ちと見て、`patch_eyecatch()` に1回だけのリトライと
+  失敗URLのログ出力を追加した（テスト2件追加）。
+- [ ] 残り約1,068件は未実行。
 
   **ローカルmacでは走らせないこと**: 本番のアイキャッチは Noto Sans CJK Bold で組まれているが、
   このMacにNoto CJKが無く、`--font` でヒラギノを指定すると過去記事と新規記事で書体が混在する。
