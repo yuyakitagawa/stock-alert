@@ -61,6 +61,18 @@ def test_rank_filers_needs_minimum_events():
     assert names == ["A"]
 
 
+def test_rank_filers_drops_those_that_match_the_market():
+    """全開示平均と差が無い提出者は投稿する内容が無いので落とす。
+    ここを外すと「平均+3.6%・全開示平均+3.6%」で上下を断定してしまう。"""
+    rows = ([{"filer_name": "EDGE", "issuer_code": "1", "issuer_name": "あ", "ret": 30.0}] * m.MIN_EVENTS
+            + [{"filer_name": "SAME", "issuer_code": "2", "issuer_name": "い", "ret": 10.0}] * m.MIN_EVENTS)
+    overall = m.summarize(rows)                      # 平均 +20.0%
+    names = [f["filer_name"] for f in m.rank_filers(rows, overall)]
+    assert names == ["EDGE", "SAME"] or names == ["SAME", "EDGE"]   # 両方とも±10ptで残る
+    tight = ([{"filer_name": "SAME", "issuer_code": "2", "issuer_name": "い", "ret": 10.0}] * m.MIN_EVENTS)
+    assert m.rank_filers(tight, m.summarize(tight)) == []           # 差0なら残らない
+
+
 def test_pick_weekly_rotates_through_filers():
     """毎週1位だけを出すと同じ投稿が並ぶため、週ごとに別の提出者を選ぶ。"""
     ranked = [{"filer_name": n} for n in ("A", "B", "C")]
@@ -84,6 +96,13 @@ def test_build_text_says_below_when_the_filer_trails_the_market():
     rec = {"filer_name": "テストファンド", "n": 25, "mean": -11.2, "win_rate": 28.0,
            "best": {"issuer_name": "あ社", "issuer_code": "1234", "ret": 5.0}}
     assert "明確に下" in m.build_text(rec, {"mean": 6.7})
+
+
+def test_build_text_refuses_when_there_is_no_gap_to_the_market():
+    """表示上おなじ数字なのに上下を断定しないこと（CI実測で出た不具合）。"""
+    rec = {"filer_name": "テストファンド", "n": 28, "mean": 3.62, "win_rate": 43.0,
+           "best": {"issuer_name": "あ社", "issuer_code": "1234", "ret": 60.6}}
+    assert m.build_text(rec, {"mean": 3.64}) is None
 
 
 if __name__ == "__main__":

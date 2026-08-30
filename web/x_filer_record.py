@@ -51,6 +51,10 @@ HORIZON_DAYS = 91
 LOOKBACK_DAYS = 700
 # この件数に満たない提出者は投稿しない。少数の当たり外れで平均が動くため。
 MIN_EVENTS = 10
+# 全開示平均とこれだけ離れていない提出者は投稿しない（%ポイント）。
+# 「平均+3.6%、全開示平均も+3.6%」では投稿する内容が無く、それでも上下を断定すると
+# 誤りになる（CI実測 2026-08-30 でキャピタル・リサーチがこの状態だった）。
+MIN_EDGE_PT = 5.0
 # 開示日・判定日それぞれで、終値を探しにいく許容日数（休場をまたぐため）
 MAX_PRICE_GAP_DAYS = 7
 # 株式分割等で終値が不連続な銘柄を弾く（x_followup.py の SPLIT_GUARD_PCT と同じ考え方）
@@ -154,19 +158,25 @@ def summarize(rows: list) -> dict:
     }
 
 
-def rank_filers(rows: list) -> list:
-    """提出者ごとの実績。件数が足りないものと自己名義の提出者は落とす。"""
+def rank_filers(rows: list, overall: dict = None) -> list:
+    """提出者ごとの実績。件数が足りないもの・自己名義の提出者・全開示平均と差が無い
+    提出者を落とし、全開示平均からの乖離が大きい順に並べる。"""
     by_filer = {}
     for r in rows:
         if _has_excluded_keyword(r.get("filer_name")):
             continue
         by_filer.setdefault(r["filer_name"], []).append(r)
+    base = (overall or {}).get("mean", 0.0)
     out = []
     for name, items in by_filer.items():
         if len(items) < MIN_EVENTS:
             continue
-        out.append({"filer_name": name, **summarize(items)})
-    return sorted(out, key=lambda f: -abs(f["mean"]))
+        rec = {"filer_name": name, **summarize(items)}
+        rec["edge"] = rec["mean"] - base
+        if overall is not None and abs(rec["edge"]) < MIN_EDGE_PT:
+            continue
+        out.append(rec)
+    return sorted(out, key=lambda f: -abs(f["edge"]))
 
 
 def pick_weekly(ranked: list, today: date) -> "dict | None":
@@ -185,7 +195,12 @@ def build_text(rec: dict, overall: dict) -> "str | None":
     if not rec or not overall:
         return None
     name = label(clean_name(rec["filer_name"]), FILER_LABEL_MAX_UNITS)
-    direction = "上" if rec["mean"] > overall["mean"] else "下"
+    # 本文に出す数字は小数1桁。判定も丸めた値で行う（表示が同じ値なのに
+    # 「明確に上」と書くような食い違いを出さないため）。
+    mean, base = round(rec["mean"], 1), round(overall["mean"], 1)
+    if abs(mean - base) < MIN_EDGE_PT:
+        return None
+    direction = "上" if mean > base else "下"
     lines = [
         f"🐋 {name}が新規で5%を届け出た{rec['n']}銘柄、3ヶ月後は平均{rec['mean']:+.1f}%（勝率{rec['win_rate']:.0f}%）",
         f"同期間の全開示平均は{overall['mean']:+.1f}%なので、明確に{direction}。",
@@ -219,7 +234,7 @@ def main() -> int:
     print(f"[x_filer_record] 全体 n={overall['n']} 平均{overall['mean']:+.1f}% "
           f"中央値{overall['median']:+.1f}% 勝率{overall['win_rate']:.1f}%")
 
-    ranked = rank_filers(rows)
+    ranked = rank_filers(rows, overall)
     if args.list:
         print(f"\n{'提出者':<44}{'n':>5}{'平均':>9}{'勝率':>8}")
         for f in ranked:
