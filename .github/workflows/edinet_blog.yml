@@ -70,13 +70,19 @@ jobs:
           echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> ~/stock-alert/.env
           echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> ~/stock-alert/.env
 
+      # 以降のステップは continue-on-error で「落ちても後続は動かす」が、最後の
+      # 「パイプラインの結果を判定」で outcome を集計してジョブ自体は赤くする。
+      # 全部 continue-on-error だけにしていたため run が常に success になり、
+      # 開示が1件も保存できていない日もワークフローは緑だった（2026-08-26）。
       - name: EDINET大量保有スキャン＋突合（イベント蓄積）
+        id: scan
         continue-on-error: true
         run: cd ~/stock-alert && python tools/scan_large_holdings.py --days 2
 
       # スキャンで増えた開示にも銘柄ランキング(/trending)の推定売買金額を付ける。
       # 株価・発行済株式数の更新分は daily_alert.yml Step 2e が拾う。
       - name: 推定売買金額ビュー更新（Supabase）
+        id: amounts
         continue-on-error: true
         run: cd ~/stock-alert && python tools/refresh_holding_amounts.py
 
@@ -88,6 +94,7 @@ jobs:
       # 自社株買い決定（TDnet）の記事化。取得枠は daily_alert.yml Step 2f2 と x_post.yml(buyback) が
       # tdnet_buybacks に抽出済み。ここでは当日分の取りこぼしを拾うため抽出も先に回す。
       - name: 自社株買い取得枠の抽出（tdnet_buybacks）
+        id: tdnet
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_tdnet.py --days 1 --catalyst-only && python tools/enrich_buybacks.py --days 2
 
@@ -103,6 +110,7 @@ jobs:
       # 開示だけを古い順に拾う。1便あたりの投稿数は BACKFILL_MAX_ARTICLES で絞る（API課金と
       # 古い記事が一度に並ぶのを避けるため）。
       - name: 取りこぼし記事のbackfill（1日1回・直近30日）
+        id: backfill
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 12 * * 1-5'
         continue-on-error: true
         env:
@@ -125,26 +133,37 @@ jobs:
       # 遡りを30日にしているのは、その日の便で回収し損ねた重複が永久に残るのを防ぐため
       # （既定の3日だと翌々日以降は二度と見に行かない）。旧世代の重複は --all で手動回収する。
       - name: 重複記事クリーンアップ
+        id: cleanup
         continue-on-error: true
         run: cd ~/stock-alert && python tools/cleanup_duplicate_blog_articles.py --days 30 --delete
 
-      # 各投稿ステップは continue-on-error で後続を止めないようにしてあるが、そのままだと
-      # 記事が1件も出ていない便もジョブは緑で終わる（2026-08-24: ANTHROPIC_API_KEYの月間上限に
-      # 達し、全便が「0件処理しました」でsuccessのまま丸1日気付けなかった）。
-      # クリーンアップまで走らせた後にoutcomeを集約し、ジョブ自体を失敗させる。
-      - name: 記事化の失敗を検知（候補ありで投稿0件ならジョブを失敗させる）
+      # 個々のステップは continue-on-error で握られているので、ここで outcome を集計して
+      # ジョブを赤くする（2026-08-24: ANTHROPIC_API_KEYの月間上限に達し、全便が
+      # 「0件処理しました」でsuccessのまま丸1日気付けなかった）。記事化に到達した候補が
+      # あるのに投稿0件だった便は publish_ledger が終了コード4を返すのでここで赤くなる。
+      # 各スクリプトは原因つきのLINEを自分で送るので、この判定は「赤くする」ことが役目。
+      - name: パイプラインの結果を判定
         if: always()
         run: |
-          FAILED=0
-          if [ "${{ steps.publish_edinet.outcome }}" = "failure" ]; then
-            echo "::error::EDINET記事の生成・投稿が失敗しています（記事化に到達した候補があるのに投稿0件）"
-            FAILED=1
+          failed=""
+          for s in "スキャン:${{ steps.scan.outcome }}" \
+                   "推定売買金額:${{ steps.amounts.outcome }}" \
+                   "ブログ生成:${{ steps.publish_edinet.outcome }}" \
+                   "自社株買い抽出:${{ steps.tdnet.outcome }}" \
+                   "自社株買い記事:${{ steps.publish_buyback.outcome }}" \
+                   "backfill:${{ steps.backfill.outcome }}" \
+                   "重複クリーンアップ:${{ steps.cleanup.outcome }}"; do
+            name="${s%%:*}"; outcome="${s##*:}"
+            if [ "$outcome" = "failure" ]; then
+              echo "::error::$name が失敗しました"
+              failed="$failed $name"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "失敗したステップ:$failed"
+            exit 1
           fi
-          if [ "${{ steps.publish_buyback.outcome }}" = "failure" ]; then
-            echo "::error::自社株買い記事の生成・投稿が失敗しています（記事化に到達した候補があるのに投稿0件）"
-            FAILED=1
-          fi
-          exit $FAILED
+          echo "全ステップ正常"
 
       # ジョブが落ちたら必ずLINEへ。ワークフローの赤は誰も見ていないという前提で運用する。
       - name: 失敗をLINE通知

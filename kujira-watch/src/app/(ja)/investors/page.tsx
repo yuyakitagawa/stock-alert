@@ -14,6 +14,7 @@ import {
   formatSignedPercent,
   type FilerReturnBrief,
 } from "@/lib/investorReturns";
+import { getPublishedFilerNames } from "@/lib/publishedPages";
 import { getArticleList } from "@/lib/microcms";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
@@ -101,7 +102,7 @@ export default async function InvestorsPage({ searchParams }: Props) {
 }
 
 async function InvestorsBody({ searchParams }: Props) {
-  const [{ category, page }, filers, returnByFiler, { contents: latestArticles }] =
+  const [{ category, page }, allFilers, returnByFiler, { contents: latestArticles }, publishedFilers] =
     await Promise.all([
       searchParams,
       getAllFilers(),
@@ -112,7 +113,10 @@ async function InvestorsBody({ searchParams }: Props) {
       getFilerReturnMap().catch((): Record<string, FilerReturnBrief> => ({})),
       // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
       getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
+      getPublishedFilerNames(),
     ]);
+  // 解説文が無く開示も1件だけの投資家のページは公開していない（404）ので一覧にも出さない。
+  const filers = allFilers.filter((f) => publishedFilers.has(f.filerName));
 
   const counts = new Map<DealType, number>();
   for (const filer of filers) {

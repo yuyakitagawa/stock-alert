@@ -3,15 +3,14 @@ import {
   getAboutUpdatedAtForSitemap,
   getAllArticlesForSitemap,
 } from "@/lib/microcms";
-import { getAllFilers, getFilersWithProfile, investorPath } from "@/lib/investors";
+import { getAllFilers, investorPath } from "@/lib/investors";
 import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import {
-  isIndexableDatePage,
-  isIndexableInvestorPage,
-  isIndexableStockPage,
-} from "@/lib/pageIndexability";
-import { getStockDescriptionCodes } from "@/lib/companyInfo";
+  getPublishedDates,
+  getPublishedFilerNames,
+  getPublishedStockCodes,
+} from "@/lib/publishedPages";
 import { CATEGORIES } from "@/types/article";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
 
@@ -81,16 +80,6 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
   ];
 }
 
-// キー（銘柄コード・取引日など）ごとの記事本数。インデックス判定に使う。
-function countBy<T>(items: T[], keyOf: (item: T) => string): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    const key = keyOf(item);
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
-}
 
 // キー（銘柄コード・取引日など）ごとの記事の最新取引日(=EDINET開示日)。
 // 銘柄・日別・月別ページの<lastmod>に使う。
@@ -109,41 +98,35 @@ function latestDealDateBy<T extends { dealDate: string }>(
 }
 
 async function stockEntries(): Promise<MetadataRoute.Sitemap> {
-  const [articles, describedCodes] = await Promise.all([
+  const [articles, publishedCodes] = await Promise.all([
     getAllArticlesForSitemap(),
-    getStockDescriptionCodes(),
+    getPublishedStockCodes(),
   ]);
   const latestByStock = latestDealDateBy(articles, (a) => a.stockCode);
-  const countByStock = countBy(articles, (a) => a.stockCode);
-  // 記事が乏しい銘柄はページ側でnoindexにしているのでサイトマップからも外す。
-  const indexable = (code: string, counts: Map<string, number>) =>
-    isIndexableStockPage({
-      articleCount: counts.get(code) ?? 0,
-      hasCompanyDescription: describedCodes.has(code),
-    });
-  return [
-    ...[...latestByStock.entries()]
-      .filter(([code]) => indexable(code, countByStock))
-      .map(([code, lastModified]) => ({
-        url: `${SITE_URL}/stocks/${code}`,
-        lastModified,
-      })),
-  ];
+  // 記事が乏しい銘柄のページは公開していない（404）のでサイトマップからも外す。
+  return [...latestByStock.entries()]
+    .filter(([code]) => publishedCodes.has(code))
+    .map(([code, lastModified]) => ({
+      url: `${SITE_URL}/stocks/${code}`,
+      lastModified,
+    }));
 }
 
 async function dateEntries(): Promise<MetadataRoute.Sitemap> {
-  const articles = await getAllArticlesForSitemap();
+  const [articles, publishedDates] = await Promise.all([
+    getAllArticlesForSitemap(),
+    getPublishedDates(),
+  ]);
   const latestByDate = latestDealDateBy(articles, (a) => a.dealDate.slice(0, 10));
   const latestByMonth = latestDealDateBy(articles, (a) => a.dealDate.slice(0, 7));
-  const countByDate = countBy(articles, (a) => a.dealDate.slice(0, 10));
   return [
     ...[...latestByMonth.entries()].map(([month, lastModified]) => ({
       url: `${SITE_URL}/monthly/${month}`,
       lastModified,
     })),
-    // 開示が数件しかない日はページ側でnoindexにしているのでサイトマップからも外す。
+    // 開示が数件しかない日のページは公開していない（404）のでサイトマップからも外す。
     ...[...latestByDate.entries()]
-      .filter(([date]) => isIndexableDatePage(countByDate.get(date) ?? 0))
+      .filter(([date]) => publishedDates.has(date))
       .map(([date, lastModified]) => ({
         url: `${SITE_URL}/date/${date}`,
         lastModified,
@@ -154,19 +137,14 @@ async function dateEntries(): Promise<MetadataRoute.Sitemap> {
 // 投資家ページ2,972件のうち、解説文が無いものが2,152件・開示1件だけが1,002件あり、
 // 大半はEDINETの数行を表に起こしただけの定型ページになる。開示が複数あって推移が読め、
 // かつ解説文があるものだけを載せる（判定は lib/pageIndexability.ts、ページ側と共通）。
-// 除外した投資家のページ自体は残す（noindex,followなので内部リンクからは辿れる）。
+// 除外した投資家のページは公開していない（404）。内部リンクも同じ判定で出し分けている。
 async function investorEntries(): Promise<MetadataRoute.Sitemap> {
-  const [filers, filersWithProfile] = await Promise.all([
+  const [filers, publishedFilers] = await Promise.all([
     getAllFilers(),
-    getFilersWithProfile(),
+    getPublishedFilerNames(),
   ]);
   return filers
-    .filter((filer) =>
-      isIndexableInvestorPage({
-        holdingCount: filer.holdingCount,
-        hasProfile: filersWithProfile.has(filer.filerName),
-      })
-    )
+    .filter((filer) => publishedFilers.has(filer.filerName))
     .map((filer) => ({
       url: `${SITE_URL}${investorPath(filer.filerId, filer.filerName)}`,
       lastModified: filer.latestDiscDate,

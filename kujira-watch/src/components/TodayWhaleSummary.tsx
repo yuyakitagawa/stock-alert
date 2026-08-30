@@ -13,6 +13,7 @@ import { formatDate, formatDealAmount } from "@/lib/format";
 // ことが一目で分かるようにする（Discover・リピーター向けの鮮度表示）。
 export default function TodayWhaleSummary({
   date,
+  href,
   count,
   buyCount,
   buyAmount,
@@ -21,6 +22,8 @@ export default function TodayWhaleSummary({
   disclosuresFixed,
 }: {
   date: string;
+  /** 取引日ページへのリンク。開示が少なくページを公開していない日はnull（lib/publishedPages.ts）。 */
+  href: string | null;
   count: number;
   buyCount: number;
   buyAmount: number;
@@ -28,14 +31,13 @@ export default function TodayWhaleSummary({
   sellAmount: number;
   disclosuresFixed: boolean;
 }) {
-  const dateOnly = date.slice(0, 10);
   const bigNumberSx = { fontWeight: 700, lineHeight: 1.1, fontSize: { xs: "1.5rem", sm: "1.75rem" } } as const;
   return (
     <Card
       variant="outlined"
       sx={{ mb: 4, borderTop: 2, borderBottom: 2, borderLeft: 0, borderRight: 0, borderColor: "primary.main", borderRadius: 0 }}
     >
-      <CardActionArea component={Link} href={`/date/${dateOnly}`} sx={{ py: 2, px: { xs: 0, sm: 0 } }}>
+      <Inner href={href}>
         {/* 「今日の〜」だと日付をまたいで見たときに実態とずれるため、データの開示日を主語にする。 */}
         <Typography variant="overline" sx={{ color: "brand.blue" }}>
           {formatDate(date)}の大口取引
@@ -64,16 +66,28 @@ export default function TodayWhaleSummary({
             <Typography variant="body2" sx={{ color: "text.secondary" }}>{sellCount}件</Typography>
           </Box>
         </Box>
-        <Typography variant="overline" sx={{ display: "block", mt: 1, color: "brand.blue" }}>
-          この日の開示をすべて見る ›
-        </Typography>
+        {href && (
+          <Typography variant="overline" sx={{ display: "block", mt: 1, color: "brand.blue" }}>
+            この日の開示をすべて見る ›
+          </Typography>
+        )}
         {/* デイトレ層向けの鮮度表示: 何時に今日の開示が載るのかをTOPで明示する（edinet_blog.ymlの毎時実行に対応） */}
         <Typography variant="caption" sx={{ display: "block", mt: 0.5, color: "text.secondary" }}>
           {disclosuresFixed
             ? "この日の開示は確定（EDINETの受付は17時15分で終了）"
             : "受付中。新着開示は平日9時〜19時ごろに毎時自動更新"}
         </Typography>
-      </CardActionArea>
+      </Inner>
     </Card>
+  );
+}
+
+// 取引日ページを公開していない日はカード全体をクリックさせない（404へ飛ばさない）。
+function Inner({ href, children }: { href: string | null; children: React.ReactNode }) {
+  if (!href) return <Box sx={{ py: 2 }}>{children}</Box>;
+  return (
+    <CardActionArea component={Link} href={href} sx={{ py: 2, px: { xs: 0, sm: 0 } }}>
+      {children}
+    </CardActionArea>
   );
 }

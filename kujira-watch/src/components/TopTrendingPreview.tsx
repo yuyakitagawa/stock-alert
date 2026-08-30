@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getHoldingAmountsInRange, getHoldingsInRange } from "@/lib/investors";
 import { buildTrendingIssuers, selectDirection } from "@/lib/trendingStats";
+import { getPublishedStockCodes } from "@/lib/publishedPages";
 
 // TOPの本文に、銘柄ランキング(/trending)の上位だけを抜き出して置く。
 //
@@ -27,9 +28,11 @@ export default async function TopTrendingPreview() {
   const rangeTo = daysAgo(0);
 
   // TOPは最も見られるページなので、この枠が取れなくても本体（記事一覧）は必ず出す。
-  const [rows, amountByDocId] = await Promise.all([
+  const [rows, amountByDocId, publishedCodes] = await Promise.all([
     getHoldingsInRange(rangeFrom, rangeTo).catch(() => []),
     getHoldingAmountsInRange(rangeFrom, rangeTo).catch(() => ({})),
+    // 銘柄ページを公開していない銘柄はリンクにしない（lib/publishedPages.ts）。
+    getPublishedStockCodes().catch(() => new Set<string>()),
   ]);
   const top = selectDirection(buildTrendingIssuers(rows, currentFrom, amountByDocId), "both").slice(
     0,
@@ -50,9 +53,13 @@ export default async function TopTrendingPreview() {
         {top.map((entry, i) => (
           <li key={entry.key} className="flex items-baseline gap-2 text-sm">
             <span className="w-4 shrink-0 font-bold text-foreground/40">{i + 1}</span>
-            <Link href={`/stocks/${entry.key}`} className="text-brand-blue hover:underline">
-              {entry.label}
-            </Link>
+            {publishedCodes.has(entry.key) ? (
+              <Link href={`/stocks/${entry.key}`} className="text-brand-blue hover:underline">
+                {entry.label}
+              </Link>
+            ) : (
+              <span>{entry.label}</span>
+            )}
             <span className="ml-auto shrink-0 text-foreground/70">
               {entry.count}件
               {entry.amount > 0 && ` / 約${Math.round(entry.amount).toLocaleString()}億円`}

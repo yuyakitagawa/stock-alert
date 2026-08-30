@@ -6,6 +6,7 @@ import TodayWhaleSummary from "@/components/TodayWhaleSummary";
 import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
+import { dateHref, getPublishedDates } from "@/lib/publishedPages";
 import { formatDate, isSellArticle } from "@/lib/format";
 import { areDisclosuresFixed } from "@/lib/jst";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -26,6 +27,9 @@ export default async function HomePage() {
   const { contents: latestDayArticles } = latestDealDate
     ? await getArticlesByDealDate(latestDealDate.slice(0, 10))
     : { contents: [] };
+  // 取引日ページは開示が少ない日を公開していない（404）。リンクにするかは共通判定で決める。
+  const latestDateHref = latestDealDate ? await dateHref(latestDealDate) : null;
+  const publishedDates = [...(await getPublishedDates().catch(() => new Set<string>()))];
   const latestDaySell = latestDayArticles.filter((a) => isSellArticle(a.tags));
   const latestDayBuy = latestDayArticles.filter((a) => !isSellArticle(a.tags));
   const sumAmount = (list: typeof latestDayArticles) => list.reduce((sum, a) => sum + a.dealAmount, 0);
@@ -72,6 +76,7 @@ export default async function HomePage() {
           {latestDealDate && latestDayArticles.length > 0 && (
             <TodayWhaleSummary
               date={latestDealDate}
+              href={latestDateHref}
               count={latestDayArticles.length}
               buyCount={latestDayBuy.length}
               buyAmount={sumAmount(latestDayBuy)}
@@ -106,6 +111,7 @@ export default async function HomePage() {
             initialArticles={contents}
             totalCount={totalCount}
             excludeIds={featuredIds}
+            publishedDates={publishedDates}
           />
         </>
       )}

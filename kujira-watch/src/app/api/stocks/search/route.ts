@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { searchStocks } from "@/lib/microcms";
 import { searchStockMaster } from "@/lib/companyInfo";
 import { getAllFilers } from "@/lib/investors";
+import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
 
 // ヘッダーの検索ボックス(StockSearch)から叩かれる。銘柄は企業名 or 証券コードの部分一致、
 // 投資家はEDINET提出者名の部分一致で検索する。
@@ -21,22 +22,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ results: [], investors: [] });
   }
 
-  const [articleHits, masterHits, filers] = await Promise.all([
+  const [articleHits, masterHits, filers, publishedCodes, publishedFilers] = await Promise.all([
     searchStocks(q),
     // マスター検索が落ちても記事側の結果は返す（逆も同様）。
     searchStockMaster(q).catch(() => []),
     // 投資家検索はSupabase障害時も銘柄検索を止めないよう、失敗は空配列に落とす。
     getAllFilers().catch(() => []),
+    // 薄い集約ページは公開していない（404）ので検索結果にも出さない（lib/publishedPages.ts）。
+    getPublishedStockCodes().catch(() => new Set<string>()),
+    getPublishedFilerNames().catch(() => new Set<string>()),
   ]);
 
   const byCode = new Map<string, { stockCode: string; stockName: string }>();
   for (const hit of [...articleHits, ...masterHits]) {
+    if (!publishedCodes.has(hit.stockCode)) continue;
     if (!byCode.has(hit.stockCode)) byCode.set(hit.stockCode, hit);
   }
   const results = Array.from(byCode.values()).slice(0, MAX_STOCK_RESULTS);
 
   const investors = filers
-    .filter((f) => f.filerName.includes(q))
+    .filter((f) => f.filerName.includes(q) && publishedFilers.has(f.filerName))
     .slice(0, MAX_INVESTOR_RESULTS)
     .map(({ filerName, filerId, category }) => ({ filerName, filerId, category }));
 
