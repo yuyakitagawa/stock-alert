@@ -103,12 +103,16 @@
 /* ===== タイポグラフィスケール =====
    和文は同じサイズでも欧文より字面が大きく、Tailwind既定の行間では詰まって見える。
    サイズが上がるほど行間比率を下げ、字間を締める（見出しほどブロックとして締まる）
-   という一般的な組版の原則に沿ってペアで定義する。text-2xs は従来6箇所に直書き
-   されていた 0.6875rem（バッジ・キッカー）を吸収するために追加した。 */
+   という一般的な組版の原則に沿ってペアで定義する。text-2xs は直書きされていた
+   0.6875rem（バッジ・キッカー・注記・チャートの軸ラベル）を吸収するために追加した。
+
+   スケールが持つのはサイズと行間だけで、字間は「サイズ」ではなく「様式」なので別トークン
+   （--tracking-label / --tracking-kicker）に分ける。当初 text-2xs に 0.08em を焼き込んで
+   いたが、そうすると同じ11pxでも字間の要らない数値ラベルでスケールを使えず、
+   text-[11px] のような任意値がコード中に残る原因になった。 */
 @theme {
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1.5;
-  --text-2xs--letter-spacing: 0.08em;
 
   --text-xs: 0.75rem;
   --text-xs--line-height: 1.6;
@@ -141,6 +145,10 @@
 
   /* 角丸スケール。導入前は rounded / -sm / -md / -lg / -xl と CSS直書きの 6px が
      混在していた。md(6px) をカード・ボタンの既定とし、他はその倍数系で持つ。 */
+  /* 字間の様式トークン。バッジ・タグ=label、キッカー=kicker。 */
+  --tracking-label: 0.08em;
+  --tracking-kicker: 0.14em;
+
   --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -158,7 +166,7 @@ body {
 .kicker {
   font-size: var(--text-2xs);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-kicker);
   text-transform: uppercase;
 }
 

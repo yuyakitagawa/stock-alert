@@ -200,7 +200,7 @@ export default async function BuybacksPage() {
                           </span>
                         )}
                         {d.willCancel && (
-                          <span className="rounded-sm bg-brand-navy/10 px-1.5 py-0.5 text-2xs font-bold text-brand-navy">
+                          <span className="rounded-sm bg-brand-navy/10 px-1.5 py-0.5 text-2xs font-bold tracking-label text-brand-navy">
                             消却
                           </span>
                         )}

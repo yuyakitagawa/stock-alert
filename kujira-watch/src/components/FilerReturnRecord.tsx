@@ -27,7 +27,7 @@ function Stat({
   const color = tone === "gain" ? "text-gain" : tone === "loss" ? "text-loss" : "text-ink-secondary";
   return (
     <div>
-      <dt className="text-[11px] text-ink-muted">{label}</dt>
+      <dt className="text-2xs text-ink-muted">{label}</dt>
       <dd className={`m-0 mt-0.5 text-sm font-bold tabular-nums ${color}`}>
         {value}
         {note && <span className="ml-1 text-xs font-normal text-ink-tertiary">{note}</span>}
@@ -63,7 +63,7 @@ export default async function FilerReturnRecord({ filerName }: { filerName: stri
           />
         )}
       </dl>
-      <p className="mb-0 mt-3 text-[11px] leading-relaxed text-ink-muted">
+      <p className="mb-0 mt-3 text-2xs leading-relaxed text-ink-muted">
         買い増し・新規取得の開示1件ごとに、開示日（休場の場合は直後の営業日）の終値から
         {RETURN_TRADING_DAYS}営業日後の終値までの騰落率を計算し、等ウェイトで平均した値です。
         対象は{formatDate(row.firstBuyDate)}〜{formatDate(row.latestBuyDate)}の開示で、

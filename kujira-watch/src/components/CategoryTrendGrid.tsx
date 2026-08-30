@@ -182,7 +182,7 @@ export default function CategoryTrendGrid({
                 {weeks.map((w) => (
                   <TableCell key={w.weekStart} align="right" sx={{ color: w.isPartial ? "text.disabled" : "text.secondary", whiteSpace: "nowrap" }}>
                     {w.axisLabel}〜
-                    <span className="block text-[0.625rem] font-normal">買い / 売り</span>
+                    <span className="block text-2xs font-normal">買い / 売り</span>
                   </TableCell>
                 ))}
               </TableRow>
@@ -200,7 +200,7 @@ export default function CategoryTrendGrid({
                       <span style={{ color: cell.sellCount > 0 ? "var(--loss)" : undefined }}>
                         {cell.sellCount > 0 ? shortAmount(cell.sellAmount) : "–"}
                       </span>
-                      <span className="block text-[0.625rem] text-ink-secondary">
+                      <span className="block text-2xs text-ink-secondary">
                         {cell.buyCount + cell.sellCount}件
                       </span>
                     </TableCell>

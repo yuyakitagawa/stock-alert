@@ -26,7 +26,7 @@ export default function FactBox({ facts, caption }: { facts: Fact[]; caption?: s
                 : "text-ink-secondary";
           return (
             <div key={fact.label}>
-              <dt className="text-[11px] text-ink-muted">{fact.label}</dt>
+              <dt className="text-2xs text-ink-muted">{fact.label}</dt>
               <dd className={`m-0 mt-0.5 text-sm font-bold tabular-nums ${color}`}>
                 {fact.value}
                 {fact.note && (
@@ -37,7 +37,7 @@ export default function FactBox({ facts, caption }: { facts: Fact[]; caption?: s
           );
         })}
       </dl>
-      {caption && <p className="mb-0 mt-3 text-[11px] leading-relaxed text-ink-muted">{caption}</p>}
+      {caption && <p className="mb-0 mt-3 text-2xs leading-relaxed text-ink-muted">{caption}</p>}
     </section>
   );
 }

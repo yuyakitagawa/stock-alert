@@ -34,7 +34,7 @@ export default async function TopReturnPreview() {
       <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
         この日の買い開示{cohort.count}件を、開示日の終値で買って3ヶ月（63営業日）持ったと仮定すると、
         {formatDate(cohort.date3m)}時点で平均
-        <span className={cohort.avgReturn >= 0 ? "font-bold text-brand-blue" : "font-bold text-red-600"}>
+        <span className={cohort.avgReturn >= 0 ? "font-bold text-gain" : "font-bold text-loss"}>
           {formatSignedPercent(cohort.avgReturn)}
         </span>
         ・勝率{cohort.winRate}%でした。内訳の上位3件は次のとおりです。
@@ -58,7 +58,7 @@ export default async function TopReturnPreview() {
             </span>
             <span
               className={`ml-auto shrink-0 font-medium ${
-                entry.ret3m >= 0 ? "text-brand-blue" : "text-red-600"
+                entry.ret3m >= 0 ? "text-gain" : "text-loss"
               }`}
             >
               {formatSignedPercent(entry.ret3m)}

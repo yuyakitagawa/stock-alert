@@ -24,10 +24,10 @@ function PricePoint({
   const up = point.close >= base.close;
   return (
     <div>
-      <dt className="text-[11px] text-ink-muted">
+      <dt className="text-2xs text-ink-muted">
         {label}（{formatDate(point.date)}）
       </dt>
-      <dd className={`m-0 mt-0.5 text-sm font-bold ${up ? "text-emerald-700" : "text-rose-700"}`}>
+      <dd className={`m-0 mt-0.5 text-sm font-bold ${up ? "text-gain" : "text-loss"}`}>
         {changePct(base.close, point.close)}
         <span className="ml-1 text-xs font-normal text-ink-tertiary">
           {Math.round(point.close).toLocaleString("ja-JP")}円
@@ -65,7 +65,7 @@ export default async function PriceAfterDisclosure({
       <h2 className="text-sm font-bold text-brand-navy">開示後の株価推移</h2>
       <dl className="m-0 mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         <div>
-          <dt className="text-[11px] text-ink-muted">基準終値（{formatDate(base.date)}）</dt>
+          <dt className="text-2xs text-ink-muted">基準終値（{formatDate(base.date)}）</dt>
           <dd className="m-0 mt-0.5 text-sm font-bold text-ink-secondary">
             {Math.round(base.close).toLocaleString("ja-JP")}円
           </dd>
@@ -75,12 +75,12 @@ export default async function PriceAfterDisclosure({
         ))}
         {pending.map(({ label, note }) => (
           <div key={label}>
-            <dt className="text-[11px] text-ink-muted">{label}</dt>
+            <dt className="text-2xs text-ink-muted">{label}</dt>
             <dd className="m-0 mt-0.5 text-xs font-normal text-ink-muted">{note}に表示</dd>
           </div>
         ))}
       </dl>
-      <p className="mb-0 mt-3 text-[11px] leading-relaxed text-ink-muted">
+      <p className="mb-0 mt-3 text-2xs leading-relaxed text-ink-muted">
         開示日（開示日が休場の場合は直後の営業日）の終値を基準にした騰落率です。1ヶ月後=21営業日後・3ヶ月後=63営業日後。終値ベースの参考値であり、将来の値動きを示すものではありません。
       </p>
     </section>

@@ -280,8 +280,8 @@ async function InvestorsBody({ searchParams }: Props) {
                       <span
                         className={
                           record.avgReturn >= 0
-                            ? "font-medium text-brand-blue"
-                            : "font-medium text-red-600"
+                            ? "font-medium text-gain"
+                            : "font-medium text-loss"
                         }
                       >
                         平均{formatSignedPercent(record.avgReturn)}
