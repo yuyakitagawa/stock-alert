@@ -297,10 +297,13 @@ def test_prompt_forbids_takeover_wording():
 
 def test_generate_script_drops_scene_that_stays_broken_instead_of_the_video():
     """1シーンの読み上げ文が直らないだけで動画を丸ごと諦めると、その日の投稿が飛ぶ
-    （2026-08-19・20と2日続けて0件になった）。会社説明はシーンごと落として動画は出す。"""
+    （2026-08-19・20と2日続けて0件になった）。定型文に組み直せないシーンは落として動画は出す。"""
     import json as _json
+    # 落とす対象はDROPPABLE_KINDS。SECTION_SPECの並びは維持率を見て変えるので位置で決め打ちしない
+    target = next(k for k, _ in bs.SECTION_SPEC if k in bs.DROPPABLE_KINDS)
+    index = [k for k, _ in bs.SECTION_SPEC].index(target)
     data = _json.loads(_script_json())
-    data["sections"][0]["narration"] = "あ" * (bs.NARRATION_MAX_CHARS + 30)  # 句点なし→…で切れる
+    data["sections"][index]["narration"] = "あ" * (bs.NARRATION_MAX_CHARS + 30)  # 句点なし→…で切れる
     payload = _json.dumps(data, ensure_ascii=False)
     client = mock.Mock()
     client.messages.create.return_value = mock.Mock(content=[mock.Mock(text=payload)])
@@ -308,7 +311,7 @@ def test_generate_script_drops_scene_that_stays_broken_instead_of_the_video():
          mock.patch("anthropic.Anthropic", return_value=client):
         script = bs.generate_script({"title": "t", "body": "<p>b</p>", "tags": ""})
     assert script is not None
-    assert "company" not in [sc["kind"] for sc in script["scenes"]]
+    assert target not in [sc["kind"] for sc in script["scenes"]]
     assert all(not bs.is_broken_narration(sc["narration"]) for sc in script["scenes"])
 
 

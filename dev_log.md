@@ -2190,3 +2190,21 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   オーナーの選択で今回の対象外。
 - 検証: `npx tsc --noEmit` 成功、テスト全715件pass（`tests/test_youtube_analytics.py` 5件、
   `tests/test_video_pipeline.py` に3件を追加）。
+
+## 2026-08-30 維持率の実測にもとづき、動画のシーン順を入れ替えた
+- 根拠（同日の初回実測、8本）: 3秒残存91〜99%で**hookは落ちていない**。落ちるのは5〜10秒で、
+  最急の落ち込みが尺の7〜23%＝実時間5〜9秒に8本とも集中。これは hook（約5.4秒）が終わって
+  第2シーンに入る境目で、そこに `company`（会社の事業内容＝開示の続報ではなく背景説明）を
+  置いていた。
+- 変更: `SECTION_SPEC` を `company→deal→filer→change` から **`filer→change→deal→company`** へ。
+  続報（誰が→前回からどう動いたか）を前に、背景説明（何の会社か）を後ろに回す。
+  `deal`（金額・保有比率）はv7のhookが既に金額も比率も言っているため中盤へ下げた。
+- 2番目を `change` ではなく `filer` にした理由: `change` は前回比率が取れない回にシーンごと
+  落ちる（v7 rank8）ため、測りたい枠が回によって別のシーンになり比較にならない。
+  `filer` は実写背景が付く2シーンの片方（`background.VIDEO_BG_KINDS`）でもあり、hook直後に絵が変わる。
+- 効果は事前に検証できない（バックテストの効く領域ではない）。次便以降の10秒残存率を
+  `video/youtube_metrics.py --report` で追い、5〜9秒の落ち込みが浅くなるかで判定する。
+  基準値は変更前8本の10秒残存53〜75%（45秒以下4本に限れば56〜75%）。
+- テスト: 718件pass。`test_generate_script_drops_scene_that_stays_broken_instead_of_the_video` が
+  `sections[0]`＝companyを決め打ちしていたので、`SECTION_SPEC`と`DROPPABLE_KINDS`から
+  対象を引くように直した（並び順は今後も維持率を見て変えるため）。
