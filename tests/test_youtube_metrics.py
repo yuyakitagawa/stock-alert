@@ -154,3 +154,11 @@ if __name__ == "__main__":
                 print(f"FAIL  {name}: {e}")
     print(f"\n{'FAILED' if fails else 'PASSED'}: {fails} failure(s)")
     sys.exit(1 if fails else 0)
+
+
+def test_access_token_falls_back_to_oauth_without_service_account_key():
+    """gcp_key.json は .gitignore されていてCIには無い。日次収集をActionsで回すため、
+    鍵が無ければ投稿用のOAuthトークン（scopeにforce-sslを含む）へ落とす。"""
+    with mock.patch.object(y, "credentials_path", return_value="/nowhere/gcp_key.json"), \
+         mock.patch.object(y.youtube_client, "access_token", return_value="oauth-tok"):
+        assert y.access_token() == "oauth-tok"

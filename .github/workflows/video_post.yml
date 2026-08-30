@@ -6,6 +6,10 @@ on:
     # edinet_blog.yml（毎時 9:00-19:00 JST）が19:00の便で当日の記事とX日次サマリーを出し切った
     # あとに走らせ、当日の一番大きい開示を動画にする。YouTubeの夜プライム帯（19〜22時）の頭に乗せる。
     - cron: '30 10 * * 1-5'
+    # 毎日 11:00 JST（UTC 02:00）に成果の収集だけ。動画は作らない。
+    # 収集を手動実行のままにしていると、施策を変えた3日後に人間が思い出して叩く運用になる。
+    # YouTube Analytics は直近1〜2本の反映が遅れるので、毎日回して履歴で埋める。
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       render_only:
@@ -27,6 +31,8 @@ concurrency:
 
 jobs:
   render-and-post:
+    # 収集だけの便（毎日11:00 JST）ではレンダリングを走らせない。
+    if: github.event.schedule != '0 2 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -144,3 +150,56 @@ jobs:
           python -m lib.notify "🚨 Short Video Post（YouTube Shorts）が失敗しました" \
             --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --dedupe-key "wf_video_post_failed"
+
+  # 再生数・平均視聴率・視聴維持率カーブをSupabaseへ日次で積む（動画は作らない軽いジョブ）。
+  # 施策を変えたあと「何日後に人間が見に行くか」に依存しないよう、履歴として毎日残す。
+  collect-metrics:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install requests python-dotenv
+
+      - name: Link repo to ~/stock-alert
+        run: |
+          rm -f ~/stock-alert
+          ln -s $GITHUB_WORKSPACE ~/stock-alert
+
+      # サービスアカウント鍵(gcp_key.json)は .gitignore されていてCIには無い。
+      # youtube_metrics.access_token() が投稿用のOAuthトークンへ落ちる。
+      - name: Collect YouTube metrics
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: cd ~/stock-alert && python video/youtube_metrics.py --report
+
+      - name: 失敗をLINE通知
+        if: failure()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          pip install --quiet requests
+          python -c "
+          import os, requests
+          token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN'); user = os.getenv('LINE_USER_ID')
+          if token and user:
+              requests.post('https://api.line.me/v2/bot/message/push',
+                            headers={'Authorization': f'Bearer {token}'},
+                            json={'to': user, 'messages': [{'type': 'text',
+                                  'text': 'YouTube成果の日次収集が失敗しました（video_post.yml / collect-metrics）'}]},
+                            timeout=15)
+          "

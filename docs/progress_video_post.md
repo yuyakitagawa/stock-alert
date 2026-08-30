@@ -174,6 +174,8 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - [x] 実測を受けたシーン順の変更（2026-08-30）: `company→deal→filer→change` を
       **`filer→change→deal→company`** へ。5〜9秒の枠から背景説明を外し、続報を置く。
       2番目を change にしないのは、前回比率が取れない回に落ちて枠が変わるため
+- [x] 成果の収集を日次のActionsジョブに（`video_post.yml` の `collect-metrics`、毎日11:00 JST）。
+      人間が日付を覚えて叩く運用をやめる。鍵なし環境ではOAuthトークンへフォールバック
 - [ ] 次便以降の10秒残存率で判定する。基準値は変更前8本の53〜75%（45秒以下4本は56〜75%）
 
 ### 初回の実測（2026-08-30、9本中8本。直近1本はAnalytics側の反映待ち）

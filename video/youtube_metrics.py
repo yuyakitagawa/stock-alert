@@ -57,9 +57,15 @@ def credentials_path() -> str:
 
 
 def access_token() -> "str | None":
+    """公開統計を読むためのトークン。
+
+    ローカルはサービスアカウント（`gcp_key.json`）を使うが、この鍵は .gitignore されていて
+    CIには存在しない。投稿用のOAuthトークンは scope に `youtube.force-ssl` を含み
+    videos.list / channels.list / playlistItems.list を読めるので、鍵が無い環境では
+    そちらへ落とす（GitHub Actions で日次収集を回すために2026-08-30に追加）。"""
     path = credentials_path()
     if not os.path.exists(path):
-        return None
+        return youtube_client.access_token()
     from google.auth.transport.requests import Request
     from google.oauth2 import service_account
 
@@ -241,7 +247,8 @@ def main() -> int:
 
     token = access_token()
     if not token:
-        print(f"[youtube_metrics] サービスアカウント鍵が見つかりません: {credentials_path()}")
+        print("[youtube_metrics] サービスアカウント鍵もYouTubeのOAuth設定も無いため取得できません"
+              f"（鍵の想定パス: {credentials_path()}）")
         return 1
     try:
         channel = fetch_channel(token)

@@ -2288,3 +2288,17 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - テスト: 718件pass。`test_generate_script_drops_scene_that_stays_broken_instead_of_the_video` が
   `sections[0]`＝companyを決め打ちしていたので、`SECTION_SPEC`と`DROPPABLE_KINDS`から
   対象を引くように直した（並び順は今後も維持率を見て変えるため）。
+
+## 2026-08-30 YouTube成果の収集を日次のActionsジョブにした
+- きっかけ: オーナー指摘「3日後のリマインドって人間がしなきゃいけないの？」。`youtube_metrics.py` を
+  手動実行専用のまま置くと、施策を変えるたびに人間が日付を覚えて叩く運用になる。
+  YouTube Analytics は直近1〜2本の反映が遅れるので、その場で1回叩く形とも相性が悪い。
+- 変更: `video_post.yml` に cron `0 2 * * *`（毎日11:00 JST）と `collect-metrics` ジョブを追加。
+  レンダリングは走らせない軽いジョブで、`youtube_metrics.py --report` だけを実行して
+  Supabaseへ日次で積む。失敗はLINEへ通知する。既存の投稿ジョブはこの便では動かない
+  （`if: github.event.schedule != '0 2 * * *'`）。
+- 付随: `youtube_metrics.access_token()` が、サービスアカウント鍵（`gcp_key.json`、`.gitignore`済みで
+  CIには存在しない）が無い環境では投稿用のOAuthトークンへ落ちるようにした。
+  scopeに`youtube.force-ssl`が入ったので videos.list / channels.list / playlistItems.list を読める。
+  Actions側に新しいSecretを足さずに済む。
+- テスト: `tests/test_youtube_metrics.py` に鍵なしフォールバックの1件を追加（16件）。
