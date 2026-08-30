@@ -120,6 +120,44 @@ def test_correction_report_has_zero_deal_amount():
     assert fix["deal_amount"] == 0.0
 
 
+# ------------------------------------------------ 読まれていない記事の切り分け（GA4）
+
+def test_extract_article_ids_keeps_only_read_articles():
+    rows = [
+        {"dimensionValues": [{"value": "/articles/pnd1lz2fk"}], "metricValues": [{"value": "17"}]},
+        {"dimensionValues": [{"value": "/articles/zeropv"}], "metricValues": [{"value": "0"}]},
+        {"dimensionValues": [{"value": "/stocks/6976"}], "metricValues": [{"value": "22"}]},
+        {"dimensionValues": [{"value": "/"}], "metricValues": [{"value": "639"}]},
+    ]
+    assert m.extract_article_ids(rows) == {"pnd1lz2fk"}
+
+
+def test_extract_article_ids_strips_query_and_trailing_slash():
+    rows = [
+        {"dimensionValues": [{"value": "/articles/abc?utm_source=x"}], "metricValues": [{"value": "1"}]},
+        {"dimensionValues": [{"value": "/articles/def/"}], "metricValues": [{"value": "2"}]},
+        {"dimensionValues": [{"value": "/articles/ghi#top"}], "metricValues": [{"value": "3"}]},
+    ]
+    assert m.extract_article_ids(rows) == {"abc", "def", "ghi"}
+
+
+def test_extract_article_ids_survives_broken_rows():
+    rows = [
+        {"dimensionValues": [], "metricValues": []},
+        {"dimensionValues": [{"value": "/articles/ok"}], "metricValues": [{"value": "not-a-number"}]},
+        {"dimensionValues": [{"value": "/articles/good"}], "metricValues": [{"value": "4"}]},
+    ]
+    assert m.extract_article_ids(rows) == {"good"}
+
+
+def test_trafficked_article_ids_returns_none_without_ga4_credentials():
+    """PVが引けないまま「PV0だから削除」に進むと全記事が消える。取れなければNoneを返し、
+    呼び出し側が中止する。"""
+    with mock.patch.dict(os.environ, {"GA4_PROPERTY_ID": ""}, clear=False), \
+         mock.patch("tools.ga4_clicks.access_token", return_value=None):
+        assert m.trafficked_article_ids(28) is None
+
+
 def test_missing_holding_ratio_is_skipped():
     row = {**NEW_REPORT, "holding_ratio": None}
     assert m.corrected_values(_article(), row) is None

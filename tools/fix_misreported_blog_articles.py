@@ -44,7 +44,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
@@ -357,6 +357,54 @@ def build_fact_sheet(article: dict, fix: dict, filer_name: str) -> dict:
     }
 
 
+# GA4で「読まれている」と判定する期間（日）。この期間のPVが0の記事は、本文を直さずに削除する。
+TRAFFIC_DAYS = 28
+
+
+def trafficked_article_ids(days: int) -> "set | None":
+    """直近days日に1PV以上あった記事idの集合を返す。取れなければ None。
+
+    是正対象が数百本あり、本文の作り直しにはAnthropic APIか人手が要る。実測（2026-08-30）で
+    全1,119記事の28日PV合計は326・PVがあったのは135本だけだったため、読まれていない記事は
+    直さずに削除する（オーナー判断、2026-08-30）。誤った数字を載せたまま残すよりは消す。
+    ※GA4は人のアクセスだけを拾う。PV0はインデックスされていないことを意味しない。
+    """
+    from tools.ga4_clicks import _period_body, access_token, run_report
+
+    token = access_token()
+    property_id = os.getenv("GA4_PROPERTY_ID")
+    if not token or not property_id:
+        print("  ⚠ GA4の認証情報（gcp_key.json / GA4_PROPERTY_ID）が無くPVを引けません")
+        return None
+    end = date.today()
+    rows, err = run_report(token, property_id, _period_body(
+        ["pagePath"], ["screenPageViews"], end - timedelta(days=days), end, 5000))
+    if err:
+        print(f"  ⚠ GA4のPVが取れません → {err}")
+        return None
+    return extract_article_ids(rows)
+
+
+def extract_article_ids(rows: list) -> set:
+    """GA4の行から、PVが1以上あった記事idを抜き出す。"""
+    ids = set()
+    for r in rows:
+        dims = r.get("dimensionValues") or []
+        metrics = r.get("metricValues") or []
+        path = dims[0].get("value", "") if dims else ""
+        try:
+            views = float(metrics[0].get("value") or 0) if metrics else 0.0
+        except (TypeError, ValueError):
+            views = 0.0
+        if views <= 0 or not path.startswith("/articles/"):
+            continue
+        # クエリ文字列・末尾スラッシュ・サブパスを落として記事idだけにする
+        article_id = path[len("/articles/"):].split("?")[0].split("#")[0].strip("/").split("/")[0]
+        if article_id:
+            ids.add(article_id)
+    return ids
+
+
 def build_tags(article: dict, fix: dict) -> str:
     tag_list = ["EDINET", "自動生成"]
     if fix["is_correction"]:
@@ -375,6 +423,11 @@ def main():
                    help="本文を再生成せず、本文中の比率・変化幅・金額の数字だけを置換する"
                         "（Anthropic APIを呼ばない）。--keep-bodyより優先")
     p.add_argument("--delete", action="store_true", help="是正後に基準未満となる記事を削除する")
+    p.add_argument("--delete-untrafficked", action="store_true",
+                   help="GA4で直近--traffic-days日のPVが0の是正対象は、本文を直さず削除対象にする"
+                        "（実際に消すのは --apply --delete を併用したときだけ）")
+    p.add_argument("--traffic-days", type=int, default=TRAFFIC_DAYS,
+                   help=f"PVを見る期間（日）。既定{TRAFFIC_DAYS}日")
     p.add_argument("--backup", default=None, help="削除時のバックアップJSONの出力先")
     args = p.parse_args()
 
@@ -400,12 +453,24 @@ def main():
     if args.limit is not None:
         targets = targets[: args.limit]
 
+    trafficked = None
+    if args.delete_untrafficked:
+        trafficked = trafficked_article_ids(args.traffic_days)
+        if trafficked is None:
+            print("GA4のPVが取れないため --delete-untrafficked は実行できません（中止）")
+            return
+        print(f"直近{args.traffic_days}日にPVがあった記事: {len(trafficked)}本")
+
     updated, deleted, failed = 0, 0, []
     to_delete = []
     body_missed, body_conflicts = [], []
     for a, fix, filer_name in targets:
         code = str(a["stockCode"])
         name = a.get("stockName") or code
+        if trafficked is not None and a["id"] not in trafficked:
+            print(f"  🗑 {a['id']}: {name}({code}) 直近{args.traffic_days}日のPVが0 — 本文を直さず削除")
+            to_delete.append(a)
+            continue
         if fix["change"] == 0:
             print(f"  🗑 {a['id']}: {name}({code}) 前回開示から保有比率が動いていない"
                   f"（{fix['holding_ratio']}% → {fix['holding_ratio']}%）— 売買を伴わない開示")
