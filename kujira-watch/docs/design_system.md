@@ -215,7 +215,28 @@ TTFB 1.9秒まで悪化した経緯。dev_log 2026-08-15）。`.card-grid` / `.c
   この関数は `src/lib/format.ts` の `displayText()` と同じ規則の写しなので、**片方だけ変えないこと**。
   NFKCは使わない（全角括弧・句読点まで半角化して和文の見た目が崩れる）。
 
-## 8. やらないこと
+## 8. 検査
+
+```bash
+python3 tools/check_design_system.py
+```
+
+`kujira-watch/src` を走査し、次を違反として落とす。CI（`ci.yml`）でも同じものが走る。
+
+| 検出するもの | 直し方 |
+|---|---|
+| `text-foreground/NN` / `bg-foreground/NN` / `border-foreground/NN` | ink 4段・`bg-surface-*`・`border-rule*` へ |
+| `text-[...]` / `leading-[...]` / `tracking-[...]` / `rounded-[...]` / `shadow-[...]` | スケールの段へ。段が足りなければ**先にこの台帳へ足す** |
+| Tailwind標準色（`text-red-600` / `fill-emerald-600` など） | ブランドトークンへ。上昇/下落は `text-gain` / `text-loss` |
+| `.tsx` の `fontSize: "0.875rem"` のような直書き | `var(--text-*)` かMUIの typography variant へ |
+
+`src/theme.ts` だけ対象外。実値が並ぶのが正しい場所なので。
+
+> トークンを用意しても、コンポーネント側で場当たりの値を書けば意味が無い。実際、導入した
+> その日に任意値サイズ15箇所・Tailwind標準色6箇所・`bg-foreground/10` 4箇所が残っていた。
+> 目視とgrepでは取りこぼすので機械で落とす。
+
+## 9. やらないこと
 
 - 和文ウェブフォントの追加、装飾フォント、重いライブラリ・大画像（レンダリングブロッキングになる）
 - `.MuiButtonBase-root` への独自タップ演出の追加（`globals.css` の `:active` / `RippleEffect` と二重になる）
