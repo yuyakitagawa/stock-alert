@@ -20,6 +20,12 @@ ratio_change_pct() が「今回比率の全量＝新規取得」とみなし、
   tags           → 方向（売り）を付け直す
   body           → 誤った変化幅・金額・「実質的な新規保有」という記述を含むため既定で再生成
                    （--keep-body で据え置き。本文末尾の株価チャート<figure>は引き継ぐ）
+                   既定の再生成は Anthropic API を呼ぶ。--fix-body-numbers を付けると
+                   APIを呼ばず、本文中の比率・変化幅・金額の数字だけを置換する
+                   （2026-08-30の保有比率の合算バグの是正は対象が数百本あり、
+                    オーナー判断で非課金運用にした）。この経路では文章の言い回しは
+                   直らないので、「約半分を占める」のような規模の記述が新しい比率と
+                   食い違う記事を最後に一覧で出す
 
 是正後に is_indexable_article() の基準（推定3億円以上 または 変化1pt以上＝表示側のindex基準）を割る記事は、
 そもそも記事化すべきでなかったもの。--delete 指定時のみ、全フィールドをlogsへバックアップして
@@ -30,6 +36,8 @@ ratio_change_pct() が「今回比率の全量＝新規取得」とみなし、
     python3 tools/fix_misreported_blog_articles.py --limit 5        # 先頭5件だけ確認
     python3 tools/fix_misreported_blog_articles.py --apply          # microCMSを更新
     python3 tools/fix_misreported_blog_articles.py --apply --delete # 基準割れ記事の削除も行う
+    python3 tools/fix_misreported_blog_articles.py --fix-body-numbers          # dry-run（非課金）
+    python3 tools/fix_misreported_blog_articles.py --fix-body-numbers --apply  # 非課金で更新
 """
 import argparse
 import json
@@ -49,7 +57,7 @@ from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
 from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, MicroCMSPermissionError,
     build_article_titles, build_context_facts, classify_filer, estimate_deal_amount_oku,
-    disclosure_close_price, generate_article_body_checked, get_company_description,
+    disclosure_close_price, format_ratio, generate_article_body_checked, get_company_description,
     is_indexable_article, update_article,
 )
 
@@ -61,6 +69,102 @@ MISMATCH_TOLERANCE_PT = 0.01
 
 # (銘柄コード, 正規化した提出者名) → [(開示日, 保有比率)] 。fetch_disclosures()が組み立てる。
 HISTORY: dict = {}
+
+
+_TITLE_RATIO_RE = re.compile(r'保有比率(?:を)?([0-9]+(?:\.[0-9]+)?)%|([0-9]+(?:\.[0-9]+)?)%を新規保有')
+
+
+def _title_ratio(article: dict) -> "float | None":
+    """記事が見出しで主張している保有比率。記事側は比率をフィールドに持たないため
+    タイトル（決定的テンプレート）から読む。本文の置換で「旧値」として使う。"""
+    m = _TITLE_RATIO_RE.search(article.get("title") or "")
+    if not m:
+        return None
+    return float(m.group(1) or m.group(2))
+
+
+# ---- 本文の数字だけを差し替える（LLM不使用）----
+# 本文の再生成は generate_article_body_checked() 経由で Anthropic API を呼ぶ。
+# 比率の合算バグ（2026-08-30）の是正は対象が数百本あり、全部を引き直すと課金が発生するため、
+# 「本文に出ている数字を新しい値へ置換するだけ」の経路を用意する。オーナー判断で非課金運用。
+#
+# 置換できるのは本文が旧値をそのまま書いている場合だけ（実測2026-08-30: 直近14日の
+# 対象130本のうち127本＝98%が該当）。置換できなかった記事は数字が古いままなので、
+# 呼び出し側で件数を必ず出すこと。
+_SCALE_PHRASES = [
+    # (本文に出る言い回し, その言い回しが成り立つ保有比率の範囲)
+    # 比率が大きく動くと「約半分を占める」のような規模の記述が実態と食い違う。
+    # 数字を置換しても文章は直らないので、該当する記事は「本文の作り直しが要る」として
+    # 一覧に出す（このスクリプトでは直さない）。
+    ("過半", (50.0, 100.0)),
+    ("約半分", (40.0, 60.0)),
+    ("3分の1", (28.0, 38.0)),
+    ("4分の1", (22.0, 28.0)),
+    ("4割", (37.0, 43.0)),
+    ("3割", (28.0, 33.0)),
+    ("2割", (17.0, 23.0)),
+    ("1割", (8.0, 13.0)),
+]
+
+
+def _number_variants(value: float, unit: str) -> list:
+    """本文中に出うる表記のゆれを列挙する（末尾ゼロの有無で2通りになる）。"""
+    out = []
+    for text in (format_ratio(value), f"{value:g}"):
+        candidate = f"{text}{unit}"
+        if candidate not in out:
+            out.append(candidate)
+    return out
+
+
+def _replace_number(body: str, old_value, new_value, unit: str) -> "tuple[str, bool]":
+    if old_value is None or new_value is None:
+        return body, False
+    if abs(float(old_value) - float(new_value)) < 0.005:
+        return body, False
+    replacement = f"{format_ratio(float(new_value))}{unit}"
+    for variant in _number_variants(float(old_value), unit):
+        if variant in body:
+            return body.replace(variant, replacement), True
+    return body, False
+
+
+def rewrite_body_numbers(body: str, old: dict, new: dict) -> "tuple[str, list]":
+    """本文中の保有比率・変化幅・推定金額を新しい値へ置換する（LLM不使用）。
+
+    old/new は {"ratio": float, "change": float, "amount": float} 。
+    変化幅と金額は本文では符号を持たない（「1.22ポイント低下」）ため絶対値で比べる。
+
+    Returns: (置換後の本文, 置換できなかった項目名のリスト)
+    """
+    missed = []
+    for key, unit in (("ratio", "%"), ("change", "ポイント"), ("amount", "億円")):
+        old_value = old.get(key)
+        new_value = new.get(key)
+        if key in ("change", "amount"):
+            old_value = None if old_value is None else abs(float(old_value))
+            new_value = None if new_value is None else abs(float(new_value))
+        if old_value is None or new_value is None:
+            continue
+        if abs(float(old_value) - float(new_value)) < 0.005:
+            continue
+        body, done = _replace_number(body, old_value, new_value, unit)
+        if not done and unit == "ポイント":
+            # 「1.22pt」表記の本文もある
+            body, done = _replace_number(body, old_value, new_value, "pt")
+        if not done:
+            missed.append(key)
+    return body, missed
+
+
+def scale_phrase_conflicts(body: str, new_ratio: float) -> list:
+    """新しい保有比率と食い違う規模の言い回しを返す。空なら本文の記述と矛盾しない。"""
+    text = re.sub(r'<[^>]+>', '', body or "")
+    hits = []
+    for phrase, (low, high) in _SCALE_PHRASES:
+        if phrase in text and not (low <= new_ratio <= high):
+            hits.append(phrase)
+    return hits
 
 
 def normalize_filer(name: str) -> str:
@@ -267,6 +371,9 @@ def main():
     p.add_argument("--apply", action="store_true", help="実際にmicroCMSを更新する（無指定はdry-run）")
     p.add_argument("--limit", type=int, default=None, help="処理件数の上限（動作確認用）")
     p.add_argument("--keep-body", action="store_true", help="本文を再生成しない（構造化フィールドのみ是正）")
+    p.add_argument("--fix-body-numbers", action="store_true",
+                   help="本文を再生成せず、本文中の比率・変化幅・金額の数字だけを置換する"
+                        "（Anthropic APIを呼ばない）。--keep-bodyより優先")
     p.add_argument("--delete", action="store_true", help="是正後に基準未満となる記事を削除する")
     p.add_argument("--backup", default=None, help="削除時のバックアップJSONの出力先")
     args = p.parse_args()
@@ -295,6 +402,7 @@ def main():
 
     updated, deleted, failed = 0, 0, []
     to_delete = []
+    body_missed, body_conflicts = [], []
     for a, fix, filer_name in targets:
         code = str(a["stockCode"])
         name = a.get("stockName") or code
@@ -328,7 +436,33 @@ def main():
               f"{a.get('dealAmount')}億円→{fix['deal_amount']}億円")
         print(f"      {a.get('title')}\n   →  {titles['title']}")
 
-        if not args.keep_body:
+        if args.fix_body_numbers:
+            # LLMを呼ばずに本文中の数字だけ差し替える。文章の言い回しは触らないので、
+            # 規模を語る記述（「約半分を占める」等）が新しい比率と食い違う記事は
+            # ここでは直らない。件数を最後にまとめて出す。
+            rewritten, missed = rewrite_body_numbers(
+                a.get("body") or "",
+                {"ratio": _title_ratio(a), "change": a.get("ratioChangePct"),
+                 "amount": a.get("dealAmount")},
+                {"ratio": fix["holding_ratio"], "change": fix["signed_change"],
+                 "amount": fix["deal_amount"]},
+            )
+            # 置換できた項目だけでも本文へ反映する。1項目でも旧値が見つからないからと
+            # 本文ごと据え置くと、直せるはずの比率・金額まで古いまま残る。
+            if rewritten != (a.get("body") or ""):
+                payload["body"] = rewritten
+            if missed:
+                # 旧値が本文に無い＝その数字を本文が書いていない（言葉で書いている・
+                # そもそも触れていない）ケース。誤りが残っているとは限らないが、
+                # 機械では判断できないので件数を出して人が見る材料にする。
+                body_missed.append((a["id"], missed))
+                print(f"      ・本文に旧{'・'.join(missed)}の記載が無く置換なし")
+            conflicts = scale_phrase_conflicts(rewritten, fix["holding_ratio"])
+            if conflicts:
+                body_conflicts.append((a["id"], fix["holding_ratio"], conflicts))
+                print(f"      ⚠ 規模の記述 {conflicts} が新しい比率 "
+                      f"{fix['holding_ratio']}% と食い違う（本文の作り直しが必要）")
+        elif not args.keep_body:
             generated = generate_article_body_checked(fact_sheet) if args.apply else None
             if args.apply and generated is None:
                 print(f"      ⚠ 本文の再生成に失敗したため構造化フィールドのみ更新します")
@@ -349,6 +483,12 @@ def main():
         except MicroCMSPermissionError as e:
             print(f"      ⚠ 権限エラーのため中断: {e}")
             break
+
+    if args.fix_body_numbers:
+        print(f"\n本文の数字置換: 旧値が本文に無く置換なし{len(body_missed)}件 / "
+              f"規模の記述が新しい比率と食い違う（本文の作り直しが要る）{len(body_conflicts)}件")
+        for cid, ratio, phrases in body_conflicts[:20]:
+            print(f"  {cid}: 新しい比率{ratio}% に対して {phrases}")
 
     if to_delete:
         print(f"\n是正後に基準未満となる記事: {len(to_delete)}件")
