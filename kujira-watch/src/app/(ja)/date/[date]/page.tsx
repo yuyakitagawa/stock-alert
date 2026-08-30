@@ -142,11 +142,13 @@ export default async function DateArchivePage({ params }: Props) {
           <>
             <FeaturedArticleCard article={top} rank={1} />
             {rest.length > 0 && (
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 {rest.map((article) => (
-                  <ArticleCard key={article.id} article={article} />
+                  <li key={article.id} className="grid">
+                    <ArticleCard article={article} />
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </>
         );

@@ -323,11 +323,13 @@ export default async function StockPage({ params }: Props) {
           {groupArticlesByDealDate(contents).map((group) => (
             <div key={group.date} className="mb-8">
               <DealDateHeading label={group.label} level="h3" />
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 {group.articles.map((article) => (
-                  <ArticleCard key={article.id} article={article} headingLevel="h4" />
+                  <li key={article.id} className="grid">
+                    <ArticleCard article={article} headingLevel="h4" />
+                  </li>
                 ))}
-              </div>
+              </ul>
               <DealDateSeeMoreLink href={publishedDates.has(group.date) ? `/date/${group.date}` : null} />
             </div>
           ))}

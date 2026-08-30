@@ -742,11 +742,13 @@ export default async function ArticleDetailPage({ params }: Props) {
             <h2 className="mb-5 text-xl font-bold text-brand-navy">
               関連記事（{category}）
             </h2>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {relatedArticles.map((related) => (
-                <ArticleCard key={related.id} article={related} headingLevel="h3" />
+                <li key={related.id} className="grid">
+                  <ArticleCard article={related} headingLevel="h3" />
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
       </div>

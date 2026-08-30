@@ -102,11 +102,13 @@ export default async function HomePage() {
               大量保有アラート型の競合が持っていない情報なので、TOPで見えるようにする。 */}
           <TopReturnPreview />
           {featuredArticles.length > 0 && (
-            <div className="mb-8 space-y-4">
+            <ul className="mb-8 space-y-4">
               {featuredArticles.map((article, i) => (
-                <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
+                <li key={article.id}>
+                  <FeaturedArticleCard article={article} rank={i + 1} />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
           {/* 記事ページにしか無かったフォロー導線をTOPにも置く。サイトの主要コンバージョンは
               Xフォロー（再訪のきっかけ）で、TOPは注目枠を読み終えた直後が最も関心が高い位置。 */}

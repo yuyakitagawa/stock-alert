@@ -94,11 +94,15 @@ export default function InfiniteArticleList({
         <Fragment key={group.date}>
           <div className="mb-8">
             <DealDateHeading label={group.label} level={dateHeadingLevel} />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
+            {/* 記事の並びはul/liで出す（件数と区切りがHTMLだけで分かるようにする）。
+                liはグリッドの升目そのもの。単一の子（カード）を升目いっぱいに伸ばすためgridにする。 */}
+            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               {group.articles.map((article) => (
-                <ArticleCard key={article.id} article={article} headingLevel={cardHeadingLevel} />
+                <li key={article.id} className="grid">
+                  <ArticleCard article={article} headingLevel={cardHeadingLevel} />
+                </li>
               ))}
-            </div>
+            </ul>
             <DealDateSeeMoreLink
               href={publishedDateSet.has(group.date) ? `/date/${group.date}` : null}
             />

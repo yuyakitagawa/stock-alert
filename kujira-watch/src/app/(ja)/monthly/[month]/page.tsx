@@ -280,11 +280,13 @@ export default async function MonthlyArchivePage({ params }: Props) {
       {featured.length > 0 && (
         <section className="mb-10">
           <h2 className="mb-4 text-xl font-bold text-brand-navy">{label}の注目取引</h2>
-          <div className="space-y-4">
+          <ul className="space-y-4">
             {featured.map((article, i) => (
-              <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
+              <li key={article.id}>
+                <FeaturedArticleCard article={article} rank={i + 1} />
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
       )}
 

@@ -888,3 +888,30 @@ TOPのHTMLソースを読もうとしたときに構造が追えなかったの�
 
 なお **出力HTMLが1行になっているのは直せない**（React SSRは要素間に改行を挟まない。
 本番HTMLは564KBで改行0）。ソースを読むときはDevToolsのElementsか整形ツールを通すこと。
+
+### 追記: 記事カードの並びを ul/li にした（レイアウト崩れなしを実測で確認）
+
+`<article>` を入れただけでは「何件並んでいるか」がHTMLから読めないため、カードの並び
+7か所を `<ul>`/`<li>` に変えた（TOPの注目枠・取引日グループ・`RelatedArticles`・
+`/date/[date]`・`/articles/[id]` の関連記事・`/stocks/[code]`・`/monthly/[month]` の注目枠）。
+
+**liは `className="grid"` にする**。従来はカードの `<article>` 自身がグリッドの升目で
+`height:100%` が効いていたが、li を挟むと升目は li になる。li を `flex` にすると子が
+コンテンツ幅までしか広がらず（実測でカード幅が2pxに潰れた）、`grid` なら単一の子が
+升目いっぱいに縦横とも伸びる。
+
+実測（localhost、変更前後で同値）:
+
+| ページ | 変更前 | 変更後 |
+|---|---|---|
+| TOP 1024px | 356px×2・カード高419で揃い | 同じ |
+| TOP 375px | 343px×1 | 同じ |
+| `/date/[date]` | 356px×2・高388 | 同じ |
+| `/articles/[id]` 関連 | 316px×2・高365 | 同じ |
+| `/trending` の`RelatedArticles` | 先頭485px(2列ぶん)＋235px×2 | 同じ |
+| `/monthly/[month]` 注目枠 | 736px全幅 | 同じ |
+
+横スクロールは全ページで0。Tailwind v4のpreflightで `list-style:none`・`padding-left:0` が
+効いているので中黒もインデントも出ない（記事本文の `.prose` の外なので typography プラグインの
+リスト装飾も掛からない＝`/articles/[id]` で `closest('.prose') === null` を確認済み）。
+
