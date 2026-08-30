@@ -153,9 +153,10 @@ export async function getCompanyInfo(code: string): Promise<CompanyInfo | null> 
         .limit(PRICE_HISTORY_DAYS),
     ]);
 
-    // supabase-jsは失敗を例外ではなく error で返すため、握り潰すと「原因がログに残らないまま
-    // 銘柄ページが404になる」ことが起きる（2026-08-29、本番だけ47ページが404だった調査）。
-    // 片方が落ちても、もう片方が取れていればページは成立させる。
+    // supabase-jsは失敗を例外ではなく error で返すため、握り潰すと取得失敗が
+    // 「データが無い」と見分けられなくなる（2026-08-29、銘柄ページが404を返す原因を
+    // 追ったときにログが何も残っていなかった）。片方が落ちても、もう片方が取れていれば
+    // ページは成立させる。
     if (metaResult.error) {
       console.error(`[getCompanyInfo] code=${code} jpx_stock_list 取得失敗`, metaResult.error.message);
     }

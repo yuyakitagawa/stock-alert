@@ -41,6 +41,7 @@ import AdUnit from "@/components/AdUnit";
 // 最大1日反映が遅れるが、リライト自体が稀なので許容する。
 export const revalidate = 86400;
 
+
 // 直近の記事はビルド時に静的生成する。Next 16では generateStaticParams の無い動的セグメントは
 // リクエストごとのSSR（実測: x-vercel-cache: MISS / cache-control: no-store）になり、
 // クローラーが同じURLを取りに来るたびにサーバー実行になる。新着記事ほどクロールされる頻度が
