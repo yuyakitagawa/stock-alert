@@ -141,7 +141,7 @@ def _bucket_report(title: str, groups: dict) -> None:
               f"{_median([t['impressions'] for t in rows]):>11.0f}")
 
 
-def report(tweets: list, top: int) -> None:
+def report(tweets: list, top: int, per_account_top: int = 0) -> None:
     if not tweets:
         print("[x_benchmark] 対象の投稿が0件でした")
         return
@@ -167,7 +167,20 @@ def report(tweets: list, top: int) -> None:
     _bucket_report("投稿時間帯(JST)", _group(tweets, _hour_bucket))
 
     print(f"\n■ エンゲージメント上位{top}投稿（型の材料。本文は改行を / に置換）")
-    for t in sorted(tweets, key=lambda x: -x["engagement"])[:top]:
+    _print_posts(sorted(tweets, key=lambda x: -x["engagement"])[:top])
+
+    # 全体の上位だけを見ると、一番大きいアカウント1つで埋まって他の型が見えない
+    # （実測: 上位25件が全て@kiokunirだった）。規模の近いアカウントから学ぶために
+    # アカウントごとの上位も必ず出す。
+    if per_account_top:
+        print(f"\n■ アカウント別のエンゲージメント上位{per_account_top}投稿")
+        for user in sorted(by_user, key=lambda u: -_median([t["engagement"] for t in by_user[u]])):
+            print(f"\n--- @{user} ---")
+            _print_posts(sorted(by_user[user], key=lambda x: -x["engagement"])[:per_account_top])
+
+
+def _print_posts(rows: list) -> None:
+    for t in rows:
         body = t["text"].replace("\n", " / ")[:200]
         print(f"\n  [eng {t['engagement']:>5} / imp {t['impressions']:>7} / {t['chars']:>3}字 / "
               f"{'画像' if t['has_media'] else '文のみ'} / {'URL' if t['has_url'] else 'URLなし'} / "
@@ -213,6 +226,8 @@ def main() -> int:
     p.add_argument("--usernames", default=",".join(DEFAULT_ACCOUNTS), help="カンマ区切り")
     p.add_argument("--per-account", type=int, default=100, help="1アカウントあたりの取得件数(5-100)")
     p.add_argument("--top", type=int, default=25, help="本文を出す上位投稿の件数")
+    p.add_argument("--top-per-account", type=int, default=3,
+                   help="アカウントごとに本文を出す上位投稿の件数（0で無効）")
     args = p.parse_args()
 
     names = [n.strip().lstrip("@") for n in args.usernames.split(",") if n.strip()]
@@ -233,7 +248,7 @@ def main() -> int:
     if not tweets:
         print("[x_benchmark] 1件も取得できませんでした")
         return 1
-    report(tweets, args.top)
+    report(tweets, args.top, args.top_per_account)
     return 0
 
 
