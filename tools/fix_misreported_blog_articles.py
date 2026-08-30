@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 import lib.supabase_client as sb
-from lib.edinet import disclosure_doc_label, resolve_filer
+from lib.edinet import disclosure_doc_label, disclosure_kind_label, resolve_filer
 from tools.cleanup_duplicate_blog_articles import delete_article
 from tools.reclassify_blog_articles import fetch_all_articles
 from tools.scan_large_holdings import is_correction_report, is_sell_disclosure
@@ -141,6 +141,7 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
     ratio = row.get("holding_ratio")
     if ratio is None:
         return None
+    desc = row.get("doc_description") or ""
     prior = row.get("holding_ratio_prior")
     inferred_prior = False
     if prior is None:
@@ -153,10 +154,20 @@ def corrected_values(article: dict, row: dict) -> "dict | None":
             (article.get("dealDate") or "")[:10],
         )
         if prior is None:
-            # 過去開示も無い＝新規の大量保有報告書。全量が今回動いた分で正しいので是正しない。
-            return None
-        inferred_prior = True
-    desc = row.get("doc_description") or ""
+            # 過去開示も無い＝新規の大量保有報告書。「前回0%」として扱い、保有比率そのものが
+            # ズレていた記事を拾えるようにする。共同保有の合算対応（2026-08-30、lib.edinet の
+            # _aggregate_ratio）で holding_ratio が「筆頭保有者の1枠」から「提出者＋共同保有者の
+            # 合算」に変わったため、新規開示の記事でも見出しの比率・推定金額がズレている
+            # （実測: 2026-08-20以降の開示430件のうち212件＝49%で比率が変わった）。
+            # 前回0%として組み直しても、比率が変わっていない記事は変化幅が一致するので対象外に
+            # なる（下の field_mismatch 判定）。
+            # 変更報告書で前回比率が取れない場合は0%とみなすと全量が動いたことになり実態と
+            # かけ離れるため、従来どおり是正しない。
+            if disclosure_kind_label(desc, str(row.get("doc_type_code") or "")) != "新規":
+                return None
+            prior = 0.0
+        else:
+            inferred_prior = True
     is_correction = is_correction_report(desc)
     is_sell = is_sell_disclosure(desc, ratio, prior)
     change = round(abs(ratio - prior), 2)
