@@ -674,6 +674,8 @@ const CtaVisual: React.FC<{
           大口投資家の監視ブログ
         </div>
       )}
+      {/* Shortsは説明文が畳まれていて開かれない（再生に対するサイト流入が約0.5%だった）。
+          1タップで開けるコメント欄へ行き先を寄せ、URLはコメントを開かない人向けに下段へ残す */}
       <div
         style={{
           display: 'inline-block',
@@ -684,6 +686,17 @@ const CtaVisual: React.FC<{
           background: brand.goldBright,
           borderRadius: 999,
           padding: '16px 44px',
+        }}
+      >
+        リンクはコメント欄に
+      </div>
+      <div
+        style={{
+          fontSize: 30,
+          fontWeight: 800,
+          color: brand.goldBright,
+          marginTop: 16,
+          textShadow: TEXT_SHADOW,
         }}
       >
         kujira-watch.com

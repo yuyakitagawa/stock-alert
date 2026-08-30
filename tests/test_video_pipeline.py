@@ -728,6 +728,24 @@ def test_youtube_title_includes_holding_ratio():
     assert "保有比率8.77%へ" in yt.build_title(PROPS)
 
 
+def test_youtube_description_puts_link_on_the_first_line():
+    """Shortsは畳まれた説明文の先頭1行しか見えないので、1行目をリンクの見出しにする。"""
+    lines = yt.build_description(PROPS).split("\n")
+    assert lines[0].startswith("▼") and "東陽テクニカ" in lines[0]
+    assert lines[1].startswith(f"{yt.SITE_URL}/articles/abc123")
+
+
+def test_youtube_comment_carries_article_url_with_its_own_source():
+    """コメント経由の流入を説明文経由と区別できないと、導線の効果が測れない。"""
+    text = yt.build_comment(PROPS)
+    assert f"{yt.SITE_URL}/articles/abc123" in text
+    assert "utm_source=youtube_comment" in text
+
+
+def test_youtube_comment_is_skipped_without_video_id():
+    assert yt.post_comment("", "本文") is False
+
+
 def test_youtube_title_omits_ratio_when_unknown():
     props = dict(PROPS, holdingRatio=0.0)
     title = yt.build_title(props)
@@ -926,7 +944,7 @@ def test_thumbnail_format_amount_matches_remotion():
 def test_set_thumbnail_skips_without_credentials(tmp_path):
     img = tmp_path / "t.png"
     img.write_bytes(b"x")
-    with mock.patch.object(yt, "_access_token", return_value=None), \
+    with mock.patch.object(yt, "access_token", return_value=None), \
          mock.patch.object(yt.requests, "post") as post:
         assert yt.set_thumbnail("vid", str(img)) is False
     post.assert_not_called()
@@ -936,7 +954,7 @@ def test_set_thumbnail_posts_png_to_thumbnails_set(tmp_path):
     img = tmp_path / "t.png"
     img.write_bytes(b"png")
     res = mock.Mock(ok=True)
-    with mock.patch.object(yt, "_access_token", return_value="tok"), \
+    with mock.patch.object(yt, "access_token", return_value="tok"), \
          mock.patch.object(yt.requests, "post", return_value=res) as post:
         assert yt.set_thumbnail("vid123", str(img)) is True
     assert post.call_args.kwargs["params"]["videoId"] == "vid123"

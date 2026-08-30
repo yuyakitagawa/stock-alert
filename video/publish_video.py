@@ -85,6 +85,10 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
         # 公開した事実をその場でSupabaseに残す。当日のハートビートが「今日、動画が出たか」を
         # 数えられるようにするため（統計の収集は手動実行なので、それ待ちだと0本に見える）。
         youtube_metrics.record_upload(youtube_id, youtube_client.build_title(props))
+        # 記事URLのコメントを自チャンネルから残す。Shortsは説明文が畳まれていて
+        # 開かないとURLに触れられず、再生に対するサイト流入が約0.5%しか無いため。
+        # 失敗しても動画は公開済みなので投稿数には影響させない。
+        youtube_client.post_comment(youtube_id, youtube_client.build_comment(props))
         # 検索結果・チャンネルページ用のカスタムサムネイル（Canva台紙＋銘柄・金額）。
         # 失敗しても動画は公開済みなので成否は投稿数に影響させない
         thumb = thumbnail.compose(props, os.path.join(OUT_DIR, f"thumb_{stamp}.png"))

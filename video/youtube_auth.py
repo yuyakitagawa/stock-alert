@@ -11,10 +11,15 @@ GitHub Actions では使わない（CI では YOUTUBE_REFRESH_TOKEN を Secrets 
   4. 取得した Client ID / Client Secret を環境変数に入れて、このスクリプトを実行する
 
 使い方:
-  YOUTUBE_CLIENT_ID=xxx YOUTUBE_CLIENT_SECRET=yyy python video/youtube_auth.py
+  python video/youtube_auth.py     # Client ID / Secret は .env から読む
 
 ブラウザが開くので投稿先チャンネルのアカウントで許可すると、リフレッシュトークンが
-表示される。それを GitHub Secrets の YOUTUBE_REFRESH_TOKEN に登録する。
+表示される。それを .env と GitHub Secrets の YOUTUBE_REFRESH_TOKEN に登録する。
+
+2026-08-30に scope を3つへ拡張した（upload だけでは視聴維持率もコメント投稿もできない）。
+既存のトークンは upload だけなので、維持率の記録と記事URLコメントを使うには
+このスクリプトをもう一度実行してトークンを取り直す必要がある。取り直したトークンは
+upload も含むので、投稿側の動作は変わらない。
 """
 import os
 import sys
@@ -23,10 +28,21 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
+from dotenv import load_dotenv
+
+# Client ID / Secret は .env に入っている。環境変数への手打ちを求めると、
+# 値があるのに「未設定」で弾かれる（2026-08-30にオーナーが実際に踏んだ）。
+load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
-SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+# 3つ要る。upload=動画投稿、force-ssl=投稿直後の記事URLコメント、
+# yt-analytics.readonly=平均視聴率と維持率カーブ（Data APIやサービスアカウントでは読めない）。
+SCOPES = " ".join([
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
+])
 PORT = 8765
 REDIRECT_URI = f"http://localhost:{PORT}"
 
@@ -53,14 +69,14 @@ def main():
     client_id = os.getenv("YOUTUBE_CLIENT_ID")
     client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
     if not client_id or not client_secret:
-        print("YOUTUBE_CLIENT_ID と YOUTUBE_CLIENT_SECRET を環境変数に設定してください")
+        print("YOUTUBE_CLIENT_ID と YOUTUBE_CLIENT_SECRET が .env にも環境変数にもありません")
         sys.exit(2)
 
     params = urllib.parse.urlencode({
         "client_id": client_id,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": SCOPE,
+        "scope": SCOPES,
         # refresh_token は初回同意時にしか返らないため、確実に受け取れるよう毎回同意を求める
         "access_type": "offline",
         "prompt": "consent",

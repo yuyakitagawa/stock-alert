@@ -198,8 +198,8 @@ def _template_scene(kind: str, f: dict) -> "dict | None":
                              f"{diff:.2f}ポイント{move}。"}
     if kind == "cta":
         return {"kind": "cta",
-                "caption": "続きはブログで公開中",
-                "narration": "詳しくは大口投資家の監視ブログで。"}
+                "caption": "リンクはコメント欄に",
+                "narration": "続きはコメント欄のリンクから。"}
     return None
 
 
@@ -315,9 +315,10 @@ def generate_script(article: dict, company_description: str = "", filer_profile:
    - caption: {CAPTION_MAX_CHARS}字以内。そのシーンで一番伝えたい一点だけ。数字を1つ含める。
    補足事実が無くて書けないkindがある場合でも、記事本文から言える範囲で必ず埋めること。
 3. closing: 締め。
-   - narration: **14〜20字**。「大口投資家の監視ブログ」でサイトの続きが読めることを伝える。
+   - narration: **14〜20字**。**コメント欄のリンクから続きが読める**ことを伝える。
      URLは読み上げない（英字URLは音声で聞き取れないため）。検索を促す言い方はしない
      （サイト名で検索上位を取れていないため、言っても辿り着けない）。
+     Shortsは説明文が畳まれていて開かれないので、行き先はコメント欄に固定する。
    - caption: 10〜18字。
 
 **すべての narration は必ず「。」で終わる完結した文にしてください。**

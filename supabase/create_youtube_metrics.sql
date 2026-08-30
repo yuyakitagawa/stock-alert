@@ -44,3 +44,27 @@ create table if not exists youtube_channel_stats (
 );
 
 create index if not exists youtube_videos_published_at_idx on youtube_videos (published_at desc);
+
+-- ここから2026-08-30追記: 視聴維持率（YouTube Analytics API v2）。
+--
+-- なぜ必要か:
+--   ここまで持てていたのは Data API の公開統計（再生・高評価・コメント）だけで、
+--   「hookで何割が消えたか」が分からなかった。再生は9本で6,909回まで来ている一方、
+--   登録者5人・サイト流入は再生の約0.5%で、演出を直しても良くなったか言えない状態だった。
+--   平均視聴率と維持率カーブは所有者本人のOAuth（scope: yt-analytics.readonly）でしか
+--   読めないため、サービスアカウントとは別経路で取る（video/youtube_analytics.py）。
+alter table youtube_videos add column if not exists avg_view_pct numeric;
+alter table youtube_videos add column if not exists avg_view_sec integer;
+alter table youtube_videos add column if not exists subscribers_gained integer;
+-- 尺に対する割合ではなく秒で本ごとに比べるための、hook（先頭3秒）時点の残存率。
+alter table youtube_videos add column if not exists hook_survival numeric;
+
+-- 維持率カーブそのもの。elapsed_ratio は尺に対する経過割合（0.00〜1.00の101点）、
+-- watch_ratio はその時点で見ている人の割合。どのシーンで落ちたかはこれでしか分からない。
+create table if not exists youtube_video_retention (
+  video_id text not null,
+  measured_on date not null,
+  elapsed_ratio numeric not null,
+  watch_ratio numeric,
+  primary key (video_id, measured_on, elapsed_ratio)
+);
