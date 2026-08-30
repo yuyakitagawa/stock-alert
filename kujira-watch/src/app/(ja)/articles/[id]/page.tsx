@@ -9,13 +9,14 @@ import Typography from "@mui/material/Typography";
 import PriceAfterDisclosure from "@/components/PriceAfterDisclosure";
 import ArticleNextStep from "@/components/ArticleNextStep";
 import HoldingRatioChart from "@/components/HoldingRatioChart";
+import HoldingPurposeBadge from "@/components/HoldingPurposeBadge";
 import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
-import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames, toDateAttr } from "@/lib/format";
 import {
   getAllArticlesForSitemap,
   getArticleDetail,
@@ -24,10 +25,11 @@ import {
 } from "@/lib/microcms";
 import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, getHoldingHistory, getHoldingSnapshot, investorPath } from "@/lib/investors";
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import { averageAcquisitionPrice, borrowingRatio, classifyPurpose, filingLagDays } from "@/lib/disclosures";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { resolveArticleRedirect } from "@/lib/articleRedirects";
 import { dateHref, getPublishedFilerNames, stockHref } from "@/lib/publishedPages";
-import { getArticleRedirect } from "@/lib/articleRedirects";
 import { categoryLabel } from "@/types/article";
 import type { ArticleContent } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -39,8 +41,6 @@ import AdUnit from "@/components/AdUnit";
 // 最大1日反映が遅れるが、リライト自体が稀なので許容する。
 export const revalidate = 86400;
 
-// 削除済み記事の引き継ぎ先が銘柄ページかどうかの判定に使う。
-const STOCK_PATH_PREFIX = "/stocks/";
 
 // 直近の記事はビルド時に静的生成する。Next 16では generateStaticParams の無い動的セグメントは
 // リクエストごとのSSR（実測: x-vercel-cache: MISS / cache-control: no-store）になり、
@@ -168,14 +168,11 @@ export default async function ArticleDetailPage({ params }: Props) {
 
   // 削除済みの記事URLは404にせず、引き継ぎ先（銘柄ページ／重複で残した方の記事）へ
   // 恒久リダイレクトする。順位の付いたURLを404で捨てないための処理。
-  // ただし引き継ぎ先の銘柄ページが公開対象でない場合（薄い集約ページは404。
-  // lib/publishedPages.ts）は、308で404へ送ることになるのでリダイレクトしない。
+  // 引き継ぎ先が非公開になっている場合はnullが返るので、そのときは素直に404にする
+  // （308→404の二段は素の404より悪い）。
   if (!article) {
-    const target = await getArticleRedirect(id);
-    const resolved = target?.startsWith(STOCK_PATH_PREFIX)
-      ? await stockHref(target.slice(STOCK_PATH_PREFIX.length))
-      : target;
-    if (resolved) permanentRedirect(resolved);
+    const target = await resolveArticleRedirect(id);
+    if (target) permanentRedirect(target);
     notFound();
   }
 
@@ -224,6 +221,22 @@ export default async function ArticleDetailPage({ params }: Props) {
   // EDINETが金額を出さないこのサイトで、概算でない実額を出せる唯一のケース。
   const transfers = snapshot?.transfers ?? null;
   const exactAmountOku = transfers?.amountOku ?? null;
+  // 大量保有報告書XBRLの本表から取れる、EDINETの原文にしか載っていない事実。
+  // 保有目的はほぼ全開示にあるが、取得資金・保有株数は記載の無い開示や
+  // 全部売却した変更報告書では欠けるので、それぞれ取れたものだけ出す。
+  const purpose = classifyPurpose(snapshot?.purposeOfHolding ?? null);
+  const unitPrice = averageAcquisitionPrice(snapshot?.fundingTotal ?? null, snapshot?.sharesHeld ?? null);
+  const leverage = borrowingRatio(snapshot?.fundingBorrowings ?? null, snapshot?.fundingTotal ?? null);
+  const filingLag = filingLagDays(snapshot?.obligationDate ?? null, dealDateOnly);
+  // 法定は報告義務発生日から5営業日以内。1ヶ月を超える遅れは「今さら出てきた開示」で、
+  // 株価が既に動いた後という読み方が要るため、そのときだけ出す。
+  const isLateFiling = filingLag !== null && filingLag > 30;
+  // formatDealAmountは億円単位を受ける。0.05億円未満は「0億円」になって金額が無いように
+  // 見えるので出さない（短期大量譲渡の実額と同じ足切り）。
+  const fundingOku =
+    snapshot?.fundingTotal && snapshot.fundingTotal >= 5e6
+      ? Math.round((snapshot.fundingTotal / 1e8) * 10) / 10
+      : null;
   // 同一投資家×同一銘柄の開示履歴（2件以上あるときだけチャートを描く）
   const holdingHistory = filerName ? await getHoldingHistory(article.stockCode, filerName) : [];
   const filerId = filerName ? await getFilerIdByName(filerName) : null;
@@ -317,7 +330,7 @@ export default async function ArticleDetailPage({ params }: Props) {
       />
       {/* 記事タイトルは長く、そのまま置くとパンくずが3行になり本文到達前のノイズに
           なるため1行ellipsisで切る。SEO用のBreadcrumbList(JSON-LD)はフルタイトルのまま。 */}
-      <nav aria-label="パンくずリスト" className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-ink-tertiary">
         <Link href="/" className="flex-none hover:text-brand-blue">トップ</Link>
         <span aria-hidden>/</span>
         {datePageHref ? (
@@ -328,7 +341,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           <span className="flex-none">{formatDate(article.dealDate)}</span>
         )}
         <span aria-hidden>/</span>
-        <span className="min-w-0 truncate text-foreground/70">{article.title}</span>
+        <span className="min-w-0 truncate text-ink-secondary">{article.title}</span>
       </nav>
       {article.eyecatch && (
         <div className="relative aspect-video w-full bg-section-tint">
@@ -388,8 +401,13 @@ export default async function ArticleDetailPage({ params }: Props) {
           </Box>
           <Box>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引日</Typography>
-            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
-              {formatDate(article.dealDate)}
+            {/* JSON-LDのdatePublished/dateModifiedと同じ日付を、可視の本文側でも
+                time要素で機械可読にする（AI検索は本文の日付表記も鮮度判定に使う）。 */}
+            <Typography
+              component="dd"
+              sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}
+            >
+              <time dateTime={toDateAttr(article.dealDate)}>{formatDate(article.dealDate)}</time>
             </Typography>
           </Box>
           <Box>
@@ -451,6 +469,93 @@ export default async function ArticleDetailPage({ params }: Props) {
               </Typography>
             </Box>
           )}
+          {snapshot?.purposeOfHolding && (
+            <Box sx={{ gridColumn: "1 / -1" }}>
+              {/* 保有目的は大量保有報告書の必須記載項目で、EDINETのXBRLからほぼ全開示で取れる。
+                  同じ「5%取得」でも純投資と重要提案行為等では意味が違うため、分類バッジと
+                  原文を併記する（分類はあくまで自由記述からの機械判定）。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                保有目的（開示原文より）
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5 }}>
+                {purpose && (
+                  <Box component="span" sx={{ mr: 0.75, verticalAlign: "middle" }}>
+                    <HoldingPurposeBadge purpose={purpose} />
+                  </Box>
+                )}
+                {/* 原文が「純投資」だけの開示ではバッジと同じ文字が2つ並ぶので原文側を省く。 */}
+                {snapshot.purposeOfHolding !== purpose && (
+                  <Typography component="span" variant="body2" sx={{ whiteSpace: "pre-line" }}>
+                    {snapshot.purposeOfHolding}
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
+          )}
+          {snapshot?.importantProposal && !/該当(事項)?(なし|ありません)/.test(snapshot.importantProposal) && (
+            <Box sx={{ gridColumn: "1 / -1" }}>
+              {/* 「重要提案行為等」欄に具体的な記載がある開示だけ出す（大半は「該当事項なし」）。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                重要提案行為等（開示原文より）
+              </Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0, mt: 0.5, whiteSpace: "pre-line" }}>
+                {snapshot.importantProposal}
+              </Typography>
+            </Box>
+          )}
+          {unitPrice !== null && (
+            <Box>
+              {/* 取得資金の総額÷保有株数。EDINETは通常「比率」しか出さないが、取得資金は
+                  本表に金額で載っているので取得原価が出せる。保有が古いほど現在株価から
+                  離れる（政策保有株は特に）ため参考値として扱う。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                平均取得単価（開示ベース）
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
+                {unitPrice.toLocaleString("ja-JP")}円
+                {snapshot?.sharesHeld ? (
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                    （{snapshot.sharesHeld.toLocaleString("ja-JP")}株）
+                  </Typography>
+                ) : null}
+              </Typography>
+            </Box>
+          )}
+          {leverage !== null && leverage > 0 && (
+            <Box>
+              {/* 取得資金に占める借入金の割合。自己資金0＝全額借入の買いが実在し、
+                  返済圧力がある分だけ同じ保有比率でも意味が違う。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                借入比率
+              </Typography>
+              <Typography
+                component="dd"
+                sx={{ m: 0, mt: 0.5, fontWeight: 500, color: leverage >= 50 ? "warning.main" : undefined }}
+              >
+                {leverage}%
+                {fundingOku !== null && (
+                  <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                    （取得資金{formatDealAmount(fundingOku)}のうち借入）
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
+          )}
+          {isLateFiling && snapshot?.obligationDate && (
+            <Box>
+              {/* 法定は報告義務発生日から5営業日以内。1ヶ月超の遅れは「株価が動いた後に
+                  出てきた開示」なので、そのときだけ出す。 */}
+              <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>
+                報告義務発生日
+              </Typography>
+              <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500 }}>
+                {formatDate(snapshot.obligationDate)}
+                <Typography component="span" variant="caption" sx={{ ml: 0.5, color: "text.disabled" }}>
+                  （提出まで{filingLag}日）
+                </Typography>
+              </Typography>
+            </Box>
+          )}
           {transfers && transfers.counterparties.length > 0 && (
             <Box sx={{ gridColumn: "1 / -1" }}>
               {/* 短期大量譲渡の原文に載る相手方。通常の大量保有報告書には無い情報なので、
@@ -504,7 +609,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         {/* 全記事で同一の説明文（提出期限のズレ・免責・分類の定義）はここに書かず、
             FAQと/aboutへのリンクに寄せる。同じ定型文が全記事の本文比率を押し上げると
             「他ページと内容が酷似」と判定されるため（GSCのクロール済み-未登録の主因）。 */}
-        <p className="-mt-2 mb-6 text-xs text-foreground/40">
+        <p className="-mt-2 mb-6 text-xs text-ink-muted">
           ※ 取引日はEDINETの開示日です（
           <Link href="/faq/basics" className="text-brand-blue hover:underline">
             実際の売買とのずれ
@@ -529,7 +634,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         {filerName && holdingRatio !== null && (
           <section className="mb-6">
             <h2 className="mb-2 text-xl font-bold text-brand-navy">この開示で何が起きた？</h2>
-            <p className="m-0 text-base leading-relaxed text-foreground/80">
+            <p className="m-0 text-base leading-relaxed text-ink-secondary">
               {formatDate(article.dealDate)}、{displayFilerName(filerName)}が{article.stockName}（{article.stockCode}）の
               保有比率を
               {snapshot?.holdingRatioPrior != null
@@ -556,7 +661,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
         />
-        <div className="mt-8 rounded border border-rule bg-section-tint px-4 py-3 text-xs leading-relaxed text-foreground/60">
+        <div className="mt-8 rounded-md border border-rule bg-section-tint px-4 py-3 text-xs leading-relaxed text-ink-tertiary">
           <p className="m-0">
             情報源: 金融庁EDINETの大量保有報告書等（提出日: {formatDate(article.dealDate)}）
             {article.sourceUrl && (
@@ -580,7 +685,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           </p>
         </div>
         {tags && tags.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
+          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-ink-tertiary">
             {tags.map((tag) => (
               <span key={tag}>#{tag}</span>
             ))}
@@ -609,7 +714,7 @@ export default async function ArticleDetailPage({ params }: Props) {
               {displayFilerName(filerName)}とはどんな投資家？
             </h2>
             {article.dealType && (
-              <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+              <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
                 {displayFilerName(filerName)}は「{category}」に分類される投資家です。
                 {DEAL_TYPE_DESCRIPTIONS[article.dealType]}
               </p>
@@ -638,11 +743,13 @@ export default async function ArticleDetailPage({ params }: Props) {
             <h2 className="mb-5 text-xl font-bold text-brand-navy">
               関連記事（{category}）
             </h2>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {relatedArticles.map((related) => (
-                <ArticleCard key={related.id} article={related} />
+                <li key={related.id} className="grid">
+                  <ArticleCard article={related} headingLevel="h3" />
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
       </div>

@@ -91,10 +91,10 @@ export default function Footer() {
           ))}
         </nav>
 
-        <p className="mt-8 border-t border-rule pt-4 text-xs leading-relaxed text-foreground/60">
+        <p className="mt-8 border-t border-rule pt-4 text-xs leading-relaxed text-ink-tertiary">
           {DISCLAIMER_JA}
         </p>
-        <p className="mt-3 text-xs text-foreground/50">
+        <p className="mt-3 text-xs text-ink-tertiary">
           © {year} {SITE_NAME}
         </p>
       </div>

@@ -9,6 +9,25 @@ export function formatDate(dateString: string): string {
   }).format(date);
 }
 
+// time要素のdatetime属性用にYYYY-MM-DDへ揃える。microCMS/Supabase由来の日付は
+// "2026-08-29" と "2026-08-29T00:00:00.000Z" が混在しており、後者をそのまま属性へ出すと
+// 表示している日付（JST）と1日ずれることがある。
+export function toDateAttr(dateString: string): string {
+  return dateString.slice(0, 10);
+}
+
+// 一覧・集計ページが「いつまでのデータを反映しているか」を求める。ページの更新日には
+// ビルド時刻ではなくこの値を使う（毎日ビルドしても中身が変わらない日はあるため）。
+export function latestDateOf(dates: (string | null | undefined)[]): string | null {
+  let latest: string | null = null;
+  for (const d of dates) {
+    if (!d) continue;
+    const day = toDateAttr(d);
+    if (!latest || day > latest) latest = day;
+  }
+  return latest;
+}
+
 // "YYYY-MM" を「2026年8月」形式にする（/monthly の見出し・パンくず用）。
 // Dateを介すとタイムゾーンで前月にずれる余地があるため、文字列のまま組み立てる。
 export function formatMonth(month: string): string {
@@ -76,7 +95,7 @@ export function frameSpeculation(html: string): string {
     (_match, inner: string) =>
       '<aside class="not-prose my-6 rounded-md border border-rule border-l-4 border-l-brand-blue bg-section-tint px-4 py-3">' +
       '<p class="m-0 text-xs font-bold text-brand-navy">編集部の見立て（開示から読み取れる範囲の推測）</p>' +
-      `<p class="m-0 mt-1 text-sm leading-relaxed text-foreground/70">${inner}</p>` +
+      `<p class="m-0 mt-1 text-sm leading-relaxed text-ink-secondary">${inner}</p>` +
       "</aside>"
   );
 }

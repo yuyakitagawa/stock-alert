@@ -7,6 +7,8 @@ import ListPageNextStep from "@/components/ListPageNextStep";
 import { getArticleList } from "@/lib/microcms";
 import { getPublishedDates } from "@/lib/publishedPages";
 import { SITE_URL } from "@/lib/site";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
+import { latestDateOf } from "@/lib/format";
 import { CATEGORIES, DEAL_TYPE_BY_CATEGORY } from "@/types/article";
 
 // トップページと同様、初回SSRの実リンク数を増やしてクロール可能な記事数を底上げする。
@@ -55,6 +57,8 @@ export default async function CategoryPage({
   // 開示が少ない日の取引日ページは公開していない（404）ので、その日はリンクを出さない。
   const publishedDates = [...(await getPublishedDates().catch(() => new Set<string>()))];
   const url = `${SITE_URL}/category/${category}`;
+  // 一覧の更新日は、載っている最新記事の取引日。
+  const latestDealDate = latestDateOf(contents.map((a) => a.dealDate));
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -87,16 +91,24 @@ export default async function CategoryPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{decodedCategory}</span>
+        <span className="text-ink-secondary">{decodedCategory}</span>
       </nav>
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">
         カテゴリ: {decodedCategory}
       </h1>
+      {latestDealDate && (
+        <DataUpdatedAt
+          className="mb-6"
+          label="最終更新（反映済みの最新取引日）"
+          date={latestDealDate}
+          url={url}
+        />
+      )}
       {contents.length === 0 ? (
-        <p className="text-foreground/50">このカテゴリの記事がまだありません。</p>
+        <p className="text-ink-tertiary">このカテゴリの記事がまだありません。</p>
       ) : (
         <InfiniteArticleList
           initialArticles={contents}

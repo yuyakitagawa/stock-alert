@@ -15,16 +15,21 @@ export type FaqItem = {
 };
 
 // カテゴリごとに色分けした質問バッジ用。9カテゴリ固定のため、増減時はここも見直す。
+// 値は DEAL_TYPE_COLORS と同じOKLCHパレットの文字グレード（L 0.46）から選ぶ。サイト内に
+// 別々のカテゴリ配色を持たないため。以前は brand.blue / brand.gold / Tailwind標準色が
+// 混在しており、明度がバラバラなうえ brand.gold(#b8863a) は文字色としてはクリーム地で
+// 約3:1しか出ずWCAG AA未達だった。
 export const CATEGORY_COLORS: Record<string, string> = {
-  basics: "brand.blue",
-  terms: "#7c3aed",
-  "term-supplement": "#4f46e5",
-  "regulation-deep-dive": "#e11d48",
-  "investor-players": "#0891b2",
-  "investing-basics-extra": "#d97706",
-  usage: "#059669",
-  howto: "brand.gold",
-  "about-site": "rgba(32, 29, 26, 0.5)",
+  basics: "#0e599d",
+  terms: "#5f4598",
+  "term-supplement": "#434f9f",
+  "regulation-deep-dive": "#9b0f1b",
+  "investor-players": "#05617e",
+  "investing-basics-extra": "#903a03",
+  usage: "#076b29",
+  howto: "#6e5400",
+  // サイト自身の説明は分類色を持たせない（中立）。
+  "about-site": "var(--ink-tertiary)",
 };
 
 export const FAQ_CATEGORIES: FaqCategory[] = [

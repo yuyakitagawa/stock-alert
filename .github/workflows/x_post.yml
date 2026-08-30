@@ -48,6 +48,14 @@ on:
         description: 'follow用。ONのときだけ実際にフォローする（OFFなら対象を表示するだけ）'
         type: boolean
         default: false
+      usernames:
+        description: 'follow用。フォローするユーザー名をカンマ区切りで（@は不要）'
+        type: string
+        default: ''
+      follow_execute:
+        description: 'follow用。ONのときだけ実際にフォローする（OFFなら対象を表示するだけ）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read

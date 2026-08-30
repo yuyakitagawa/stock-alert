@@ -21,11 +21,11 @@ const LINKS = [
 export default function NotFound() {
   return (
     <div className="border-t border-rule bg-paper p-6 sm:p-10">
-      <p className="mb-2 text-sm font-bold text-foreground/50">404</p>
+      <p className="mb-2 text-sm font-bold text-ink-tertiary">404</p>
       <h1 className="mb-4 text-2xl font-bold text-brand-navy sm:text-3xl">
         ページが見つかりません
       </h1>
-      <p className="mb-8 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-8 text-sm leading-relaxed text-ink-secondary">
         お探しのページは削除されたか、URLが変更された可能性があります。
         記載に誤りがあった記事は、開示原本と照合のうえ修正または削除しています。
         {SITE_NAME}の主なページは以下からご覧ください。
@@ -36,7 +36,7 @@ export default function NotFound() {
             <Link href={link.href} className="font-bold text-brand-blue hover:underline">
               {link.label}
             </Link>
-            <span className="ml-2 text-sm text-foreground/60">{link.description}</span>
+            <span className="ml-2 text-sm text-ink-tertiary">{link.description}</span>
           </li>
         ))}
       </ul>

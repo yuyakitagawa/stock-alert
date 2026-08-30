@@ -163,3 +163,100 @@ export const getFilerReturnPositions = unstable_cache(
   ["getFilerReturnPositions"],
   { revalidate: 3600 }
 );
+
+// /investors（一覧）のカードに成績を添えるための対応表。filer_name → 成績。
+// 一覧は1ページ100件・全体で約2,900件並ぶので、getFilerReturnSummaryで1人ずつ引くと
+// リクエストあたり数百往復になる。ビュー自体が200行程度なので一括で取り切って引き当てる。
+// 戻り値がMapではなく素のオブジェクトなのは getFilerReturnPositions と同じ理由
+// （unstable_cacheはJSONで保存するためMapは`{}`に化ける）。
+// 買い開示がMIN_POSITIONS件に満たない投資家はビューに載っていないので、キーごと存在しない
+// （呼び出し側は成績行を出さない）。
+export type FilerReturnBrief = {
+  avgReturn: number;
+  winRate: number;
+  positionCount: number;
+};
+
+async function getFilerReturnMapUncached(): Promise<Record<string, FilerReturnBrief>> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("investor_returns_3m")
+    .select("filer_name, avg_return, win_rate, position_count");
+  if (error) throw new Error(`getFilerReturnMap failed: ${error.message}`);
+  return Object.fromEntries(
+    (data ?? []).map((r) => [
+      r.filer_name,
+      {
+        avgReturn: Number(r.avg_return),
+        winRate: r.win_rate,
+        positionCount: r.position_count,
+      },
+    ])
+  );
+}
+
+export const getFilerReturnMap = unstable_cache(getFilerReturnMapUncached, ["getFilerReturnMap"], {
+  revalidate: 3600,
+});
+
+// TOPの「3ヶ月前の開示は、その後どうなったか」枠。
+// 直近で3ヶ月の判定期間を満了した開示日ぶん（＝base_dateの最大値）をひとまとまりで返す。
+// 上位だけを並べると勝った銘柄しか出ない見せ方になるので、同じ日の全件から平均と勝率も
+// 一緒に返し、コンポーネント側で必ず併記する（競合のアラートアプリは株価を持たないため
+// この「その後」を出せない＝ここが差別化点だが、都合の良い数字だけ出すと信用を落とす）。
+export type ReturnCohort = {
+  discDate: string;
+  date3m: string;
+  count: number;
+  avgReturn: number;
+  winRate: number;
+  top: { docId: string; issuerCode: string; issuerName: string; filerName: string; ret3m: number }[];
+};
+
+const COHORT_TOP_COUNT = 3;
+
+async function getLatestReturnCohortUncached(): Promise<ReturnCohort | null> {
+  const supabase = getSupabaseServerClient();
+  const { data: latest } = await supabase
+    .from("investor_return_positions_3m")
+    .select("base_date")
+    .order("base_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!latest?.base_date) return null;
+
+  const { data } = await supabase
+    .from("investor_return_positions_3m")
+    .select("doc_id, filer_name, issuer_code, issuer_name, disc_date, date_3m, ret_3m")
+    .eq("base_date", latest.base_date);
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
+
+  const returns = rows.map((r) => Number(r.ret_3m));
+  const avgReturn = returns.reduce((sum, v) => sum + v, 0) / returns.length;
+  const wins = returns.filter((v) => v > 0).length;
+
+  return {
+    discDate: rows[0].disc_date,
+    date3m: rows[0].date_3m,
+    count: rows.length,
+    avgReturn: Math.round(avgReturn * 10) / 10,
+    winRate: Math.round((wins / rows.length) * 1000) / 10,
+    top: [...rows]
+      .sort((a, b) => Number(b.ret_3m) - Number(a.ret_3m))
+      .slice(0, COHORT_TOP_COUNT)
+      .map((r) => ({
+        docId: r.doc_id,
+        issuerCode: r.issuer_code,
+        issuerName: r.issuer_name,
+        filerName: r.filer_name,
+        ret3m: Number(r.ret_3m),
+      })),
+  };
+}
+
+export const getLatestReturnCohort = unstable_cache(
+  getLatestReturnCohortUncached,
+  ["getLatestReturnCohort"],
+  { revalidate: 3600 }
+);

@@ -16,13 +16,13 @@ export default function ListPageNextStep({
       aria-label="次に見るページ"
       className="mt-10 border-t border-rule pt-4"
     >
-      <p className="mb-3 text-xs font-bold text-foreground/50">次に見る</p>
+      <p className="mb-3 text-xs font-bold text-ink-tertiary">次に見る</p>
       <div className="flex flex-wrap gap-2 text-sm">
         {links.map((link) => (
           <Link
             key={link.href}
             href={link.href}
-            className="rounded border border-rule px-3 py-1.5 text-foreground/70 hover:border-brand-blue hover:text-brand-blue"
+            className="rounded-md border border-rule px-3 py-1.5 text-ink-secondary hover:border-brand-blue hover:text-brand-blue"
           >
             {link.label} ›
           </Link>

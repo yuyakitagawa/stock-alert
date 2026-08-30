@@ -14,6 +14,52 @@
   --rule: #ded5c0;
   --gain: #047857;
   --loss: #be123c;
+
+  /* ===== 意味づけトークン =====
+     ここから下はブランド色そのものではなく「役割」を表す層。コンポーネントは
+     生の色（--foreground/--rule）ではなくこの層を参照する。役割ごとに1つしか
+     値が無い状態を保つことで、同じ意味の要素がページごとに別の見た目になるのを防ぐ。 */
+
+  /* --- 文字の階調（4段）---
+     導入前は text-foreground/30〜/80 の6段が混在し、しかも /40(2.6:1)・/50(3.3:1) は
+     WCAG AA（通常文字4.5:1）未達だった。背景 #faf7f0 上での実測コントラストを添えて
+     4段に固定する。--ink-muted は大きい文字・UI装飾（3:1）専用で本文には使わない。 */
+  --ink: var(--foreground);                                             /* 15.5:1 */
+  --ink-secondary: color-mix(in srgb, var(--foreground) 72%, transparent); /*  6.3:1 */
+  --ink-tertiary: color-mix(in srgb, var(--foreground) 62%, transparent);  /*  4.6:1 AA */
+  --ink-muted: color-mix(in srgb, var(--foreground) 55%, transparent);     /*  3.7:1 大文字/UI限定 */
+  --ink-on-dark: rgba(255, 255, 255, 0.94);
+  --ink-on-dark-secondary: rgba(255, 255, 255, 0.72);
+
+  /* --- 面（サーフェス）--- */
+  --surface: var(--background);
+  --surface-raised: var(--paper);
+  --surface-sunken: var(--section-tint);
+  --surface-inverse: var(--brand-navy);
+
+  /* --- 罫線 --- */
+  --rule-subtle: color-mix(in srgb, var(--rule) 55%, transparent);
+  --rule-strong: color-mix(in srgb, var(--brand-navy) 30%, transparent);
+
+  /* --- エレベーション ---
+     影はニュートラルな黒ではなくブランドネイビーを透過させる。クリーム地(#faf7f0)に
+     黒影を落とすと彩度が抜けて紙がくすんで見えるため。 */
+  --elevation-1: 0 1px 2px rgba(22, 33, 58, 0.05);
+  --elevation-2: 0 1px 2px rgba(22, 33, 58, 0.05), 0 6px 16px -8px rgba(22, 33, 58, 0.14);
+  --elevation-3: 0 2px 4px rgba(22, 33, 58, 0.06), 0 16px 32px -12px rgba(22, 33, 58, 0.2);
+
+  /* カード面のエレベーション。このサイトはエディトリアル（雑誌）系の意匠として
+     「影で持ち上げず、罫線で区切る」を選んでいる（README参照）ため既定は none。
+     カードを紙のように浮かせたくなったら、ここを var(--elevation-1) に変えるだけで
+     .card とMUI Cardの両方が一斉に切り替わる。個々のコンポーネントには書かないこと。 */
+  --card-elevation: none;
+  --card-elevation-hover: none;
+
+  /* --- モーション --- */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 320ms;
 }
 
 @theme inline {
@@ -29,11 +75,77 @@
   --color-rule: var(--rule);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
+
+  /* 意味づけトークンをユーティリティに露出する（text-ink / bg-surface-sunken / border-rule-strong …） */
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-tertiary: var(--ink-tertiary);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-on-dark: var(--ink-on-dark);
+  --color-ink-on-dark-secondary: var(--ink-on-dark-secondary);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-rule-subtle: var(--rule-subtle);
+  --color-rule-strong: var(--rule-strong);
+
+  --shadow-card: var(--elevation-1);
+  --shadow-raised: var(--elevation-2);
+  --shadow-overlay: var(--elevation-3);
   /* 欧文はGeist(ウェブフォント)、和文は端末内蔵フォントに任せる。"Noto Sans JP"は
      ローカル指定で、Androidの内蔵Noto Sans CJK JPに当たる（ダウンロードは発生しない）。 */
   --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Hiragino Sans",
     "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic Medium", "Yu Gothic", Meiryo, sans-serif;
   --font-mono: var(--font-geist-mono);
+}
+
+/* ===== タイポグラフィスケール =====
+   和文は同じサイズでも欧文より字面が大きく、Tailwind既定の行間では詰まって見える。
+   サイズが上がるほど行間比率を下げ、字間を締める（見出しほどブロックとして締まる）
+   という一般的な組版の原則に沿ってペアで定義する。text-2xs は従来6箇所に直書き
+   されていた 0.6875rem（バッジ・キッカー）を吸収するために追加した。 */
+@theme {
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1.5;
+  --text-2xs--letter-spacing: 0.08em;
+
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.6;
+
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.65;
+
+  --text-base: 1rem;
+  --text-base--line-height: 1.75;
+
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.7;
+  --text-lg--letter-spacing: -0.005em;
+
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.55;
+  --text-xl--letter-spacing: -0.01em;
+
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.45;
+  --text-2xl--letter-spacing: -0.015em;
+
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 1.35;
+  --text-3xl--letter-spacing: -0.02em;
+
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 1.25;
+  --text-4xl--letter-spacing: -0.025em;
+
+  /* 角丸スケール。導入前は rounded / -sm / -md / -lg / -xl と CSS直書きの 6px が
+     混在していた。md(6px) をカード・ボタンの既定とし、他はその倍数系で持つ。 */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 }
 
 body {
@@ -44,7 +156,7 @@ body {
 }
 
 .kicker {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -57,15 +169,18 @@ body {
      TTFB 1.9秒まで悪化した。dev_log 2026-08-15 参照）。 */
   .card {
     display: block;
-    background: var(--paper);
+    background: var(--surface-raised);
     border: 1px solid var(--rule);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0.625rem 0.75rem;
-    transition: border-color 0.15s ease-out;
+    box-shadow: var(--card-elevation);
+    transition: border-color var(--duration-base) var(--ease-standard),
+      box-shadow var(--duration-base) var(--ease-standard);
   }
 
   a.card:hover {
     border-color: var(--brand-gold);
+    box-shadow: var(--card-elevation-hover);
   }
 
   /* auto-fill で「入るだけ並べる」ため、列数ごとのメディアクエリを持たない。
@@ -120,7 +235,8 @@ button:not(.MuiButtonBase-root),
 [role="button"]:not(.MuiButtonBase-root),
 summary:not(.MuiButtonBase-root) {
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
 }
 
 a:not(.MuiButtonBase-root):active,

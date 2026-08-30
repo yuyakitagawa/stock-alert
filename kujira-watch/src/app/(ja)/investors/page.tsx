@@ -9,9 +9,15 @@ import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
 import RelatedArticles from "@/components/RelatedArticles";
 import { getAllFilers, investorPath } from "@/lib/investors";
+import {
+  getFilerReturnMap,
+  formatSignedPercent,
+  type FilerReturnBrief,
+} from "@/lib/investorReturns";
 import { getPublishedFilerNames } from "@/lib/publishedPages";
 import { getArticleList } from "@/lib/microcms";
-import { displayFilerName, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -95,10 +101,10 @@ export default async function InvestorsPage({ searchParams }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">投資家一覧</span>
+        <span className="text-ink-secondary">投資家一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">投資家一覧</h1>
       <Suspense fallback={<ListFallback rows={12} />}>
@@ -113,16 +119,23 @@ export default async function InvestorsPage({ searchParams }: Props) {
 }
 
 async function InvestorsBody({ searchParams }: Props) {
-  const [{ category, page }, allFilers, { contents: latestArticles }, publishedFilers] =
+  const [{ category, page }, allFilers, returnByFiler, { contents: latestArticles }, publishedFilers] =
     await Promise.all([
       searchParams,
       getAllFilers(),
+      // 「開示のあとどうなったか」＝この投資家が買った銘柄の3ヶ月後リターン。
+      // 競合（保有報告のアラートアプリ）は株価を持たないので出せない数字であり、
+      // 一覧の段階で見せないと投資家ページまで来た人しか気付けない。
+      // 取れなくても一覧自体は成立させる（成績行が消えるだけ）。
+      getFilerReturnMap().catch((): Record<string, FilerReturnBrief> => ({})),
       // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
       getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
       getPublishedFilerNames(),
     ]);
   // 解説文が無く開示も1件だけの投資家のページは公開していない（404）ので一覧にも出さない。
   const filers = allFilers.filter((f) => publishedFilers.has(f.filerName));
+  // 一覧の更新日は、載っている投資家の最終開示日のうち最も新しいもの。
+  const latestDiscDate = latestDateOf(filers.map((f) => f.latestDiscDate));
 
   const counts = new Map<DealType, number>();
   for (const filer of filers) {
@@ -144,7 +157,9 @@ async function InvestorsBody({ searchParams }: Props) {
   // 集計そのもので、LLM呼び出しはしない。2ページ目以降は同じ文が並ぶだけなので出さない。
   const since = recentSince(RECENT_DAYS);
   const recentFilers = matchedFilers.filter((f) => f.latestDiscDate >= since);
-  const latestDiscDate = matchedFilers.reduce(
+  // 絞り込み後の集合での最新開示日。ページ全体の更新日(latestDiscDate)とは別物で、
+  // ?category= で絞っているときは「その分類の最新開示日」を直答文に出すため。
+  const matchedLatestDiscDate = matchedFilers.reduce(
     (latest, f) => (f.latestDiscDate > latest ? f.latestDiscDate : latest),
     ""
   );
@@ -157,17 +172,17 @@ async function InvestorsBody({ searchParams }: Props) {
     ? `「${selectedCategory}」に分類される投資家は${matchedFilers.length}者です` +
       `（掲載している投資家${filers.length}者のうち）。` +
       `直近${RECENT_DAYS}日間に新しい開示があったのは${recentFilers.length}者で、` +
-      `この分類の最新の開示日は${formatDate(latestDiscDate)}です。`
+      `この分類の最新の開示日は${formatDate(matchedLatestDiscDate)}です。`
     : `このページには、EDINETに大量保有報告書（5%ルール）を提出した投資家を${filers.length}者掲載しています。` +
       `分類別では${topCategories.map((c) => `${c.category}が${c.count}者`).join("、")}の順に多く、` +
       `直近${RECENT_DAYS}日間に新しい開示があったのは${recentFilers.length}者です` +
-      `（最新の開示日は${formatDate(latestDiscDate)}）。`;
+      `（最新の開示日は${formatDate(matchedLatestDiscDate)}）。`;
 
   return (
     <>
       {currentPage === 1 && matchedFilers.length > 0 && (
         <>
-          <p className="mb-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
+          <p className="mb-3 text-sm leading-relaxed text-ink-secondary">{leadSentence}</p>
           <FactBox
             facts={
               selectedCategory
@@ -175,7 +190,7 @@ async function InvestorsBody({ searchParams }: Props) {
                     { label: `分類「${selectedCategory}」`, value: `${matchedFilers.length}者` },
                     { label: "掲載している投資家（全体）", value: `${filers.length}者` },
                     { label: `直近${RECENT_DAYS}日に開示`, value: `${recentFilers.length}者` },
-                    { label: "最新の開示日", value: formatDate(latestDiscDate) },
+                    { label: "最新の開示日", value: formatDate(matchedLatestDiscDate) },
                   ]
                 : [
                     { label: "掲載している投資家", value: `${filers.length}者` },
@@ -185,17 +200,25 @@ async function InvestorsBody({ searchParams }: Props) {
                       note: topCategories[0] ? `${topCategories[0].count}者` : undefined,
                     },
                     { label: `直近${RECENT_DAYS}日に開示`, value: `${recentFilers.length}者` },
-                    { label: "最新の開示日", value: formatDate(latestDiscDate) },
+                    { label: "最新の開示日", value: formatDate(matchedLatestDiscDate) },
                   ]
             }
             caption="出典はEDINETの大量保有報告書・変更報告書。分類は当サイトが提出者ごとに判定したものです。解説も無く開示1件だけの提出者はページを公開していないため、この一覧にも載せていません。"
           />
         </>
       )}
-      <p className="mb-4 text-sm text-foreground/50">
+      <p className="mb-1 text-sm text-ink-tertiary">
         EDINET大量保有報告書に登場した投資家{filers.length}件。最終開示日が新しい順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
+      {latestDiscDate && (
+        <DataUpdatedAt
+          className="mb-4"
+          label="最終更新（反映済みの最新開示日）"
+          date={latestDiscDate}
+          url={`${SITE_URL}/investors`}
+        />
+      )}
       {filers.length > 0 && (
         <FilterButtonNav
           ariaLabel="カテゴリで絞り込む"
@@ -214,7 +237,7 @@ async function InvestorsBody({ searchParams }: Props) {
         />
       )}
       {visibleFilers.length === 0 ? (
-        <p className="text-foreground/50">
+        <p className="text-ink-tertiary">
           {filers.length === 0 ? "投資家データがまだありません。" : "該当する投資家がいません。"}
         </p>
       ) : (
@@ -240,9 +263,35 @@ async function InvestorsBody({ searchParams }: Props) {
                 <span className="mt-1 block font-normal">
                   <DealTypeLabel dealType={filer.category} />
                 </span>
-                <span className="block text-xs font-normal text-foreground/50">
-                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                <span className="block text-xs font-normal text-ink-tertiary">
+                  保有開示{filer.holdingCount}件・最終開示
+                  <time dateTime={toDateAttr(filer.latestDiscDate)}>
+                    {formatDate(filer.latestDiscDate)}
+                  </time>
                 </span>
+                {/* 4行目。買い開示が少ない投資家はビューに載らないので行ごと出ない
+                    （高さがカードごとにずれるが、成績のある投資家を目立たせる方を採る）。 */}
+                {(() => {
+                  const record = returnByFiler[filer.filerName];
+                  if (!record) return null;
+                  return (
+                    <span className="mt-1 block text-xs font-normal">
+                      <span className="text-ink-tertiary">開示3ヶ月後 </span>
+                      <span
+                        className={
+                          record.avgReturn >= 0
+                            ? "font-medium text-brand-blue"
+                            : "font-medium text-red-600"
+                        }
+                      >
+                        平均{formatSignedPercent(record.avgReturn)}
+                      </span>
+                      <span className="text-ink-tertiary">
+                        ・勝率{record.winRate}%（{record.positionCount}件）
+                      </span>
+                    </span>
+                  );
+                })()}
               </Link>
             </li>
           ))}
@@ -257,7 +306,7 @@ async function InvestorsBody({ searchParams }: Props) {
           ) : (
             <span />
           )}
-          <span className="kicker text-foreground/50">
+          <span className="kicker text-ink-tertiary">
             {currentPage} / {totalPages}
           </span>
           {currentPage < totalPages ? (

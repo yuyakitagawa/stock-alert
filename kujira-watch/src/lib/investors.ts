@@ -459,11 +459,19 @@ async function getHoldingSnapshotUncached(
   holdingRatio: number | null;
   holdingRatioPrior: number | null;
   transfers: TransferSummary | null;
+  // 大量保有報告書XBRLの本表（lib/edinet.pyのparse_holding_details()が保存）。
+  // 保有目的はほぼ全開示で取れるが、取得資金は記載の無い開示・全部売却の開示ではnull。
+  purposeOfHolding: string | null;
+  importantProposal: string | null;
+  sharesHeld: number | null;
+  fundingTotal: number | null;
+  fundingBorrowings: number | null;
+  obligationDate: string | null;
 } | null> {
   const supabase = getSupabaseServerClient();
   const { data } = await supabase
     .from("edinet_large_holdings")
-    .select("holding_ratio, holding_ratio_prior, short_term_transfers")
+    .select("holding_ratio, holding_ratio_prior, short_term_transfers, purpose_of_holding, important_proposal, shares_held, funding_total, funding_borrowings, obligation_date")
     .eq("issuer_code", stockCode)
     .eq("disc_date", discDate)
     .eq("filer_name", filerName)
@@ -480,6 +488,12 @@ async function getHoldingSnapshotUncached(
     holdingRatio: data.holding_ratio,
     holdingRatioPrior: data.holding_ratio_prior,
     transfers: summarizeDisposals(data.short_term_transfers, ratioChange),
+    purposeOfHolding: data.purpose_of_holding ?? null,
+    importantProposal: data.important_proposal ?? null,
+    sharesHeld: data.shares_held ?? null,
+    fundingTotal: data.funding_total ?? null,
+    fundingBorrowings: data.funding_borrowings ?? null,
+    obligationDate: data.obligation_date ?? null,
   };
 }
 

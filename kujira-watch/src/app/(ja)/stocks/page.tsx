@@ -10,7 +10,8 @@ import SectorIcon from "@/components/SectorIcon";
 import { getAllStocksForIndex, getArticleList } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { getPublishedStockCodes } from "@/lib/publishedPages";
-import { formatDate } from "@/lib/format";
+import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
@@ -76,10 +77,10 @@ export default async function StocksIndexPage({ searchParams }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">銘柄一覧</span>
+        <span className="text-ink-secondary">銘柄一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">銘柄一覧</h1>
       <Suspense fallback={<ListFallback rows={12} />}>
@@ -105,6 +106,8 @@ async function StocksBody({ searchParams }: Props) {
     ]);
   // 解説記事も事業内容の説明も無い銘柄のページは公開していない（404）ので一覧にも出さない。
   const stocks = allStocks.filter((s) => publishedCodes.has(s.stockCode));
+  // 一覧の更新日は、載っている銘柄の最終開示日のうち最も新しいもの。
+  const latestDealDate = latestDateOf(stocks.map((s) => s.latestDealDate));
 
   const counts = new Map<string, number>();
   for (const s of stocks) {
@@ -122,10 +125,18 @@ async function StocksBody({ searchParams }: Props) {
 
   return (
     <>
-      <p className="mb-4 text-sm text-foreground/50">
+      <p className="mb-1 text-sm text-ink-tertiary">
         大量保有・自社株買いの開示があった銘柄{stocks.length}件。証券コード順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
+      {latestDealDate && (
+        <DataUpdatedAt
+          className="mb-4"
+          label="最終更新（反映済みの最新開示日）"
+          date={latestDealDate}
+          url={`${SITE_URL}/stocks`}
+        />
+      )}
       {sectors.length > 0 && (
         <FilterButtonNav
           ariaLabel="業種で絞り込む"
@@ -144,7 +155,7 @@ async function StocksBody({ searchParams }: Props) {
         />
       )}
       {visibleStocks.length === 0 ? (
-        <p className="text-foreground/50">
+        <p className="text-ink-tertiary">
           {stocks.length === 0 ? "銘柄データがまだありません。" : "該当する銘柄がありません。"}
         </p>
       ) : (
@@ -161,12 +172,15 @@ async function StocksBody({ searchParams }: Props) {
                   </span>
                 </span>
                 {/* 2・3行目はアイコン分を字下げせずカード左端から。 */}
-                <span className="mt-1 block text-xs text-foreground/50">
+                <span className="mt-1 block text-xs text-ink-tertiary">
                   {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
                   記事{stock.articleCount}件
                 </span>
-                <span className="block text-xs text-foreground/50">
-                  最終開示{formatDate(stock.latestDealDate)}
+                <span className="block text-xs text-ink-tertiary">
+                  最終開示
+                  <time dateTime={toDateAttr(stock.latestDealDate)}>
+                    {formatDate(stock.latestDealDate)}
+                  </time>
                 </span>
               </Link>
             </li>
@@ -182,7 +196,7 @@ async function StocksBody({ searchParams }: Props) {
           ) : (
             <span />
           )}
-          <span className="kicker text-foreground/50">
+          <span className="kicker text-ink-tertiary">
             {currentPage} / {totalPages}
           </span>
           {currentPage < totalPages ? (

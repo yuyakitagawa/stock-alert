@@ -10,7 +10,8 @@ import RelatedArticles from "@/components/RelatedArticles";
 import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { formatAmountOku, getRecentBuybackDecisions, type BuybackDecision } from "@/lib/buybacks";
 import type { FaqItem } from "@/lib/faqData";
-import { formatDate } from "@/lib/format";
+import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getArticleList } from "@/lib/microcms";
 import { getPublishedStockCodes } from "@/lib/publishedPages";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -91,7 +92,7 @@ function Frame({ d }: { d: BuybackDecision }) {
   return (
     <>
       <span className="font-bold text-brand-navy">{amount ?? "-"}</span>
-      {d.ratioPct !== null && <span className="ml-2 text-xs text-foreground/60">発行済の{d.ratioPct}%</span>}
+      {d.ratioPct !== null && <span className="ml-2 text-xs text-ink-tertiary">発行済の{d.ratioPct}%</span>}
     </>
   );
 }
@@ -114,6 +115,8 @@ export default async function BuybacksPage() {
   // 発行済株式比率の量感バーの基準。一覧は開示日の新しい順なので、
   // 需給インパクトの大小（＝比率）は数字を読まないと分からなかった。
   const maxRatio = listed.reduce((max, d) => Math.max(max, d.ratioPct ?? 0), 0);
+  // 一覧の更新日は、載っている決議のうち最も新しい開示日。
+  const latestDisclosedAt = latestDateOf(decisions.map((d) => d.disclosedAt));
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -137,31 +140,39 @@ export default async function BuybacksPage() {
     <div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
 
       <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           <span className="hidden sm:inline">
             上場企業が決議した自社株買いの取得枠を、TDnet開示の原文PDFから{SITE_NAME}が毎日抽出。
           </span>
           直近{WINDOW_DAYS}日の決定を開示日の新しい順に並べています（数字の見方は
           <a href="#faq" className="text-brand-blue hover:underline">FAQ</a>）。
         </p>
+        {latestDisclosedAt && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新開示日）"
+            date={latestDisclosedAt}
+            url={url}
+          />
+        )}
       </div>
 
       <section className="mb-10">
         <h2 className="mb-1 text-xl font-bold text-brand-navy">最新の自社株買い決定</h2>
-        <p className="mb-3 text-xs text-foreground/60">
+        <p className="mb-3 text-xs text-ink-tertiary">
           開示日の新しい順。
           {decisions.length > LIST_LIMIT && `上位${LIST_LIMIT}件を表示（ほか${decisions.length - LIST_LIMIT}件は各銘柄ページでご確認ください）。`}
         </p>
         {listed.length === 0 ? (
-          <p className="text-sm text-foreground/60">直近{WINDOW_DAYS}日の決定はありません。</p>
+          <p className="text-sm text-ink-tertiary">直近{WINDOW_DAYS}日の決定はありません。</p>
         ) : (
           /* 以前はMUI Table（minWidth 720px）でスマホは横スクロールが必要だった。
              他の一覧ページと同じ1件1カード（.card-grid-wide）にして全項目を折り返しで収める。 */
@@ -189,13 +200,18 @@ export default async function BuybacksPage() {
                           </span>
                         )}
                         {d.willCancel && (
-                          <span className="rounded bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">
+                          <span className="rounded-sm bg-brand-navy/10 px-1.5 py-0.5 text-2xs font-bold text-brand-navy">
                             消却
                           </span>
                         )}
-                        <span className="text-xs text-foreground/50">{formatDate(d.disclosedAt.slice(0, 10))}</span>
+                        <time
+                          dateTime={toDateAttr(d.disclosedAt)}
+                          className="text-xs text-ink-tertiary"
+                        >
+                          {formatDate(d.disclosedAt.slice(0, 10))}
+                        </time>
                       </span>
-                      <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-foreground/60">
+                      <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-ink-tertiary">
                         <span className="text-sm">
                           <Frame d={d} />
                         </span>

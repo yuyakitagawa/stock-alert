@@ -283,10 +283,13 @@ def article_facts(article: dict) -> dict:
     }
 
 
-def build_tweet_text(article: dict, insight: str = "") -> str:
+def build_tweet_text(article: dict, insight: str = "", valuation: str = "") -> str:
     """記事1件分の投稿本文。1行目は「誰が・どの銘柄を・どうした」のフックにし、
-    2行目に金額と保有比率の変化を置く（施策2）。insightは提出者の文脈1行（施策9）で、
-    文字数に収まらなければ落とす。URLは入れず、末尾の PROFILE_CTA で誘導する。"""
+    2行目に金額と保有比率の変化を置く（施策2）。valuationは開示時点のPBR/ROE/配当性向
+    （x_insight.build_valuation_line）、insightは提出者の文脈1行（施策9）。
+    文字数に収まらないときは insight → valuation の順に落とす（開示時点の数字のほうが
+    「なぜこの銘柄が狙われたか」を運んでいるので後に残す）。
+    URLは入れず、末尾の PROFILE_CTA で誘導する。"""
     f = article_facts(article)
     stock = label(f["stock_name"], STOCK_LABEL_MAX_UNITS)
     stock_label = f"{stock}({f['stock_code']})" if f["stock_code"] else stock
@@ -304,20 +307,22 @@ def build_tweet_text(article: dict, insight: str = "") -> str:
         parts = [p for p in (f["amount_label"], _ratio_phrase(f["ratio"], f["prior"], f["change_pt"])) if p]
         second = "・".join(parts)
 
-    def assemble(with_insight: bool) -> str:
+    def assemble(with_valuation: bool, with_insight: bool) -> str:
         lines = [head]
         if second:
             lines.append(second)
+        if with_valuation and valuation:
+            lines.append(valuation)
         if with_insight and insight:
             lines.append(insight)
         lines += [PROFILE_CTA, TAGS]
         return "\n".join(lines)
 
-    for with_insight in (True, False):
-        text = assemble(with_insight)
+    for with_valuation, with_insight in ((True, True), (True, False), (False, False)):
+        text = assemble(with_valuation, with_insight)
         if weighted_len(text) <= 270:
             return text
-    return assemble(False)
+    return assemble(False, False)
 
 
 def build_article_alt(article: dict) -> str:
@@ -516,7 +521,8 @@ def post_top_articles(published: list, featured_ids: set, top_n: int = ARTICLES_
         print("[x_client] 投稿時間帯(JST 8〜22時)外のため投稿をスキップします")
         return 0
 
-    from web.x_insight import build_insight_line, fetch_filer_context
+    from web.x_insight import (build_insight_line, build_valuation_line,
+                               fetch_filer_context, fetch_valuation_context)
 
     featured = [a for a in published if a.get("id") and a["id"] in featured_ids
                 and "訂正" not in (a.get("tags") or "")]
@@ -530,7 +536,9 @@ def post_top_articles(published: list, featured_ids: set, top_n: int = ARTICLES_
         is_correction = "訂正" in (article.get("tags") or "")
         context = fetch_filer_context(article.get("filerName") or "", article.get("stockCode") or "")
         insight = build_insight_line(clean_name(article.get("stockName") or ""), context)
-        text = build_tweet_text(article, insight=insight)
+        valuation = build_valuation_line(fetch_valuation_context(
+            article.get("stockCode") or "", article.get("dealDate") or ""))
+        text = build_tweet_text(article, insight=insight, valuation=valuation)
         media_ids = build_article_media(article)
         reply_to = find_prior_tweet(article.get("stockCode") or "") if is_correction else None
 

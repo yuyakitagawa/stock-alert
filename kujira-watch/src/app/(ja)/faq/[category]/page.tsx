@@ -79,15 +79,15 @@ export default async function FaqCategoryPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
         <Link href="/faq" className="hover:text-brand-blue">よくある質問</Link>
         {" / "}
-        <span className="text-foreground/70">{category.label}</span>
+        <span className="text-ink-secondary">{category.label}</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{category.label}</h1>
-      <p className="mb-6 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-6 text-sm leading-relaxed text-ink-secondary">
         {categoryTopic(category.label)}についてよく寄せられる質問と回答{faqs.length}件です。
         質問をタップすると回答が開きます。
       </p>

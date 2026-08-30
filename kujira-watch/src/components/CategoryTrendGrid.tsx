@@ -151,7 +151,7 @@ export default function CategoryTrendGrid({
 
   return (
     <figure className="my-4">
-      <div className="mb-2 flex items-center gap-4 text-xs text-foreground/60">
+      <div className="mb-2 flex items-center gap-4 text-xs text-ink-tertiary">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm" style={{ background: "var(--brand-blue)" }} />
           買い（上）
@@ -166,13 +166,13 @@ export default function CategoryTrendGrid({
           <CategoryChart key={row.dealType} row={row} weeks={weeks} />
         ))}
       </div>
-      <figcaption className="mt-2 text-xs text-foreground/50">
+      <figcaption className="mt-2 text-xs text-ink-tertiary">
         解説記事化した開示の推定取引金額を投資家分類×週（月曜始まり）で買い・売りに分けて集計。
         単位は億円。縦軸のスケールは分類ごと（各カード右上の「目盛り」が棒の最大値）なので、分類間の規模は右上の期間計で比べてください。
         並びは期間計（買い＋売り）の大きい順。
         {hasPartial && "薄い棒は今週（集計中）です。"}
       </figcaption>
-      <details className="mt-2 text-sm text-foreground/60">
+      <details className="mt-2 text-sm text-ink-tertiary">
         <summary className="cursor-pointer">数値を表で見る</summary>
         <TableContainer>
           <Table size="small" sx={{ minWidth: 120 + weeks.length * 90, "& .MuiTableCell-root": { borderColor: "divider", px: 1 } }}>
@@ -200,7 +200,7 @@ export default function CategoryTrendGrid({
                       <span style={{ color: cell.sellCount > 0 ? "var(--loss)" : undefined }}>
                         {cell.sellCount > 0 ? shortAmount(cell.sellAmount) : "–"}
                       </span>
-                      <span className="block text-[0.625rem] text-foreground/70">
+                      <span className="block text-[0.625rem] text-ink-secondary">
                         {cell.buyCount + cell.sellCount}件
                       </span>
                     </TableCell>

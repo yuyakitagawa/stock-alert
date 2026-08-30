@@ -78,6 +78,15 @@ class TestMissingAndVocab(unittest.TestCase):
         v = check_ranking(rows)
         self.assertTrue(any(x.check == "recommend_vocab" and x.severity == "warning" for x in v))
 
+    def test_known_recommend_labels_are_not_flagged(self):
+        """recommend_from_scores() が返す3値は語彙違反にしない。「🔴 売り検討」の登録漏れで
+        毎run warning が出ていた（2026-08-29 のログレビューで検出）。"""
+        rows = _healthy_rows(50)
+        for i, label in enumerate(("💎 買い", "🔴 売り検討", "—")):
+            rows[i]["recommend"] = label
+        v = check_ranking(rows)
+        self.assertFalse(any(x.check == "recommend_vocab" for x in v))
+
     def test_empty_is_critical(self):
         v = check_ranking([])
 

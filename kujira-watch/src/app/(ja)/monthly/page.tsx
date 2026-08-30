@@ -4,7 +4,8 @@ import MonthList from "@/components/MonthList";
 import { siblingDataPages } from "@/lib/nav";
 import ListPageNextStep from "@/components/ListPageNextStep";
 import RelatedArticles from "@/components/RelatedArticles";
-import { formatMonth } from "@/lib/format";
+import { formatMonth, latestDateOf } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getAllMonthsForIndex, getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
@@ -39,6 +40,9 @@ export default async function MonthlyIndexPage() {
     getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
   ]);
 
+  // 一覧の更新日は、最新記事の取引日＝アーカイブに最後に積まれた日。
+  const latestDealDate = latestDateOf(latestArticles.map((a) => a.dealDate));
+
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -70,20 +74,28 @@ export default async function MonthlyIndexPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">月別アーカイブ</h1>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           {SITE_NAME}が公開した大口投資家の動きを月ごとにまとめています。
           各月のページでは、その月に動いた投資家・銘柄のランキングと日別の一覧を確認できます。
         </p>
+        {latestDealDate && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新取引日）"
+            date={latestDealDate}
+            url={url}
+          />
+        )}
       </div>
       {months.length === 0 ? (
-        <p className="text-sm text-foreground/60">まだ記事がありません。</p>
+        <p className="text-sm text-ink-tertiary">まだ記事がありません。</p>
       ) : (
         <MonthList months={months} />
       )}

@@ -16,7 +16,8 @@ import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
 import { getFilerIdMap, getFilersByStockCode, getHoldingsByStockCode, investorPath } from "@/lib/investors";
 import { getBuybacksByStockCode } from "@/lib/buybacks";
 import BuybackHistory from "@/components/BuybackHistory";
-import { formatDate } from "@/lib/format";
+import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import RatioTransition from "@/components/RatioTransition";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -139,6 +140,13 @@ export default async function StockPage({ params }: Props) {
   // 見出し直下の直答文。AI検索・強調スニペットは「タイトルに対する答えの1文」を抜くため、
   // 大株主の一覧・表より前に文章で置く。数字はすべて下の一覧と同じEDINET開示から作る。
   const holderLead = formatStockHolderLead(stockName, code, filers);
+  // このページが反映している最新の開示日。保有一覧（filers/holdings）と記事の
+  // どちらか新しい方を使う（記事化していない開示だけが増える日があるため）。
+  const latestDiscDate = latestDateOf([
+    ...filers.map((f) => f.latestDiscDate),
+    ...holdings.map((h) => h.discDate),
+    ...contents.map((a) => a.dealDate),
+  ]);
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -188,19 +196,27 @@ export default async function StockPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{stockName}（{code}）</span>
+        <span className="text-ink-secondary">{stockName}（{code}）</span>
       </nav>
-      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${holderLead || companyInfo?.description ? "mb-2" : "mb-6"}`}>
+      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${holderLead || companyInfo?.description || latestDiscDate ? "mb-2" : "mb-6"}`}>
         {stockName}（{code}）の大株主・株主構成
       </h1>
       {holderLead && (
-        <p className="mb-3 text-sm leading-relaxed text-foreground/80">{holderLead}</p>
+        <p className="mb-3 text-sm leading-relaxed text-ink-secondary">{holderLead}</p>
       )}
       {companyInfo?.description && (
-        <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>
+        <p className="mb-3 text-sm text-ink-secondary">{companyInfo.description}</p>
+      )}
+      {latestDiscDate && (
+        <DataUpdatedAt
+          className="mb-6"
+          label="最終更新（反映済みの最新開示日）"
+          date={latestDiscDate}
+          url={url}
+        />
       )}
       {companyInfo && <CompanyInfoCard info={companyInfo} />}
       {filers.length > 0 && (
@@ -224,7 +240,11 @@ export default async function StockPage({ params }: Props) {
                 <DealTypeBadge dealType={filer.category} />
                 {filer.latestRatio !== null && filer.latestDiscDate && (
                   <Typography component="span" variant="caption" sx={{ color: "text.secondary" }}>
-                    保有比率 {filer.latestRatio}%（{formatDate(filer.latestDiscDate)}時点）
+                    保有比率 {filer.latestRatio}%（
+                    <time dateTime={toDateAttr(filer.latestDiscDate)}>
+                      {formatDate(filer.latestDiscDate)}
+                    </time>
+                    時点）
                   </Typography>
                 )}
               </ListItem>
@@ -252,7 +272,7 @@ export default async function StockPage({ params }: Props) {
                 {holdings.map((h) => (
                   <TableRow key={h.docId}>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                      {formatDate(h.discDate)}
+                      <time dateTime={toDateAttr(h.discDate)}>{formatDate(h.discDate)}</time>
                     </TableCell>
                     <TableCell>
                       {publishedFilers.has(h.filerName) ? (
@@ -296,18 +316,20 @@ export default async function StockPage({ params }: Props) {
         <>
           <div className="mb-6">
             <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
-            <p className="mt-1 text-sm text-foreground/80">
+            <p className="mt-1 text-sm text-ink-secondary">
               {formatStockDealSummary(dealSummary, stockName, code)}
             </p>
           </div>
           {groupArticlesByDealDate(contents).map((group) => (
             <div key={group.date} className="mb-8">
-              <DealDateHeading label={group.label} />
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <DealDateHeading label={group.label} level="h3" />
+              <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 {group.articles.map((article) => (
-                  <ArticleCard key={article.id} article={article} />
+                  <li key={article.id} className="grid">
+                    <ArticleCard article={article} headingLevel="h4" />
+                  </li>
                 ))}
-              </div>
+              </ul>
               <DealDateSeeMoreLink href={publishedDates.has(group.date) ? `/date/${group.date}` : null} />
             </div>
           ))}

@@ -4,10 +4,11 @@ import InfoTip from "@/components/InfoTip";
 import ListPageNextStep from "@/components/ListPageNextStep";
 import { siblingDataPages } from "@/lib/nav";
 import { notFound } from "next/navigation";
-import { displayFilerName, formatDate, formatDealAmount } from "@/lib/format";
+import { displayFilerName, formatDate, formatDealAmount, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getArticlesByFilerNames, getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
-import { getInvestorReturns, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
+import { getInvestorReturns, getLatestReturnCohort, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
 import { buildStockRows } from "@/lib/rankingStats";
 import { getFilerIdMap, investorPath } from "@/lib/investors";
 import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
@@ -150,6 +151,17 @@ export default async function RankingSlugPage({ params }: Props) {
       .slice(0, RELATED_ARTICLE_SIZE);
   }
 
+  const url = `${SITE_URL}/ranking/${slug}`;
+  // ランキングの更新日。returnsは「開示から3ヶ月後の終値」で毎日計算し直しているので、
+  // 判定を満了した最新コホートの3ヶ月後日付＝数字が最後に動いた日を使う
+  // （行のlatestBuyDateは常に約3ヶ月前になり、更新日として出すと3ヶ月古く見える）。
+  const latestReturnCohort =
+    ranking.axis === "returns" ? await getLatestReturnCohort().catch(() => null) : null;
+  const latestDataDate =
+    ranking.axis === "returns"
+      ? latestReturnCohort?.date3m ?? latestDateOf(returnRows.map((row) => row.latestBuyDate))
+      : latestDateOf(stockRows.map((row) => row.dealDate));
+
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -197,24 +209,36 @@ export default async function RankingSlugPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
         <Link href="/ranking/returns" className="hover:text-brand-blue">投資家ランキング</Link>
         {" / "}
-        <span className="text-foreground/70">{ranking.title}</span>
+        <span className="text-ink-secondary">{ranking.title}</span>
       </nav>
       {/* h1はヘッダー・フッターのラベル（投資家ランキング）と揃え、個別のランキング名は
           h2に置く。2026-08-21に開示急増投資家ランキングを廃止してタブは無くなったが、
           パンくず・ナビの語との一致を優先してこの2段構成のままにしている。 */}
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
-      <p className="mb-6 text-sm text-foreground/50">
+      <p className="mb-1 text-sm text-ink-tertiary">
         {ranking.description}
         <InfoTip
           content={`${ranking.detail} ${ranking.note} 出典はEDINET大量保有報告書。過去の成績であり、将来の値動きや投資助言を示すものではありません。`}
         />
       </p>
+      {latestDataDate && (
+        <DataUpdatedAt
+          className="mb-6"
+          label={
+            ranking.axis === "returns"
+              ? "最終更新（3ヶ月後リターンの算定日）"
+              : "最終更新（反映済みの最新開示日）"
+          }
+          date={latestDataDate}
+          url={url}
+        />
+      )}
       {/* アクティビストランキングだけは/activists（アクティビスト注目銘柄）と対の関係にあるため
           相互リンクを置く。他のタブページには無関係なリンクを並べない。 */}
       {slug === "activist" && (
@@ -225,7 +249,7 @@ export default async function RankingSlugPage({ params }: Props) {
         </nav>
       )}
       {rowCount === 0 ? (
-        <p className="text-foreground/50">
+        <p className="text-ink-tertiary">
           {ranking.axis === "returns"
             ? "集計対象の開示がまだありません。"
             : `直近${RANKING_DAYS}日に該当する開示がありません。`}
@@ -238,7 +262,7 @@ export default async function RankingSlugPage({ params }: Props) {
             publishedFilerNames={[...publishedFilers]}
             publishedStockCodes={[...publishedCodes]}
           />
-          <p className="mt-2 text-xs leading-relaxed text-foreground/40">
+          <p className="mt-2 text-xs leading-relaxed text-ink-muted">
             集計対象は買い開示{MIN_POSITIONS}件以上の投資家です。リターンは開示日（休場なら直後の営業日）の終値を基準に
             {RETURN_TRADING_DAYS}営業日後の終値までを計算したもので、実際の取得単価・売却時期は反映していません。
             日経平均比は同じ期間の日経平均の騰落率との差（％pt）です。
@@ -249,7 +273,7 @@ export default async function RankingSlugPage({ params }: Props) {
           {stockRows.map((row, index) => (
             <li key={row.key} className="card">
               <span className="flex items-start gap-2">
-                <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
+                <span className="w-5 shrink-0 font-bold tabular-nums text-ink-muted">
                   {index + 1}
                 </span>
                 <SectorIcon sector={stockBriefs.get(row.stockCode)?.sector} size="lg" />
@@ -266,7 +290,7 @@ export default async function RankingSlugPage({ params }: Props) {
                   </span>
                 )}
               </span>
-              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-tertiary">
                 <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
                 {row.filerName &&
                   (publishedFilers.has(row.filerName) ? (
@@ -279,7 +303,7 @@ export default async function RankingSlugPage({ params }: Props) {
                   ) : (
                     <span>{row.filerName}</span>
                   ))}
-                <span>{formatDate(row.dealDate)}</span>
+                <time dateTime={toDateAttr(row.dealDate)}>{formatDate(row.dealDate)}</time>
                 <Link href={`/articles/${row.articleId}`} className="text-brand-blue hover:underline">
                   解説記事
                 </Link>

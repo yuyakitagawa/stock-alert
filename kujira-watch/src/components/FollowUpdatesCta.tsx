@@ -15,14 +15,14 @@ export default function FollowUpdatesCta({
   return (
     <section className="mb-10 rounded-md border border-rule bg-section-tint p-4">
       <h2 className="text-sm font-bold text-brand-navy">{targetLabel}の更新を追う</h2>
-      <p className="mt-1 text-xs leading-relaxed text-foreground/60">
+      <p className="mt-1 text-xs leading-relaxed text-ink-tertiary">
         新しい開示が出たときに気づけるよう、RSSリーダー（Feedly・Inoreader等）に登録できます。
         大きな動きは公式X（@{X_SCREEN_NAME}）でも毎日お知らせしています。
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <a
           href={feedUrl}
-          className="rounded border border-brand-blue px-3 py-1.5 text-xs font-bold text-brand-blue hover:bg-brand-blue hover:text-white"
+          className="rounded-md border border-brand-blue px-3 py-1.5 text-xs font-bold text-brand-blue hover:bg-brand-blue hover:text-white"
         >
           RSSで新着を受け取る
         </a>
@@ -30,7 +30,7 @@ export default function FollowUpdatesCta({
           href={X_FOLLOW_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded border border-rule px-3 py-1.5 text-xs font-bold text-foreground/70 hover:border-brand-blue hover:text-brand-blue"
+          className="rounded-md border border-rule px-3 py-1.5 text-xs font-bold text-ink-secondary hover:border-brand-blue hover:text-brand-blue"
         >
           Xでフォローする
         </a>

@@ -37,6 +37,7 @@ def test_estimate_deal_amount_oku_none_when_shares_missing():
 
 
 def test_shares_outstanding_retries_then_succeeds():
+    m.shares_outstanding.cache_clear()  # 実行内メモ化しているのでテスト間で持ち越さない
     ticker = mock.MagicMock()
     type(ticker).info = mock.PropertyMock(
         side_effect=[Exception("rate limited"), Exception("rate limited"), {"sharesOutstanding": 5_000_000}]
@@ -46,6 +47,7 @@ def test_shares_outstanding_retries_then_succeeds():
 
 
 def test_shares_outstanding_falls_back_to_implied_shares_outstanding():
+    m.shares_outstanding.cache_clear()
     ticker = mock.MagicMock()
     type(ticker).info = mock.PropertyMock(return_value={"impliedSharesOutstanding": 3_000_000})
     with mock.patch("yfinance.Ticker", return_value=ticker):
@@ -53,6 +55,7 @@ def test_shares_outstanding_falls_back_to_implied_shares_outstanding():
 
 
 def test_shares_outstanding_returns_none_after_exhausting_retries():
+    m.shares_outstanding.cache_clear()
     ticker = mock.MagicMock()
     type(ticker).info = mock.PropertyMock(side_effect=Exception("rate limited"))
     with mock.patch("yfinance.Ticker", return_value=ticker), mock.patch("time.sleep"):
@@ -1104,6 +1107,23 @@ def test_eyecatch_stock_line_variants():
     assert m._stock_line_text({"stock_name": "A", "holding_ratio": None}, "▲ 買い増し") == "A"
 
 
+def test_display_text_halfwidths_only_latin_and_english_symbols():
+    """EDINETの全角英数はアイキャッチで字間が間延びして読めないため半角へ寄せる。
+    和文の句読点・中黒・全角括弧は変換しない（NFKCを使わない理由）。"""
+    assert m.display_text("ＢＣＰＥ　Ｐａｎｇｅａ　Ｃａｙｍａｎ，　Ｌ．Ｐ．") == "BCPE Pangea Cayman, L.P."
+    assert m.display_text("ＩＸＧＳ，　Ｉｎｃ．") == "IXGS, Inc."
+    assert m.display_text("Ｈｅａｒｔｓｅｅｄ株式会社") == "Heartseed株式会社"
+    # 和文の記号はそのまま
+    assert m.display_text("三陽商会（8011）・大量保有") == "三陽商会（8011）・大量保有"
+
+
+def test_eyecatch_stock_line_normalizes_fullwidth_name():
+    """銘柄名側もアイキャッチに焼き込む前に半角へ寄せる。"""
+    assert m._stock_line_text(
+        {"stock_name": "ＲｅＹｕｕ　Ｊａｐａｎ株式会社", "holding_ratio": 5.09}, "▲ 買い増し"
+    ) == "ReYuu Japan株式会社　5.09%"
+
+
 def test_upload_eyecatch_returns_url_on_success():
     resp = _FakeResponse(201, "", {"url": "https://images.microcms-assets.io/assets/x/y.png"})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
@@ -2085,4 +2105,6 @@ if __name__ == "__main__":
     test_ledger_flags_generation_failure_as_anomaly()
     test_ledger_flags_publish_failure_as_anomaly()
     test_ledger_counts_every_candidate()
-    print("全テスト成功 (136件)")
+    test_display_text_halfwidths_only_latin_and_english_symbols()
+    test_eyecatch_stock_line_normalizes_fullwidth_name()
+    print("全テスト成功 (138件)")

@@ -48,7 +48,7 @@ export default function HoldingRatioChart({
   return (
     <section className="mb-8 rounded-md border border-rule bg-section-tint p-4">
       <h2 className="text-sm font-bold text-brand-navy">この投資家の保有比率の推移</h2>
-      <p className="mt-1 text-[11px] text-foreground/50">
+      <p className="mt-1 text-[11px] text-ink-tertiary">
         EDINETに提出された{points.length}件の開示（{formatDate(first.discDate)}〜{formatDate(last.discDate)}）の保有比率です。
       </p>
       <div className="mt-3 overflow-x-auto">
@@ -84,25 +84,25 @@ export default function HoldingRatioChart({
               className={rising ? "fill-emerald-600" : "fill-rose-600"}
             />
           ))}
-          <text x={first.x} y={first.y - 8} className="fill-current text-[11px] text-foreground/60">
+          <text x={first.x} y={first.y - 8} className="fill-current text-[11px] text-ink-tertiary">
             {first.holdingRatio}%
           </text>
           <text
             x={last.x}
             y={last.y - 8}
             textAnchor="end"
-            className="fill-current text-[11px] font-bold text-foreground/80"
+            className="fill-current text-[11px] font-bold text-ink-secondary"
           >
             {last.holdingRatio}%
           </text>
-          <text x={first.x} y={HEIGHT - 8} className="fill-current text-[10px] text-foreground/40">
+          <text x={first.x} y={HEIGHT - 8} className="fill-current text-[10px] text-ink-muted">
             {formatDate(first.discDate)}
           </text>
           <text
             x={last.x}
             y={HEIGHT - 8}
             textAnchor="end"
-            className="fill-current text-[10px] text-foreground/40"
+            className="fill-current text-[10px] text-ink-muted"
           >
             {formatDate(last.discDate)}
           </text>

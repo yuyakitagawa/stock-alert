@@ -37,7 +37,7 @@ export default function ArticleNextStep({
       {stockHref && (
         <Link
           href={stockHref}
-          className="rounded border border-brand-blue px-3 py-1.5 font-bold text-brand-blue hover:bg-brand-blue hover:text-white"
+          className="rounded-md border border-brand-blue px-3 py-1.5 font-bold text-brand-blue hover:bg-brand-blue hover:text-white"
         >
           {stockName}の大株主構成 ›
         </Link>
@@ -45,7 +45,7 @@ export default function ArticleNextStep({
       {filerName && filerHref && (
         <Link
           href={filerHref}
-          className="rounded border border-rule px-3 py-1.5 text-foreground/70 hover:border-brand-blue hover:text-brand-blue"
+          className="rounded-md border border-rule px-3 py-1.5 text-ink-secondary hover:border-brand-blue hover:text-brand-blue"
         >
           {displayFilerName(filerName)}の保有銘柄 ›
         </Link>
@@ -53,7 +53,7 @@ export default function ArticleNextStep({
       {dateOnly && dateHref && (
         <Link
           href={dateHref}
-          className="rounded border border-rule px-3 py-1.5 text-foreground/70 hover:border-brand-blue hover:text-brand-blue"
+          className="rounded-md border border-rule px-3 py-1.5 text-ink-secondary hover:border-brand-blue hover:text-brand-blue"
         >
           {formatDate(dateOnly)}の全開示 ›
         </Link>

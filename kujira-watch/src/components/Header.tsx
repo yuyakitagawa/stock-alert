@@ -67,7 +67,7 @@ export default function Header() {
                   flexShrink: 0,
                   borderRadius: "50%",
                   bgcolor: "primary.main",
-                  fontSize: "1.25rem",
+                  fontSize: "var(--text-xl)",
                   lineHeight: 1,
                 }}
               >
@@ -122,7 +122,7 @@ export default function Header() {
                 minWidth: "auto",
                 px: 0,
                 mr: 3,
-                fontSize: "0.6875rem",
+                fontSize: "var(--text-2xs)",
                 fontWeight: 700,
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",

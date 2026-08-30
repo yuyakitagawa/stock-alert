@@ -151,7 +151,7 @@ export default function StockSearch() {
               bgcolor: "transparent",
               color: "text.primary",
               fontFamily: "inherit",
-              fontSize: "0.8125rem",
+              fontSize: "var(--text-sm)",
             }}
           />
         </Box>

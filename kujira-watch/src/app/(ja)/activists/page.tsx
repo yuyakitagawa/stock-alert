@@ -8,7 +8,8 @@ import {
   getActivistRecentMoves,
   type ActivistMove,
 } from "@/lib/activists";
-import { displayFilerName, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
@@ -63,7 +64,7 @@ export default async function ActivistsPage() {
         {issuerName}（{issuerCode}）
       </Link>
     ) : (
-      <span className="text-foreground/80">
+      <span className="text-ink-secondary">
         {issuerName}（{issuerCode}）
       </span>
     );
@@ -128,7 +129,7 @@ export default async function ActivistsPage() {
         max={maxDelta}
         tone={row.totalDelta === maxDelta ? "gold" : "gain"}
       />
-      <ul className="mt-1 space-y-0.5 text-xs text-foreground/60">
+      <ul className="mt-1 space-y-0.5 text-xs text-ink-tertiary">
         {row.buys.map((move) => (
           <li key={move.docId}>
             {publishedFilers.has(move.filerName) ? (
@@ -139,12 +140,12 @@ export default async function ActivistsPage() {
                 {displayFilerName(move.filerName)}
               </Link>
             ) : (
-              <span className="text-foreground/80">{displayFilerName(move.filerName)}</span>
+              <span className="text-ink-secondary">{displayFilerName(move.filerName)}</span>
             )}
             <span className="ml-2">
               {move.holdingRatioPrior === null && "新規 "}
               <RatioTransition ratio={move.holdingRatio} prior={move.holdingRatioPrior} />
-              （{formatDate(move.discDate)}）
+              （<time dateTime={toDateAttr(move.discDate)}>{formatDate(move.discDate)}</time>）
             </span>
           </li>
         ))}
@@ -184,10 +185,10 @@ export default async function ActivistsPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
 
       <div className="mb-8">
@@ -195,8 +196,8 @@ export default async function ActivistsPage() {
         {/* 1文目で「今どこを狙っているか」に数字で答える。見出し直下の短い断定文はAI検索・
             強調スニペットが最も抜き出しやすい位置。JSXの改行が余分な半角スペースになって
             日本語の文中に入るため、文は文字列として組み立ててから流し込む。 */}
-        <p className="mt-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-3 text-sm leading-relaxed text-ink-secondary">{leadSentence}</p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           下の一覧は直近{MOVES_WINDOW_DAYS}日に買い入れた銘柄を、増加幅の大きい順に並べたものです。
           <InfoTip
             content={
@@ -209,6 +210,14 @@ export default async function ActivistsPage() {
           />
           {attentionOmitted > 0 && `（増加幅の大きい上位${ATTENTION_RENDER_LIMIT}銘柄を表示。ほか${attentionOmitted}銘柄は各銘柄ページでご確認ください）`}
         </p>
+        {latestMoveDate && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新開示日）"
+            date={latestMoveDate}
+            url={url}
+          />
+        )}
       </div>
 
       <FactBox
@@ -230,7 +239,7 @@ export default async function ActivistsPage() {
 
       <section className="mb-10">
         {attentionStocks.length === 0 ? (
-          <p className="text-sm text-foreground/60">
+          <p className="text-sm text-ink-tertiary">
             直近{MOVES_WINDOW_DAYS}日にアクティビストが買い入れた銘柄はありません。
           </p>
         ) : (

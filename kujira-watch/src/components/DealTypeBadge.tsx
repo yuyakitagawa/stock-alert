@@ -1,10 +1,6 @@
-"use client";
-
-import Chip from "@mui/material/Chip";
-import Tooltip from "@mui/material/Tooltip";
-import Box from "@mui/material/Box";
 import type { DealType } from "@/types/article";
 import { DEAL_TYPE_COLORS, DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
+import DotBadge from "./DotBadge";
 
 export default function DealTypeBadge({
   dealType,
@@ -17,25 +13,13 @@ export default function DealTypeBadge({
 }) {
   if (!dealType) return null;
   const colors = DEAL_TYPE_COLORS[dealType] ?? DEAL_TYPE_COLORS.その他;
-  const title = DEAL_TYPE_DESCRIPTIONS[dealType];
 
   return (
-    <Tooltip title={title}>
-      <Chip
-        size="small"
-        variant="outlined"
-        icon={<Box component="span" sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: colors.dot, ml: "6px !important" }} />}
-        label={dealType}
-        sx={{
-          height: "auto",
-          borderColor: "transparent",
-          color: onDark ? "rgba(255, 255, 255, 0.92)" : colors.text,
-          fontSize: "0.6875rem",
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          "& .MuiChip-label": { px: 0.75, py: 0.25 },
-        }}
-      />
-    </Tooltip>
+    <DotBadge
+      label={dealType}
+      dotColor={colors.dot}
+      color={onDark ? "var(--ink-on-dark)" : colors.text}
+      tooltip={DEAL_TYPE_DESCRIPTIONS[dealType]}
+    />
   );
 }

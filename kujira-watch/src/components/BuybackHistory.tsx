@@ -88,7 +88,7 @@ export default function BuybackHistory({ rows }: { rows: BuybackRow[] }) {
                   </TableCell>
                   <TableCell sx={{ color: "text.secondary" }}>
                     <span className="block text-xs">{r.title}</span>
-                    {detail && <span className="block text-xs text-foreground/60">{detail}</span>}
+                    {detail && <span className="block text-xs text-ink-tertiary">{detail}</span>}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}>
                     {r.docUrl && (

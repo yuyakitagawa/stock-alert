@@ -1,8 +1,10 @@
 import CategoryFilterDetails from "@/components/CategoryFilterDetails";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TodayWhaleSummary from "@/components/TodayWhaleSummary";
+import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
 import { dateHref, getPublishedDates } from "@/lib/publishedPages";
@@ -64,12 +66,20 @@ export default async function HomePage() {
           ? `大量保有報告書で読む大口投資家の動き（${formatDate(latestDealDate)}の取引）`
           : "大量保有報告書で読む大口投資家の動き"}
       </h1>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-2 text-sm leading-relaxed text-ink-secondary">
         EDINETに提出された大量保有報告書を平日毎時チェックし、機関投資家・アクティビスト・創業家など
         大口投資家の売買を開示当日のうちに記事にしています。
       </p>
+      {latestDealDate && (
+        <DataUpdatedAt
+          className="mb-4"
+          label="最終更新（反映済みの最新取引日）"
+          date={latestDealDate}
+          url={SITE_URL}
+        />
+      )}
       {contents.length === 0 ? (
-        <p className="text-foreground/50">記事がまだありません。</p>
+        <p className="text-ink-tertiary">記事がまだありません。</p>
       ) : (
         <>
           {latestDealDate && latestDayArticles.length > 0 && (
@@ -88,12 +98,17 @@ export default async function HomePage() {
               /trendingは閲覧者全員が押している（2026-08-27のGA4実測）。ヘッダーに同じリンクは
               あるので、足りないのはリンクではなく押す理由＝実際の銘柄名と金額。 */}
           <TopTrendingPreview />
+          {/* 「誰が買ったか」の次に「そのあとどうなったか」を置く。株価と結び付けた数字は
+              大量保有アラート型の競合が持っていない情報なので、TOPで見えるようにする。 */}
+          <TopReturnPreview />
           {featuredArticles.length > 0 && (
-            <div className="mb-8 space-y-4">
+            <ul className="mb-8 space-y-4">
               {featuredArticles.map((article, i) => (
-                <FeaturedArticleCard key={article.id} article={article} rank={i + 1} />
+                <li key={article.id}>
+                  <FeaturedArticleCard article={article} rank={i + 1} />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
           {/* 記事ページにしか無かったフォロー導線をTOPにも置く。サイトの主要コンバージョンは
               Xフォロー（再訪のきっかけ）で、TOPは注目枠を読み終えた直後が最も関心が高い位置。 */}
@@ -104,6 +119,7 @@ export default async function HomePage() {
           <h2 className="mb-4 text-xl font-bold text-brand-navy">新着の取引</h2>
           <CategoryFilterDetails />
           <InfiniteArticleList
+            dateHeadingLevel="h3"
             initialArticles={contents}
             totalCount={totalCount}
             excludeIds={featuredIds}

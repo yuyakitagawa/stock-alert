@@ -46,6 +46,7 @@ import json
 import argparse
 import hashlib
 from collections import Counter
+from functools import lru_cache
 from datetime import date, datetime, timedelta, timezone
 
 import requests
@@ -285,6 +286,25 @@ def _wrap_text_lines(draw, text: str, font, max_width: int, max_lines: int = 3) 
     return lines[:max_lines]
 
 
+# EDINETの提出者名・銘柄名は英数字が全角（例:「ＢＣＰＥ　Ｐａｎｇｅａ　Ｃａｙｍａｎ，　Ｌ．Ｐ．」）で
+# 登録されており、そのまま画像に焼き込むと字間が間延びして読みにくく、素人臭い見た目になる。
+# kujira-watch/src/lib/format.ts の displayText() と同じ規則の写し。片方だけ変えないこと。
+# NFKCは使わない（全角括弧・句読点まで半角化してしまい和文の見た目が崩れるため）。
+# 変換するのは表示文字列だけで、DB照合・APIに渡す値は原文のまま使う。
+_FULLWIDTH_SYMBOLS = {"．": ".", "，": ",", "＆": "&", "　": " "}
+
+
+def display_text(text: str) -> str:
+    """全角英数字と英文文脈の記号だけを半角へ寄せる。日本語の句読点・中黒・全角括弧は変換しない。"""
+    out = []
+    for ch in text or "":
+        if "０" <= ch <= "９" or "Ａ" <= ch <= "Ｚ" or "ａ" <= ch <= "ｚ":
+            out.append(chr(ord(ch) - 0xFEE0))
+        else:
+            out.append(_FULLWIDTH_SYMBOLS.get(ch, ch))
+    return re.sub(r" {2,}", " ", "".join(out)).strip()
+
+
 def _stock_line_text(card: dict, badge_label: str) -> str:
     """アイキャッチ2段目（銘柄名＋保有比率）の文字列を組み立てる。
 
@@ -293,11 +313,12 @@ def _stock_line_text(card: dict, badge_label: str) -> str:
     「全株売却」と書き、後者は数字を出さず銘柄名だけにする。素の「0.00%」はどちらも
     データ欠損に見えるため焼き込まない。badge_labelは絵文字置換後の文字列を受け取る。"""
     ratio = card.get("holding_ratio")
+    stock_name = display_text(card["stock_name"])
     if ratio:
-        return f"{card['stock_name']}　{ratio:.2f}%"
+        return f"{stock_name}　{ratio:.2f}%"
     if "売却" in badge_label:
-        return f"{card['stock_name']}　全株売却"
-    return card["stock_name"]
+        return f"{stock_name}　全株売却"
+    return stock_name
 
 
 def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
@@ -340,7 +361,9 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
         for emoji, symbol in (("📈", "▲"), ("📉", "▼"), ("📝", "■")):
             badge_label = badge_label.replace(emoji, symbol)
         badge_text = f"{badge_label}　{card['disc_date']}"
-        filer_lines = _wrap_text_lines(draw, card["filer_name"], filer_font, max_text_width, max_lines=2)
+        filer_lines = _wrap_text_lines(
+            draw, display_text(card["filer_name"]), filer_font, max_text_width, max_lines=2
+        )
         stock_text = _stock_line_text(card, badge_label)
         stock_lines = _wrap_text_lines(draw, stock_text, stock_font, max_text_width, max_lines=2)
 
@@ -355,11 +378,15 @@ def generate_eyecatch_image(category: str, card: dict) -> "bytes | None":
             + 60 * ss
         )
         band_y = (h - band_h) // 2
-        band = Image.new("RGBA", (w, band_h), (10, 9, 8, 200))
+        # 帯はニュートラルな黒ではなくブランドネイビー(--surface-inverse #16213a)。
+        # サイト上の注目カード（ダーク地）と同じ色にして、一覧に並んだときに浮かないようにする。
+        band = Image.new("RGBA", (w, band_h), (22, 33, 58, 205))
         img.paste(band, (0, band_y), band)
 
         y = band_y + 30 * ss
-        draw.text((pad_left, y), badge_text, font=badge_font, fill=(255, 200, 80, 255))
+        # バッジ文字はブランドの金(--brand-gold-bright #d9a44f)。以前の(255,200,80)は
+        # どのブランド色でもない黄色で、サイトの配色から浮いていた。
+        draw.text((pad_left, y), badge_text, font=badge_font, fill=(217, 164, 79, 255))
         y += badge_h + gap
         for line in filer_lines:
             draw.text((pad_left, y), line, font=filer_font, fill=(255, 255, 255, 255))
@@ -668,11 +695,16 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
         return True
 
 
+@lru_cache(maxsize=None)
 def shares_outstanding(code: str) -> "float | None":
     """yfinanceの.infoは一時的なレート制限で単発失敗することが多く（2026-08-06の実行では
     価格データが揃っている銘柄（サンリオ等）でもこれが原因で「金額を概算できない」スキップに
     なっていた）、最大3回まで短い間隔でリトライする。J-REIT（投資口）はsharesOutstandingが
-    空でimpliedSharesOutstandingに口数が入ることがあるためフォールバックで見る。"""
+    空でimpliedSharesOutstandingに口数が入ることがあるためフォールバックで見る。
+
+    同一銘柄が同じ実行内で複数回判定されることがある（同日・同一提出者の開示が2件出る等、
+    実例: 2026-08-27 ハリマ共和物産7444）ため、実行内で結果をメモ化する。上場廃止・新規コードで
+    404になる銘柄（8190.T / 5953.T / 9170.T）の3回リトライを毎回やり直さないためでもある。"""
     import time
     import yfinance as yf
     for attempt in range(3):
@@ -755,6 +787,7 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
     return abs(current_ratio - prev_ratio)
 
 
+@lru_cache(maxsize=None)
 def close_price_from_yfinance(code: str, target_date: date) -> "float | None":
     """yahoo_price_cacheに無い銘柄の終値をyfinanceから直接取る（target_date以前の直近終値）。
 
@@ -762,7 +795,7 @@ def close_price_from_yfinance(code: str, target_date: date) -> "float | None":
     ユニバース外の銘柄はEDINET開示が出ても株価が引けない（実例: 2026-08-18、
     アイ・グリッド・ソリューションズ603A・ビート・ホールディングス9399・デンタス6174が
     「金額を概算できない」として不投稿）。発行済株式数は既にyfinanceから取っているので、
-    株価も同じ経路でフォールバックする。"""
+    株価も同じ経路でフォールバックする。shares_outstanding と同じ理由で実行内メモ化する。"""
     import yfinance as yf
     try:
         hist = yf.Ticker(f"{code}.T").history(period="1mo")

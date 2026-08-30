@@ -136,6 +136,7 @@ def main():
     print("=" * 60)
 
     done = fail = 0
+    failed_codes: list[str] = []
     days = target_days + 30  # 少し余裕を持って取得
     for b in range(n_batches):
         batch_codes = codes[b * BATCH_SIZE:(b + 1) * BATCH_SIZE]
@@ -147,6 +148,7 @@ def main():
                 done += 1
             else:
                 fail += 1
+                failed_codes.append(code)
 
         elapsed = (b + 1) / n_batches * 100
         print(f"  [batch {b+1:3d}/{n_batches}] {elapsed:.0f}%  取得: {done}  失敗: {fail}")
@@ -156,6 +158,11 @@ def main():
 
     print("=" * 60)
     print(f"完了: 取得={done}  スキップ={skip}  失敗={fail}")
+    # 失敗銘柄のコードを出す。件数だけだと「Yahooの一時的な不調」と「上場廃止・改称で
+    # 恒久的に引けないコード」の区別がつかず、毎日同じ50件前後を叩き続けても気付けなかった
+    # （2026-08-25〜29の全runで 失敗46〜55件・内訳不明）。
+    if failed_codes:
+        print(f"失敗銘柄({len(failed_codes)}件): {' '.join(sorted(failed_codes))}")
     print("次のステップ: python3 tools/backtest.py --start 2020-01-01 --end 2020-06-30 で任意期間検証できます")
 
 
