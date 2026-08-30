@@ -171,7 +171,10 @@ TikTok Content Posting API は**アプリ審査（audit）を通るまで直接�
 - [x] `video/youtube_auth.py` の scope を3つに拡張（upload / force-ssl / yt-analytics.readonly）
 - [x] **オーナー作業**: トークン取り直し（scope3つ）＋ GCPで YouTube Analytics API を有効化。完了
 - [x] 初回の維持率を実測（下記）
-- [ ] 実測を受けたシーン順の変更（第2シーンを company から何に替えるか。オーナー判断待ち）
+- [x] 実測を受けたシーン順の変更（2026-08-30）: `company→deal→filer→change` を
+      **`filer→change→deal→company`** へ。5〜9秒の枠から背景説明を外し、続報を置く。
+      2番目を change にしないのは、前回比率が取れない回に落ちて枠が変わるため
+- [ ] 次便以降の10秒残存率で判定する。基準値は変更前8本の53〜75%（45秒以下4本は56〜75%）
 
 ### 初回の実測（2026-08-30、9本中8本。直近1本はAnalytics側の反映待ち）
 | 公開日 | 尺 | 再生 | 視聴率 | 3秒 | 10秒 | 20秒 | 30秒 |
