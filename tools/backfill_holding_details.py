@@ -38,7 +38,13 @@ RATIO_EPS = 0.05
 
 
 def fetch_targets(only_missing: bool, since: str, limit: int) -> list:
-    query = "select=doc_id,disc_date,holding_ratio&order=disc_date.asc,doc_id.asc"
+    # issuer_code も必ず取る。PostgRESTのupsertは INSERT ... ON CONFLICT DO UPDATE なので、
+    # 実際にはUPDATEになる行でも「INSERTしようとしたタプル」に対してNOT NULL制約が評価される。
+    # payloadに issuer_code を含めないと、既存行の更新のはずが
+    # `null value in column "issuer_code" ... violates not-null constraint` で
+    # バッチごと400になる（2026-08-30に実測。25,000件を処理したのに1行も書けていなかった）。
+    # このテーブルのNOT NULLは doc_id と issuer_code の2つだけ。
+    query = "select=doc_id,disc_date,holding_ratio,issuer_code&order=disc_date.asc,doc_id.asc"
     if only_missing:
         query += "&xbrl_detail_fetched_date=is.null"
     if since:
@@ -68,6 +74,8 @@ def main() -> int:
         return 0
 
     pending: list[dict] = []
+    # 書き込めなかった行数。1件でもあれば「完了」と言えないので最後に必ず出す。
+    write_failed = [0]
     ratio_changed = 0
     ratio_examples: list[str] = []
     failed = 0
@@ -78,10 +86,13 @@ def main() -> int:
         if not pending:
             return
         if not args.dry_run:
-            # doc_idと今回計算し直した列だけを送る。payloadに無い列は触られないので、
-            # 記事の紐付け（article_published_at）などは保持される。
+            # doc_id・issuer_codeと今回計算し直した列だけを送る。payloadに無い列は
+            # 触られないので、記事の紐付け（article_published_at）などは保持される。
             if not sb.upsert("edinet_large_holdings", pending, on_conflict="doc_id"):
-                print("  ⚠ upsert失敗。ここまでの書き込みは反映済み・未反映が混在する")
+                write_failed[0] += len(pending)
+                print(f"  ⚠ upsert失敗（{len(pending)}行）。この分は書けていない")
+                pending = []
+                return
         written += len(pending)
         pending = []
 
@@ -93,7 +104,8 @@ def main() -> int:
             failed += 1
             continue
 
-        patch = {"doc_id": doc_id}
+        # issuer_code は変更しないが、NOT NULL制約のためpayloadに必ず載せる（fetch_targets参照）。
+        patch = {"doc_id": doc_id, "issuer_code": row.get("issuer_code")}
         for key in HOLDING_DETAIL_COLUMNS:
             patch[key] = details.get(key)
 
@@ -116,10 +128,12 @@ def main() -> int:
             time.sleep(args.sleep)
 
     flush()
-    print(f"完了: 処理{len(rows)}件 / 書き込み{written}件 / 比率変更{ratio_changed}件 / 取得失敗{failed}件")
+    print(f"完了: 処理{len(rows)}件 / 書き込み{written}件 / 書き込み失敗{write_failed[0]}件 / "
+          f"比率変更{ratio_changed}件 / 取得失敗{failed}件")
     for example in ratio_examples:
         print(f"  例 {example}")
-    return 0
+    # 書き込みに失敗した行が残っているうちは成功扱いにしない。
+    return 1 if write_failed[0] else 0
 
 
 if __name__ == "__main__":
