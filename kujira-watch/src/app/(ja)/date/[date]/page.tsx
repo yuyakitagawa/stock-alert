@@ -118,18 +118,18 @@ export default async function DateArchivePage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
         <Link href={`/monthly/${month}`} className="hover:text-brand-blue">{monthLabel}</Link>
         {" / "}
-        <span className="text-foreground/70">{label}</span>
+        <span className="text-ink-secondary">{label}</span>
       </nav>
       <div className="mb-6">
         <h1 className="font-serif text-2xl font-bold text-brand-navy sm:text-3xl">
           {label}の大口投資家の動き
         </h1>
-        <p className="mt-1 text-sm text-foreground/50">
+        <p className="mt-1 text-sm text-ink-tertiary">
           この日に開示された大量保有・変更報告書を{contents.length}件まとめています。
         </p>
       </div>

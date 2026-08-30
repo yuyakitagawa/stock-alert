@@ -47,13 +47,13 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
-      <p className="mb-8 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-8 text-sm leading-relaxed text-ink-secondary">
         {SITE_NAME}の使い方、大量保有報告書（5%ルール）のしくみ、投資家分類の意味から、
         投資初心者・中級者の方からよく寄せられる疑問まで、全{FAQS.length}件をカテゴリ別に
         まとめました。気になるカテゴリを選んでご覧ください。
@@ -84,7 +84,7 @@ export default function FaqPage() {
             </h2>
             <ul className="mb-4 list-disc pl-5">
               {faqs.slice(0, PREVIEW_COUNT).map((faq) => (
-                <li key={faq.question} className="mb-1 text-sm text-foreground/70">
+                <li key={faq.question} className="mb-1 text-sm text-ink-secondary">
                   <Link href={`/faq/${category.id}`} className="hover:text-brand-blue hover:underline">
                     {faq.question}
                   </Link>

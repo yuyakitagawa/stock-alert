@@ -45,7 +45,7 @@ export default function AmountTrendChart({ bars }: { bars: AmountTrendBar[] }) {
 
   return (
     <figure className="my-4 rounded-lg border border-rule bg-paper px-4 py-3">
-      <div className="mb-1 flex items-center gap-4 text-xs text-foreground/60">
+      <div className="mb-1 flex items-center gap-4 text-xs text-ink-tertiary">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm" style={{ background: "var(--brand-blue)" }} />
           買い
@@ -149,7 +149,7 @@ export default function AmountTrendChart({ bars }: { bars: AmountTrendBar[] }) {
           );
         })}
       </svg>
-      <figcaption className="mt-1 text-xs text-foreground/50">
+      <figcaption className="mt-1 text-xs text-ink-tertiary">
         解説記事化した開示の推定取引金額を週別（月曜始まり）に買い・売りへ分けた推移。単位は億円。
         {bars[lastIndex].isPartial && "薄い棒は今週（集計中）です。"}
       </figcaption>

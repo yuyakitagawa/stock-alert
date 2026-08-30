@@ -17,17 +17,7 @@ export default function ArticleCard({ article }: { article: ArticleContent }) {
   const href = `/articles/${article.id}`;
   const title = article.title;
   return (
-    <Card
-      variant="outlined"
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        borderColor: "divider",
-        transition: "border-color 0.15s ease-out",
-        "&:hover": { borderColor: "brand.gold" },
-      }}
-    >
+    <Card sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CardActionArea
         component={Link}
         href={href}
@@ -52,7 +42,7 @@ export default function ArticleCard({ article }: { article: ArticleContent }) {
               {formatDate(article.dealDate)}
             </Typography>
           </Stack>
-          <Typography variant="h6" component="h2" sx={{ fontWeight: 700, lineHeight: 1.35, color: "primary.main" }}>
+          <Typography variant="h6" component="h2" sx={{ color: "primary.main" }}>
             {title}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>

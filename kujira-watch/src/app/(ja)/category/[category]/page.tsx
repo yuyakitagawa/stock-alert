@@ -87,16 +87,16 @@ export default async function CategoryPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{decodedCategory}</span>
+        <span className="text-ink-secondary">{decodedCategory}</span>
       </nav>
       <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">
         カテゴリ: {decodedCategory}
       </h1>
       {contents.length === 0 ? (
-        <p className="text-foreground/50">このカテゴリの記事がまだありません。</p>
+        <p className="text-ink-tertiary">このカテゴリの記事がまだありません。</p>
       ) : (
         <InfiniteArticleList
           initialArticles={contents}

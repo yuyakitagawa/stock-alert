@@ -188,19 +188,19 @@ export default async function StockPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{stockName}（{code}）</span>
+        <span className="text-ink-secondary">{stockName}（{code}）</span>
       </nav>
       <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${holderLead || companyInfo?.description ? "mb-2" : "mb-6"}`}>
         {stockName}（{code}）の大株主・株主構成
       </h1>
       {holderLead && (
-        <p className="mb-3 text-sm leading-relaxed text-foreground/80">{holderLead}</p>
+        <p className="mb-3 text-sm leading-relaxed text-ink-secondary">{holderLead}</p>
       )}
       {companyInfo?.description && (
-        <p className="mb-6 text-sm text-foreground/80">{companyInfo.description}</p>
+        <p className="mb-6 text-sm text-ink-secondary">{companyInfo.description}</p>
       )}
       {companyInfo && <CompanyInfoCard info={companyInfo} />}
       {filers.length > 0 && (
@@ -296,7 +296,7 @@ export default async function StockPage({ params }: Props) {
         <>
           <div className="mb-6">
             <h2 className="text-xl font-bold text-brand-navy">大量保有・自社株買い履歴</h2>
-            <p className="mt-1 text-sm text-foreground/80">
+            <p className="mt-1 text-sm text-ink-secondary">
               {formatStockDealSummary(dealSummary, stockName, code)}
             </p>
           </div>

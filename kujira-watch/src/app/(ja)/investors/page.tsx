@@ -84,10 +84,10 @@ export default async function InvestorsPage({ searchParams }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">投資家一覧</span>
+        <span className="text-ink-secondary">投資家一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">投資家一覧</h1>
       <Suspense fallback={<ListFallback rows={12} />}>
@@ -134,7 +134,7 @@ async function InvestorsBody({ searchParams }: Props) {
 
   return (
     <>
-      <p className="mb-4 text-sm text-foreground/50">
+      <p className="mb-4 text-sm text-ink-tertiary">
         EDINET大量保有報告書に登場した投資家{filers.length}件。最終開示日が新しい順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
@@ -156,7 +156,7 @@ async function InvestorsBody({ searchParams }: Props) {
         />
       )}
       {visibleFilers.length === 0 ? (
-        <p className="text-foreground/50">
+        <p className="text-ink-tertiary">
           {filers.length === 0 ? "投資家データがまだありません。" : "該当する投資家がいません。"}
         </p>
       ) : (
@@ -182,7 +182,7 @@ async function InvestorsBody({ searchParams }: Props) {
                 <span className="mt-1 block font-normal">
                   <DealTypeLabel dealType={filer.category} />
                 </span>
-                <span className="block text-xs font-normal text-foreground/50">
+                <span className="block text-xs font-normal text-ink-tertiary">
                   保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
                 </span>
                 {/* 4行目。買い開示が少ない投資家はビューに載らないので行ごと出ない
@@ -192,7 +192,7 @@ async function InvestorsBody({ searchParams }: Props) {
                   if (!record) return null;
                   return (
                     <span className="mt-1 block text-xs font-normal">
-                      <span className="text-foreground/50">開示3ヶ月後 </span>
+                      <span className="text-ink-tertiary">開示3ヶ月後 </span>
                       <span
                         className={
                           record.avgReturn >= 0
@@ -202,7 +202,7 @@ async function InvestorsBody({ searchParams }: Props) {
                       >
                         平均{formatSignedPercent(record.avgReturn)}
                       </span>
-                      <span className="text-foreground/50">
+                      <span className="text-ink-tertiary">
                         ・勝率{record.winRate}%（{record.positionCount}件）
                       </span>
                     </span>
@@ -222,7 +222,7 @@ async function InvestorsBody({ searchParams }: Props) {
           ) : (
             <span />
           )}
-          <span className="kicker text-foreground/50">
+          <span className="kicker text-ink-tertiary">
             {currentPage} / {totalPages}
           </span>
           {currentPage < totalPages ? (

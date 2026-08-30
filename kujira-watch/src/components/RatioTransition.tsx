@@ -18,7 +18,7 @@ export default function RatioTransition({
       {diff !== null && diff !== 0 && (
         <Box
           component="span"
-          sx={{ ml: 0.5, fontSize: "0.75rem", color: diff > 0 ? "success.main" : "error.main" }}
+          sx={{ ml: 0.5, fontSize: "var(--text-xs)", color: diff > 0 ? "success.main" : "error.main" }}
         >
           {diff > 0 ? "▲" : "▼"}{Math.abs(diff)}pt
         </Box>

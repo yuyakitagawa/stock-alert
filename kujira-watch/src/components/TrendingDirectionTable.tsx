@@ -69,7 +69,7 @@ export default function TrendingDirectionTable({
       </Stack>
 
       {shownItems.length === 0 ? (
-        <p className="text-sm text-foreground/60">
+        <p className="text-sm text-ink-tertiary">
           直近{windowDays}日間で前期間より
           {direction === "both" ? "開示" : `${direction === "buy" ? "買い" : "売り"}の開示`}
           が増えた銘柄はありません。

@@ -41,7 +41,7 @@ export default async function TopTrendingPreview() {
   if (top.length === 0) return null;
 
   return (
-    <section className="mb-8 rounded border border-foreground/15 p-4">
+    <section className="mb-8 rounded-md border border-rule bg-surface-raised p-4">
       {/* スマホでは見出しが折り返してリンクが見出しの途中に挟まって見えるため、縦に積む。 */}
       <div className="mb-3 flex flex-col items-start gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
         <h2 className="text-base font-bold text-brand-navy">直近7日で開示が増えた銘柄</h2>
@@ -52,7 +52,7 @@ export default async function TopTrendingPreview() {
       <ol className="space-y-2">
         {top.map((entry, i) => (
           <li key={entry.key} className="flex items-baseline gap-2 text-sm">
-            <span className="w-4 shrink-0 font-bold text-foreground/40">{i + 1}</span>
+            <span className="w-4 shrink-0 font-bold text-ink-muted">{i + 1}</span>
             {publishedCodes.has(entry.key) ? (
               <Link href={`/stocks/${entry.key}`} className="text-brand-blue hover:underline">
                 {entry.label}
@@ -60,7 +60,7 @@ export default async function TopTrendingPreview() {
             ) : (
               <span>{entry.label}</span>
             )}
-            <span className="ml-auto shrink-0 text-foreground/70">
+            <span className="ml-auto shrink-0 text-ink-secondary">
               {entry.count}件
               {entry.amount > 0 && ` / 約${Math.round(entry.amount).toLocaleString()}億円`}
             </span>

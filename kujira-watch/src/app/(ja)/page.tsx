@@ -65,12 +65,12 @@ export default async function HomePage() {
           ? `大量保有報告書で読む大口投資家の動き（${formatDate(latestDealDate)}の取引）`
           : "大量保有報告書で読む大口投資家の動き"}
       </h1>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
         EDINETに提出された大量保有報告書を平日毎時チェックし、機関投資家・アクティビスト・創業家など
         大口投資家の売買を開示当日のうちに記事にしています。
       </p>
       {contents.length === 0 ? (
-        <p className="text-foreground/50">記事がまだありません。</p>
+        <p className="text-ink-tertiary">記事がまだありません。</p>
       ) : (
         <>
           {latestDealDate && latestDayArticles.length > 0 && (

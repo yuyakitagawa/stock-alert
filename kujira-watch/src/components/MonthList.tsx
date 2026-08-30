@@ -11,7 +11,7 @@ export default function MonthList({ months }: { months: MonthSummary[] }) {
         <li key={m.month}>
           <Link href={`/monthly/${m.month}`} className="card">
             <span className="block font-bold text-brand-navy">{formatMonth(m.month)}</span>
-            <span className="mt-1 block text-sm text-foreground/60">
+            <span className="mt-1 block text-sm text-ink-tertiary">
               {m.count}件・{formatDealAmount(m.amount)}
             </span>
             <span className="kicker mt-2 block text-brand-blue">この月のまとめを見る ›</span>

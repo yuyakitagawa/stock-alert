@@ -329,7 +329,7 @@ export default async function ArticleDetailPage({ params }: Props) {
       />
       {/* 記事タイトルは長く、そのまま置くとパンくずが3行になり本文到達前のノイズに
           なるため1行ellipsisで切る。SEO用のBreadcrumbList(JSON-LD)はフルタイトルのまま。 */}
-      <nav aria-label="パンくずリスト" className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="flex items-center gap-1.5 border-b border-rule px-6 py-3 text-xs text-ink-tertiary">
         <Link href="/" className="flex-none hover:text-brand-blue">トップ</Link>
         <span aria-hidden>/</span>
         {datePageHref ? (
@@ -340,7 +340,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           <span className="flex-none">{formatDate(article.dealDate)}</span>
         )}
         <span aria-hidden>/</span>
-        <span className="min-w-0 truncate text-foreground/70">{article.title}</span>
+        <span className="min-w-0 truncate text-ink-secondary">{article.title}</span>
       </nav>
       {article.eyecatch && (
         <div className="relative aspect-video w-full bg-section-tint">
@@ -603,7 +603,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         {/* 全記事で同一の説明文（提出期限のズレ・免責・分類の定義）はここに書かず、
             FAQと/aboutへのリンクに寄せる。同じ定型文が全記事の本文比率を押し上げると
             「他ページと内容が酷似」と判定されるため（GSCのクロール済み-未登録の主因）。 */}
-        <p className="-mt-2 mb-6 text-xs text-foreground/40">
+        <p className="-mt-2 mb-6 text-xs text-ink-muted">
           ※ 取引日はEDINETの開示日です（
           <Link href="/faq/basics" className="text-brand-blue hover:underline">
             実際の売買とのずれ
@@ -628,7 +628,7 @@ export default async function ArticleDetailPage({ params }: Props) {
         {filerName && holdingRatio !== null && (
           <section className="mb-6">
             <h2 className="mb-2 text-xl font-bold text-brand-navy">この開示で何が起きた？</h2>
-            <p className="m-0 text-base leading-relaxed text-foreground/80">
+            <p className="m-0 text-base leading-relaxed text-ink-secondary">
               {formatDate(article.dealDate)}、{displayFilerName(filerName)}が{article.stockName}（{article.stockCode}）の
               保有比率を
               {snapshot?.holdingRatioPrior != null
@@ -655,7 +655,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           className="prose max-w-none prose-headings:text-brand-navy prose-a:text-brand-blue first:prose-p:first-letter:float-left first:prose-p:first-letter:mr-2 first:prose-p:first-letter:text-5xl first:prose-p:first-letter:font-bold first:prose-p:first-letter:text-brand-navy"
           dangerouslySetInnerHTML={{ __html: linkedBody }}
         />
-        <div className="mt-8 rounded border border-rule bg-section-tint px-4 py-3 text-xs leading-relaxed text-foreground/60">
+        <div className="mt-8 rounded-md border border-rule bg-section-tint px-4 py-3 text-xs leading-relaxed text-ink-tertiary">
           <p className="m-0">
             情報源: 金融庁EDINETの大量保有報告書等（提出日: {formatDate(article.dealDate)}）
             {article.sourceUrl && (
@@ -679,7 +679,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           </p>
         </div>
         {tags && tags.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-foreground/50">
+          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-rule pt-4 text-xs text-ink-tertiary">
             {tags.map((tag) => (
               <span key={tag}>#{tag}</span>
             ))}
@@ -708,7 +708,7 @@ export default async function ArticleDetailPage({ params }: Props) {
               {displayFilerName(filerName)}とはどんな投資家？
             </h2>
             {article.dealType && (
-              <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+              <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
                 {displayFilerName(filerName)}は「{category}」に分類される投資家です。
                 {DEAL_TYPE_DESCRIPTIONS[article.dealType]}
               </p>

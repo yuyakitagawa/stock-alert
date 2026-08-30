@@ -31,7 +31,7 @@ export default async function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">Xで最新情報をチェック</h2>
-        <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+        <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
           新着記事や注目の大量保有報告書の速報は
           <a
             href="https://x.com/kujira_watch"
@@ -47,10 +47,10 @@ export default async function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">大口投資家とは</h2>
-        <p className="text-sm leading-relaxed text-foreground/70">
+        <p className="text-sm leading-relaxed text-ink-secondary">
           株式や各種金融市場において、市場価格を動かすほどの巨大な資金を運用する投資主体です。
         </p>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink-secondary">
           <li>
             <strong className="text-brand-navy">機関投資家（国内・海外）</strong>:
             年金基金（GPIFなど）、投資信託、生命保険会社、政府系ファンド
@@ -68,7 +68,7 @@ export default async function AboutPage() {
             個人枠でありながら億単位で動かす投資家
           </li>
         </ul>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
           {SITE_NAME}ではこれらの投資家を13種類に分類しています。詳しくは
           <Link href="#dealtype-glossary" className="text-brand-blue hover:underline">
             用語集
@@ -79,7 +79,7 @@ export default async function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">大口投資家の動きを追う意味</h2>
-        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-foreground/70">
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink-secondary">
           <li>
             <strong className="text-brand-navy">資金の流れ（トレンド）の把握</strong>:
             株価の持続的な上昇・下落は大口投資家の買増し・売却によって作られます。トレンドに逆らわない
@@ -94,7 +94,7 @@ export default async function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">大口投資家の動きとは</h2>
-        <p className="text-sm leading-relaxed text-foreground/70">
+        <p className="text-sm leading-relaxed text-ink-secondary">
           「大口投資家の動き」とは、機関投資家・アクティビストファンド・創業家の資産管理会社・
           自社株買いなど、相場を動かすほどの資金力を持つ投資主体（クジラ）が、上場企業の株式を
           いつ・どれくらいの規模で売買したかを指します。日本では、株式の5%以上を保有した投資家は
@@ -115,7 +115,7 @@ export default async function AboutPage() {
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">このサイトについて</h2>
         <div
-          className="prose prose-sm max-w-none text-foreground/70"
+          className="prose prose-sm max-w-none text-ink-secondary"
           dangerouslySetInnerHTML={{ __html: about.profileBody }}
         />
       </section>
@@ -125,7 +125,7 @@ export default async function AboutPage() {
           Organization構造化データのcontactPoint（ルートレイアウト）と連絡先を一致させる。 */}
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">運営者について</h2>
-        <p className="text-sm leading-relaxed text-foreground/70">
+        <p className="text-sm leading-relaxed text-ink-secondary">
           本サイトは個人（X:{" "}
           <a href={X_PROFILE_URL} target="_blank" rel="noopener noreferrer" className="text-brand-blue hover:underline">
             {X_HANDLE}
@@ -138,12 +138,12 @@ export default async function AboutPage() {
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">データソースと更新方法</h2>
         <div
-          className="prose prose-sm max-w-none text-foreground/70"
+          className="prose prose-sm max-w-none text-ink-secondary"
           dangerouslySetInnerHTML={{ __html: about.dataSources }}
         />
         {about.methodology && (
           <div
-            className="prose prose-sm mt-3 max-w-none text-foreground/70"
+            className="prose prose-sm mt-3 max-w-none text-ink-secondary"
             dangerouslySetInnerHTML={{ __html: about.methodology }}
           />
         )}
@@ -151,12 +151,12 @@ export default async function AboutPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">情報源について（EDINET）</h2>
-        <p className="text-sm leading-relaxed text-foreground/70">
+        <p className="text-sm leading-relaxed text-ink-secondary">
           本サイトが扱う大量保有報告書などの開示情報は、金融庁が運営する電子開示システム
           「EDINET（Electronic Disclosure for Investors&apos; NETwork）」の公開情報を一次情報源としています。
           ご自身で開示書類の原本を確認したい場合は、以下から直接検索できます。
         </p>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-foreground/70">
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink-secondary">
           <li>
             <a
               href="https://disclosure2.edinet-fsa.go.jp/"
@@ -179,14 +179,14 @@ export default async function AboutPage() {
             （本サイトが開示情報の自動取得に利用している金融庁公式APIの仕様書です）
           </li>
         </ul>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-3 text-sm leading-relaxed text-ink-secondary">
           各記事の「出典」欄には、判明している場合、その記事の元になった個別の開示書類・適時開示への
           直接リンクを掲載しています。
         </p>
       </section>
 
       <section className="mb-6">
-        <p className="text-sm leading-relaxed text-foreground/70">
+        <p className="text-sm leading-relaxed text-ink-secondary">
           大量保有報告書のしくみや本サイトの使い方については
           <Link href="/faq" className="text-brand-blue hover:underline">
             よくある質問
@@ -197,7 +197,7 @@ export default async function AboutPage() {
 
       <section id="dealtype-glossary" className="mb-6 scroll-mt-20">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">投資家分類（用語集）</h2>
-        <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+        <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
           記事に付いているバッジは、大量保有報告書の提出者を以下のいずれかに分類したものです。
         </p>
         <Box component="dl" sx={{ m: 0, display: "flex", flexDirection: "column", gap: 1.5 }}>
@@ -218,7 +218,7 @@ export default async function AboutPage() {
         <section className="mb-6">
           <h2 className="mb-2 text-xl font-bold text-brand-navy">よくある質問</h2>
           <div
-            className="prose prose-sm max-w-none text-foreground/70"
+            className="prose prose-sm max-w-none text-ink-secondary"
             dangerouslySetInnerHTML={{ __html: about.faq }}
           />
         </section>
@@ -227,7 +227,7 @@ export default async function AboutPage() {
       <section>
         <h2 className="mb-2 text-xl font-bold text-brand-navy">免責事項</h2>
         <div
-          className="prose prose-sm max-w-none text-foreground/70"
+          className="prose prose-sm max-w-none text-ink-secondary"
           dangerouslySetInnerHTML={{ __html: about.disclaimer }}
         />
       </section>

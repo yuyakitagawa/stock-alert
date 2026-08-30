@@ -76,10 +76,10 @@ export default async function StocksIndexPage({ searchParams }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">銘柄一覧</span>
+        <span className="text-ink-secondary">銘柄一覧</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">銘柄一覧</h1>
       <Suspense fallback={<ListFallback rows={12} />}>
@@ -122,7 +122,7 @@ async function StocksBody({ searchParams }: Props) {
 
   return (
     <>
-      <p className="mb-4 text-sm text-foreground/50">
+      <p className="mb-4 text-sm text-ink-tertiary">
         大量保有・自社株買いの開示があった銘柄{stocks.length}件。証券コード順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
@@ -144,7 +144,7 @@ async function StocksBody({ searchParams }: Props) {
         />
       )}
       {visibleStocks.length === 0 ? (
-        <p className="text-foreground/50">
+        <p className="text-ink-tertiary">
           {stocks.length === 0 ? "銘柄データがまだありません。" : "該当する銘柄がありません。"}
         </p>
       ) : (
@@ -161,11 +161,11 @@ async function StocksBody({ searchParams }: Props) {
                   </span>
                 </span>
                 {/* 2・3行目はアイコン分を字下げせずカード左端から。 */}
-                <span className="mt-1 block text-xs text-foreground/50">
+                <span className="mt-1 block text-xs text-ink-tertiary">
                   {sectorByCode.get(stock.stockCode) && `${sectorByCode.get(stock.stockCode)}・`}
                   記事{stock.articleCount}件
                 </span>
-                <span className="block text-xs text-foreground/50">
+                <span className="block text-xs text-ink-tertiary">
                   最終開示{formatDate(stock.latestDealDate)}
                 </span>
               </Link>
@@ -182,7 +182,7 @@ async function StocksBody({ searchParams }: Props) {
           ) : (
             <span />
           )}
-          <span className="kicker text-foreground/50">
+          <span className="kicker text-ink-tertiary">
             {currentPage} / {totalPages}
           </span>
           {currentPage < totalPages ? (

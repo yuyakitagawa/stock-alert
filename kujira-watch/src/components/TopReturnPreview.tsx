@@ -22,7 +22,7 @@ export default async function TopReturnPreview() {
   if (!cohort || cohort.top.length === 0) return null;
 
   return (
-    <section className="mb-8 rounded border border-foreground/15 p-4">
+    <section className="mb-8 rounded-md border border-rule bg-surface-raised p-4">
       <div className="mb-3 flex flex-col items-start gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
         <h2 className="text-base font-bold text-brand-navy">
           {formatDate(cohort.discDate)}の買い開示は、その後どうなったか
@@ -31,7 +31,7 @@ export default async function TopReturnPreview() {
           投資家別の成績を見る ›
         </Link>
       </div>
-      <p className="mb-3 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
         この日の買い開示{cohort.count}件を、開示日の終値で買って3ヶ月（63営業日）持ったと仮定すると、
         {formatDate(cohort.date3m)}時点で平均
         <span className={cohort.avgReturn >= 0 ? "font-bold text-brand-blue" : "font-bold text-red-600"}>
@@ -42,7 +42,7 @@ export default async function TopReturnPreview() {
       <ol className="space-y-2">
         {cohort.top.map((entry, i) => (
           <li key={entry.docId} className="flex items-baseline gap-2 text-sm">
-            <span className="w-4 shrink-0 font-bold text-foreground/40">{i + 1}</span>
+            <span className="w-4 shrink-0 font-bold text-ink-muted">{i + 1}</span>
             <span className="min-w-0">
               {publishedCodes.has(entry.issuerCode) ? (
                 <Link
@@ -54,7 +54,7 @@ export default async function TopReturnPreview() {
               ) : (
                 <span>{entry.issuerName}</span>
               )}
-              <span className="text-foreground/50">（{displayFilerName(entry.filerName)}）</span>
+              <span className="text-ink-tertiary">（{displayFilerName(entry.filerName)}）</span>
             </span>
             <span
               className={`ml-auto shrink-0 font-medium ${

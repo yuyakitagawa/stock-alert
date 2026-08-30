@@ -81,7 +81,7 @@ export default function TrendingTable({
 
   return (
     <>
-      <p className="kicker mb-2 text-foreground/50">
+      <p className="kicker mb-2 text-ink-tertiary">
         {headLabel}
         <span className="ml-2 font-normal normal-case tracking-normal">
           {items.length}件中{Math.min(shown, items.length)}件
@@ -103,11 +103,11 @@ export default function TrendingTable({
           const body = (
             <>
               {entry.note && (
-                <span className="mt-1 block text-xs font-normal leading-relaxed text-foreground/60">
+                <span className="mt-1 block text-xs font-normal leading-relaxed text-ink-tertiary">
                   {entry.note}
                 </span>
               )}
-              <span className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-0.5 pt-1.5 font-normal text-foreground/50">
+              <span className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-0.5 pt-1.5 font-normal text-ink-tertiary">
                 <span className="text-sm font-bold text-brand-navy">
                   直近{windowDays}日 {currentAmount ?? "金額不明"}
                   <span className="ml-1 font-semibold">{entry.count}件</span>
@@ -133,7 +133,7 @@ export default function TrendingTable({
                   {body}
                 </Link>
               ) : (
-                <span className="card flex h-full flex-col font-medium text-foreground/80">
+                <span className="card flex h-full flex-col font-medium text-ink-secondary">
                   {label}
                   {body}
                 </span>

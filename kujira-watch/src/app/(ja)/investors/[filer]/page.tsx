@@ -228,23 +228,23 @@ export default async function InvestorPage({ params }: Props) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
         />
       )}
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
         <Link href="/investors" className="hover:text-brand-blue">投資家一覧</Link>
         {" / "}
-        <span className="text-foreground/70">{displayFilerName(filerName)}</span>
+        <span className="text-ink-secondary">{displayFilerName(filerName)}</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{displayFilerName(filerName)}</h1>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <DealTypeBadge dealType={category} />
         {classification?.description && (
-          <p className="text-sm text-foreground/60">{classification.description}</p>
+          <p className="text-sm text-ink-tertiary">{classification.description}</p>
         )}
       </div>
       {summary && (
         <>
-          <p className="mb-4 text-sm leading-relaxed text-foreground/80">
+          <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
             {formatInvestorSummary(filerName, category, summary)}
           </p>
           <FactBox
@@ -265,7 +265,7 @@ export default async function InvestorPage({ params }: Props) {
       {classification?.profile && (
         <div className="mb-8 border-t border-rule pt-4">
           <h2 className="mb-2 text-sm font-bold text-brand-navy">{displayFilerName(filerName)}について</h2>
-          <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/70">
+          <p className="whitespace-pre-line text-sm leading-relaxed text-ink-secondary">
             {classification.profile}
           </p>
         </div>
@@ -281,7 +281,7 @@ export default async function InvestorPage({ params }: Props) {
               <li key={h.issuerCode}>
                 <StockCell code={h.issuerCode} name={h.issuerName} published={publishedCodes} />
                 {h.holdingRatio !== null && (
-                  <span className="ml-2 text-xs text-foreground/40">保有比率{h.holdingRatio}%</span>
+                  <span className="ml-2 text-xs text-ink-muted">保有比率{h.holdingRatio}%</span>
                 )}
               </li>
             ))}
@@ -324,7 +324,7 @@ export default async function InvestorPage({ params }: Props) {
       )}
       <div className="mb-6 border-t border-rule pt-4">
         <h2 className="text-xl font-bold text-brand-navy">最近の取引</h2>
-        <p className="mt-1 text-sm text-foreground/50">
+        <p className="mt-1 text-sm text-ink-tertiary">
           EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
           {holdings.length}件まとめています。「3ヶ月後」は買い増し・新規取得の開示について、開示日の終値から
           63営業日後の終値までの騰落率です（売却の開示・訂正報告書・まだ3ヶ月経っていない開示は「—」）。
@@ -365,7 +365,7 @@ export default async function InvestorPage({ params }: Props) {
                 <TableCell sx={{ whiteSpace: "nowrap" }}>
                   {(() => {
                     const ret = returnPositions[h.docId];
-                    if (ret === undefined) return <span className="text-foreground/30">—</span>;
+                    if (ret === undefined) return <span className="text-ink-muted">—</span>;
                     return (
                       <span
                         className={`text-xs font-bold tabular-nums ${ret >= 0 ? "text-gain" : "text-loss"}`}
@@ -393,7 +393,7 @@ export default async function InvestorPage({ params }: Props) {
         </Table>
       </TableContainer>
       {category !== "その他" && (
-        <p className="mt-6 text-xs text-foreground/40">
+        <p className="mt-6 text-xs text-ink-muted">
           {DEAL_TYPE_DESCRIPTIONS[category]}
         </p>
       )}

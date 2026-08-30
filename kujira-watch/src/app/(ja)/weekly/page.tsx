@@ -276,19 +276,19 @@ export default async function WeeklyDigestPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">大口投資家の週次トレンド</span>
+        <span className="text-ink-secondary">大口投資家の週次トレンド</span>
       </nav>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">大口投資家の週次トレンド</h1>
         {/* 1文目で「今どれくらい動いているか」に数字で答える。見出し直下の短い断定文は
             AI検索・強調スニペットが最も抜き出しやすい位置。 */}
         {leadSentence && (
-          <p className="mt-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
+          <p className="mt-3 text-sm leading-relaxed text-ink-secondary">{leadSentence}</p>
         )}
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           週ごとの推移は下のグラフで確認できます。
           <InfoTip content={`${SITE_NAME}がEDINET大量保有報告書をもとに集計。週別の売買金額（買い/売り）と投資家分類別の推移を示します。`} />
         </p>
@@ -312,7 +312,7 @@ export default async function WeeklyDigestPage() {
       )}
 
       {amountRows.length < 2 && (
-        <p className="mb-10 text-sm leading-relaxed text-foreground/70">
+        <p className="mb-10 text-sm leading-relaxed text-ink-secondary">
           週次トレンドを表示できるだけの開示データがまだありません。
         </p>
       )}
@@ -320,7 +320,7 @@ export default async function WeeklyDigestPage() {
       {amountRows.length >= 2 && (
         <section className="mb-10">
           <h2 className="mb-2 text-xl font-bold text-brand-navy">週別の売買金額トレンド</h2>
-          <p className="mb-2 text-sm text-foreground/60">
+          <p className="mb-2 text-sm text-ink-tertiary">
             上が買い、下が売り。上に大きく振れた週ほど買い越しです。
             <InfoTip content="解説記事化した開示の推定金額を週ごとに買い・売りへ分けた推移です。ベースラインより上が買い、下が売りです。" />
           </p>
@@ -336,7 +336,7 @@ export default async function WeeklyDigestPage() {
               isPartial: row.isPartial,
             }))}
           />
-          <details className="mt-2 text-sm text-foreground/60">
+          <details className="mt-2 text-sm text-ink-tertiary">
             <summary className="cursor-pointer">数値を表で見る</summary>
           <TableContainer>
             <Table size="small" sx={{ minWidth: 420, "& .MuiTableCell-root": { borderColor: "divider" } }}>
@@ -357,7 +357,7 @@ export default async function WeeklyDigestPage() {
                       <TableCell sx={{ color: "primary.main", whiteSpace: "nowrap" }}>
                         {weekRangeLabel(row.weekStart)}
                         {row.isPartial && (
-                          <Box component="span" sx={{ ml: 0.5, fontSize: "0.6875rem", color: "text.disabled" }}>
+                          <Box component="span" sx={{ ml: 0.5, fontSize: "var(--text-2xs)", color: "text.disabled" }}>
                             集計中
                           </Box>
                         )}
@@ -383,7 +383,7 @@ export default async function WeeklyDigestPage() {
             </Table>
           </TableContainer>
           </details>
-          <p className="mt-2 text-xs text-foreground/50">
+          <p className="mt-2 text-xs text-ink-tertiary">
             ※推定金額は発行済株式数×株価×保有比率の変化幅から概算した参考値です。
           </p>
         </section>
@@ -392,13 +392,13 @@ export default async function WeeklyDigestPage() {
       {categoryRows.length > 0 && (
         <section className="mb-10 border-y border-rule py-6">
           <h2 className="text-xl font-bold text-brand-navy">投資家分類別の週次トレンド</h2>
-          <p className="mb-2 mt-2 text-sm leading-relaxed text-foreground/60">
+          <p className="mb-2 mt-2 text-sm leading-relaxed text-ink-tertiary">
             アクティビスト・事業会社・外資系運用会社といった提出者のタイプ別に、週ごとの
             推定取引金額を買い（上）・売り（下）に分けて並べたものです。
             どの種類の投資家がいま買い集めているのか・降りているのかが分類ごとに分かります。
           </p>
           <CategoryTrendGrid rows={categoryRows} weeks={categoryWeeks} />
-          <p className="mt-2 text-xs text-foreground/50">
+          <p className="mt-2 text-xs text-ink-tertiary">
             ※推定金額は発行済株式数×株価×保有比率の変化幅から概算した参考値です。
           </p>
         </section>

@@ -197,19 +197,19 @@ export default async function RankingSlugPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
         <Link href="/ranking/returns" className="hover:text-brand-blue">投資家ランキング</Link>
         {" / "}
-        <span className="text-foreground/70">{ranking.title}</span>
+        <span className="text-ink-secondary">{ranking.title}</span>
       </nav>
       {/* h1はヘッダー・フッターのラベル（投資家ランキング）と揃え、個別のランキング名は
           h2に置く。2026-08-21に開示急増投資家ランキングを廃止してタブは無くなったが、
           パンくず・ナビの語との一致を優先してこの2段構成のままにしている。 */}
       <h1 className="mb-3 text-2xl font-bold text-brand-navy sm:text-3xl">投資家ランキング</h1>
       <h2 className="mb-1 text-xl font-bold text-brand-navy">{ranking.title}</h2>
-      <p className="mb-6 text-sm text-foreground/50">
+      <p className="mb-6 text-sm text-ink-tertiary">
         {ranking.description}
         <InfoTip
           content={`${ranking.detail} ${ranking.note} 出典はEDINET大量保有報告書。過去の成績であり、将来の値動きや投資助言を示すものではありません。`}
@@ -225,7 +225,7 @@ export default async function RankingSlugPage({ params }: Props) {
         </nav>
       )}
       {rowCount === 0 ? (
-        <p className="text-foreground/50">
+        <p className="text-ink-tertiary">
           {ranking.axis === "returns"
             ? "集計対象の開示がまだありません。"
             : `直近${RANKING_DAYS}日に該当する開示がありません。`}
@@ -238,7 +238,7 @@ export default async function RankingSlugPage({ params }: Props) {
             publishedFilerNames={[...publishedFilers]}
             publishedStockCodes={[...publishedCodes]}
           />
-          <p className="mt-2 text-xs leading-relaxed text-foreground/40">
+          <p className="mt-2 text-xs leading-relaxed text-ink-muted">
             集計対象は買い開示{MIN_POSITIONS}件以上の投資家です。リターンは開示日（休場なら直後の営業日）の終値を基準に
             {RETURN_TRADING_DAYS}営業日後の終値までを計算したもので、実際の取得単価・売却時期は反映していません。
             日経平均比は同じ期間の日経平均の騰落率との差（％pt）です。
@@ -249,7 +249,7 @@ export default async function RankingSlugPage({ params }: Props) {
           {stockRows.map((row, index) => (
             <li key={row.key} className="card">
               <span className="flex items-start gap-2">
-                <span className="w-5 shrink-0 font-bold tabular-nums text-foreground/40">
+                <span className="w-5 shrink-0 font-bold tabular-nums text-ink-muted">
                   {index + 1}
                 </span>
                 <SectorIcon sector={stockBriefs.get(row.stockCode)?.sector} size="lg" />
@@ -266,7 +266,7 @@ export default async function RankingSlugPage({ params }: Props) {
                   </span>
                 )}
               </span>
-              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/60">
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-tertiary">
                 <span>{row.sell ? "📉 売却" : "📈 買い増し・新規"}</span>
                 {row.filerName &&
                   (publishedFilers.has(row.filerName) ? (

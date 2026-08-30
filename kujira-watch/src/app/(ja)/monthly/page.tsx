@@ -70,20 +70,20 @@ export default async function MonthlyIndexPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">月別アーカイブ</h1>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           {SITE_NAME}が公開した大口投資家の動きを月ごとにまとめています。
           各月のページでは、その月に動いた投資家・銘柄のランキングと日別の一覧を確認できます。
         </p>
       </div>
       {months.length === 0 ? (
-        <p className="text-sm text-foreground/60">まだ記事がありません。</p>
+        <p className="text-sm text-ink-tertiary">まだ記事がありません。</p>
       ) : (
         <MonthList months={months} />
       )}

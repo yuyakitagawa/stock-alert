@@ -138,15 +138,15 @@ export default async function TrendingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           直近{WINDOW_DAYS}日間で大口投資家の取引（大量保有報告書）が増えた銘柄のランキングです。
           <InfoTip
             content={
@@ -171,7 +171,7 @@ export default async function TrendingPage() {
 
       <section className="mb-10">
         <TrendingDirectionTable items={trendingItems} windowDays={WINDOW_DAYS} />
-        <p className="mt-3 text-xs leading-relaxed text-foreground/40">
+        <p className="mt-3 text-xs leading-relaxed text-ink-muted">
           ※金額はEDINET開示に取引金額の記載が無いための概算です。売買を伴わない訂正報告書や、
           株価・発行済株式数が取れない銘柄は金額を推定できないため「金額不明」として一覧の下側に並びます
           （件数には含みます）。

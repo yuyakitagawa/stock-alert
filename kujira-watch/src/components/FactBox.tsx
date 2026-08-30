@@ -23,21 +23,21 @@ export default function FactBox({ facts, caption }: { facts: Fact[]; caption?: s
               ? "text-gain"
               : fact.tone === "loss"
                 ? "text-loss"
-                : "text-foreground/80";
+                : "text-ink-secondary";
           return (
             <div key={fact.label}>
-              <dt className="text-[11px] text-foreground/40">{fact.label}</dt>
+              <dt className="text-[11px] text-ink-muted">{fact.label}</dt>
               <dd className={`m-0 mt-0.5 text-sm font-bold tabular-nums ${color}`}>
                 {fact.value}
                 {fact.note && (
-                  <span className="ml-1 text-xs font-normal text-foreground/50">{fact.note}</span>
+                  <span className="ml-1 text-xs font-normal text-ink-tertiary">{fact.note}</span>
                 )}
               </dd>
             </div>
           );
         })}
       </dl>
-      {caption && <p className="mb-0 mt-3 text-[11px] leading-relaxed text-foreground/40">{caption}</p>}
+      {caption && <p className="mb-0 mt-3 text-[11px] leading-relaxed text-ink-muted">{caption}</p>}
     </section>
   );
 }

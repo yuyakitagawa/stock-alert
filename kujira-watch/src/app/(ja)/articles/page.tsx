@@ -61,13 +61,13 @@ export default async function ArticlesPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-foreground/70">{title}</span>
+        <span className="text-ink-secondary">{title}</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{title}</h1>
-      <p className="mb-6 text-sm leading-relaxed text-foreground/70">
+      <p className="mb-6 text-sm leading-relaxed text-ink-secondary">
         全{totalCount.toLocaleString()}本。EDINETの大量保有報告書とTDnetの自社株買い開示を
         日次で取得し、誰がどの銘柄をどれだけ売買したかを開示原本にもとづいて解説しています。
         投資家の種類で絞り込む場合はページ上部のカテゴリから、銘柄や投資家から探す場合は
@@ -77,7 +77,7 @@ export default async function ArticlesPage() {
         をご覧ください。
       </p>
       {contents.length === 0 ? (
-        <p className="text-foreground/50">記事がまだありません。</p>
+        <p className="text-ink-tertiary">記事がまだありません。</p>
       ) : (
         <InfiniteArticleList
           initialArticles={contents}

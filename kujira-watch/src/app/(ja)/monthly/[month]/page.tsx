@@ -155,19 +155,19 @@ export default async function MonthlyArchivePage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
-      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-foreground/50">
+      <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
         <Link href="/monthly" className="hover:text-brand-blue">月別アーカイブ</Link>
         {" / "}
-        <span className="text-foreground/70">{label}</span>
+        <span className="text-ink-secondary">{label}</span>
       </nav>
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">
           {label}の大口投資家の動き
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/70">
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           {label}にEDINETで開示された大量保有・変更報告書は{summary.totalCount}件、
           推定取引金額は{formatDealAmount(summary.totalAmount)}でした。金額ベースでは買いが
           {formatDealAmount(summary.buyAmount)}（{summary.buyCount}件）、売りが
@@ -180,7 +180,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
       {topFilers.length > 0 && (
         <section className="mb-10">
           <h2 className="mb-2 text-xl font-bold text-brand-navy">この月に動いた投資家</h2>
-          <p className="mb-4 text-sm text-foreground/60">
+          <p className="mb-4 text-sm text-ink-tertiary">
             開示された取引の推定金額が大きい順（{label}分の合算）。同じ銘柄・同じ日に複数の
             投資家が開示していて提出者を一意に特定できない取引は集計に含めていません
             （{summary.totalCount}件中{attributedCount}件を集計）。
@@ -224,7 +224,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
       {topStocks.length > 0 && (
         <section className="mb-10">
           <h2 className="mb-2 text-xl font-bold text-brand-navy">この月に狙われた銘柄</h2>
-          <p className="mb-4 text-sm text-foreground/60">
+          <p className="mb-4 text-sm text-ink-tertiary">
             大口投資家の開示が集まった銘柄を推定金額の大きい順に並べています。
           </p>
           <TableContainer>
@@ -285,7 +285,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
               >
                 <div>
                   <p className="font-bold text-brand-navy">{group.label}</p>
-                  <p className="mt-0.5 text-sm text-foreground/60">
+                  <p className="mt-0.5 text-sm text-ink-tertiary">
                     {group.articles.length}件・{formatDealAmount(dayAmount)}
                   </p>
                 </div>
