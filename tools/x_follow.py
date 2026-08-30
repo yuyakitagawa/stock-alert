@@ -34,8 +34,11 @@ import sys
 import time
 
 import requests
+from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from web.x_client import _auth
 
