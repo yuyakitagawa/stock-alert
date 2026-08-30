@@ -37,6 +37,7 @@ def test_estimate_deal_amount_oku_none_when_shares_missing():
 
 
 def test_shares_outstanding_retries_then_succeeds():
+    m.shares_outstanding.cache_clear()  # 実行内メモ化しているのでテスト間で持ち越さない
     ticker = mock.MagicMock()
     type(ticker).info = mock.PropertyMock(
         side_effect=[Exception("rate limited"), Exception("rate limited"), {"sharesOutstanding": 5_000_000}]
@@ -46,6 +47,7 @@ def test_shares_outstanding_retries_then_succeeds():
 
 
 def test_shares_outstanding_falls_back_to_implied_shares_outstanding():
+    m.shares_outstanding.cache_clear()
     ticker = mock.MagicMock()
     type(ticker).info = mock.PropertyMock(return_value={"impliedSharesOutstanding": 3_000_000})
     with mock.patch("yfinance.Ticker", return_value=ticker):
@@ -53,6 +55,7 @@ def test_shares_outstanding_falls_back_to_implied_shares_outstanding():
 
 
 def test_shares_outstanding_returns_none_after_exhausting_retries():
+    m.shares_outstanding.cache_clear()
     ticker = mock.MagicMock()
     type(ticker).info = mock.PropertyMock(side_effect=Exception("rate limited"))
     with mock.patch("yfinance.Ticker", return_value=ticker), mock.patch("time.sleep"):

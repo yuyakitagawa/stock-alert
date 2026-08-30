@@ -46,6 +46,7 @@ import json
 import argparse
 import hashlib
 from collections import Counter
+from functools import lru_cache
 from datetime import date, datetime, timedelta, timezone
 
 import requests
@@ -666,11 +667,16 @@ def already_published(stock_code: str, disc_date: str, deal_amount: "float | Non
         return True
 
 
+@lru_cache(maxsize=None)
 def shares_outstanding(code: str) -> "float | None":
     """yfinanceの.infoは一時的なレート制限で単発失敗することが多く（2026-08-06の実行では
     価格データが揃っている銘柄（サンリオ等）でもこれが原因で「金額を概算できない」スキップに
     なっていた）、最大3回まで短い間隔でリトライする。J-REIT（投資口）はsharesOutstandingが
-    空でimpliedSharesOutstandingに口数が入ることがあるためフォールバックで見る。"""
+    空でimpliedSharesOutstandingに口数が入ることがあるためフォールバックで見る。
+
+    同一銘柄が同じ実行内で複数回判定されることがある（同日・同一提出者の開示が2件出る等、
+    実例: 2026-08-27 ハリマ共和物産7444）ため、実行内で結果をメモ化する。上場廃止・新規コードで
+    404になる銘柄（8190.T / 5953.T / 9170.T）の3回リトライを毎回やり直さないためでもある。"""
     import time
     import yfinance as yf
     for attempt in range(3):
@@ -753,6 +759,7 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
     return abs(current_ratio - prev_ratio)
 
 
+@lru_cache(maxsize=None)
 def close_price_from_yfinance(code: str, target_date: date) -> "float | None":
     """yahoo_price_cacheに無い銘柄の終値をyfinanceから直接取る（target_date以前の直近終値）。
 
@@ -760,7 +767,7 @@ def close_price_from_yfinance(code: str, target_date: date) -> "float | None":
     ユニバース外の銘柄はEDINET開示が出ても株価が引けない（実例: 2026-08-18、
     アイ・グリッド・ソリューションズ603A・ビート・ホールディングス9399・デンタス6174が
     「金額を概算できない」として不投稿）。発行済株式数は既にyfinanceから取っているので、
-    株価も同じ経路でフォールバックする。"""
+    株価も同じ経路でフォールバックする。shares_outstanding と同じ理由で実行内メモ化する。"""
     import yfinance as yf
     try:
         hist = yf.Ticker(f"{code}.T").history(period="1mo")
