@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.expanduser("~/stock-alert/.env"))
 
 from lib import supabase_client as sb  # noqa: E402
+from video import youtube_analytics, youtube_client  # noqa: E402
 
 API_ROOT = "https://www.googleapis.com/youtube/v3"
 SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
@@ -45,6 +46,9 @@ BATCH = 50
 # 「短尺」の境目（秒）。実測で39〜45秒の3本が平均1,224回、66〜89秒の4本が平均571回だった
 # ため、まずこの線で分けて様子を見る。本数が増えたら見直す。
 SHORT_SEC = 60
+# hookの持ち時間。v7で hook を約5.4秒に組み直したので、その手前の3秒で
+# 何割残っているかを本ごとの比較軸にする。
+HOOK_SEC = 3.0
 
 
 def credentials_path() -> str:
@@ -148,7 +152,36 @@ def fetch_videos(token: str, uploads_playlist: str) -> list[dict]:
     return videos
 
 
-def save(videos: list[dict], channel: dict) -> None:
+def fetch_engagement(videos: list[dict]) -> list[dict]:
+    """平均視聴率・平均視聴秒・登録者獲得数・維持率カーブを各動画に足す。
+
+    サービスアカウントでは読めない領域なので、投稿用のOAuthトークンを使う。
+    トークンのscopeが古い（upload のみ）と403になるが、その場合も再生数の記録は
+    成立しているので、警告だけ出して素通りさせる。"""
+    token = youtube_client.access_token()
+    if token is None:
+        print("[youtube_metrics] YouTubeのOAuth未設定のため視聴維持率は取得しません")
+        return []
+    today = date.today().isoformat()
+    stats = youtube_analytics.video_stats(token, today)
+    if not stats:
+        return []
+    curves = []
+    for v in videos:
+        st = stats.get(v["video_id"])
+        if not st:
+            continue
+        v.update(st)
+        curve = youtube_analytics.retention_curve(token, v["video_id"], today)
+        if not curve:
+            continue
+        v["hook_survival"] = youtube_analytics.survival_at(curve, v["duration_sec"], HOOK_SEC)
+        curves += [{"video_id": v["video_id"], "measured_on": today,
+                    "elapsed_ratio": round(r, 2), "watch_ratio": round(w, 4)} for r, w in curve]
+    return curves
+
+
+def save(videos: list[dict], channel: dict, curves: list[dict] | None = None) -> None:
     if not sb.is_configured():
         print("[youtube_metrics] Supabase未設定のため保存をスキップします")
         return
@@ -164,6 +197,9 @@ def save(videos: list[dict], channel: dict) -> None:
         "measured_on": today, "subscribers": channel["subscribers"],
         "total_views": channel["total_views"], "video_count": channel["video_count"],
     }], on_conflict="measured_on")
+    if curves:
+        sb.upsert("youtube_video_retention", curves,
+                  on_conflict="video_id,measured_on,elapsed_ratio")
 
 
 def summarize(videos: list[dict]) -> dict:
@@ -179,11 +215,23 @@ def report(videos: list[dict], channel: dict) -> None:
     print(f"チャンネル: 登録者{channel['subscribers']}人 / 公開{channel['video_count']}本 "
           f"/ 総再生{channel['total_views']:,}回\n")
     for v in videos:
+        # 視聴率とhook残存率は、OAuthのscopeが古いと取れない。取れた本だけ出す。
+        pct = f"視聴{v['avg_view_pct']:>5.1f}%" if v.get("avg_view_pct") is not None else "視聴  ―  "
+        hook = (f"3秒残{v['hook_survival'] * 100:>5.1f}%"
+                if v.get("hook_survival") is not None else "3秒残  ―  ")
+        subs = f"登録+{v['subscribers_gained']:>2}" if v.get("subscribers_gained") is not None else ""
         print(f"  {(v['published_at'] or '')[:10]}  再生{v['views']:6,}  👍{v['likes']:>3}  "
-              f"💬{v['comments']:>3}  {v['duration_sec']:>3}秒  {(v['title'] or '')[:40]}")
+              f"💬{v['comments']:>3}  {v['duration_sec']:>3}秒  {pct}  {hook}  {subs}  "
+              f"{(v['title'] or '')[:24]}")
     s = summarize(videos)
     print(f"\n  {SHORT_SEC}秒以下: {s['short_n']}本 平均{s['short_avg_views']:,.0f}回")
     print(f"  {SHORT_SEC}秒超  : {s['long_n']}本 平均{s['long_avg_views']:,.0f}回")
+    measured = [v for v in videos if v.get("avg_view_pct") is not None]
+    if measured:
+        avg_pct = sum(v["avg_view_pct"] for v in measured) / len(measured)
+        print(f"  平均視聴率: {avg_pct:.1f}%（{len(measured)}本）")
+    else:
+        print("  平均視聴率: 未取得（`python video/youtube_auth.py` でトークンを取り直すと出ます）")
 
 
 def main() -> int:
@@ -202,7 +250,10 @@ def main() -> int:
         print(f"[youtube_metrics] 取得に失敗: {e}")
         return 1
 
-    save(videos, channel)
+    # 視聴維持率（Analytics API）。取れなくても再生数の記録は成立させる。
+    curves = fetch_engagement(videos)
+
+    save(videos, channel, curves)
     print(f"[youtube_metrics] {len(videos)}本を記録しました"
           f"（登録者{channel['subscribers']}人 / 総再生{channel['total_views']:,}回）")
     if a.report:
