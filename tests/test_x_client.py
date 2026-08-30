@@ -85,6 +85,26 @@ def test_build_tweet_text_drops_insight_when_too_long():
     assert m.weighted_len(text) <= 270
 
 
+def test_build_tweet_text_includes_valuation_line():
+    text = m.build_tweet_text(BUY_ARTICLE, valuation="開示時点 PBR0.62倍・ROE4.1%・配当性向18%")
+    assert text.splitlines()[2] == "開示時点 PBR0.62倍・ROE4.1%・配当性向18%"
+
+
+def test_build_tweet_text_keeps_valuation_and_drops_insight_when_too_long():
+    """収まらないときに残すのは「なぜ狙われたか」を運ぶ開示時点の数字のほう。"""
+    text = m.build_tweet_text(BUY_ARTICLE, insight="あ" * 100,
+                              valuation="開示時点 PBR0.62倍・ROE4.1%・配当性向18%")
+    assert "開示時点 PBR0.62倍" in text
+    assert "あ" * 100 not in text
+    assert m.weighted_len(text) <= 270
+
+
+def test_build_tweet_text_drops_valuation_when_it_still_does_not_fit():
+    text = m.build_tweet_text(BUY_ARTICLE, insight="い" * 100, valuation="あ" * 200)
+    assert "あ" * 200 not in text and "い" * 100 not in text
+    assert m.weighted_len(text) <= 270
+
+
 def test_build_tweet_text_has_no_url_and_ends_with_profile_cta():
     """リンク入り投稿は$0.20/本（リンク無しの13倍）なのでURLは入れず、プロフィール経由で誘導する。"""
     text = m.build_tweet_text(BUY_ARTICLE)
@@ -259,6 +279,7 @@ def _patch_article_deps(publish_side_effect):
         mock.patch.object(m, "build_article_media", return_value=[]),
         mock.patch.object(m, "find_prior_tweet", return_value=None),
         mock.patch("web.x_insight.fetch_filer_context", return_value={}),
+        mock.patch("web.x_insight.fetch_valuation_context", return_value={}),
         mock.patch.object(m, "post_tweet", side_effect=publish_side_effect),
     ]
 
@@ -322,6 +343,7 @@ def test_post_top_articles_replies_correction_to_the_prior_post_on_the_same_stoc
         mock.patch.object(m, "build_article_media", return_value=[]),
         mock.patch.object(m, "find_prior_tweet", return_value="900"),
         mock.patch("web.x_insight.fetch_filer_context", return_value={}),
+        mock.patch("web.x_insight.fetch_valuation_context", return_value={}),
         mock.patch.object(m, "post_tweet", side_effect=lambda body, **kw: calls.append(kw) or "1"),
     ]
     with mock.patch.dict(os.environ, X_ENV, clear=True):
@@ -483,6 +505,82 @@ def test_build_insight_line_empty_without_context():
     import web.x_insight as ins
 
     assert ins.build_insight_line("東陽テクニカ", {}) == ""
+
+
+# ------------------------------------------------------ 開示時点のバリュエーション（web/x_insight）
+
+def test_build_valuation_line_lists_pit_metrics():
+    import web.x_insight as ins
+
+    line = ins.build_valuation_line({"pbr": 0.62, "roe": 4.13, "payout_pct": 18.4})
+    assert line == "開示時点 PBR0.62倍・ROE4.1%・配当性向18%"
+
+
+def test_build_valuation_line_omits_missing_metrics():
+    import web.x_insight as ins
+
+    assert ins.build_valuation_line({"pbr": 1.53}) == "開示時点 PBR1.53倍"
+
+
+def test_build_valuation_line_empty_without_pbr():
+    """PBRが取れない銘柄（REIT等）はROE単独になり資本コストの文脈にならないので出さない。"""
+    import web.x_insight as ins
+
+    assert ins.build_valuation_line({"roe": 2.7}) == ""
+    assert ins.build_valuation_line({}) == ""
+
+
+def test_fetch_valuation_context_uses_point_in_time_rows_only():
+    """株価指標は開示日以前の最新行、ROEは本決算(FY)行から。開示日より後の数字は使わない。"""
+    import web.x_insight as ins
+
+    captured = []
+
+    def fake_select_one(table, query):
+        captured.append((table, query))
+        if table == "gen_rankings":
+            return {"date": "2026-08-18", "pbr": 0.62}
+        return {"disc_date": "2026-05-14", "np": 826.0, "equity": 20000.0, "payout_ratio": 0.184}
+
+    with mock.patch.object(ins.sb, "is_configured", return_value=True), \
+         mock.patch.object(ins.sb, "select_one", side_effect=fake_select_one):
+        out = ins.fetch_valuation_context("8151", "2026-08-19T00:00:00.000Z")
+
+    assert out["pbr"] == 0.62
+    assert round(out["roe"], 2) == 4.13
+    assert round(out["payout_pct"], 1) == 18.4
+    assert "date=lte.2026-08-19" in captured[0][1]
+    assert "doc_type=eq.FY" in captured[1][1] and "disc_date=lte.2026-08-19" in captured[1][1]
+
+
+def test_fetch_valuation_context_normalizes_payout_ratio_stored_as_percent():
+    """payout_ratioは行によって比率(0.2)と%(20.0)が混在する。"""
+    import web.x_insight as ins
+
+    with mock.patch.object(ins.sb, "is_configured", return_value=True), \
+         mock.patch.object(ins.sb, "select_one",
+                           side_effect=lambda t, q: {"pbr": 1.0} if t == "gen_rankings"
+                           else {"np": 100.0, "equity": 1000.0, "payout_ratio": 35.0}):
+        out = ins.fetch_valuation_context("8151", "2026-08-19")
+    assert out["payout_pct"] == 35.0
+
+
+def test_fetch_valuation_context_drops_out_of_range_values():
+    import web.x_insight as ins
+
+    with mock.patch.object(ins.sb, "is_configured", return_value=True), \
+         mock.patch.object(ins.sb, "select_one",
+                           side_effect=lambda t, q: {"pbr": 120.0} if t == "gen_rankings"
+                           else {"np": 100.0, "equity": 0.0, "payout_ratio": 999.0}):
+        out = ins.fetch_valuation_context("8151", "2026-08-19")
+    assert out == {}
+
+
+def test_fetch_valuation_context_empty_without_supabase():
+    import web.x_insight as ins
+
+    with mock.patch.object(ins.sb, "is_configured", return_value=False):
+        assert ins.fetch_valuation_context("8151", "2026-08-19") == {}
 
 
 # ------------------------------------------------------------------ 答え合わせ（web/x_followup）
