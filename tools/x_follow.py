@@ -29,10 +29,13 @@ X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET）。フォローには書き込み権限
 """
 import argparse
 import json
+import os
 import sys
 import time
 
 import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from web.x_client import _auth
 
