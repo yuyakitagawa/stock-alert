@@ -9,6 +9,11 @@ import FilterButtonNav from "@/components/FilterButtonNav";
 import ListFallback from "@/components/ListFallback";
 import RelatedArticles from "@/components/RelatedArticles";
 import { getAllFilers, investorPath } from "@/lib/investors";
+import {
+  getFilerReturnMap,
+  formatSignedPercent,
+  type FilerReturnBrief,
+} from "@/lib/investorReturns";
 import { getArticleList } from "@/lib/microcms";
 import { displayFilerName, formatDate } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
@@ -96,12 +101,18 @@ export default async function InvestorsPage({ searchParams }: Props) {
 }
 
 async function InvestorsBody({ searchParams }: Props) {
-  const [{ category, page }, filers, { contents: latestArticles }] = await Promise.all([
-    searchParams,
-    getAllFilers(),
-    // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
-    getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
-  ]);
+  const [{ category, page }, filers, returnByFiler, { contents: latestArticles }] =
+    await Promise.all([
+      searchParams,
+      getAllFilers(),
+      // 「開示のあとどうなったか」＝この投資家が買った銘柄の3ヶ月後リターン。
+      // 競合（保有報告のアラートアプリ）は株価を持たないので出せない数字であり、
+      // 一覧の段階で見せないと投資家ページまで来た人しか気付けない。
+      // 取れなくても一覧自体は成立させる（成績行が消えるだけ）。
+      getFilerReturnMap().catch((): Record<string, FilerReturnBrief> => ({})),
+      // 一覧の下に添えるアイキャッチ付き記事カード用。取れなくても一覧は成立させる。
+      getArticleList({ limit: 4 }).catch(() => ({ contents: [] })),
+    ]);
 
   const counts = new Map<DealType, number>();
   for (const filer of filers) {
@@ -170,6 +181,29 @@ async function InvestorsBody({ searchParams }: Props) {
                 <span className="block text-xs font-normal text-foreground/50">
                   保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
                 </span>
+                {/* 4行目。買い開示が少ない投資家はビューに載らないので行ごと出ない
+                    （高さがカードごとにずれるが、成績のある投資家を目立たせる方を採る）。 */}
+                {(() => {
+                  const record = returnByFiler[filer.filerName];
+                  if (!record) return null;
+                  return (
+                    <span className="mt-1 block text-xs font-normal">
+                      <span className="text-foreground/50">開示3ヶ月後 </span>
+                      <span
+                        className={
+                          record.avgReturn >= 0
+                            ? "font-medium text-brand-blue"
+                            : "font-medium text-red-600"
+                        }
+                      >
+                        平均{formatSignedPercent(record.avgReturn)}
+                      </span>
+                      <span className="text-foreground/50">
+                        ・勝率{record.winRate}%（{record.positionCount}件）
+                      </span>
+                    </span>
+                  );
+                })()}
               </Link>
             </li>
           ))}

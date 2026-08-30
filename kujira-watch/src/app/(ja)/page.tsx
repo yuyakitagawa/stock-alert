@@ -3,6 +3,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TodayWhaleSummary from "@/components/TodayWhaleSummary";
+import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
 import { formatDate, isSellArticle } from "@/lib/format";
@@ -83,6 +84,9 @@ export default async function HomePage() {
               /trendingは閲覧者全員が押している（2026-08-27のGA4実測）。ヘッダーに同じリンクは
               あるので、足りないのはリンクではなく押す理由＝実際の銘柄名と金額。 */}
           <TopTrendingPreview />
+          {/* 「誰が買ったか」の次に「そのあとどうなったか」を置く。株価と結び付けた数字は
+              大量保有アラート型の競合が持っていない情報なので、TOPで見えるようにする。 */}
+          <TopReturnPreview />
           {featuredArticles.length > 0 && (
             <div className="mb-8 space-y-4">
               {featuredArticles.map((article, i) => (

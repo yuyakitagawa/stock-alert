@@ -162,7 +162,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--days", type=int, default=7, help="EDINETを遡る日数（蓄積用）")
     p.add_argument("--start", type=str, default=None,
-                   help="バックフィル開始日 YYYY-MM-DD（指定時はこの日から当日まで全走査・--daysは無視）")
+                   help="バックフィル開始日 YYYY-MM-DD（指定時はこの日から--end（既定=当日）まで全走査・--daysは無視）")
+    p.add_argument("--end", type=str, default=None,
+                   help="バックフィル終了日 YYYY-MM-DD（既定=当日）。蓄積済み期間の再走査を避けるのに使う")
     p.add_argument("--match-days", type=int, default=30, help="突合で見る蓄積イベントの範囲")
     p.add_argument("--candidates", type=str, default="data/catalyst_candidates.csv")
     p.add_argument("--out", type=str, default="data/edinet_holding_matches.csv")
@@ -192,8 +194,9 @@ def main():
 
     if not args.no_fetch and _api_key():
         if args.start:
-            print(f"EDINET 大量保有報告書をバックフィル中（{args.start} 〜 当日・土日スキップ）...")
-            recs = scan_large_holdings(start_date=args.start, persist=True, sleep_sec=0.2)
+            print(f"EDINET 大量保有報告書をバックフィル中（{args.start} 〜 {args.end or '当日'}・土日スキップ）...")
+            recs = scan_large_holdings(start_date=args.start, end_date=args.end,
+                                       persist=True, sleep_sec=0.2)
         else:
             print(f"EDINET 大量保有報告書をスキャン中（直近{args.days}日）...")
             recs = scan_large_holdings(days_back=args.days, persist=True)
