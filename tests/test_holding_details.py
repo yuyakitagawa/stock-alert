@@ -111,6 +111,12 @@ def test_classify_purpose():
     assert classify_purpose("安定株主として長期保有しております。") == "安定株主"
     assert classify_purpose("純投資") == "純投資"
     assert classify_purpose("証券業務に係る商品在庫として保有している。") == "純投資"
+    # 運用会社・証券会社の定型文（直近553件で判定不可の大半を占めていた）
+    assert classify_purpose("投資一任契約による顧客の資産運用") == "純投資"
+    assert classify_purpose("証券投資信託の財産及び投資一任契約による顧客資金として保有") == "純投資"
+    assert classify_purpose("有価証券関連業務の一部としてのトレーディング・有価証券の借入等") == "純投資"
+    assert classify_purpose("企業グループ間取引の維持強化のため。") == "政策保有"
+    assert classify_purpose("発行会社の代表取締役であり、経営の安定化を図るための継続保有目的であります。") == "安定株主"
     assert classify_purpose(None) is None
     assert classify_purpose("なんとも判別できない記載") is None
 
