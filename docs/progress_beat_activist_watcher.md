@@ -42,3 +42,33 @@
 乗っているので、後発はあちら。列名が食い違ったため、**DDLをあちらのコードに合わせた**
 （`funding_amount` を削除し `funding_total/funding_own/funding_borrowings/shares_outstanding/obligation_date` を追加）。
 stock-alert-dd / stock-alert-db に担当範囲を照会中。返答があるまで lib/ 配下は触らない。
+
+
+## ④ holding_ratio の共同保有バグ修正（2026-08-30・オーナー「直して」で着手）
+XBRLは保有割合を「保有者ごとのcontext」と「メンバー無しの合算context(FilingDateInstant)」の
+両方に持ち、報告書の見出し数値は後者。従来は正規表現で先に見つかった値＝筆頭保有者の1枠を
+拾っていた。実測1,101件中656件（60%）がズレ。
+
+- [x] `_aggregate_ratio()` / `_normalize_ratio()` を追加（`_aggregate_or_sum`は`int(float())`で
+      0.1975が0に落ちるため流用不可。別関数にした）
+- [x] `holding_ratio_prior` も同じ扱いに。`jplvh_cor:`で取れない開示向けに旧正規表現をフォールバックで残す
+- [x] tests/test_holding_details.py 12件（うち6件はstock-alert-dbが追加）・test_scan_large_holdings.py 13件 PASS
+- [x] `tools/backfill_holding_details.py` 新設（蓄積済み行のXBRL引き直し。`--only-missing`で再開、
+      `--dry-run`で差分だけ数える）
+- [x] dry-run実測: 2026-08-20以降430件で比率変更212件（49%）・取得失敗0件。
+      例 0.39%→5.12% / 0.66%→8.05% / 23.25%→56.26%
+- [x] コミット `4929ffc3`
+- [~] 全行スイープ実行中（バックフィル完走を待って自動起動する形で予約。
+      `logs/edinet_detail_sweep_20260830.log`）
+- [ ] スイープ後に `investor_returns_3m` / `investor_return_positions_3m` をリフレッシュ
+- [ ] 公開済み記事の数字の是正（`ratioChangePct`・`dealAmount`・タイトル）
+      → stock-alert-db が担当。`tools/fix_misreported_blog_articles.py` を拡張する方針。
+        **Anthropic APIは使わない**（現行ツールは決定的テンプレートで本文再生成。LLM呼び出し無し）
+
+## ⑤ git分岐（B・オーナー「相談して」）
+- [x] 未コミット5本の持ち主を全セッションに照会 → 終了済みセッションの取りこぼしと判明。
+      stock-alert-dd が内容確認のうえコミット（`c4e6ff08`）
+- [x] こちらの担当分をコミット（`7f75e601` / `4929ffc3`）。作業ツリーをクリアにした
+- [ ] stock-alert-dd が `git merge origin/pr284` → push（担当合意済み。着手OKを通知済み）
+- [ ] `git branch -u origin/pr284`（upstreamが別ブランチを向いている）
+- 履歴の書き換え（rebase/drop/force push）はしない方針で合意（CLAUDE.md §8・2026-07-16の消失事故の前例）
