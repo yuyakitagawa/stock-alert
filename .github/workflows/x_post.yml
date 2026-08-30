@@ -11,6 +11,11 @@ name: X Post
 #   手動のみ        verify    : アクセストークンの実権限確認（投稿しない。web/x_client --verify）
 #                               App権限変更前に発行したトークンは読み取り専用のままで投稿だけ403になる
 #                               （実例: 2026-08-18）ため、トークン更新後の確認に使う。
+#   手動のみ        discover  : フォロー候補の抽出（読み取りのみ。tools/x_follow.py discover）
+#   手動のみ        follow    : usernames入力のアカウントをフォロー（tools/x_follow.py follow）
+#                               follow_execute がONのときだけ実際にフォローする。Xの自動化
+#                               ポリシーは大量・無差別な自動フォローを禁止しているため、
+#                               cronには載せず対象は毎回手で渡す。
 on:
   schedule:
     - cron: '0 9 * * 6'   # trending
@@ -23,10 +28,18 @@ on:
       target:
         description: 'どれを実行するか'
         type: choice
-        options: [trending, activists, followup, buyback, metrics, verify]
+        options: [trending, activists, followup, buyback, metrics, verify, discover, follow]
         default: trending
       dry_run:
         description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback）'
+        type: boolean
+        default: false
+      usernames:
+        description: 'follow用。フォローするユーザー名をカンマ区切りで（@は不要）'
+        type: string
+        default: ''
+      follow_execute:
+        description: 'follow用。ONのときだけ実際にフォローする（OFFなら対象を表示するだけ）'
         type: boolean
         default: false
 
@@ -104,6 +117,17 @@ jobs:
       - name: Verify X access token permissions (手動)
         if: env.TARGET == 'verify'
         run: cd ~/stock-alert && python -m web.x_client --verify
+
+      - name: Discover follow candidates (手動)
+        if: env.TARGET == 'discover'
+        run: cd ~/stock-alert && python tools/x_follow.py discover
+
+      - name: Follow accounts (手動)
+        if: env.TARGET == 'follow'
+        env:
+          USERNAMES: ${{ inputs.usernames }}
+          EXECUTE: ${{ inputs.follow_execute && '--execute' || '' }}
+        run: cd ~/stock-alert && python tools/x_follow.py follow --usernames "$USERNAMES" $EXECUTE
 
       # ジョブが落ちたら必ずLINEへ。ワークフローの赤は誰も見ていないという前提で運用する。
       - name: 失敗をLINE通知
