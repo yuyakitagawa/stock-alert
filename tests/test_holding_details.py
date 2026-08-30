@@ -7,8 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.edinet import (average_acquisition_price, classify_purpose,
-                        parse_holding_details)
+from lib.edinet import (_aggregate_ratio, average_acquisition_price,
+                        classify_purpose, parse_holding_details)
 
 
 def _member(edinet_code: str, n: int) -> str:
@@ -119,6 +119,55 @@ def test_classify_purpose():
     assert classify_purpose("発行会社の代表取締役であり、経営の安定化を図るための継続保有目的であります。") == "安定株主"
     assert classify_purpose(None) is None
     assert classify_purpose("なんとも判別できない記載") is None
+
+
+def test_aggregate_ratio_prefers_the_group_total_context():
+    """共同保有では、メンバー無しの合算contextが報告書の見出しに出る数値。
+    保有者ごとのcontextを先に拾うと筆頭保有者の1枠だけを保有割合として出してしまう
+    （2026-08-30の実測1,101件中656件＝60%がこのズレを起こしていた）。"""
+    xbrl = "".join([
+        _tag("HoldingRatioOfShareCertificatesEtc", _member("E12345", 1), "0.1041"),
+        _tag("HoldingRatioOfShareCertificatesEtc", _member("E12345", 2), "0.0500"),
+        _tag("HoldingRatioOfShareCertificatesEtc", "FilingDateInstant", "0.1975"),
+    ])
+    assert _aggregate_ratio(xbrl, "HoldingRatioOfShareCertificatesEtc") == 19.75
+
+
+def test_aggregate_ratio_sums_members_when_there_is_no_total_context():
+    xbrl = "".join([
+        _tag("HoldingRatioOfShareCertificatesEtc", _member("E12345", 1), "0.0460"),
+        _tag("HoldingRatioOfShareCertificatesEtc", _member("E12345", 2), "0.0581"),
+    ])
+    assert _aggregate_ratio(xbrl, "HoldingRatioOfShareCertificatesEtc") == 10.41
+
+
+def test_aggregate_ratio_single_filer_is_unchanged():
+    xbrl = _tag("HoldingRatioOfShareCertificatesEtc", _member("E12345", 1), "0.0778")
+    assert _aggregate_ratio(xbrl, "HoldingRatioOfShareCertificatesEtc") == 7.78
+
+
+def test_aggregate_ratio_does_not_pick_up_the_prior_report_tag():
+    """`...EtcPerLastReport` は別タグ。素の名前で引いたときに混ざると
+    「今回の保有割合」に前回値が出る。"""
+    xbrl = "".join([
+        _tag("HoldingRatioOfShareCertificatesEtcPerLastReport", "FilingDateInstant", "0.3612"),
+        _tag("HoldingRatioOfShareCertificatesEtc", "FilingDateInstant", "0.3235"),
+    ])
+    assert _aggregate_ratio(xbrl, "HoldingRatioOfShareCertificatesEtc") == 32.35
+    assert _aggregate_ratio(xbrl, "HoldingRatioOfShareCertificatesEtcPerLastReport") == 36.12
+
+
+def test_aggregate_ratio_none_when_the_tag_is_absent():
+    assert _aggregate_ratio("<jplvh_cor:Other contextRef=\"X\">1</jplvh_cor:Other>",
+                            "HoldingRatioOfShareCertificatesEtc") is None
+
+
+def test_aggregate_ratio_treats_values_at_or_above_one_as_percent():
+    """様式によって小数(0.0778)とパーセント(7.78)の両方の書き方がある。
+    ※1%未満の保有をパーセント表記で書く様式があると 0.46 → 46% に化ける。
+    実データでは未確認だが、この閾値はその前提に乗っている。"""
+    xbrl = _tag("HoldingRatioOfShareCertificatesEtc", "FilingDateInstant", "7.78")
+    assert _aggregate_ratio(xbrl, "HoldingRatioOfShareCertificatesEtc") == 7.78
 
 
 def test_average_acquisition_price_guards():
