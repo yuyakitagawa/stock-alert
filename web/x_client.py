@@ -51,10 +51,12 @@ ARTICLES_PER_RUN = 1
 # 深夜に投稿が飛ぶのを防ぐ。
 POST_HOURS_JST = range(8, 23)
 
-# 日次サマリー「本日のクジラ」を投稿するUTC時（12時UTC=21時JST）。
-# 19時JSTは帰宅時間帯でタイムラインが薄いため21時に移した（edinet_blog.ymlの最終便）。
+# 日次サマリーを投稿するUTC時（0時UTC=9時JST=edinet_blog.ymlの初便）。
+# 以前は21時JSTだったが、同ジャンル9アカウント879投稿の実測（2026-08-30、tools/x_benchmark.py）で
+# 朝7-11時JSTの中央値インプレッションが2,080、夕16-19時が710、夜20-23時が1,094だったため朝に移した。
 # 毎時バッチのうちこの1回だけ投稿することで、外部ストレージ無しで1日1回の重複ガードにする。
-DAILY_SUMMARY_UTC_HOUR = 12
+# 朝の便では当日の開示がまだ出ていないので、対象は「前営業日」になる（summary_target_date）。
+DAILY_SUMMARY_UTC_HOUR = 0
 
 # ハッシュタグ。#EDINET は検索母数が小さく、記号を除いた `#社名` は実際には検索されない
 # （株クラは「社名 コード」で検索する）ため、母数のある2つだけに絞り本文側にコードを書く。
@@ -373,7 +375,7 @@ def _summary_line(article: dict, sign: str) -> str:
 
 
 def build_daily_summary_text(articles: list, date_str: str, total_count: "int | None" = None) -> "str | None":
-    """その日(dealDate)の記事一覧から「本日のクジラ」日次サマリー本文を組み立てる。
+    """その日(dealDate)の記事一覧から日次サマリー本文を組み立てる。
     0件の日はNone（投稿しない）。articlesはmicroCMSのdealAmount降順取得を前提とする。
     total_countはmicroCMSのtotalCount（100件超の日にarticlesが先頭100件に切れていても
     件数表示を正確にするため）。URLは入れず、全件一覧へはプロフィールのリンクで誘導する。"""
@@ -385,12 +387,12 @@ def build_daily_summary_text(articles: list, date_str: str, total_count: "int | 
     sells = [a for a in articles if "売り" in (a.get("tags") or "")]
 
     month_day = f"{int(date_str[5:7])}/{int(date_str[8:10])}"
-    lines = [f"🐋 本日のクジラ｜{month_day}の大量保有報告書", f"{count}件・合計{total_oku}億円", ""]
+    lines = [f"🐋 {month_day}のクジラ｜大量保有報告書", f"{count}件・合計{total_oku}億円", ""]
     if buys:
         lines += ["🟢 最大買い増し", _summary_line(buys[0], "+"), ""]
     if sells:
         lines += ["🔴 最大売却", _summary_line(sells[0], "-"), ""]
-    lines += [f"今日の全{count}件は{PROFILE_CTA[3:]}", TAGS]
+    lines += [f"この日の全{count}件は{PROFILE_CTA[3:]}", TAGS]
     return "\n".join(lines)
 
 
@@ -409,7 +411,7 @@ def build_daily_summary_media(articles: list, date_str: str, total_count: int) -
         rows.append((left, f"{'-' if is_sell else '+'}{a.get('dealAmount') or 0}億円",
                      "sell" if is_sell else "buy"))
     card = build_list_card(
-        f"本日のクジラ｜{month_day}の大量保有報告書",
+        f"{month_day}のクジラ｜大量保有報告書",
         f"{total_count}件・合計{total_oku}億円",
         rows,
         f"全{total_count}件は kujira-watch.com/date/{date_str}",
@@ -471,24 +473,33 @@ def fetch_articles_by_deal_date(date_str: str) -> "tuple[list, int]":
         return [], 0
 
 
+def summary_target_date(now_utc) -> str:
+    """日次サマリーが対象にする日（JST）。朝9時の便では当日の開示はまだ無いので前営業日を返す。
+    土日はEDINETの提出が無いため金曜まで遡る（祝日は0件でスキップされる）。"""
+    d = (now_utc + timedelta(hours=9)).date() - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime("%Y-%m-%d")
+
+
 def post_daily_summary(now_utc=None, force: bool = False) -> bool:
-    """「本日のクジラ」日次サマリーを1日1回(21時JST=12時UTCの最終便のみ)Xへ投稿する。
+    """前営業日ぶんの日次サマリーを1日1回(9時JST=0時UTCの初便のみ)Xへ投稿する。
     forceで時刻ガードを無視できる（手動実行用）。該当時刻以外・0件・認証未設定はFalse。"""
     if _auth() is None:
         return False
     now = now_utc or datetime.now(timezone.utc)
     if not force and now.hour != DAILY_SUMMARY_UTC_HOUR:
         return False
-    today_jst = (now + timedelta(hours=9)).strftime("%Y-%m-%d")
-    articles, total_count = fetch_articles_by_deal_date(today_jst)
-    text = build_daily_summary_text(articles, today_jst, total_count)
+    target = summary_target_date(now)
+    articles, total_count = fetch_articles_by_deal_date(target)
+    text = build_daily_summary_text(articles, target, total_count)
     if text is None:
         print("  [x_client] 本日の開示記事が無いため日次サマリーをスキップします")
         return False
-    media_ids = build_daily_summary_media(articles, today_jst, total_count)
+    media_ids = build_daily_summary_media(articles, target, total_count)
     tweet_id = post_tweet(text, media_ids=media_ids, kind="daily")
     if tweet_id:
-        print(f"  🐦 X日次サマリー投稿: {today_jst} 全{total_count}件")
+        print(f"  🐦 X日次サマリー投稿: {target} 全{total_count}件")
         return True
     return False
 
