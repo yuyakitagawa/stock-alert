@@ -2208,3 +2208,32 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - テスト: 718件pass。`test_generate_script_drops_scene_that_stays_broken_instead_of_the_video` が
   `sections[0]`＝companyを決め打ちしていたので、`SECTION_SPEC`と`DROPPABLE_KINDS`から
   対象を引くように直した（並び順は今後も維持率を見て変えるため）。
+
+## 2026-08-30 大量保有報告書XBRLから保有目的・取得資金を取り込んだ（競合対抗）
+- 発端: オーナーから「@activistw_app（競合アプリ「アクティビストウォッチャー」、iOS/Android、
+  月300円・年3000円、App Store 4.9/47件）を参考にプロダクトを改善したい」。競合の**プレミアム機能**は
+  ①保有比率推移グラフ ②平均取得単価（参考値）③保有目的の自動分類 ④保有目的の変更点ハイライト。
+  ①は`HoldingRatioChart`で実装済みだが、②③④は当方に**データが無かった**。
+- 判明したこと: これらは全部、当方が既に毎時ダウンロードしているXBRLの中に構造化されて入っていた。
+  `jplvh_cor:PurposeOfHolding`（保有目的）は直近20件で**20/20＝100%取得できる**。ほかに
+  `TotalNumberOfStocksEtcHeld`（保有株数）、`TotalAmountOfFundingForAcquisition`（取得資金総額）、
+  `AmountOfOwnFund`／`TotalAmountOfBorrowings`（自己資金／借入金）、
+  `DateWhenFilingRequirementAroseCoverPage`（報告義務発生日）、`ActOfMakingImportantProposalEtc`。
+  追加のAPIコストはゼロ（同じzipを読むだけ）。
+- 実装: `lib/edinet.py`に`parse_holding_details()`／`classify_purpose()`／`average_acquisition_price()`。
+  `fetch_xbrl_details()`が結果に混ぜ、`scan_large_holdings()`→`lib/db.py`の
+  `HOLDING_DETAIL_COLUMNS`経由でSupabaseへ保存（`supabase/add_holding_purpose_and_funding.sql`）。
+- 競合が出していない切り口が出た: **借入比率**（取得資金に占める借入金）。実データで
+  成成→東京コスモス電機9.05億円が**自己資金0・全額借入**、DOE5パーセント→日本フエルト14.2億円も
+  自己資金0。レバレッジをかけた買いは返済圧力があるため、同じ「5%取得」でも意味が違う。
+  平均取得単価も算出できた（シトラス→日立建機3,436.7円、成成→東京コスモス電機680.1円）。
+- パーサの落とし穴を2つ踏んだのでテストに残した。(a) 数値タグを`.*?`で取ると、ある提出者で
+  タグが欠けたときに次の提出者の値まで飲み込む（`[^<]*`で閉じタグまでに限定）。
+  (b) 株数・発行済株式総数はメンバー無しの合算contextがあるが、**取得資金系には合算contextが無い**
+  ので提出者ごとの値を足し上げる必要がある。
+- 未実施: 既存20,351行のバックフィル（EDINETのzipを引き直すだけでAnthropic APIは使わない）、
+  kujira-watch側の表示。
+- 別途見つかった既存の不正確さ（未修正）: `holding_ratio`は共同保有のとき**筆頭提出者の割合**で、
+  グループ合算ではない。例 S100YZ5F（ニイタカSC）はDB 19.28%に対し報告書の合算は19.75%。
+  XBRLの合算contextを優先すれば直せるが、既存記事の数字が変わるためオーナー判断待ち。
+- テスト: `tests/test_holding_details.py` 6件を追加。`tests/test_scan_large_holdings.py` 13件pass。

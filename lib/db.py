@@ -208,6 +208,17 @@ def save_price_cache(code, df):
 
 # ── edinet_large_holdings（大量保有報告書・5%ルール）───────────────────────
 
+# lib.edinet.parse_holding_details() が返すXBRL本表の項目。保有割合と違って
+# 開示によっては欠ける（全部売却で株数0、資金の記載が無い等）ので、
+# 保存もSELECTもこの一覧を単一の情報源として扱う。
+HOLDING_DETAIL_COLUMNS = (
+    "purpose_of_holding", "important_proposal", "shares_held", "shares_outstanding",
+    "funding_total", "funding_own", "funding_borrowings", "obligation_date",
+    # XBRL本文を取得できた回に立つ日付。値が全部Noneの開示と未取得行を区別する。
+    "xbrl_detail_fetched_date",
+)
+
+
 def upsert_edinet_large_holdings(records: list) -> bool:
     """全行を保存できたら True。1バッチでも落ちたら False（呼び出し側は必ず見ること）。"""
     if not records:
@@ -238,6 +249,12 @@ def upsert_edinet_large_holdings(records: list) -> bool:
         # 既存行を空で上書きしないよう値があるときだけ送る。
         if r.get("short_term_transfers"):
             row["short_term_transfers"] = r["short_term_transfers"]
+        # 保有目的・取得資金・保有株数・報告義務発生日（XBRL本表）。
+        # XBRL取得に失敗した回の再upsertで既存値をNULLに戻さないよう、
+        # 短期大量譲渡と同じく「値があるときだけ送る」。
+        for key in HOLDING_DETAIL_COLUMNS:
+            if r.get(key) is not None:
+                row[key] = r[key]
         sb_rows.append(row)
     return sb.upsert("edinet_large_holdings", sb_rows, on_conflict="doc_id")
 
@@ -247,7 +264,7 @@ def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     q = f"disc_date=gte.{cutoff}&order=disc_date.desc,submit_date.desc"
     q += ("&select=doc_id,filer_name,doc_type_code,doc_description,submit_date,disc_date,"
           "holding_ratio,holding_ratio_prior,issuer_code,issuer_name,short_term_transfers,"
-          "article_published_at")
+          "article_published_at," + ",".join(HOLDING_DETAIL_COLUMNS))
     if codes:
         code_list = ",".join(str(c) for c in codes)
         q += f"&issuer_code=in.({code_list})"

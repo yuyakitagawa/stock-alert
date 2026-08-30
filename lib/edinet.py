@@ -157,13 +157,24 @@ def fetch_xbrl_details(doc_id: str) -> dict:
     短期大量譲渡に該当する開示は「譲渡の相手方・単価」の表も持つので併せて返す
     （short_term_transfers。該当しない開示では空リスト）。
 
+    保有目的・取得資金・保有株数・報告義務発生日は parse_holding_details() が返す
+    キーをそのまま含める。
+
     Returns: {"issuer_code": str|None, "holding_ratio": float|None,
               "holding_ratio_prior": float|None, "issuer_name": str|None,
-              "short_term_transfers": list}
+              "short_term_transfers": list,
+              "purpose_of_holding": str|None, "important_proposal": str|None,
+              "shares_held": int|None, "shares_outstanding": int|None,
+              "funding_total": int|None, "funding_own": int|None,
+              "funding_borrowings": int|None, "obligation_date": str|None}
     """
     result = {"issuer_code": None, "holding_ratio": None,
               "holding_ratio_prior": None, "issuer_name": None,
-              "short_term_transfers": []}
+              "short_term_transfers": [],
+              "purpose_of_holding": None, "important_proposal": None,
+              "shares_held": None, "shares_outstanding": None,
+              "funding_total": None, "funding_own": None,
+              "funding_borrowings": None, "obligation_date": None}
     xbrl_text = _fetch_xbrl_text(doc_id)
     if not xbrl_text:
         print(f"    ⚠ XBRL取得失敗: {doc_id}")
@@ -226,7 +237,168 @@ def fetch_xbrl_details(doc_id: str) -> dict:
     # 短期大量譲渡の「譲渡の相手方・単価」（該当しない開示では空リスト）
     result["short_term_transfers"] = parse_short_term_transfers(xbrl_text)
 
+    # 保有目的・取得資金・保有株数・報告義務発生日
+    result.update(parse_holding_details(xbrl_text))
+    # XBRL本文まで取れた回だけ日付を立てる。値が全部Noneの開示（全部売却・資金の記載なし）と
+    # 「そもそもXBRLを取りに行っていない行」を区別するための印で、
+    # 未取得行の絞り込み（xbrl_detail_fetched_date is null）に使う。
+    result["xbrl_detail_fetched_date"] = date.today().isoformat()
+
     return result
+
+
+# ---- 保有目的・取得資金（XBRLの本表。EDINETが構造化して出している）----
+# 大量保有報告書のXBRLには、これまで使っていた保有割合のほかに
+# 「保有目的」「取得資金の総額／自己資金／借入金」「保有株数」「発行済株式総数」
+# 「報告義務発生日」が入っている。ここから
+#   - 保有目的（純投資 / 政策保有 / 重要提案行為等 / 経営参加 ...）の判定
+#   - 平均取得単価 = 取得資金の総額 ÷ 保有株数（開示ベースの取得コスト）
+#   - 借入比率 = 借入金 ÷ 取得資金（レバレッジをかけた買いかどうか）
+#   - 報告義務発生日→提出日のラグ（買った日と開示日のズレ）
+# が計算できる。株価からの概算に頼っていた金額の裏取りにもなる。
+#
+# 値は保有者ごとのcontext（...FilerLargeVolumeHolder{N}Member）に入る。
+# 株数・発行済株式総数・保有割合はメンバー無しの合算context（FilingDateInstant）も
+# あるのでそれを優先し、取得資金系は合算contextが無いのでメンバー分を足し上げる。
+
+# 数値タグは値に子タグを含まない。`[^<]*` で閉じタグまで取り切り、
+# 別のcontextの要素まで飲み込まないようにする（`.*?` だと欠損時に暴走する）。
+_NUM_TAG_TMPL = r'<jplvh_cor:{name}\b([^>]*)>([^<]*)</jplvh_cor:{name}>'
+# テキストタグは中に注記のタグが入りうるので非貪欲で取り、後からタグを落とす。
+_TEXT_TAG_TMPL = r'<jplvh_cor:{name}\b([^>]*)>(.*?)</jplvh_cor:{name}>'
+_MEMBER_RE = re.compile(r'FilerLargeVolumeHolder(\d+)Member')
+_CONTEXT_RE = re.compile(r'contextRef="([^"]+)"')
+
+
+def _tag_by_context(xbrl_text: str, name: str, text: bool = False) -> dict:
+    """タグ名を context ごとに取り出す。{context: 値} を返す（重複は先勝ち）。"""
+    tmpl = _TEXT_TAG_TMPL if text else _NUM_TAG_TMPL
+    pattern = re.compile(tmpl.format(name=name), re.S)
+    out: dict[str, str] = {}
+    for m in pattern.finditer(xbrl_text):
+        ctx_match = _CONTEXT_RE.search(m.group(1))
+        ctx = ctx_match.group(1) if ctx_match else ""
+        value = m.group(2)
+        if text:
+            value = re.sub(r'<[^>]+>', '', _unescape(value))
+        value = re.sub(r'\s+', ' ', value).strip()
+        if ctx not in out and value:
+            out[ctx] = value
+    return out
+
+
+def _sum_over_members(by_context: dict) -> "int | None":
+    """保有者ごとのcontextに散った金額を足し上げる（合算contextが無い項目用）。"""
+    total = None
+    for ctx, value in by_context.items():
+        if not _MEMBER_RE.search(ctx):
+            continue
+        try:
+            total = (total or 0) + int(float(value))
+        except ValueError:
+            continue
+    return total
+
+
+def _aggregate_or_sum(by_context: dict) -> "int | None":
+    """メンバー無しの合算contextを優先し、無ければメンバー分を足し上げる。"""
+    for ctx, value in by_context.items():
+        if not _MEMBER_RE.search(ctx):
+            try:
+                return int(float(value))
+            except ValueError:
+                pass
+    return _sum_over_members(by_context)
+
+
+def _join_member_texts(by_context: dict, limit: int = 3) -> "str | None":
+    """保有者ごとの文言を重複を除いて連結する（共同保有で目的が違うことがある）。"""
+    seen: list[str] = []
+    for ctx, value in sorted(by_context.items()):
+        if value not in seen:
+            seen.append(value)
+    if not seen:
+        return None
+    return "\n".join(seen[:limit])
+
+
+def parse_holding_details(xbrl_text: "str | None") -> dict:
+    """XBRLから保有目的・取得資金・保有株数・報告義務発生日を取り出す。
+
+    Returns: {"purpose_of_holding": str|None, "important_proposal": str|None,
+              "shares_held": int|None, "shares_outstanding": int|None,
+              "funding_total": int|None, "funding_own": int|None,
+              "funding_borrowings": int|None, "obligation_date": str|None}
+    """
+    empty = {"purpose_of_holding": None, "important_proposal": None,
+             "shares_held": None, "shares_outstanding": None,
+             "funding_total": None, "funding_own": None,
+             "funding_borrowings": None, "obligation_date": None}
+    if not xbrl_text:
+        return empty
+
+    purpose = _join_member_texts(_tag_by_context(xbrl_text, "PurposeOfHolding", text=True))
+    proposal = _join_member_texts(
+        _tag_by_context(xbrl_text, "ActOfMakingImportantProposalEtc", text=True))
+    obligation = _tag_by_context(xbrl_text, "DateWhenFilingRequirementAroseCoverPage")
+    obligation_date = None
+    for value in obligation.values():
+        if re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+            obligation_date = value
+            break
+
+    return {
+        "purpose_of_holding": purpose,
+        "important_proposal": proposal,
+        "shares_held": _aggregate_or_sum(_tag_by_context(xbrl_text, "TotalNumberOfStocksEtcHeld")),
+        "shares_outstanding": _aggregate_or_sum(
+            _tag_by_context(xbrl_text, "TotalNumberOfOutstandingStocksEtc")),
+        "funding_total": _sum_over_members(
+            _tag_by_context(xbrl_text, "TotalAmountOfFundingForAcquisition")),
+        "funding_own": _sum_over_members(_tag_by_context(xbrl_text, "AmountOfOwnFund")),
+        "funding_borrowings": _sum_over_members(
+            _tag_by_context(xbrl_text, "TotalAmountOfBorrowings")),
+        "obligation_date": obligation_date,
+    }
+
+
+# 保有目的の分類。EDINETの保有目的欄は自由記述なので、株主としての姿勢が
+# 強い順（重要提案行為等 > 経営参加 > 政策保有 > 純投資 > 安定株主）に判定する。
+# 「重要提案行為等を行う可能性もある」という留保付きの記載も、実際に経営へ
+# 関与しうる立場を宣言している点で純投資とは区別する。
+_PURPOSE_RULES = [
+    ("重要提案行為等", re.compile(r'重要提案行為|重要な提案|株主提案|企業価値の向上を目的として')),
+    ("経営参加", re.compile(r'経営参加|経営に参画|経営権|子会社化|完全子会社|経営支援|役員として')),
+    ("政策保有", re.compile(r'政策投資|政策保有|取引関係|業務提携|資本提携|関係強化')),
+    ("安定株主", re.compile(r'安定株主|長期保有|長期安定')),
+    ("純投資", re.compile(r'純投資|投資収益|値上がり|運用を目的|商品在庫|信託契約')),
+]
+
+
+def classify_purpose(purpose_text: "str | None") -> "str | None":
+    """保有目的の自由記述を5区分（重要提案行為等/経営参加/政策保有/安定株主/純投資）に寄せる。
+
+    どれにも当たらなければ None（サイト側で「その他」表示にする）。
+    """
+    if not purpose_text:
+        return None
+    for label, pattern in _PURPOSE_RULES:
+        if pattern.search(purpose_text):
+            return label
+    return None
+
+
+def average_acquisition_price(funding_total: "int | None",
+                              shares_held: "int | None") -> "float | None":
+    """開示ベースの平均取得単価（円/株）= 取得資金の総額 ÷ 保有株数。
+
+    取得資金の総額は「現在保有している分」の取得原価なので、政策保有株のように
+    保有が古いほど現在株価から乖離する（それ自体が含み損益の手がかりになる）。
+    株数0（全部売却済み）や資金額の記載が無い開示では None。
+    """
+    if not funding_total or not shares_held or shares_held <= 0:
+        return None
+    return round(funding_total / shares_held, 1)
 
 
 # ---- 短期大量譲渡（法第27条の25第2項）の「譲渡の相手方・単価」----
@@ -486,7 +658,7 @@ def extract_large_holdings(results: list, disc_date: str) -> list:
 
 
 def scan_large_holdings(days_back: int = 7, persist: bool = True,
-                        start_date: "str | None" = None,
+                        start_date: "str | None" = None, end_date: "str | None" = None,
                         skip_weekends: bool = True, sleep_sec: float = 0.0,
                         fetch_xbrl: bool = True) -> list:
     """直近 days_back 日分（または start_date 以降）の大量保有報告書をスキャンしてDB蓄積。
@@ -494,7 +666,8 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
     Args:
         days_back:     何日前まで遡るか（当日含む）。start_date 指定時は無視。
         persist:       True なら edinet_large_holdings テーブルへ upsert。
-        start_date:    'YYYY-MM-DD'。指定するとこの日から当日までを全て走査（バックフィル用）。
+        start_date:    'YYYY-MM-DD'。指定するとこの日から end_date（既定は当日）までを全て走査（バックフィル用）。
+        end_date:      'YYYY-MM-DD'。走査の終端。既に蓄積済みの期間を再走査しないために使う。
         skip_weekends: 土日はEDINET提出が無いのでスキップ（API呼び出し削減）。
         sleep_sec:     各日リクエスト間の待機（バックフィルでEDINETに優しく）。
         fetch_xbrl:    True なら XBRL本文から保有割合を取得。Falseならメタデータのみ。
@@ -502,12 +675,13 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
     Returns: 取得した全レコード（dict のリスト）。
     """
     import time
-    from lib.db import upsert_edinet_large_holdings
+    from lib.db import HOLDING_DETAIL_COLUMNS, upsert_edinet_large_holdings
 
     today = date.today()
     if start_date:
         d0 = date.fromisoformat(start_date)
-        dates = [d0 + timedelta(days=i) for i in range((today - d0).days + 1)]
+        d1 = date.fromisoformat(end_date) if end_date else today
+        dates = [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
     else:
         dates = [today - timedelta(days=i) for i in range(days_back)]
     if skip_weekends:
@@ -526,6 +700,8 @@ def scan_large_holdings(days_back: int = 7, persist: bool = True,
                 rec["issuer_code"] = details["issuer_code"]
                 rec["issuer_name"] = details.get("issuer_name")
                 rec["short_term_transfers"] = details.get("short_term_transfers") or []
+                for key in HOLDING_DETAIL_COLUMNS:
+                    rec[key] = details.get(key)
                 if not rec["issuer_code"]:
                     print(f"    ⚠ issuer_code取得失敗: {rec['doc_id']} filer={rec.get('filer_name')}")
                 if sleep_sec:
