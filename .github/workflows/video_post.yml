@@ -1,11 +1,10 @@
 name: Short Video Post
 
+# 定期実行は2026-08-30に停止した（走るのは手動実行のときだけ）。実測は公開9本・
+# 総再生6,909回・登録者5人・コメント0（docs/progress_video_post.md）で、GEOのA/B実験に
+# 無関係なままAnthropic APIとActionsの時間を消費するため。コードは残してあるので、
+# 再開したいときは以下の schedule を戻せばよい（旧設定: '30 10 * * 1-5' ＝平日19:30 JST）。
 on:
-  schedule:
-    # 平日 19:30 JST（UTC 10:30）に1日1回。EDINETの提出は18時以降ゼロ（実データ確認済み）で
-    # edinet_blog.yml（毎時 9:00-19:00 JST）が19:00の便で当日の記事とX日次サマリーを出し切った
-    # あとに走らせ、当日の一番大きい開示を動画にする。YouTubeの夜プライム帯（19〜22時）の頭に乗せる。
-    - cron: '30 10 * * 1-5'
   workflow_dispatch:
     inputs:
       render_only:

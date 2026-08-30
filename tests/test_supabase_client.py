@@ -166,6 +166,47 @@ def test_successful_write_records_no_failure():
         sb._notified_tables.clear()
 
 
+def test_production_writes_are_blocked_during_tests():
+    """テスト実行中は本番プロジェクトへ書かない（読み取りは通す）。
+
+    tests/test_api_usage.py の atexit flush が本番 api_usage へ合成行を書き
+    （2026-08-29、job=local / task="x" / $1.35）、その1行で当日合計が日次予算を超えて
+    翌営業日の記事生成が全便打ち切られる状態になった。同種の事故の再発検知。"""
+    sb.SUPABASE_URL = "https://prod.example"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    prod = sb._ENV_SUPABASE_URL
+    sb._ENV_SUPABASE_URL = "https://prod.example"
+    try:
+        with mock.patch("lib.supabase_client.requests.request",
+                        return_value=_FakeResponse()) as req:
+            assert sb.upsert("api_usage", [{"a": 1}]) is False
+            assert sb.update("api_usage", "id=eq.1", {"a": 1}) is False
+            sb.insert_ignore("api_usage", [{"a": 1}])
+            sb.delete("api_usage", "id=eq.1")
+            assert req.call_count == 0, req.call_args_list
+            # 読み取りは止めない（本番データを読むテストは事故ではない）
+            sb.select("api_usage", "select=cost_usd")
+            assert req.call_count == 1
+    finally:
+        sb._ENV_SUPABASE_URL = prod
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+
+
+def test_writes_to_a_non_production_url_still_go_through():
+    """URLを差し替えているテストの書き込みまで止めない（ガードが広すぎないことの確認）。"""
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    try:
+        with mock.patch("lib.supabase_client.requests.request",
+                        return_value=_FakeResponse()) as req:
+            assert sb.upsert("some_table", [{"a": 1}], on_conflict="a") is True
+        assert req.call_count == 1
+    finally:
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+
+
 if __name__ == "__main__":
     test_request_retries_on_timeout_then_succeeds()
     test_request_raises_after_max_retries()
@@ -174,4 +215,6 @@ if __name__ == "__main__":
     test_insert_ignore_splits_rows_with_different_keys()
     test_write_failure_is_recorded_and_notified_once()
     test_successful_write_records_no_failure()
-    print("OK: test_supabase_client (7 tests)")
+    test_production_writes_are_blocked_during_tests()
+    test_writes_to_a_non_production_url_still_go_through()
+    print("OK: test_supabase_client (9 tests)")

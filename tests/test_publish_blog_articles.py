@@ -487,7 +487,8 @@ def test_build_and_publish_skips_disclosure_already_articled():
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書", "doc_id": "D1",
                  "article_published_at": "2026-07-20T12:00:00+00:00"}]
-    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+    with mock.patch.object(m, "daily_quota", return_value=2), \
+         mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
@@ -502,7 +503,8 @@ def test_build_and_publish_records_ledger_after_publishing():
     holdings = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
                  "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
                  "doc_description": "大量保有報告書", "doc_id": "S100ABCD"}]
-    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+    with mock.patch.object(m, "daily_quota", return_value=2), \
+         mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
@@ -560,6 +562,75 @@ def test_build_and_publish_backfill_widens_window_and_takes_oldest_first():
     assert holdings.call_args.kwargs["days"] == m.BACKFILL_DAYS
     # 窓から外れる寸前の古い開示を先に消化する
     assert [r["stockCode"] for r in results] == ["6502"]
+
+
+def test_daily_quota_subtracts_todays_articles():
+    """日次上限は「1便あたり」ではなく「1日あたり」。当日の実績を引いた残りを返す。"""
+    with mock.patch.object(m.sb, "select", return_value=[{"doc_id": "D1"}]) as sel:
+        assert m.daily_quota("edinet_large_holdings") == m.DAILY_MAX_ARTICLES - 1
+    assert "article_published_at=gte." in sel.call_args.args[1]
+    with mock.patch.object(m.sb, "select",
+                           return_value=[{"doc_id": f"D{i}"} for i in range(m.DAILY_MAX_ARTICLES)]):
+        assert m.daily_quota("edinet_large_holdings") == 0
+    # 読めない日は0件扱い＝上限いっぱいまで出す（計測の失敗で投稿を止めない）
+    with mock.patch.object(m.sb, "select", return_value=[]):
+        assert m.daily_quota("edinet_large_holdings") == m.DAILY_MAX_ARTICLES
+
+
+def test_build_and_publish_caps_articles_per_day():
+    """通常運転は当日の残り枠で止まり、見送りは正常な見送り(SKIP_MAX_ARTICLES)として残る。"""
+    rows = [
+        {"issuer_code": f"{7000 + i}", "name": f"銘柄{i}", "filer_name": f"提出者{i}",
+         "holding_ratio": 8.5, "disc_date": "2026-08-28", "doc_type_code": "350",
+         "doc_description": "大量保有報告書", "doc_id": f"D{i}"}
+        for i in range(m.DAILY_MAX_ARTICLES + 2)
+    ]
+    from lib import publish_ledger as pl
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    with mock.patch.object(m, "articles_published_today", return_value=1) as today, \
+         mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(days=3, dry_run=True, ledger=led)
+    today.assert_called_once()
+    assert len(results) == m.DAILY_MAX_ARTICLES - 1
+    assert led.reasons[pl.SKIP_MAX_ARTICLES] == 1
+    assert led.has_anomaly() is False, led.summary()
+
+
+def test_explicit_max_articles_wins_over_the_daily_cap():
+    """--max-articles を明示したときは当日の実績を見に行かない（手動実行の上書き）。"""
+    rows = [{"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+             "holding_ratio": 8.5, "disc_date": "2026-08-28", "doc_type_code": "350",
+             "doc_description": "大量保有報告書", "doc_id": "D1"}]
+    with mock.patch.object(m, "articles_published_today") as today, \
+         mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(days=3, max_articles=1, dry_run=True)
+    today.assert_not_called()
+    assert len(results) == 1
 
 
 def test_build_and_publish_backfill_caps_articles_by_default():
@@ -1777,7 +1848,8 @@ def test_build_and_publish_skips_disclosure_below_threshold(capsys=None):
         "holding_ratio": 0.04, "holding_ratio_prior": 0.03, "disc_date": "2026-08-07",
         "doc_description": "変更報告書", "doc_type_code": "350",
     }]
-    with mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+    with mock.patch.object(m, "daily_quota", return_value=2), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "ratio_change_pct", return_value=0.01), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=0.0), \
          mock.patch.object(m, "generate_article_body_checked") as gen:

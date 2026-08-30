@@ -1,6 +1,7 @@
 """Supabase REST API client for stock-alert pipeline."""
 import math
 import os
+import sys
 import time
 import requests
 from dotenv import load_dotenv
@@ -10,6 +11,10 @@ load_dotenv()
 # GitHub Secrets等に混入した前後の空白でホスト名解決が壊れるため必ずstripする
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+
+# 本番プロジェクトのURLの控え。テストが SUPABASE_URL を差し替えても変わらないので、
+# 「いま書こうとしている先が本番か」の判定に使う（_block_production_write）。
+_ENV_SUPABASE_URL = SUPABASE_URL
 
 _BATCH_SIZE = 500
 _TIMEOUT = 30
@@ -59,6 +64,32 @@ def _headers(prefer: str = "resolution=merge-duplicates") -> dict:
 
 def is_configured() -> bool:
     return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
+
+
+def running_under_test() -> bool:
+    """テストランナーの中かどうか。`pytest tests/` と `python3 tests/test_x.py` の両方を見る。"""
+    if "pytest" in sys.modules:
+        return True
+    return os.path.basename(sys.argv[0] or "").startswith("test_")
+
+
+def _block_production_write(table: str, op: str) -> bool:
+    """テスト実行中に本番プロジェクトへ書こうとしていたら True（呼び出しは握りつぶす）。
+
+    なぜ必要か: tests/test_api_usage.py が atexit の flush() で本番 api_usage へ
+    合成行を書いていた（2026-08-29、job=local / task="x" / cache_write 1,000,000 / $1.35）。
+    その1行だけで当日合計が日次予算 $1.2 を超え、翌営業日の記事生成が全便
+    `check_daily_cap()` に打ち切られる状態になっていた。テスト側で書き込みを毎回
+    モックする規律に頼ると必ず漏れる（atexit のように後片付けの外で走る経路もある）ため、
+    全ての書き込みが通る唯一の出口であるここで止める。
+
+    URLを差し替えているテスト（test_supabase_client.py の example.test）は本番では
+    ないので通す。読み取りは止めない（本番データを読むテストは事故ではない）。
+    """
+    if not (running_under_test() and _ENV_SUPABASE_URL and SUPABASE_URL == _ENV_SUPABASE_URL):
+        return False
+    print(f"[supabase] ⚠ テスト実行中のため本番への {op} {table} を中止しました")
+    return True
 
 
 def _dedup_batch(batch: list[dict], on_conflict: str) -> list[dict]:
@@ -123,6 +154,8 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
     （2026-08-24〜25）。"""
     if not rows or not is_configured():
         return False
+    if _block_production_write(table, "upsert"):
+        return False
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if on_conflict:
         url += f"?on_conflict={on_conflict}"
@@ -151,6 +184,8 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
 
 def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
     if not rows or not is_configured():
+        return
+    if _block_production_write(table, "insert_ignore"):
         return
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if on_conflict:
@@ -214,6 +249,8 @@ def select_one(table: str, query: str = "") -> dict | None:
 def delete(table: str, query: str) -> None:
     if not is_configured():
         return
+    if _block_production_write(table, "delete"):
+        return
     url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
     _request("DELETE", url, headers=_headers(), timeout=_TIMEOUT)
 
@@ -226,6 +263,8 @@ def update(table: str, query: str, patch: dict) -> bool:
     upsertが issuer_code のNOT NULL制約で400になった）。
     """
     if not is_configured():
+        return False
+    if _block_production_write(table, "update"):
         return False
     url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
     resp = _request("PATCH", url, headers=_headers(prefer="return=minimal"),

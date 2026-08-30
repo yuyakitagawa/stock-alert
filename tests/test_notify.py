@@ -115,38 +115,30 @@ class ApiBudgetNotifyTest(unittest.TestCase):
 
 class HeartbeatTest(unittest.TestCase):
     BASE = {"date": "2026-08-24", "holdings": 39, "buybacks": 2, "edinet_api": 39,
-            "articles": 18, "x_posts": 2, "videos": 1}
+            "articles": 18}
 
     def test_healthy_day_has_no_problem(self):
         self.assertEqual(hb.judge(self.BASE), [])
 
     def test_flags_zero_articles_when_material_exists(self):
-        problems = hb.judge({**self.BASE, "articles": 0, "videos": 0})
+        problems = hb.judge({**self.BASE, "articles": 0})
         self.assertTrue(any("ブログ記事が0件" in p for p in problems))
 
     def test_quiet_day_without_material_is_not_flagged(self):
         """開示が無い日（祝日等）は記事0件でも異常ではない。
         「静かな日」はEDINET側も0件であることまで確認する（DBだけ0件なら保存の故障）。"""
         problems = hb.judge({**self.BASE, "edinet_api": 0, "holdings": 0, "buybacks": 0,
-                             "articles": 0, "videos": 0})
+                             "articles": 0})
         self.assertFalse(any("ブログ記事" in p for p in problems))
-
-    def test_flags_missing_video_when_articles_exist(self):
-        """2026-08-24の実データ: 記事は出たが動画は0本。"""
-        problems = hb.judge({**self.BASE, "videos": 0})
-        self.assertTrue(any("動画" in p for p in problems))
-
-    def test_flags_zero_x_posts(self):
-        self.assertTrue(any("X投稿が0件" in p for p in hb.judge({**self.BASE, "x_posts": 0})))
 
     def test_unknown_counts_are_not_flagged(self):
         """Supabase/microCMSが引けなかった項目(-1)で誤報を出さない。"""
-        self.assertEqual(hb.judge({**self.BASE, "articles": -1, "x_posts": -1, "videos": -1}), [])
+        self.assertEqual(hb.judge({**self.BASE, "articles": -1}), [])
 
     def test_message_marks_problem_and_lists_counts(self):
-        msg = hb.build_message(self.BASE, hb.judge({**self.BASE, "videos": 0}))
+        msg = hb.build_message(self.BASE, hb.judge({**self.BASE, "articles": 0}))
         self.assertTrue(msg.startswith("🚨"))
-        self.assertIn("ブログ18件", msg)
+        self.assertIn("ブログ18件", hb.build_message(self.BASE, []))
 
     def test_message_is_ok_when_healthy(self):
         self.assertTrue(hb.build_message(self.BASE, []).startswith("✅"))
@@ -163,7 +155,7 @@ class HeartbeatTest(unittest.TestCase):
 
     def test_delayed_morning_run_judges_the_previous_day(self):
         """13:00 UTCの便が翌朝に遅れて起動した実例（8/28 07:40 JST）。
-        始まったばかりの当日を見ると「X0件・動画0本」で毎朝誤報になる。"""
+        始まったばかりの当日を見ると「記事0件」で毎朝誤報になる。"""
         run_at = datetime(2026, 8, 28, 7, 40, tzinfo=hb.JST)
         self.assertEqual(hb.target_date(now=run_at), "2026-08-27")
 
@@ -172,37 +164,33 @@ class HeartbeatTest(unittest.TestCase):
                                         now=datetime(2026, 8, 28, 7, 40, tzinfo=hb.JST)),
                          "2026-08-24")
 
-    def test_counts_are_bounded_to_the_target_day(self):
-        """上限が無いと、前日を見る便が当日ぶん（backfillの記事等）まで数えてしまう。
-        動画はXのクロス投稿ではなくYouTubeの公開実績から数える。"""
+    def test_counts_only_blog_articles_and_material(self):
+        """X投稿・動画は2026-08-30に定期実行を止めたので数えない（毎日0件で誤報になる）。"""
         with mock.patch.object(hb, "count_edinet_disclosures", return_value=0), \
                 mock.patch.object(hb, "count_blog_articles", return_value=3), \
                 mock.patch.object(hb.sb, "select", return_value=[]) as sel:
-            hb.collect("2026-08-27")
-        queries = {c.args[0]: c.args[1] for c in sel.call_args_list}
-        self.assertIn("youtube_videos", queries)
-        self.assertNotIn("kind=eq.video", "".join(queries.values()))
-        for table in ("x_posts", "youtube_videos"):
-            self.assertIn("2026-08-26T15:00:00.000Z", queries[table])
-            self.assertIn("2026-08-27T15:00:00.000Z", queries[table])
+            counts = hb.collect("2026-08-27")
+        tables = {c.args[0] for c in sel.call_args_list}
+        self.assertEqual(tables, {"edinet_large_holdings", "tdnet_buybacks"})
+        self.assertNotIn("x_posts", counts)
+        self.assertNotIn("videos", counts)
 
     def test_flags_db_zero_while_edinet_has_disclosures(self):
         """保存が壊れてDBだけ0件になった日を名指しで検知する（2026-08-26〜27の実例）。"""
-        problems = hb.judge({**self.BASE, "holdings": 0, "articles": 0, "videos": 0})
+        problems = hb.judge({**self.BASE, "holdings": 0, "articles": 0})
         self.assertTrue(any("DBは0件" in p for p in problems), problems)
 
     def test_material_is_counted_from_edinet_not_db(self):
         """DBが0件でもEDINETに開示があれば「記事0件」を異常として拾う。
         素材をDBから数えていたため、保存が壊れた日が静かな日と区別できていなかった。"""
-        problems = hb.judge({**self.BASE, "holdings": 0, "buybacks": 0,
-                             "articles": 0, "videos": 0})
+        problems = hb.judge({**self.BASE, "holdings": 0, "buybacks": 0, "articles": 0})
         self.assertTrue(any("ブログ記事が0件" in p for p in problems), problems)
 
     def test_edinet_unknown_falls_back_to_db_count(self):
         """EDINETを引けなかった(-1)ときは従来どおりDBの件数で判定し、誤報も出さない。"""
         self.assertEqual(hb.judge({**self.BASE, "edinet_api": -1}), [])
         problems = hb.judge({**self.BASE, "edinet_api": -1, "holdings": 0,
-                             "buybacks": 0, "articles": 0, "videos": 0})
+                             "buybacks": 0, "articles": 0})
         self.assertEqual(problems, [])
 
     def test_message_shows_both_db_and_edinet_counts(self):

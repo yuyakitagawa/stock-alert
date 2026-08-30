@@ -1,27 +1,24 @@
 """
 tools/output_heartbeat.py
 
-「その日、出るはずのものが出たか」を成果物そのもの（microCMSの記事・Supabaseのx_posts /
-youtube_videos）で数え、欠けていればLINEへ通知するハートビート。
+「その日、出るはずのものが出たか」を成果物そのもの（microCMSの記事）で数え、欠けていれば
+LINEへ通知するハートビート。X投稿と動画は2026-08-30に定期実行を止めたので数えない。
 
 なぜワークフローの成否ではなく成果物を見るのか（2026-08-24の無言停止）:
   edinet_blog.yml は各ステップが continue-on-error のため、記事生成がAnthropic APIの
-  利用上限で全件失敗しても run は success。記事が0件なので video_post.yml も
-  「投稿対象がないため終了」で正常終了する。GitHub Actions は全部緑、成果物だけがゼロ、
+  利用上限で全件失敗しても run は success。GitHub Actions は全部緑、成果物だけがゼロ、
   という状態を検知できるのは成果物側から数える見張りだけ。Claudeを一切使わないので、
   API上限やモデル障害の最中でも動く。
 
 対象日（ops.yml から 13:00 UTC = 22:00 JST に実行）:
   JSTの正午より前に起動した便は「前日」を見る。GitHubのscheduleは数時間遅れて起動する
   ことがあり（実測: 8/27 13:00 UTCの便が 22:40 UTC＝8/28 07:40 JST に起動）、起動時刻の
-  JST日付をそのまま対象にすると、始まったばかりの当日を「X投稿0件・動画0本」と判定して
+  JST日付をそのまま対象にすると、始まったばかりの当日を「記事0件」と判定して
   毎朝誤報になる（2026-08-28の実例）。
 
 判定（平日想定）:
   🚨 EDINETに大量保有の開示があるのにDB（edinet_large_holdings）が0件＝保存が壊れている
   🚨 素材（当日のEDINET大量保有開示 or 自社株買い決定）があるのにブログ記事が0件
-  🚨 X投稿が0件
-  ⚠️ ブログ記事は出ているのに動画（YouTube Shorts）が0本
   正常時は送らない（--always で毎日1通送る）
 
 終了コードは既定で常に0（異常は通知で伝える。集計自体に失敗したときだけ例外で落ちる →
@@ -135,7 +132,6 @@ def _count_rows(table: str, query: str) -> int:
 
 def collect(date_str: str) -> dict:
     """当日の素材と成果物の件数を集める。取得できなかった項目は -1。"""
-    day_start, day_end = _day_start_utc(date_str), _day_end_utc(date_str)
     return {
         "date": date_str,
         "holdings": _count_rows("edinet_large_holdings",
@@ -145,15 +141,6 @@ def collect(date_str: str) -> dict:
                                 f"disclosed_at=gte.{date_str}T00:00:00"
                                 f"&disclosed_at=lt.{date_str}T23:59:59&select=code"),
         "articles": count_blog_articles(date_str),
-        "x_posts": _count_rows("x_posts",
-                               f"posted_at=gte.{day_start}&posted_at=lt.{day_end}"
-                               f"&select=tweet_id"),
-        # 動画はYouTubeへの公開実績（youtube_videos）を数える。以前は x_posts の kind=video
-        # ＝「動画リンクのXクロス投稿」を見ていたが、これはX認証が切れていれば0になるうえ、
-        # 実際に1件も記録されたことがなく、Shortsを毎営業日出していても常に「動画0本」だった。
-        "videos": _count_rows("youtube_videos",
-                              f"published_at=gte.{day_start}&published_at=lt.{day_end}"
-                              f"&select=video_id"),
     }
 
 
@@ -174,10 +161,6 @@ def judge(counts: dict) -> list[str]:
             f"ブログ記事が0件（当日の素材: 大量保有{counts['holdings']}件 / "
             f"自社株買い{counts['buybacks']}件）"
         )
-    if counts["x_posts"] == 0:
-        problems.append("X投稿が0件")
-    if counts["videos"] == 0 and counts["articles"] > 0:
-        problems.append(f"動画の投稿が0本（当日の記事は{counts['articles']}件）")
     return problems
 
 
@@ -187,8 +170,7 @@ def _n(v: int) -> str:
 
 def build_message(counts: dict, problems: list[str]) -> str:
     md = f"{int(counts['date'][5:7])}/{int(counts['date'][8:10])}"
-    body = (f"ブログ{_n(counts['articles'])}件 / X{_n(counts['x_posts'])}件 / "
-            f"動画{_n(counts['videos'])}本\n"
+    body = (f"ブログ{_n(counts['articles'])}件\n"
             f"素材: 大量保有{_n(counts['holdings'])}件"
             f"（EDINET {_n(counts.get('edinet_api', -1))}件）"
             f" / 自社株買い{_n(counts['buybacks'])}件")

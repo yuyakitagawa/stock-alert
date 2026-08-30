@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib import api_budget  # noqa: E402
 from lib import api_usage  # noqa: E402
+from lib import supabase_client as sb  # noqa: E402
 
 
 def _resp(model="claude-haiku-4-5-20251001", **usage):
@@ -236,6 +237,35 @@ class BudgetAlertTest(unittest.TestCase):
         """監視が落ちても本処理（flush直後）を止めない。"""
         with mock.patch("lib.api_usage.month_usage", side_effect=Exception("boom")):
             self.assertEqual(api_usage.check_budget(), 0)
+
+
+class ProductionWriteGuardTest(unittest.TestCase):
+    """テストが本番 api_usage へ書いた事故（2026-08-29）の再発検知。
+
+    task="x" / cache_write 1,000,000 / $1.35 の合成行が本番に入り、当日合計が
+    日次予算 $1.2 を超えて check_daily_cap() が誤発火する状態になっていた。
+    書き込みは atexit の flush() から出るのでテスト側のモックでは塞ぎきれない。
+    塞いでいるのは lib/supabase_client.py の _block_production_write()。
+    """
+
+    def setUp(self):
+        api_usage.reset()
+        api_budget.reset()
+
+    def tearDown(self):
+        api_usage.reset()
+        api_budget.reset()
+
+    def test_flush_never_posts_to_production(self):
+        """upsertをモックせずに flush() しても本番へのPOSTが1本も出ないこと。"""
+        self.assertTrue(sb.running_under_test())
+        with mock.patch.dict(os.environ, {"ANTHROPIC_DAILY_BUDGET_USD": "0"}):
+            api_usage.record(_resp(cache_creation_input_tokens=1_000_000,
+                                   cache_read_input_tokens=1_000_000), task="x")
+        with mock.patch("lib.supabase_client._request") as req:
+            api_usage.flush()
+        methods = [c.args[0] for c in req.call_args_list]
+        self.assertNotIn("POST", methods, methods)
 
 
 if __name__ == "__main__":

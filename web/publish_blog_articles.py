@@ -553,6 +553,13 @@ BACKFILL_DAYS = 30
 # 外れる前に消化しきれる。取りこぼしが解消した後の定常状態では数件しか残らず上限に当たらない。
 BACKFILL_MAX_ARTICLES = 15
 
+# 通常運転で1日に投稿する上限（--max-articles 未指定・--backfill でないときの既定値）。
+# kujira-watch を「GEOのA/B実験台」に切り替えた 2026-08-30 に導入。記事を毎日大量に出すと
+# APIコストが積み上がるうえ、A/Bの母集団が日ごとに変わって効果を測れない。毎日決まった
+# 本数だけ出して観測条件を揃える。上限は「1便あたり」ではなく「1日あたり」で、当日ぶんの
+# 実績（開示側の article_published_at）を数えて残り枠を出す（便が3本あるため）。
+DAILY_MAX_ARTICLES = 2
+
 
 def fetch_published_index(since_date: str, extra_filter: str = "",
                           fields: str = "stockCode,dealDate,filerName") -> "list[dict] | None":
@@ -1691,6 +1698,23 @@ def estimated_amounts(days: int) -> dict:
     return {r["doc_id"]: r for r in rows}
 
 
+def articles_published_today(table: str, column: str = "doc_id") -> int:
+    """当日(UTC)に記事化した開示の件数。日次上限の残り枠を出すために使う。
+
+    1便あたりの上限では1日の本数を決められない（edinet_blog.yml は1日3便）。開示側の台帳
+    article_published_at は記事を消しても残るので、便をまたいでも当日の実績で判断できる。
+    読めなかった日は0を返す＝上限いっぱいまで出す（計測の失敗で投稿を止めない）。
+    """
+    day = datetime.now(timezone.utc).date().isoformat()
+    rows = sb.select(table, f"article_published_at=gte.{day}T00:00:00Z&select={column}")
+    return len(rows)
+
+
+def daily_quota(table: str, column: str = "doc_id") -> int:
+    """通常運転で今から投稿してよい本数（DAILY_MAX_ARTICLES から当日の実績を引いた残り）。"""
+    return max(0, DAILY_MAX_ARTICLES - articles_published_today(table, column))
+
+
 def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
     """backfillの事前足切り。記事を作ったことがある開示と、推定金額ビューの時点で足切り基準に
     届かない開示を、yfinance（発行済株式数・終値）とmicroCMSを叩く前に落とす。
@@ -1732,6 +1756,10 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print("[publish_blog_articles] 既報インデックスを取得できないため backfill を中止（重複投稿を避ける）")
             return []
         amounts = estimated_amounts(days)
+    elif max_articles is None:
+        max_articles = daily_quota("edinet_large_holdings")
+        print(f"[publish_blog_articles] 本日の残り枠 {max_articles}件"
+              f"（日次上限{DAILY_MAX_ARTICLES}件）")
 
     holdings = get_recent_large_holdings(days=days)
     candidates = [
@@ -1939,7 +1967,9 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--days", type=int, default=LARGE_HOLDINGS_DAYS, help="EDINET開示を見る直近日数")
-    p.add_argument("--max-articles", type=int, default=None, help="1回の実行で投稿する上限件数（未指定なら上限なし）")
+    p.add_argument("--max-articles", type=int, default=None,
+                   help=f"1回の実行で投稿する上限件数（未指定なら通常運転は当日の残り枠＝"
+                        f"日{DAILY_MAX_ARTICLES}本、--backfill時は{BACKFILL_MAX_ARTICLES}本/便）")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
     p.add_argument("--backfill", action="store_true",
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない開示だけを拾い直す")
@@ -1950,15 +1980,11 @@ def main():
                                 dry_run=args.dry_run, backfill=args.backfill, ledger=ledger)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
-    # backfillは数日前の開示を拾い直す便なので、Xには流さない（タイムラインに古い開示が並ぶ）
-    if not args.dry_run and not args.backfill:
-        from web.x_client import post_daily_summary, post_top_articles
-        featured_ids = get_featured_article_ids()
-        posted = post_top_articles(results, featured_ids)
-        if posted:
-            print(f"🐦 X投稿: {posted}件")
-        # 「本日のクジラ」日次サマリー(21時JSTの最終便のみ投稿される。時刻ガードはx_client側)
-        post_daily_summary()
+    # X投稿は 2026-08-30 に停止した（x_post.yml のスケジュールも同日に停止）。
+    # 実測（2026-08-19〜08-29）は34投稿・総インプレッション43・いいね0・リポスト0・
+    # URLクリック1・フォロワー10日連続0で、リーチの3経路（フォロワーTL / X内検索 /
+    # 他チャネル流入）がすべて塞がっている。再開条件は docs/x_operation_rules.md。
+    # 投稿処理は web/x_client.py に残してあるので、再開はここから呼び直せばよい。
 
     # 内訳は毎回出す（日次ログレビューが「候補はあったが全部基準未満」を読めるように）。
     # 生成・投稿の失敗があったときだけLINE通知＋終了コード4でワークフローを赤くする。
