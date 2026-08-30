@@ -20,7 +20,8 @@ import {
   getFilersWithProfile,
   investorPath,
 } from "@/lib/investors";
-import { displayFilerName, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { SITE_URL } from "@/lib/site";
 import { isIndexableInvestorPage } from "@/lib/pageIndexability";
 import { getPublishedStockCodes } from "@/lib/publishedPages";
@@ -236,12 +237,21 @@ export default async function InvestorPage({ params }: Props) {
         <span className="text-ink-secondary">{displayFilerName(filerName)}</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{displayFilerName(filerName)}</h1>
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className="mb-2 flex flex-wrap items-center gap-3">
         <DealTypeBadge dealType={category} />
         {classification?.description && (
           <p className="text-sm text-ink-tertiary">{classification.description}</p>
         )}
       </div>
+      {summary && (
+        <DataUpdatedAt
+          className="mb-6"
+          label="最終更新（反映済みの最新開示日）"
+          date={summary.latestDiscDate}
+          datePublished={summary.firstDiscDate}
+          url={url}
+        />
+      )}
       {summary && (
         <>
           <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
@@ -347,7 +357,7 @@ export default async function InvestorPage({ params }: Props) {
             {holdings.map((h) => (
               <TableRow key={h.docId}>
                 <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
-                  {formatDate(h.discDate)}
+                  <time dateTime={toDateAttr(h.discDate)}>{formatDate(h.discDate)}</time>
                 </TableCell>
                 <TableCell>
 <StockCell code={h.issuerCode} name={h.issuerName} published={publishedCodes} />

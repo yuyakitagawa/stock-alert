@@ -16,7 +16,7 @@ import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
 import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
-import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames } from "@/lib/format";
+import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames, toDateAttr } from "@/lib/format";
 import {
   getAllArticlesForSitemap,
   getArticleDetail,
@@ -400,8 +400,13 @@ export default async function ArticleDetailPage({ params }: Props) {
           </Box>
           <Box>
             <Typography variant="overline" component="dt" sx={{ display: "block", color: "text.disabled" }}>取引日</Typography>
-            <Typography component="dd" sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}>
-              {formatDate(article.dealDate)}
+            {/* JSON-LDのdatePublished/dateModifiedと同じ日付を、可視の本文側でも
+                time要素で機械可読にする（AI検索は本文の日付表記も鮮度判定に使う）。 */}
+            <Typography
+              component="dd"
+              sx={{ m: 0, mt: 0.5, fontWeight: 500, color: "primary.main" }}
+            >
+              <time dateTime={toDateAttr(article.dealDate)}>{formatDate(article.dealDate)}</time>
             </Typography>
           </Box>
           <Box>
@@ -739,7 +744,7 @@ export default async function ArticleDetailPage({ params }: Props) {
             </h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {relatedArticles.map((related) => (
-                <ArticleCard key={related.id} article={related} />
+                <ArticleCard key={related.id} article={related} headingLevel="h3" />
               ))}
             </div>
           </div>

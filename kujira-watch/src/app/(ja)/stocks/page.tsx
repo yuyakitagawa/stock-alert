@@ -10,7 +10,8 @@ import SectorIcon from "@/components/SectorIcon";
 import { getAllStocksForIndex, getArticleList } from "@/lib/microcms";
 import { getAllSectorsByCode } from "@/lib/companyInfo";
 import { getPublishedStockCodes } from "@/lib/publishedPages";
-import { formatDate } from "@/lib/format";
+import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { SITE_URL } from "@/lib/site";
 import AdUnit from "@/components/AdUnit";
 
@@ -105,6 +106,8 @@ async function StocksBody({ searchParams }: Props) {
     ]);
   // 解説記事も事業内容の説明も無い銘柄のページは公開していない（404）ので一覧にも出さない。
   const stocks = allStocks.filter((s) => publishedCodes.has(s.stockCode));
+  // 一覧の更新日は、載っている銘柄の最終開示日のうち最も新しいもの。
+  const latestDealDate = latestDateOf(stocks.map((s) => s.latestDealDate));
 
   const counts = new Map<string, number>();
   for (const s of stocks) {
@@ -122,10 +125,18 @@ async function StocksBody({ searchParams }: Props) {
 
   return (
     <>
-      <p className="mb-4 text-sm text-ink-tertiary">
+      <p className="mb-1 text-sm text-ink-tertiary">
         大量保有・自社株買いの開示があった銘柄{stocks.length}件。証券コード順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
+      {latestDealDate && (
+        <DataUpdatedAt
+          className="mb-4"
+          label="最終更新（反映済みの最新開示日）"
+          date={latestDealDate}
+          url={`${SITE_URL}/stocks`}
+        />
+      )}
       {sectors.length > 0 && (
         <FilterButtonNav
           ariaLabel="業種で絞り込む"
@@ -166,7 +177,10 @@ async function StocksBody({ searchParams }: Props) {
                   記事{stock.articleCount}件
                 </span>
                 <span className="block text-xs text-ink-tertiary">
-                  最終開示{formatDate(stock.latestDealDate)}
+                  最終開示
+                  <time dateTime={toDateAttr(stock.latestDealDate)}>
+                    {formatDate(stock.latestDealDate)}
+                  </time>
                 </span>
               </Link>
             </li>

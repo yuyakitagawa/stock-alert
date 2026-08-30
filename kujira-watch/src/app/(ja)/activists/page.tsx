@@ -8,7 +8,8 @@ import {
   getActivistRecentMoves,
   type ActivistMove,
 } from "@/lib/activists";
-import { displayFilerName, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getArticleList } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import RatioTransition from "@/components/RatioTransition";
@@ -144,7 +145,7 @@ export default async function ActivistsPage() {
             <span className="ml-2">
               {move.holdingRatioPrior === null && "新規 "}
               <RatioTransition ratio={move.holdingRatio} prior={move.holdingRatioPrior} />
-              （{formatDate(move.discDate)}）
+              （<time dateTime={toDateAttr(move.discDate)}>{formatDate(move.discDate)}</time>）
             </span>
           </li>
         ))}
@@ -209,6 +210,14 @@ export default async function ActivistsPage() {
           />
           {attentionOmitted > 0 && `（増加幅の大きい上位${ATTENTION_RENDER_LIMIT}銘柄を表示。ほか${attentionOmitted}銘柄は各銘柄ページでご確認ください）`}
         </p>
+        {latestMoveDate && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新開示日）"
+            date={latestMoveDate}
+            url={url}
+          />
+        )}
       </div>
 
       <FactBox

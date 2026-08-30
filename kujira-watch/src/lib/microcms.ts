@@ -410,8 +410,10 @@ export const getAllStocksForIndex = unstable_cache(
   { revalidate: REVALIDATE_SECONDS }
 );
 
+// updatedAtはmicroCMSが全オブジェクトに付ける実更新日時。/aboutの可視の更新日表示と
+// WebPage(dateModified)に使う（サイトマップの<lastmod>と同じ値）。
 export async function getAboutPage() {
-  return client.getObject<AboutPage>({
+  return client.getObject<AboutPage & { updatedAt?: string }>({
     endpoint: "about",
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });

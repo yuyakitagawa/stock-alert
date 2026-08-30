@@ -18,7 +18,8 @@ import CategoryTrendGrid, {
 import RelatedArticles from "@/components/RelatedArticles";
 import { getArticleList, getRecentArticleDigests, type ArticleDigest } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
-import { formatDealAmount, isSellArticle } from "@/lib/format";
+import { formatDealAmount, isSellArticle, latestDateOf } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import type { DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
 import FactBox from "@/components/FactBox";
@@ -233,6 +234,7 @@ export default async function WeeklyDigestPage() {
     .slice(0, 4);
 
   const recentSummary = buildRecentSummary(digests, RECENT_SUMMARY_DAYS);
+  const latestDealDate = latestDateOf(digests.map((d) => d.dealDate));
   // JSXの改行はレンダリング時に半角スペースになり、日本語の文の途中に入ってしまう。
   // 直答文は文字列として組み立ててから流し込む。
   const leadSentence = recentSummary
@@ -292,6 +294,14 @@ export default async function WeeklyDigestPage() {
           週ごとの推移は下のグラフで確認できます。
           <InfoTip content={`${SITE_NAME}がEDINET大量保有報告書をもとに集計。週別の売買金額（買い/売り）と投資家分類別の推移を示します。`} />
         </p>
+        {latestDealDate && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新取引日）"
+            date={latestDealDate}
+            url={url}
+          />
+        )}
       </div>
 
       {recentSummary && (

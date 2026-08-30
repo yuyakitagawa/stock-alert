@@ -10,7 +10,8 @@ import RelatedArticles from "@/components/RelatedArticles";
 import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { formatAmountOku, getRecentBuybackDecisions, type BuybackDecision } from "@/lib/buybacks";
 import type { FaqItem } from "@/lib/faqData";
-import { formatDate } from "@/lib/format";
+import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getArticleList } from "@/lib/microcms";
 import { getPublishedStockCodes } from "@/lib/publishedPages";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -114,6 +115,8 @@ export default async function BuybacksPage() {
   // 発行済株式比率の量感バーの基準。一覧は開示日の新しい順なので、
   // 需給インパクトの大小（＝比率）は数字を読まないと分からなかった。
   const maxRatio = listed.reduce((max, d) => Math.max(max, d.ratioPct ?? 0), 0);
+  // 一覧の更新日は、載っている決議のうち最も新しい開示日。
+  const latestDisclosedAt = latestDateOf(decisions.map((d) => d.disclosedAt));
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -152,6 +155,14 @@ export default async function BuybacksPage() {
           直近{WINDOW_DAYS}日の決定を開示日の新しい順に並べています（数字の見方は
           <a href="#faq" className="text-brand-blue hover:underline">FAQ</a>）。
         </p>
+        {latestDisclosedAt && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新開示日）"
+            date={latestDisclosedAt}
+            url={url}
+          />
+        )}
       </div>
 
       <section className="mb-10">
@@ -193,7 +204,12 @@ export default async function BuybacksPage() {
                             消却
                           </span>
                         )}
-                        <span className="text-xs text-ink-tertiary">{formatDate(d.disclosedAt.slice(0, 10))}</span>
+                        <time
+                          dateTime={toDateAttr(d.disclosedAt)}
+                          className="text-xs text-ink-tertiary"
+                        >
+                          {formatDate(d.disclosedAt.slice(0, 10))}
+                        </time>
                       </span>
                       <span className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-ink-tertiary">
                         <span className="text-sm">

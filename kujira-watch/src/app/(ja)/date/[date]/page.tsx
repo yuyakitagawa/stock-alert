@@ -7,6 +7,7 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate, formatMonth } from "@/lib/format";
 import { getAllArticlesForSitemap, getArticlesByDealDate } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+import { PageDatesJsonLd } from "@/components/DataUpdatedAt";
 import { isIndexableDatePage } from "@/lib/pageIndexability";
 import AdUnit from "@/components/AdUnit";
 
@@ -118,6 +119,8 @@ export default async function DateArchivePage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
+      {/* このページの日付＝取引日そのもの。見出しのtime要素と同じ値をWebPageでも宣言する。 */}
+      <PageDatesJsonLd url={url} date={date} />
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
@@ -127,7 +130,7 @@ export default async function DateArchivePage({ params }: Props) {
       </nav>
       <div className="mb-6">
         <h1 className="font-serif text-2xl font-bold text-brand-navy sm:text-3xl">
-          {label}の大口投資家の動き
+          <time dateTime={date}>{label}</time>の大口投資家の動き
         </h1>
         <p className="mt-1 text-sm text-ink-tertiary">
           この日に開示された大量保有・変更報告書を{contents.length}件まとめています。

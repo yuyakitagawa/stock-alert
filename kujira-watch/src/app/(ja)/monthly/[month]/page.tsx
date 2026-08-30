@@ -10,7 +10,8 @@ import TableRow from "@mui/material/TableRow";
 import ActionButton from "@/components/ActionButton";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
-import { formatDealAmount, formatMonth } from "@/lib/format";
+import { formatDealAmount, formatMonth, latestDateOf } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getAllMonthsForIndex, getArticlesByMonth, MONTH_PATTERN } from "@/lib/microcms";
 import { getFilerIdMap, getFilerNamesByStockAndDate, investorPath } from "@/lib/investors";
 import {
@@ -105,6 +106,11 @@ export default async function MonthlyArchivePage({ params }: Props) {
   const topStocks = buildStockRanking(contents, RANKING_COUNT);
   const featured = [...contents].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, FEATURED_COUNT);
   const dateGroups = groupArticlesByDealDate(contents);
+  // 月ページの日付は、その月で実際に反映している取引日の範囲をそのまま使う
+  // （初出日を月初と決め打ちすると、月の途中に作られたページで嘘になる）。
+  const dealDays = contents.map((a) => a.dealDate.slice(0, 10)).sort();
+  const latestDealDate = latestDateOf(dealDays);
+  const firstDealDate = dealDays[0];
 
   // 月一覧は新しい順のため、配列上の「次の要素」が前月にあたる。
   const monthIndex = months.findIndex((m) => m.month === month);
@@ -167,6 +173,15 @@ export default async function MonthlyArchivePage({ params }: Props) {
         <h1 className="text-2xl font-bold text-brand-navy sm:text-3xl">
           {label}の大口投資家の動き
         </h1>
+        {latestDealDate && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新取引日）"
+            date={latestDealDate}
+            datePublished={firstDealDate}
+            url={url}
+          />
+        )}
         <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           {label}にEDINETで開示された大量保有・変更報告書は{summary.totalCount}件、
           推定取引金額は{formatDealAmount(summary.totalAmount)}でした。金額ベースでは買いが

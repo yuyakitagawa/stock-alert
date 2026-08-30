@@ -7,7 +7,7 @@ import Stack from "@mui/material/Stack";
 import DealTypeIcon from "./DealTypeIcon";
 import MagnitudeBar from "./MagnitudeBar";
 import DealTypeLabel from "./DealTypeLabel";
-import { displayFilerName, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, toDateAttr } from "@/lib/format";
 import {
   formatSignedPercent,
   formatSignedPoint,
@@ -152,7 +152,12 @@ export default function InvestorReturnRanking({
                   </span>
                 )}
               </span>
-              <span>最終買い{formatDate(row.latestBuyDate)}</span>
+              <span>
+                最終買い
+                <time dateTime={toDateAttr(row.latestBuyDate)}>
+                  {formatDate(row.latestBuyDate)}
+                </time>
+              </span>
               <span
                 className={`ml-auto whitespace-nowrap text-sm font-semibold tabular-nums ${
                   row.avgReturn >= 0 ? "text-gain" : "text-loss"

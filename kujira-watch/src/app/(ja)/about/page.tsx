@@ -7,6 +7,7 @@ import { getAboutPage } from "@/lib/microcms";
 import { SITE_NAME, SITE_URL, X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { DEAL_TYPES } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 
 const title = "このサイトについて";
 const description =
@@ -27,7 +28,13 @@ export default async function AboutPage() {
 
   return (
     <article className="border-t border-rule bg-paper p-6 sm:p-10">
-      <h1 className="mb-6 text-2xl font-bold text-brand-navy sm:text-3xl">{about.heroTitle}</h1>
+      <h1 className={`text-2xl font-bold text-brand-navy sm:text-3xl ${about.updatedAt ? "mb-2" : "mb-6"}`}>
+        {about.heroTitle}
+      </h1>
+      {/* 日付はmicroCMSのaboutオブジェクトの実updatedAt（サイトマップの<lastmod>と同じ源泉）。 */}
+      {about.updatedAt && (
+        <DataUpdatedAt className="mb-6" date={about.updatedAt} url={`${SITE_URL}/about`} />
+      )}
 
       <section className="mb-6">
         <h2 className="mb-2 text-xl font-bold text-brand-navy">Xで最新情報をチェック</h2>

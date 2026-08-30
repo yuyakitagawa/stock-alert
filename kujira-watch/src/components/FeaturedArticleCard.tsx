@@ -8,7 +8,7 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { ArticleContent } from "@/types/article";
-import { excerptFromHtml, formatDate, formatDealAmountOrCorrection } from "@/lib/format";
+import { excerptFromHtml, formatDate, formatDealAmountOrCorrection, toDateAttr } from "@/lib/format";
 import { UI } from "@/lib/i18n";
 import DealDirectionBadge from "./DealDirectionBadge";
 import DealTypeBadge from "./DealTypeBadge";
@@ -27,6 +27,7 @@ export default function FeaturedArticleCard({
   const body = article.body;
   return (
     <Card
+      component="article"
       elevation={4}
       sx={{
         position: "relative",
@@ -82,7 +83,12 @@ export default function FeaturedArticleCard({
             </Typography>
             <DealTypeBadge dealType={article.dealType} onDark />
             <DealDirectionBadge tags={article.tags} onDark />
-            <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.6)" }}>
+            <Typography
+              variant="overline"
+              component="time"
+              dateTime={toDateAttr(article.dealDate)}
+              sx={{ color: "rgba(255,255,255,0.6)" }}
+            >
               {formatDate(article.dealDate)}
             </Typography>
           </Stack>

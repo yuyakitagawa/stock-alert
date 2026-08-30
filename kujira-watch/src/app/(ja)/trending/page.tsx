@@ -10,6 +10,8 @@ import RelatedArticles from "@/components/RelatedArticles";
 import TrendingDirectionTable from "@/components/TrendingDirectionTable";
 import { getArticleList } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
+import { latestDateOf } from "@/lib/format";
 import { buildTrendingIssuers, selectDirection } from "@/lib/trendingStats";
 import AdUnit from "@/components/AdUnit";
 
@@ -101,6 +103,9 @@ export default async function TrendingPage() {
     return true;
   }).slice(0, RELATED_ARTICLE_SIZE);
 
+  // 反映済みデータの最終日。集計に入っている開示日そのものを使う（ビルド時刻ではない）。
+  const latestDiscDate = latestDateOf(rows.map((row) => row.discDate));
+
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -167,6 +172,14 @@ export default async function TrendingPage() {
           </Link>
           へ。
         </p>
+        {latestDiscDate && (
+          <DataUpdatedAt
+            className="mt-2"
+            label="最終更新（反映済みの最新開示日）"
+            date={latestDiscDate}
+            url={url}
+          />
+        )}
       </div>
 
       <section className="mb-10">

@@ -16,7 +16,8 @@ import {
 } from "@/lib/investorReturns";
 import { getPublishedFilerNames } from "@/lib/publishedPages";
 import { getArticleList } from "@/lib/microcms";
-import { displayFilerName, formatDate } from "@/lib/format";
+import { displayFilerName, formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { SITE_URL } from "@/lib/site";
 import { DEAL_TYPES, type DealType } from "@/types/article";
 import AdUnit from "@/components/AdUnit";
@@ -117,6 +118,8 @@ async function InvestorsBody({ searchParams }: Props) {
     ]);
   // 解説文が無く開示も1件だけの投資家のページは公開していない（404）ので一覧にも出さない。
   const filers = allFilers.filter((f) => publishedFilers.has(f.filerName));
+  // 一覧の更新日は、載っている投資家の最終開示日のうち最も新しいもの。
+  const latestDiscDate = latestDateOf(filers.map((f) => f.latestDiscDate));
 
   const counts = new Map<DealType, number>();
   for (const filer of filers) {
@@ -134,10 +137,18 @@ async function InvestorsBody({ searchParams }: Props) {
 
   return (
     <>
-      <p className="mb-4 text-sm text-ink-tertiary">
+      <p className="mb-1 text-sm text-ink-tertiary">
         EDINET大量保有報告書に登場した投資家{filers.length}件。最終開示日が新しい順
         {totalPages > 1 && `（${currentPage}/${totalPages}ページ）`}。
       </p>
+      {latestDiscDate && (
+        <DataUpdatedAt
+          className="mb-4"
+          label="最終更新（反映済みの最新開示日）"
+          date={latestDiscDate}
+          url={`${SITE_URL}/investors`}
+        />
+      )}
       {filers.length > 0 && (
         <FilterButtonNav
           ariaLabel="カテゴリで絞り込む"
@@ -183,7 +194,10 @@ async function InvestorsBody({ searchParams }: Props) {
                   <DealTypeLabel dealType={filer.category} />
                 </span>
                 <span className="block text-xs font-normal text-ink-tertiary">
-                  保有開示{filer.holdingCount}件・最終開示{formatDate(filer.latestDiscDate)}
+                  保有開示{filer.holdingCount}件・最終開示
+                  <time dateTime={toDateAttr(filer.latestDiscDate)}>
+                    {formatDate(filer.latestDiscDate)}
+                  </time>
                 </span>
                 {/* 4行目。買い開示が少ない投資家はビューに載らないので行ごと出ない
                     （高さがカードごとにずれるが、成績のある投資家を目立たせる方を採る）。 */}

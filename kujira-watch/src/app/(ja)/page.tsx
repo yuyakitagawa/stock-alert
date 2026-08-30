@@ -1,4 +1,5 @@
 import CategoryFilterDetails from "@/components/CategoryFilterDetails";
+import DataUpdatedAt from "@/components/DataUpdatedAt";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
@@ -65,10 +66,18 @@ export default async function HomePage() {
           ? `大量保有報告書で読む大口投資家の動き（${formatDate(latestDealDate)}の取引）`
           : "大量保有報告書で読む大口投資家の動き"}
       </h1>
-      <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
+      <p className="mb-2 text-sm leading-relaxed text-ink-secondary">
         EDINETに提出された大量保有報告書を平日毎時チェックし、機関投資家・アクティビスト・創業家など
         大口投資家の売買を開示当日のうちに記事にしています。
       </p>
+      {latestDealDate && (
+        <DataUpdatedAt
+          className="mb-4"
+          label="最終更新（反映済みの最新取引日）"
+          date={latestDealDate}
+          url={SITE_URL}
+        />
+      )}
       {contents.length === 0 ? (
         <p className="text-ink-tertiary">記事がまだありません。</p>
       ) : (
@@ -108,6 +117,7 @@ export default async function HomePage() {
           <h2 className="mb-4 text-xl font-bold text-brand-navy">新着の取引</h2>
           <CategoryFilterDetails />
           <InfiniteArticleList
+            dateHeadingLevel="h3"
             initialArticles={contents}
             totalCount={totalCount}
             excludeIds={featuredIds}
