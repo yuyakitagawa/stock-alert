@@ -1,4 +1,4 @@
-name: Backfill (JPX / TDnet / EDINET / 株価 / ランキング)
+name: Backfill (JPX / TDnet / EDINET / 株価 / ランキング / アイキャッチ)
 
 # 手動実行専用。過去データの遡及取得・再生成をまとめた1本。targets で対象を選ぶ。
 #   jpx      : JPX 空売り・信用残（tools/fetch_jpx_market.py）
@@ -7,11 +7,14 @@ name: Backfill (JPX / TDnet / EDINET / 株価 / ランキング)
 #   prices   : Yahoo Finance 株価キャッシュ（tools/fetch_history.py --years）
 #   rankings : gen_rankings の遡及生成（tools/backfill_history.py --start/--end/--force）
 #              ※通常 prices とセットで使う（例: targets=prices,rankings）
+#   eyecatch : ブログ記事のアイキャッチ画像を作り直す（tools/backfill_blog_eyecatch.py）
+#              ※ローカルmacでは実行しないこと。本番のアイキャッチは Noto Sans CJK Bold で
+#                組まれており、macのヒラギノで焼くと過去記事と新規記事で書体が混在する。
 on:
   workflow_dispatch:
     inputs:
       targets:
-        description: '取得対象（カンマ区切り: jpx,tdnet,edinet,prices,rankings）'
+        description: '取得対象（カンマ区切り: jpx,tdnet,edinet,prices,rankings,eyecatch）'
         required: true
         default: 'jpx,tdnet'
       tdnet_days:
@@ -36,6 +39,17 @@ on:
         description: '[rankings] 既存日付も再生成・上書きする（価格データ修正後の再生成用）'
         type: boolean
         default: false
+      eyecatch_mode:
+        description: '[eyecatch] replace=画像がある記事を作り直す / missing=画像が無い記事に付ける'
+        type: choice
+        options: [replace, missing]
+        default: 'replace'
+      eyecatch_limit:
+        description: '[eyecatch] 処理する最大件数（新しい順）。既定50。全件やるなら 0'
+        default: '50'
+      eyecatch_max_per_hour:
+        description: '[eyecatch] 画像生成の上限（件/時）'
+        default: '600'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -57,7 +71,13 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests pandas numpy scikit-learn joblib \
-            python-dotenv openpyxl xlrd xgboost lightgbm yfinance
+            python-dotenv openpyxl xlrd xgboost lightgbm yfinance Pillow
+
+      # 本番のアイキャッチと同じ書体で焼くために必要（web/publish_blog_articles.py の
+      # EYECATCH_FONT_PATH が /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc を指す）。
+      - name: Install Noto Sans CJK (アイキャッチ生成用フォント)
+        if: contains(inputs.targets, 'eyecatch')
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
 
       - name: Link repo to ~/stock-alert
         run: |
@@ -69,6 +89,9 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > ~/stock-alert/.env
           echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}" >> ~/stock-alert/.env
           echo "EDINET_API_KEY=${{ secrets.EDINET_API_KEY }}" >> ~/stock-alert/.env
+          echo "MICROCMS_SERVICE_DOMAIN=${{ secrets.MICROCMS_SERVICE_DOMAIN }}" >> ~/stock-alert/.env
+          echo "MICROCMS_API_KEY=${{ secrets.MICROCMS_API_KEY }}" >> ~/stock-alert/.env
+          echo "PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}" >> ~/stock-alert/.env
 
       - name: Verify secrets
         run: |
@@ -121,3 +144,17 @@ jobs:
           [ -n "${{ inputs.end_date }}" ] && ARGS="$ARGS --end ${{ inputs.end_date }}"
           [ "${{ inputs.force }}" = "true" ] && ARGS="$ARGS --force"
           python tools/backfill_history.py $ARGS
+
+      # 既存記事のアイキャッチを作り直す。ANTHROPIC_API_KEY は使わない（本文は触らず
+      # 画像の差し替えだけ）。写真の選択は提出者名+銘柄名+開示日のハッシュで決まるので、
+      # 同じ記事を2回流しても同じ写真になる。
+      - name: アイキャッチ画像の再生成
+        if: contains(inputs.targets, 'eyecatch')
+        run: |
+          cd ~/stock-alert
+          ARGS="--max-per-hour ${{ inputs.eyecatch_max_per_hour }}"
+          [ "${{ inputs.eyecatch_mode }}" = "replace" ] && ARGS="$ARGS --replace"
+          if [ "${{ inputs.eyecatch_limit }}" != "0" ]; then
+            ARGS="$ARGS --limit ${{ inputs.eyecatch_limit }}"
+          fi
+          python tools/backfill_blog_eyecatch.py $ARGS

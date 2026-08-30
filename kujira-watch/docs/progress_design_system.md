@@ -85,6 +85,17 @@
 - ローカルで `/investors`・`/stocks/7966`・`/faq` を目視。Chipの実効色をDevToolsで確認し、
   `color-mix(in srgb, var(--ink-tertiary) 8%, transparent)` が正しく解決することも確認済み。
 
-### 残件
-- 既存記事のアイキャッチ画像は再生成していない（新規記事から新しい表記・配色になる）。
-  一括で直すなら `tools/backfill_blog_eyecatch.py --replace`。Pexels APIは叩くがAnthropic APIは使わない。
+### 残件（2026-08-30 更新）
+- [x] 既存記事のアイキャッチを一括で作り直すための実行経路を用意（`.github/workflows/backfill.yml` に
+  `eyecatch` ターゲットを追加）。`eyecatch_mode`=replace/missing・`eyecatch_limit` 既定50・全件は0。
+- [ ] 実行そのものは未実施。**対象1,118件**（`--replace --dry-run` で確認済み）。
+  まず `eyecatch_limit=50` で出来上がりを確認してから全件に上げること。
+
+  **ローカルmacでは走らせないこと**: 本番のアイキャッチは Noto Sans CJK Bold で組まれているが、
+  このMacにNoto CJKが無く、`--font` でヒラギノを指定すると過去記事と新規記事で書体が混在する。
+  Actionsのジョブは fonts-noto-cjk を入れてから走るので本番と同じ書体になる。
+
+  留意点: 画像1枚あたり約100〜200KBのJPEGをmicroCMSに新規アップロードするため、全件で
+  **約150MBのメディアが増える**（旧画像は自動削除されない）。microCMSの容量を見てから全件を判断する。
+  写真の選択は提出者名+銘柄名+開示日のハッシュで決まるので、同じ記事を2回流しても同じ写真になる。
+  Anthropic APIは使わない（本文は触らず画像の差し替えのみ）。
