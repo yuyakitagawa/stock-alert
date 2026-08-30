@@ -21,10 +21,14 @@ export default function InfiniteArticleList({
   dealType,
   excludeIds,
   publishedDates,
+  dateHeadingLevel = "h2",
 }: {
   initialArticles: ArticleContent[];
   totalCount: number;
   dealType?: DealType;
+  // 取引日グループの見出しレベル。一覧がh1直下ならh2、TOPのようにセクション見出し
+  // （「新着の取引」）の下に入るならh3。記事カードの見出しはこの1つ下になる。
+  dateHeadingLevel?: "h2" | "h3";
   // ページ上部の「注目」枠に既に表示済みの記事IDを一覧から除外する（重複表示防止）。
   excludeIds?: Set<string>;
   // 取引日ページを公開している日（YYYY-MM-DD）。ここに無い日は「この日の記事を見る」を出さない。
@@ -69,6 +73,7 @@ export default function InfiniteArticleList({
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
+  const cardHeadingLevel = dateHeadingLevel === "h3" ? "h4" : "h3";
   const rest = excludeIds ? articles.filter((a) => !excludeIds.has(a.id)) : articles;
   const groups = groupArticlesByDealDate(rest);
 
@@ -88,10 +93,10 @@ export default function InfiniteArticleList({
       {blocks.map(({ group, withAd }) => (
         <Fragment key={group.date}>
           <div className="mb-8">
-            <DealDateHeading label={group.label} />
+            <DealDateHeading label={group.label} level={dateHeadingLevel} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               {group.articles.map((article) => (
-                <ArticleCard key={article.id} article={article} />
+                <ArticleCard key={article.id} article={article} headingLevel={cardHeadingLevel} />
               ))}
             </div>
             <DealDateSeeMoreLink

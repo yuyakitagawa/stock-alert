@@ -866,3 +866,25 @@ CDNの勉強を兼ねて、Vercel Edge Networkのキャッシュを「自動で�
 
 ハマり: MUIの `palette` に `var(--ink)` を渡すと `alpha()` の色計算で
 `MUI: Unsupported 'var(--ink)' color` の実行時エラーになる。paletteは実値、`styleOverrides` は `var()` でよい。
+
+## 2026-08-30 出力HTMLのセマンティクスを整えた（記事カード＝article／見出しの入れ子）
+
+TOPのHTMLソースを読もうとしたときに構造が追えなかったのがきっかけ。実測したところ、
+記事カード30枚がすべて素の `<div class="MuiCard-root">` で、ページ内の見出しが
+`h1:1 / h2:33 / h3:1` ＝ セクション見出しも取引日の区切りも記事タイトルも全部 h2 で、
+アウトラインが1段に潰れていた。
+
+- 記事カード（`ArticleCard` / `FeaturedArticleCard`）の `Card` に `component="article"` を付けた。
+  カード1枚は単体で意味が通る記事の要約なので `article` が適切。TOPで `<article>` が 0 → 30。
+- `ArticleCard` に `headingLevel`（既定 `h2`）、`DealDateHeading` に `level`（既定 `h2`）を足し、
+  `InfiniteArticleList` は `dateHeadingLevel` を受けてカードの見出しを常にその1段下にする。
+  既定値は変更前の出力と同じなので、明示的に渡したページ以外のHTMLは変わらない。
+- 実際に入れ子が崩れていた3か所に渡した: TOP（`新着の取引` h2 → 取引日 h3 → 記事 h4）、
+  `/stocks/[code]`（`大量保有・自社株買い履歴` h2 → 取引日 h3 → 記事 h4）、
+  `RelatedArticles` と記事詳細の関連記事（セクション h2 → 記事 h3）。
+  `/date/[date]` は取引日そのものが h1 なので既定の h2 のままで正しい。
+- 結果（ローカルSSR実測）: `<article> 30` / `<time datetime> 31` / `h1:1 h2:6 h3:2 h4:27`。
+  グリッドは 356px×2 のまま、横スクロールも出ていない（見た目の変更なし）。
+
+なお **出力HTMLが1行になっているのは直せない**（React SSRは要素間に改行を挟まない。
+本番HTMLは564KBで改行0）。ソースを読むときはDevToolsのElementsか整形ツールを通すこと。

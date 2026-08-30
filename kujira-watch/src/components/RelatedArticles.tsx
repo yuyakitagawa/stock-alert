@@ -28,7 +28,7 @@ export default function RelatedArticles({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {articles.map((article, index) => (
           <div key={article.id} className={index === 0 ? "sm:col-span-2" : undefined}>
-            <ArticleCard article={article} />
+            <ArticleCard article={article} headingLevel="h3" />
           </div>
         ))}
       </div>
