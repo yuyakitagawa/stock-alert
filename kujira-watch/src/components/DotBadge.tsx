@@ -50,7 +50,9 @@ export default function DotBadge({
           height: "auto",
           color,
           borderColor: bordered ? "rgba(22, 33, 58, 0.4)" : "transparent",
-          ...(tint ? { bgcolor: `${dotColor}14` } : null),
+          // 16進アルファの連結（`${dotColor}14`）ではなくcolor-mix。分類色には
+          // その他/純投資のように var(--ink-tertiary) を渡す場合があり、連結だと壊れるため。
+          ...(tint ? { bgcolor: `color-mix(in srgb, ${dotColor} 8%, transparent)` } : null),
           "& .MuiChip-label": { px: 0.75, py: 0.25 },
         },
         ...(Array.isArray(sx) ? sx : [sx]),

@@ -95,7 +95,7 @@ export function frameSpeculation(html: string): string {
     (_match, inner: string) =>
       '<aside class="not-prose my-6 rounded-md border border-rule border-l-4 border-l-brand-blue bg-section-tint px-4 py-3">' +
       '<p class="m-0 text-xs font-bold text-brand-navy">編集部の見立て（開示から読み取れる範囲の推測）</p>' +
-      `<p class="m-0 mt-1 text-sm leading-relaxed text-foreground/70">${inner}</p>` +
+      `<p class="m-0 mt-1 text-sm leading-relaxed text-ink-secondary">${inner}</p>` +
       "</aside>"
   );
 }

@@ -182,7 +182,7 @@ async function InvestorsBody({ searchParams }: Props) {
     <>
       {currentPage === 1 && matchedFilers.length > 0 && (
         <>
-          <p className="mb-3 text-sm leading-relaxed text-foreground/80">{leadSentence}</p>
+          <p className="mb-3 text-sm leading-relaxed text-ink-secondary">{leadSentence}</p>
           <FactBox
             facts={
               selectedCategory

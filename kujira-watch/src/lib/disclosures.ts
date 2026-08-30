@@ -168,12 +168,16 @@ export function classifyPurpose(purposeText: string | null): HoldingPurpose | nu
 }
 
 // バッジの色。経営に関与する側ほど強い色にして、一覧で目が留まるようにする。
+// DEAL_TYPE_COLORS と同じOKLCHパレットの文字グレード（L 0.46）。保有目的バッジは
+// ドットと文字の両方に同じ色を使うため、明るいドットグレードではなく文字グレードを持つ。
+// 色相の意味づけも分類側とそろえてある（赤=関与が強い / 暖色=経営寄り / 青緑=事業上の保有 /
+// 青=安定保有）。純投資は中立なので色相を持たせない。
 export const PURPOSE_COLORS: Record<HoldingPurpose, string> = {
-  重要提案行為等: "#e11d48",
-  経営参加: "#c2410c",
-  政策保有: "#0f766e",
-  安定株主: "#2563eb",
-  純投資: "#6b7280",
+  重要提案行為等: "#9b0f1b",
+  経営参加: "#903a03",
+  政策保有: "#056662",
+  安定株主: "#0e599d",
+  純投資: "var(--ink-tertiary)",
 };
 
 export const PURPOSE_DESCRIPTIONS: Record<HoldingPurpose, string> = {

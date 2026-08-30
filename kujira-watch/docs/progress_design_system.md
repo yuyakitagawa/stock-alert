@@ -72,3 +72,19 @@
 ## 検証
 - `npx tsc --noEmit` クリーン / `npx eslint`（変更ファイル）クリーン。
 - ローカルで TOP・`/trending`・`/investors` を 1280px / 375px で目視。375pxで横スクロール発生なし。
+
+## 追加フェーズ（2026-08-30 後半）
+
+- [x] P8 アイキャッチ生成の全角英数を `display_text()` で是正、帯・バッジ色をブランド色に統一
+- [x] P9 分類色（投資家分類14 / 保有目的5 / FAQ 9）をOKLCHの単一パレットに統合
+- [x] P10 `docs/design_system.md` に §1.4 カテゴリカルパレット・§7 生成画像 を追記、README更新
+
+### 検証
+- `venv/bin/python3 tests/test_publish_blog_articles.py` 全138件成功（`display_text` 2件を追加）。
+- `npx tsc --noEmit` / `npx eslint`（変更ファイル）クリーン。
+- ローカルで `/investors`・`/stocks/7966`・`/faq` を目視。Chipの実効色をDevToolsで確認し、
+  `color-mix(in srgb, var(--ink-tertiary) 8%, transparent)` が正しく解決することも確認済み。
+
+### 残件
+- 既存記事のアイキャッチ画像は再生成していない（新規記事から新しい表記・配色になる）。
+  一括で直すなら `tools/backfill_blog_eyecatch.py --replace`。Pexels APIは叩くがAnthropic APIは使わない。

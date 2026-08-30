@@ -131,8 +131,9 @@ export default function DealTypeIcon({
       aria-hidden
       title={dealType}
       className={`flex shrink-0 select-none items-center justify-center rounded-full leading-none ${circle}`}
-      // 背景=分類のドット色を約12%アルファ（16進2桁）で薄めたもの、線=分類の文字色。
-      style={{ backgroundColor: `${colors.dot}1f`, color: colors.text }}
+      // 背景=分類のドット色を12%に薄めたもの、線=分類の文字色。16進アルファの連結ではなく
+      // color-mixを使う（分類色には var(--ink-tertiary) が入りうるため）。
+      style={{ backgroundColor: `color-mix(in srgb, ${colors.dot} 12%, transparent)`, color: colors.text }}
     >
       <svg
         viewBox="0 0 24 24"
