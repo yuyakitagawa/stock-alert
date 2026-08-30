@@ -69,6 +69,15 @@ XBRLは保有割合を「保有者ごとのcontext」と「メンバー無しの
 - [x] 未コミット5本の持ち主を全セッションに照会 → 終了済みセッションの取りこぼしと判明。
       stock-alert-dd が内容確認のうえコミット（`c4e6ff08`）
 - [x] こちらの担当分をコミット（`7f75e601` / `4929ffc3`）。作業ツリーをクリアにした
-- [ ] stock-alert-dd が `git merge origin/pr284` → push（担当合意済み。着手OKを通知済み）
-- [ ] `git branch -u origin/pr284`（upstreamが別ブランチを向いている）
+- [x] stock-alert-dd が `git merge origin/pr284` → push 完了（`526f0ada`）。衝突2件、
+      うち `/investors` は「3ヶ月リターン表示」と「未公開投資家を一覧から外す」を両方残す形で解消（内容確認済み）
+- [x] `git branch -u origin/pr284`（stock-alert-ddが実施）
 - 履歴の書き換え（rebase/drop/force push）はしない方針で合意（CLAUDE.md §8・2026-07-16の消失事故の前例）
+
+## ⑥ マージで生じた404リンクの修正（2026-08-30）
+origin/pr284 が PR#290（薄い集約ページをnoindexではなく404にする）と `lib/publishedPages.ts` を
+持ち込んだため、同じ時間帯に別ブランチで書いた `TopReturnPreview.tsx` だけがガード漏れになっていた。
+- [x] `getPublishedStockCodes()` でガードし、未公開の銘柄は素のテキストで出す
+- [x] 実証: 直近コホート3件のうち ジェネレーションパス(3195) は `/stocks/3195` が404。
+      修正前はリンクを張っていた。修正後はリンクが消え、他2件(9722/9425)はリンクのまま
+- [x] tsc / lint / build / `next start` で TOP=200・/investors=200 を確認

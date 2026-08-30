@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getLatestReturnCohort, formatSignedPercent } from "@/lib/investorReturns";
 import { displayFilerName, formatDate } from "@/lib/format";
+import { getPublishedStockCodes } from "@/lib/publishedPages";
 
 // TOPに「3ヶ月前の開示は、その後どうなったか」を置く。
 //
@@ -12,7 +13,12 @@ import { displayFilerName, formatDate } from "@/lib/format";
 // 必ず先に書き、上位はその内訳として出す（都合の良い数字だけを見せない）。
 export default async function TopReturnPreview() {
   // TOPは最も見られるページなので、この枠が取れなくても本体（記事一覧）は必ず出す。
-  const cohort = await getLatestReturnCohort().catch(() => null);
+  const [cohort, publishedCodes] = await Promise.all([
+    getLatestReturnCohort().catch(() => null),
+    // 銘柄ページを公開していない銘柄はリンクにしない（lib/publishedPages.ts）。
+    // 薄い集約ページは404にしているので、リンクだけ残すとリンク切れになる。
+    getPublishedStockCodes().catch(() => new Set<string>()),
+  ]);
   if (!cohort || cohort.top.length === 0) return null;
 
   return (
@@ -38,9 +44,16 @@ export default async function TopReturnPreview() {
           <li key={entry.docId} className="flex items-baseline gap-2 text-sm">
             <span className="w-4 shrink-0 font-bold text-foreground/40">{i + 1}</span>
             <span className="min-w-0">
-              <Link href={`/stocks/${entry.issuerCode}`} className="text-brand-blue hover:underline">
-                {entry.issuerName}
-              </Link>
+              {publishedCodes.has(entry.issuerCode) ? (
+                <Link
+                  href={`/stocks/${entry.issuerCode}`}
+                  className="text-brand-blue hover:underline"
+                >
+                  {entry.issuerName}
+                </Link>
+              ) : (
+                <span>{entry.issuerName}</span>
+              )}
               <span className="text-foreground/50">（{displayFilerName(entry.filerName)}）</span>
             </span>
             <span
