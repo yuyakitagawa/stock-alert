@@ -43,6 +43,7 @@ import os
 import re
 import sys
 import json
+import time
 import argparse
 import hashlib
 from collections import Counter
@@ -1516,6 +1517,13 @@ class MicroCMSPermissionError(Exception):
 
 
 _UNEXPECTED_TYPE_RE = re.compile(r"'(\w+)' has unexpected data type")
+# アップロード直後のメディアURLをコンテンツAPIの検証が拒むことがある
+# （HTTP 400 "'eyecatch' field invalid. Please set a valid URL."）。
+# tools/backfill_blog_eyecatch.py の50件実行で2件発生し、同じURLで待って貼り直すと通った
+# （2026-08-30）。本番の投稿でも同じ400で記事1本が丸ごと落ちた（2026-08-31 run 33359138225）。
+_INVALID_FIELD_RE = re.compile(r"'(\w+)' field invalid")
+# メディア反映待ちのリトライ間隔（秒）。backfill_blog_eyecatch.patch_eyecatch と同じ。
+MEDIA_PROPAGATION_WAIT = 3.0
 
 
 def attach_figures(payload: dict, figures: list) -> int:
@@ -1551,10 +1559,13 @@ def publish_article(payload: dict) -> "str | None":
     再送信する。1回で1フィールドしか教えてくれないAPIなので、複数フィールドが
     ズレていても順番に直していける。文字列以外（eyecatch等のオブジェクト値）で型不一致に
     なった場合は配列化では直せないため、そのフィールドを除外して再送信する（記事自体を
-    投稿失敗させるより、画像等の付随情報なしで本文だけ投稿する方を優先する）。"""
+    投稿失敗させるより、画像等の付随情報なしで本文だけ投稿する方を優先する）。
+    'field invalid. Please set a valid URL.'（アップロード直後のメディアURLが弾かれる）は
+    まず同じ値のまま一度待って送り直し、それでも直らなければそのフィールドを外して投稿する。"""
     try:
         working_payload = dict(payload)
         fixed_fields = set()
+        waited_fields = set()
         for _ in range(MAX_TYPE_MISMATCH_RETRIES + 1):
             resp = _post_once(working_payload)
             if resp.status_code in (401, 403) or (
@@ -1575,6 +1586,24 @@ def publish_article(payload: dict) -> "str | None":
                         del working_payload[field]
                         fixed_fields.add(field)
                         print(f"    ↻ '{field}' の型が不一致のため除外して再送信します")
+                        continue
+
+                invalid = _INVALID_FIELD_RE.search(resp.text)
+                invalid_field = invalid.group(1) if invalid else None
+                if invalid_field and invalid_field in working_payload:
+                    if invalid_field not in waited_fields:
+                        # メディアの反映待ちの可能性があるので、同じ値のまま一度だけ待って送り直す
+                        waited_fields.add(invalid_field)
+                        print(f"    ↻ '{invalid_field}' が不正と言われたため"
+                              f"{MEDIA_PROPAGATION_WAIT:.0f}秒待って再送信します: "
+                              f"{working_payload[invalid_field]}")
+                        time.sleep(MEDIA_PROPAGATION_WAIT)
+                        continue
+                    if invalid_field not in fixed_fields:
+                        # 待っても直らないURLで記事1本を落とすより、画像なしで本文を出す
+                        del working_payload[invalid_field]
+                        fixed_fields.add(invalid_field)
+                        print(f"    ↻ '{invalid_field}' を除外して再送信します（画像なしで投稿）")
                         continue
 
             if resp.status_code not in (200, 201):
