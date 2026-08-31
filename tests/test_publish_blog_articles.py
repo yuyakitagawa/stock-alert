@@ -1014,6 +1014,44 @@ def test_publish_article_drops_non_string_field_on_type_mismatch():
     assert "eyecatch" not in retried_payload
 
 
+def test_publish_article_retries_same_url_when_media_not_yet_valid():
+    """アップロード直後のメディアURLが 'field invalid. Please set a valid URL.' で弾かれたら、
+    値は変えずに一度だけ待って送り直す（2026-08-31 run 33359138225 でトヨクモ(4058)の
+    記事1本が丸ごと落ちた）。"""
+    url = "https://images.microcms-assets.io/assets/x/eyecatch.jpg"
+    responses = [
+        _FakeResponse(400, '{"message":"\'eyecatch\' field invalid. Please set a valid URL."}'),
+        _FakeResponse(201, "", {"id": "waited-id"}),
+    ]
+    payload = {"title": "t", "eyecatch": url}
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock, \
+         mock.patch.object(m.time, "sleep") as sleep_mock:
+        content_id = m.publish_article(payload)
+    assert content_id == "waited-id"
+    assert post_mock.call_count == 2
+    # 画像は作り直さず同じURLを貼り直す
+    assert post_mock.call_args_list[1].args[0]["eyecatch"] == url
+    sleep_mock.assert_called_once_with(m.MEDIA_PROPAGATION_WAIT)
+
+
+def test_publish_article_drops_invalid_url_field_after_waiting():
+    """待っても直らないURLなら、そのフィールドを外して本文だけ投稿する
+    （記事1本を落とすより画像なしを優先する）。"""
+    responses = [
+        _FakeResponse(400, '{"message":"\'eyecatch\' field invalid. Please set a valid URL."}'),
+        _FakeResponse(400, '{"message":"\'eyecatch\' field invalid. Please set a valid URL."}'),
+        _FakeResponse(201, "", {"id": "no-eyecatch-id"}),
+    ]
+    payload = {"title": "t", "eyecatch": "https://images.microcms-assets.io/assets/x/e.jpg"}
+    with mock.patch.object(m, "_post_once", side_effect=responses) as post_mock, \
+         mock.patch.object(m.time, "sleep"):
+        content_id = m.publish_article(payload)
+    assert content_id == "no-eyecatch-id"
+    assert post_mock.call_count == 3
+    assert "eyecatch" not in post_mock.call_args_list[2].args[0]
+    assert post_mock.call_args_list[2].args[0]["title"] == "t"
+
+
 def test_publish_article_gives_up_when_same_field_fails_twice():
     responses = [
         _FakeResponse(400, '{"message":"\'dealType\' has unexpected data type."}'),
@@ -2080,6 +2118,8 @@ if __name__ == "__main__":
     test_build_and_publish_stops_early_on_permission_error()
     test_publish_article_retries_as_array_on_type_mismatch()
     test_publish_article_drops_non_string_field_on_type_mismatch()
+    test_publish_article_retries_same_url_when_media_not_yet_valid()
+    test_publish_article_drops_invalid_url_field_after_waiting()
     test_publish_article_gives_up_when_same_field_fails_twice()
     test_update_article_retries_as_array_on_type_mismatch()
     test_update_article_returns_false_on_failure()
@@ -2179,4 +2219,4 @@ if __name__ == "__main__":
     test_ledger_counts_every_candidate()
     test_display_text_halfwidths_only_latin_and_english_symbols()
     test_eyecatch_stock_line_normalizes_fullwidth_name()
-    print("全テスト成功 (138件)")
+    print("全テスト成功 (144件)")
