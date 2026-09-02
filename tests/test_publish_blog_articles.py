@@ -935,21 +935,38 @@ def test_already_published_true_for_unique_filing_even_if_ratio_differs():
         assert m.already_published("6976", "2026-08-18", 10.0, "F", -10.81, unique_filing=False) is False
 
 
-def test_get_featured_article_ids_picks_top_deal_amount():
+def test_get_featured_article_ids_picks_top_deal_amount_within_recent_days():
     """kujira-watch側getFeaturedArticles()と同じロジック: プール（microCMS側で
-    -dealDate,-dealAmount順に取得済み）の中から推定取引金額が大きい順に先頭count件を採用する。"""
+    -dealDate,-dealAmount順に取得済み）を最新の取引日からday_window日ぶんに絞ってから、
+    推定取引金額が大きい順に先頭count件を採用する。窓の外の大型取引は採らない。"""
     pool = [
-        {"id": "today-big", "dealAmount": 50},
-        {"id": "today-small", "dealAmount": 1},
-        {"id": "older-huge", "dealAmount": 999},
-        {"id": "older-medium", "dealAmount": 30},
+        {"id": "today-big", "dealAmount": 50, "dealDate": "2026-09-02T00:00:00.000Z"},
+        {"id": "today-small", "dealAmount": 1, "dealDate": "2026-09-02T00:00:00.000Z"},
+        {"id": "yesterday-medium", "dealAmount": 30, "dealDate": "2026-09-01T00:00:00.000Z"},
+        {"id": "older-huge", "dealAmount": 999, "dealDate": "2026-08-28T00:00:00.000Z"},
     ]
     resp = _FakeResponse(200, "", {"contents": pool})
     with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch("requests.get", return_value=resp):
-        ids = m.get_featured_article_ids(pool_size=20, count=2)
-    assert ids == {"older-huge", "today-big"}
+        ids = m.get_featured_article_ids(pool_size=20, count=2, day_window=2)
+    assert ids == {"today-big", "yesterday-medium"}
+
+
+def test_get_featured_article_ids_widens_window_when_too_few_recent():
+    """最新day_window日ぶんの記事がcount件に満たないときだけプール全体から選ぶ
+    （土日祝や開示ゼロの日にヒーロー枠が空になるのを避けるため）。"""
+    pool = [
+        {"id": "today-only", "dealAmount": 5, "dealDate": "2026-09-02T00:00:00.000Z"},
+        {"id": "older-huge", "dealAmount": 999, "dealDate": "2026-08-28T00:00:00.000Z"},
+        {"id": "older-medium", "dealAmount": 30, "dealDate": "2026-08-28T00:00:00.000Z"},
+    ]
+    resp = _FakeResponse(200, "", {"contents": pool})
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch("requests.get", return_value=resp):
+        ids = m.get_featured_article_ids(pool_size=20, count=2, day_window=1)
+    assert ids == {"older-huge", "older-medium"}
 
 
 def test_get_featured_article_ids_returns_empty_set_on_http_error():
@@ -2162,7 +2179,8 @@ if __name__ == "__main__":
     test_build_price_chart_for_article_none_when_generation_fails()
     test_build_price_chart_for_article_returns_url_on_success()
     test_build_and_publish_embeds_chart_image_in_body()
-    test_get_featured_article_ids_picks_top_deal_amount()
+    test_get_featured_article_ids_picks_top_deal_amount_within_recent_days()
+    test_get_featured_article_ids_widens_window_when_too_few_recent()
     test_get_featured_article_ids_returns_empty_set_on_http_error()
     test_get_featured_article_ids_returns_empty_set_on_exception()
     test_get_filer_profile_returns_cached_without_calling_claude()
@@ -2219,4 +2237,4 @@ if __name__ == "__main__":
     test_ledger_counts_every_candidate()
     test_display_text_halfwidths_only_latin_and_english_symbols()
     test_eyecatch_stock_line_normalizes_fullwidth_name()
-    print("全テスト成功 (144件)")
+    print("全テスト成功 (145件)")
