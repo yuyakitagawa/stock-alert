@@ -601,16 +601,19 @@ def fetch_published_index(since_date: str, extra_filter: str = "",
     return None
 
 
-# kujira-watch/src/lib/microcms.ts の FEATURED_POOL_SIZE/FEATURED_COUNT
+# kujira-watch/src/lib/microcms.ts の FEATURED_POOL_SIZE/FEATURED_COUNT/FEATURED_DAY_WINDOW
 # （ホームページ「注目」枠 getFeaturedArticles()）と同じ値。ここを変える場合は
 # あちらも合わせて変更すること。
 FEATURED_POOL_SIZE = 20
 FEATURED_COUNT = 3
+FEATURED_DAY_WINDOW = 3
 
 
-def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = FEATURED_COUNT) -> set:
-    """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件のプールから
-    推定取引金額dealAmountが大きい順に先頭count件を採用）を
+def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = FEATURED_COUNT,
+                             day_window: int = FEATURED_DAY_WINDOW) -> set:
+    """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件のプールを
+    最新の取引日から数えてday_window開示日ぶんに絞り、推定取引金額dealAmountが大きい順に
+    先頭count件を採用。絞った結果がcount件に満たない場合だけプール全体に戻す）を
     Python側で再現し、現在ホームページで「注目」表示されている記事のidセットを返す。
     X投稿をこれと一致させることで、サイトで目立っていない小粒な開示がXにだけ投稿される
     事態を防ぐ。取得失敗時は空集合（この場合X投稿は0件になる）。"""
@@ -621,7 +624,7 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
             params={
                 "orders": "-dealDate,-dealAmount",
                 "limit": pool_size,
-                "fields": "id,dealAmount",
+                "fields": "id,dealAmount,dealDate",
             },
             timeout=15,
         )
@@ -632,8 +635,12 @@ def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = F
         print(f"  ⚠ 注目記事プール取得失敗: {e}")
         return set()
 
-    contents.sort(key=lambda a: a.get("dealAmount", 0), reverse=True)
-    return {a["id"] for a in contents[:count]}
+    days = sorted({(a.get("dealDate") or "")[:10] for a in contents}, reverse=True)
+    allowed = set(days[:day_window])
+    recent = [a for a in contents if (a.get("dealDate") or "")[:10] in allowed]
+    base = recent if len(recent) >= count else contents
+    base = sorted(base, key=lambda a: a.get("dealAmount", 0), reverse=True)
+    return {a["id"] for a in base[:count]}
 
 
 def already_published(stock_code: str, disc_date: str, deal_amount: "float | None" = None,
