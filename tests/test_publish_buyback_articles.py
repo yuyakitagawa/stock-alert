@@ -284,6 +284,31 @@ def test_ledger_flags_generation_failure_as_anomaly():
         assert led.finish() == pl.EXIT_ANOMALY
 
 
+def test_daily_budget_stop_is_not_an_anomaly():
+    """日次予算に達した状態で残った候補は生成を呼ばずに打ち切り、正常終了する。"""
+    from lib import api_budget
+    from lib import publish_ledger as pl
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    with mock.patch("lib.notify.error"):
+        api_budget.stop_for_daily_cap(0.16, 0.15)
+    try:
+        with mock.patch.object(m, "daily_quota", return_value=2), \
+             mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
+             mock.patch.object(m, "already_published", return_value=False), \
+             mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
+             mock.patch.object(m, "generate_body_checked", return_value=None) as gen, \
+             mock.patch.object(m, "publish_article"):
+            out = m.build_and_publish(days=7, dry_run=True, ledger=led)
+    finally:
+        api_budget.reset()
+    assert out == []
+    gen.assert_not_called()
+    assert led.reasons == {pl.SKIP_DAILY_BUDGET: 1}
+    assert led.unclassified == 0
+    assert led.has_anomaly() is False, led.summary()
+
+
 def test_ledger_counts_every_candidate():
     """公開できた候補・見送った候補の合計が候補数と一致する（未分類が残らない）。"""
     from lib.publish_ledger import PublishLedger

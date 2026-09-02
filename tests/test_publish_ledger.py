@@ -82,6 +82,37 @@ def test_stopping_early_does_not_count_the_rest_as_unclassified():
     assert led.has_anomaly() is False
 
 
+def test_daily_budget_stop_is_not_an_anomaly():
+    """日次予算で打ち切った残りは翌日の便が拾う。設計どおりの停止なので鳴らさない。
+
+    2026-08-31〜09-02のbackfill便は14本公開した後にこれで止まった残り75件を
+    「記事生成に失敗」に数え、3日連続でワークフローが赤くなっていた。
+    """
+    led = PublishLedger("test")
+    led.start(89)
+    for _ in range(14):
+        led.publish()
+    led.stop_early(pl.SKIP_DAILY_BUDGET, "A(1111)")
+    assert led.unclassified == 0
+    assert led.has_anomaly() is False
+    assert "日次予算で打ち切り1" in led.summary()
+    with mock.patch("lib.publish_ledger.notify.error") as err:
+        assert led.finish() == 0
+    err.assert_not_called()
+
+
+def test_usage_limit_stop_is_an_anomaly():
+    """月次上限で打ち切ったときは復旧まで記事が出ないので、残りを数えなくても異常。"""
+    led = PublishLedger("test")
+    led.start(10)
+    led.stop_early(pl.FAIL_USAGE_LIMIT, "A(1111)")
+    assert led.unclassified == 0
+    assert led.has_anomaly() is True
+    with mock.patch("lib.publish_ledger.notify.error") as err:
+        assert led.finish() == pl.EXIT_ANOMALY
+    assert "API利用上限で打ち切り" in err.call_args[0][1]
+
+
 def test_permission_error_stop_is_an_anomaly():
     """microCMSの権限エラーで打ち切ったときは、残りを数えなくても異常のまま。"""
     led = PublishLedger("test")
@@ -144,8 +175,10 @@ if __name__ == "__main__":
     test_publish_failure_is_an_anomaly()
     test_candidate_dropped_without_a_reason_is_an_anomaly()
     test_stopping_early_does_not_count_the_rest_as_unclassified()
+    test_daily_budget_stop_is_not_an_anomaly()
+    test_usage_limit_stop_is_an_anomaly()
     test_permission_error_stop_is_an_anomaly()
     test_summary_shows_the_breakdown()
     test_unknown_reason_is_treated_as_an_anomaly()
     test_notification_is_deduped_by_cause()
-    print("OK: test_publish_ledger (9 tests)")
+    print("OK: test_publish_ledger (11 tests)")

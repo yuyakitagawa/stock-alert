@@ -725,6 +725,84 @@ def test_ledger_flags_generation_failure_as_anomaly():
         assert led.finish() == pl.EXIT_ANOMALY
 
 
+_BUDGET_HOLDINGS = [
+    {"issuer_code": "7203", "name": "テスト自動車", "filer_name": "個人 太郎",
+     "holding_ratio": 8.5, "disc_date": "2026-07-20", "doc_type_code": "350",
+     "doc_description": "大量保有報告書"},
+    {"issuer_code": "6502", "name": "テスト電機", "filer_name": "個人 次郎",
+     "holding_ratio": 9.5, "disc_date": "2026-07-21", "doc_type_code": "350",
+     "doc_description": "大量保有報告書"},
+]
+
+
+def _run_until_budget_stop(generate):
+    """2候補を台帳つきで回し、(ledger, 生成モック) を返す。api_budget は呼び出し側が仕込む。"""
+    from lib.publish_ledger import PublishLedger
+    led = PublishLedger("test")
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=_BUDGET_HOLDINGS), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "ratio_change_pct", return_value=8.5), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
+         mock.patch.object(m, "disclosure_close_price", return_value=None), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=None), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", side_effect=generate) as gen, \
+         mock.patch.object(m, "build_eyecatch_for_article", return_value=None), \
+         mock.patch.object(m, "build_price_chart_for_article", return_value=None), \
+         mock.patch.object(m, "attach_figures", return_value=0), \
+         mock.patch.object(m, "publish_article", return_value="fakeid123"):
+        try:
+            m.build_and_publish(days=3, max_articles=3, dry_run=False, ledger=led)
+        finally:
+            api_budget.reset()
+    return led, gen
+
+
+def test_daily_budget_stop_is_recorded_as_expected_and_stops_the_loop():
+    """生成中に日次予算へ達したら、その候補以降は「日次予算で打ち切り」で正常終了する。
+
+    2026-08-31〜09-02のbackfill便は14本公開後にこれで止まった残り75件を1件ずつ
+    「記事生成に失敗」に数え、ワークフローを赤くしてLINEを鳴らしていた。"""
+    from lib import publish_ledger as pl
+
+    def hit_cap(fact_sheet):
+        with mock.patch("lib.notify.error"):
+            api_budget.stop_for_daily_cap(0.16, 0.15)
+        return None
+
+    led, gen = _run_until_budget_stop(hit_cap)
+    assert gen.call_count == 1                      # 2件目は生成を呼ばずに打ち切る
+    assert led.published_count == 0
+    assert led.reasons == {pl.SKIP_DAILY_BUDGET: 1}
+    assert led.unclassified == 0
+    assert led.has_anomaly() is False, led.summary()
+    with mock.patch("lib.publish_ledger.notify.error") as err:
+        assert led.finish() == 0
+    err.assert_not_called()
+
+
+def test_usage_limit_stop_is_recorded_as_anomaly_and_stops_the_loop():
+    """月次上限に当たったときは打ち切ったうえで異常（終了コード4）にする。復旧まで記事は出ない。"""
+    from lib import publish_ledger as pl
+    from tests.test_api_budget import REAL_LIMIT_ERROR
+
+    def hit_limit(fact_sheet):
+        with mock.patch("lib.notify.error"):
+            api_budget.note(Exception(REAL_LIMIT_ERROR))
+        return None
+
+    led, gen = _run_until_budget_stop(hit_limit)
+    assert gen.call_count == 1
+    assert led.anomaly_counts() == {pl.FAIL_USAGE_LIMIT: 1}
+    with mock.patch("lib.publish_ledger.notify.error"):
+        assert led.finish() == pl.EXIT_ANOMALY
+
+
 def test_ledger_flags_publish_failure_as_anomaly():
     """microCMSがidを返さなかった候補も異常。"""
     from lib import publish_ledger as pl
@@ -2233,8 +2311,10 @@ if __name__ == "__main__":
     test_already_published_narrows_query_to_the_disclosure_date()
     test_ledger_marks_below_threshold_run_as_healthy()
     test_ledger_flags_generation_failure_as_anomaly()
+    test_daily_budget_stop_is_recorded_as_expected_and_stops_the_loop()
+    test_usage_limit_stop_is_recorded_as_anomaly_and_stops_the_loop()
     test_ledger_flags_publish_failure_as_anomaly()
     test_ledger_counts_every_candidate()
     test_display_text_halfwidths_only_latin_and_english_symbols()
     test_eyecatch_stock_line_normalizes_fullwidth_name()
-    print("全テスト成功 (145件)")
+    print("全テスト成功 (147件)")

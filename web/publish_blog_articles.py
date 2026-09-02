@@ -1772,6 +1772,18 @@ def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
     return is_worth_publishing(v.get("deal_amount_oku") or 0.0, v.get("ratio_change_pt") or 0.0)
 
 
+def budget_stop_reason() -> "str | None":
+    """Claude呼び出しを打ち切る状態なら、残りの候補を打ち切る台帳の理由を返す（未到達ならNone）。
+
+    日次予算（設計どおりの停止）は SKIP_DAILY_BUDGET＝正常な見送り、Anthropicの月次上限
+    （復旧まで記事が出ない障害）は FAIL_USAGE_LIMIT＝異常。以前はどちらも残り候補を1件ずつ
+    「記事生成に失敗」に数えていたため、日次予算で止まっただけの便がワークフローを赤くし、
+    候補ごとの株価・DB照会も空回りしていた（2026-08-31〜09-02のbackfill便）。"""
+    if not api_budget.reached():
+        return None
+    return pl.SKIP_DAILY_BUDGET if api_budget.daily_cap_reached() else pl.FAIL_USAGE_LIMIT
+
+
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
                        dry_run: bool = False, backfill: bool = False,
                        ledger: "PublishLedger | None" = None) -> list:
@@ -1819,6 +1831,11 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
     for h in candidates:
         if max_articles is not None and len(published) >= max_articles:
             ledger.stop_early(pl.SKIP_MAX_ARTICLES)
+            break
+        budget_stop = budget_stop_reason()
+        if budget_stop:
+            print(f"  ⏹ {pl.label(budget_stop)}のため残りの候補を打ち切ります")
+            ledger.stop_early(budget_stop)
             break
         code = str(h["issuer_code"])
         disc_date = h["disc_date"]
@@ -1914,6 +1931,12 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         }
         article = generate_article_body_checked(fact_sheet)
         if article is None:
+            budget_stop = budget_stop_reason()
+            if budget_stop:
+                # この候補の生成中に上限へ達した。生成失敗ではなく打ち切りとして記録する
+                print(f"  ⏹ {name}({code}): {pl.label(budget_stop)}のため残りの候補を打ち切ります")
+                ledger.stop_early(budget_stop, f"{name}({code})")
+                break
             print(f"  ⏭ {name}({code}): 記事生成に失敗したためスキップ")
             ledger.skip(pl.FAIL_GENERATION, f"{name}({code})")
             continue
