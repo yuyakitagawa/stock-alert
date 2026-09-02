@@ -54,6 +54,7 @@ from web.publish_blog_articles import (  # noqa: E402
     attach_figures,
     body_char_count,
     body_quality_key,
+    budget_stop_reason,
     build_eyecatch_for_article,
     daily_quota,
     build_price_chart_for_article,
@@ -421,6 +422,11 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         if max_articles is not None and len(published) >= max_articles:
             ledger.stop_early(pl.SKIP_MAX_ARTICLES)
             break
+        budget_stop = budget_stop_reason()
+        if budget_stop:
+            print(f"  ⏹ {pl.label(budget_stop)}のため残りの候補を打ち切ります")
+            ledger.stop_early(budget_stop)
+            break
         code, disc_date = row["code"], row["disclosed_at"][:10]
         if row.get("article_published_at"):
             # 既に記事を作った開示。microCMS上に無いのは意図的に削除したからなので作り直さない
@@ -440,6 +446,11 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
 
         article = generate_body_checked(f)
         if not article:
+            budget_stop = budget_stop_reason()
+            if budget_stop:
+                print(f"    ⏹ {f['stock_name']}({code}): {pl.label(budget_stop)}のため残りの候補を打ち切ります")
+                ledger.stop_early(budget_stop, f"{f['stock_name']}({code})")
+                break
             print(f"    ⏭ {f['stock_name']}({code}): 記事生成に失敗したためスキップ")
             ledger.skip(pl.FAIL_GENERATION, f"{f['stock_name']}({code})")
             continue

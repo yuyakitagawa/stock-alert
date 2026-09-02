@@ -49,9 +49,15 @@ SKIP_NO_PRIOR_RATIO = "no_prior_ratio"
 SKIP_NO_AMOUNT = "no_amount"
 SKIP_NO_STOCK_NAME = "no_stock_name"
 SKIP_MAX_ARTICLES = "max_articles"
+# 日次予算（lib/api_budget.stop_for_daily_cap）で打ち切った。設計どおりの停止で、残りは翌日
+# （UTC 0時）以降の便が拾う。2026-08-31〜09-02のbackfill便は14本公開した後にこれで止まった
+# 残り75件が「記事生成に失敗」に数えられ、3日連続でワークフローが赤くなりLINEが鳴っていた。
+SKIP_DAILY_BUDGET = "daily_budget"
 
 # ── 異常（素材があるのに出せていない）────────────────────────────────
 FAIL_GENERATION = "generation_failed"
+# Anthropicの月次利用上限（lib/api_budget.note）で打ち切った。復旧まで記事は出ないので異常。
+FAIL_USAGE_LIMIT = "usage_limit"
 FAIL_PUBLISH = "publish_failed"
 FAIL_PERMISSION = "permission_error"
 FAIL_UNCLASSIFIED = "unclassified"
@@ -66,10 +72,12 @@ EXPECTED = {
     SKIP_NO_AMOUNT: "金額を概算できない",
     SKIP_NO_STOCK_NAME: "銘柄名が取れない",
     SKIP_MAX_ARTICLES: "1回の上限に到達",
+    SKIP_DAILY_BUDGET: "日次予算で打ち切り",
 }
 
 ANOMALY = {
     FAIL_GENERATION: "記事生成に失敗",
+    FAIL_USAGE_LIMIT: "API利用上限で打ち切り",
     FAIL_PUBLISH: "microCMSへの投稿に失敗",
     FAIL_PERMISSION: "microCMSの権限エラー",
     FAIL_UNCLASSIFIED: "理由が記録されないまま脱落",
@@ -77,6 +85,11 @@ ANOMALY = {
 
 # 異常の例を通知に載せる件数（LINEは4,000字だが、読ませたいのは先頭数件だけ）
 _MAX_EXAMPLES = 5
+
+
+def label(reason: str) -> str:
+    """理由コードの日本語ラベル（ログと通知で共通）。未知のコードはそのまま返す。"""
+    return EXPECTED.get(reason) or ANOMALY.get(reason) or reason
 
 
 class PublishLedger:
@@ -131,7 +144,7 @@ class PublishLedger:
 
     # ── 出力 ────────────────────────────────────────────────────
     def _label(self, reason: str) -> str:
-        return EXPECTED.get(reason) or ANOMALY.get(reason) or reason
+        return label(reason)
 
     def summary(self) -> str:
         """候補と結末の内訳を1行で。日次ログレビューが読む前提で日本語のまま出す。"""

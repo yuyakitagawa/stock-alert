@@ -5,6 +5,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -58,6 +59,26 @@ class ApiBudgetTest(unittest.TestCase):
         api_budget.note(Exception(REAL_LIMIT_ERROR))
         api_budget.reset()
         self.assertFalse(api_budget.reached())
+
+    def test_daily_cap_is_distinguished_from_usage_limit(self):
+        """日次予算の停止は daily_cap_reached() で見分けられる（月次上限では False）。
+
+        記事生成の台帳は日次予算なら正常な見送り、月次上限なら異常に倒す。"""
+        with mock.patch("lib.notify.error"):
+            api_budget.stop_for_daily_cap(0.16, 0.15)
+        self.assertTrue(api_budget.reached())
+        self.assertTrue(api_budget.daily_cap_reached())
+        api_budget.reset()
+        with mock.patch("lib.notify.error"):
+            api_budget.note(Exception(REAL_LIMIT_ERROR))
+        self.assertTrue(api_budget.reached())
+        self.assertFalse(api_budget.daily_cap_reached())
+
+    def test_reset_clears_daily_cap(self):
+        with mock.patch("lib.notify.error"):
+            api_budget.stop_for_daily_cap(0.16, 0.15)
+        api_budget.reset()
+        self.assertFalse(api_budget.daily_cap_reached())
 
 
 if __name__ == "__main__":

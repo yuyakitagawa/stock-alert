@@ -2460,3 +2460,27 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - テスト2件追加（待って同じURLで通る／待っても駄目なら外して投稿）。
   test_publish_blog_articles 142→144件。表示件数が実際の呼び出し数(142)とずれて138のまま
   だったのも合わせて直した。
+
+## 2026-09-02 日次予算で止まっただけのbackfill便がワークフローを赤くしていた
+- `EDINET Blog Hourly` のbackfill便（cron `30 12 * * 1-5`）が 08-31（run 33429278127）・
+  09-01（run 33534158689）・09-02（run 33657025800）と3日連続で失敗しLINEが鳴っていた。
+  09-02の内訳: 候補153件 → 公開14件（記事生成に失敗75 / 比率変化なし48 / 金額概算不可12 /
+  既報3 / 持ち越し1）、終了コード4。
+- 「記事生成に失敗75」の実体は失敗ではなく、14本目の直後に `api_usage.check_daily_cap()` が
+  日次予算$0.15（記事1本≈$0.0092、backfillは1便15本）に達して `api_budget.stop_for_daily_cap()`
+  で以降のClaude呼び出しを止めたこと。`generate_article_body()` は `reached()` でNoneを返すので、
+  残り75候補が1件ずつ `FAIL_GENERATION` に数えられ、台帳が異常と判定して赤くなっていた。
+  候補ごとの株価・DB照会（`build_context_facts` 等）も75回空回りしていた。
+- 直し: `api_budget.daily_cap_reached()` を足して日次予算と月次上限を区別し、
+  `publish_blog_articles.budget_stop_reason()` で台帳の理由に変換する。両publishスクリプトは
+  ループ先頭と生成失敗直後にこれを見て `stop_early()` → `break`。
+  - 日次予算 → `SKIP_DAILY_BUDGET`「日次予算で打ち切り」＝正常な見送り（終了コード0、緑）。
+    残りは翌日UTC 0時以降の便が拾う。
+  - 月次上限 → `FAIL_USAGE_LIMIT`「API利用上限で打ち切り」＝異常（終了コード4、赤）。
+    復旧まで記事が出ない障害なので、2026-08-24型の見逃しは起こさない。
+- テスト: test_publish_ledger 9→11、test_api_budget 6→8、test_publish_blog_articles 145→147、
+  test_publish_buyback_articles 22→23。
+- 据え置いたもの: `BACKFILL_MAX_ARTICLES=15` と日次予算$0.15の組み合わせは、backfill便が
+  14本前後で必ず日次予算に当たる（15本×$0.0092≈$0.14＋会社説明）。打ち切り自体は設計どおり
+  なので値は変えていない。backfillを1便で使い切りたいなら `ANTHROPIC_DAILY_BUDGET_USD` を
+  上げるか `BACKFILL_MAX_ARTICLES` を下げる。

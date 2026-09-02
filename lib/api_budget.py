@@ -48,6 +48,8 @@ _MARKERS = (
 _reached = False
 _notified = False
 _daily_notified = False
+# 日次予算で止まったか（月次上限と区別する。日次は設計どおりの停止、月次は障害）。
+_daily_cap = False
 
 
 def is_usage_limit_error(exc: BaseException) -> bool:
@@ -135,10 +137,11 @@ def stop_for_daily_cap(spent_usd: float, budget_usd: float) -> None:
     バックフィルが1日で月の予算を焼いたのが原因で、月次の50/80%通知が出た時には
     もう手遅れだった。1日ぶんの上限で先に止めれば、被害は翌日UTC 0時までに限定される。
     """
-    global _reached
+    global _reached, _daily_cap
     if _reached:
         return
     _reached = True
+    _daily_cap = True
     _notify_daily_once(spent_usd, budget_usd)
 
 
@@ -173,9 +176,19 @@ def reached() -> bool:
     return _reached
 
 
+def daily_cap_reached() -> bool:
+    """止まった理由が日次予算（stop_for_daily_cap）なら True。月次上限（note）なら False。
+
+    記事生成の台帳（lib/publish_ledger）がこの区別で終了コードを変える。日次予算は
+    「今日はここまで」という設計どおりの停止なのでワークフローを赤くしない。月次上限は
+    復旧まで記事が1本も出ない障害なので赤くする。"""
+    return _daily_cap
+
+
 def reset() -> None:
     """フラグを戻す（テスト用）。"""
-    global _reached, _notified, _daily_notified
+    global _reached, _notified, _daily_notified, _daily_cap
     _reached = False
     _notified = False
     _daily_notified = False
+    _daily_cap = False
