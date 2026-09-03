@@ -86,8 +86,8 @@ export default function PrivacyPage() {
             をご利用ください。
           </li>
           <li>
-            <strong className="text-brand-navy">Vercel Analytics / Speed Insights</strong>:
-            ページの表示回数と表示速度を集計します。
+            <strong className="text-brand-navy">Vercel Speed Insights</strong>:
+            ページの表示速度を集計します。
           </li>
           <li>
             <strong className="text-brand-navy">運営者独自のアクセスログ</strong>:
