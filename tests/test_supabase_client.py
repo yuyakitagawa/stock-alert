@@ -15,6 +15,7 @@ import lib.supabase_client as sb
 
 class _FakeResponse:
     ok = True
+    status_code = 200
 
     def json(self):
         return []
@@ -207,6 +208,67 @@ def test_writes_to_a_non_production_url_still_go_through():
         sb.SUPABASE_SERVICE_KEY = ""
 
 
+class _StatusResponse:
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.ok = status_code < 400
+        self.text = text
+
+    def json(self):
+        return []
+
+
+def test_request_retries_on_5xx_then_succeeds():
+    """Cloudflare 522 等のサーバー側一時障害はネットワーク例外と同じくバックオフして再試行する
+    （2026-09-03、522が数十秒続いた間に yahoo_price_cache の書き込みが再試行されず落ちた）。"""
+    responses = [_StatusResponse(522), _StatusResponse(503), _StatusResponse(201)]
+
+    with mock.patch("lib.supabase_client.requests.request", side_effect=responses), \
+         mock.patch("lib.supabase_client.time.sleep") as fake_sleep:
+        resp = sb._request("POST", "https://example.test/x")
+    assert resp.status_code == 201
+    assert fake_sleep.call_count == 2
+
+
+def test_request_returns_last_5xx_after_max_retries_and_does_not_retry_4xx():
+    """5xxが続く場合は _MAX_RETRIES 回試したうえで最後のレスポンスを返す（例外にしない）。
+    400系は呼び出し側のバグなので再試行しない。"""
+    calls = {"n": 0}
+
+    def always_522(method, url, **kwargs):
+        calls["n"] += 1
+        return _StatusResponse(522)
+
+    with mock.patch("lib.supabase_client.requests.request", side_effect=always_522), \
+         mock.patch("lib.supabase_client.time.sleep"):
+        resp = sb._request("POST", "https://example.test/x")
+    assert resp.status_code == 522
+    assert calls["n"] == sb._MAX_RETRIES + 1
+
+    calls["n"] = 0
+
+    def always_400(method, url, **kwargs):
+        calls["n"] += 1
+        return _StatusResponse(400)
+
+    with mock.patch("lib.supabase_client.requests.request", side_effect=always_400), \
+         mock.patch("lib.supabase_client.time.sleep") as fake_sleep:
+        resp = sb._request("POST", "https://example.test/x")
+    assert resp.status_code == 400
+    assert calls["n"] == 1
+    assert fake_sleep.call_count == 0
+
+
+def test_error_detail_summarizes_html_error_page():
+    """CloudflareのHTMLエラーページは<title>だけに要約し、JSONエラーはそのまま残す。"""
+    html = ('<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->'
+            '<html><head><title>x.supabase.co | 522: Connection\n  timed out</title></head></html>')
+    assert sb._error_detail(_StatusResponse(522, html)) == \
+        "HTTP 522 x.supabase.co | 522: Connection timed out"
+    assert sb._error_detail(_StatusResponse(400, '{"code":"PGRST102"}')) == \
+        'HTTP 400 {"code":"PGRST102"}'
+
+
 if __name__ == "__main__":
     test_request_retries_on_timeout_then_succeeds()
     test_request_raises_after_max_retries()
@@ -217,4 +279,7 @@ if __name__ == "__main__":
     test_successful_write_records_no_failure()
     test_production_writes_are_blocked_during_tests()
     test_writes_to_a_non_production_url_still_go_through()
-    print("OK: test_supabase_client (9 tests)")
+    test_request_retries_on_5xx_then_succeeds()
+    test_request_returns_last_5xx_after_max_retries_and_does_not_retry_4xx()
+    test_error_detail_summarizes_html_error_page()
+    print("OK: test_supabase_client (12 tests)")
