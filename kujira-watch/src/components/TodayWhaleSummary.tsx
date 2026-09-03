@@ -8,26 +8,23 @@ import Typography from "@mui/material/Typography";
 import { formatDate, formatDealAmount } from "@/lib/format";
 
 // TOPの冒頭に置く最新開示サマリー。以前は見出しを「今日の注目取引」で固定していたが、
-// 実際の最新開示が何日付なのか・その日に何件いくら動いたのかは記事カードを読むまで
-// 分からなかった。開示日と件数・金額を最初に大きく出すことで、毎日更新されている
+// 実際の最新開示が何日付なのか・その日にいくら動いたのかは記事カードを読むまで
+// 分からなかった。開示日と金額を最初に大きく出すことで、毎日更新されている
 // ことが一目で分かるようにする（Discover・リピーター向けの鮮度表示）。
+// 件数は出さない（2026-09-03、オーナー指示）。ここで数えられるのは記事になった開示だけで、
+// 足切り（5億円/1.5pt）や日次上限で記事にしなかった開示は数に入らない。「N件の開示」と
+// 出すと、その日の開示自体が少なかったように読めてしまう。
 export default function TodayWhaleSummary({
   date,
   href,
-  count,
-  buyCount,
   buyAmount,
-  sellCount,
   sellAmount,
   disclosuresFixed,
 }: {
   date: string;
   /** 取引日ページへのリンク。開示が少なくページを公開していない日はnull（lib/publishedPages.ts）。 */
   href: string | null;
-  count: number;
-  buyCount: number;
   buyAmount: number;
-  sellCount: number;
   sellAmount: number;
   disclosuresFixed: boolean;
 }) {
@@ -42,13 +39,7 @@ export default function TodayWhaleSummary({
         <Typography variant="overline" sx={{ color: "brand.blue" }}>
           {formatDate(date)}の大口取引
         </Typography>
-        <Box sx={{ mt: 1, display: "flex", alignItems: "baseline", columnGap: 1 }}>
-          <Typography variant="h3" component="span" sx={{ ...bigNumberSx, color: "primary.main" }}>
-            {count}
-          </Typography>
-          <Typography variant="body2" sx={{ color: "text.secondary" }}>件の開示</Typography>
-        </Box>
-        {/* 合計金額だけでは買い優勢か売り優勢か分からないため、買い・売りの件数と金額を分けて出す。
+        {/* 合計金額だけでは買い優勢か売り優勢か分からないため、買い・売りの金額を分けて出す。
             合計値なので小数第1位は読む意味が薄く、整数に丸めて桁を見やすくする。 */}
         <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", columnGap: 3, rowGap: 0.5 }}>
           <Box sx={{ display: "flex", alignItems: "baseline", columnGap: 1 }}>
@@ -56,14 +47,12 @@ export default function TodayWhaleSummary({
             <Typography variant="h3" component="span" sx={{ ...bigNumberSx, color: "primary.main" }}>
               {formatDealAmount(Math.round(buyAmount))}
             </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>{buyCount}件</Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "baseline", columnGap: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 700, color: "error.main" }}>売り</Typography>
             <Typography variant="h3" component="span" sx={{ ...bigNumberSx, color: "error.main" }}>
               {formatDealAmount(Math.round(sellAmount))}
             </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>{sellCount}件</Typography>
           </Box>
         </Box>
         {href && (
