@@ -1,6 +1,7 @@
 """Supabase REST API client for stock-alert pipeline."""
 import math
 import os
+import re
 import sys
 import time
 import requests
@@ -20,22 +21,44 @@ _BATCH_SIZE = 500
 _TIMEOUT = 30
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_SEC = 2
+# 一時的なサーバー側障害としてリトライするHTTPステータス。5xx全般に加え、Supabase前段の
+# Cloudflareがオリジン到達不能時に返す 52x（522=Connection timed out 等）を含む。
+_RETRY_STATUS = {500, 502, 503, 504, 520, 521, 522, 523, 524, 529}
 
 
 def _request(method: str, url: str, **kwargs) -> requests.Response:
-    """requests呼び出しの共通ラッパー。タイムアウト等の一時的なネットワーク失敗は
-    指数バックオフ(2s/4s/8s)で最大_MAX_RETRIES回リトライする。単発のタイムアウトで
-    数時間かかるバックテスト/日次パイプライン全体が落ちるのを防ぐため。"""
+    """requests呼び出しの共通ラッパー。タイムアウト等の一時的なネットワーク失敗と、
+    5xx/Cloudflare 52x のサーバー側一時障害は指数バックオフ(2s/4s/8s)で最大_MAX_RETRIES回
+    リトライする。単発の障害で数時間かかるバックテスト/日次パイプライン全体が落ちるのを防ぐため。
+    リトライしても5xxが続いた場合は最後のレスポンスをそのまま返し、呼び出し側が記録・通知する。
+    （実例: 2026-09-03、Supabaseが HTTP 522 を返した数十秒間に yahoo_price_cache の書き込みが
+    リトライされずそのまま落ち、約55銘柄の当日終値が欠けた）"""
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            return requests.request(method, url, **kwargs)
+            resp = requests.request(method, url, **kwargs)
         except requests.exceptions.RequestException as e:
             if attempt == _MAX_RETRIES:
                 raise
-            wait = _RETRY_BACKOFF_SEC * (2 ** attempt)
-            print(f"[supabase] {method} {url[:80]} failed ({e}), "
-                  f"retry {attempt + 1}/{_MAX_RETRIES} in {wait}s")
-            time.sleep(wait)
+            reason = str(e)
+        else:
+            if resp.status_code not in _RETRY_STATUS or attempt == _MAX_RETRIES:
+                return resp
+            reason = f"HTTP {resp.status_code}"
+        wait = _RETRY_BACKOFF_SEC * (2 ** attempt)
+        print(f"[supabase] {method} {url[:80]} failed ({reason}), "
+              f"retry {attempt + 1}/{_MAX_RETRIES} in {wait}s")
+        time.sleep(wait)
+
+
+def _error_detail(resp: requests.Response) -> str:
+    """失敗レスポンスをログ・LINE通知向けの1行にする。CloudflareのエラーページはHTML
+    （<!DOCTYPE html>...）で、先頭200文字を切っても IE 向けコメントしか残らず原因が読めない
+    ため、HTMLなら<title>だけを取り出す（例: "HTTP 522 example.supabase.co | 522: Connection timed out"）。"""
+    text = (resp.text or "").strip()
+    if text[:15].lower().startswith(("<!doctype", "<html")):
+        m = re.search(r"<title>(.*?)</title>", text, re.I | re.S)
+        text = " ".join(m.group(1).split()) if m else "(HTML error page)"
+    return f"HTTP {resp.status_code} {text[:200]}"
 
 
 def _sanitize(rows: list[dict]) -> list[dict]:
@@ -173,9 +196,8 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
                 continue
             if not resp.ok:
                 print(f"[supabase] {table} upsert failed ({len(batch)} rows): "
-                      f"{resp.status_code} {resp.text[:500]}")
-                _record_write_failure(table, len(batch),
-                                      f"HTTP {resp.status_code} {resp.text[:200]}")
+                      f"{_error_detail(resp)}")
+                _record_write_failure(table, len(batch), _error_detail(resp))
                 ok_all = False
             else:
                 print(f"[supabase] {table} upsert OK ({len(batch)} rows)")
@@ -202,9 +224,8 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
                 continue
             if not resp.ok:
                 print(f"[supabase] {table} insert_ignore failed ({len(batch)} rows): "
-                      f"{resp.status_code} {resp.text[:300]}")
-                _record_write_failure(table, len(batch),
-                                      f"HTTP {resp.status_code} {resp.text[:200]}")
+                      f"{_error_detail(resp)}")
+                _record_write_failure(table, len(batch), _error_detail(resp))
 
 
 def select(table: str, query: str = "", limit: int = 0) -> list[dict]:
