@@ -19,7 +19,10 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。
 // 一部でも事前生成しておくとルート全体がISR扱いになり、事前生成していないパラメータも
 // 2回目以降はCDNから返る。クロール速度に直結するので主要分だけ事前生成する。
-const PRERENDERED_DATES = 60;
+// 2026-09-03に件数を大きく減らした: 4ルート合計937ページの事前生成にビルド6.6分（1回8分）かかり、
+// Proプランのビルド課金（CPU分単価）の主因になっていたため。事前生成から外れたページも
+// 初回アクセスでISR生成されてCDNに載る（ルート全体がISR扱い）ので表示は変わらない。
+const PRERENDERED_DATES = 7;
 
 export async function generateStaticParams() {
   // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で

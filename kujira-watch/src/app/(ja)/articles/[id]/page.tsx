@@ -46,7 +46,10 @@ export const revalidate = 86400;
 // リクエストごとのSSR（実測: x-vercel-cache: MISS / cache-control: no-store）になり、
 // クローラーが同じURLを取りに来るたびにサーバー実行になる。新着記事ほどクロールされる頻度が
 // 高いので、直近分だけ事前生成してCDNから即返す（それ以前の記事は従来どおり都度レンダリング）。
-const PRERENDERED_ARTICLES = 200;
+// 2026-09-03に件数を大きく減らした: 4ルート合計937ページの事前生成にビルド6.6分（1回8分）かかり、
+// Proプランのビルド課金（CPU分単価）の主因になっていたため。事前生成から外れたページも
+// 初回アクセスでISR生成されてCDNに載る（ルート全体がISR扱い）ので表示は変わらない。
+const PRERENDERED_ARTICLES = 30;
 
 export async function generateStaticParams() {
   // 一覧の取得に失敗しても空配列を返してビルドは通す（microCMS/Supabaseの一時障害で
