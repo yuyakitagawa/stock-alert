@@ -41,6 +41,16 @@ def test_redirected_paths_are_separated_from_missing():
         assert g.path_status(path) == "redirect", path
 
 
+def test_en_host_uses_english_edition_paths():
+    """英語版ホストは実在するページの形が違う。日本語版の判定を流用すると
+    /sitemap-en.xml を404扱いし、/stocks/... を実在扱いしてしまう。"""
+    assert g.path_status("/sitemap-en.xml", g.EN_HOST) == "ok"
+    assert g.path_status("/stocks/4591", g.EN_HOST) == "missing"
+    assert g.path_status("/faq", g.EN_HOST) == "missing"
+    assert g.path_status("/stocks/4591", None) == "ok"
+    assert g.path_status("/stocks/4591", "kujira-watch.com") == "ok"
+
+
 def test_query_and_trailing_slash_are_ignored():
     assert g.path_status("/about/") == "ok"
     assert g.path_status("/stocks/4591?utm_source=x") == "ok"
@@ -67,7 +77,8 @@ def test_is_ai_source_matches_medium_and_host():
 def test_crawler_sections_separates_on_demand_bots():
     """引用の代理指標は ChatGPT-User / PerplexityBot だけ。一括クロールを混ぜない。"""
     now = [_row("/articles/a", "ChatGPT-User"), _row("/articles/b", "OAI-SearchBot"),
-           _row("/disclosures", "OAI-SearchBot"), _row("/watchlist", "GPTBot")]
+           _row("/disclosures", "OAI-SearchBot"), _row("/watchlist", "GPTBot"),
+           {**_row("/articles/c", "GPTBot"), "host": g.EN_HOST}]
     buf = io.StringIO()
     with mock.patch.object(g, "fetch_ai_rows", side_effect=[now, []]), redirect_stdout(buf):
         g.crawler_sections(days=14, limit=10)
@@ -77,6 +88,7 @@ def test_crawler_sections_separates_on_demand_bots():
     assert "/articles/b" not in on_demand
     assert "/watchlist" in out.split("存在しないURL")[1].split("旧URL")[0]
     assert "/disclosures" in out.split("旧URL")[1]
+    assert f"うち英語版({g.EN_HOST}): 1回" in out
 
 
 def test_crawler_sections_handles_empty_log():

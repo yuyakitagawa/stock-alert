@@ -320,3 +320,11 @@ company_description $2.4/月・その他$1.6/月。`api_usage`の記録開始が
   なっていますか？」）の数字も5億円/1.5ptへ更新。
 
 これでA+B+C+Dが揃い、見込みは月$13 → 約$7.7（-41%）。
+
+## 2026-09-04: 英語版をサブドメイン（en.kujira-watch.com）で再開、クローラー巡回をhost別に計測
+- 8/29に廃止した /en（同一ホストのディレクトリ）に対し、サブドメイン＝別サイトとして巡回されるかを
+  実測するための再開。新規の英訳は生成しない（Anthropic API の消化は増えない）。microCMS に残っている
+  英訳済み記事だけを配信する。実装の詳細は `kujira-watch/dev_log.md` 同日分。
+- `blog_crawler_log` に `host` 列を追加（`supabase/add_blog_crawler_log_host.sql`、適用済み）。
+  `tools/en_crawl_report.py` を新設、`tools/geo_report.py` を host 対応。
+- 手動で残る作業: Vercel Domains / DNS CNAME / GSC プロパティ追加。

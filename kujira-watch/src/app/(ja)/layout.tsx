@@ -9,6 +9,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ThemeRegistry from "@/components/ThemeRegistry";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, X_HANDLE, SITE_ALTERNATE_NAMES, ORGANIZATION_SAME_AS, ORGANIZATION_CONTACT_POINT } from "@/lib/site";
+import { EN_SITE_URL } from "@/lib/en";
 import "../globals.css";
 
 const geistSans = Geist({
@@ -41,6 +42,9 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   alternates: {
     canonical: "/",
+    // 英語版（en.kujira-watch.com）との相互参照。トップ以外のページは各自の alternates で
+    // 上書きする（metadataの alternates はキー単位で置き換わるため、ここが効くのはトップだけ）。
+    languages: { ja: SITE_URL, en: EN_SITE_URL },
     types: {
       "application/rss+xml": `${SITE_URL}/feed.xml`,
     },
@@ -59,6 +63,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "ja_JP",
+    alternateLocale: "en_US",
     url: SITE_URL,
     siteName: SITE_NAME,
     title: SITE_NAME,
