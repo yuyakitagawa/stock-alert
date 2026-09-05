@@ -1,3 +1,16 @@
+## 2026-09-03 kujira-watch: TOPサマリーから開示件数を外す
+
+オーナー指示「開示件数はトップに載せないで。記事にしてるのが少ないだけで開示自体はあるから」。
+`TodayWhaleSummary` の「N件の開示」と買い/売りの「N件」は microCMS の記事を数えた値で、
+足切り（5億円/1.5pt）や日次上限（2026-08-30〜09-03の日2本）で記事にしなかった開示は数に入らない。
+その日の開示自体が少なかったように読めるため件数を全て外し、日付と買い/売りの推定金額だけにした。
+
+- `src/components/TodayWhaleSummary.tsx`: `count` / `buyCount` / `sellCount` props と表示を削除。
+- `src/app/(ja)/page.tsx`: 同props の受け渡しを削除（`latestDayBuy` / `latestDaySell` は金額の合算に使うので残す）。
+- README の `/` の説明を更新。
+
+検証: `npx tsc --noEmit`・`npx eslint src`・`tools/check_design_system.py` パス。
+
 ## 2026-09-04 英語版をサブドメイン（en.kujira-watch.com）で再開し、クローラーの巡回をhost別に測る
 
 オーナー指示「英語版をサブドメインで作って。クローラーの巡回を知りたい」。

@@ -1,5 +1,37 @@
 # Dev Log
 
+## 2026-09-03 記事の日次上限（日2本）を撤去し、基準を満たす開示を全件記事化する運用へ戻す
+
+オーナー指示「やっぱり開示案件は記事にしてほしい」。2026-08-30にkujira-watchを「GEOのA/B実験台」へ
+切り替えた際、通常運転の記事を大量保有・自社株買いそれぞれ日2本（`DAILY_MAX_ARTICLES`）に絞ったが、
+上限撤去前の実績は対象1,041件のうち記事化789件／30日（2026-08-28調査）＝約26本/日で、
+日2本では開示の9割以上が記事にならない。取り消したもの:
+
+- `web/publish_blog_articles.py` の `DAILY_MAX_ARTICLES` / `articles_published_today()` /
+  `daily_quota()` と、`web/publish_buyback_articles.py` 側の参照を削除（コメントアウトではなく削除。
+  CLAUDE.md §7）。`--max-articles` 未指定の通常運転は上限なしに戻る。`--backfill` の
+  `BACKFILL_MAX_ARTICLES`（15件/便）と足切り（5億円 or 1.5pt）は変更なし。
+- `edinet_blog.yml` を3便（`0 0,6,9 * * 1-5`）→ 平日9〜19時JSTの毎時11便（`0 0-10 * * 1-5`）。
+  サイトのTOP・FAQ・サマリーの注記が「平日9時〜19時に毎時チェック」と掲げたままだったので、
+  記述と実態を合わせる。20〜21時JSTの便はX日次サマリー（停止済み）専用だったので戻さない。
+- `lib/api_usage.py` の `DEFAULT_DAILY_BUDGET_USD` を 0.15 → 1.2（08-30以前の値）。
+  記事本文1本 $0.0092 × 約26本 ≈ $0.24、未取得の会社説明（web_search込み1社約$0.05）を足しても収まる。
+- テスト: `tests/test_publish_blog_articles.py` から日次上限の3件（`test_daily_quota_subtracts_todays_articles`
+  / `test_build_and_publish_caps_articles_per_day` / `test_explicit_max_articles_wins_over_the_daily_cap`）を
+  削除（この3件は `__main__` の実行リストに入っておらず、表示の147件は変わらない）。
+  `tests/test_publish_buyback_articles.py` 23→22件。`daily_quota` のモックも全て外した。
+- `docs/progress_experiment_setup.md` にステップ2・3・6の取り消しを記録。テストの本番書き込みガード、
+  X週1本、動画停止、ハートビートは据え置き。**A/Bの母集団固定は無くなる**。
+
+あわせてオーナー指示「開示件数はトップに載せないで。記事にしてるのが少ないだけで開示自体はあるから」
+→ kujira-watch TOPの `TodayWhaleSummary` から「N件の開示」と買い/売りの件数を外し、日付と
+買い/売りの推定金額だけにした（詳細は `kujira-watch/dev_log.md`）。
+
+検証: `test_publish_blog_articles` 147件・`test_publish_buyback_articles` 22件・`test_api_usage`・
+`test_publish_ledger` 11件パス。全テスト走査で落ちたのは `test_thumbnail_compose_writes_1280x720_png`
+（日本語フォント未導入の環境依存、本変更と無関係）のみ。kujira-watch は `tsc --noEmit`・`eslint src`・
+`tools/check_design_system.py` パス。
+
 ## 2026-08-29 台帳のLINE通知に dedupe_key を付ける（通知疲れの穴を塞ぐ）
 
 `PublishLedger.finish()` が `notify.error()` を dedupe_key 無しで呼んでいた。

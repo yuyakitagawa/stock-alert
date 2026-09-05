@@ -23,7 +23,7 @@ export default async function HomePage() {
   const featuredIds = new Set(featuredArticles.map((a) => a.id));
 
   // 最新の取引日ぶんは、初回取得(INITIAL_ARTICLES_COUNT件)で切れている可能性があるため
-  // 件数・金額は日付指定で取り直す（開示が多い日は1日で30件を超える）。
+  // 金額は日付指定で取り直す（開示が多い日は1日で30件を超える）。
   const latestDealDate = contents[0]?.dealDate;
   const { contents: latestDayArticles } = latestDealDate
     ? await getArticlesByDealDate(latestDealDate.slice(0, 10))
@@ -86,10 +86,7 @@ export default async function HomePage() {
             <TodayWhaleSummary
               date={latestDealDate}
               href={latestDateHref}
-              count={latestDayArticles.length}
-              buyCount={latestDayBuy.length}
               buyAmount={sumAmount(latestDayBuy)}
-              sellCount={latestDaySell.length}
               sellAmount={sumAmount(latestDaySell)}
               disclosuresFixed={areDisclosuresFixed(latestDealDate)}
             />
