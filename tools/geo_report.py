@@ -40,6 +40,7 @@ from urllib.parse import quote, unquote
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import supabase_client as sb  # noqa: E402
+from tools.en_crawl_report import EN_HOST, en_path_status, is_en  # noqa: E402
 from tools.ga4_clicks import access_token, delta, parse_rows, run_report  # noqa: E402
 
 DEFAULT_DAYS = 28
@@ -118,8 +119,11 @@ def page_group(path: str) -> str:
     return "その他"
 
 
-def path_status(path: str) -> str:
-    """"ok" / "redirect" / "missing"。クエリ・末尾スラッシュは落として判定する。"""
+def path_status(path: str, host: str | None = None) -> str:
+    """"ok" / "redirect" / "missing"。クエリ・末尾スラッシュは落として判定する。
+    英語版ホスト（en.kujira-watch.com）は実在するページの形が違うので判定を分ける。"""
+    if host == EN_HOST:
+        return en_path_status(path)
     clean = unquote(path.split("?")[0])
     if len(clean) > 1:
         clean = clean.rstrip("/")
@@ -140,7 +144,7 @@ def fetch_ai_rows(start: datetime, end: datetime) -> list[dict]:
         f"bot_name=in.({bots})"
         f"&occurred_at=gte.{quote(start.isoformat(), safe='')}"
         f"&occurred_at=lt.{quote(end.isoformat(), safe='')}"
-        "&select=occurred_at,path,bot_name&order=occurred_at.desc",
+        "&select=occurred_at,path,host,bot_name&order=occurred_at.desc",
     )
 
 
@@ -167,6 +171,11 @@ def crawler_sections(days: int, limit: int) -> None:
     print_counter(Counter(r["bot_name"] for r in now_rows),
                   Counter(r["bot_name"] for r in prev_rows), limit)
 
+    # 英語版サブドメイン（2026-09-04〜）の分。詳細は tools/en_crawl_report.py。
+    en_now = sum(1 for r in now_rows if is_en(r))
+    en_prev = sum(1 for r in prev_rows if is_en(r))
+    print(f"  うち英語版({EN_HOST}): {en_now:,}回{delta(en_now, en_prev)}")
+
     print("\n■ AI巡回のページ種別")
     print_counter(Counter(page_group(r["path"]) for r in now_rows),
                   Counter(page_group(r["path"]) for r in prev_rows), limit)
@@ -178,11 +187,13 @@ def crawler_sections(days: int, limit: int) -> None:
                   Counter(r["path"] for r in prev_on_demand), limit)
 
     print("\n■ AIクローラーが当たっている存在しないURL（404の可能性）")
-    missing = Counter(r["path"] for r in now_rows if path_status(r["path"]) == "missing")
+    missing = Counter(r["path"] for r in now_rows
+                      if path_status(r["path"], r.get("host")) == "missing")
     print_counter(missing, Counter(), limit)
 
     print("\n■ AIクローラーが当たっている旧URL（リダイレクト。AI側に古い参照が残っている）")
-    redirected = Counter(r["path"] for r in now_rows if path_status(r["path"]) == "redirect")
+    redirected = Counter(r["path"] for r in now_rows
+                         if path_status(r["path"], r.get("host")) == "redirect")
     print_counter(redirected, Counter(), limit)
 
 

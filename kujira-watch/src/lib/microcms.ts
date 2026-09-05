@@ -394,6 +394,50 @@ export const getAllArticlesForSitemap = unstable_cache(
   { revalidate: 3600 }
 );
 
+// 英語版（en.kujira-watch.com）用。英訳（titleEn/bodyEn）がある記事の軽量な参照一覧。
+// microCMSの `titleEn[exists]true` フィルタは実データがあってもヒットしない既知不具合がある
+// （2026-08-14確認。begins_with等の他演算子は正常に動く一方でexistsだけ0件を返す）ため、
+// 全件を取ってからクライアント側で titleEn の有無で絞る。bodyEn（本文全文）は取らない —
+// 旧/en時代はこれを毎リクエスト全件取得しておりsitemap応答が9秒超だった。本文の有無は
+// 記事ページ側で getArticleDetail() の結果を見て判定する（無ければ404）。
+// 英訳は2026-08-29以降生成していないので内容はほぼ変わらない。1時間キャッシュする。
+export type TranslatedArticleRef = SitemapArticleRef & {
+  titleEn: string;
+  stockName: string;
+  tags?: string;
+};
+
+export const getTranslatedArticleRefs = unstable_cache(
+  async (): Promise<TranslatedArticleRef[]> => {
+    const contents = await fetchAllPagesParallel<
+      Pick<
+        Article,
+        "stockCode" | "stockName" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "filerName" | "titleEn" | "tags"
+      > & { id: string }
+    >({
+      fields: "id,stockCode,stockName,dealDate,dealType,dealAmount,ratioChangePct,filerName,titleEn,tags",
+      orders: "-dealDate,-dealAmount",
+    });
+    return contents
+      .filter((a) => a.titleEn)
+      .map(normalizeDealType)
+      .map(({ id, stockCode, stockName, dealDate, dealType, dealAmount, ratioChangePct, filerName, titleEn, tags }) => ({
+        id,
+        stockCode,
+        stockName,
+        dealDate,
+        dealType,
+        dealAmount,
+        ratioChangePct,
+        filerName,
+        titleEn: titleEn as string,
+        tags,
+      }));
+  },
+  ["translated-article-refs"],
+  { revalidate: 3600 }
+);
+
 export type StockSummary = { stockCode: string; stockName: string; articleCount: number; latestDealDate: string };
 
 // /stocks（銘柄一覧）用。記事が1件以上ある銘柄をstockCode単位で集約する。

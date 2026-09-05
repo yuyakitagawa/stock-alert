@@ -94,3 +94,40 @@ export function supersededArticleIds(articles: SupersedableArticle[]): Set<strin
   }
   return superseded;
 }
+
+// ---------------------------------------------------------------------------
+// 英語版（en.kujira-watch.com）のインデックス対象判定。日本語版より明確に厳しくする。
+// ---------------------------------------------------------------------------
+//
+// 旧/en時代のGSC実測（2026-08-18・直近3か月）は表示33回・クリック0・平均掲載順位23.3で、
+// 需要はゼロではないが極小。英訳を全記事に展開すると日本語版と同じだけのURLがクロール枠を
+// 食うので、英語圏の読者が実際に探す「アクティビストの動き」「大型案件」「新規の5%取得」に
+// 絞り、それ以外の英訳済み記事はnoindex,follow（ページは残す）にする。
+// サブドメインでの再開（2026-09）でも同じ基準を使う。緩める判断はGSCの英語版プロパティの
+// 表示回数と blog_crawler_log（host列）の巡回実績を見てから行う。
+
+/** 大型案件とみなす推定取得金額（億円）。 */
+export const EN_MIN_DEAL_AMOUNT_OKU = 100;
+/** 新規の5%取得とみなす保有比率の変化幅（ポイント）。5%ルールの新規保有は変化幅=保有比率になる。 */
+export const EN_NEW_POSITION_RATIO_PT = 5;
+/** 新規5%取得でも、規模が小さいものは英語版をindexしない（億円）。 */
+export const EN_NEW_POSITION_MIN_AMOUNT_OKU = 20;
+/** 英語圏の関心が最も高い投資家分類。 */
+export const EN_ALWAYS_DEAL_TYPE = "アクティビスト";
+
+export type EnArticleIndexabilityInput = ArticleIndexabilityInput & {
+  dealType?: string | string[] | null;
+};
+
+export function isIndexableEnArticle(article: EnArticleIndexabilityInput): boolean {
+  const dealTypes = Array.isArray(article.dealType)
+    ? article.dealType
+    : article.dealType
+      ? [article.dealType]
+      : [];
+  if (dealTypes.includes(EN_ALWAYS_DEAL_TYPE)) return true;
+  const amount = article.dealAmount ?? 0;
+  if (amount >= EN_MIN_DEAL_AMOUNT_OKU) return true;
+  const ratioChange = Math.abs(article.ratioChangePct ?? 0);
+  return ratioChange >= EN_NEW_POSITION_RATIO_PT && amount >= EN_NEW_POSITION_MIN_AMOUNT_OKU;
+}

@@ -56,6 +56,11 @@ export const DEAL_TYPE_BY_CATEGORY: Record<string, DealType> = Object.fromEntrie
 export type Article = {
   title: string;
   body: string;
+  // 英語版（en.kujira-watch.com）用の翻訳フィールド。2026-08-29の/en廃止以降は新規生成して
+  // いないため、それ以前に英訳された記事にしか無い。未設定の記事は英語版の一覧・詳細に出さない
+  // （日英混在ページを検索エンジンに出さないため）。
+  titleEn?: string;
+  bodyEn?: string;
   stockName: string;
   stockCode: string;
   dealType: DealType;
