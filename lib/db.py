@@ -190,8 +190,8 @@ def get_price_df(code, days=None):
     )
 
 
-def save_price_cache(code, df):
-    """DataFrame を yahoo_price_cache に INSERT IGNORE で保存。"""
+def save_price_cache(code, df) -> bool:
+    """DataFrame を yahoo_price_cache に INSERT IGNORE で保存。書けなければ False。"""
     import math
     rows = []
     for idx, row in df.iterrows():
@@ -201,8 +201,9 @@ def save_price_cache(code, df):
         c = float(cv) if cv is not None and not (isinstance(cv, float) and math.isnan(cv)) else None
         v = int(vv) if vv is not None and not (isinstance(vv, float) and math.isnan(vv)) else None
         rows.append({"code": str(code), "date": d, "close": c, "volume": v})
-    if rows:
-        sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
+    if not rows:
+        return True
+    return sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
 
 
 

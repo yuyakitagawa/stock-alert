@@ -32,6 +32,13 @@ sys.path.insert(0, BASE_DIR)
 from lib.db import save_price_cache, get_price_cache_coverage
 
 BATCH_SIZE = 100
+# Supabaseへの保存に失敗した銘柄の再送回数と、再送前に待つ秒数。
+# lib/supabase_client._request() のリトライ(2s/4s/8s)は数十秒の障害しか吸収できず、
+# Cloudflare 522 が数分続くとその間の銘柄が丸ごと欠ける（2026-09-03、約55銘柄）。
+# 翌日のrunで埋まるとはいえ、当日のランキング(Step 3)が欠けた終値で走るのを防ぐため、
+# 全銘柄の取得が終わった後に失敗分だけ間隔を置いて送り直す。
+RESEND_ROUNDS = 3
+RESEND_WAIT_SEC = 60
 
 
 def _parse_args():
@@ -107,6 +114,19 @@ def get_all_codes():
     return sorted(codes_from_db | jpx_codes)
 
 
+def resend_failed_saves(failed: dict, rounds: int = RESEND_ROUNDS,
+                        wait_sec: int = RESEND_WAIT_SEC, sleep=time.sleep) -> dict:
+    """保存に失敗した {code: DataFrame} を、wait_sec 待ってから最大 rounds 回まとめて再送する。
+    成功した銘柄は落とし、rounds 回試しても書けなかった銘柄だけを返す。"""
+    for r in range(1, rounds + 1):
+        if not failed:
+            break
+        print(f"  保存失敗 {len(failed)}銘柄を {wait_sec}秒後に再送します ({r}/{rounds})")
+        sleep(wait_sec)
+        failed = {code: df for code, df in failed.items() if not save_price_cache(code, df)}
+    return failed
+
+
 def main():
     args = _parse_args()
     target_days = args.years * 365
@@ -137,6 +157,7 @@ def main():
 
     done = fail = 0
     failed_codes: list[str] = []
+    save_failed: dict = {}   # Supabaseへの保存に失敗した銘柄（末尾でまとめて再送）
     days = target_days + 30  # 少し余裕を持って取得
     for b in range(n_batches):
         batch_codes = codes[b * BATCH_SIZE:(b + 1) * BATCH_SIZE]
@@ -144,8 +165,10 @@ def main():
         for code in batch_codes:
             df = fetched.get(code)
             if df is not None and len(df) > 50:
-                save_price_cache(code, df)
-                done += 1
+                if save_price_cache(code, df):
+                    done += 1
+                else:
+                    save_failed[code] = df
             else:
                 fail += 1
                 failed_codes.append(code)
@@ -157,7 +180,14 @@ def main():
             time.sleep(args.sleep)
 
     print("=" * 60)
-    print(f"完了: 取得={done}  スキップ={skip}  失敗={fail}")
+    if save_failed:
+        n_before = len(save_failed)
+        save_failed = resend_failed_saves(save_failed)
+        done += n_before - len(save_failed)
+    print(f"完了: 取得={done}  スキップ={skip}  失敗={fail}  保存失敗={len(save_failed)}")
+    if save_failed:
+        print(f"保存失敗銘柄({len(save_failed)}件・{RESEND_ROUNDS}回再送しても書けず): "
+              f"{' '.join(sorted(save_failed))}")
     # 失敗銘柄のコードを出す。件数だけだと「Yahooの一時的な不調」と「上場廃止・改称で
     # 恒久的に引けないコード」の区別がつかず、毎日同じ50件前後を叩き続けても気付けなかった
     # （2026-08-25〜29の全runで 失敗46〜55件・内訳不明）。

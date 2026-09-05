@@ -204,11 +204,14 @@ def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
     return ok_all
 
 
-def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
+def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> bool:
+    """全バッチが書けたら True、1バッチでも落ちたら False（upsert と同じ契約）。
+    tools/fetch_history.py は False の銘柄を控えておき、Step 0 の末尾でまとめて再送する。"""
     if not rows or not is_configured():
-        return
+        return False
     if _block_production_write(table, "insert_ignore"):
-        return
+        return False
+    ok_all = True
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if on_conflict:
         url += f"?on_conflict={on_conflict}"
@@ -221,11 +224,14 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> None:
             except Exception as e:
                 print(f"[supabase] {table} insert_ignore exception ({len(batch)} rows): {e}")
                 _record_write_failure(table, len(batch), str(e))
+                ok_all = False
                 continue
             if not resp.ok:
                 print(f"[supabase] {table} insert_ignore failed ({len(batch)} rows): "
                       f"{_error_detail(resp)}")
                 _record_write_failure(table, len(batch), _error_detail(resp))
+                ok_all = False
+    return ok_all
 
 
 def select(table: str, query: str = "", limit: int = 0) -> list[dict]:
