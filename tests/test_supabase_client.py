@@ -269,6 +269,24 @@ def test_error_detail_summarizes_html_error_page():
         'HTTP 400 {"code":"PGRST102"}'
 
 
+def test_insert_ignore_returns_false_on_failure_and_true_on_success():
+    """insert_ignore は upsert と同じく全バッチ成功で True、1バッチでも落ちたら False。
+    fetch_history が保存失敗の銘柄を控えて再送するのに使う。"""
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    sb._notified_tables.add("t")
+    try:
+        with mock.patch("lib.supabase_client.requests.request",
+                        return_value=_StatusResponse(522, "x")), \
+             mock.patch("lib.supabase_client.time.sleep"):
+            assert sb.insert_ignore("t", [{"a": 1}]) is False
+        with mock.patch("lib.supabase_client.requests.request",
+                        return_value=_StatusResponse(201)):
+            assert sb.insert_ignore("t", [{"a": 1}]) is True
+    finally:
+        sb._write_failures.clear()
+
+
 if __name__ == "__main__":
     test_request_retries_on_timeout_then_succeeds()
     test_request_raises_after_max_retries()
@@ -282,4 +300,5 @@ if __name__ == "__main__":
     test_request_retries_on_5xx_then_succeeds()
     test_request_returns_last_5xx_after_max_retries_and_does_not_retry_4xx()
     test_error_detail_summarizes_html_error_page()
-    print("OK: test_supabase_client (12 tests)")
+    test_insert_ignore_returns_false_on_failure_and_true_on_success()
+    print("OK: test_supabase_client (13 tests)")
