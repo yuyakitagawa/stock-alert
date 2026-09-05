@@ -54,9 +54,36 @@ def test_fetch_jpx_codes_includes_reit_and_domestic_stock():
     assert codes == ["7203", "3269"]
 
 
+def test_resend_failed_saves_retries_up_to_rounds_and_returns_leftovers():
+    """保存に失敗した銘柄は間隔を置いて最大3回再送し、途中で成功した銘柄は落とす。
+    3回とも書けなかった銘柄だけが返る。"""
+    attempts = {"A": 0, "B": 0}
+
+    def fake_save(code, df):
+        attempts[code] += 1
+        return code == "A" and attempts[code] >= 2   # Aは2回目で成功、Bは永久に失敗
+
+    sleeps = []
+    with mock.patch.object(m, "save_price_cache", side_effect=fake_save):
+        left = m.resend_failed_saves({"A": "dfA", "B": "dfB"}, rounds=3, wait_sec=7,
+                                     sleep=sleeps.append)
+    assert left == {"B": "dfB"}
+    assert attempts == {"A": 2, "B": 3}
+    assert sleeps == [7, 7, 7]
+
+
+def test_resend_failed_saves_does_nothing_when_empty():
+    sleeps = []
+    with mock.patch.object(m, "save_price_cache") as fake_save:
+        assert m.resend_failed_saves({}, sleep=sleeps.append) == {}
+    assert sleeps == [] and fake_save.call_count == 0
+
+
 if __name__ == "__main__":
     test_get_all_codes_unions_db_and_jpx()
     test_get_all_codes_falls_back_to_db_when_jpx_fetch_fails()
     test_fetch_jpx_codes_returns_empty_on_request_exception()
     test_fetch_jpx_codes_includes_reit_and_domestic_stock()
-    print("OK: test_fetch_history (4 tests)")
+    test_resend_failed_saves_retries_up_to_rounds_and_returns_leftovers()
+    test_resend_failed_saves_does_nothing_when_empty()
+    print("OK: test_fetch_history (6 tests)")
