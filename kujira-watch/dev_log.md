@@ -11,6 +11,30 @@
 
 検証: `npx tsc --noEmit`・`npx eslint src`・`tools/check_design_system.py` パス。
 
+## 2026-09-04 英語版をサブドメイン（en.kujira-watch.com）で再開し、クローラーの巡回をhost別に測る
+
+オーナー指示「英語版をサブドメインで作って。クローラーの巡回を知りたい」。
+8/29に廃止した /en は「同じホストのディレクトリ」だったので、今回はサブドメイン＝別サイトとして
+検索エンジン・AIクローラーがどう扱うかを実測する。新しい英訳は生成しない（APIの消化を増やさない）
+ので、載るのは microCMS に残っている英訳済み記事（廃止時点で約1,046本）だけ。
+
+- **ルーティング**: `src/proxy.ts` が Host ヘッダーで `en.kujira-watch.com` を判定し、`/x` を内部の
+  `/en/x`（`src/app/(en)/en` 配下）へ rewrite。公開URLに /en は付かない。既存の `/en/* → /` 301は
+  相対先なので英語版ホストでも効き、内部パスが公開URLとして二重に見えない。
+- **ページ**: トップ（英訳済み新着50件）・記事・about・privacy・robots.txt・sitemap-en.xml。
+  日本語側の Header/Footer/MUI と locale 引数は戻さず、`layout.tsx` と `EnArticleCard` で完結。
+  AdSense 無し、GA4 は同じプロパティ（hostName で分ける）。
+- **index基準**は旧/enと同じ厳しめの `isIndexableEnArticle()` を復活。日本語記事側の hreflang は
+  この基準を満たす記事だけに張る。
+- **計測**: `blog_crawler_log` に `host` 列を追加（Supabase適用済み・`supabase/add_blog_crawler_log_host.sql`）。
+  `tools/en_crawl_report.py`（新規、テスト6件）でクローラー別・日別・パス別に見る。`tools/geo_report.py` も
+  host を読むようにした（テスト1件追加）。
+- **未実施（手動）**: Vercel の Domains への `en.kujira-watch.com` 追加、DNS の CNAME、GSC のプロパティ追加。
+  これが済むまで英語版は到達できず、ログにも何も入らない。
+- 検証: `tsc --noEmit` / `eslint` / `tools/check_design_system.py` 通過。`next build` は microCMS の
+  鍵が無い環境のため未実行（本番デプロイで確認する）。microCMS 側に `titleEn`/`bodyEn` のフィールドが
+  残っていることも未確認（残っていなければ英語版トップが0件・記事が404になるだけで日本語版には影響しない）。
+
 ## 2026-09-03 kujira-watch: Vercel Pro化に伴うコスト削減（ビルド課金ゼロ化）
 
 オーナー指示「Vercelがproにしちゃったので、節約した構成を考えて」→「進めて」。

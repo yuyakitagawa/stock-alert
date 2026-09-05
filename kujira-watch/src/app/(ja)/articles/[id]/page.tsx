@@ -27,7 +27,8 @@ import { getFilerIdByName, getFilerNamesByStockAndDate, getFilersByStockCode, ge
 import { DEAL_TYPE_DESCRIPTIONS } from "@/lib/dealTypeInfo";
 import { averageAcquisitionPrice, borrowingRatio, classifyPurpose, filingLagDays } from "@/lib/disclosures";
 import { SITE_NAME, SITE_URL, X_HANDLE } from "@/lib/site";
-import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { isIndexableArticle, isIndexableEnArticle, supersededArticleIds } from "@/lib/articleIndexability";
+import { EN_SITE_URL, isTranslated } from "@/lib/en";
 import { resolveArticleRedirect } from "@/lib/articleRedirects";
 import { dateHref, getPublishedFilerNames, stockHref } from "@/lib/publishedPages";
 import { categoryLabel } from "@/types/article";
@@ -120,6 +121,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // 詳細はlib/articleIndexability.tsのsupersededArticleIds()を参照）。
   const superseded = await isSupersededArticle(id, article.stockCode);
   const indexable = isIndexableArticle(article) && !superseded;
+  // 英語版（en.kujira-watch.com）がnoindexの記事にhreflangを張るとnoindexページを代替言語として
+  // 宣言することになるため、英語版でindexする基準を満たす記事だけ相互参照する。
+  const hasEn = isTranslated(article) && isIndexableEnArticle(article) && !superseded;
 
   return {
     // サイト名サフィックス（｜大口投資家の監視ブログ＝全角12字）を付けない。記事タイトルは
@@ -135,6 +139,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ...(indexable ? {} : { robots: { index: false, follow: true } }),
     alternates: {
       canonical: url,
+      ...(hasEn ? { languages: { ja: url, en: `${EN_SITE_URL}/articles/${id}` } } : {}),
     },
     openGraph: {
       type: "article",

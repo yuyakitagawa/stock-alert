@@ -14,9 +14,9 @@ export const SITE_DESCRIPTION =
 // Organization構造化データの alternateName。サイトは「大口投資家の監視ブログ」（ブランド名）・
 // 「クジラウォッチ」（/aboutの自称）・「kujira-watch」（ドメイン）の3表記で呼ばれており、
 // AI検索エンジンが別エンティティと誤認しないよう、正式名以外の呼び名をここで1つに束ねる。
-// 英語名 "Big Investor Watch" は英語版(/en)の廃止（2026-08-29）に伴い外した。
-// 対応するページが無い呼び名を宣言すると、エンティティを増やすだけで得が無い。
-export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "クジラウォッチ", "kujira-watch"];
+// 英語名 "Big Investor Watch" は英語版のサブドメイン（en.kujira-watch.com、lib/en.ts）が
+// 対応するページを持つので含める（対応ページの無い呼び名は宣言しない）。
+export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "クジラウォッチ", "kujira-watch", "Big Investor Watch"];
 // generateSitemapsで分割した子サイトマップのID一覧。/sitemap/<id>.xml のURLになる。
 // app/sitemap.ts（子の生成）と app/sitemap.xml/route.ts（sitemapindex）の両方から参照する。
 // app/sitemap.tsから直接exportしないのは、metadata routeのnamed exportは

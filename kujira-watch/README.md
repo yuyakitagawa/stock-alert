@@ -110,14 +110,16 @@ npm run dev
 
 ### 廃止したURL（`next.config.ts`の`redirects`）
 
-- **英語版 `/en` 配下（2026-08-29に廃止）**: `/en`・`/en/articles/[id]`・`/en/stocks/[code]`・
-  `/en/about`・`/en/privacy`・`/en/investors`・`/en/category/[slug]` と、取りこぼし用の `/en/:path*`
-  を、対応する日本語ページ（カテゴリとその他はトップ）へ301で飛ばす。廃止の理由は英語面に
+- **英語版 `/en` 配下（2026-08-29に廃止、2026-09-04にサブドメインへ移設）**: `/en`・`/en/articles/[id]`・
+  `/en/stocks/[code]`・`/en/about`・`/en/privacy`・`/en/investors`・`/en/category/[slug]` と、取りこぼし用の
+  `/en/:path*` を、対応する日本語ページ（カテゴリとその他はトップ）へ301で飛ばす。廃止の理由は英語面に
   検索流入の山が無かったこと（直近14日の実測: EN記事1,046本にブラウザPV1,544・中央値1・最大7、
   10PV以上は0本。日本語版は最大73PV・10PV以上が42本）と、英訳のぶん記事1本あたりの
   出力トークンが約1.3倍かかり続けること。記事生成側（`web/publish_blog_articles.py` /
-  `publish_buyback_articles.py`）も`bodyEn`/`titleEn`を作らなくなった。microCMSに既にある
-  `bodyEn`/`titleEn`のデータは消していない（表示しないだけ）。
+  `publish_buyback_articles.py`）は今も`bodyEn`/`titleEn`を作らない。microCMSに残っている
+  `bodyEn`/`titleEn`は、下の「英語版（サブドメイン）」で配信している。このredirectは英語版ホストでも
+  効く（相対先なので `en.kujira-watch.com/en/...` → `en.kujira-watch.com/`）ため、内部パス`/en/...`が
+  公開URLとして二重に見えることはない。
 - 廃止したランキングURL（`/ranking`・`/ranking/buys`ほか）は`/ranking/returns`へ301。
 - **`/disclosures`（2026-08-18に廃止）→ `/` へ301（2026-08-29追加）**: 廃止時にリダイレクトを置き忘れて404のまま残っていた。`tools/geo_report.py`の実測でAIクローラーが直近30日に58回・GA4のPVも28日で63件当たっており、AI側に残った参照が全部404を踏んでいた。役割が最も近いTOP（新着開示の日付降順一覧）へ寄せる。
 - **削除した記事URL（Supabase `deleted_article_redirects` 経由で308）**: `next.config.ts`ではなく
@@ -135,10 +137,40 @@ npm run dev
   （PR #294で入れた「同じ銘柄の生存記事へ振り替える」フォールバックは該当0件だったのでPR #295で削除済み）。
 - **`/articles`（記事一覧の入口としてクローラーが推測してくるURL）→ `/` へ301**: 実在したことは無いが、AIクローラーが14日で18回取りに来ていた（同上の実測）。記事一覧はTOPそのものなので404にせず寄せる。
 
+## 英語版（en.kujira-watch.com）
+
+- **目的**: 「ディレクトリ（/en）ではなくサブドメインなら、別サイトとして検索エンジン・AIクローラーに
+  巡回されるのか」を実測する（2026-09-04〜）。新しい英訳は生成しない（Anthropic APIの消化を増やさない）
+  ので、載るのは2026-08-29以前に英訳された記事だけ（廃止時点で約1,046本）。
+- **ルーティング**: `src/proxy.ts` が `Host` ヘッダーを見て、`en.kujira-watch.com` へのリクエストを
+  内部パス `/en/...`（`src/app/(en)/en` 配下）へ rewrite する。公開URLに `/en` は付かない
+  （`en.kujira-watch.com/articles/<id>`）。`/api/*`・`/icon`・`/apple-icon`・`/logo`・`/ads.txt`・
+  `/manifest.webmanifest` はルート直下の共通ルートをそのまま使う（`SHARED_ROOT_PATHS`）。
+  ホスト名は `src/lib/en.ts` の `EN_HOST`（`NEXT_PUBLIC_EN_HOST` で上書き可）。
+- **ページ**: `/`（英訳済み記事の新着50件）・`/articles/[id]`（`titleEn`/`bodyEn` が無い記事は404）・
+  `/about`・`/privacy`・`/robots.txt`（`sitemap-en.xml` を指す）・`/sitemap-en.xml`。銘柄・投資家・
+  カテゴリページは作らず、日本語版の該当ページへリンクする。日本語側の `Header`/`Footer`/MUI は
+  使わず、`src/app/(en)/en/layout.tsx` と `src/components/EnArticleCard.tsx` で完結させている
+  （locale 引数を共通コンポーネントに戻すと変更範囲が全面に広がるため）。AdSense は入れない。
+  GA4 は同じプロパティで取り、`hostName` で日英を分ける。
+- **index基準**: 英語版は日本語版より厳しい `isIndexableEnArticle()`（`src/lib/articleIndexability.ts`。
+  アクティビスト / 推定100億円以上 / 新規5%取得かつ20億円以上）を満たし、かつ同一「銘柄×提出者」で
+  最新の記事だけを index＋サイトマップ掲載。それ以外の英訳済み記事は `noindex, follow`。
+  日本語版の記事ページは、この基準を満たす記事にだけ英語版への hreflang を張る（トップ・about・
+  privacy は常に相互参照）。
+- **必要な手動設定（未実施なら英語版は到達不能）**: ① Vercel のプロジェクト → Domains に
+  `en.kujira-watch.com` を追加 ② DNS に `en` の CNAME → `cname.vercel-dns.com` ③ Search Console に
+  `en.kujira-watch.com` をURLプレフィックスのプロパティとして追加し `sitemap-en.xml` を送信。
+- **巡回の実測**: `blog_crawler_log` の `host` 列（2026-09-04追加、`supabase/add_blog_crawler_log_host.sql`。
+  それ以前の行は NULL＝日本語版）で日英を分け、`python3 tools/en_crawl_report.py` で
+  クローラー別・日別・パス別に見る。`tools/geo_report.py` にも英語版ぶんの行を出す。
+- **ローカル確認**: `curl -H "Host: en.kujira-watch.com" http://localhost:3000/about` のように
+  Host ヘッダーを付ける（proxy はホスト名だけで判定する）。
+
 ## 計測・ログ
 
 - **累計訪問者数カウンター**: ヘッダー上部（サイト名の右側、モバイル幅ではロゴの1行表示を優先して非表示・sm以上のみ）に表示（`src/components/VisitCounter.tsx`）。ページ読み込み時に `/api/counter` をPOSTし、Supabaseの `blog_visit_counter`（単一行）をアトミックにインクリメントして返す。スマホでも見られるようハンバーガーメニュー最下部にも置いており、こちらは `increment={false}` でGET（加算なし）を使い二重計上を防ぐ。
-- **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther/meta-externalagent/Amazonbot等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。ただし`BOT_PATTERNS`は個別名の列挙なので新顔のクローラーは取りこぼし、UAに自己申告があっても`"Browser"`に混ざる（2026-08-28の実測でmeta-externalagentが1日1,031PV、Amazonbotが337PVそこに入っていた）。気づいたら`BOT_PATTERNS`に追加すること。取りこぼしは`tools/traffic_report.py`が名前付きで表示する。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。
+- **アクセスログ**: `src/proxy.ts`（Next.js 16で`middleware`から改称された`proxy`規約）が全リクエストのUser-Agentを見て、Googlebot/Bingbot/GPTBot/ClaudeBot/GoogleOther/meta-externalagent/Amazonbot等の既知クローラーは`bot_name`にその名前、主要ブラウザ（Chrome/Safari/Firefox/Edge/Opera）は`bot_name="Browser"`としてSupabaseの `blog_crawler_log` に記録する（`src/lib/crawlers.ts` の `classifyVisitor()`）。curl等のスクリプト・UA不明のノイズはどちらにも一致しないため記録しない。`bot_name`で絞り込めば「本当のクローラー」と「ブラウザからの実アクセス」を区別できる。ただし`BOT_PATTERNS`は個別名の列挙なので新顔のクローラーは取りこぼし、UAに自己申告があっても`"Browser"`に混ざる（2026-08-28の実測でmeta-externalagentが1日1,031PV、Amazonbotが337PVそこに入っていた）。気づいたら`BOT_PATTERNS`に追加すること。取りこぼしは`tools/traffic_report.py`が名前付きで表示する。`bot_name="Browser"`の行には、`kw_vid`という匿名cookie（初回アクセス時にランダムUUIDを発行、個人情報なし）由来の`visitor_id`も記録するため、`count(DISTINCT visitor_id)`でユニーク訪問者数を集計できる。ログはSupabaseダッシュボードのTable Editorから直接閲覧・CSVエクスポートできる。`host`列（2026-09-04追加）にリクエストの`Host`ヘッダーを入れ、英語版（`en.kujira-watch.com`）と日本語版を区別する。`path`は公開URLのパス（英語版でも`/en`は付かない）。
 - どちらも `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`（トレーディングシステム側と同じSupabaseプロジェクト）が必要。未設定でもビルド・記事表示自体には影響しない（カウンターAPI呼び出し時にのみエラーになるが、フロント側は握りつぶして非表示にする）。
 
 - **`/faq`の分割（2026-08-15）**: 以前は全502件のQ&Aを`/faq`1ページに置いており、HTMLが**1.57MB（gzip 241KB）**まで膨らんでいた。内訳は可視HTML 873KB・RSCペイロード 471KB・FAQPage構造化データ 225KBで、**同じ本文が1つの文書に3回**入っていた（クライアントコンポーネント`FaqList`へ全件をpropsで渡すとハイドレーション用にRSCペイロードへ、構造化データで更にもう1回）。さらに可視HTMLは`MuiAccordion-root`が502個・`Mui〜`クラスの出現が14,160回で、**タグを除いた実テキストは220KBだけ＝75%がマークアップ**だった。カテゴリ別ページに分割して解消（gzip後: `/faq` 241KB→18KB、各カテゴリページ22KB）。分割によってタブでの絞り込みが不要になったため`FaqList`は削除した。
