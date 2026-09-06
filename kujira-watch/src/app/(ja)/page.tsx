@@ -3,13 +3,11 @@ import DataUpdatedAt from "@/components/DataUpdatedAt";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
-import TodayWhaleSummary from "@/components/TodayWhaleSummary";
 import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
-import { getArticleList, getArticlesByDealDate, getFeaturedArticles } from "@/lib/microcms";
-import { dateHref, getPublishedDates } from "@/lib/publishedPages";
-import { formatDate, isSellArticle } from "@/lib/format";
-import { areDisclosuresFixed } from "@/lib/jst";
+import { getArticleList, getFeaturedArticle } from "@/lib/microcms";
+import { getPublishedDates } from "@/lib/publishedPages";
+import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 // クローラーが最初のHTML(SSR)だけで辿れるリンク数を増やすため、初回取得件数を
@@ -19,21 +17,11 @@ const INITIAL_ARTICLES_COUNT = 30;
 
 export default async function HomePage() {
   const { contents, totalCount } = await getArticleList({ limit: INITIAL_ARTICLES_COUNT });
-  const featuredArticles = contents.length > 0 ? await getFeaturedArticles() : [];
-  const featuredIds = new Set(featuredArticles.map((a) => a.id));
+  const featured = contents.length > 0 ? await getFeaturedArticle() : null;
+  const featuredIds = new Set(featured ? [featured.id] : []);
 
-  // 最新の取引日ぶんは、初回取得(INITIAL_ARTICLES_COUNT件)で切れている可能性があるため
-  // 件数・金額は日付指定で取り直す（開示が多い日は1日で30件を超える）。
   const latestDealDate = contents[0]?.dealDate;
-  const { contents: latestDayArticles } = latestDealDate
-    ? await getArticlesByDealDate(latestDealDate.slice(0, 10))
-    : { contents: [] };
-  // 取引日ページは開示が少ない日を公開していない（404）。リンクにするかは共通判定で決める。
-  const latestDateHref = latestDealDate ? await dateHref(latestDealDate) : null;
   const publishedDates = [...(await getPublishedDates().catch(() => new Set<string>()))];
-  const latestDaySell = latestDayArticles.filter((a) => isSellArticle(a.tags));
-  const latestDayBuy = latestDayArticles.filter((a) => !isSellArticle(a.tags));
-  const sumAmount = (list: typeof latestDayArticles) => list.reduce((sum, a) => sum + a.dealAmount, 0);
 
   // 初回表示分（INITIAL_ARTICLES_COUNT件）のみをItemListとして構造化データ化する。
   // オートスクロールで追加取得される分はクライアント側描画のためJSON-LDには含めない
@@ -82,18 +70,6 @@ export default async function HomePage() {
         <p className="text-ink-tertiary">記事がまだありません。</p>
       ) : (
         <>
-          {latestDealDate && latestDayArticles.length > 0 && (
-            <TodayWhaleSummary
-              date={latestDealDate}
-              href={latestDateHref}
-              count={latestDayArticles.length}
-              buyCount={latestDayBuy.length}
-              buyAmount={sumAmount(latestDayBuy)}
-              sellCount={latestDaySell.length}
-              sellAmount={sumAmount(latestDaySell)}
-              disclosuresFixed={areDisclosuresFixed(latestDealDate)}
-            />
-          )}
           {/* 記事一覧より先にランキングの中身を出す。TOPは押した人17.6%で全ページ中最低なのに、
               /trendingは閲覧者全員が押している（2026-08-27のGA4実測）。ヘッダーに同じリンクは
               あるので、足りないのはリンクではなく押す理由＝実際の銘柄名と金額。 */}
@@ -101,14 +77,10 @@ export default async function HomePage() {
           {/* 「誰が買ったか」の次に「そのあとどうなったか」を置く。株価と結び付けた数字は
               大量保有アラート型の競合が持っていない情報なので、TOPで見えるようにする。 */}
           <TopReturnPreview />
-          {featuredArticles.length > 0 && (
-            <ul className="mb-8 space-y-4">
-              {featuredArticles.map((article, i) => (
-                <li key={article.id}>
-                  <FeaturedArticleCard article={article} rank={i + 1} />
-                </li>
-              ))}
-            </ul>
+          {featured && (
+            <div className="mb-8">
+              <FeaturedArticleCard article={featured} rank={1} />
+            </div>
           )}
           {/* 記事ページにしか無かったフォロー導線をTOPにも置く。サイトの主要コンバージョンは
               Xフォロー（再訪のきっかけ）で、TOPは注目枠を読み終えた直後が最も関心が高い位置。 */}
