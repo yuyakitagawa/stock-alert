@@ -25,7 +25,9 @@
 
 あわせてオーナー指示「開示件数はトップに載せないで。記事にしてるのが少ないだけで開示自体はあるから」
 → kujira-watch TOPの `TodayWhaleSummary` から「N件の開示」と買い/売りの件数を外し、日付と
-買い/売りの推定金額だけにした（詳細は `kujira-watch/dev_log.md`）。
+買い/売りの推定金額だけにした。**その後オーナーが PR #307 でカード自体を削除**し（2026-09-06、
+main に取り込み済み）、本PRの件数削除は差分から消えた。TOPに開示件数は出ない、が結果として同じ
+（詳細は `kujira-watch/dev_log.md`）。
 
 検証: `test_publish_blog_articles` 147件・`test_publish_buyback_articles` 22件・`test_api_usage`・
 `test_publish_ledger` 11件パス。全テスト走査で落ちたのは `test_thumbnail_compose_writes_1280x720_png`

@@ -11,6 +11,10 @@
 
 検証: `npx tsc --noEmit`・`npx eslint src`・`tools/check_design_system.py` パス。
 
+追記（2026-09-06）: オーナーが PR #307「TOPの日次サマリーカードを削除」でカード（`TodayWhaleSummary.tsx`、
+`src/lib/jst.ts` の `areDisclosuresFixed()`）ごと削除して main に取り込んだため、上の props 削除は
+差分として残っていない。TOPに開示件数が出ない、という結果は同じ。
+
 ## 2026-09-04 英語版をサブドメイン（en.kujira-watch.com）で再開し、クローラーの巡回をhost別に測る
 
 オーナー指示「英語版をサブドメインで作って。クローラーの巡回を知りたい」。
