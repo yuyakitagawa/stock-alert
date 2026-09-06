@@ -1,7 +1,6 @@
 import CategoryFilterDetails from "@/components/CategoryFilterDetails";
 import DataUpdatedAt from "@/components/DataUpdatedAt";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
-import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
@@ -82,11 +81,6 @@ export default async function HomePage() {
               <FeaturedArticleCard article={featured} rank={1} />
             </div>
           )}
-          {/* 記事ページにしか無かったフォロー導線をTOPにも置く。サイトの主要コンバージョンは
-              Xフォロー（再訪のきっかけ）で、TOPは注目枠を読み終えた直後が最も関心が高い位置。 */}
-          <div className="mb-8">
-            <FollowCta />
-          </div>
           {/* 一覧は最新の開示日ぶんとは限らない（土日は数日前が最新）ため「今日」と言い切らない。 */}
           <h2 className="mb-4 text-xl font-bold text-brand-navy">新着の取引</h2>
           <CategoryFilterDetails />

@@ -8,7 +8,6 @@ import MenuIcon from "@mui/icons-material/Menu";
 import type { MenuGroup } from "./HeaderMenuDrawer";
 import { mainNavLinks } from "@/lib/nav";
 import { UI } from "@/lib/i18n";
-import { X_PROFILE_URL, X_SCREEN_NAME, YOUTUBE_CHANNEL_URL } from "@/lib/site";
 
 // ドロワー本体(Drawer/List/Divider/…)は開くまで要らない。MUI DrawerはModal/Portal/
 // Backdrop/Slide一式を引き連れており、閉じているのが既定なのに全ページの初期JSへ
@@ -41,12 +40,9 @@ export default function HeaderMenu() {
       ],
     },
     {
-      heading: "フォロー",
-      links: [
-        { href: X_PROFILE_URL, label: `公式X（@${X_SCREEN_NAME}）`, external: true },
-        { href: YOUTUBE_CHANNEL_URL, label: "公式YouTube（1分ショート解説）", external: true },
-        { href: "/feed.xml", label: "RSSフィード" },
-      ],
+      // SNSアカウントへの導線はフッター1か所だけに集約したため、メニューにはRSSのみ置く。
+      heading: "更新を追う",
+      links: [{ href: "/feed.xml", label: "RSSフィード" }],
     },
   ];
 
