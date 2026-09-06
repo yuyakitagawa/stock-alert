@@ -168,31 +168,22 @@ export async function getArticlesByFilerNames(
   return { contents: result.contents.map(normalizeDealType) };
 }
 
-export const FEATURED_POOL_SIZE = 20;
-export const FEATURED_COUNT = 3;
-
-// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得）
-// から、推定取引金額が大きい順に先頭FEATURED_COUNT件を選ぶ。
-// プールの取得を日付優先にしているのは、金額だけで並べ替えると投稿数が少ない日に
-// 数日前の大型取引が「注目」を占有し続けてしまうため。
-// web/publish_blog_articles.pyのget_featured_article_ids()と同じロジック。
-function pickFeatured(pool: ArticleContent[], count: number): ArticleContent[] {
-  return [...pool].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
-}
-
-export async function getFeaturedArticles(
-  poolSize = FEATURED_POOL_SIZE,
-  count = FEATURED_COUNT
-) {
+// 「注目」枠は最新の取引日（＝直近24時間に開示された取引。土日・祝で新規開示が無い日は
+// 直近の開示日）ぶんだけを対象にし、その中で推定取引金額が最大の1件を出す。
+// 複数日ぶんのプールから金額順に選ぶ方式だと、投稿数が少ない日に数日前の大型取引が
+// 「注目」に居座り続けてTOPの鮮度が落ちるため（実例: 2026-09-06時点で4日前の記事を表示）。
+// microCMSから -dealDate,-dealAmount 順に取れば、先頭がそのまま該当記事になる。
+export async function getFeaturedArticle(): Promise<ArticleContent | null> {
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
-      limit: poolSize,
+      limit: 1,
       orders: "-dealDate,-dealAmount",
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  return pickFeatured(result.contents.map(normalizeDealType), count);
+  const top = result.contents[0];
+  return top ? normalizeDealType(top) : null;
 }
 
 export async function getArticlesByStockCode(stockCode: string) {
