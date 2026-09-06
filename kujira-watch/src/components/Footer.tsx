@@ -39,11 +39,13 @@ const JA_GROUPS: FooterGroup[] = [
     ],
   },
   {
+    // サイト内に置くSNS導線はここ1か所だけ（本文中のフォローCTAは2026-09-06に全廃）。
+    // 登録の要らないRSSを先頭に置き、公式アカウントはその下に添える。
     heading: "フォロー",
     links: [
+      { href: "/feed.xml", label: "RSSフィード" },
       { href: X_PROFILE_URL, label: `公式X（@${X_SCREEN_NAME}）`, external: true },
       { href: YOUTUBE_CHANNEL_URL, label: "公式YouTube", external: true },
-      { href: "/feed.xml", label: "RSSフィード" },
     ],
   },
 ];

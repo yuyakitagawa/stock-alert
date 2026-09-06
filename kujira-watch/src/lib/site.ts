@@ -24,17 +24,16 @@ export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "ク�
 export const SITEMAP_IDS = ["pages", "stocks", "dates", "investors", "articles"] as const;
 export type SitemapId = (typeof SITEMAP_IDS)[number];
 
-// 公式Xアカウント。フォロー導線（記事末尾CTA・フッター）で使用する。
+// 公式Xアカウント。SNSへの導線はフッターと/about・/contactの連絡先窓口だけに絞っており、
+// 本文中のフォローCTAは2026-09-06に全廃した（フォローintentの定数も同時に削除）。
 export const X_SCREEN_NAME = "kujira_watch";
 export const X_PROFILE_URL = `https://x.com/${X_SCREEN_NAME}`;
-// フォローintent。プロフィールへの素のリンクよりワンタップ少なくフォローできる。
-export const X_FOLLOW_URL = `https://x.com/intent/follow?screen_name=${X_SCREEN_NAME}`;
 // Xカードの帰属表示（twitter:site / twitter:creator）用。これが無いと、サイトのURLが
 // Xで共有されてもカードにアカウント名が出ず、共有のたびに得られるはずの露出を捨てている。
 export const X_HANDLE = `@${X_SCREEN_NAME}`;
 
 // 公式YouTubeチャンネル（1分ショート動画。video/publish_video.pyが平日投稿）。
-// チャンネル側からサイトへはリンク済みだが、サイト側からの導線もここで持つ。
+// サイト側からの導線はフッターとOrganizationのsameAsだけ。
 // ハンドル変更時は video/youtube_client.py の CHANNEL_URL も対で更新すること。
 export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@kujira-watch";
 
@@ -51,8 +50,3 @@ export const ORGANIZATION_CONTACT_POINT = {
   url: X_PROFILE_URL,
   availableLanguage: ["ja", "en"],
 };
-
-// 読者向けLINE公式アカウントの友だち追加URL（lin.ee/…）。アカウント未開設のため
-// 通常は未設定で、未設定の間はLINE導線を一切表示しない。開設したらVercelの環境変数
-// NEXT_PUBLIC_LINE_ADD_FRIEND_URL にURLを入れるだけでFollowCtaにボタンが出る。
-export const LINE_ADD_FRIEND_URL = process.env.NEXT_PUBLIC_LINE_ADD_FRIEND_URL || "";
