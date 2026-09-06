@@ -1,5 +1,61 @@
 # Dev Log
 
+## 2026-09-06 記事の足切りを「10億円のみ」へ引き上げ、対象開示は /date/[date] に全件並べる
+
+オーナー指示「対象開示はリストに書くが、記事は10億以上と上限を上げたい」。選択は
+①記事化の条件=「10億のみ（比率条件を撤廃）」②対象開示のリスト=「日付別の開示一覧を新設」。
+
+**なぜ比率条件（1.5pt）を撤廃したか**: 金額だけ上げても比率側で通る分が残るため。
+Supabase実測（2026-08-01〜09-05の24開示日・入口フィルタ通過1,161件）:
+
+| 条件 | 記事化 | 1日あたり |
+|---|---|---|
+| 5億 or 1.5pt（現行） | 706件 | 29.4本 |
+| 10億 or 1.5pt | 627件 | 26.1本 |
+| 10億 or 3pt | 542件 | 22.6本 |
+| **10億のみ（採用）** | **429件** | **17.9本** |
+
+10億 or 1.5pt では11%しか減らない。10億のみなら -39%。
+
+変更:
+
+- `web/publish_blog_articles.py`: `MIN_DEAL_AMOUNT_OKU` 5.0 → 10.0、`MIN_RATIO_CHANGE_PT` を削除
+  （コメントアウトではなく定数・分岐ごと削除。CLAUDE.md §7）。`is_worth_publishing()` の引数は
+  金額1つだけになった。**訂正報告書は金額の足切りから除外**する（`if not is_correction and not
+  is_worth_publishing(...)`）: 訂正は売買を伴わず `dealAmount=0` 固定で、従来は1.5ptの比率条件だけで
+  通っていたため、金額のみにすると大幅訂正記事が一切出なくなる（実例: 2026-08-18の太陽誘電6976が
+  15.22%→4.41%で株価-11.5%）。入口の `is_material_correction()` が3pt以上に絞っているので
+  些末な訂正は入ってこない。
+- `INDEXABLE_MIN_DEAL_AMOUNT_OKU`（3億円）/ `INDEXABLE_MIN_RATIO_CHANGE_PT`（1.0pt）は**据え置き**。
+  公開済み記事のindex基準で、合わせて上げると既存記事をnoindexに落とすことになる。
+- kujira-watch `/date/[date]` に **「この日の対象開示」** を追加（`DateDisclosureTable`）。
+  その日の対象開示を推定売買金額の降順で全件並べ、記事にしたものは記事リンク、していないものも
+  EDINETの原文PDFへ飛ばす。「記事にしていないだけで開示自体はある」を隠さないため。
+  - `src/lib/disclosures.ts`: `isTargetDisclosure()` / `isMaterialCorrection()` と定数3つを追加。
+    `web/market_timing_alert.py` の `get_recent_large_holdings()`（= `tools/scan_large_holdings.py` の
+    `is_noise_match()`）と同じ判定順・同じ数値。過半数超51%以上・訂正（3pt以上の大幅訂正を除く）・
+    自己申告を除外し、売りは除外しない。Python側との唯一の差は自己申告判定に使う発行体名
+    （PythonはJ-Quantsの銘柄名優先、TSはEDINETのissuer_nameのみ）。
+  - `src/lib/investors.ts`: `getDisclosuresByDate()`。`edinet_large_holdings` と推定金額ビュー
+    `edinet_holding_amounts` を並列取得し `unstable_cache`（1時間）に載せる。取得失敗時は空配列を
+    返してページを落とさない（ページ本体は記事一覧で、開示表は補足のため）。
+  - 独立URLは作らない。2026-08-18に `/disclosures` を廃止した理由（記事一覧との二重表示）を
+    再発させないため、日付ページの中に置く。
+- 読者向けの数字を同時更新: `src/lib/faqData.tsx`（「5億円以上、または保有比率1.5ポイント以上」→
+  「10億円以上」＋日付別ページに全件載せている旨）、`src/lib/articleIndexability.ts` のコメント、
+  `tools/delete_low_value_blog_articles.py` のdocstring、README.md / kujira-watch/README.md。
+- テスト: `tests/test_publish_blog_articles.py` を147→148件。旧しきい値の4件を差し替え、
+  `test_material_correction_bypasses_amount_threshold`（大幅訂正が金額の足切りを迂回する）と
+  `test_site_threshold_constants_match_python`（TS側の定数3つとFAQ本文がPythonとずれていないこと）を追加。
+
+検証: `tests/test_publish_blog_articles.py` 148件・`test_publish_buyback_articles.py` 22件・
+`test_scan_large_holdings.py` 13件・`test_market_timing_alert.py` 28件・`test_publish_ledger.py` 11件・
+`test_delete_low_value_blog_articles.py` 2件・`test_fix_misreported_blog_articles.py` 13件すべてパス。
+`npx tsc --noEmit`・`npx eslint src`・`tools/check_design_system.py` パス。
+
+未実施: 実データでの `/date/[date]` の表示確認（本番デプロイ後に見る）。1日あたり11.5本
+（29.4→17.9）記事が減るぶん、Anthropic APIの日次消費は $0.0092 × 11.5 ≈ $0.11/日 減る見込み。
+
 ## 2026-09-03 記事の日次上限（日2本）を撤去し、基準を満たす開示を全件記事化する運用へ戻す
 
 オーナー指示「やっぱり開示案件は記事にしてほしい」。2026-08-30にkujira-watchを「GEOのA/B実験台」へ

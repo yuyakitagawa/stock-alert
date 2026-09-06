@@ -6,6 +6,8 @@ import ListPageNextStep from "@/components/ListPageNextStep";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import { formatDate, formatMonth } from "@/lib/format";
 import { getAllArticlesForSitemap, getArticlesByDealDate } from "@/lib/microcms";
+import { getDisclosuresByDate } from "@/lib/investors";
+import DateDisclosureTable from "@/components/DateDisclosureTable";
 import { SITE_URL } from "@/lib/site";
 import { PageDatesJsonLd } from "@/components/DataUpdatedAt";
 import { isIndexableDatePage } from "@/lib/pageIndexability";
@@ -55,7 +57,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const label = formatDate(date);
   const title = `${label}の大口投資家の動き`;
-  const description = `${label}に開示された大量保有・変更報告書をもとにした、大口投資家の動き。全${contents.length}件。`;
+  const description = `${label}に開示された大量保有・変更報告書をもとにした、大口投資家の動き。記事${contents.length}件と、この日の対象開示の一覧。`;
   const url = `${SITE_URL}/date/${date}`;
 
   return {
@@ -72,7 +74,11 @@ export default async function DateArchivePage({ params }: Props) {
     notFound();
   }
 
-  const { contents } = await getArticlesByDealDate(date);
+  // 記事（microCMS）とこの日の対象開示（Supabase）は独立なので並列に取る。
+  const [{ contents }, disclosures] = await Promise.all([
+    getArticlesByDealDate(date),
+    getDisclosuresByDate(date),
+  ]);
 
   if (contents.length === 0) {
     notFound();
@@ -136,7 +142,9 @@ export default async function DateArchivePage({ params }: Props) {
           <time dateTime={date}>{label}</time>の大口投資家の動き
         </h1>
         <p className="mt-1 text-sm text-ink-tertiary">
-          この日に開示された大量保有・変更報告書を{contents.length}件まとめています。
+          この日に開示された大量保有・変更報告書のうち{contents.length}件を記事にしています。
+          {disclosures.length > 0 &&
+            `対象開示は全${disclosures.length}件で、記事にしていないものも下の一覧に並べています。`}
         </p>
       </div>
       {(() => {
@@ -156,6 +164,9 @@ export default async function DateArchivePage({ params }: Props) {
           </>
         );
       })()}
+      {/* 記事にしているのは推定10億円以上の開示だけなので、記事一覧だけだと
+          「この日は開示が少なかった」ように見える。対象開示は全件ここに出す。 */}
+      <DateDisclosureTable rows={disclosures} articles={contents} />
       {/* 入口の直帰率100%＝この日の記事を見て終わっていた（2026-08-27のGA4実測）。
           同じ月の他の日と、開示を横断して見るページへ送る。 */}
       <ListPageNextStep

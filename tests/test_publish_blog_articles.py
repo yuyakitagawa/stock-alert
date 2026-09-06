@@ -457,7 +457,7 @@ def test_fetch_published_index_returns_none_on_http_error():
 def test_is_backfill_target_drops_published_and_below_threshold():
     amounts = {
         "D1": {"deal_amount_oku": 50.0, "ratio_change_pt": 0.2},   # 金額で基準超え
-        "D2": {"deal_amount_oku": 0.1, "ratio_change_pt": 0.1},    # どちらも基準未満
+        "D2": {"deal_amount_oku": 9.9, "ratio_change_pt": 5.0},    # 比率が大きくても金額が基準未満
     }
     keys = {("7203", "2026-08-01", "個人 太郎")}
     published = {"issuer_code": "7203", "disc_date": "2026-08-01", "filer_name": "個人 太郎", "doc_id": "D1"}
@@ -634,7 +634,7 @@ def _run_with_ledger(**overrides):
 
 def test_ledger_marks_below_threshold_run_as_healthy():
     """候補が基準未満で0件公開なのは正常。ワークフローを赤くしない。"""
-    # 金額も比率変化も基準未満（is_worth_publishing はどちらかを超えれば通す）
+    # 推定金額が基準（10億円）未満（is_worth_publishing は金額だけで判定する）
     led = _run_with_ledger(estimate_deal_amount_oku=0.01, ratio_change_pct=0.01)
     assert led.published_count == 0
     assert led.has_anomaly() is False, led.summary()
@@ -1829,24 +1829,44 @@ def test_checked_recently_handles_missing_and_malformed_values():
 
 
 def test_is_worth_publishing_accepts_large_amount():
-    # 金額が基準以上なら比率変化が小さくても記事にする
-    assert m.is_worth_publishing(5.0, 0.02) is True
+    # 推定売買金額が基準（10億円）以上なら記事にする
+    assert m.is_worth_publishing(10.0) is True
+    assert m.is_worth_publishing(50.0) is True
 
 
-def test_is_worth_publishing_accepts_large_ratio_change():
-    # 金額が小さくても保有方針が動いた開示は記事にする（売りの負値も絶対値で判定）
-    assert m.is_worth_publishing(0.5, -1.7) is True
+def test_is_worth_publishing_rejects_below_threshold():
+    """2026-09-06に 5億円or1.5pt → 10億円のみ へ変更した足切り。旧基準は通さない。"""
+    assert m.is_worth_publishing(5.0) is False
+    assert m.is_worth_publishing(9.9) is False
+    assert m.is_worth_publishing(0.0) is False
 
 
-def test_is_worth_publishing_rejects_trivial_disclosure():
-    # 保有比率0.04%・推定0億円のような実質ニュース価値の無い変更報告書は落とす
-    assert m.is_worth_publishing(0.0, 0.01) is False
+def test_material_correction_bypasses_amount_threshold():
+    """大幅訂正は推定金額を持たない(dealAmount=0)。金額のみの足切りで消えないこと。
+    入口の is_material_correction() が3pt以上に絞っているので素通りさせてよい。"""
+    assert m.is_worth_publishing(0.0) is False  # 金額基準そのものは0億円を落とす
+    holdings = [{"issuer_code": "6976", "name": "太陽誘電", "filer_name": "Situational Awareness LP",
+                 "holding_ratio": 4.41, "holding_ratio_prior": 15.22, "disc_date": "2026-08-18",
+                 "doc_type_code": "360", "doc_description": "訂正報告書（大量保有報告書・変更報告書）"}]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "get_pit_ranking_snapshot", return_value=None), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "外資系伝統運用会社", "is_foreign": True, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(days=3, max_articles=3, dry_run=True)
+    assert len(results) == 1 and results[0]["dealAmount"] == 0.0
 
 
-def test_is_worth_publishing_rejects_below_raised_threshold():
-    """2026-08-29に 3億円/1.0pt → 5億円/1.5pt へ引き上げた足切り。旧基準は通さない。"""
-    assert m.is_worth_publishing(3.0, 0.02) is False
-    assert m.is_worth_publishing(0.5, -1.2) is False
+def test_is_worth_publishing_ignores_ratio_change():
+    """比率変化による救済は撤廃した。金額だけで決まること（引数も金額1つだけ）。"""
+    import inspect
+    assert list(inspect.signature(m.is_worth_publishing).parameters) == ["deal_amount_oku"]
+    assert not hasattr(m, "MIN_RATIO_CHANGE_PT")
 
 
 def test_index_basis_stays_looser_than_publish_basis():
@@ -1855,9 +1875,34 @@ def test_index_basis_stays_looser_than_publish_basis():
     assert m.is_indexable_article(3.0, 0.02) is True
     assert m.is_indexable_article(0.5, -1.2) is True
     assert m.is_indexable_article(0.0, 0.01) is False
-    # 新規記事は必ず両方を通る＝「出したのにnoindex」は起きない
+    # 新規記事は必ず10億円以上＝index基準を通る＝「出したのにnoindex」は起きない
     assert m.MIN_DEAL_AMOUNT_OKU >= m.INDEXABLE_MIN_DEAL_AMOUNT_OKU
-    assert m.MIN_RATIO_CHANGE_PT >= m.INDEXABLE_MIN_RATIO_CHANGE_PT
+
+
+def test_site_threshold_constants_match_python():
+    """サイト側(kujira-watch/src/lib/disclosures.ts)に置いた数値がPythonとずれないこと。
+
+    /date/[date] の「この日の対象開示」は、記事にしなかった開示も含めて全件出すために
+    TS側で足切りを再実装している。数値がずれると「一覧に出ているのに記事化されない理由が
+    説明できない」状態になり、FAQで読者に公開している金額とも矛盾する。
+    """
+    import re
+    from tools.scan_large_holdings import MATERIAL_CORRECTION_DELTA_PT, MAJORITY_HOLDING_THRESHOLD
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ts = open(os.path.join(root, "kujira-watch/src/lib/disclosures.ts"), encoding="utf-8").read()
+
+    def const(name):
+        match = re.search(rf"export const {name} = ([\d.]+);", ts)
+        assert match, f"{name} が disclosures.ts に見つからない"
+        return float(match.group(1))
+
+    assert const("ARTICLE_MIN_DEAL_AMOUNT_OKU") == m.MIN_DEAL_AMOUNT_OKU
+    assert const("MATERIAL_CORRECTION_DELTA_PT") == MATERIAL_CORRECTION_DELTA_PT
+    assert const("MAJORITY_HOLDING_THRESHOLD") == MAJORITY_HOLDING_THRESHOLD
+    # FAQ（読者に公開している数字）も同じ値であること
+    faq = open(os.path.join(root, "kujira-watch/src/lib/faqData.tsx"), encoding="utf-8").read()
+    assert f"推定売買金額が{m.MIN_DEAL_AMOUNT_OKU:g}億円以上の開示だけを記事にしています" in faq
 
 
 def test_body_char_count_excludes_tags_and_whitespace():
@@ -2196,10 +2241,11 @@ if __name__ == "__main__":
     test_get_filer_profile_skips_claude_when_checked_recently()
     test_get_filer_profile_retries_after_recheck_window()
     test_is_worth_publishing_accepts_large_amount()
-    test_is_worth_publishing_accepts_large_ratio_change()
-    test_is_worth_publishing_rejects_trivial_disclosure()
-    test_is_worth_publishing_rejects_below_raised_threshold()
+    test_is_worth_publishing_rejects_below_threshold()
+    test_is_worth_publishing_ignores_ratio_change()
+    test_material_correction_bypasses_amount_threshold()
     test_index_basis_stays_looser_than_publish_basis()
+    test_site_threshold_constants_match_python()
     test_body_char_count_excludes_tags_and_whitespace()
     test_generate_article_body_checked_retries_when_body_too_short()
     test_generate_article_body_checked_keeps_longer_of_two_attempts()
@@ -2245,4 +2291,4 @@ if __name__ == "__main__":
     test_ledger_counts_every_candidate()
     test_display_text_halfwidths_only_latin_and_english_symbols()
     test_eyecatch_stock_line_normalizes_fullwidth_name()
-    print("全テスト成功 (147件)")
+    print("全テスト成功 (148件)")
