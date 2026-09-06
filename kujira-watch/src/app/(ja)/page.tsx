@@ -5,7 +5,7 @@ import FollowCta from "@/components/FollowCta";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
-import { getArticleList, getFeaturedArticles } from "@/lib/microcms";
+import { getArticleList, getFeaturedArticle } from "@/lib/microcms";
 import { getPublishedDates } from "@/lib/publishedPages";
 import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
@@ -17,8 +17,8 @@ const INITIAL_ARTICLES_COUNT = 30;
 
 export default async function HomePage() {
   const { contents, totalCount } = await getArticleList({ limit: INITIAL_ARTICLES_COUNT });
-  const featuredArticles = contents.length > 0 ? await getFeaturedArticles() : [];
-  const featuredIds = new Set(featuredArticles.map((a) => a.id));
+  const featured = contents.length > 0 ? await getFeaturedArticle() : null;
+  const featuredIds = new Set(featured ? [featured.id] : []);
 
   const latestDealDate = contents[0]?.dealDate;
   const publishedDates = [...(await getPublishedDates().catch(() => new Set<string>()))];
@@ -77,14 +77,10 @@ export default async function HomePage() {
           {/* 「誰が買ったか」の次に「そのあとどうなったか」を置く。株価と結び付けた数字は
               大量保有アラート型の競合が持っていない情報なので、TOPで見えるようにする。 */}
           <TopReturnPreview />
-          {featuredArticles.length > 0 && (
-            <ul className="mb-8 space-y-4">
-              {featuredArticles.map((article, i) => (
-                <li key={article.id}>
-                  <FeaturedArticleCard article={article} rank={i + 1} />
-                </li>
-              ))}
-            </ul>
+          {featured && (
+            <div className="mb-8">
+              <FeaturedArticleCard article={featured} rank={1} />
+            </div>
           )}
           {/* 記事ページにしか無かったフォロー導線をTOPにも置く。サイトの主要コンバージョンは
               Xフォロー（再訪のきっかけ）で、TOPは注目枠を読み終えた直後が最も関心が高い位置。 */}
