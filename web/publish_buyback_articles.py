@@ -45,7 +45,6 @@ from web.publish_blog_articles import (  # noqa: E402
     ANTHROPIC_API_KEY,
     BACKFILL_DAYS,
     BACKFILL_MAX_ARTICLES,
-    DAILY_MAX_ARTICLES,
     CLAUDE_MODEL,
     MAX_TITLE_LEN,
     MicroCMSPermissionError,
@@ -56,7 +55,6 @@ from web.publish_blog_articles import (  # noqa: E402
     body_quality_key,
     budget_stop_reason,
     build_eyecatch_for_article,
-    daily_quota,
     build_price_chart_for_article,
     fetch_published_index,
     get_company_description,
@@ -400,11 +398,6 @@ def build_and_publish(days: int = DEFAULT_DAYS, max_articles: "int | None" = Non
         if known is None:
             print("[buyback_blog] 既報インデックスを取得できないため backfill を中止（重複投稿を避ける）")
             return []
-    elif max_articles is None:
-        # 通常運転の日次上限（publish_blog_articles.DAILY_MAX_ARTICLES）。
-        # 大量保有の記事とは別枠で、自社株買いの記事を1日DAILY_MAX_ARTICLES本まで出す。
-        max_articles = daily_quota("tdnet_buybacks", "code")
-        print(f"[buyback_blog] 本日の残り枠 {max_articles}件（日次上限{DAILY_MAX_ARTICLES}件）")
     candidates = fetch_candidates(days)
     print(f"[buyback_blog] 記事候補: {len(candidates)}件（上限{MIN_AMOUNT_OKU:g}億円以上 or 発行済{MIN_RATIO_PCT:g}%以上）")
     if backfill:
@@ -501,8 +494,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--days", type=int, default=DEFAULT_DAYS, help="決定開示を見る直近日数")
     p.add_argument("--max-articles", type=int, default=None,
-                   help=f"1回の実行で投稿する上限件数（未指定なら通常運転は当日の残り枠＝"
-                        f"日{DAILY_MAX_ARTICLES}本、--backfill時は{BACKFILL_MAX_ARTICLES}本/便）")
+                   help=f"1回の実行で投稿する上限件数（未指定なら通常運転は上限なし、"
+                        f"--backfill時は{BACKFILL_MAX_ARTICLES}本/便）")
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
     p.add_argument("--backfill", action="store_true",
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない決定開示だけを拾い直す")
