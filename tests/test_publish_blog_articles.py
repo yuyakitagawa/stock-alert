@@ -943,7 +943,7 @@ def test_already_published_true_for_unique_filing_even_if_ratio_differs():
 
 
 def test_get_featured_article_ids_picks_top_deal_amount_within_recent_days():
-    """kujira-watch側getFeaturedArticles()と同じロジック: プール（microCMS側で
+    """動画・X投稿の足切りプール: プール（microCMS側で
     -dealDate,-dealAmount順に取得済み）を最新の取引日からday_window日ぶんに絞ってから、
     推定取引金額が大きい順に先頭count件を採用する。窓の外の大型取引は採らない。"""
     pool = [

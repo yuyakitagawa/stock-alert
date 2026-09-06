@@ -168,47 +168,24 @@ export async function getArticlesByFilerNames(
   return { contents: result.contents.map(normalizeDealType) };
 }
 
-export const FEATURED_POOL_SIZE = 20;
-export const FEATURED_COUNT = 3;
-// 「注目」枠に載せてよい取引日の幅（プールに含まれる最新のdealDateから数えた開示日数）。
-export const FEATURED_DAY_WINDOW = 3;
-
-// 「注目」枠: 直近FEATURED_POOL_SIZE件のプール（日付優先→同日内は金額が大きい順で取得）
-// から、最新の取引日を含むFEATURED_DAY_WINDOW営業日ぶんに絞り、その中で推定取引金額が
-// 大きい順に先頭FEATURED_COUNT件を選ぶ。
-// プールの取得を日付優先にしているのは、金額だけで並べ替えると投稿数が少ない日に
-// 数日前の大型取引が「注目」を占有し続けてしまうため。ただしプール20件は実測で4〜5営業日
-// ぶんあり、日付で絞らないと同じ理由で古い大型取引が居座る（実例: 2026-09-02のTOPは
-// 8/31・8/28・8/28の3件＝最新でも2日前、最古は5日前だった）。日付そのものではなく
-// 「プールに実在する取引日の新しい方からFEATURED_DAY_WINDOW日」で切るのは、土日祝や
-// 開示ゼロの日にヒーロー枠が空になるのを避けるため。
-// 絞った結果がFEATURED_COUNTに満たない場合だけプール全体に戻す。
-// web/publish_blog_articles.pyのget_featured_article_ids()と同じロジック。
-function pickFeatured(
-  pool: ArticleContent[],
-  count: number,
-  dayWindow: number = FEATURED_DAY_WINDOW
-): ArticleContent[] {
-  const days = [...new Set(pool.map((a) => a.dealDate.slice(0, 10)))].sort().reverse();
-  const allowed = new Set(days.slice(0, dayWindow));
-  const recent = pool.filter((a) => allowed.has(a.dealDate.slice(0, 10)));
-  const base = recent.length >= count ? recent : pool;
-  return [...base].sort((a, b) => b.dealAmount - a.dealAmount).slice(0, count);
-}
-
-export async function getFeaturedArticles(
-  poolSize = FEATURED_POOL_SIZE,
-  count = FEATURED_COUNT
-) {
+// 「注目」枠は最新の取引日（＝直近24時間に開示された取引。土日・祝で新規開示が無い日は
+// 直近の開示日）ぶんだけを対象にし、その中で推定取引金額が最大の1件だけを出す。
+// 複数日ぶんのプールから金額順に上位3件を選ぶ方式（〜2026-09-06）は、投稿数が少ない日に
+// 数日前の大型取引が「注目」に居座り続けてTOPの鮮度が落ちていた（実例: 2026-09-06時点の
+// 注目①は4日前の09/02の記事）。日付そのものではなく「プールの先頭の取引日」で切るのは、
+// 土日祝や開示ゼロの日にヒーロー枠が空になるのを避けるため。
+// microCMSから -dealDate,-dealAmount 順に取れば、先頭がそのまま該当記事になる。
+export async function getFeaturedArticle(): Promise<ArticleContent | null> {
   const result = await client.getList<Article>({
     endpoint: "articles",
     queries: {
-      limit: poolSize,
+      limit: 1,
       orders: "-dealDate,-dealAmount",
     },
     customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
   });
-  return pickFeatured(result.contents.map(normalizeDealType), count);
+  const top = result.contents[0];
+  return top ? normalizeDealType(top) : null;
 }
 
 export async function getArticlesByStockCode(stockCode: string) {

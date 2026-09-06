@@ -1,10 +1,10 @@
 """
 web/x_client.py
-publish_blog_articles.py が投稿した新着記事のうち、ホームページの「注目」枠
-（kujira-watch側 getFeaturedArticles()、直近プールをdealAmount降順に並べ直した
-上位3件）に入っている記事だけをX(Twitter)へ自動投稿する。サイトで目立っていない
+publish_blog_articles.py が投稿した新着記事のうち、足切りプール
+（publish_blog_articles.get_featured_article_ids()、直近20件を最新3開示日ぶんに
+絞ってdealAmount降順の上位3件）に入っている記事だけをX(Twitter)へ自動投稿する。
 小粒な開示が「その日一番大きい」というだけでXに投稿される事態を避けるため、
-「その日新規公開した記事」×「現在サイトで注目表示されている記事」の積集合を対象にする
+「その日新規公開した記事」×「その足切りプール」の積集合を対象にする
 （該当が無い地味な日は0件のこともある）。訂正報告書だけは既報の前提を覆すため
 「注目」枠に関係なく全件投稿する。
 

@@ -594,9 +594,10 @@ def fetch_published_index(since_date: str, extra_filter: str = "",
     return None
 
 
-# kujira-watch/src/lib/microcms.ts の FEATURED_POOL_SIZE/FEATURED_COUNT/FEATURED_DAY_WINDOW
-# （ホームページ「注目」枠 getFeaturedArticles()）と同じ値。ここを変える場合は
-# あちらも合わせて変更すること。
+# 動画・X投稿の対象を小粒な開示に取られないための足切りプール。
+# 2026-09-06まではホームページ「注目」枠と同じ値だったが、そちらは最新の取引日の
+# 最大1件だけを出す仕様（kujira-watch/src/lib/microcms.ts の getFeaturedArticle()）へ
+# 変えたため、ここは動画・X側の独立した閾値として残す。
 FEATURED_POOL_SIZE = 20
 FEATURED_COUNT = 3
 FEATURED_DAY_WINDOW = 3
@@ -604,12 +605,11 @@ FEATURED_DAY_WINDOW = 3
 
 def get_featured_article_ids(pool_size: int = FEATURED_POOL_SIZE, count: int = FEATURED_COUNT,
                              day_window: int = FEATURED_DAY_WINDOW) -> set:
-    """kujira-watch側 getFeaturedArticles() と同じロジック（直近pool_size件のプールを
-    最新の取引日から数えてday_window開示日ぶんに絞り、推定取引金額dealAmountが大きい順に
-    先頭count件を採用。絞った結果がcount件に満たない場合だけプール全体に戻す）を
-    Python側で再現し、現在ホームページで「注目」表示されている記事のidセットを返す。
-    X投稿をこれと一致させることで、サイトで目立っていない小粒な開示がXにだけ投稿される
-    事態を防ぐ。取得失敗時は空集合（この場合X投稿は0件になる）。"""
+    """直近pool_size件のプールを最新の取引日から数えてday_window開示日ぶんに絞り、
+    推定取引金額dealAmountが大きい順に先頭count件のidセットを返す（絞った結果がcount件に
+    満たない場合だけプール全体に戻す）。動画・X投稿の対象をこの集合に限ることで、
+    小粒な開示が動画やXにだけ流れるのを防ぐ。
+    取得失敗時は空集合（この場合X投稿・動画は0件になる）。"""
     try:
         resp = requests.get(
             _microcms_base_url(),
