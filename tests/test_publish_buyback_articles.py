@@ -168,33 +168,30 @@ def test_backfill_skips_disclosure_already_articled():
     assert [o["stockCode"] for o in out] == ["6082"]
 
 
-def test_build_and_publish_caps_articles_per_day():
-    """通常運転は当日の残り枠（DAILY_MAX_ARTICLES − 当日の実績）で止まる。"""
+def test_build_and_publish_publishes_every_candidate_by_default():
+    """通常運転は上限なし。足切りを通った決定開示はその便で全部記事にする。"""
     from lib import publish_ledger as pl
     from lib.publish_ledger import PublishLedger
     rows = [
         {"code": f"{6000 + i}", "disclosed_at": f"2026-08-2{i}T16:00:00+00:00",
          "amount_oku": 10.0, "ratio": 12.8, "max_amount_yen": 1_000_000_000}
-        for i in range(m.DAILY_MAX_ARTICLES + 2)
+        for i in range(4)
     ]
     led = PublishLedger("test")
-    with mock.patch.object(m, "daily_quota", return_value=1) as quota, \
-         mock.patch.object(m, "fetch_candidates", return_value=rows), \
+    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "build_fact_sheet", side_effect=lambda r: {**FACT, "stock_code": r["code"]}), \
          mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}):
         out = m.build_and_publish(days=7, dry_run=True, ledger=led)
-    quota.assert_called_once_with("tdnet_buybacks", "code")
-    assert len(out) == 1
-    assert led.reasons[pl.SKIP_MAX_ARTICLES] == 1
+    assert len(out) == len(rows)
+    assert pl.SKIP_MAX_ARTICLES not in led.reasons
     assert led.has_anomaly() is False, led.summary()
 
 
 def test_build_and_publish_records_ledger_after_publishing():
     rows = [{"code": "6082", "disclosed_at": "2026-08-14T16:00:00+00:00", "amount_oku": 10.0,
              "ratio": 12.8, "max_amount_yen": 1_000_000_000}]
-    with mock.patch.object(m, "daily_quota", return_value=2), \
-         mock.patch.object(m, "fetch_candidates", return_value=rows), \
+    with mock.patch.object(m, "fetch_candidates", return_value=rows), \
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
          mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}), \
@@ -255,8 +252,7 @@ def test_ledger_treats_all_already_published_as_healthy():
     """
     from lib.publish_ledger import PublishLedger
     led = PublishLedger("test")
-    with mock.patch.object(m, "daily_quota", return_value=2), \
-         mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
+    with mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
          mock.patch.object(m, "already_published", return_value=True), \
          mock.patch.object(m, "publish_article") as publish:
         out = m.build_and_publish(days=7, dry_run=True, ledger=led)
@@ -271,8 +267,7 @@ def test_ledger_flags_generation_failure_as_anomaly():
     from lib import publish_ledger as pl
     from lib.publish_ledger import PublishLedger
     led = PublishLedger("test")
-    with mock.patch.object(m, "daily_quota", return_value=2), \
-         mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
+    with mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
          mock.patch.object(m, "already_published", return_value=False), \
          mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
          mock.patch.object(m, "generate_body_checked", return_value=None), \
@@ -288,8 +283,7 @@ def test_ledger_counts_every_candidate():
     """公開できた候補・見送った候補の合計が候補数と一致する（未分類が残らない）。"""
     from lib.publish_ledger import PublishLedger
     led = PublishLedger("test")
-    with mock.patch.object(m, "daily_quota", return_value=2), \
-         mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
+    with mock.patch.object(m, "fetch_candidates", return_value=_TWO_CANDIDATES), \
          mock.patch.object(m, "already_published", side_effect=[True, False]), \
          mock.patch.object(m, "build_fact_sheet", return_value={**FACT, "stock_code": "6082"}), \
          mock.patch.object(m, "generate_body_checked", return_value={"body": "<p>本文</p>"}), \
