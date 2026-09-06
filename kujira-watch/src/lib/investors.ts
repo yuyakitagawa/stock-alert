@@ -6,7 +6,7 @@ import { unstable_cache } from "next/cache";
 // x-vercel-cache: MISS・cache-control: no-store で毎回サーバー実行、TTFB約2秒）。
 // クローラーは同じURLを何度も取りに来るので、これがそのままクロール速度の上限になっていた。
 // EDINET開示は日次更新なので1時間のキャッシュで十分。
-import { summarizeDisposals, type TransferSummary } from "@/lib/disclosures";
+import { isTargetDisclosure, summarizeDisposals, type TransferSummary } from "@/lib/disclosures";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type { DealType } from "@/types/article";
 
@@ -563,5 +563,76 @@ async function getFilerIdByNameUncached(filerName: string): Promise<number | nul
 }
 
 export const getFilerIdByName = unstable_cache(getFilerIdByNameUncached, ["getFilerIdByName"], {
+  revalidate: SUPABASE_REVALIDATE_SECONDS,
+});
+
+// /date/[date] の「この日の対象開示」用。その日に開示された大量保有・変更報告書のうち
+// サイトの対象になるもの（isTargetDisclosure）を、推定売買金額の大きい順に全件返す。
+// 記事は推定売買金額10億円以上に絞っているため、記事一覧だけでは「その日に開示が
+// 少なかった」ように見えてしまう。記事にしていない開示も含めて事実を出すための一覧。
+export type DateDisclosure = {
+  docId: string;
+  issuerCode: string;
+  issuerName: string;
+  filerName: string;
+  discDate: string;
+  docTypeCode: string;
+  docDescription: string | null;
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+  // edinet_holding_amounts（推定売買金額ビュー）の値。株価・発行済株式数が引けない開示はnull。
+  dealAmountOku: number | null;
+};
+
+async function getDisclosuresByDateUncached(date: string): Promise<DateDisclosure[]> {
+  const supabase = getSupabaseServerClient();
+  // 1日の開示は多い日でも百件台なので、PostgRESTの既定1000行上限には掛からない。
+  const [holdings, amounts] = await Promise.all([
+    supabase
+      .from("edinet_large_holdings")
+      .select(
+        "doc_id, issuer_code, issuer_name, filer_name, disc_date, doc_type_code, doc_description, holding_ratio, holding_ratio_prior"
+      )
+      .eq("disc_date", date)
+      .limit(PAGE_SIZE),
+    supabase
+      .from("edinet_holding_amounts")
+      .select("doc_id, deal_amount_oku")
+      .eq("disc_date", date)
+      .limit(PAGE_SIZE),
+  ]);
+
+  // 一覧が空でも記事セクションは出るので、取得失敗はページを落とさず空で返す
+  // （/date/[date] の本体は記事一覧。開示表は補足）。
+  if (holdings.error) return [];
+
+  // deal_amount_oku は numeric 型で、PostgRESTの返し方によっては文字列で届く。
+  // 並び替えと表示の両方で数値として扱うためここで一度だけ寄せる。
+  const amountByDocId = new Map<string, number | null>(
+    (amounts.data ?? []).map((r) => {
+      const value = Number(r.deal_amount_oku);
+      return [r.doc_id as string, Number.isFinite(value) ? value : null];
+    })
+  );
+
+  return (holdings.data ?? [])
+    .filter((r) => r.filer_name && r.issuer_code)
+    .map((r) => ({
+      docId: r.doc_id,
+      issuerCode: r.issuer_code,
+      issuerName: r.issuer_name ?? r.issuer_code,
+      filerName: r.filer_name,
+      discDate: r.disc_date,
+      docTypeCode: r.doc_type_code,
+      docDescription: r.doc_description,
+      holdingRatio: r.holding_ratio,
+      holdingRatioPrior: r.holding_ratio_prior,
+      dealAmountOku: amountByDocId.get(r.doc_id) ?? null,
+    }))
+    .filter((r) => isTargetDisclosure(r))
+    .sort((a, b) => (b.dealAmountOku ?? -1) - (a.dealAmountOku ?? -1));
+}
+
+export const getDisclosuresByDate = unstable_cache(getDisclosuresByDateUncached, ["getDisclosuresByDate"], {
   revalidate: SUPABASE_REVALIDATE_SECONDS,
 });

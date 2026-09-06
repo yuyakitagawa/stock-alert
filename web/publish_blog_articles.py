@@ -1672,25 +1672,32 @@ def update_article(content_id: str, payload: dict) -> bool:
 # なっていますか？」で読者にも公開している。変更時は両方を同じコミットで直すこと。
 # 2026-08-29に 3.0億円/1.0pt から引き上げ（Anthropic APIの消化削減。直近30日の開示851件で
 # 通過が693件→529件＝-24%。記事1本あたり約$0.013なので月-$2.2）。
-MIN_DEAL_AMOUNT_OKU = 5.0
-MIN_RATIO_CHANGE_PT = 1.5
+# 2026-09-06に **10億円のみ**へ変更（オーナー指示）。保有比率の変化幅による救済
+# （MIN_RATIO_CHANGE_PT=1.5pt）は撤廃した。金額を上げるだけでは比率側で通る分が残り、
+# 実測（08/01〜09/05の24開示日・対象1,161件）で 5億or1.5pt=706件 → 10億or1.5pt=627件と
+# 11%しか減らなかったため。10億円のみなら429件＝日17.9本（現行29.4本の-39%）。
+# 基準に満たない開示は記事にしないが、/date/[date] の「この日の対象開示」に全件並べる
+# （記事化していないだけで開示自体はある、という事実を隠さないため）。
+MIN_DEAL_AMOUNT_OKU = 10.0
 
 # **公開済み記事**をindexするか・掃除で消すかの基準。表示側 kujira-watch/src/lib/
 # articleIndexability.ts の INDEXABLE_MIN_* と必ず同じ値にすること（ずれると
 # 「サイトマップに載っているのにnoindex」という矛盾した指示をGoogleに送る）。
-# 新規記事の足切り(MIN_*)を2026-08-29に引き上げた後も、こちらは据え置く。
+# 新規記事の足切り(MIN_DEAL_AMOUNT_OKU)を2026-08-29・2026-09-06に引き上げた後も、こちらは据え置く。
 # 引き上げに合わせて下げると、既に順位が付いている既存記事の24%をnoindexに落とすことになり、
-# 節約する月$2.2に対して失うものが大きすぎる。新規記事は必ずMIN_*≥INDEXABLE_MIN_*なので
-# 「出したのにnoindex」は起きない。
+# 節約する月$2.2に対して失うものが大きすぎる。新規記事は必ず10億円以上＝
+# INDEXABLE_MIN_DEAL_AMOUNT_OKU を満たすので「出したのにnoindex」は起きない。
 INDEXABLE_MIN_DEAL_AMOUNT_OKU = 3.0
 INDEXABLE_MIN_RATIO_CHANGE_PT = 1.0
 
 
-def is_worth_publishing(deal_amount_oku: float, ratio_change_pt: float) -> bool:
-    """推定金額か保有比率の変化幅のどちらかが基準を超える開示だけを記事にする（新規記事用）。"""
-    if deal_amount_oku >= MIN_DEAL_AMOUNT_OKU:
-        return True
-    return abs(ratio_change_pt) >= MIN_RATIO_CHANGE_PT
+def is_worth_publishing(deal_amount_oku: float) -> bool:
+    """推定売買金額が基準を超える開示だけを記事にする（新規記事用）。
+
+    金額を概算できない開示はこの手前の SKIP_NO_AMOUNT で落ちるので、ここに来る時点で
+    deal_amount_oku は常に数値。
+    """
+    return deal_amount_oku >= MIN_DEAL_AMOUNT_OKU
 
 
 def is_indexable_article(deal_amount_oku: float, ratio_change_pt: float) -> bool:
@@ -1745,7 +1752,7 @@ def is_backfill_target(h: dict, published_keys: set, amounts: dict) -> bool:
     v = amounts.get(h.get("doc_id"))
     if v is None:
         return True
-    return is_worth_publishing(v.get("deal_amount_oku") or 0.0, v.get("ratio_change_pt") or 0.0)
+    return is_worth_publishing(v.get("deal_amount_oku") or 0.0)
 
 
 def budget_stop_reason() -> "str | None":
@@ -1859,8 +1866,13 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         signed_change = round(-change if is_sell else change, 2)
 
         # 足切りはClaude呼び出し（事業内容・本文生成）より前に置く。API費用も同時に減る。
-        if not is_worth_publishing(deal_amount, signed_change):
-            print(f"  ⏭ {name}({code}): 推定{deal_amount}億円・比率変化{signed_change}ptで基準未満のためスキップ")
+        # 訂正報告書は売買を伴わず推定金額を出さない（deal_amount=0固定）ので金額基準に掛けない。
+        # 既報の数字を正すための記事で、金額の大小とは別軸。入口の
+        # market_timing_alert.is_material_correction() が届出比率3pt以上の大幅訂正だけに
+        # 絞っているため、ここを素通りさせても些末な訂正は入ってこない
+        # （実例: 2026-08-18の太陽誘電6976が15.22%→4.41%で株価-11.5%）。
+        if not is_correction and not is_worth_publishing(deal_amount):
+            print(f"  ⏭ {name}({code}): 推定{deal_amount}億円で基準（{MIN_DEAL_AMOUNT_OKU:g}億円）未満のためスキップ")
             ledger.skip(pl.SKIP_BELOW_THRESHOLD, f"{name}({code})")
             continue
 

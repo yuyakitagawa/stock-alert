@@ -3,6 +3,8 @@
 // かつては全件を日付降順に並べる /disclosures（開示速報）があったが、同じ開示を
 // TOPの記事一覧と二重に見せているだけだったため2026-08-18に廃止した
 // （原文PDFへのリンクは /stocks/[code]・/investors/[filer] の開示履歴表へ移設）。
+// 2026-09-06に記事の足切りを10億円へ上げたのに伴い、日付単位の対象開示一覧を
+// /date/[date] の中に置いた（独立URLを作らないので二重表示の問題は再発しない）。
 
 // EDINETの書類PDFへの直リンク（閲覧サイトの検索を経由せず原文を開ける）。
 export function edinetPdfUrl(docId: string): string {
@@ -218,4 +220,80 @@ export function filingLagDays(obligationDate: string | null, discDate: string | 
   if (!obligationDate || !discDate) return null;
   const lag = Math.round((Date.parse(discDate) - Date.parse(obligationDate)) / 86400000);
   return Number.isFinite(lag) && lag >= 0 ? lag : null;
+}
+
+// ---- 「この日の対象開示」の判定（/date/[date]）----
+// web/market_timing_alert.py の get_recent_large_holdings() と同じ足切りをTS側に置いたもの。
+// 記事の足切り（推定売買金額10億円以上）を通らなかった開示も /date/[date] に全件並べるため、
+// 「記事にはしないが対象ではある開示」をここで選び直す必要がある。
+// 数値・判定順は tools/scan_large_holdings.py の is_noise_match() / is_material_correction() と
+// 同一にすること。片方だけ直すと「一覧に出ているのに記事化されない理由が説明できない」状態になる。
+//
+// Python側との唯一の差: 自己申告の判定に使う発行体名が、Pythonは data/code_name_map.json
+// （J-Quantsの銘柄名）優先なのに対しここはEDINETのissuer_nameのみ。どちらも法人格を
+// 除去して包含判定するため実務上の差は出ないが、完全一致ではない。
+
+/** これ以上の保有比率はスクイーズアウト対象になりうる水準で、大口の「買い集め」として扱わない。 */
+export const MAJORITY_HOLDING_THRESHOLD = 51;
+/** 訂正報告書のうち、届出比率がこのポイント数以上動くものは既報の誤りを正す情報として扱う。 */
+export const MATERIAL_CORRECTION_DELTA_PT = 3.0;
+/** 記事にする推定売買金額の下限（億円）。web/publish_blog_articles.py の MIN_DEAL_AMOUNT_OKU と同値。 */
+export const ARTICLE_MIN_DEAL_AMOUNT_OKU = 10;
+
+const NAME_NOISE_TOKENS = ["株式会社", "(株)", "（株）", "ホールディングス", "HD", " ", "　", "・"];
+
+function normalizeCompanyName(name: string): string {
+  let out = name ?? "";
+  for (const token of NAME_NOISE_TOKENS) out = out.split(token).join("");
+  return out.trim();
+}
+
+function isCorrectionReport(docDescription: string | null): boolean {
+  return (docDescription ?? "").includes("訂正");
+}
+
+// 概要欄が売買方向を示さない開示が多いため、直前保有割合が取れるときは比率の増減で判定する。
+const SELL_KEYWORDS = ["譲渡", "売却", "売出", "処分"];
+
+function isSellDisclosure(
+  docDescription: string | null,
+  ratio: number | null,
+  prior: number | null
+): boolean {
+  if (ratio !== null && prior !== null) return ratio < prior;
+  return SELL_KEYWORDS.some((k) => (docDescription ?? "").includes(k));
+}
+
+export type DisclosureFilterInput = {
+  filerName: string;
+  issuerName: string;
+  docDescription: string | null;
+  holdingRatio: number | null;
+  holdingRatioPrior: number | null;
+};
+
+/** 訂正報告書のうち届出比率が大きく動くもの（既報の保有比率そのものが誤りだった開示）。 */
+export function isMaterialCorrection(row: DisclosureFilterInput): boolean {
+  if (!isCorrectionReport(row.docDescription)) return false;
+  if (row.holdingRatio === null || row.holdingRatioPrior === null) return false;
+  return Math.abs(row.holdingRatio - row.holdingRatioPrior) >= MATERIAL_CORRECTION_DELTA_PT;
+}
+
+/**
+ * サイトが扱う対象開示か。除外するのは
+ * 過半数超（51%以上）・訂正報告書（大幅訂正を除く）・自己申告（提出者≒発行体）の3つ。
+ * 売り（保有比率の減少）は大口の動きとして扱うので除外しない。
+ */
+export function isTargetDisclosure(row: DisclosureFilterInput): boolean {
+  if (row.holdingRatio !== null && Math.abs(row.holdingRatio) >= MAJORITY_HOLDING_THRESHOLD) {
+    return false;
+  }
+  if (isCorrectionReport(row.docDescription)) return isMaterialCorrection(row);
+  // Python側は売り判定が自己申告判定より先に来る。順序を変えると
+  // 「自己申告かつ売り」の開示の扱いがずれるため、ここでも売りを先に通す。
+  if (isSellDisclosure(row.docDescription, row.holdingRatio, row.holdingRatioPrior)) return true;
+  const filer = normalizeCompanyName(row.filerName);
+  const issuer = normalizeCompanyName(row.issuerName);
+  if (filer && issuer && (filer.includes(issuer) || issuer.includes(filer))) return false;
+  return true;
 }

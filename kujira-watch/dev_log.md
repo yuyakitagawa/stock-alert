@@ -1,3 +1,30 @@
+## 2026-09-06 /date/[date] に「この日の対象開示」を追加（記事にしていない開示も全件出す）
+
+オーナー指示「対象開示はリストに書くが、記事は10億以上と上限を上げたい」。記事の足切りを
+10億円へ上げると1日あたり29.4本→17.9本まで減るため、記事一覧だけを見ると「その日は開示が
+少なかった」ように見える。日付ページの中に対象開示の全件リストを置いて事実を隠さない。
+
+- `src/components/DateDisclosureTable.tsx`（新規）: 銘柄／投資家／種別／保有比率／推定売買金額／
+  記事リンク／EDINET原文PDF。推定金額の降順。記事は`doc_id`を持たないため**銘柄コード×提出者名**で
+  その日の記事と突き合わせてリンクする。訂正報告書と株価・株式数を引けない銘柄は金額が無いので「-」。
+- `src/lib/disclosures.ts`: `isTargetDisclosure()` / `isMaterialCorrection()` と
+  `MAJORITY_HOLDING_THRESHOLD` / `MATERIAL_CORRECTION_DELTA_PT` / `ARTICLE_MIN_DEAL_AMOUNT_OKU` を追加。
+  `web/market_timing_alert.py` の `get_recent_large_holdings()` と同じ判定順・同じ数値
+  （過半数超51%以上・訂正（3pt以上の大幅訂正を除く）・自己申告を除外。売りは除外しない）。
+  数値のずれは Python側のテスト `test_site_threshold_constants_match_python` が検出する。
+- `src/lib/investors.ts`: `getDisclosuresByDate()`。`edinet_large_holdings` と `edinet_holding_amounts`
+  を並列取得し `unstable_cache`（1時間）に載せる。取得失敗時は空配列（ページ本体は記事一覧）。
+- `src/app/(ja)/date/[date]/page.tsx`: 記事と開示を`Promise.all`で並列取得。リード文と
+  metadataのdescriptionを「記事N件＋対象開示の一覧」に書き換え。ページの404条件（記事3本未満）は変更なし。
+- `src/lib/faqData.tsx`: 「5億円以上、または保有比率1.5ポイント以上」→「10億円以上」。
+  記事にしなかった開示も日付別ページに全件載せている旨を追記。
+- `src/lib/articleIndexability.ts`: コメントの履歴を更新（index基準3億円/1.0ptは据え置き）。
+
+独立URL（`/disclosures`）は作らない。2026-08-18に廃止した理由＝記事一覧との二重表示を再発させないため。
+
+検証: `npx tsc --noEmit`・`npx eslint src`・`python3 tools/check_design_system.py` パス。
+未実施: 実データでの表示確認（本番デプロイ後）。
+
 ## 2026-09-03 kujira-watch: TOPサマリーから開示件数を外す
 
 オーナー指示「開示件数はトップに載せないで。記事にしてるのが少ないだけで開示自体はあるから」。
