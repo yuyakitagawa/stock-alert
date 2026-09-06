@@ -2574,3 +2574,22 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
   14本前後で必ず日次予算に当たる（15本×$0.0092≈$0.14＋会社説明）。打ち切り自体は設計どおり
   なので値は変えていない。backfillを1便で使い切りたいなら `ANTHROPIC_DAILY_BUDGET_USD` を
   上げるか `BACKFILL_MAX_ARTICLES` を下げる。
+
+## 2026-09-06 サイト内のSNS誘導を削減（フォローCTAバナーを全廃）
+オーナー指示「SNSへの誘導も少なくしたい」。X定期投稿を週1本まで絞った運用に対して、
+サイト側は記事本文の直後という最も目立つ位置をネイビー地のフォローCTAが占めていた。
+- **`src/components/FollowCta.tsx` を削除**（TOPの注目枠直後と記事詳細の本文下の2か所で使用）。
+  未使用になった `X_FOLLOW_URL`（フォローintent）と `LINE_ADD_FRIEND_URL`（未開設のLINE用の
+  受け皿。読者向けLINEはやらない方針）も `src/lib/site.ts` から削除し、READMEの.env例からも外した。
+- **`FollowUpdatesCta`（投資家・銘柄ページ）はRSSのみに**。「大きな動きは公式Xでも毎日お知らせ
+  しています」の一文とXボタンを外した。週1投稿になった時点でこの文言は事実と合っていなかった。
+- **ハンバーガーメニュー**の「フォロー」節から公式X・公式YouTubeの外部リンクを外し、
+  「更新を追う」節（RSSのみ）に変更。
+- **残すSNS導線はフッターの「フォロー」節だけ**（RSSを先頭に、その下に公式X・公式YouTube）。
+  `/about`・`/contact`・`/privacy` の公式Xテキストリンクは連絡先窓口として残す（運営者は実名・
+  メール非公開のため、E-E-A-Tの連絡可能性シグナルがこれしか無い）。Twitter Cardの
+  `twitter:site`/`twitter:creator` とOrganizationの `sameAs` はメタデータなので変更なし。
+- 記事詳細の共有ボタン（`ShareButtons`）は残した。これは読者からの発信＝流入を増やす側で、
+  こちらのアカウントへ誘導するものではない。
+- `npx tsc --noEmit` と `npx eslint src` は通過。ローカルdevでTOP・記事詳細・銘柄ページを開き、
+  バナー消失と余白の崩れが無いこと（共有ボタンの直後が「◯◯とはどんな投資家？」節）を確認。

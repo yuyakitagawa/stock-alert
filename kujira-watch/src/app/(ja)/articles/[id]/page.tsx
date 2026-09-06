@@ -14,7 +14,6 @@ import CategoryBadge from "@/components/CategoryBadge";
 import DealDirectionBadge from "@/components/DealDirectionBadge";
 import ActionButton from "@/components/ActionButton";
 import ArticleCard from "@/components/ArticleCard";
-import FollowCta from "@/components/FollowCta";
 import ShareButtons from "@/components/ShareButtons";
 import { displayFilerName, excerptFromHtml, formatDate, formatDealAmount, formatDealAmountOrCorrection, frameSpeculation, isCorrectionArticle, linkifyFilerNames, toDateAttr } from "@/lib/format";
 import {
@@ -700,7 +699,6 @@ export default async function ArticleDetailPage({ params }: Props) {
           </div>
         )}
         <ShareButtons url={url} title={article.title} />
-        <FollowCta />
         {relatedStockArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
             <h2 className="mb-4 text-xl font-bold text-brand-navy">
