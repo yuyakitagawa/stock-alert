@@ -562,6 +562,32 @@ def test_build_and_publish_backfill_widens_window_and_takes_oldest_first():
     assert [r["stockCode"] for r in results] == ["6502"]
 
 
+def test_build_and_publish_backfill_since_limits_to_newer_disclosures():
+    """--backfill-since は指定日より前の開示を候補から外す（日次予算を古い分に食わせないため）。"""
+    rows = [
+        {"issuer_code": "7203", "name": "8月の開示", "filer_name": "個人 太郎", "holding_ratio": 8.5,
+         "disc_date": "2026-08-31", "doc_type_code": "350", "doc_description": "大量保有報告書", "doc_id": "D1"},
+        {"issuer_code": "6502", "name": "9月の開示", "filer_name": "個人 次郎", "holding_ratio": 9.5,
+         "disc_date": "2026-09-01", "doc_type_code": "350", "doc_description": "大量保有報告書", "doc_id": "D2"},
+    ]
+    with mock.patch.object(m, "MICROCMS_DOMAIN", "dummy"), \
+         mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
+         mock.patch.object(m, "published_holding_keys", return_value=set()), \
+         mock.patch.object(m, "estimated_amounts", return_value={}), \
+         mock.patch.object(m, "get_recent_large_holdings", return_value=rows), \
+         mock.patch.object(m, "already_published", return_value=False), \
+         mock.patch.object(m, "estimate_deal_amount_oku", return_value=30.0), \
+         mock.patch.object(m, "disclosure_close_price", return_value=1000.0), \
+         mock.patch.object(m, "classify_filer",
+                           return_value={"category": "個人", "is_foreign": False, "description": ""}), \
+         mock.patch.object(m, "get_company_description", return_value=""), \
+         mock.patch.object(m, "get_filer_profile", return_value=""), \
+         mock.patch.object(m, "build_context_facts", return_value={}), \
+         mock.patch.object(m, "generate_article_body_checked", return_value={"body": "<p>本文</p>"}):
+        results = m.build_and_publish(dry_run=True, backfill=True, backfill_since="2026-09-01")
+    assert [r["stockCode"] for r in results] == ["6502"]
+
+
 def test_build_and_publish_backfill_caps_articles_by_default():
     """--max-articles 未指定のbackfillは BACKFILL_MAX_ARTICLES 件で止まる（API課金の暴発防止）。"""
     rows = [
@@ -2277,6 +2303,7 @@ if __name__ == "__main__":
     test_build_and_publish_backfill_aborts_when_index_unavailable()
     test_build_and_publish_backfill_widens_window_and_takes_oldest_first()
     test_build_and_publish_backfill_caps_articles_by_default()
+    test_build_and_publish_backfill_since_limits_to_newer_disclosures()
     test_is_backfill_target_skips_disclosure_already_articled()
     test_build_and_publish_skips_disclosure_already_articled()
     test_build_and_publish_records_ledger_after_publishing()
@@ -2291,4 +2318,4 @@ if __name__ == "__main__":
     test_ledger_counts_every_candidate()
     test_display_text_halfwidths_only_latin_and_english_symbols()
     test_eyecatch_stock_line_normalizes_fullwidth_name()
-    print("全テスト成功 (148件)")
+    print("全テスト成功 (149件)")

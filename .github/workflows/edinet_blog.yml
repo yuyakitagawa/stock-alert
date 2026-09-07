@@ -21,6 +21,9 @@ on:
       backfill_max:
         description: '取りこぼしbackfillの1便あたり投稿上限（空なら既定のBACKFILL_MAX_ARTICLES）'
         required: false
+      backfill_since:
+        description: '取りこぼしbackfillの対象を この開示日(YYYY-MM-DD)以降 に絞る（空なら直近30日すべて）'
+        required: false
 
 permissions:
   contents: read
@@ -116,8 +119,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 12 * * 1-5'
         continue-on-error: true
         env:
-          # 直接 ${{ }} を run に埋めるとシェルへ注入されるため、環境変数で受けて整数か検証する
+          # 直接 ${{ }} を run に埋めるとシェルへ注入されるため、環境変数で受けて形式を検証する
           BACKFILL_MAX: ${{ inputs.backfill_max }}
+          BACKFILL_SINCE: ${{ inputs.backfill_since }}
         run: |
           cd ~/stock-alert
           ARG=""
@@ -127,7 +131,15 @@ jobs:
             esac
             ARG="--max-articles $BACKFILL_MAX"
           fi
-          python web/publish_blog_articles.py --backfill $ARG
+          SINCE=""
+          if [ -n "$BACKFILL_SINCE" ]; then
+            case "$BACKFILL_SINCE" in
+              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+              *) echo "backfill_since は YYYY-MM-DD で指定してください: $BACKFILL_SINCE"; exit 1;;
+            esac
+            SINCE="--backfill-since $BACKFILL_SINCE"
+          fi
+          python web/publish_blog_articles.py --backfill $ARG $SINCE
           python web/publish_buyback_articles.py --backfill $ARG
 
       # 概算金額の再計算ブレ等で重複判定をすり抜けた同一開示の二重記事を自動回収する

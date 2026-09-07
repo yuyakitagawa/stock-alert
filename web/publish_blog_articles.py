@@ -1769,6 +1769,7 @@ def budget_stop_reason() -> "str | None":
 
 def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None" = None,
                        dry_run: bool = False, backfill: bool = False,
+                       backfill_since: "str | None" = None,
                        ledger: "PublishLedger | None" = None) -> list:
     # ledger は候補1件ごとの結末を記録する台帳。「候補はあったのに公開0件」の原因
     # （正常な見送りか、生成・投稿の失敗か）を分類して終了コードに出す。
@@ -1795,9 +1796,14 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
     ]
     if backfill:
         candidates = [h for h in candidates if is_backfill_target(h, published_keys, amounts)]
+        # 特定期間だけ埋め直したいとき（例: 日次予算で記事が頭打ちになっていた
+        # 2026-09-01〜09-04分）に、古い順の消化で予算を先に使い切らせないための絞り込み。
+        if backfill_since:
+            candidates = [h for h in candidates if str(h["disc_date"])[:10] >= backfill_since]
         # 古い開示ほど窓（BACKFILL_DAYS）から外れて永久に失われるので先に消化する
         candidates.sort(key=lambda h: (h["disc_date"], -abs(h["holding_ratio"])))
-        print(f"[publish_blog_articles] backfill: 直近{days}日の未記事化候補 {len(candidates)}件")
+        since_note = f"（{backfill_since}以降に限定）" if backfill_since else ""
+        print(f"[publish_blog_articles] backfill: 直近{days}日の未記事化候補 {len(candidates)}件{since_note}")
     else:
         candidates.sort(key=lambda h: abs(h["holding_ratio"]), reverse=True)
     ledger.start(len(candidates))
@@ -2016,11 +2022,16 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="microCMSへ投稿せず内容を表示するのみ")
     p.add_argument("--backfill", action="store_true",
                    help=f"直近{BACKFILL_DAYS}日まで遡り、記事化されていない開示だけを拾い直す")
+    p.add_argument("--backfill-since", default=None, metavar="YYYY-MM-DD",
+                   help="--backfill の対象をこの開示日以降だけに絞る（窓の外は従来どおり拾わない）")
     args = p.parse_args()
+    if args.backfill_since and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.backfill_since):
+        p.error(f"--backfill-since は YYYY-MM-DD で指定してください: {args.backfill_since}")
 
     ledger = PublishLedger("publish_blog_articles")
     results = build_and_publish(days=args.days, max_articles=args.max_articles,
-                                dry_run=args.dry_run, backfill=args.backfill, ledger=ledger)
+                                dry_run=args.dry_run, backfill=args.backfill,
+                                backfill_since=args.backfill_since, ledger=ledger)
     print(f"\n{'[dry-run] ' if args.dry_run else ''}{len(results)}件処理しました。")
 
     # X投稿は 2026-08-30 に停止した（x_post.yml のスケジュールも同日に停止）。
