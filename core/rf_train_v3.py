@@ -97,7 +97,7 @@ def get_usdjpy_df(days=2200):
     return _load_local_index().get("USDJPY")
 
 def get_tse_stock_list():
-    url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+    url="https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
     try:
         resp=requests.get(url,headers=HEADERS,timeout=30)
         df=pd.read_excel(io.BytesIO(resp.content),dtype=str)

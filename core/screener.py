@@ -25,7 +25,7 @@ STOCK_CODE_PATTERN = r"^\d{3}[0-9A-Z]$"
 
 def get_tse_stock_list():
     """JPXから全上場銘柄を取得（ETF・REIT除外）"""
-    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
     print("銘柄リストを取得中...")
     try:
         resp = requests.get(url, headers=HEADERS, timeout=30)
@@ -185,8 +185,10 @@ def main():
 
     stock_list = get_tse_stock_list()
     if stock_list is None:
+        # ここで return するとワークフローが緑のまま成果物ゼロで終わる（実例: 2026-09-03〜04、
+        # JPXが data_j.xls を .xlsx に差し替えて404になり、2営業日ぶん気づけなかった）。
         print("ERROR: 銘柄リスト取得失敗")
-        return
+        sys.exit(1)
 
     if args.test:
         stock_list = stock_list.head(5)

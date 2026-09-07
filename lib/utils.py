@@ -181,7 +181,7 @@ def calc_rsi(prices, period=14):
 
 RANK_FEAT_INDICES = [0, 1, 2, 6, 7, 9]  # ret5, ret20, ret60, rsi, vol20, pos52
 
-_JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+_JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
 _SECTOR_CACHE = None  # プロセス内キャッシュ {code: sector}
 
 def _load_jpx_sector_map():
