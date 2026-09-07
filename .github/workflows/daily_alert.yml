@@ -57,6 +57,16 @@ jobs:
             ${{ github.workspace }}/rf_drop_model.pkl
           key: rf-drop-model-v1
 
+      # 全銘柄の終値のローカルミラー（lib/price_store.py）。run間で持ち回さないと
+      # 毎回161万行をRESTで引き直すことになり、それだけで1回85MBのegressになる。
+      # 保存は毎回別キーにして、restore-keys で直近のものを拾う（同一キーは上書き不可）。
+      - name: Restore price store cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/_price_store.pkl
+          key: price-store-${{ github.run_id }}
+          restore-keys: price-store-
+
       - name: Step 0 - 株価キャッシュ更新（Yahoo Finance 差分）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_history.py --years 1
@@ -105,15 +115,11 @@ jobs:
       - name: Step 4 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
-      - name: Step 5b - マーケットタイミング＆dpウォッチアラート
-        continue-on-error: true
-        run: cd ~/stock-alert && python web/market_timing_alert.py
-
       # Step 5c（ブログ記事自動生成・投稿）は edinet_blog.yml（毎時）に移管済み。
 
       - name: Step 6 - モデル学習（金曜 or 初回のみ）
-        # 配信系(Step1〜5c)より後段に配置。学習が長引いてもアラート配信は既に完了しているため、
-        # ここが失敗/タイムアウトしても当日の配信には影響しない。
+        # 日次処理(Step1〜4)より後段に配置。学習が長引いてもランキングとWeb同期は完了しているため、
+        # ここが失敗/タイムアウトしても当日の更新には影響しない。
         continue-on-error: true
         timeout-minutes: 180
         run: |
@@ -142,6 +148,14 @@ jobs:
           path: |
             ${{ github.workspace }}/rf_drop_model.pkl
           key: rf-drop-model-v1
+
+      - name: Save price store cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/_price_store.pkl
+          key: price-store-${{ github.run_id }}
 
       - name: 結果をアーティファクトとして保存
         uses: actions/upload-artifact@v4

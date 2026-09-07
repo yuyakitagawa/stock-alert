@@ -211,6 +211,10 @@ def _calc_nk225_beta(stock_prices, nk_closes, window=60):
 
 
 def main():
+    # 全銘柄の終値を舐めるのでローカルミラーを使う。RESTで1銘柄1リクエストを
+    # 続けると1回52MBのegressになりSupabase Free枠(5GB/月)を食い潰す。
+    from lib import price_store
+    price_store.enable()
     print("=" * 55)
     print("スクリーナー × RF ランキング  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
     print(f"スクリーナー通過銘柄に下落確率スコアをつけてランキング")

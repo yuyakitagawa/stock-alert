@@ -256,6 +256,10 @@ def fetch_tse_codes():
 
 # ── メイン ──────────────────────────────────
 def main():
+    # 全銘柄の終値を舐めるのでローカルミラーを使う。RESTで1銘柄1リクエストを
+    # 続けると1回52MBのegressになりSupabase Free枠(5GB/月)を食い潰す。
+    from lib import price_store
+    price_store.enable()
     print("=" * 60)
     print(f"  バックテスト: {BACKTEST_DATE} → {TODAY}")
     print(f"  予測上位{TOP_N}銘柄を「買い」として検証")

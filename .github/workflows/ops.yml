@@ -125,6 +125,14 @@ jobs:
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python tools/output_heartbeat.py
 
+      # Free枠(DB 500MB)に収め続けるための保持期間の適用。消し漏らすと月160MB増える。
+      - name: Supabaseの保持期間を適用
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/purge_supabase.py
+
       - name: 失敗をLINE通知
         if: failure()
         env:

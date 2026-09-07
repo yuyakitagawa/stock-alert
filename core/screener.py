@@ -167,6 +167,10 @@ def main():
     parser.add_argument("--test", action="store_true", help="5銘柄のみ処理するテストモード")
     args = parser.parse_args()
 
+    # 全銘柄の終値を舐めるのでローカルミラーを使う（rank_stocks.py と同じ理由）。
+    from lib import price_store
+    price_store.enable()
+
     print("=" * 55)
     print("TSE 株価スクリーナー  " + datetime.now().strftime("%Y-%m-%d %H:%M"))
     if args.test:

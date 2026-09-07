@@ -66,13 +66,23 @@ JST = timezone(timedelta(hours=9))
 
 
 def fetch_rows(days: int) -> list[dict]:
-    """直近days日の "Browser" 判定アクセスを取得する。"""
+    """直近days日の "Browser" 判定アクセスを取得する。
+
+    user_agent は blog_crawler_ua に正規化されている（生テキストのままだと432,101行で
+    62MBあり、Free枠のDB 500MBを単独で食い潰していた）。UAは598種類しか無いので
+    ここで引き当てて元の形に戻す。
+    """
     since = quote((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), safe="")
-    return sb.select(
+    rows = sb.select(
         "blog_crawler_log",
         f"bot_name=eq.Browser&occurred_at=gte.{since}"
-        "&select=occurred_at,path,ip_address,user_agent,visitor_id&order=occurred_at.desc",
+        "&select=occurred_at,path,ip_address,ua_id,visitor_id&order=occurred_at.desc",
     )
+    ua_map = {u["id"]: u["user_agent"]
+              for u in sb.select("blog_crawler_ua", "select=id,user_agent")}
+    for r in rows:
+        r["user_agent"] = ua_map.get(r.get("ua_id"))
+    return rows
 
 
 def heavy_ips(rows: list[dict], max_pv: int) -> set:
