@@ -85,7 +85,7 @@ def _fetch_jpx_codes() -> list:
     ため、REITも対象に含める（コア銘柄スクリーニング側のREIT除外はcore/screener.pyで別途
     維持しており、ここでの拡張は価格キャッシュの網羅性のみに影響する）。
     取得失敗時は空リスト。"""
-    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
     try:
         r = requests.get(url, timeout=30)
         df = pd.read_excel(pd.io.common.BytesIO(r.content), dtype=str)

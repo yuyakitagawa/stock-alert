@@ -236,7 +236,7 @@ def extract_features_at(hist, target_date, nk_rets=None, code=None):
 
 # ── スクリーナー銘柄リスト取得 ──────────────
 def fetch_tse_codes():
-    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+    url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
     try:
         r = requests.get(url, timeout=30)
         df = pd.read_excel(pd.io.common.BytesIO(r.content), dtype=str)

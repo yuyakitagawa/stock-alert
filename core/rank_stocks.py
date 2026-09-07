@@ -305,8 +305,10 @@ def main():
     # 全TSE銘柄リスト取得（JPX直読み）
     stock_list = get_tse_stock_list()
     if stock_list is None:
+        # ここで return するとワークフローが緑のまま成果物ゼロで終わる（実例: 2026-09-03〜04、
+        # JPXが data_j.xls を .xlsx に差し替えて404になり、2営業日ぶん気づけなかった）。
         print("ERROR: 銘柄リスト取得失敗")
-        return
+        sys.exit(1)
     codes = stock_list["code"].tolist()
     names = dict(zip(stock_list["code"], stock_list["name"]))
     print(f"全銘柄スキャン: {len(codes)} 銘柄")
