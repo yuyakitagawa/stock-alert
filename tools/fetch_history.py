@@ -128,6 +128,10 @@ def resend_failed_saves(failed: dict, rounds: int = RESEND_ROUNDS,
 
 
 def main():
+    # 全銘柄の終値を舐めるのでローカルミラーを使う。RESTで1銘柄1リクエストを
+    # 続けると1回52MBのegressになりSupabase Free枠(5GB/月)を食い潰す。
+    from lib import price_store
+    price_store.enable()
     args = _parse_args()
     target_days = args.years * 365
 

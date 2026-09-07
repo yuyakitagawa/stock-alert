@@ -35,10 +35,13 @@ import FollowUpdatesCta from "@/components/FollowUpdatesCta";
 import FaqAccordionList from "@/components/FaqAccordionList";
 import { buildStockFaqItems } from "@/lib/stockFaq";
 
-// 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次更新なので、
-// 再検証も1日で足りる。5分周期はクローラーのアクセスがほぼ毎回再生成に当たり
-// コールドTTFBを悪化させていた（クロール速度の律速）。
-export const revalidate = 86400;
+// 会社情報(jpx_stock_list/gen_rankings)はトレーディングシステム側が日次更新だが、
+// 再検証は7日に1回にしている。銘柄ページは3,814本あり、1日1回の再検証でも
+// 3,814ページ×株価90日分=約600MB/月のSupabase egressになってFree枠(5GB/月)を
+// 押し上げていたため。株価の鮮度より枠を優先する（最新値は記事ページ側で出る）。
+// 5分周期はクローラーのアクセスがほぼ毎回再生成に当たり、コールドTTFBを悪化させて
+// いた（クロール速度の律速）。
+export const revalidate = 604800;
 
 // generateStaticParams が無い動的セグメントはNext 16ではリクエスト毎のSSRになり、
 // 何度アクセスしてもCDNキャッシュに乗らない（実測: x-vercel-cache: MISS・no-store）。

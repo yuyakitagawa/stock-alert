@@ -30,6 +30,10 @@ const BOT_PATTERNS: [RegExp, string][] = [
   [/Bytespider/i, "Bytespider"],
 ];
 
+// 被リンク調査系のクローラー。SEO/GEOの計測には一切使わないのに blog_crawler_log の
+// 1割(36日で42,863行)を占めていたため、robots.txtでDisallowした上で記録もしない。
+const IGNORED_BOTS = new Set(["AhrefsBot", "SemrushBot", "MJ12bot"]);
+
 export function detectBot(userAgent: string): string | null {
   for (const [pattern, name] of BOT_PATTERNS) {
     if (pattern.test(userAgent)) return name;
@@ -45,7 +49,7 @@ const BROWSER_PATTERNS: RegExp[] = [/Chrome\//, /Safari\//, /Firefox\//, /Edg\//
 // どちらでもなければnull（記録対象外）。
 export function classifyVisitor(userAgent: string): string | null {
   const bot = detectBot(userAgent);
-  if (bot) return bot;
+  if (bot) return IGNORED_BOTS.has(bot) ? null : bot;
   if (BROWSER_PATTERNS.some((pattern) => pattern.test(userAgent))) return "Browser";
   return null;
 }

@@ -234,7 +234,17 @@ def insert_ignore(table: str, rows: list[dict], on_conflict: str = "") -> bool:
     return ok_all
 
 
-def select(table: str, query: str = "", limit: int = 0) -> list[dict]:
+class SelectFailed(RuntimeError):
+    """ページング途中でSELECTが失敗した。strict=True のときだけ送出する。"""
+
+
+def select(table: str, query: str = "", limit: int = 0, strict: bool = False) -> list[dict]:
+    """ページングしながら全件返す。
+
+    strict=True にすると、途中のページが失敗したときに「そこまでの分」を返さず
+    SelectFailed を送出する。全件揃っている前提で使う呼び出し（価格ミラーの構築など）は
+    必ず指定すること。既定の False は従来通り、取れた分だけを返して先へ進む。
+    """
     if not is_configured():
         return []
     base = f"{SUPABASE_URL}/rest/v1/{table}"
@@ -247,7 +257,10 @@ def select(table: str, query: str = "", limit: int = 0) -> list[dict]:
         url = f"{base}?{'&'.join(parts)}"
         resp = _request("GET", url, headers=_headers(), timeout=_TIMEOUT)
         if not resp.ok:
-            print(f"[supabase] {table} select failed: {resp.status_code} {resp.text[:200]}")
+            msg = f"[supabase] {table} select failed: {resp.status_code} {resp.text[:200]}"
+            print(msg)
+            if strict:
+                raise SelectFailed(msg)
             break
         rows = resp.json()
         out.extend(rows)

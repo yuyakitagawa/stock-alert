@@ -20,21 +20,21 @@ def get_ranking_by_date(date_str, select="*", order="drop_prob.asc"):
 
 
 def get_ranking_dates_desc(limit=0):
-    """gen_rankings の開示日を新しい順の重複なしで返す。"""
-    rows = sb.select("gen_rankings", "order=date.desc&select=date")
-    seen = []
-    for r in rows:
-        if r["date"] not in seen:
-            seen.append(r["date"])
-        if limit and len(seen) >= limit:
-            break
-    return seen
+    """gen_rankings の開示日を新しい順の重複なしで返す。
+
+    `select=date` だと59万行(約12MB)を引いて手元で重複を潰すことになるので、
+    集約はDB側（RPC）でやる。
+    """
+    dates = sb.rpc("gen_ranking_dates", {}) or []
+    return dates[:limit] if limit else list(dates)
 
 
 def get_price_cache_codes():
     """yahoo_price_cache に存在する銘柄コード一覧（重複なし）。"""
-    rows = sb.select("yahoo_price_cache", "select=code")
-    return sorted({r["code"] for r in rows})
+    from lib import price_store
+    if price_store.is_enabled():
+        return price_store.codes()
+    return price_store.rpc_codes()
 
 
 def get_all_yutai():
@@ -123,6 +123,9 @@ def save_stock_meta_bulk(rows: list[dict]):
 
 def get_price_cache_coverage(code):
     """キャッシュの (min_date_str, max_date_str) を返す。未キャッシュは None。"""
+    from lib import price_store
+    if price_store.is_enabled():
+        return price_store.coverage(code)
     mn_row = sb.select_one("yahoo_price_cache", f"code=eq.{code}&order=date.asc&select=date")
     mx_row = sb.select_one("yahoo_price_cache", f"code=eq.{code}&order=date.desc&select=date")
     if mn_row and mx_row:
@@ -130,64 +133,50 @@ def get_price_cache_coverage(code):
     return None
 
 
-def get_price_cache(code, start_date_str, end_date_str):
-    """キャッシュから DataFrame(Close, Volume) を返す。データ不足なら None。"""
+def _rows_to_price_df(rows):
+    """REST行を DataFrame(Close, Volume) にする。index は datetime.date。"""
     import pandas as pd
     from datetime import date as _date
-    rows = sb.select(
-        "yahoo_price_cache",
-        f"code=eq.{code}&date=gte.{start_date_str}&date=lte.{end_date_str}"
-        f"&order=date.asc&select=date,close,volume"
-    )
-    if len(rows) < 100:
-        return None
-    dates = [r["date"] for r in rows]
-    closes = [r["close"] for r in rows]
-    vols = [r["volume"] for r in rows]
-    idx = [_date.fromisoformat(d) for d in dates]
-    return pd.DataFrame({"Close": closes, "Volume": vols}, index=idx)
-
-
-_local_prices_cache = None
-
-def _load_local_prices():
-    global _local_prices_cache
-    if _local_prices_cache is not None:
-        return _local_prices_cache
-    import os, pickle
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_local_prices.pkl")
-    if os.path.exists(path):
-        with open(path, "rb") as f:
-            _local_prices_cache = pickle.load(f)
-        return _local_prices_cache
-    return {}
-
-def get_price_df(code, days=None):
-    """yahoo_price_cacheからDataFrame(Close, Volume)を返す。"""
-    import pandas as pd
-    from datetime import date as _date
-    query = f"code=eq.{code}&order=date.asc&select=date,close,volume"
-    if days:
-        cutoff = (date.today() - timedelta(days=days)).isoformat()
-        query = f"code=eq.{code}&date=gte.{cutoff}&order=date.asc&select=date,close,volume"
-    rows = sb.select("yahoo_price_cache", query)
     if not rows:
-        lp = _load_local_prices()
-        if code in lp:
-            data = lp[code]
-            idx = [_date.fromisoformat(r[0]) for r in data]
-            df = pd.DataFrame({"Close": [r[1] for r in data], "Volume": [r[2] for r in data]}, index=idx)
-            if days:
-                cutoff_d = date.today() - timedelta(days=days)
-                df = df[df.index >= cutoff_d.date() if hasattr(cutoff_d, 'date') else cutoff_d]
-            return df if len(df) > 0 else None
         return None
-    idx = [_date.fromisoformat(r["date"]) for r in rows]
     return pd.DataFrame(
         {"Close": [r["close"] for r in rows],
          "Volume": [r["volume"] for r in rows]},
-        index=idx,
+        index=[_date.fromisoformat(r["date"]) for r in rows],
     )
+
+
+def get_price_cache(code, start_date_str, end_date_str):
+    """キャッシュから DataFrame(Close, Volume) を返す。データ不足なら None。"""
+    from lib import price_store
+    if price_store.is_enabled():
+        df = price_store.frame(code, start=start_date_str, end=end_date_str)
+    else:
+        df = _rows_to_price_df(sb.select(
+            "yahoo_price_cache",
+            f"code=eq.{code}&date=gte.{start_date_str}&date=lte.{end_date_str}"
+            f"&order=date.asc&select=date,close,volume"
+        ))
+    if df is None or len(df) < 100:
+        return None
+    return df
+
+
+def get_price_df(code, days=None):
+    """yahoo_price_cacheからDataFrame(Close, Volume)を返す。
+
+    全銘柄を舐める処理は lib.price_store.enable() を先に呼ぶこと。以降はローカル
+    ミラーから返すのでRESTを一切叩かない（従来は1銘柄1リクエストで1回52MBだった）。
+    """
+    from lib import price_store
+    if price_store.is_enabled():
+        return price_store.frame(code, days=days)
+    query = f"code=eq.{code}&order=date.asc&select=date,close,volume"
+    if days:
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        query = (f"code=eq.{code}&date=gte.{cutoff}"
+                 f"&order=date.asc&select=date,close,volume")
+    return _rows_to_price_df(sb.select("yahoo_price_cache", query))
 
 
 def save_price_cache(code, df) -> bool:
@@ -203,7 +192,11 @@ def save_price_cache(code, df) -> bool:
         rows.append({"code": str(code), "date": d, "close": c, "volume": v})
     if not rows:
         return True
-    return sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
+    ok = sb.insert_ignore("yahoo_price_cache", rows, on_conflict="code,date")
+    if ok:
+        from lib import price_store
+        price_store.absorb(str(code), rows)
+    return ok
 
 
 
