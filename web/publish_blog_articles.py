@@ -748,6 +748,15 @@ def is_change_report(doc_description: str) -> bool:
     return "変更報告書" in desc and "訂正" not in desc
 
 
+def is_special_report(doc_description: str) -> bool:
+    """特例対象株券等の報告書（機関投資家の基準日ベースの報告）かどうか。
+
+    金商法27条の26の特例報告は、機関投資家が2週間ごとの基準日時点の保有比率を届け出るもので、
+    5%ラインを行き来する提出者が多い。新規の特例報告は「今回5%を超えた」という事実しか示さず、
+    直前が4.9%だったのか0%だったのかは開示から読み取れない。"""
+    return "特例" in (doc_description or "")
+
+
 def should_wait_for_prior_ratio(doc_description: str, prior_ratio: "float | None",
                                 disc_date: str, today: "date | None" = None) -> bool:
     """変更報告書なのに直前保有割合が未取得なら、次の便まで記事化を見送るかどうか。"""
@@ -763,7 +772,8 @@ def should_wait_for_prior_ratio(doc_description: str, prior_ratio: "float | None
 
 def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date: str,
                      prior_ratio: "float | None" = None,
-                     is_amendment: bool = False) -> "float | None":
+                     is_amendment: bool = False,
+                     is_special: bool = False) -> "float | None":
     """今回開示の保有比率が前回からどれだけ動いたか（変化幅、%ポイント）を返す。
 
     EDINET開示自体が持つ直前保有割合(prior_ratio)があればそれを使う。DB蓄積分の履歴から
@@ -773,9 +783,18 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
     prior_ratioが無い開示のみ、従来通り過去開示から直近の比率を探す。
 
     is_amendmentは変更報告書かどうか（is_change_report()の結果）。前回比率も過去開示も
-    無いときに「今回比率の全量＝今回動いた分」とみなせるのは**新規の大量保有報告書だけ**。
+    無いときに「今回比率の全量＝今回動いた分」とみなせるのは**新規かつ非特例の大量保有報告書だけ**
+    （TOB・資本業務提携など実際に全量を取得した開示）。
     変更報告書は提出者が既に5%以上を保有している届出なので、全量ぶんの変化幅を返すと
-    変化幅も推定金額も実態の数十倍に膨らむ。should_wait_for_prior_ratio()はXBRLの遅延を
+    変化幅も推定金額も実態の数十倍に膨らむ。
+
+    is_specialは特例対象株券等の報告か（is_special_report()の結果）。**新規の特例報告も同じ理由で
+    Noneを返す**。特例報告は基準日時点で5%を超えたことの届出でしかなく、直前保有割合が
+    開示されないので「今回いくら買ったか」は原理的に確定できない。全量を取得額として扱うと
+    実態の十数倍になる（実測2026-08-09〜09-08: 任天堂7974をキャピタル・リサーチが5.2%で新規報告
+    → 推定取得金額5,857億円として公開。直前が4.9%なら実際の買いは0.3pt＝338億円で17.3倍の過大表示。
+    同期間で全量計上のまま公開した特例報告は40件・合計15,697億円・平均402.5億円に対し、
+    変化幅が確定している変更報告書の平均は28.9〜54.9億円）。should_wait_for_prior_ratio()はXBRLの遅延を
     PRIOR_RATIO_WAIT_DAYSだけ待つが、待っても直前保有割合が入らない開示（特例報告に多い。
     2026-08-19の実測で直近90日に7件。変更報告書のprior充填率は99.6%）はそこを通過して
     しまうため、ここで変化幅を「不明」としてNoneを返し、呼び出し側で記事化を見送る。"""
@@ -789,7 +808,7 @@ def ratio_change_pct(code: str, filer_name: str, current_ratio: float, disc_date
         and h.get("holding_ratio") is not None
     ]
     if not past:
-        return None if is_amendment else current_ratio
+        return None if (is_amendment or is_special) else current_ratio
     past.sort(key=lambda h: h["disc_date"])
     prev_ratio = past[-1]["holding_ratio"]
     return abs(current_ratio - prev_ratio)
@@ -1836,11 +1855,12 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
         change = ratio_change_pct(
             code, filer_name, h["holding_ratio"], disc_date, prior_ratio,
             is_change_report(h.get("doc_description") or ""),
+            is_special_report(h.get("doc_description") or ""),
         )
         if change is None:
-            # 待っても直前保有割合が入らなかった変更報告書。全量を動いたとみなすと
-            # 「X%を新規保有」＋過大な推定金額になるため記事化しない。
-            print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合を取得できず変化幅を確定できないためスキップ")
+            # 待っても直前保有割合が入らなかった変更報告書か、履歴の無い新規の特例報告。
+            # 全量を動いたとみなすと「X%を新規保有」＋過大な推定金額になるため記事化しない。
+            print(f"  ⏭ {name}({code}): 直前保有割合を取得できず変化幅を確定できないためスキップ")
             ledger.skip(pl.SKIP_NO_PRIOR_RATIO, f"{name}({code})")
             continue
         if change <= 0:
