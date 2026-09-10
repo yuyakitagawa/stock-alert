@@ -13,6 +13,7 @@ import {
 } from "@/lib/publishedPages";
 import { CATEGORIES } from "@/types/article";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
+import { GUIDES } from "@/lib/guides";
 
 // microCMSの一時的な障害時にビルド自体が失敗しないよう、ビルド時の事前生成を行わず
 // リクエスト時に生成する（データ取得はunstable_cacheで1時間キャッシュされるため軽い）。
@@ -63,6 +64,9 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/privacy` },
     { url: `${SITE_URL}/terms` },
     { url: `${SITE_URL}/faq` },
+    // 読み方ガイドは本文を lib/guides.ts に持つので、公開日・更新日をそのまま lastmod にする。
+    { url: `${SITE_URL}/guides`, lastModified: GUIDES.map((g) => g.updated ?? g.published).sort().at(-1) },
+    ...GUIDES.map((g) => ({ url: `${SITE_URL}/guides/${g.slug}`, lastModified: g.updated ?? g.published })),
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
     ...FAQ_CATEGORIES.map((category) => ({

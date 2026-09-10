@@ -1594,7 +1594,7 @@ def test_generate_article_body_includes_company_description_when_available():
 
 
 def test_generate_article_body_always_requests_labelled_speculation():
-    """事業内容・下落リスク文脈の有無に関わらず、「※推測:」ラベル付きの1文を必ず要求する。"""
+    """推測は任意になったが（2026-09-10）、書くときは「※推測:」ラベルを付けるよう必ず指示する。"""
     fact_sheet = _fact_sheet()  # company_description/context 無し
     raw = json.dumps({"title": "タイトル", "body": "<p>本文</p>"})
     client, calls = _capturing_client(raw)
@@ -1619,8 +1619,8 @@ def test_generate_article_body_prompt_asks_for_japanese_only():
     assert "bodyEn" not in prompt
     assert "stockNameEn" not in prompt
     assert "English" not in prompt
-    assert "本文の1文目は、必ず次の文をそのまま使ってください" in prompt
-    assert "大量保有報告書（EDINET）で分かりました" in prompt
+    assert "銘柄名とコード" in prompt
+    assert "定型の書き出しは使わないでください" in prompt
     assert result == {"body": "<p>本文</p>"}
 
 
@@ -2200,6 +2200,65 @@ def _fake_client(text):
     return _Client(text)
 
 
+
+# ---- 書き出しの切り口と、報告書本文由来の事実（2026-09-10 AdSense再監査） ----
+
+def _lead_sheet(**kw):
+    sheet = {"holding_ratio": 7.0, "prior_ratio": 6.0, "doc_type_label": "変更報告書",
+             "is_correction": False, "filing_details": {}, "context_facts": {}, "deal_amount_oku": 10}
+    sheet.update(kw)
+    return sheet
+
+
+def test_pick_lead_angle_priorities():
+    assert "訂正" in m.pick_lead_angle(_lead_sheet(is_correction=True))
+    assert "短期大量譲渡" in m.pick_lead_angle(_lead_sheet(filing_details={"doc_description": "変更報告書（短期大量譲渡）"}))
+    assert "0%" in m.pick_lead_angle(_lead_sheet(holding_ratio=0, prior_ratio=18.64))
+    assert "重要提案行為" in m.pick_lead_angle(_lead_sheet(filing_details={"purpose_of_holding": "投資及び状況に応じて重要提案行為等を行うこと"}))
+    assert "経営者・創業家" in m.pick_lead_angle(_lead_sheet(filing_details={"purpose_of_holding": "発行会社の代表取締役であり安定株主として保有"}))
+    assert "3分の1" in m.pick_lead_angle(_lead_sheet(holding_ratio=35.0, prior_ratio=30.0))
+
+
+def test_pick_lead_angle_ignores_negated_proposal():
+    angle = m.pick_lead_angle(_lead_sheet(filing_details={"purpose_of_holding": "純投資。重要提案行為を行う予定はない", "doc_description": "変更報告書（特例対象株券等）"}))
+    assert "重要提案行為" not in angle
+    assert "特例報告" in angle
+
+
+def test_pick_lead_angle_threshold_crossing_down():
+    # 49.99%→35.04%（オリエントコーポレーションの実例）は50%にも3分の1にも届かない＝節目をまたがない
+    angle = m.pick_lead_angle(_lead_sheet(holding_ratio=35.04, prior_ratio=49.99))
+    assert "過半数" not in angle and "3分の1" not in angle
+    # 36.77%→20.01%（きんでんの実例）は3分の1を下にまたぐ
+    assert "3分の1" in m.pick_lead_angle(_lead_sheet(holding_ratio=20.01, prior_ratio=36.77))
+
+
+def test_format_filing_details():
+    text = m.format_filing_details({
+        "purpose_of_holding": "純投資\n純投資\n信託財産の運用", "shares_held": 1558550, "shares_outstanding": 2240000,
+        "funding_total": 839402000, "funding_own": 16100000, "funding_borrowings": 823302000,
+        "obligation_date": "2026-07-29"})
+    assert "保有目的欄: 純投資 / 信託財産の運用" in text
+    assert "1,558,550株（発行済株式数 2,240,000株" in text
+    assert "合計8.4億円（自己資金1,610万円、借入金8.2億円）" in text
+    assert "報告義務発生日: 2026-07-29" in text
+    assert m.format_filing_details({}) == ""
+
+
+def test_generate_article_body_prompt_includes_filing_details_and_angle():
+    fact_sheet = _fact_sheet()
+    fact_sheet["filing_details"] = {"purpose_of_holding": "発行会社の代表取締役であり、安定株主として保有", "doc_description": "大量保有報告書"}
+    raw = json.dumps({"body": "<p>本文</p>"})
+    client, calls = _capturing_client(raw)
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=client):
+        m.generate_article_body(fact_sheet)
+    prompt = calls[0]["messages"][0]["content"]
+    assert "報告書の保有目的欄: 発行会社の代表取締役" in prompt
+    assert "経営者・創業家の側であることから書き出して" in prompt
+    assert "最後に※推測文" not in prompt
+
+
 if __name__ == "__main__":
     test_estimate_deal_amount_oku_calculation()
     test_estimate_deal_amount_oku_none_when_no_change()
@@ -2353,4 +2412,9 @@ if __name__ == "__main__":
     test_is_special_report_detects_tokurei_filings()
     test_ratio_change_pct_returns_none_for_new_special_report_without_history()
     test_ratio_change_pct_uses_prior_or_history_for_special_report()
+    test_pick_lead_angle_priorities()
+    test_pick_lead_angle_ignores_negated_proposal()
+    test_pick_lead_angle_threshold_crossing_down()
+    test_format_filing_details()
+    test_generate_article_body_prompt_includes_filing_details_and_angle()
     print("全テスト成功 (152件)")

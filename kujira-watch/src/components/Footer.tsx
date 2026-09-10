@@ -33,6 +33,7 @@ const JA_GROUPS: FooterGroup[] = [
     links: [
       { href: "/about", label: "このサイトについて" },
       { href: "/faq", label: "よくある質問" },
+      { href: "/guides", label: "読み方ガイド" },
       { href: "/contact", label: "お問い合わせ" },
       { href: "/privacy", label: "プライバシーポリシー" },
       { href: "/terms", label: "利用規約" },

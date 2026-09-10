@@ -135,6 +135,8 @@ export default function EnRootLayout({
             <nav aria-label="Footer" className="flex flex-wrap gap-4">
               <Link href="/about" className="hover:text-brand-blue">About &amp; Disclaimer</Link>
               <Link href="/privacy" className="hover:text-brand-blue">Privacy</Link>
+              <Link href="/terms" className="hover:text-brand-blue">Terms</Link>
+              <Link href="/contact" className="hover:text-brand-blue">Contact</Link>
               <a href={X_PROFILE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-brand-blue">
                 {X_HANDLE} on X
               </a>
