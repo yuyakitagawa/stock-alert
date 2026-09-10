@@ -46,7 +46,7 @@ def blog_stock_url(code: str) -> str:
 
 
 def get_today_rankings(today_str: str) -> list[dict]:
-    return sb.select("gen_rankings", f"date=eq.{today_str}&select=code,name,close,drop_prob,recommend")
+    return sb.select("gen_rankings", f"date=eq.{today_str}&select=code,name,close,drop_prob,recommend", strict=True)
 
 
 def get_previous_rankings(codes: list[str], today_str: str) -> dict[str, float]:
@@ -60,6 +60,7 @@ def get_previous_rankings(codes: list[str], today_str: str) -> dict[str, float]:
         return {}
     prev_date = latest["date"]
     codes_str = ",".join(str(c) for c in codes)
+    # strict にしない: 前日比の表示用。欠けた銘柄は前日比なしで表示されるだけ。
     rows = sb.select(
         "gen_rankings",
         f"code=in.({codes_str})&date=eq.{prev_date}&select=code,drop_prob",
@@ -69,7 +70,7 @@ def get_previous_rankings(codes: list[str], today_str: str) -> dict[str, float]:
 
 def get_all_watchlists() -> dict[str, list[dict]]:
     rows = sb.select("dp_watchlist",
-                      "select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at")
+                      "select=line_user_id,code,name,dp_threshold,dp_sell_threshold&order=line_user_id,created_at", strict=True)
     by_user: dict[str, list[dict]] = {}
     for r in rows:
         uid = r["line_user_id"]
@@ -80,7 +81,7 @@ def get_all_watchlists() -> dict[str, list[dict]]:
 def get_all_filer_watchlists() -> dict[str, list[str]]:
     """ユーザー別の投資家（EDINET提出者）ウォッチリストを返す。
     銘柄ではなく提出者名で登録し、その提出者がどの銘柄を動かしても拾う。"""
-    rows = sb.select("filer_watchlist", "select=line_user_id,filer_name&order=line_user_id,created_at")
+    rows = sb.select("filer_watchlist", "select=line_user_id,filer_name&order=line_user_id,created_at", strict=True)
     by_user: dict[str, list[str]] = {}
     for r in rows:
         by_user.setdefault(r["line_user_id"], []).append(r["filer_name"])

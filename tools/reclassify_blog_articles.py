@@ -78,7 +78,7 @@ def find_filer_names(code: str, disc_date: str) -> set[str]:
     1件のみなら一意特定、複数あれば手動確認が必要（呼び出し側で判定）。"""
     rows = sb.select(
         "edinet_large_holdings",
-        f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name",
+        f"issuer_code=eq.{code}&disc_date=eq.{disc_date}&select=filer_name", strict=True,
     )
     return {r["filer_name"] for r in rows if r.get("filer_name")}
 

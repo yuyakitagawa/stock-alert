@@ -56,7 +56,7 @@ def fetch_holdings(range_from: str, range_to: str) -> list:
         f"disc_date=gte.{range_from}&disc_date=lte.{range_to}"
         "&select=doc_id,issuer_code,issuer_name,disc_date,filer_name"
     )
-    rows = sb.select("edinet_large_holdings", q)
+    rows = sb.select("edinet_large_holdings", q, strict=True)
     return [r for r in rows if r.get("issuer_code") and r.get("disc_date") and r.get("filer_name")]
 
 
@@ -67,7 +67,7 @@ def fetch_amounts(range_from: str, range_to: str) -> dict:
         f"disc_date=gte.{range_from}&disc_date=lte.{range_to}"
         "&select=doc_id,deal_amount_oku"
     )
-    rows = sb.select("edinet_holding_amounts", q)
+    rows = sb.select("edinet_holding_amounts", q, strict=True)
     return {r["doc_id"]: float(r["deal_amount_oku"]) for r in rows if r.get("deal_amount_oku") is not None}
 
 

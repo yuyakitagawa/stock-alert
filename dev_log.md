@@ -1,5 +1,37 @@
 # Dev Log
 
+## 2026-09-10 sb.select() の途中切れを「完全なデータ」として扱う呼び出しを strict にする
+
+`lib/supabase_client.select()` は途中のページが失敗すると、エラーを出力して「そこまでに取れた行」を
+正常な戻り値として返す。2026-09-07 に価格の全履歴取得が1,610,048行中350,000行で打ち切られたまま
+使われ、`strict=True`（`SelectFailed` を送出）を足して `lib/price_store.py` だけが使っていた。
+
+全呼び出し（lib/ core/ web/ tools/、core/ は直接呼んでおらず `lib/db.py` 経由）を洗い出し、
+「途中切れ（先頭ページの失敗＝0件を含む）で何が壊れるか」で判定した。
+
+- **strict にした（52箇所）**: 件数・集合そのものが判断材料になるもの。ランキング
+  （`get_ranking_by_date`・`export_rankings`・市場平均dp）、特徴量の入力（業種・優待・日経・
+  1銘柄の株価 REST 経路・EDINET全件）、記事化候補と重複判定（`pending_decisions` の既処理集合、
+  自社株買い候補、`find_filer_names` の一意判定、記事化台帳）、通知先（ウォッチリスト2種）、
+  X投稿の候補・個人除外・直近投稿、集計レポート（traffic/geo/en_crawl/api_usage/x_metrics）、
+  バックフィルの対象抽出（未分類の判定が欠けると有料の再生成が走るものを含む）、ハートビートの件数。
+- **strict にしなかった（12箇所、その場にコメント）**: 表示用（前日比・銘柄名・業種）、limit付きで
+  1リクエストに収まるもの（関連保有・大株主・過去の自社株買い・フォロワー推移・jquants 1銘柄ぶん・
+  当日の api_usage）、欠けても判定を誤らないもの（推定金額ビュー＝欠けた開示は個別に概算、
+  x_metrics の更新対象＝翌便で取り直し）、冪等な修正（HTML除去）。
+
+例外が出たときに便全体を止めないよう、次の2箇所は受け止めて安全側に倒す:
+`lib/utils._load_jpx_sector_map()` は DB の業種表を使わず pkl/JPX 一覧から作り直す。
+`publish_blog_articles` の変化幅計算（`ratio_change_pct` の過去開示）は、その開示だけ次の便へ回す。
+それ以外（`export_to_web`・`market_timing_alert` 等）は例外でジョブを失敗させる（部分データで
+公開・配信するより失敗通知の方がよい）。`core/rf_train_v3.py` は触っていない（金曜以外は変更禁止）。
+`get_edinet_all()` が strict になったので、途中切れは既存の `except` で EDINET 特徴量なし（{}）になる。
+
+大きいテーブル: `tools/traffic_report.py` は `blog_crawler_log`（42万行）の Browser 判定を1本で
+ページングしており、30日ぶん（約21万行）は offset 20万で1ページ6.8秒（statement timeout 8秒の手前）
+だった。1日ずつの窓に分けて引く。他の全件取得（`edinet_large_holdings` 2.9万行の最深 offset で1.7秒、
+`blog_crawler_log` 14日ぶん8万行で0.7秒）は余裕があるため据え置き。
+
 ## 2026-09-06 記事の足切りを「10億円のみ」へ引き上げ、対象開示は /date/[date] に全件並べる
 
 オーナー指示「対象開示はリストに書くが、記事は10億以上と上限を上げたい」。選択は

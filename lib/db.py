@@ -16,7 +16,7 @@ DB_PATH = os.path.join(_BASE_DIR, "stock_alert.db")
 
 def get_ranking_by_date(date_str, select="*", order="drop_prob.asc"):
     """指定日のランキング全行を返す。"""
-    return sb.select("gen_rankings", f"date=eq.{date_str}&order={order}&select={select}")
+    return sb.select("gen_rankings", f"date=eq.{date_str}&order={order}&select={select}", strict=True)
 
 
 def get_ranking_dates_desc(limit=0):
@@ -39,7 +39,7 @@ def get_price_cache_codes():
 
 def get_all_yutai():
     """jpx_stock_list から優待情報を返す。"""
-    return sb.select("jpx_stock_list", "select=code,has_yutai,yutai_month&has_yutai=eq.true")
+    return sb.select("jpx_stock_list", "select=code,has_yutai,yutai_month&has_yutai=eq.true", strict=True)
 
 
 # ── daily_ranking (→ gen_rankings) ────────────────────────────────────────
@@ -94,13 +94,13 @@ def set_yutai_cache(code, today_str, has_yutai, record_month):
 # ── sector_cache (→ jpx_stock_list) ───────────────────────────────────────
 
 def get_all_sectors():
-    rows = sb.select("jpx_stock_list", "select=code,sector")
+    rows = sb.select("jpx_stock_list", "select=code,sector", strict=True)
     return {r["code"]: r["sector"] for r in rows if r.get("sector")}
 
 
 def count_null_names() -> int:
     """jpx_stock_list で name が NULL の行数を返す。"""
-    rows = sb.select("jpx_stock_list", "name=is.null&select=code")
+    rows = sb.select("jpx_stock_list", "name=is.null&select=code", strict=True)
     return len(rows)
 
 
@@ -155,7 +155,7 @@ def get_price_cache(code, start_date_str, end_date_str):
         df = _rows_to_price_df(sb.select(
             "yahoo_price_cache",
             f"code=eq.{code}&date=gte.{start_date_str}&date=lte.{end_date_str}"
-            f"&order=date.asc&select=date,close,volume"
+            f"&order=date.asc&select=date,close,volume", strict=True
         ))
     if df is None or len(df) < 100:
         return None
@@ -176,7 +176,7 @@ def get_price_df(code, days=None):
         cutoff = (date.today() - timedelta(days=days)).isoformat()
         query = (f"code=eq.{code}&date=gte.{cutoff}"
                  f"&order=date.asc&select=date,close,volume")
-    return _rows_to_price_df(sb.select("yahoo_price_cache", query))
+    return _rows_to_price_df(sb.select("yahoo_price_cache", query, strict=True))
 
 
 def save_price_cache(code, df) -> bool:
@@ -262,7 +262,7 @@ def get_edinet_large_holdings_recent(days: int = 30, codes: list | None = None):
     if codes:
         code_list = ",".join(str(c) for c in codes)
         q += f"&issuer_code=in.({code_list})"
-    return sb.select("edinet_large_holdings", q)
+    return sb.select("edinet_large_holdings", q, strict=True)
 
 
 def mark_article_published(doc_id: str, when: "str | None" = None) -> bool:
@@ -283,7 +283,7 @@ def mark_article_published(doc_id: str, when: "str | None" = None) -> bool:
 def get_edinet_all():
     """学習用: edinet_large_holdings 全件を返す。"""
     return sb.select("edinet_large_holdings",
-                     "order=submit_date.desc&select=issuer_code,submit_date,disc_date,holding_ratio")
+                     "order=submit_date.desc&select=issuer_code,submit_date,disc_date,holding_ratio", strict=True)
 
 
 # ── yahoo_market_index ────────────────────────────────────────────────────
@@ -317,7 +317,7 @@ def load_market_index_data(ticker: str, days: int = 2200):
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     rows = sb.select(
         "yahoo_market_index",
-        f"ticker=eq.{ticker}&date=gte.{cutoff}&order=date.asc&select=date,close"
+        f"ticker=eq.{ticker}&date=gte.{cutoff}&order=date.asc&select=date,close", strict=True
     )
     if not rows:
         return None
@@ -334,6 +334,9 @@ def bulk_upsert_jquants_fin_summary(rows: list):
     sb.upsert("jquants_fin_summary", rows, on_conflict="code,disc_date")
 
 
+# 以下の jquants_fin_summary の読み出しは strict にしない。どれも1銘柄ぶん（全履歴でも数十行）で
+# 1リクエストに収まり、途中切れが起きない。失敗時の [] は呼び出し側（lib/fundamentals.py 等の
+# try/except）で「財務データなし」として扱われ、strict にして例外にしても結果は同じになる。
 def get_jquants_fin_history(code: str, as_of_date: str, n: int = 4) -> list:
     return sb.select(
         "jquants_fin_summary",

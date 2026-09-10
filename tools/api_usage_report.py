@@ -33,7 +33,7 @@ DEFAULT_DAYS = 30
 
 def fetch_rows(days: int) -> list[dict]:
     since = (datetime.now(timezone.utc).date() - timedelta(days=days - 1)).isoformat()
-    return sb.select("api_usage", f"usage_date=gte.{since}&order=usage_date.asc")
+    return sb.select("api_usage", f"usage_date=gte.{since}&order=usage_date.asc", strict=True)
 
 
 def _sum(rows: list[dict], key_of) -> dict:

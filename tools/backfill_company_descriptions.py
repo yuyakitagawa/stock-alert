@@ -50,7 +50,7 @@ def stock_codes_with_pages(recent_days: "int | None" = None) -> list:
     if recent_days is not None:
         since = (date.today() - timedelta(days=recent_days - 1)).isoformat()
         query += f"&disc_date=gte.{since}"
-    rows = sb.select("edinet_large_holdings", query)
+    rows = sb.select("edinet_large_holdings", query, strict=True)
     return sorted({r["issuer_code"] for r in rows if r.get("issuer_code")})
 
 
@@ -71,7 +71,7 @@ def main():
         print("ANTHROPIC_API_KEY が未設定です。")
         sys.exit(1)
 
-    meta_rows = sb.select("jpx_stock_list", "select=code,name,description,description_checked_at")
+    meta_rows = sb.select("jpx_stock_list", "select=code,name,description,description_checked_at", strict=True)
     meta_by_code = {r["code"]: r for r in meta_rows}
 
     if args.codes:

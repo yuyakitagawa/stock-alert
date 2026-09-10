@@ -188,9 +188,17 @@ def _load_jpx_sector_map():
     """JPX Excelから {code: 33業種区分} を一括取得してDBキャッシュに保存。
     銘柄名も同時に jpx_stock_list へ書き込む。"""
     from lib.db import get_all_sectors, save_stock_meta_bulk, count_null_names
+    from lib.supabase_client import SelectFailed
     import io
-    cache = get_all_sectors()
-    if cache and count_null_names() == 0:
+    try:
+        cache = get_all_sectors()
+        complete = bool(cache) and count_null_names() == 0
+    except SelectFailed as e:
+        # 途中で切れた業種表で進むと、載っていない銘柄だけセクター内相対モメンタム（CS特徴量）が
+        # 静かに欠ける。DBの表は使わず、下のpkl/JPX一覧から作り直す。
+        print(f"[WARN] 業種キャッシュを全件読めないためJPX一覧から取り直します: {e}")
+        cache, complete = {}, False
+    if complete:
         return cache
     pkl = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sectors.pkl")
     if not cache and os.path.exists(pkl):

@@ -86,7 +86,7 @@ def fetch_candidates(days: int) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     rows = sb.select(
         "tdnet_buybacks",
-        f"disclosed_at=gte.{since}&extract_ok=is.true&select=*&order=disclosed_at.desc",
+        f"disclosed_at=gte.{since}&extract_ok=is.true&select=*&order=disclosed_at.desc", strict=True,
     )
     out = []
     for r in rows:
@@ -179,6 +179,8 @@ def stock_name_of(code: str) -> str:
 def prior_buybacks(code: str, before: str) -> list[dict]:
     """同じ銘柄の過去の決定開示（before より前、新しい順・最大3件）。連続実施の文脈に使う。"""
     # disclosed_at のタイムゾーン部「+00:00」はURLで空白に化けて400になるため秒までで切る
+    # strict にしない: limit=3 は1リクエストで終わる。失敗時の [] はプロンプトに過去の決定を
+    # 載せないだけで（「初めて」とは書かせていない）、誤った事実にはならない。
     return sb.select(
         "tdnet_buybacks",
         f"code=eq.{code}&disclosed_at=lt.{before[:19]}&extract_ok=is.true"

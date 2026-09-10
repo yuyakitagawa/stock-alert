@@ -124,7 +124,7 @@ def count_edinet_disclosures(date_str: str) -> int:
 
 def _count_rows(table: str, query: str) -> int:
     try:
-        return len(sb.select(table, query))
+        return len(sb.select(table, query, strict=True))
     except Exception as e:
         print(f"[heartbeat] ⚠ {table} 取得失敗: {e}")
         return -1

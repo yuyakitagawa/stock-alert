@@ -42,7 +42,10 @@ def load_fundamentals_cache():
         _YUTAI_MONTH = {}
         for r in get_all_yutai():
             _YUTAI_MONTH[str(r["code"])] = r.get("yutai_month") or r.get("record_month")
-    except Exception:
+    except Exception as e:
+        # get_all_yutai() は strict。途中で切れた一覧だと一部の銘柄だけ優待が消えるので、
+        # 読めなければ全銘柄を「情報なし」に揃える。
+        print(f"[WARN] 優待情報を読めないため全銘柄を情報なしとして扱います: {e}")
         _YUTAI_MONTH = {}
 
 

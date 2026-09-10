@@ -1159,7 +1159,7 @@ def build_context_facts(code: str, filer_name: str, disc_date: str) -> dict:
             "edinet_large_holdings",
             f"select=disc_date,holding_ratio&issuer_code=eq.{code}"
             f"&filer_name=eq.{requests.utils.quote(filer_name)}&disc_date=lte.{disc_date}"
-            "&order=disc_date.asc",
+            "&order=disc_date.asc", strict=True,
         )
         if len(history) >= 2:
             first = history[0]
@@ -1174,6 +1174,8 @@ def build_context_facts(code: str, filer_name: str, disc_date: str) -> dict:
             }
 
         # 2. 同じ提出者が同時点で持っている他の銘柄（保有比率の高い順）
+        # 2・3と業種の引き当ては strict にしない。limit≦500 は1リクエストで終わるので途中切れが
+        # 起きず、失敗時の [] は「その段落を出さない」だけで誤った事実にはならない。
         others = sb.select(
             "edinet_large_holdings",
             f"select=issuer_code,issuer_name,holding_ratio,disc_date"
@@ -1723,7 +1725,10 @@ def published_holding_keys(days: int) -> "set | None":
 
 def estimated_amounts(days: int) -> dict:
     """edinet_holding_amounts（開示1件ごとの推定売買金額ビュー）を doc_id 引きの dict で返す。
-    取得できなければ空dict（=足切りせずに全件見る）。"""
+    取得できなければ空dict（=足切りせずに全件見る）。
+
+    strict にしない: 行が欠けた開示は is_backfill_target() が「判定できない」として残し、
+    ループ内で個別に概算する。途中切れでも手間が増えるだけで、判定は誤らない。"""
     since = (date.today() - timedelta(days=days)).isoformat()
     try:
         rows = sb.select("edinet_holding_amounts",
@@ -1833,10 +1838,17 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             print(f"  ⏭ {name}({code}): 変更報告書だが直前保有割合が未取得のため次の便へ持ち越し")
             ledger.skip(pl.SKIP_WAIT_NEXT_RUN, f"{name}({code})")
             continue
-        change = ratio_change_pct(
-            code, filer_name, h["holding_ratio"], disc_date, prior_ratio,
-            is_change_report(h.get("doc_description") or ""),
-        )
+        try:
+            change = ratio_change_pct(
+                code, filer_name, h["holding_ratio"], disc_date, prior_ratio,
+                is_change_report(h.get("doc_description") or ""),
+            )
+        except sb.SelectFailed as e:
+            # 過去開示が途中までしか読めないと前回比率を取り違え、変更報告書を「新規保有」と
+            # 書きかねない。この開示だけ次の便へ回す（1件の読み込み失敗で便全体を止めない）。
+            print(f"  ⏭ {name}({code}): 過去開示を全件読めないため次の便へ持ち越し: {e}")
+            ledger.skip(pl.SKIP_WAIT_NEXT_RUN, f"{name}({code})")
+            continue
         if change is None:
             # 待っても直前保有割合が入らなかった変更報告書。全量を動いたとみなすと
             # 「X%を新規保有」＋過大な推定金額になるため記事化しない。

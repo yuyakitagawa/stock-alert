@@ -28,7 +28,7 @@ def target_docs(limit: int = 0, refetch: bool = False) -> list:
     q += "&select=doc_id,filer_name,issuer_code,issuer_name,disc_date,holding_ratio,holding_ratio_prior,short_term_transfers"
     if not refetch:
         q += "&short_term_transfers=is.null"
-    rows = sb.select("edinet_large_holdings", q)
+    rows = sb.select("edinet_large_holdings", q, strict=True)
     return rows[:limit] if limit else rows
 
 

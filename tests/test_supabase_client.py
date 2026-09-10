@@ -287,6 +287,46 @@ def test_insert_ignore_returns_false_on_failure_and_true_on_success():
         sb._write_failures.clear()
 
 
+class _PageResponse:
+    def __init__(self, rows=None, status=200):
+        self._rows = rows or []
+        self.status_code = status
+        self.ok = status < 400
+        self.text = "" if self.ok else "canceling statement due to statement timeout"
+
+    def json(self):
+        return self._rows
+
+
+def _select_with_pages(pages, **kwargs):
+    sb.SUPABASE_URL = "https://example.test"
+    sb.SUPABASE_SERVICE_KEY = "dummy"
+    try:
+        with mock.patch("lib.supabase_client._request", side_effect=pages):
+            return sb.select("big_table", "select=id&order=id", **kwargs)
+    finally:
+        sb.SUPABASE_URL = ""
+        sb.SUPABASE_SERVICE_KEY = ""
+
+
+def test_select_strict_raises_when_a_later_page_fails():
+    """strict=True は途中のページが落ちたら「そこまでの分」を返さず SelectFailed を送出する
+    （2026-09-07、価格の全履歴取得が161万行中35万行で打ち切られたまま完全なデータとして扱われた）。"""
+    full = [{"id": i} for i in range(1000)]
+    try:
+        _select_with_pages([_PageResponse(full), _PageResponse(status=500)], strict=True)
+        assert False, "SelectFailed が発生するはず"
+    except sb.SelectFailed as e:
+        assert "500" in str(e)
+
+
+def test_select_default_still_returns_partial_rows():
+    """既定(strict=False)は従来通り取れた分だけ返す。途中切れで困らない表示用の呼び出し向け。"""
+    full = [{"id": i} for i in range(1000)]
+    rows = _select_with_pages([_PageResponse(full), _PageResponse(status=500)])
+    assert len(rows) == 1000
+
+
 if __name__ == "__main__":
     test_request_retries_on_timeout_then_succeeds()
     test_request_raises_after_max_retries()
@@ -301,4 +341,6 @@ if __name__ == "__main__":
     test_request_returns_last_5xx_after_max_retries_and_does_not_retry_4xx()
     test_error_detail_summarizes_html_error_page()
     test_insert_ignore_returns_false_on_failure_and_true_on_success()
-    print("OK: test_supabase_client (13 tests)")
+    test_select_strict_raises_when_a_later_page_fails()
+    test_select_default_still_returns_partial_rows()
+    print("OK: test_supabase_client (15 tests)")

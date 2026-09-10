@@ -305,12 +305,12 @@ def pending_decisions(days: int, retry_failed: bool = False) -> list[dict]:
     rows = sb.select(
         "ext_tdnet_disclosures",
         f"category=eq.自社株買い&disclosed_at=gte.{since}"
-        "&select=code,disclosed_at,title,doc_url&order=disclosed_at.desc",
+        "&select=code,disclosed_at,title,doc_url&order=disclosed_at.desc", strict=True,
     )
     done_q = f"disclosed_at=gte.{since}&select=code,disclosed_at,title"
     if retry_failed:
         done_q += "&extract_ok=is.true"  # 抽出失敗行はもう一度読み直す
-    done = sb.select("tdnet_buybacks", done_q)
+    done = sb.select("tdnet_buybacks", done_q, strict=True)
     done_keys = {(d["code"], d["disclosed_at"], d["title"]) for d in done}
     return [
         r for r in rows

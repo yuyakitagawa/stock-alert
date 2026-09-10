@@ -34,7 +34,7 @@ def fetch_filer_context(filer_name: str, issuer_code: str) -> dict:
         rows = sb.select(
             "edinet_large_holdings",
             f"filer_name=eq.{quote(filer_name, safe='')}"
-            f"&issuer_code=eq.{quote(issuer_code or '', safe='')}&select=doc_id",
+            f"&issuer_code=eq.{quote(issuer_code or '', safe='')}&select=doc_id", strict=True,
         ) if issuer_code else []
         return {
             "filer_disclosures": int((summary or {}).get("holding_count") or 0),

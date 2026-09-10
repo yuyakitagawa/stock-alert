@@ -182,7 +182,7 @@ def fetch_disclosures(codes: list) -> dict:
         rows += sb.select(
             "edinet_large_holdings",
             f"issuer_code=in.({chunk})&order=doc_id&select=doc_id,issuer_code,disc_date,filer_name,"
-            "holding_ratio,holding_ratio_prior,doc_type_code,doc_description",
+            "holding_ratio,holding_ratio_prior,doc_type_code,doc_description", strict=True,
         )
     seen_docs = set()
     out = {}

@@ -39,10 +39,10 @@ def main():
         print("ERROR: SUPABASE_URL / SUPABASE_SERVICE_KEY が未設定です")
         return
 
-    holdings = sb.select("edinet_large_holdings", "select=filer_name")
+    holdings = sb.select("edinet_large_holdings", "select=filer_name", strict=True)
     all_filers = sorted({r["filer_name"] for r in holdings if r.get("filer_name")})
 
-    classification_rows = sb.select("edinet_filer_classification", "select=filer_name,category,profile")
+    classification_rows = sb.select("edinet_filer_classification", "select=filer_name,category,profile", strict=True)
     classification = {r["filer_name"]: r for r in classification_rows}
 
     targets = [name for name in all_filers if not (classification.get(name) or {}).get("profile")]

@@ -24,6 +24,29 @@ def _norm(text):
     return re.sub(r"\s+", " ", text)
 
 
+def test_fetch_rows_pulls_one_day_at_a_time_with_strict():
+    """30日ぶんを1本でページングすると offset が深くなり statement timeout 手前まで遅くなるため
+    1日ずつ区切って引く。窓は隙間なく連続し、途中切れの集計を防ぐため全て strict で引く。"""
+    calls = []
+
+    def fake_select(table, query="", limit=0, strict=False):
+        calls.append((table, query, strict))
+        if table == "blog_crawler_ua":
+            return [{"id": 1, "user_agent": HUMAN_UA}]
+        return [{"occurred_at": "x", "ua_id": 1}]
+
+    with mock.patch.object(t.sb, "select", side_effect=fake_select):
+        rows = t.fetch_rows(3)
+    logs = [c for c in calls if c[0] == "blog_crawler_log"]
+    assert len(logs) == 3
+    assert all(strict for _, _, strict in calls)
+    windows = [re.search(r"occurred_at=gte\.([^&]+)&occurred_at=lt\.([^&]+)", q).groups()
+               for _, q, _ in logs]
+    for (start, _), (_, end) in zip(windows, windows[1:]):
+        assert start == end  # 前の窓の始まり＝次の窓の終わり（隙間・重複なし）
+    assert len(rows) == 3 and rows[0]["user_agent"] == HUMAN_UA
+
+
 def test_heavy_ips_uses_threshold():
     rows = [_row("1.1.1.1") for _ in range(5)] + [_row("2.2.2.2")]
     assert t.heavy_ips(rows, max_pv=3) == {"1.1.1.1"}

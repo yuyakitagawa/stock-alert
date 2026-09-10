@@ -204,7 +204,7 @@ def month_usage(month: str = "") -> tuple[float, dict]:
     from lib import supabase_client as sb
 
     month = month or datetime.now(timezone.utc).strftime("%Y-%m")
-    rows = sb.select(_TABLE, f"usage_date=gte.{month}-01&select=usage_date,task,cost_usd")
+    rows = sb.select(_TABLE, f"usage_date=gte.{month}-01&select=usage_date,task,cost_usd", strict=True)
     by_task: dict[str, float] = {}
     for r in rows:
         if not str(r.get("usage_date", "")).startswith(month):
@@ -226,6 +226,8 @@ def day_usage(day: str = "") -> float:
     from lib import supabase_client as sb
 
     day = day or datetime.now(timezone.utc).date().isoformat()
+    # strict にしない: 1日ぶんは数十行で1リクエストに収まり途中切れが起きない。読めない日は
+    # today_cost() が0扱いにする設計（本処理を止めない）で、例外にしても結果は同じ。
     rows = sb.select(_TABLE, f"usage_date=eq.{day}&select=cost_usd")
     return sum(float(r.get("cost_usd") or 0) for r in rows)
 

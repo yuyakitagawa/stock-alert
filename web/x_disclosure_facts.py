@@ -60,7 +60,7 @@ def fetch_candidates(days: int) -> list:
         "edinet_large_holdings",
         "select=doc_id,filer_name,issuer_code,issuer_name,disc_date,holding_ratio,holding_ratio_prior,"
         "funding_total,funding_own,funding_borrowings,obligation_date,doc_description"
-        f"&disc_date=gte.{since}&issuer_code=not.is.null",
+        f"&disc_date=gte.{since}&issuer_code=not.is.null", strict=True,
     )
     return [r for r in rows or [] if "訂正" not in (r.get("doc_description") or "")]
 
@@ -89,7 +89,7 @@ def looks_like_individual(filer_name: str) -> bool:
 
 def fetch_individual_filers() -> set:
     """分類が「個人」の提出者名。私人を名指しする投稿を避けるために使う。"""
-    rows = sb.select("edinet_filer_classification", "select=filer_name&category=eq.個人")
+    rows = sb.select("edinet_filer_classification", "select=filer_name&category=eq.個人", strict=True)
     return {r["filer_name"] for r in rows or []}
 
 
@@ -123,7 +123,7 @@ def recently_posted_codes() -> set:
     # PostgRESTのクエリ文字列で "+00:00" の + が空白として解釈され 400 になるため Z を使う。
     since = (datetime.now(timezone.utc) - timedelta(days=RECENT_STOCK_DAYS)) \
         .strftime("%Y-%m-%dT%H:%M:%SZ")
-    rows = sb.select("x_posts", f"select=stock_code&kind=eq.{KIND}&posted_at=gte.{since}")
+    rows = sb.select("x_posts", f"select=stock_code&kind=eq.{KIND}&posted_at=gte.{since}", strict=True)
     return {r["stock_code"] for r in rows or [] if r.get("stock_code")}
 
 
