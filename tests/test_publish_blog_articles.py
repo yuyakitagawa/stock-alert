@@ -217,7 +217,7 @@ def test_build_and_publish_includes_sell_and_tags_them():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False, special=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             side_effect=[
@@ -825,6 +825,38 @@ def test_ratio_change_pct_returns_none_for_amendment_without_prior_or_history():
         assert m.ratio_change_pct("3878", "ＦＭＲ　ＬＬＣ", 7.6, "2026-08-18", None, False) == 7.6
 
 
+def test_is_special_report_detects_tokurei_filings():
+    assert m.is_special_report("大量保有報告書（特例対象株券等）") is True
+    assert m.is_special_report("変更報告書（特例対象株券等）") is True
+    assert m.is_special_report("大量保有報告書") is False
+    assert m.is_special_report("") is False
+
+
+def test_ratio_change_pct_returns_none_for_new_special_report_without_history():
+    """新規の特例報告は、履歴が無ければ全量を取得したとみなさずNoneを返す。
+
+    実例: 2026-09-07、任天堂(7974)をキャピタル・リサーチが5.2%で新規の特例報告
+    → 全量計上で推定取得金額5,857億円として公開されていた（直前4.9%なら実額は338億円）。
+    特例報告は基準日時点で5%を超えたことの届出でしかなく、直前保有割合が開示されない。"""
+    with mock.patch.object(m, "get_edinet_large_holdings_recent", return_value=[]):
+        assert m.ratio_change_pct("7974", "キャピタル・リサーチ・アンド・マネージメント・カンパニー",
+                                  5.2, "2026-09-07", None, False, True) is None
+        # 非特例の新規届出（TOB・資本業務提携など実際に全量を取得する開示）は従来どおり
+        assert m.ratio_change_pct("5202", "Ｌｕｍｉｎａ　Ｊａｐａｎ",
+                                  72.0, "2026-09-03", None, False, False) == 72.0
+
+
+def test_ratio_change_pct_uses_prior_or_history_for_special_report():
+    """特例報告でも変化幅が確定できるときは従来どおり差分で計算する。"""
+    with mock.patch.object(m, "get_edinet_large_holdings_recent") as hist:
+        assert round(m.ratio_change_pct("6857", "三井住友トラスト・アセットマネジメント",
+                                        8.24, "2026-09-04", 9.31, True, True), 2) == 1.07
+    hist.assert_not_called()
+    history = [{"filer_name": "F", "disc_date": "2026-08-20", "holding_ratio": 5.0}]
+    with mock.patch.object(m, "get_edinet_large_holdings_recent", return_value=history):
+        assert round(m.ratio_change_pct("6857", "F", 6.2, "2026-09-04", None, False, True), 2) == 1.2
+
+
 def test_build_article_titles_amendment_without_prior_is_not_new_holding():
     """変更報告書の記事タイトルが「X%を新規保有」にならず、引き上げ/引き下げ表現になる。"""
     fs = {"stock_name": "テスト商事", "stock_code": "9999", "filer_name": "テストファンド",
@@ -1404,7 +1436,7 @@ def test_build_and_publish_stops_early_on_permission_error():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False, special=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "その他", "is_foreign": False, "description": ""}), \
@@ -1601,7 +1633,7 @@ def test_build_and_publish_never_sends_english_fields():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False, special=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
@@ -1625,7 +1657,7 @@ def test_build_and_publish_omits_english_fields_when_not_generated():
          mock.patch.object(m, "MICROCMS_KEY", "dummy"), \
          mock.patch.object(m, "get_recent_large_holdings", return_value=holdings), \
          mock.patch.object(m, "already_published", return_value=False), \
-         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False: ratio), \
+         mock.patch.object(m, "ratio_change_pct", side_effect=lambda code, filer, ratio, d, prior=None, amend=False, special=False: ratio), \
          mock.patch.object(m, "estimate_deal_amount_oku", return_value=12.3), \
          mock.patch.object(m, "classify_filer",
                             return_value={"category": "個人", "is_foreign": False, "description": ""}), \
@@ -2318,4 +2350,7 @@ if __name__ == "__main__":
     test_ledger_counts_every_candidate()
     test_display_text_halfwidths_only_latin_and_english_symbols()
     test_eyecatch_stock_line_normalizes_fullwidth_name()
-    print("全テスト成功 (149件)")
+    test_is_special_report_detects_tokurei_filings()
+    test_ratio_change_pct_returns_none_for_new_special_report_without_history()
+    test_ratio_change_pct_uses_prior_or_history_for_special_report()
+    print("全テスト成功 (152件)")
