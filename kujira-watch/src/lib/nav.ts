@@ -7,6 +7,10 @@ export type NavLink = { href: string; label: string };
 export function mainNavLinks(): NavLink[] {
   return [
     { href: "/", label: "TOP" },
+    // 制度の解説（/textbook）と計算ツール（/tools）は、データページ群とは役割が違うので
+    // TOPの直後に置く。開示の一覧に慣れていない読者が最初に入る場所という位置づけ。
+    { href: "/textbook", label: "教科書" },
+    { href: "/tools", label: "ツール" },
     { href: "/trending", label: "銘柄ランキング" },
     { href: "/ranking/returns", label: "投資家ランキング" },
     { href: "/weekly", label: "週次トレンド" },

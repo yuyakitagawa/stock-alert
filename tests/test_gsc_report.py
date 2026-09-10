@@ -21,6 +21,9 @@ def test_page_group_splits_hub_pages_from_others():
     assert g.page_group("https://kujira-watch.com/stocks/6976") == "銘柄ページ"
     assert g.page_group("https://kujira-watch.com/ranking/buys") == "ランキング"
     assert g.page_group("https://kujira-watch.com/contact") == "その他"
+    # 教科書と計算ツールは「その他」に埋もれさせない（別の型として効き目を見る）。
+    assert g.page_group("https://kujira-watch.com/textbook/rules") == "教科書"
+    assert g.page_group("https://kujira-watch.com/tools/filing-deadline") == "計算ツール"
 
 
 def test_totals_weights_ctr_and_position_by_impressions():

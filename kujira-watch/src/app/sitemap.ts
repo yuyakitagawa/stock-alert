@@ -13,6 +13,8 @@ import {
 } from "@/lib/publishedPages";
 import { CATEGORIES } from "@/types/article";
 import { FAQ_CATEGORIES } from "@/lib/faqData";
+import { TEXTBOOK_CHAPTERS, chapterPath } from "@/lib/textbook";
+import { TOOLS, toolPath } from "@/lib/tools";
 
 // microCMSの一時的な障害時にビルド自体が失敗しないよう、ビルド時の事前生成を行わず
 // リクエスト時に生成する（データ取得はunstable_cacheで1時間キャッシュされるため軽い）。
@@ -63,6 +65,15 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/privacy` },
     { url: `${SITE_URL}/terms` },
     { url: `${SITE_URL}/faq` },
+    // 教科書は本文が固定だが、各章に載せる実例が最新の開示で入れ替わるので lastmod を持たせる。
+    { url: `${SITE_URL}/textbook`, lastModified: latestArticle },
+    ...TEXTBOOK_CHAPTERS.map((chapter) => ({
+      url: `${SITE_URL}${chapterPath(chapter.id)}`,
+      lastModified: latestArticle,
+    })),
+    // 計算ツールはブラウザ内で完結する静的ページなので lastmod は持たせない。
+    { url: `${SITE_URL}/tools` },
+    ...TOOLS.map((tool) => ({ url: `${SITE_URL}${toolPath(tool.slug)}` })),
     // FAQはカテゴリ別ページにQ&A本文を置いているので、各カテゴリもサイトマップに載せる
     // （ハブの/faqからもリンクしているが、確実に拾わせるため）。
     ...FAQ_CATEGORIES.map((category) => ({

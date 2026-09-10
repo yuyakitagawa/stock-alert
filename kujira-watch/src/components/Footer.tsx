@@ -13,6 +13,8 @@ const JA_GROUPS: FooterGroup[] = [
     heading: "主要ページ",
     links: [
       { href: "/", label: "TOP" },
+      { href: "/textbook", label: "大量保有報告書の教科書" },
+      { href: "/tools", label: "計算ツール" },
       { href: "/trending", label: "銘柄ランキング" },
       { href: "/ranking/returns", label: "投資家ランキング" },
       { href: "/weekly", label: "週次トレンド" },

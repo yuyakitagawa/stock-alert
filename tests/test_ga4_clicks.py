@@ -143,6 +143,9 @@ def test_page_group_buckets_paths():
     assert g.page_group("/category/vc") == "カテゴリページ"
     assert g.page_group("/trending") == "データ/一覧ページ"
     assert g.page_group("/weekly") == "データ/一覧ページ"
+    # 教科書・計算ツールはデータ一覧ではないので独立した種別で見る。
+    assert g.page_group("/textbook") == "教科書"
+    assert g.page_group("/tools/buyback-impact") == "計算ツール"
 
 
 def test_collect_pdca_metrics_computes_internal_moves_per_session():

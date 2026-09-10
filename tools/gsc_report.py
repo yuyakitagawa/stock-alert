@@ -74,6 +74,8 @@ PAGE_GROUPS = (
     ("/activists", "アクティビスト"),
     ("/buybacks", "自社株買い"),
     ("/faq", "FAQ"),
+    ("/textbook", "教科書"),
+    ("/tools", "計算ツール"),
 )
 
 
