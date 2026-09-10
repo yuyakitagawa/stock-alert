@@ -10,10 +10,10 @@
 【16:00 JST】アラートパイプライン（daily_alert.yml）
 core/rank_stocks.py（銘柄取得・下落確率ランキング生成を単独で実施。core/screener.pyは2026-08-01に
 日次パイプラインから除外済み。詳細は下のファイル構成参照）
-→ web/export_to_web.py（Supabase同期）→ web/market_timing_alert.py（LINE通知）
-core/rf_train_v3.py（金曜 or モデル未存在時のみ）は配信より後段で実行。
-配信のクリティカルパスから切り離すことで、学習が長時間化/タイムアウト
-（continue-on-error, timeout-minutes: 180）しても当日のアラート配信は止めない。
+→ web/export_to_web.py（Supabase同期）
+core/rf_train_v3.py（金曜 or モデル未存在時のみ）はランキング生成・Web同期より後段で実行。
+日次更新のクリティカルパスから切り離すことで、学習が長時間化/タイムアウト
+（continue-on-error, timeout-minutes: 180）しても当日の更新は止めない。
 
 【平日9:00〜19:00 JST・毎時11便】EDINETブログパイプライン（edinet_blog.yml）
 tools/scan_large_holdings.py（EDINET大量保有スキャン）→ web/publish_blog_articles.py
@@ -83,7 +83,7 @@ x_post.yml（X関連を1本に統合。**2026-08-30に定期実行を週1本へ�
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
 | `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
-| `web/market_timing_alert.py` | LINE Messaging APIで日次プッシュ通知（Step 5b）。N225シグナル（平均下落確率→投資/キャッシュ）・🌐日経 vs S&P500相対強弱・🏦直近のEDINET大口保有動向（自己申告・過半数超(51%以上、スクイーズアウト対象で上値が見込めない)は除外、譲渡/売却も📈買い・📉売りを明示して表示。同一提出者の開示が期間内に複数あれば保有比率の変化を「5.2%→10.1%」で表示。開示日が新しい順を最優先し、同日内はウォッチ銘柄→法人/ファンド→保有比率が大きい順に優先し最大3件（通知疲れ防止のためLINEは絞り、残りはmicroCMSブログ「大口投資家の監視ブログ」（`kujira-watch/`、https://kujira-watch.com/ の詳細解説記事）のURLに委ねる。各行の下にはその銘柄の`/stocks/{code}`へのディープリンクを添える（`blog_stock_url()`。トップURLだけだと読者が銘柄を探し直す必要があったため）。流入はGA4で識別できるよう`utm_source=line&utm_medium=push`付き）、個人名の提出者は後回し）・🔍ユーザー別ウォッチ投資家の動き（`filer_watchlist`に登録した提出者名で部分一致照合し、その投資家がどの銘柄を動かしても通知。自己申告・過半数超は除外しない）・ユーザー別ウォッチリストのdp閾値アラート（ランキング本体の推奨が「🔴 売り検討」の銘柄は、個人のdp_sell_threshold設定値に関わらず必ず⚠️売り検討を表示。既定値20%はシステム全体の売り検討基準(drop_prob≥10%等)より緩いため、この上書きが無いと10〜20%の間で警告が沈黙するギャップが生じていた。閾値未達で変化のない銘柄は個別表示せず件数のみ要約し、前日比のdrop_prob変化があれば表示：通知疲れ対策）を配信 |
+| `web/market_timing_alert.py` | N225シグナル・日経 vs S&P500相対強弱・EDINET大口保有動向・ウォッチリストをLINE Messaging APIへ送る手動実行用スクリプト。日次プッシュ通知（旧Step 5b）は2026-09-10に停止。コードは調査・手動実行用に残している |
 | `config.py` | 戦略パラメータ（`BASE_DIR`・下落相場判定 `BEAR_MARKET_THRESHOLD`・市場タイミング `MARKET_TIMING_20D_THRESH`）。学習時スクリーニングの閾値は`core/rf_train_v3.py`の`_SC_*`、バックテストは`tools/backtest.py`の`_SC_*`が保持する |
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗と、5xx／Cloudflare 52x＝522 Connection timed out 等のサーバー側一時障害は指数バックオフ2s/4s/8sで最大3回自動リトライ。400系は再試行しない。実例: 2026-09-03、Supabaseが522を返した間に`yahoo_price_cache`の書き込みが再試行されず約55銘柄の当日終値が欠けた）。失敗時のログ・LINE通知の詳細は`_error_detail()`が作り、CloudflareのHTMLエラーページは`<title>`（"522: Connection timed out"等）だけに要約する。`upsert()`・`insert_ignore()`は全バッチ成功でTrue／1バッチでも失敗でFalseを返す。書けたかどうかがジョブの成否そのものである処理（`web/x_metrics.py`等）は必ず戻り値を見ること。送信直前に`_group_by_keys()`がキー構成の同じ行どうしへ分割する（PostgRESTは1リクエスト内でキーが不一致だとPGRST102で400を返しバッチ丸ごと落ちる。「値があるときだけ送る」列＝`issuer_name`・`short_term_transfers`等が混ざると必ず踏む。実例: 2026-08-26〜27、EDINET大量保有の全件が保存されずブログ記事が0件になった）。書き込みが失敗したら`_record_write_failure()`がテーブル別に記録し**その場でLINEへ通知**する（テーブルごと1プロセス1回。各ステップが`continue-on-error`で緑のまま進むため、`if: failure()`の通知では鳴らない）。`write_failures()`で失敗したテーブルと行数を取得でき、`tools/scan_large_holdings.py`は1行でも落ちていれば終了コード1で終わる。**テスト実行中は本番プロジェクトへの書き込み（upsert/insert_ignore/update/delete）を握りつぶす**（`_block_production_write()`。読み取りは通す。テストがURLを差し替えている場合も通す）。`tests/test_api_usage.py`がatexitの`flush()`で本番`api_usage`へ合成行（task="x" / $1.35）を書き、その1行だけで当日合計が日次予算を超えて翌営業日の記事生成が全便打ち切られる状態になった（2026-08-29）ため、テスト側のモックではなく書き込みの出口で止める|
