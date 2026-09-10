@@ -124,16 +124,6 @@ def _fallback_stock_list():
             return df.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
     except Exception as e:
         print(f"  DB銘柄リスト取得失敗: {e}")
-    cache_path=os.path.join(SAVE_DIR,"_local_prices.pkl")
-    if os.path.exists(cache_path):
-        import pickle
-        with open(cache_path,"rb") as f:
-            d=pickle.load(f)
-        codes=[c for c in d.keys() if len(c)==4 and c[0].isdigit()]
-        if codes:
-            df=pd.DataFrame({"code":codes,"name":""})
-            print(f"  ローカルキャッシュから{len(codes)}銘柄取得（フォールバック）")
-            return df.sample(frac=1,random_state=RANDOM_SEED).reset_index(drop=True)
     print("フォールバック銘柄リストなし"); return None
 
 def get_prices(code,days=HISTORY_DAYS):
@@ -520,6 +510,10 @@ def train_model(X_tr,y_tr,X_te,y_te,X_cal,y_cal,label,feat_names=None):
     return cal_m
 
 def main():
+    # 全銘柄の終値を舐めるのでローカルミラーを使う。RESTで1銘柄1リクエストを
+    # 続けると1回52MBのegressになりSupabase Free枠(5GB/月)を食い潰す。
+    from lib import price_store
+    price_store.enable()
     global TRAIN_CUTOFF
     import argparse as _ap
     _p=_ap.ArgumentParser(add_help=False)

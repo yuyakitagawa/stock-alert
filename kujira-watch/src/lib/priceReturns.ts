@@ -22,6 +22,10 @@ const THREE_MONTHS_TRADING_DAYS = 63;
 // 古い開示や、上場廃止・コード変更などのケース）。
 const MAX_BASE_GAP_DAYS = 7;
 
+// 先頭から取る行数。+3ヶ月(63営業日)を指すのに必要な数に、close が NULL の日
+// （売買停止など）でずれるぶんの余裕を足す。
+const HEAD_ROWS = THREE_MONTHS_TRADING_DAYS + 8;
+
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(to) - Date.parse(from)) / (24 * 60 * 60 * 1000));
 }
@@ -34,14 +38,28 @@ async function getPriceAfterDisclosureUncached(
 ): Promise<PriceAfterDisclosureData | null> {
   try {
     const supabase = getSupabaseServerClient();
-    const { data } = await supabase
-      .from("yahoo_price_cache")
-      .select("date, close")
-      .eq("code", stockCode)
-      .gte("date", dealDate)
-      .order("date", { ascending: true });
+    // 開示日以降を全部取ると古い開示ほど行数が増える（2年前の開示なら約490行）。
+    // 使うのは先頭63営業日ぶんと直近1件だけなので、2本に分けて上限を付ける。
+    const [headResult, latestResult] = await Promise.all([
+      supabase
+        .from("yahoo_price_cache")
+        .select("date, close")
+        .eq("code", stockCode)
+        .gte("date", dealDate)
+        .order("date", { ascending: true })
+        .limit(HEAD_ROWS),
+      supabase
+        .from("yahoo_price_cache")
+        .select("date, close")
+        .eq("code", stockCode)
+        .gte("date", dealDate)
+        .order("date", { ascending: false })
+        .limit(1),
+    ]);
 
-    const rows = (data ?? []).filter((r): r is { date: string; close: number } => r.close !== null);
+    const rows = (headResult.data ?? []).filter(
+      (r): r is { date: string; close: number } => r.close !== null
+    );
     if (rows.length === 0) return null;
 
     const base = rows[0];
@@ -49,7 +67,10 @@ async function getPriceAfterDisclosureUncached(
 
     const oneMonth = rows[ONE_MONTH_TRADING_DAYS] ?? null;
     const threeMonths = rows[THREE_MONTHS_TRADING_DAYS] ?? null;
-    const last = rows[rows.length - 1];
+    const latestRow = (latestResult.data ?? []).find(
+      (r): r is { date: string; close: number } => r.close !== null
+    );
+    const last = latestRow ?? rows[rows.length - 1];
     // 直近の終値が基準・+1ヶ月・+3ヶ月のいずれかと同じ日なら重複表示しない。
     const latest =
       last.date !== base.date && last.date !== oneMonth?.date && last.date !== threeMonths?.date
