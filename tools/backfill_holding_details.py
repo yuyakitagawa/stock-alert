@@ -53,7 +53,7 @@ def fetch_targets(only_missing: bool, since: str, limit: int,
         query += f"&disc_date=gte.{since}"
     if with_article:
         query += "&article_published_at=not.is.null"
-    return sb.select("edinet_large_holdings", query, limit=limit)
+    return sb.select("edinet_large_holdings", query, limit=limit, strict=True)
 
 
 def main() -> int:

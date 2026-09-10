@@ -48,7 +48,7 @@ MIN_DELTA_PT = 0.5
 
 def fetch_activist_filers() -> set:
     rows = sb.select(
-        "edinet_filer_classification", "category=eq.アクティビスト&select=filer_name"
+        "edinet_filer_classification", "category=eq.アクティビスト&select=filer_name", strict=True
     )
     return {r["filer_name"] for r in rows if r.get("filer_name")}
 
@@ -59,7 +59,7 @@ def fetch_holdings(range_from: str, range_to: str) -> list:
         "&select=filer_name,issuer_code,issuer_name,disc_date,submit_date,"
         "holding_ratio,holding_ratio_prior,doc_type_code,doc_description"
     )
-    rows = sb.select("edinet_large_holdings", q)
+    rows = sb.select("edinet_large_holdings", q, strict=True)
     return [r for r in rows if r.get("issuer_code") and r.get("filer_name") and r.get("disc_date")]
 
 

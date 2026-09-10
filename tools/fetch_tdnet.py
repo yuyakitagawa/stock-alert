@@ -34,9 +34,10 @@ def get_watchlist_codes() -> list[str]:
     """dp_watchlist の全ユーザーのウォッチ銘柄コード（重複なし）。"""
     try:
         import lib.supabase_client as sb
-        rows = sb.select("dp_watchlist", "select=code")
+        rows = sb.select("dp_watchlist", "select=code", strict=True)
         return sorted({r["code"] for r in rows})
-    except Exception:
+    except Exception as e:
+        print(f"[tdnet] ⚠ ウォッチリストを全件読めません: {e}")
         return []
 
 

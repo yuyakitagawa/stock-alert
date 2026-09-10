@@ -33,6 +33,7 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
+    # strict にしない: 修正は冪等で、取りこぼした行はタグが残ったまま次回の実行で拾われる。
     rows = sb.select("jpx_stock_list", "select=code,description&description=like.*<*")
     fixed = []
     for row in rows:

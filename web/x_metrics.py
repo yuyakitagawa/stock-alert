@@ -48,6 +48,7 @@ def fetch_targets() -> dict:
     # ISO文字列の "+00:00" はクエリ文字列上でそのまま渡すと空白に解釈されて
     # PostgRESTが400を返すため、値をURLエンコードしてから渡す。
     since = quote((datetime.now(timezone.utc) - timedelta(days=METRICS_WINDOW_DAYS)).isoformat(), safe="")
+    # strict にしない: 欠けた投稿はその日の数字が更新されないだけで、次の便で取り直せる。
     rows = sb.select("x_posts", f"posted_at=gte.{since}&select=tweet_id,kind&order=posted_at.desc")
     return {r["tweet_id"]: r.get("kind") for r in rows if r.get("tweet_id")}
 
@@ -172,6 +173,7 @@ def save(metrics: dict, kinds: dict) -> int:
 
 def follower_report() -> None:
     """フォロワー数の推移を表示する。増減の判断はこの表だけを見る。"""
+    # strict にしない: limit=40 は1リクエストで終わり途中切れが起きない（失敗時は「記録なし」と出る）。
     rows = sb.select("x_followers", "select=measured_on,followers&order=measured_on.desc&limit=40")
     rows = [r for r in rows if r.get("followers") is not None]
     if not rows:
@@ -195,7 +197,7 @@ def report() -> None:
     """種別ごとの平均を表示する。フォーマット変更の効果はこの表で判断する。"""
     follower_report()
     rows = sb.select("x_posts", "select=kind,variant,has_media,impressions,likes,reposts,bookmarks,"
-                                "url_link_clicks,user_profile_clicks")
+                                "url_link_clicks,user_profile_clicks", strict=True)
     groups = defaultdict(list)
     for r in rows:
         if r.get("impressions") is not None or r.get("likes") is not None:

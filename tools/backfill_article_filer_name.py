@@ -97,7 +97,7 @@ def load_disclosures(stock_codes: set[str]) -> dict[tuple[str, str], list[str]]:
     # （実測: 順序未指定だと「候補なし」が73件出たが、order指定で3件まで減った）。
     rows = sb.select(
         "edinet_large_holdings",
-        f"issuer_code=in.({codes})&select=issuer_code,disc_date,filer_name&order=doc_id",
+        f"issuer_code=in.({codes})&select=issuer_code,disc_date,filer_name&order=doc_id", strict=True,
     )
     table: dict[tuple[str, str], list[str]] = {}
     for row in rows:

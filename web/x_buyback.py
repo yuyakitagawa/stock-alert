@@ -58,12 +58,13 @@ def fetch_decisions(date_str: str) -> list:
         "tdnet_buybacks",
         f"disclosed_at=gte.{date_str}T00:00:00&disclosed_at=lt.{date_str}T23:59:59"
         "&extract_ok=is.true&select=code,disclosed_at,title,max_amount_yen,ratio_pct,method,will_cancel"
-        "&order=max_amount_yen.desc.nullslast",
+        "&order=max_amount_yen.desc.nullslast", strict=True,
     )
     rows = [r for r in rows if (r.get("max_amount_yen") or 0) >= MIN_AMOUNT_YEN]
     if not rows:
         return []
     codes = ",".join(sorted({r["code"] for r in rows}))
+    # 銘柄名の引き当ては strict にしない: 表示用で、欠けた銘柄はコードで表示される。
     names = {
         n["code"]: n["name"]
         for n in sb.select("jpx_stock_list", f"code=in.({codes})&select=code,name")

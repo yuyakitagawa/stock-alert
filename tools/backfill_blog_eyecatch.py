@@ -160,7 +160,7 @@ def fetch_holding_ratios(articles: list) -> dict:
         f"issuer_code=in.({','.join(codes)})&disc_date=gte.{min(dates)}&disc_date=lte.{max(dates)}"
         "&select=issuer_code,disc_date,filer_name,holding_ratio&order=doc_id"
     )
-    rows = sb.select("edinet_large_holdings", q)
+    rows = sb.select("edinet_large_holdings", q, strict=True)
     out = {}
     for r in rows:
         if r.get("holding_ratio") is None:

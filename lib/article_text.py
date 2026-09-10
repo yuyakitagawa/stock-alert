@@ -31,7 +31,7 @@ def find_filer_names(code: str, disc_date: str) -> list:
     return sb.select(
         "edinet_large_holdings",
         f"issuer_code=eq.{code}&disc_date=eq.{disc_date}"
-        "&select=filer_name,doc_type_code,doc_description,holding_ratio",
+        "&select=filer_name,doc_type_code,doc_description,holding_ratio", strict=True,
     )
 
 

@@ -111,7 +111,7 @@ def backfill_holdings(records: list[dict], apply: bool) -> int:
     してしまうと、まだ記事の無い開示を永久に作れなくする＝今回直している不具合そのもの）。"""
     rows = sb.select("edinet_large_holdings",
                      f"disc_date=gte.{SINCE_DATE}&article_published_at=is.null"
-                     "&select=doc_id,issuer_code,disc_date,filer_name,holding_ratio,holding_ratio_prior")
+                     "&select=doc_id,issuer_code,disc_date,filer_name,holding_ratio,holding_ratio_prior", strict=True)
     by_triple, by_pair = defaultdict(list), defaultdict(list)
     for r in rows:
         code, d = str(r.get("issuer_code") or ""), str(r.get("disc_date") or "")[:10]
@@ -154,7 +154,7 @@ def backfill_buybacks(records: list[dict], apply: bool) -> int:
     """自社株買い決定の開示に article_published_at を立てる。"""
     rows = sb.select("tdnet_buybacks",
                      f"disclosed_at=gte.{SINCE_DATE}&article_published_at=is.null"
-                     "&select=code,disclosed_at")
+                     "&select=code,disclosed_at", strict=True)
     by_pair = defaultdict(list)
     for r in rows:
         by_pair[(str(r["code"]), str(r["disclosed_at"])[:10])].append(r["disclosed_at"][:19])

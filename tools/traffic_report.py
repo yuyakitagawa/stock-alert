@@ -71,15 +71,24 @@ def fetch_rows(days: int) -> list[dict]:
     user_agent は blog_crawler_ua に正規化されている（生テキストのままだと432,101行で
     62MBあり、Free枠のDB 500MBを単独で食い潰していた）。UAは598種類しか無いので
     ここで引き当てて元の形に戻す。
+
+    1日ずつ区切って引く。30日ぶん（約21万行）を1本でページングすると offset が20万まで
+    深くなり、1ページ6.8秒と statement timeout(8秒) の手前まで遅くなる（2026-09-10実測）。
+    どちらも strict: 途中で切れた行数でPVや人間/機械の比率を出すと、静かに誤った集計になる。
     """
-    since = quote((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), safe="")
-    rows = sb.select(
-        "blog_crawler_log",
-        f"bot_name=eq.Browser&occurred_at=gte.{since}"
-        "&select=occurred_at,path,ip_address,ua_id,visitor_id&order=occurred_at.desc",
-    )
+    now = datetime.now(timezone.utc)
+    rows = []
+    for i in range(days):
+        start = quote((now - timedelta(days=i + 1)).isoformat(), safe="")
+        end = quote((now - timedelta(days=i)).isoformat(), safe="")
+        rows += sb.select(
+            "blog_crawler_log",
+            f"bot_name=eq.Browser&occurred_at=gte.{start}&occurred_at=lt.{end}"
+            "&select=occurred_at,path,ip_address,ua_id,visitor_id&order=occurred_at.desc",
+            strict=True,
+        )
     ua_map = {u["id"]: u["user_agent"]
-              for u in sb.select("blog_crawler_ua", "select=id,user_agent")}
+              for u in sb.select("blog_crawler_ua", "select=id,user_agent", strict=True)}
     for r in rows:
         r["user_agent"] = ua_map.get(r.get("ua_id"))
     return rows

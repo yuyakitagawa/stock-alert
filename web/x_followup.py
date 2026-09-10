@@ -51,7 +51,7 @@ def find_target_date(today) -> "tuple[str, list]":
         rows = sb.select(
             "edinet_large_holdings",
             f"disc_date=eq.{target}&doc_type_code=in.({','.join(DOC_TYPE_CODES)})"
-            "&select=issuer_code,issuer_name,holding_ratio,filer_name",
+            "&select=issuer_code,issuer_name,holding_ratio,filer_name", strict=True,
         )
         rows = [r for r in rows if r.get("issuer_code")]
         if len(rows) >= 5:
@@ -67,7 +67,7 @@ def fetch_returns(codes: list, disc_date: str) -> dict:
         rows = sb.select(
             "yahoo_price_cache",
             f"code=in.({','.join(chunk)})&date=gte.{disc_date}"
-            "&select=code,date,close&order=code.asc,date.asc",
+            "&select=code,date,close&order=code.asc,date.asc", strict=True,
         )
         series: dict = {}
         for r in rows:

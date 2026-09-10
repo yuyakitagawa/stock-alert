@@ -60,7 +60,7 @@ def build_targets() -> list:
     rows = sb.select(
         "edinet_large_holdings",
         "short_term_transfers=not.is.null&select=issuer_code,disc_date,filer_name,"
-        "holding_ratio,holding_ratio_prior,short_term_transfers",
+        "holding_ratio,holding_ratio_prior,short_term_transfers", strict=True,
     )
     by_key = {}
     for r in rows:

@@ -152,7 +152,7 @@ def fetch_swept_doc_ids() -> set:
         rows = sb.select(
             "edinet_large_holdings",
             f"select=doc_id&xbrl_detail_fetched_date=not.is.null&order=doc_id&offset={offset}",
-            limit=step)
+            limit=step, strict=True)
         out.update(r["doc_id"] for r in rows)
         if len(rows) < step:
             return out

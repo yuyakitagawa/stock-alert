@@ -72,7 +72,7 @@ def fetch_rows(start: datetime, end: datetime) -> list[dict]:
         "blog_crawler_log",
         f"occurred_at=gte.{quote(start.isoformat(), safe='')}"
         f"&occurred_at=lt.{quote(end.isoformat(), safe='')}"
-        "&select=occurred_at,path,host,bot_name&order=occurred_at.desc",
+        "&select=occurred_at,path,host,bot_name&order=occurred_at.desc", strict=True,
     )
 
 

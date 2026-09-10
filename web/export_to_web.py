@@ -29,7 +29,7 @@ def export_rankings(today: str) -> list[dict]:
         "gen_rankings",
         f"date=eq.{today}&order=drop_prob.asc"
         "&select=date,code,name,close,drop_prob,vol,"
-        "recommend,rel20,per,pbr,piotroski,bps_growth,eps_surprise,pos52"
+        "recommend,rel20,per,pbr,piotroski,bps_growth,eps_surprise,pos52", strict=True
     )
 
     records = []
