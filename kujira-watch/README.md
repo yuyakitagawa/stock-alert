@@ -97,6 +97,7 @@ npm run dev
 | `/contact` | お問い合わせ（`src/app/(ja)/contact/page.tsx`）。窓口は公式XのDM/リプライ1本（運営者は実名・メールアドレスを公開しない方針。`src/lib/site.ts`の`ORGANIZATION_CONTACT_POINT`と同じ窓口を指す）。掲載内容の誤りの指摘・訂正削除の依頼・引用転載・取材の受け口と、投資助言に当たるため答えられない範囲を用件別に明記する。2026-08-25の監査で`/contact`が404、連絡手段がプライバシーポリシー本文の中にしか無いと指摘されたため追加。フッター・ハンバーガーメニュー・サイトマップからリンク |
 | `/privacy` | プライバシーポリシー（AdSense審査の必須要件）。Google AdSenseによる第三者配信広告・Cookie利用とそのオプトアウト方法、アクセス解析（GA4/Vercel Speed Insights/独自アクセスログの`kw_vid` cookie）について記載。ヘッダーのハンバーガーメニューから常時リンク |
 | `/faq` | よくある質問のハブ。9カテゴリそれぞれの件数・質問サンプル5件・カテゴリページへのボタンを並べる（回答本文は置かない） |
+| `/guides`・`/guides/[slug]` | 読み方ガイド（編集部の解説記事）。本文は`src/lib/guides.ts`に固定で持ち、ビルド時に全ページを生成する（`dynamicParams = false`）。開示1件ごとの自動生成記事とは別に、EDINET全件の集計と実際の開示例で「保有目的」「短期大量譲渡」「特例報告」「潜在株式を含む保有比率」「創業者・資産管理会社」を解説する。Article＋BreadcrumbList構造化データ、サイトマップ（pages）に掲載、フッター「サイト情報」と`/faq`からリンク。2026-09のAdSense再審査対応で追加（開示ごとの定型記事に偏ったサイト構成を補う） |
 | `/faq/[category]` | カテゴリ別のQ&A（全508件を9カテゴリに分割）。MUI Accordionで開閉。FAQPage構造化データはそのページに表示しているQ&Aのみを載せる（構造化データと可視コンテンツの一致がGoogleのガイドラインで必須のため）。データ本体は`src/lib/faqData.tsx` |
 | `/sitemap.xml` | sitemapindex（実体は`src/app/sitemap-index.xml/route.ts`、`next.config.ts`のrewriteで割り当て）。子サイトマップ`/sitemap/<id>.xml`（pages/stocks/dates/investors/articles の5種、`src/app/sitemap.ts`の`generateSitemaps`）を束ねる |
 | `/robots.txt` | `src/app/robots.ts` |
@@ -147,7 +148,7 @@ npm run dev
   `/manifest.webmanifest` はルート直下の共通ルートをそのまま使う（`SHARED_ROOT_PATHS`）。
   ホスト名は `src/lib/en.ts` の `EN_HOST`（`NEXT_PUBLIC_EN_HOST` で上書き可）。
 - **ページ**: `/`（英訳済み記事の新着50件）・`/articles/[id]`（`titleEn`/`bodyEn` が無い記事は404）・
-  `/about`・`/privacy`・`/robots.txt`（`sitemap-en.xml` を指す）・`/sitemap-en.xml`。銘柄・投資家・
+  `/about`・`/privacy`・`/terms`・`/contact`（2026-09-10追加。英語版にだけ窓口・規約が無かった）・`/robots.txt`（`sitemap-en.xml` を指す）・`/sitemap-en.xml`。銘柄・投資家・
   カテゴリページは作らず、日本語版の該当ページへリンクする。日本語側の `Header`/`Footer`/MUI は
   使わず、`src/app/(en)/en/layout.tsx` と `src/components/EnArticleCard.tsx` で完結させている
   （locale 引数を共通コンポーネントに戻すと変更範囲が全面に広がるため）。AdSense は入れない。
@@ -212,6 +213,8 @@ npm run dev
 
 ## 実装メモ
 
+- **銘柄ページの公開判定はサイトマップと同じ入力で行う（2026-09-10）**: `/stocks/[code]`は「事業内容の説明があるか」を`getStockDescriptionCodes()`（1時間キャッシュのコード集合＝サイトマップ側と同じ源）でも判定する。`getCompanyInfo()`はSupabaseの一時失敗時にdescriptionをnullで返すため、それだけで判定すると`notFound()`がISR（24時間）に残り、サイトマップ掲載URLが404になっていた（実測: /stocks/6420・3726・7810、再取得で200）。
+
 - **Supabaseの1000行上限**: PostgRESTは1リクエスト既定1000行で打ち切り、返る行の順序も保証しない。`src/lib/investors.ts`の`PAGE_SIZE`/`MAX_PAGES`で並び順を固定したページングを行い、全件必要なクエリ（`getAllFilers()`＝投資家2,938件、`getHoldingsInRange()`＝開示60日で2,906行）を取り切る。2026-08-15にこの上限で2件の実害を確認して修正した: ①`/investors`一覧とサイトマップに投資家が1,000件しか載らず、約1,900件の投資家ページがサイトマップから漏れていた ②`/trending`の投資家集計が（打ち切られた1000行に対象期間の行が入らず）まるごと空になっていた。
 - **一覧ページの重さ**: `/investors`は全件（約2,900件）を1ページに並べていたためHTMLが1.5MBに達し、本番のTTFBが1.6〜1.9秒だった。1ページ200件のページ送り＋行の軽量化（MUIの`ListItem`/`Chip`/`Tooltip`をやめて素の`ul`/`li`＋`DealTypeLabel`）でHTML約390KB・TTFB 0.03〜0.06秒（`unstable_cache`ヒット時）に改善。分類の色定義は`src/lib/dealTypeInfo.ts`の`DEAL_TYPE_COLORS`に置き、`DealTypeBadge`（Chip+Tooltip、記事カード用）と`DealTypeLabel`（一覧用）で共有する。
 - **microCMSの全件取得**: 公式SDKの`getAllContents`はページ間に1秒の固定スリープが入るため使わず、1ページ目の`totalCount`から残りのoffsetを割り出して並列取得する（`fetchAllPagesParallel()`＝銘柄一覧・月別インデックス、`fetchAllArticlesByFilter()`＝`/weekly`・`/monthly/[month]`）。直列だと1往復200〜300msがページ数だけ積み上がる。
@@ -227,7 +230,7 @@ npm run dev
 - デザインはエディトリアル（雑誌）系。欧文は`next/font/google`のGeist、**和文は端末内蔵フォント**（iOS: Hiragino Sans / Android: Noto Sans CJK JP）を使う。以前はNoto Sans JPをウェブフォントで読んでいたが、`next/font/google`の`subsets`はプリロード範囲の指定でしかなくCJKの`@font-face`は生成CSSから落ちず、4ウェイト分でunicode-range分割の`@font-face`が496個・378KB（gzip 130KB）のレンダリングブロッキングCSSになっていた。加えて本文の漢字に応じて70〜90KBのwoff2スライスをウェイトごとに追加ダウンロードしていた（スマホで表示が重い直接の原因）。フォントスタックは`src/app/globals.css`の`--font-sans`で定義する。配色はクリーム地の紙面(`--background`/`--paper`)＋インクネイビー＋くすみゴールドのアクセント（`src/app/globals.css` のCSS変数で調整可）。バッジ・カテゴリ表示はピル型からドット＋スモールキャップス文字（`.kicker`）のキッカー表記に変更し、カードは影で持ち上げる代わりに罫線区切り＋タイトル下線ホバーのシンプルな見せ方にした。記事詳細の本文冒頭にはドロップキャップ（先頭一文字の大型表示）を適用。ヒーロー枠（注目記事カード）はアイキャッチ画像がある記事のみ大きな高さを取り、無い記事では余白を残さないコンパクトな表示にフォールバックする。
 - 記事一覧（TOP・カテゴリ別一覧・銘柄別履歴）は取引日(`dealDate`)の新しい順、同日内は金額規模(`dealAmount`)の大きい順にソートし（`src/lib/microcms.ts` の `orders: "-dealDate,-dealAmount"`）、`src/lib/groupByDealDate.ts` で取引日ごとに見出しを付けて表示する（見出しは`src/components/DealDateHeading.tsx`で3ページ共通）。「いつの話か」が一覧性で分かるようにするため。各見出しの下には、その取引日の全記事を一覧できる`/date/[date]`アーカイブページへのボタン（`src/components/DealDateSeeMoreLink.tsx`）を表示する。
 - ヘッダーのロゴ（🐋アイコン）・カテゴリ別一覧のパンくずリストから常にTOPへ戻れる（記事詳細・銘柄別履歴には既存のパンくずリストあり）。
-- フッター（`src/components/Footer.tsx`）は日英両方のlayoutに置き、全ページ共通で表示する。「主要ページ」「一覧・アーカイブ」「サイト情報（このサイトについて・FAQ・お問い合わせ・プライバシーポリシー・利用規約）」「フォロー（RSS・公式X・公式YouTube・言語切替。サイト内に残す唯一のSNS導線で、登録の要らないRSSを先頭に置く）」の4グループ＋免責の定型文＋著作権表示という構成（モバイル2列・sm以上4列）。一時は「オートスクロールで記事一覧が際限なく伸び、最下部まで到達するのが困難」という理由で廃止しハンバーガーメニューに集約していたが、メニューは開かないと見えず、`/terms`のようにどのページからもリンクの無い固定ページが生まれていたため2026-08-18に復活させた。一覧ページで到達しづらい問題への手当てとして`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）は併存させ、スクロール位置によらず主要リンクへ行けるようにしている。
+- フッター（`src/components/Footer.tsx`）は日英両方のlayoutに置き、全ページ共通で表示する。「主要ページ」「一覧・アーカイブ」「サイト情報（このサイトについて・FAQ・読み方ガイド・お問い合わせ・プライバシーポリシー・利用規約）」「フォロー（RSS・公式X・公式YouTube・言語切替。サイト内に残す唯一のSNS導線で、登録の要らないRSSを先頭に置く）」の4グループ＋免責の定型文＋著作権表示という構成（モバイル2列・sm以上4列）。一時は「オートスクロールで記事一覧が際限なく伸び、最下部まで到達するのが困難」という理由で廃止しハンバーガーメニューに集約していたが、メニューは開かないと見えず、`/terms`のようにどのページからもリンクの無い固定ページが生まれていたため2026-08-18に復活させた。一覧ページで到達しづらい問題への手当てとして`src/components/HeaderMenu.tsx`（ヘッダー右上のハンバーガーメニュー）は併存させ、スクロール位置によらず主要リンクへ行けるようにしている。
 - ヘッダー上部のハブナビ（今週の動き／大口投資家一覧／株式銘柄一覧）はスマホ幅では折り返さず横スクロール1行にし（`.no-scrollbar`、`src/app/globals.css`）ている。カテゴリ絞り込み（13カテゴリ）は以前ヘッダーに常設していたが、全ページ共通で常時表示すると場所を取り本文の文脈からも離れて見えるため`src/components/CategoryFilterDetails.tsx`に切り出し、TOPページのみ（ランキング・リターン枠の下、記事一覧の直前）に表示する構成に変更した。
 - カテゴリフィルター（`/category/[category]`、`CategoryFilterDetails.tsx`）はmicroCMS側に別フィールドを持たず、`dealType`の値をそのままカテゴリ名として使う（`src/types/article.ts` の `categoryLabel`/`DEAL_TYPE_BY_CATEGORY`、値はidentity）。CMS側の選択肢リストをdealTypeの分類と別途同期させる必要が無く、選択肢の同期漏れによる不具合が起きない構成にしている。
 - `/investors`・`/stocks`のカテゴリ／業種フィルターはクライアントJSを使わず、`searchParams`（`?category=`/`?sector=`）を読んでサーバー側で絞り込んだ結果を返すシンプルな構成（フィルターの実体は`<Link>`をボタン化した`src/components/FilterButtonNav.tsx`で、選択中のみ塗りつぶし表示）。`/investors`はカテゴリ別、`/stocks`は業種別で、切り口をあえて分けている。

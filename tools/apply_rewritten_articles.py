@@ -6,6 +6,8 @@ tools/apply_rewritten_articles.py
 tools/export_article_fact_cards.py が書き出した事実カードをもとに書いた本文を、
 {"記事ID": "<p>...</p>形式のHTML本文"} のJSONで受け取り、PATCHで更新する。
 タイトルも直したい場合は {"記事ID": {"body": "...", "title": "..."}} の形で渡す。
+英語版（en.kujira-watch.com が配信する titleEn / bodyEn）だけを直すときは
+{"記事ID": {"bodyEn": "...", "titleEn": "..."}} の形で渡す（和文の body と同時でもよい）。
 
 安全策:
 - 更新前に現行の本文とタイトルを logs/ へバックアップする（--backup で出力先を変更可）。
@@ -58,11 +60,32 @@ def main():
     by_id = {a["id"]: a for a in fetch_all_articles()}
     targets, problems = [], []
     for aid, entry in bodies.items():
-        new_body = entry["body"] if isinstance(entry, dict) else entry
+        new_body = entry.get("body") if isinstance(entry, dict) else entry
         new_title = entry.get("title") if isinstance(entry, dict) else None
         old = by_id.get(aid)
         if old is None:
             problems.append((aid, "microCMSに存在しない記事ID"))
+            continue
+        en = {}
+        if isinstance(entry, dict) and entry.get("bodyEn"):
+            new_en = entry["bodyEn"]
+            if not new_en.lstrip().startswith("<p"):
+                problems.append((aid, "英語本文が<p>で始まっていない"))
+                continue
+            old_en_len = len(re.sub(r"<[^>]+>", " ", old.get("bodyEn") or "").split())
+            new_en_len = len(re.sub(r"<[^>]+>", " ", new_en).split())
+            if new_en_len <= old_en_len:
+                problems.append((aid, f"新しい英語本文が既存より短い({old_en_len}→{new_en_len}語)"))
+                continue
+            en["bodyEn"] = restore_figures(new_en, old.get("bodyEn") or "")
+            print(f"  {aid}: 英語本文 {old_en_len}→{new_en_len}語")
+        if isinstance(entry, dict) and entry.get("titleEn"):
+            en["titleEn"] = entry["titleEn"]
+        if new_body is None:
+            if not en:
+                problems.append((aid, "反映する本文がない"))
+                continue
+            targets.append((aid, old, None, 0, 0, new_title, en))
             continue
         if not new_body.lstrip().startswith("<p"):
             problems.append((aid, "本文が<p>で始まっていない"))
@@ -74,9 +97,11 @@ def main():
             continue
         # 既存の図を引き継ぐ（解説図は本文中へ、株価チャートは末尾へ）
         body = restore_figures(new_body, old.get("body") or "")
-        targets.append((aid, old, body, old_len, new_len, new_title))
+        targets.append((aid, old, body, old_len, new_len, new_title, en))
 
-    for aid, old, _, old_len, new_len, new_title in targets:
+    for aid, old, body, old_len, new_len, new_title, _ in targets:
+        if body is None:
+            continue
         note = f" / タイトル差し替え: {new_title}" if new_title else ""
         print(f"  {aid}: {old.get('stockName')}({old.get('stockCode')}) {old_len}→{new_len}字{note}")
     if problems:
@@ -98,14 +123,18 @@ def main():
     os.makedirs(os.path.dirname(backup_path), exist_ok=True)
     with open(backup_path, "w", encoding="utf-8") as f:
         json.dump(
-            {aid: {"body": old.get("body"), "title": old.get("title")} for aid, old, _, _, _, _ in targets},
+            {aid: {"body": old.get("body"), "title": old.get("title"),
+                   "bodyEn": old.get("bodyEn"), "titleEn": old.get("titleEn")}
+             for aid, old, _, _, _, _, _ in targets},
             f, ensure_ascii=False, indent=1,
         )
     print(f"\n現行本文をバックアップ: {backup_path}")
 
     updated = 0
-    for aid, _, body, _, _, new_title in targets:
-        payload = {"body": body}
+    for aid, _, body, _, _, new_title, en in targets:
+        payload = dict(en)
+        if body is not None:
+            payload["body"] = body
         if new_title:
             payload["title"] = new_title
         try:
@@ -117,8 +146,11 @@ def main():
         except MicroCMSPermissionError as e:
             print(f"  ✖ 権限エラーのため中断: {e}")
             break
-        with open(DONE_LEDGER, "a", encoding="utf-8") as f:
-            f.write(aid + "\n")
+        # 台帳は和文リライトの進捗用（export_article_fact_cards.py が候補から外す）。
+        # 英語本文だけを直した記事を載せると、和文が未リライトのまま候補から消えてしまう。
+        if body is not None:
+            with open(DONE_LEDGER, "a", encoding="utf-8") as f:
+                f.write(aid + "\n")
         time.sleep(0.3)
     print(f"更新: {updated}/{len(targets)}件（台帳: {DONE_LEDGER}）")
 

@@ -1306,6 +1306,96 @@ def format_context_facts(facts: dict, stock_name: str, filer_name: str) -> str:
     return "\n".join(lines) + "\n" if lines else ""
 
 
+# ---- 開示ごとに違う事実（保有目的・取得資金など）と、書き出しの切り口 ----
+# 2026-09-10の監査: index対象1,099本のうち1,089本が同じ直答文「…が大量保有報告書（EDINET）で
+# 分かりました。」で始まり、1,093本が「※推測:」の段落で終わっていた。見出しは9割が固有でも、
+# 書き出し・締め・扱う話題（株主構成・他の保有・株価指標・推定金額）が全記事で同じだと
+# Googleの言う cookie cutter に見え、AdSenseの「有用性の低いコンテンツ」に当たる。
+# 報告書本文の保有目的・取得資金・保有株数は開示ごとに違う事実なのでプロンプトに渡し、
+# 書き出しはその開示で一番特徴的な事実から入らせる（直答に要る銘柄・提出者・比率は必須のまま）。
+FILING_DETAIL_KEYS = (
+    "purpose_of_holding", "important_proposal", "shares_held", "shares_outstanding",
+    "funding_total", "funding_own", "funding_borrowings", "obligation_date", "doc_description",
+)
+# 「重要提案行為を行う予定はない」のような否定の記載を、提案の意思ありと取り違えないため。
+_PROPOSAL_NEGATION_RE = re.compile(
+    r"重要提案行為[^。]{0,20}(行わない|行う予定はない|行う意図はない|行うことはない|予定していない|ありません|なし)"
+)
+
+
+def filing_details_from_row(row: dict) -> dict:
+    """edinet_large_holdings の行から、報告書本文由来の事実だけを抜き出す。"""
+    return {key: row.get(key) for key in FILING_DETAIL_KEYS}
+
+
+def _yen_text(value) -> str:
+    value = float(value)
+    return f"{value / 1e8:,.1f}億円" if value >= 1e8 else f"{value / 1e4:,.0f}万円"
+
+
+def format_filing_details(details: dict) -> str:
+    """プロンプトの事実欄に足す行。値の無い項目は出さない。"""
+    lines = []
+    purpose_lines = []
+    for line in (details.get("purpose_of_holding") or "").splitlines():
+        line = line.strip()
+        if line and line not in purpose_lines:
+            purpose_lines.append(line)
+    purpose = " / ".join(purpose_lines)
+    if purpose:
+        lines.append(f"- 報告書の保有目的欄: {purpose[:220]}")
+    held, outstanding = details.get("shares_held"), details.get("shares_outstanding")
+    if held and outstanding:
+        lines.append(f"- 報告書の保有株数: {int(held):,}株（発行済株式数 {int(outstanding):,}株。保有株数は潜在株式を含む場合がある）")
+    total = details.get("funding_total")
+    if total:
+        parts = []
+        if details.get("funding_own"):
+            parts.append(f"自己資金{_yen_text(details['funding_own'])}")
+        if details.get("funding_borrowings"):
+            parts.append(f"借入金{_yen_text(details['funding_borrowings'])}")
+        breakdown = f"（{'、'.join(parts)}）" if parts else ""
+        lines.append(f"- 報告書の取得資金: 合計{_yen_text(total)}{breakdown}")
+    if details.get("obligation_date"):
+        lines.append(f"- 報告義務発生日: {details['obligation_date']}")
+    return "".join(line + "\n" for line in lines)
+
+
+def pick_lead_angle(fact_sheet: dict) -> str:
+    """書き出しで最初に伝える事実を1つ選び、その指示文を返す（優先順位の高い順）。"""
+    details = fact_sheet.get("filing_details") or {}
+    purpose = details.get("purpose_of_holding") or ""
+    doc = details.get("doc_description") or fact_sheet.get("doc_type_label") or ""
+    ratio = float(fact_sheet.get("holding_ratio") or 0)
+    prior = fact_sheet.get("prior_ratio")
+    if prior is None and is_new_holding(fact_sheet):
+        prior = 0.0
+    if fact_sheet.get("is_correction"):
+        return "既に届け出ていた保有比率を訂正した開示であることから書き出してください。"
+    if "短期大量譲渡" in doc:
+        return "短期間にまとまった株式を手放したときに出る短期大量譲渡の報告であることから書き出してください。"
+    if ratio == 0:
+        return "保有比率が0%になり、この提出者が大株主の一覧から外れたことから書き出してください。"
+    if "重要提案行為" in purpose and not _PROPOSAL_NEGATION_RE.search(purpose):
+        return "保有目的に重要提案行為（経営陣への重要な提案）が書かれていることから書き出してください。"
+    if re.search(r"代表取締役|創業|資産管理会社|出資会社", purpose):
+        return "提出者が発行会社の経営者・創業家の側であることから書き出してください。"
+    if prior is not None:
+        for threshold, label in ((200 / 3, "3分の2"), (50.0, "過半数"), (100 / 3, "3分の1")):
+            if min(prior, ratio) < threshold <= max(prior, ratio):
+                return f"保有比率が{label}の節目をまたいだことから書き出してください。"
+    if "政策" in purpose:
+        return "取引関係の維持のための政策保有（持ち合い）であることから書き出してください。"
+    if "商品在庫" in purpose or "特例対象" in doc:
+        return "金融機関の定期的な報告（特例報告）であり、比率の動きが投資判断とは限らない点から書き出してください。"
+    history = (fact_sheet.get("context_facts") or {}).get("holding_history") or {}
+    if (history.get("count") or 0) >= 3:
+        return f"この提出者がこの銘柄について出した{history['count']}回目の開示であることから書き出してください。"
+    if (fact_sheet.get("deal_amount_oku") or 0) >= 100:
+        return "推定金額の大きさから書き出してください。"
+    return "保有比率がどれだけ動いたかから書き出してください。"
+
+
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからbodyを生成させる。JSONで
     {"body"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
@@ -1353,6 +1443,8 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
     context_facts_line = format_context_facts(
         fact_sheet.get("context_facts") or {}, fact_sheet["stock_name"], fact_sheet["filer_name"]
     )
+    filing_details_line = format_filing_details(fact_sheet.get("filing_details") or {})
+    lead_angle = pick_lead_angle(fact_sheet)
     ratio_str = format_ratio(fact_sheet["holding_ratio"])
     if is_correction:
         answer_sentence = (
@@ -1421,9 +1513,11 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
 - 報告書種別: {fact_sheet['doc_type_label']}
 - 保有比率: {fact_sheet['holding_ratio']}%
 - 開示日: {fact_sheet['disc_date']}
-{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}{context_facts_line}
-本文の1文目は、必ず次の文をそのまま使ってください（検索してきた読者への直答として最初に置く）:
-「{answer_sentence}」
+{amount_fact_line}{filer_description_line}{company_description_line}{context_line}{change_line}{context_facts_line}{filing_details_line}
+冒頭の段落には、検索してきた読者への直答として、銘柄名とコード（{fact_sheet['stock_name']}（{fact_sheet['stock_code']}））・
+提出者名・保有比率{ratio_str}%を必ず含めてください。ただし書き出しは記事ごとに変えてください。この開示では、{lead_angle}
+「〜ことが大量保有報告書（EDINET）で分かりました。」という定型の書き出しは使わないでください。
+事実関係を1文にまとめると次のとおりです（この文をそのまま写さないこと）: 「{answer_sentence}」
 提出者について の事実がある場合は、それがどんな種類の投資家かを1文で読者に補足してください
 （例: 提出者が海外の資産運用会社なら「海外の資産運用会社による{deal_verb}」等）。無い場合は無理に触れなくてよいです。
 {fact_sheet['stock_name']}の事業内容 の事実がある場合は、1文目の直後にその会社が何をしている会社かを
@@ -1446,19 +1540,23 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
   比べてどれだけ大きいか）。具体名と比率を挙げて比較する。
 - 業種・指標: PER・PBR・52週レンジ内の位置がそれぞれ何を示しているか。ただし「割安だから買い」のような
   投資判断の断定はしないでください。
+- 報告書の保有目的・取得資金: 報告書に書かれた保有目的や取得資金から分かること（純投資か、政策保有か、
+  経営参加か、証券会社の商品在庫か、借入で取得したか等）。報告書の文言を要約して示す。
+セクションは、この開示で重要な順に並べてください（毎回同じ順番にしないこと）。
 
 他社の業種・事業内容は、事実に業種が明記されている銘柄についてだけ言及してください。社名から業種を
 推測して書くことは禁止です（例: 事実に業種の無い銘柄を「電機メーカー」と決めつけない）。
 
-最後に1文だけ、この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるかの推測を
-加えてください。{speculation_scope}ただし事実として断定せず、必ず文頭に「※推測:」を付けて、事実の記述とは明確に
-分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
+この{deal_verb}が今後の同社や当該投資家にとってどんな意味を持ちうるか、事実から自然に読み取れることがあれば、
+1〜2文の推測を加えてもかまいません。{speculation_scope}推測を書くときは事実として断定せず、必ず文頭に「※推測:」を付けて、
+事実の記述とは明確に分けてください（例: 「※推測: 海外ファンドとの関係強化を通じて新市場開拓を模索している可能性がある」）。
+推測の置き場所は最後の段落に限りません（関係するセクションの中でよい）。読み取れることが無ければ推測は書かないでください。
 上記の事実（事業内容・提出者の属性・保有比率の規模等）から自然に読み取れる範囲の推測に留め、
 事実として存在しない具体的な計画やコメントの引用は創作しないでください。
 
 出力はJSON形式のみとし、他のテキストやコードフェンスは含めないでください（タイトルは別途
 テンプレートで組み立てるため出力しない）:
-{{"body": "HTML本文（1,300〜1,700字。冒頭の直答段落は<p>で始め、以降は<h2>見出し</h2>と<p>本文</p>を3〜5セクション。最後に※推測文の<p>）"}}
+{{"body": "HTML本文（1,300〜1,700字。冒頭の直答段落は<p>で始め、以降は<h2>見出し</h2>と<p>本文</p>を3〜5セクション）"}}
 """
     try:
         resp = client.messages.create(
@@ -1935,6 +2033,8 @@ def build_and_publish(days: int = LARGE_HOLDINGS_DAYS, max_articles: "int | None
             "ratio_change_pct": change,
             "prior_ratio": prior_ratio,
             "is_correction": is_correction,
+            # 報告書本文の保有目的・取得資金・保有株数（開示ごとに違う事実。書き出しの切り口にも使う）
+            "filing_details": filing_details_from_row(h),
             # 開示1件の数字だけでは記事がテンプレートになるため、開示を横断して初めて書ける
             # 事実（保有の積み上げ履歴・他の保有銘柄・他の大株主・指標）を足す。
             "context_facts": build_context_facts(code, filer_name, disc_date),

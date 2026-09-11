@@ -58,6 +58,11 @@ export default function FaqPage() {
         投資初心者・中級者の方からよく寄せられる疑問まで、全{FAQS.length}件をカテゴリ別に
         まとめました。気になるカテゴリを選んでご覧ください。
       </p>
+      <p className="mb-8 text-sm leading-relaxed text-ink-secondary">
+        実際の開示例を使った長めの解説は
+        <Link href="/guides" className="text-brand-blue hover:underline">大量保有報告書の読み方ガイド</Link>
+        にまとめています。
+      </p>
 
       {FAQ_CATEGORIES.map((category) => {
         const faqs = faqsByCategory(category.id);

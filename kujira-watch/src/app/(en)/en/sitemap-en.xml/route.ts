@@ -31,6 +31,8 @@ export async function GET(): Promise<Response> {
     ...urlEntry(EN_SITE_URL, latest),
     ...urlEntry(`${EN_SITE_URL}/about`),
     ...urlEntry(`${EN_SITE_URL}/privacy`),
+    ...urlEntry(`${EN_SITE_URL}/terms`),
+    ...urlEntry(`${EN_SITE_URL}/contact`),
     ...indexable.flatMap((a) => urlEntry(`${EN_SITE_URL}/articles/${a.id}`, a.dealDate)),
     `</urlset>`,
   ].join("\n");

@@ -12,7 +12,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.fix_misreported_blog_articles import (  # noqa: E402
     _title_ratio,
+    en_needs_rewrite,
+    rebuild_en_title,
     rewrite_body_numbers,
+    rewrite_en_body_numbers,
     scale_phrase_conflicts,
 )
 
@@ -108,6 +111,62 @@ def test_title_ratio_both_templates():
     check("読めないタイトルはNone", _title_ratio({"title": "見出しのない記事"}), None)
 
 
+
+# ---- 英語版（titleEn / bodyEn）----
+# 2026-09-10: 是正が title/body だけに入り、英語版324本中82本が和文と矛盾していた。
+
+def _sheet(ratio, direction="buy", doc="変更報告書", prior=10.0, change=1.0):
+    return {"stock_code": "9201", "holding_ratio": ratio, "direction": direction,
+            "doc_type_label": doc, "prior_ratio": prior, "ratio_change_pct": change,
+            "is_correction": False}
+
+
+def test_en_title_flips_direction_and_ratio():
+    old = "Nomura Securities Cuts Stake in Japan Airlines (9201) to 0% | Large Shareholding Report"
+    got = rebuild_en_title(old, _sheet(8.14, "buy", prior=7.0, change=1.14))
+    check("方向と比率を組み直す", got,
+          "Nomura Securities Raises Stake in Japan Airlines (9201) to 8.14% | Large Shareholding Report")
+
+
+def test_en_title_new_holding():
+    old = "Arne Deussen Takes 3.42% Stake in Kobayashi Paper (3944) | Large Shareholding Report"
+    got = rebuild_en_title(old, _sheet(5.12, "buy", doc="大量保有報告書", prior=0, change=5.12) | {"stock_code": "3944"})
+    check("新規保有の英題", got, "Arne Deussen Takes 5.12% Stake in Kobayashi Paper (3944) | Large Shareholding Report")
+
+
+def test_en_title_keeps_parentheses_in_company_name():
+    old = "Evo Fund Cuts Stake in Tokyo Kiraboshi (Holdings) (7173) to 4.2% | Large Shareholding Report"
+    got = rebuild_en_title(old, _sheet(3.9, "sell", change=-0.3) | {"stock_code": "7173"})
+    check("社名の括弧を残す", got,
+          "Evo Fund Cuts Stake in Tokyo Kiraboshi (Holdings) (7173) to 3.9% | Large Shareholding Report")
+
+
+def test_en_title_unknown_template_is_none():
+    check("テンプレート外はNone", rebuild_en_title("Something else entirely", _sheet(5.0)), None)
+
+
+def test_en_body_numbers():
+    body = ("<p>raised its stake to 11.64%, a 1.16 percentage point increase, "
+            "with an estimated ¥2.33 billion purchase.</p>")
+    new_body, missed = rewrite_en_body_numbers(
+        body, {"ratio": 11.64, "change": 1.16, "amount": 23.3}, {"ratio": 12.03, "change": 0.38, "amount": 7.7})
+    check("英語: 置換漏れなし", missed, [])
+    check("英語: 比率", "12.03%" in new_body and "11.64%" not in new_body, True)
+    check("英語: 変化幅", "0.38 percentage point" in new_body, True)
+    check("英語: 金額（10億円未満はmillion）", "¥770 million" in new_body, True)
+
+
+def test_en_body_reports_missing():
+    _, missed = rewrite_en_body_numbers("<p>no numbers here</p>", {"ratio": 5.0, "change": 1.0, "amount": 3.0},
+                                        {"ratio": 6.0, "change": 2.0, "amount": 4.0})
+    check("英語: 旧値が無い項目を報告", missed, ["ratio", "change", "amount"])
+
+
+def test_en_needs_rewrite_on_direction_flip():
+    check("方向が反転したら書き直し", en_needs_rewrite({"ratioChangePct": -0.13}, {"signed_change": 1.14}, []), True)
+    check("同方向・置換済みなら不要", en_needs_rewrite({"ratioChangePct": 1.16}, {"signed_change": 0.38}, []), False)
+    check("旧値が残るなら書き直し", en_needs_rewrite({"ratioChangePct": 1.16}, {"signed_change": 0.38}, ["amount"]), True)
+
 for fn in [
     test_replaces_ratio_change_and_amount,
     test_reports_missing_values,
@@ -117,6 +176,13 @@ for fn in [
     test_scale_phrase_conflict_detected,
     test_scale_phrase_ignores_tags,
     test_title_ratio_both_templates,
+    test_en_title_flips_direction_and_ratio,
+    test_en_title_new_holding,
+    test_en_title_keeps_parentheses_in_company_name,
+    test_en_title_unknown_template_is_none,
+    test_en_body_numbers,
+    test_en_body_reports_missing,
+    test_en_needs_rewrite_on_direction_flip,
 ]:
     fn()
 

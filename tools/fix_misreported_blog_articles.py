@@ -58,7 +58,7 @@ from web.publish_blog_articles import (
     MICROCMS_DOMAIN, MICROCMS_KEY, MicroCMSPermissionError,
     build_article_titles, build_context_facts, classify_filer, estimate_deal_amount_oku,
     disclosure_close_price, format_ratio, generate_article_body_checked, get_company_description,
-    is_indexable_article, update_article,
+    is_indexable_article, is_new_holding, update_article,
 )
 
 load_dotenv()
@@ -165,6 +165,102 @@ def scale_phrase_conflicts(body: str, new_ratio: float) -> list:
         if phrase in text and not (low <= new_ratio <= high):
             hits.append(phrase)
     return hits
+
+
+# ---- 英語版（titleEn / bodyEn）を同じ事実へそろえる ----
+# 英語版（en.kujira-watch.com）は日本語版と同じ記事の titleEn / bodyEn を配信する。
+# このスクリプトが title / body だけを直していたため、2026-08-30 の是正（238本）と方向の訂正
+# （27本）が英語版に一切届かず、2026-09-10 の監査で英語版324本中82本が和文と矛盾していた
+# （例: 日本航空 野村證券 和文「8.14%に引き上げ」/ 英語「Cuts Stake to 0%」）。
+# 英語のタイトルは決定的テンプレート（2026-08-29 まで build_article_titles() が組んでいた形）
+# なので、既存の titleEn から英語の社名・提出者名を読み取って組み直す。
+_EN_TITLE_RE = re.compile(
+    r"^(?P<filer>.+?) (?:"
+    r"Takes [0-9.]+% Stake in (?P<n1>.+) \((?P<c1>[0-9A-Z]+)\)"
+    r"|(?:Raises|Cuts) Stake in (?P<n2>.+) \((?P<c2>[0-9A-Z]+)\) to [0-9.]+%"
+    r"|Corrects Reported Stake in (?P<n3>.+) \((?P<c3>[0-9A-Z]+)\) to [0-9.]+%"
+    r") \| "
+)
+
+
+def rebuild_en_title(title_en: str, fact_sheet: dict) -> "str | None":
+    """既存の titleEn の英語名を引き継いで、是正後の事実でタイトルを組み直す。
+    テンプレートに当てはまらない titleEn は None（呼び出し側で「直せなかった」として出す）。"""
+    m = _EN_TITLE_RE.match(title_en or "")
+    if not m:
+        return None
+    filer_en = m.group("filer")
+    name_en = m.group("n1") or m.group("n2") or m.group("n3")
+    code = fact_sheet["stock_code"]
+    ratio = format_ratio(fact_sheet["holding_ratio"])
+    if fact_sheet.get("is_correction"):
+        return (f"{filer_en} Corrects Reported Stake in {name_en} ({code}) to {ratio}% "
+                "| Amended Large Shareholding Report")
+    if is_new_holding(fact_sheet):
+        return f"{filer_en} Takes {ratio}% Stake in {name_en} ({code}) | Large Shareholding Report"
+    verb = "Cuts" if fact_sheet.get("direction") == "sell" else "Raises"
+    return f"{filer_en} {verb} Stake in {name_en} ({code}) to {ratio}% | Large Shareholding Report"
+
+
+def _en_amount_variants(oku: float) -> list:
+    """億円の概算額が英語本文に出る表記（10億円以上は ¥X billion、未満は ¥X million）。"""
+    oku = abs(float(oku))
+    if oku >= 10:
+        value = oku / 10
+        texts = (f"{value:.2f}", f"{value:.1f}", f"{value:g}")
+        unit = " billion"
+    else:
+        value = oku * 100
+        texts = (f"{value:,.0f}", f"{value:g}")
+        unit = " million"
+    out = []
+    for text in texts:
+        candidate = f"¥{text}{unit}"
+        if candidate not in out:
+            out.append(candidate)
+    return out
+
+
+def _en_amount_text(oku: float) -> str:
+    return _en_amount_variants(oku)[0]
+
+
+def rewrite_en_body_numbers(body: str, old: dict, new: dict) -> "tuple[str, list]":
+    """英語本文の保有比率・変化幅・推定金額を新しい値へ置換する（LLM不使用）。
+    old/new と戻り値は rewrite_body_numbers() と同じ形。"""
+    missed = []
+    for key in ("ratio", "change", "amount"):
+        old_value = old.get(key)
+        new_value = new.get(key)
+        if old_value is None or new_value is None:
+            continue
+        if key in ("change", "amount"):
+            old_value, new_value = abs(float(old_value)), abs(float(new_value))
+        if abs(float(old_value) - float(new_value)) < 0.005:
+            continue
+        done = False
+        if key == "ratio":
+            body, done = _replace_number(body, old_value, new_value, "%")
+        elif key == "change":
+            body, done = _replace_number(body, old_value, new_value, " percentage point")
+        else:
+            replacement = _en_amount_text(new_value)
+            for variant in _en_amount_variants(old_value):
+                if variant in body:
+                    body, done = body.replace(variant, replacement), True
+                    break
+        if not done:
+            missed.append(key)
+    return body, missed
+
+
+def en_needs_rewrite(article: dict, fix: dict, en_missed: list) -> bool:
+    """数字の置換だけでは英語本文が事実と一致しないもの。売買の方向が変わった
+    （Raises↔Cuts）ときは文章ごと逆なので置換では直らない。"""
+    old_change = article.get("ratioChangePct")
+    flipped = (old_change is not None and fix["signed_change"] != 0
+               and (float(old_change) < 0) != (fix["signed_change"] < 0))
+    return flipped or bool(en_missed)
 
 
 def normalize_filer(name: str) -> str:
@@ -464,6 +560,7 @@ def main():
     updated, deleted, failed = 0, 0, []
     to_delete = []
     body_missed, body_conflicts = [], []
+    en_stale = []  # (記事id, 理由) 英語版の書き直しが要る記事
     # 更新前のフィールドを1行1JSONで退避してから送る。まとめて最後に書くと、
     # 途中で落ちたときに「書き換えたのにバックアップが無い記事」が残る。
     backup_file = None
@@ -508,6 +605,13 @@ def main():
             "ratioChangePct": fix["signed_change"],
             "tags": build_tags(a, fix),
         }
+        has_en = bool(a.get("titleEn") or a.get("bodyEn"))
+        if has_en:
+            title_en = rebuild_en_title(a.get("titleEn"), fact_sheet)
+            if title_en:
+                payload["titleEn"] = title_en
+            else:
+                en_stale.append((a["id"], "titleEnがテンプレートに一致せず組み直せない"))
 
         print(f"  {a['id']}: {name}({code}) {a.get('ratioChangePct')}pt→{fix['signed_change']}pt / "
               f"{a.get('dealAmount')}億円→{fix['deal_amount']}億円")
@@ -534,6 +638,16 @@ def main():
                 # 機械では判断できないので件数を出して人が見る材料にする。
                 body_missed.append((a["id"], missed))
                 print(f"      ・本文に旧{'・'.join(missed)}の記載が無く置換なし")
+            if a.get("bodyEn"):
+                old_values = {"ratio": _title_ratio(a), "change": a.get("ratioChangePct"),
+                              "amount": a.get("dealAmount")}
+                new_values = {"ratio": fix["holding_ratio"], "change": fix["signed_change"],
+                              "amount": fix["deal_amount"]}
+                rewritten_en, en_missed = rewrite_en_body_numbers(a["bodyEn"], old_values, new_values)
+                if rewritten_en != a["bodyEn"]:
+                    payload["bodyEn"] = rewritten_en
+                if en_needs_rewrite(a, fix, en_missed):
+                    en_stale.append((a["id"], "英語本文は数字の置換では直らない（方向の反転または旧値の記載なし）"))
             conflicts = scale_phrase_conflicts(rewritten, fix["holding_ratio"])
             if conflicts:
                 body_conflicts.append((a["id"], fix["holding_ratio"], conflicts))
@@ -549,6 +663,8 @@ def main():
                 if figure:
                     new_body += figure.group(0)
                 payload["body"] = new_body
+                if a.get("bodyEn"):
+                    en_stale.append((a["id"], "和文だけ再生成したため英語本文が古いまま"))
 
         if not args.apply:
             continue
@@ -560,6 +676,8 @@ def main():
             "dealAmount": a.get("dealAmount"),
             "ratioChangePct": a.get("ratioChangePct"),
             "tags": a.get("tags"),
+            "titleEn": a.get("titleEn"),
+            "bodyEn": a.get("bodyEn"),
         }, ensure_ascii=False) + "\n")
         backup_file.flush()
         try:
@@ -579,6 +697,11 @@ def main():
               f"規模の記述が新しい比率と食い違う（本文の作り直しが要る）{len(body_conflicts)}件")
         for cid, ratio, phrases in body_conflicts[:20]:
             print(f"  {cid}: 新しい比率{ratio}% に対して {phrases}")
+
+    if en_stale:
+        print(f"\n英語版（en.kujira-watch.com）の書き直しが要る記事: {len(en_stale)}件")
+        for cid, reason in en_stale:
+            print(f"  {cid}: {reason}")
 
     if to_delete:
         print(f"\n是正後に基準未満となる記事: {len(to_delete)}件")

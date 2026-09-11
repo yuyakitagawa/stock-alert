@@ -10,7 +10,7 @@ import CompanyInfoCard from "@/components/CompanyInfoCard";
 import DealDateHeading from "@/components/DealDateHeading";
 import DealDateSeeMoreLink from "@/components/DealDateSeeMoreLink";
 import DealTypeBadge from "@/components/DealTypeBadge";
-import { getCompanyInfo } from "@/lib/companyInfo";
+import { getCompanyInfo, getStockDescriptionCodes } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
 import { getFilerIdMap, getFilersByStockCode, getHoldingsByStockCode, investorPath } from "@/lib/investors";
@@ -120,6 +120,11 @@ export default async function StockPage({ params }: Props) {
       // 投資家ページは公開しているものだけリンクにする（lib/publishedPages.ts）。
       getPublishedFilerNames().catch(() => new Set<string>()),
     ]);
+  // 公開判定の「事業内容の説明があるか」は、サイトマップ（lib/publishedPages.ts）と同じ
+  // 1時間キャッシュのコード集合を正にする。getCompanyInfo() は Supabase が一時的に落ちると
+  // description を null で返し、そのまま notFound() すると 404 が ISR に24時間残る
+  // （2026-09-10 の実測: サイトマップ掲載の /stocks/6420 3726 7810 が404、再取得で200）。
+  const describedCodes = await getStockDescriptionCodes().catch(() => new Set<string>());
   const publishedDates = await getPublishedDates().catch(() => new Set<string>());
 
   // 解説記事が無くてもEDINET開示・会社情報があれば銘柄ページとして成立させる
@@ -135,7 +140,7 @@ export default async function StockPage({ params }: Props) {
   if (
     !isIndexableStockPage({
       articleCount: contents.length,
-      hasCompanyDescription: Boolean(companyInfo?.description),
+      hasCompanyDescription: describedCodes.has(code) || Boolean(companyInfo?.description),
     })
   ) {
     notFound();
