@@ -50,6 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 import lib.supabase_client as sb
+from lib import gsc_search_guard
 from lib.edinet import disclosure_doc_label, disclosure_kind_label, resolve_filer
 from tools.cleanup_duplicate_blog_articles import delete_article
 from tools.reclassify_blog_articles import fetch_all_articles
@@ -706,6 +707,9 @@ def main():
     if to_delete:
         print(f"\n是正後に基準未満となる記事: {len(to_delete)}件")
         if args.apply and args.delete:
+            # 検索に出ている記事は消さない（lib/gsc_search_guard.py）。--delete-untrafficked で
+            # 本文の是正を飛ばした記事がここで残ると、数字は未是正のまま残るので別途直すこと。
+            to_delete = gsc_search_guard.filter_deletable(to_delete) or []
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             path = args.backup or os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

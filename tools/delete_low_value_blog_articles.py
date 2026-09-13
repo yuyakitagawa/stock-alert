@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib import article_redirects
+from lib import article_redirects, gsc_search_guard
 from web.publish_blog_articles import (
     _microcms_base_url, _microcms_headers, is_indexable_article,
     MICROCMS_DOMAIN, MICROCMS_KEY,
@@ -85,6 +85,11 @@ def main():
 
     if not args.delete:
         print("dry-run（--delete で実行）")
+        return
+
+    targets = gsc_search_guard.filter_deletable(targets)
+    if not targets:
+        print("削除対象がありません")
         return
 
     backup_path = args.backup or os.path.join(

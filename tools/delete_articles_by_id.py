@@ -33,7 +33,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
-from lib import article_redirects
+from lib import article_redirects, gsc_search_guard
 from tools.reclassify_blog_articles import fetch_all_articles
 from tools.cleanup_duplicate_blog_articles import delete_article
 
@@ -67,6 +67,7 @@ def main():
     if not args.delete:
         print("\n--delete を付けると実際に削除します（今回は確認のみ）")
         return
+    targets = gsc_search_guard.filter_deletable(targets)
     if not targets:
         print("削除対象がありません")
         return
