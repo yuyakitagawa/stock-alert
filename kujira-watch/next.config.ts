@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 
+// src/lib/en.ts の EN_SITE_URL と同じ値（next.config は @/ エイリアスを解決しないためここで組み立てる）。
+const EN_SITE_URL = `https://${process.env.NEXT_PUBLIC_EN_HOST || "en.kujira-watch.com"}`;
+
 const nextConfig: NextConfig = {
   // /sitemap.xml はGSC登録済み・robots.txt記載の公開URL。実体はsitemapindexを返す
   // app/sitemap-index.xml/route.ts（app/sitemap.xml/route.tsはmetadata予約名と衝突するため）。
@@ -22,14 +25,19 @@ const nextConfig: NextConfig = {
   // 英語版(/en)は2026-08-29に廃止。GSC実測でも/en配下は検索流入の山が無く
   // （直近14日: EN記事1,046本にブラウザPV1,544・最大7PV、日本語版は最大73PV）、
   // 英訳のために記事1本あたり約3割多い出力トークンを払い続ける形になっていた。
-  // 既にインデックス済みのURLがあるので404にはせず、対応する日本語ページへ恒久リダイレクトする。
+  // 既にインデックス済みのURLがあるので404にはせず、対応するページへ恒久リダイレクトする。
+  // 2026-09-13: 記事・トップ・about・privacyは、英語版の移転先（en.kujira-watch.com、9/5再開）へ向け直した。
+  // GSCの生成AI機能の表示99回中95回が/en記事で、引用された46記事中36記事は英訳が残っているのに、
+  // 日本語ページへ飛ばしていたため英語の評価が英語版に引き継がれていなかった。英訳の無い記事は
+  // 英語版の記事ページ側で日本語ページへ転送する（src/app/(en)/en/articles/[id]/page.tsx）。
+  // 英語版に対応ページが無い stocks・investors・category は日本語側のまま。
   async redirects() {
     return [
-      { source: "/en", destination: "/", permanent: true },
-      { source: "/en/articles/:id", destination: "/articles/:id", permanent: true },
+      { source: "/en", destination: `${EN_SITE_URL}/`, permanent: true },
+      { source: "/en/articles/:id", destination: `${EN_SITE_URL}/articles/:id`, permanent: true },
       { source: "/en/stocks/:code", destination: "/stocks/:code", permanent: true },
-      { source: "/en/about", destination: "/about", permanent: true },
-      { source: "/en/privacy", destination: "/privacy", permanent: true },
+      { source: "/en/about", destination: `${EN_SITE_URL}/about`, permanent: true },
+      { source: "/en/privacy", destination: `${EN_SITE_URL}/privacy`, permanent: true },
       { source: "/en/investors", destination: "/investors", permanent: true },
       // 英語カテゴリはslug（activist等）で、日本語カテゴリ名との対応表は廃止済み。
       // 個別に振り分けず、分類の一覧が並ぶトップへ寄せる。

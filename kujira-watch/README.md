@@ -112,13 +112,19 @@ npm run dev
 
 - **英語版 `/en` 配下（2026-08-29に廃止、2026-09-04にサブドメインへ移設）**: `/en`・`/en/articles/[id]`・
   `/en/stocks/[code]`・`/en/about`・`/en/privacy`・`/en/investors`・`/en/category/[slug]` と、取りこぼし用の
-  `/en/:path*` を、対応する日本語ページ（カテゴリとその他はトップ）へ301で飛ばす。廃止の理由は英語面に
+  `/en/:path*` を飛ばす。**2026-09-13から `/en`・`/en/articles/[id]`・`/en/about`・`/en/privacy` は英語版
+  サブドメイン（`https://en.kujira-watch.com/...`）へ308**、英語版に対応ページが無い `/en/stocks`・`/en/investors`
+  は日本語ページへ、カテゴリとその他は日本語トップへ飛ばす。向け直した理由は、GSCの生成AI機能の表示99回中
+  95回が旧/en記事で、引用された46記事中36記事は英訳が残っているのに日本語ページへ飛ばしていたため
+  （英語の評価が英語版へ引き継がれない）。英訳の無い記事・削除済み記事は、英語版の記事ページ
+  （`(en)/en/articles/[id]/page.tsx`）が404にせず日本語の `/articles/[id]` へ308する。
+  当初（8/29〜9/12）はすべて対応する日本語ページへ飛ばしていた。廃止の理由は英語面に
   検索流入の山が無かったこと（直近14日の実測: EN記事1,046本にブラウザPV1,544・中央値1・最大7、
   10PV以上は0本。日本語版は最大73PV・10PV以上が42本）と、英訳のぶん記事1本あたりの
   出力トークンが約1.3倍かかり続けること。記事生成側（`web/publish_blog_articles.py` /
   `publish_buyback_articles.py`）は今も`bodyEn`/`titleEn`を作らない。microCMSに残っている
   `bodyEn`/`titleEn`は、下の「英語版（サブドメイン）」で配信している。このredirectは英語版ホストでも
-  効く（相対先なので `en.kujira-watch.com/en/...` → `en.kujira-watch.com/`）ため、内部パス`/en/...`が
+  効く（相対先のものは `en.kujira-watch.com/en/...` → `en.kujira-watch.com/`、英語版へ向けたものは同じ英語版URLへ）ため、内部パス`/en/...`が
   公開URLとして二重に見えることはない。
 - 廃止したランキングURL（`/ranking`・`/ranking/buys`ほか）は`/ranking/returns`へ301。
 - **`/disclosures`（2026-08-18に廃止）→ `/` へ301（2026-08-29追加）**: 廃止時にリダイレクトを置き忘れて404のまま残っていた。`tools/geo_report.py`の実測でAIクローラーが直近30日に58回・GA4のPVも28日で63件当たっており、AI側に残った参照が全部404を踏んでいた。役割が最も近いTOP（新着開示の日付降順一覧）へ寄せる。

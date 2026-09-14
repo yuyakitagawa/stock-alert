@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import EnArticleCard from "@/components/EnArticleCard";
@@ -88,16 +88,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function EnArticleDetailPage({ params }: Props) {
   const { id } = await params;
 
+  // 英訳の無い記事・削除済みの記事は日本語ページへ恒久リダイレクトする（日英混在ページは出さない）。
+  // 旧 /en/articles/:id を一律に英語版へ飛ばしているため、ここで404にすると旧URLの評価が消える。
+  // 削除済み記事は日本語側が銘柄ページへ引き継ぐ（lib/articleRedirects.ts）。
   const article = await getArticleDetail(id).catch((error: unknown) => {
     if (error instanceof Error && error.message.includes("status: 404")) {
-      notFound();
+      permanentRedirect(`${SITE_URL}/articles/${id}`);
     }
     throw error;
   });
 
-  // 未翻訳の記事は英語版では404扱い（日英混在ページを出さない）
   if (!isTranslated(article)) {
-    notFound();
+    permanentRedirect(`${SITE_URL}/articles/${id}`);
   }
   const titleEn = article.titleEn as string;
   const bodyEn = article.bodyEn as string;
