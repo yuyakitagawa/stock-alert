@@ -8,7 +8,18 @@ import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ThemeRegistry from "@/components/ThemeRegistry";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, X_HANDLE, SITE_ALTERNATE_NAMES, ORGANIZATION_SAME_AS, ORGANIZATION_CONTACT_POINT } from "@/lib/site";
+import {
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_URL,
+  X_HANDLE,
+  SITE_ALTERNATE_NAMES,
+  ORGANIZATION_SAME_AS,
+  ORGANIZATION_CONTACT_POINT,
+  ORGANIZATION_ID,
+  ORGANIZATION_KNOWS_ABOUT,
+  WEBSITE_ID,
+} from "@/lib/site";
 import { EN_SITE_URL } from "@/lib/en";
 import "../globals.css";
 
@@ -81,20 +92,25 @@ export const metadata: Metadata = {
 const websiteJsonLd = {
   "@context": "https://schema.org",
   "@type": "WebSite",
+  "@id": WEBSITE_ID,
   name: SITE_NAME,
   url: SITE_URL,
   description: SITE_DESCRIPTION,
   inLanguage: "ja",
+  publisher: { "@id": ORGANIZATION_ID },
 };
 
 const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": ORGANIZATION_ID,
   name: SITE_NAME,
   alternateName: SITE_ALTERNATE_NAMES.filter((n) => n !== SITE_NAME),
   description: SITE_DESCRIPTION,
   sameAs: ORGANIZATION_SAME_AS,
   contactPoint: ORGANIZATION_CONTACT_POINT,
+  knowsAbout: ORGANIZATION_KNOWS_ABOUT,
+  publishingPrinciples: `${SITE_URL}/about`,
   url: SITE_URL,
   logo: `${SITE_URL}/logo`,
 };

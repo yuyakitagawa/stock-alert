@@ -50,3 +50,20 @@ export const ORGANIZATION_CONTACT_POINT = {
   url: X_PROFILE_URL,
   availableLanguage: ["ja", "en"],
 };
+
+// Organization/WebSite/DatasetのJSON-LDで共通利用する永続ID。ページごとに同じ
+// @idを参照させ、運営主体・サイト・公開データを別エンティティとして分断させない。
+export const ORGANIZATION_ID = `${SITE_URL}/#organization`;
+export const WEBSITE_ID = `${SITE_URL}/#website`;
+
+// 運営主体が扱う専門領域。表示上のキーワード詰め込みではなく、/about・/faq・各集計ページで
+// 実際に説明している対象だけを宣言する。
+export const ORGANIZATION_KNOWS_ABOUT = [
+  "大量保有報告書",
+  "変更報告書",
+  "EDINET",
+  "日本株",
+  "機関投資家",
+  "アクティビスト投資家",
+  "自社株買い",
+];
