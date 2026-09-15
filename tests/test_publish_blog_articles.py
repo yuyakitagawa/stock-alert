@@ -122,13 +122,13 @@ def test_build_article_titles_new_holding_uses_ratio_change_heuristic():
     assert "テストファンドが6%を新規保有" in new["title"]
 
 
-def test_build_article_titles_truncates_long_filer_name():
+def test_build_article_titles_keeps_full_long_filer_name():
     long_filer = "とても長い名前の資産運用株式会社" * 4
     result = m.build_article_titles({"stock_name": "テスト", "stock_code": "1234",
                                      "filer_name": long_filer, "holding_ratio": 5.0,
                                      "direction": "buy", "ratio_change_pct": 1.0})
-    assert len(result["title"]) <= m.MAX_TITLE_LEN
-    assert "…" in result["title"]
+    assert long_filer in result["title"]
+    assert "…" not in result["title"]
     assert result["title"].endswith("｜大量保有報告書")
 
 
@@ -2271,7 +2271,7 @@ if __name__ == "__main__":
     test_generate_article_body_none_on_empty_body()
     test_build_article_titles_buy_and_sell_templates()
     test_build_article_titles_new_holding_uses_ratio_change_heuristic()
-    test_build_article_titles_truncates_long_filer_name()
+    test_build_article_titles_keeps_full_long_filer_name()
     test_classify_filer_returns_cached_master_row_without_calling_claude()
     test_classify_filer_asks_claude_and_persists_when_not_cached()
     test_classify_filer_falls_back_to_sonota_on_invalid_category()
