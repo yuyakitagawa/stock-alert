@@ -1,3 +1,4 @@
+import { RSC_DISALLOW } from "@/lib/crawlers";
 import { EN_SITE_URL } from "@/lib/en";
 
 // 英語版ホストの /robots.txt。app/robots.ts（日本語版）はサイトマップとして
@@ -6,6 +7,13 @@ import { EN_SITE_URL } from "@/lib/en";
 export const dynamic = "force-static";
 
 export function GET(): Response {
-  const body = ["User-Agent: *", "Allow: /", "", `Sitemap: ${EN_SITE_URL}/sitemap-en.xml`, ""].join("\n");
+  const body = [
+    "User-Agent: *",
+    "Allow: /",
+    ...RSC_DISALLOW.map((path) => `Disallow: ${path}`),
+    "",
+    `Sitemap: ${EN_SITE_URL}/sitemap-en.xml`,
+    "",
+  ].join("\n");
   return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }

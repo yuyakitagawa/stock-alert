@@ -1,3 +1,19 @@
+## 2026-09-15 robots.txt で `?_rsc=`（next/linkのプリフェッチ）を巡回対象から外す
+
+8/30以降、Googleの巡回が急減し、8/31以降に作った記事が24件中0件しかインデックスされていない（URL検査、
+検出-未登録21・未知3）。GSCのクロール統計はレスポンス200が98%＝エラーやブロックではない一方、
+ファイル形式が「その他」80%・HTML 11%で、URLの例は `/faq/basics?_rsc=...`・`/articles/<id>?_rsc=...` だった。
+Googleがページを描画するたびに next/link の先読み（RSCペイロード）まで取得し、巡回の大半をHTML以外に使っていた。
+巡回ログでも 8/16〜29 に GoogleOther が /about 3,910回・/faq 3,277回・/terms 2,481回とフッターのリンク先を取り続けていた。
+
+- `src/lib/crawlers.ts`: `RSC_DISALLOW = ["/*?_rsc=", "/*&_rsc="]`
+- `src/app/robots.ts`: `User-Agent: *` に Disallow を追加（`Allow: /` より長い規則が優先される）
+- `src/app/(en)/en/robots.txt/route.ts`: 英語版ホストにも同じ Disallow
+- 実ユーザーの画面遷移には影響しない（robots.txtはクローラーだけが読む）
+
+検証: `npx tsc --noEmit`・`npx eslint` パス。robots() と英語版 GET() の出力に Disallow 2行が出ることを確認。
+効果判定（未実施）: 1〜2週間後に GSC クロール統計の HTML 比率と、新規記事のURL検査のインデックス件数を見る。
+
 ## 2026-09-06 /date/[date] に「この日の対象開示」を追加（記事にしていない開示も全件出す）
 
 オーナー指示「対象開示はリストに書くが、記事は10億以上と上限を上げたい」。記事の足切りを
