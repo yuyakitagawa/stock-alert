@@ -53,3 +53,9 @@ export function classifyVisitor(userAgent: string): string | null {
   if (BROWSER_PATTERNS.some((pattern) => pattern.test(userAgent))) return "Browser";
   return null;
 }
+
+// next/link のプリフェッチ（`?_rsc=` 付きのRSCペイロード）。Googleはページを描画するたびに
+// 画面内リンクの先読みまで取りに行き、GSCのクロール統計で「その他のファイル形式」80%・HTML 11%
+// （2026-09-15実測）＝巡回の大半をHTMLでない先読みに使っていた。描画には不要なので巡回対象から外す。
+// パスより長い規則が優先されるので、`allow: "/"` と並べてもこちらが勝つ。
+export const RSC_DISALLOW = ["/*?_rsc=", "/*&_rsc="];

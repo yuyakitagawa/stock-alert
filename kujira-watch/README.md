@@ -100,7 +100,7 @@ npm run dev
 | `/guides`・`/guides/[slug]` | 読み方ガイド（編集部の解説記事）。本文は`src/lib/guides.ts`に固定で持ち、ビルド時に全ページを生成する（`dynamicParams = false`）。開示1件ごとの自動生成記事とは別に、EDINET全件の集計と実際の開示例で「保有目的」「短期大量譲渡」「特例報告」「潜在株式を含む保有比率」「創業者・資産管理会社」を解説する。Article＋BreadcrumbList構造化データ、サイトマップ（pages）に掲載、フッター「サイト情報」と`/faq`からリンク。2026-09のAdSense再審査対応で追加（開示ごとの定型記事に偏ったサイト構成を補う） |
 | `/faq/[category]` | カテゴリ別のQ&A（全508件を9カテゴリに分割）。MUI Accordionで開閉。FAQPage構造化データはそのページに表示しているQ&Aのみを載せる（構造化データと可視コンテンツの一致がGoogleのガイドラインで必須のため）。データ本体は`src/lib/faqData.tsx` |
 | `/sitemap.xml` | sitemapindex（実体は`src/app/sitemap-index.xml/route.ts`、`next.config.ts`のrewriteで割り当て）。子サイトマップ`/sitemap/<id>.xml`（pages/stocks/dates/investors/articles の5種、`src/app/sitemap.ts`の`generateSitemaps`）を束ねる |
-| `/robots.txt` | `src/app/robots.ts` |
+| `/robots.txt` | `src/app/robots.ts`。全クローラーに `/*?_rsc=`・`/*&_rsc=`（next/linkのプリフェッチ）をDisallow。2026-09-15のGSCクロール統計でGoogleの巡回の80%がこの先読み、HTMLは11%だったため。被リンク調査系bot（Ahrefs等）は全体をDisallow |
 | `/ads.txt` | AdSenseの販売者情報（`src/app/ads.txt/route.ts`）。`NEXT_PUBLIC_ADSENSE_CLIENT`未設定時は404を返す |
 | `/feed.xml` | RSSフィード（新着記事20件、`src/app/feed.xml/route.ts`）。ヘッダーのハンバーガーメニュー・`<head>`の`alternate`リンク・`llms.txt`から参照 |
 | `/investors/[filer]/feed.xml`・`/stocks/[code]/feed.xml` | 投資家別・銘柄別のRSS（`src/lib/rss.ts`で組み立て、`revalidate = 300`）。記事ではなくEDINET開示そのものを源にするため、記事化されなかった小さな開示も追える。各ページの`<head>`の`alternate`と「更新を追う」導線から参照 |

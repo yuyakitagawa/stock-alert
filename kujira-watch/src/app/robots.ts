@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { RSC_DISALLOW } from "@/lib/crawlers";
 import { SITE_URL } from "@/lib/site";
 
 // 被リンク調査系のクローラーは検索にもAI引用にも寄与しないのに、36日で42,863回巡回して
@@ -8,7 +9,7 @@ const DISALLOWED_BOTS = ["AhrefsBot", "SemrushBot", "MJ12bot", "DotBot", "BLEXBo
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
-      { userAgent: "*", allow: "/" },
+      { userAgent: "*", allow: "/", disallow: RSC_DISALLOW },
       ...DISALLOWED_BOTS.map((userAgent) => ({ userAgent, disallow: "/" })),
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,
