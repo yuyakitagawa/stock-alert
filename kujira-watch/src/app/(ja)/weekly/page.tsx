@@ -17,7 +17,7 @@ import CategoryTrendGrid, {
 } from "@/components/CategoryTrendGrid";
 import RelatedArticles from "@/components/RelatedArticles";
 import { getArticleList, getRecentArticleDigests, type ArticleDigest } from "@/lib/microcms";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { ORGANIZATION_ID, SITE_NAME, SITE_URL } from "@/lib/site";
 import { formatDealAmount, isSellArticle, latestDateOf } from "@/lib/format";
 import DataUpdatedAt from "@/components/DataUpdatedAt";
 import type { DealType } from "@/types/article";
@@ -272,12 +272,47 @@ export default async function WeeklyDigestPage() {
     ],
   };
 
+  // このページは記事ではなく、一次開示を期間集計した更新型データセット。
+  // Datasetとして期間・生成方法・出典・変数を宣言し、AI検索が数値の意味と鮮度を
+  // 本文の推測に頼らず判別できるようにする。値は画面に表示する集計と同じ変数から作る。
+  const datasetJsonLd = recentSummary
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "@id": `${url}#dataset`,
+        name: "大口投資家の週次売買動向データ",
+        description: leadSentence,
+        url,
+        inLanguage: "ja",
+        creator: { "@id": ORGANIZATION_ID },
+        publisher: { "@id": ORGANIZATION_ID },
+        isAccessibleForFree: true,
+        temporalCoverage: `${recentSummary.from}/${recentSummary.to}`,
+        dateModified: latestDealDate?.slice(0, 10),
+        measurementTechnique:
+          "EDINET大量保有報告書と適時開示を取引日で集計。推定金額は発行済株式数×株価×保有比率の変化で算出。",
+        variableMeasured: [
+          { "@type": "PropertyValue", name: "開示件数", value: recentSummary.count, unitText: "件" },
+          { "@type": "PropertyValue", name: "買い推定金額", value: recentSummary.buyAmount, unitText: "円" },
+          { "@type": "PropertyValue", name: "売り推定金額", value: recentSummary.sellAmount, unitText: "円" },
+        ],
+        citation: "https://disclosure2.edinet-fsa.go.jp/",
+        license: `${SITE_URL}/terms`,
+      }
+    : null;
+
   return (
     <div>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
+      {datasetJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd).replace(/</g, "\\u003c") }}
+        />
+      )}
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
