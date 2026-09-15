@@ -46,7 +46,6 @@ from web.publish_blog_articles import (  # noqa: E402
     BACKFILL_DAYS,
     BACKFILL_MAX_ARTICLES,
     CLAUDE_MODEL,
-    MAX_TITLE_LEN,
     MicroCMSPermissionError,
     _microcms_base_url,
     _microcms_headers,
@@ -191,6 +190,12 @@ def format_amount(amount_oku: "float | None") -> str:
     if amount_oku is None:
         return ""
     return f"{amount_oku:,.0f}億円" if amount_oku >= 100 else f"{amount_oku:.1f}".rstrip("0").rstrip(".") + "億円"
+
+
+# 検索結果で全文が見えるよう、テンプレタイトルはこの長さに収める。超過時に落とすのは末尾の
+# 「｜TDnet適時開示」だけで、検索語である銘柄名・コード・規模は必ず残す。
+# （publish_blog_articles 側は提出者名を切らざるを得ないため 2026-09-15 に上限を撤廃した）
+MAX_TITLE_LEN = 60
 
 
 def build_titles(fact: dict) -> dict:
