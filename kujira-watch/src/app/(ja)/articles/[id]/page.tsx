@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { fullArticleTitle } from "@/lib/articleTitle";
 import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -107,6 +108,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const article = await getArticleDetail(id).catch(() => null);
   if (!article) return {};
+  const title = fullArticleTitle(article.title, article.filerName);
 
   // dealTypeは投資家分類（例: 日系証券銀行）なので「横河電機の日系証券銀行を解説」とは
   // 日本語として繋がらない。検索結果の説明文は「銘柄｜投資家分類の大量保有報告書を解説。」に
@@ -129,7 +131,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // 銘柄名・提出者名・保有比率だけで既に40字前後あり、検索結果に出る約32字にサイト名は
     // 入らない。入る場合も本文側の情報を押し出すだけで、人名・銘柄名で探している読者には
     // 何の手がかりにもならない。一覧・ハブページのtitleにはサイト名を残す。
-    title: { absolute: article.title },
+    title: { absolute: title },
     description,
     // 金額も保有比率の変化も小さい開示（例: 保有比率0.04%・推定額0億円の変更報告書）と、
     // 同一「銘柄×提出者」で最新に置き換わった記事は、検索意図を満たさず
@@ -143,7 +145,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       type: "article",
       url,
-      title: article.title,
+      title,
       description,
       // 記事が外に出す日付は「EDINET開示日(dealDate)」に一本化する。microCMSのupdatedAtは
       // 分類の付け替えやフィールド削除などの一括バッチでも動いてしまい、「全記事が昨日更新」に
@@ -157,7 +159,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       card: "summary_large_image",
       site: X_HANDLE,
       creator: X_HANDLE,
-      title: article.title,
+      title,
       description,
     },
   };
@@ -218,6 +220,7 @@ export default async function ArticleDetailPage({ params }: Props) {
   const filerName = isBuyback
     ? undefined
     : article.filerName ?? filerByKey.get(`${article.stockCode}|${dealDateOnly}`);
+  const displayTitle = fullArticleTitle(article.title, filerName);
 
   // ファクトボックス用: 保有比率はCMSに無いため、提出者が特定できた記事のみEDINET開示から引く。
   const snapshot = filerName
@@ -278,7 +281,7 @@ export default async function ArticleDetailPage({ params }: Props) {
   const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
-    headline: article.title,
+    headline: displayTitle,
     url,
     // 日付はEDINET開示日に一本化（generateMetadataのpublishedTimeの注記を参照）。
     // 画面に出している「開示日」とも一致させ、構造化データと可視コンテンツをずらさない。
@@ -321,7 +324,7 @@ export default async function ArticleDetailPage({ params }: Props) {
             },
           ]
         : []),
-      { "@type": "ListItem", position: datePageHref ? 3 : 2, name: article.title, item: url },
+      { "@type": "ListItem", position: datePageHref ? 3 : 2, name: displayTitle, item: url },
     ],
   };
 
@@ -348,13 +351,13 @@ export default async function ArticleDetailPage({ params }: Props) {
           <span className="flex-none">{formatDate(article.dealDate)}</span>
         )}
         <span aria-hidden>/</span>
-        <span className="min-w-0 truncate text-ink-secondary">{article.title}</span>
+        <span className="min-w-0 truncate text-ink-secondary">{displayTitle}</span>
       </nav>
       {article.eyecatch && (
         <div className="relative aspect-video w-full bg-section-tint">
           <Image
             src={article.eyecatch.url}
-            alt={article.eyecatch.alt || article.title}
+            alt={article.eyecatch.alt || displayTitle}
             fill
             priority
             className="object-cover"
@@ -370,7 +373,7 @@ export default async function ArticleDetailPage({ params }: Props) {
           <DealDirectionBadge tags={article.tags} />
         </div>
         <h1 className="mb-4 text-2xl font-bold leading-snug text-brand-navy sm:text-3xl">
-          {article.title}
+          {displayTitle}
         </h1>
         <Box
           component="dl"
@@ -698,7 +701,7 @@ export default async function ArticleDetailPage({ params }: Props) {
             ))}
           </div>
         )}
-        <ShareButtons url={url} title={article.title} />
+        <ShareButtons url={url} title={displayTitle} />
         {relatedStockArticles.length > 0 && (
           <div className="mt-10 border-t border-rule pt-6">
             <h2 className="mb-4 text-xl font-bold text-brand-navy">

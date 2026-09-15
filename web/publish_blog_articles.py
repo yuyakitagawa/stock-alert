@@ -1102,14 +1102,6 @@ def is_new_holding(fact_sheet: dict) -> bool:
     return change is not None and change >= fact_sheet["holding_ratio"]
 
 
-# 検索結果で全文が見えるよう、テンプレタイトルはこの長さに収める（超過時は提出者名を短縮する）
-# 検索結果に出るのは全角30〜32字程度で、この上限に収まる記事はほとんど無い。それでも
-# 短くしないのは、切るとしたら提出者名（＝検索されている語そのもの。GSC実測で上位クエリの
-# 大半が提出者の人名・法人名）を削ることになるため。表示順が「銘柄名→提出者名→保有比率→
-# 大量保有報告書」なので、切れるのは後ろの補足だけで済んでいる。
-MAX_TITLE_LEN = 60
-
-
 def build_article_titles(fact_sheet: dict) -> dict:
     """検索クエリ型の記事タイトルを決定的テンプレートで組み立てる（LLM不使用）。
     「銘柄名（コード）」「保有比率」「大量保有報告書」という検索語が必ずタイトルに入ることを
@@ -1130,13 +1122,10 @@ def build_article_titles(fact_sheet: dict) -> dict:
             action = f"{filer_name}が保有比率{ratio}%に{'引き下げ' if is_sell else '引き上げ'}"
         return f"{name}（{code}）、{action}｜大量保有報告書"
 
-    title = ja_title(filer)
-    if len(title) > MAX_TITLE_LEN:
-        excess = len(title) - MAX_TITLE_LEN
-        keep = max(4, len(filer) - excess - 1)
-        title = ja_title(filer[:keep] + "…")
-
-    return {"title": title}
+    # GSC実測では上位クエリの大半が提出者の人名・法人名。検索結果の表示幅に合わせて
+    # 提出者名を途中省略すると、検索語そのものとタイトルが一致しなくなる。表示上の省略は
+    # 検索エンジンに任せ、HTML・構造化データには正式名称を完全な形で渡す。
+    return {"title": ja_title(filer)}
 
 
 # 記事に独自性を与える周辺事実。EDINET開示1件の数字だけを書くと、どの記事も
