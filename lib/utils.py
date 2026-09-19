@@ -664,52 +664,13 @@ def get_fundamentals(code):
 
 # ── 推奨ラベル（rank_stocks 共通） ───────────────────────────
 
-_RECOMMEND_EMOJI_MAP = {
-    "🥇 S買い":        "S買い",
-    "🥈 A買い":        "A買い",
-    "⏳ 方向感なし":   "方向感なし",
-    "🟡 高値警戒":     "方向感なし",
-    "高値警戒":        "方向感なし",
-    "—":               "—",
-}
-
-
-def clean_recommend_label(value: str) -> str:
-    """推奨ラベルから絵文字を除いた短縮形を返す（Web/バックフィル出力の表示統一用）。"""
-    return _RECOMMEND_EMOJI_MAP.get(value, value)
-
-
-def recommend_from_scores(drop_prob, allow_buy=True, vol=None,
-                          piotroski=None, pos52=None, bps_growth=None, eps_surprise=None,
-                          ret90=None, turnover_m=None, regime=None,
-                          drawdown60=None, down_streak_raw=None,
-                          cfo_margin=None, leverage=None, op_margin_improve=None):
-    """💎 買い: 下落確率が低く、QV条件(業績強×株価低迷) + ファンダ品質を満たす銘柄。
-    🔴 売り検討: 下落確率が危険域に入った銘柄を警告。
-    LINE Botのウォッチリスト等と同じく下落モデルのみに基づく（上昇モデルは廃止済み）。"""
+def sell_label(drop_prob, drawdown60=None, down_streak_raw=None):
+    """🔴 売り検討: 下落確率が危険域に入った銘柄を警告。該当しなければ「—」。
+    買い判定は2026-09-19に廃止（6月以降💎買いは5件のみで、どこからも使われていなかった）。"""
     if drop_prob is not None and drop_prob >= 10.0:
         return "🔴 売り検討"
     if drawdown60 is not None and drawdown60 < -0.20:
         return "🔴 売り検討"
     if down_streak_raw is not None and down_streak_raw >= 5:
         return "🔴 売り検討"
-
-    if not allow_buy or regime == 'bear':
-        return "—"
-    qv_ok = (
-        piotroski is not None and piotroski >= 0.67
-        and pos52 is not None and pos52 < 0.45
-        and ((eps_surprise is not None and eps_surprise > 2.0)
-             or (bps_growth is not None and bps_growth > 0))
-    )
-    quality_ok = (
-        (cfo_margin is None or cfo_margin > 0)
-        and (leverage is None or leverage < 5.0)
-    )
-    if (qv_ok and quality_ok
-            and drop_prob is not None and drop_prob < 8.0
-            and (vol is None or vol <= 20.0)
-            and (ret90 is None or ret90 > -0.25)
-            and (turnover_m is None or turnover_m >= 50.0)):
-        return "💎 買い"
     return "—"

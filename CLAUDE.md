@@ -15,7 +15,6 @@
 
 ## 1. File Map (Core Only)
 - `lib/utils.py`: 特徴量定義(64次元: 57基本[32テクニカル+11ファンダ+4マクロ(VIX/US5/US20/JPY5)+8新規IB(Amihud非流動性/FXβ/JPY5/EPSサプライズ/BPS成長/Piotroski/配当性向/アクルーアル)+1EDINET大量保有+3モメンタム拡張(ret504/trend_slope60/trend_r2_60)]+7CS[6標準+1セクター内相対モメンタム]) & 共通関数。※変更時は要申告。
-- `lib/nlp_sentiment.py`: 決算テキスト感情分析（Claude Haiku × kabutan）。ランキング後処理に使用。
 - `core/rf_train_v3.py`: XGBoost学習(下落モデルのみ。上昇モデルは廃止済み)。※金曜(再学習日)以外は触らない。
 - `core/screener.py` -> `core/rank_stocks.py`: 抽出 & 下落確率ランキング計算。
 - `web/export_to_web.py`: Supabaseへランキング・日経 vs S&P500判定をエクスポート（LINE Botが参照）。
@@ -23,11 +22,8 @@
 
 ## 2. Model & Strategy (規律)
 - **Target**: 63日(3ヶ月)で±15%変動予測。
-- **Logic**: 下落確率(drop_prob)のみで買い候補判定（上昇モデル・Net Scoreは廃止済み。詳細は `dev_log.md`）。
-- **Hard Filters (Don't Touch)**:
-  - `down_streak > 3日` (0.15換算): 除外
-  - `drawdown60 < -15%`: 除外
-- **βフィルター**: 日経強気時(N225>20SMA)はβ≥0.4の銘柄のみ💎対象。低β(ディフェンシブ)は降格。
+- **Logic**: 下落確率(drop_prob)のみで「🔴 売り検討」を判定（`lib/utils.py` の `sell_label`）。上昇モデル・Net Score・買い判定（💎買い・品質フィルター・優待/米国ETF/β/感情分析の降格）は廃止済み（買い判定は2026-09-19。詳細は `dev_log.md`）。
+- **売り検討の条件**: `drop_prob ≥ 10%` / `drawdown60 < -20%` / 連続下落 ≥ 5日（いずれか該当）。
 - **Note**: AUC 0.766 (下落)。下落予測の精度を重視せよ。
 
 ## 3. Operations (Commands)

@@ -197,7 +197,7 @@ def test_ratio_unchanged_shows_single_value_not_range():
 
 def test_watchlist_shows_buy_mark_below_threshold():
     watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
-    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "—"}}
     msg = build_watchlist_section(watchlist, ranking_map)
     assert "🔔買い時！" in msg
 
@@ -214,7 +214,7 @@ def test_watchlist_suppresses_buy_mark_when_ranking_says_sell():
 
 def test_watchlist_shows_sell_mark_above_sell_threshold():
     watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
-    ranking_map = {"7203": {"drop_prob": 25.0, "close": 3000.0, "recommend": "⏳ 方向感なし"}}
+    ranking_map = {"7203": {"drop_prob": 25.0, "close": 3000.0, "recommend": "—"}}
     msg = build_watchlist_section(watchlist, ranking_map)
     assert "⚠️売り検討" in msg
 
@@ -238,8 +238,8 @@ def test_watchlist_summarizes_unchanged_stocks_instead_of_listing_each():
         {"code": "9984", "name": "ソフトバンクG", "dp_threshold": 8.0, "dp_sell_threshold": 20.0},
     ]
     ranking_map = {
-        "7203": {"drop_prob": 12.0, "close": 3000.0, "recommend": "⏳ 方向感なし"},
-        "9984": {"drop_prob": 13.0, "close": 8000.0, "recommend": "⏳ 方向感なし"},
+        "7203": {"drop_prob": 12.0, "close": 3000.0, "recommend": "—"},
+        "9984": {"drop_prob": 13.0, "close": 8000.0, "recommend": "—"},
     }
     msg = build_watchlist_section(watchlist, ranking_map)
     assert "他2銘柄は閾値未到達で変化なし" in msg
@@ -249,14 +249,14 @@ def test_watchlist_summarizes_unchanged_stocks_instead_of_listing_each():
 
 def test_watchlist_shows_previous_day_change_for_actionable_stocks():
     watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
-    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "—"}}
     msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map={"7203": 6.5})
     assert "前日比-1.5pt" in msg
 
 
 def test_watchlist_omits_change_when_no_previous_data():
     watchlist = [{"code": "7203", "name": "トヨタ", "dp_threshold": 8.0, "dp_sell_threshold": 20.0}]
-    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "💎 買い"}}
+    ranking_map = {"7203": {"drop_prob": 5.0, "close": 3000.0, "recommend": "—"}}
     msg = build_watchlist_section(watchlist, ranking_map, prev_dp_map={})
     assert "前日比" not in msg
 

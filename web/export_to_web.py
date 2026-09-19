@@ -12,7 +12,6 @@ from datetime import date
 from dotenv import load_dotenv
 
 import lib.supabase_client as sb
-from lib.utils import clean_recommend_label
 
 load_dotenv()
 
@@ -42,7 +41,7 @@ def export_rankings(today: str) -> list[dict]:
             "close":      r["close"],
             "drop_prob":  r["drop_prob"],
             "vol":        r["vol"],
-            "recommend":  clean_recommend_label(r["recommend"]),
+            "recommend":  r["recommend"],
             "rel20":      r["rel20"],
             "per":          r["per"],
             "pbr":          r["pbr"],
