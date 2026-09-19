@@ -15,7 +15,8 @@ SEOでは、記事タイトルに銘柄名・証券コード・提出者の正�
 core/rank_stocks.py（銘柄取得・下落確率ランキング生成を単独で実施。core/screener.pyは2026-08-01に
 日次パイプラインから除外済み。詳細は下のファイル構成参照）
 → web/export_to_web.py（Supabase同期）
-→ web/dip_buy_alert.py（日経平均-2%以下の日だけ、押し目買い候補をLINE通知。条件と検証は docs/dip_buy_strategy.md）
+→ web/dip_buy_alert.py（日経平均-2%以下の日だけ、押し目買い候補をLINE通知。条件と検証は docs/dip_buy_strategy.md。
+  従業員数は Step 2h の tools/fetch_employees.py が company_employees に古い順に400銘柄ずつ更新）
 core/rf_train_v3.py（金曜 or モデル未存在時のみ）はランキング生成・Web同期より後段で実行。
 日次更新のクリティカルパスから切り離すことで、学習が長時間化/タイムアウト
 （continue-on-error, timeout-minutes: 180）しても当日の更新は止めない。
@@ -108,7 +109,8 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
 | `core/rank_stocks.py` | 全銘柄に下落確率をつけてランキング生成・DB保存。推奨ラベルは「🔴 売り検討」か「—」のみ（買い判定は2026-09-19に廃止）。フェーズ8で相場リスク管制官の判定を保存（情報表示のみ） |
 | `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
-| `web/dip_buy_alert.py` | **押し目買い候補のLINE通知**（daily_alert.yml Step 5、continue-on-error）。日経平均の当日騰落が-2%以下の日だけ動き、当日-4%以下に下げた銘柄のうち株価300円以上・売買代金1億円/日以上・PBR<1.5（株式分割を補正）・会社予想の純利益が前期実績より多い・従業員1000人以上を、β（過去250日）の高い順に最大40行でオーナーのLINEへ送る（`notify.push_once`で同じ日の二重送信を防ぐ）。同じ銘柄の再通知は抑えない（買うかは人間が判断する）。決算は前日までの開示だけを使い、会社予想は直近の本決算より後の年度のものに限る（2026-04-25以降はEDINET由来で予想が入らないため、判定できなかった件数を本文に出す）。本決算が400日より前の銘柄には「⚠決算古」を付ける。当日の終値がある銘柄が1,000未満なら株価更新の失敗とみなしてLINEで警告する。`yahoo_price_cache`は過去行を分割調整しないので、分割日の騰落はβから除き、当日が分割日の銘柄は候補にしない。`--dry-run`で送らずに本文を表示、`--date`で過去日を判定。条件の根拠は`docs/dip_buy_strategy.md` |
+| `web/dip_buy_alert.py` | **押し目買い候補のLINE通知**（daily_alert.yml Step 5、continue-on-error）。日経平均の当日騰落が-2%以下の日だけ動き、当日-4%以下に下げた銘柄のうち株価300円以上・売買代金1億円/日以上・PBR<1.5（株式分割を補正）・会社予想の純利益が前期実績より多い・従業員1000人以上（`company_employees`、`lib/employees.py`経由。行が無い銘柄だけYahooで補って書き戻す）を、β（過去250日）の高い順に最大40行でオーナーのLINEへ送る（`notify.push_once`で同じ日の二重送信を防ぐ）。同じ銘柄の再通知は抑えない（買うかは人間が判断する）。決算は前日までの開示だけを使い、会社予想は直近の本決算より後の年度のものに限る（2026-04-25以降はEDINET由来で予想が入らないため、判定できなかった件数を本文に出す）。本決算が400日より前の銘柄には「⚠決算古」を付ける。当日の終値がある銘柄が1,000未満なら株価更新の失敗とみなしてLINEで警告する。`yahoo_price_cache`は過去行を分割調整しないので、分割日の騰落はβから除き、当日が分割日の銘柄は候補にしない。`--dry-run`で送らずに本文を表示、`--date`で過去日を判定。条件の根拠は`docs/dip_buy_strategy.md` |
+| `tools/fetch_employees.py` + `lib/employees.py` | **従業員数（Supabase `company_employees`、`supabase/create_company_employees.sql`）の更新**（daily_alert.yml Step 2h、continue-on-error）。Yahoo Financeの`fullTimeEmployees`（連結・現在値）を、未取得の銘柄→取得日が古い順に`--limit 400`銘柄ずつ取る（約3,800銘柄を10日弱で一巡）。取得から30日以内（`--max-age-days`）は取り直さない（従業員数は年1回しか変わらない）。Yahooに値が無い銘柄もNULLで保存して毎日取り直さない。通知のたびに候補数ぶんYahooへ問い合わせると急落日に数分かかり、並列取得の一部がレート制限で空振りして候補から漏れるため、テーブルに持つ。`--limit 0`で全銘柄（初回の一括投入） |
 | `web/market_timing_alert.py` | N225シグナル・日経 vs S&P500相対強弱・EDINET大口保有動向・ウォッチリストをLINE Messaging APIへ送る手動実行用スクリプト。日次プッシュ通知（旧Step 5b）は2026-09-10に停止。コードは調査・手動実行用に残している |
 | `config.py` | 戦略パラメータ（`BASE_DIR`・下落相場判定 `BEAR_MARKET_THRESHOLD`・市場タイミング `MARKET_TIMING_20D_THRESH`）。学習時スクリーニングの閾値は`core/rf_train_v3.py`の`_SC_*`、バックテストは`tools/backtest.py`の`_SC_*`が保持する |
 | `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, sell_label 等）|
@@ -191,7 +193,7 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）と `sell_label` の閾値・語彙のユニットテスト（17件）|
 | `tests/test_fix_body_numbers.py` | 記事是正の非課金経路（`tools/fix_misreported_blog_articles.py --fix-body-numbers`）のユニットテスト。本文中の比率・変化幅・金額の置換（表記ゆれ・符号なし変化幅・pt表記）、旧値が本文に無いときの報告、規模を語る記述と新しい比率の矛盾検出、タイトルからの旧比率の読み取りを確認、英語版（英題の組み直し・英語本文の数字置換・書き直し要否の判定）も確認（29アサーション）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
-| `tests/test_dip_buy_alert.py` | 押し目買い候補通知のユニットテスト（β・日次騰落・開示後の株式分割の検出と分割比から外れた急落の無視・前日までの開示だけを使うこと・直近の本決算と同じ年度の予想で増益判定しないこと・分割補正後のPBR・前期赤字/横ばいの除外・本文の行数上限と「⚠決算古」・予想未取得の件数表示、12件）|
+| `tests/test_dip_buy_alert.py` | 押し目買い候補通知のユニットテスト（β・日次騰落・開示後の株式分割の検出と分割比から外れた急落の無視・前日までの開示だけを使うこと・直近の本決算と同じ年度の予想で増益判定しないこと・分割補正後のPBR・前期赤字/横ばいの除外・本文の行数上限と「⚠決算古」・予想未取得の件数表示・従業員数テーブルの取り直し順（未取得→古い順、30日以内は除外）・テーブルに無い銘柄だけYahooで補うこと、14件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション（開示日優先ソート・根拠なき買い/売り推測の抑制込み）・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止・売り閾値ギャップの上書き・通知疲れ対策の要約表示・前日比表示込み）・投資家ウォッチ（提出者名の部分一致照合・大口保有動向セクション生成）・code_name_map未収載銘柄のEDINET issuer_nameフォールバック・大幅訂正報告書の通過/軽微な訂正の除外のユニットテスト（28件）|
 | `tests/test_scan_large_holdings.py` | EDINET大量保有スキャナーの判定ロジック（売却検知・保有比率増減による方向判定・個人名判定・過半数超除外・訂正報告書除外／大幅訂正の判定・ノイズ除外・保存失敗時の`HoldingsSaveFailed`送出／1日ぶん失敗しても残りの日は取得して最後に投げること）のユニットテスト（16件）|
 | `tests/test_holding_details.py` | 保有目的・取得資金パーサ（`lib/edinet.py`の`parse_holding_details()`/`classify_purpose()`/`average_acquisition_price()`）のユニットテスト（単独提出者の株数・資金・報告義務発生日の抽出／共同保有3名で取得資金・自己資金・借入金を足し上げ、タグが飛んだ提出者のぶんを隣の提出者の値で埋めないこと／全部売却（株数0）で平均取得単価を出さないこと／空XBRL／保有目的5区分の判定／平均取得単価のゼロ除算ガード、6件）|

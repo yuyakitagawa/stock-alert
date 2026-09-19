@@ -8,7 +8,7 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   3. 株価300円以上・直近20日の平均売買代金1億円以上
   4. PBR < 1.5（株式分割は補正する）
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
-  6. 従業員数 1000人以上
+  6. 従業員数 1000人以上（Supabase company_employees。tools/fetch_employees.py が更新）
   並びはβ（過去250日・日経平均に対する感応度）の高い順。
 
 なぜこの条件か（検証は docs/dip_buy_strategy.md）:
@@ -27,7 +27,6 @@ import argparse
 import json
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
@@ -161,15 +160,6 @@ def _load_names() -> dict:
         return {}
 
 
-def _employees(code: str) -> int | None:
-    try:
-        import yfinance as yf
-        v = yf.Ticker(f"{code}.T").info.get("fullTimeEmployees")
-        return int(v) if v else None
-    except Exception:
-        return None
-
-
 def _fin_rows(codes: list[str]) -> dict[str, list[dict]]:
     import lib.supabase_client as sb
     out: dict[str, list[dict]] = {}
@@ -247,10 +237,9 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
             stage2.append(s)
     print(f"[dip] PBR<1.5・予想増益: {len(stage2)}（PBR<1.5だが会社予想が無く判定できず: {no_forecast}）")
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        emps = list(ex.map(_employees, [s["code"] for s in stage2]))
-    # 並列で取ると一部がレート制限で空振りするので、取れなかった分だけ1件ずつ取り直す
-    emps = [e if e is not None else _employees(s["code"]) for s, e in zip(stage2, emps)]
+    from lib import employees
+    emp_map = employees.get([s["code"] for s in stage2])  # company_employees、無い銘柄だけYahooで補う
+    emps = [emp_map.get(s["code"]) for s in stage2]
     names = _load_names()
     picks = []
     for s, e in zip(stage2, emps):

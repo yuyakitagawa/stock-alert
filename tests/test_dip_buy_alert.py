@@ -103,6 +103,31 @@ def test_build_message_reports_missing_forecasts():
     assert "該当 0銘柄" in text and "判定できず除外: 12銘柄" in text
 
 
+def test_employees_stale_codes_orders_missing_first_then_oldest():
+    from lib.employees import stale_codes
+    rows = {"1000": {"fetched_date": "2026-09-18"},   # 新しい→対象外
+            "2000": {"fetched_date": "2026-07-01"},
+            "3000": {"fetched_date": "2026-06-01"}}
+    got = stale_codes(["1000", "2000", "3000", "4000"], rows, 30, date(2026, 9, 19))
+    assert got == ["4000", "3000", "2000"]
+
+
+def test_employees_get_reads_table_and_fills_only_missing():
+    import lib.employees as emp
+    saved = {}
+    orig = (emp.load, emp.fetch_many, emp.save)
+    emp.load = lambda codes=None: {"1000": {"employees": 5000, "fetched_date": "2026-09-01"},
+                                   "2000": {"employees": None, "fetched_date": "2026-09-01"}}
+    emp.fetch_many = lambda codes, workers=8: {c: 1234 for c in codes}
+    emp.save = lambda values, today=None: saved.update(values) or True
+    try:
+        got = emp.get(["1000", "2000", "3000"])
+    finally:
+        emp.load, emp.fetch_many, emp.save = orig
+    assert got == {"1000": 5000, "2000": None, "3000": 1234}  # 値なし(None)の行は取り直さない
+    assert saved == {"3000": 1234}
+
+
 if __name__ == "__main__":
     import inspect
     fns = [f for n, f in sorted(globals().items()) if n.startswith("test_") and inspect.isfunction(f)]

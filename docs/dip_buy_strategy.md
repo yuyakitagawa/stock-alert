@@ -11,7 +11,7 @@
 | 3 | 株価・流動性 | 300円以上、直近20日の平均売買代金1億円以上 |
 | 4 | 割安 | PBR < 1.5（株式分割を補正） |
 | 5 | 成長の見込み | 会社予想の純利益 > 前期実績（前期黒字）。予想は直近の本決算より後の年度のものに限る |
-| 6 | 規模 | 従業員1000人以上（Yahoo Finance の fullTimeEmployees） |
+| 6 | 規模 | 従業員1000人以上（Yahoo Finance の fullTimeEmployees を Supabase `company_employees` に保存。tools/fetch_employees.py が更新） |
 | 並び | β（過去250日、日経平均に対する感応度）の高い順 | |
 
 同じ銘柄の再通知は抑えない（買うかどうかは人間が判断する）。
