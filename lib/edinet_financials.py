@@ -1,21 +1,23 @@
 """
 lib/edinet_financials.py
-EDINET API v2 から有価証券報告書・四半期報告書のXBRLを取得し、
+EDINET API v2 から有価証券報告書・半期報告書のXBRLを取得し、
 財務データ（BS/PL/CF）を抽出するモジュール。
 
 jquants_fin_summary テーブルと同じスキーマで保存し、
 J-Quants Free期限切れ後の代替データソースとして機能する。
 
-docTypeCode:
+docTypeCode（取得対象は120と160のみ）:
   120 = 有価証券報告書（年次）
-  130 = 四半期報告書
-  140 = 半期報告書
+  160 = 半期報告書
+  130 = 訂正有価証券報告書 … 過去期の数値が当日の開示として保存され「最新決算」を上書きするため対象外
+  140 = 四半期報告書 … 2024年4月に制度廃止（1Q/3Qは決算短信のみ＝EDINETに無い）
+  2026-09-19まで 120/130/140 を取得しており、半期報告書が1件も入らず訂正報告書が混入していた。
 """
 import re
 from datetime import date, timedelta
 from lib.edinet import _fetch_xbrl_text, fetch_documents_list, _normalize_sec_code
 
-_FIN_DOC_TYPES = {"120", "130", "140"}
+_FIN_DOC_TYPES = {"120", "160"}
 
 # XBRL タクソノミ要素名 → 抽出ターゲット
 # jpcrp_cor: (日本基準の連結・個別共通プレフィックス)
@@ -32,13 +34,15 @@ _XBRL_TAGS = {
         "OperatingIncomeSummaryOfBusinessResults",
         "OperatingIncome",
         "OperatingProfitIFRSSummaryOfBusinessResults",
+        "OperatingProfitLossIFRS",
     ],
     "np": [
         "ProfitLossAttributableToOwnersOfParentSummaryOfBusinessResults",
         "ProfitLossAttributableToOwnersOfParent",
         "NetIncomeLossSummaryOfBusinessResults",
         "NetIncomeLoss",
-        "ProfitLossIFRSSummaryOfBusinessResults",
+        "ProfitLossAttributableToOwnersOfParentIFRSSummaryOfBusinessResults",
+        "ProfitLossAttributableToOwnersOfParentIFRS",
     ],
     "ta": [
         "TotalAssetsSummaryOfBusinessResults",
@@ -54,11 +58,15 @@ _XBRL_TAGS = {
     "eps": [
         "BasicEarningsLossPerShareSummaryOfBusinessResults",
         "BasicEarningsLossPerShare",
+        "BasicEarningsLossPerShareIFRSSummaryOfBusinessResults",
+        "BasicEarningsLossPerShareIFRS",
     ],
     "bps": [
         "NetAssetsPerShareSummaryOfBusinessResults",
         "NetAssetsPerShare",
         "BookValuePerShareOfEquityAttributableToOwnersOfParentIFRSSummaryOfBusinessResults",
+        # 名前に反してIFRSの「1株当たり親会社所有者帰属持分」＝BPS（4183で 持分÷株数 と一致を確認）
+        "EquityToAssetRatioIFRSSummaryOfBusinessResults",
     ],
     "cfo": [
         "NetCashProvidedByUsedInOperatingActivitiesSummaryOfBusinessResults",
@@ -90,31 +98,32 @@ _XBRL_TAGS = {
 
 
 def _extract_float(xbrl_text: str, tag_names: list[str]) -> float | None:
-    """XBRL本文から指定タグ名のいずれかにマッチする数値を抽出する。
-    contextRef に CurrentYear* や CurrentQuarter* を含むものを優先。
-    """
-    for tag in tag_names:
-        pattern = rf'<[^>]*{tag}[^>]*contextRef="([^"]*)"[^>]*>\s*([+-]?[\d,]+\.?\d*)\s*<'
-        matches = re.findall(pattern, xbrl_text)
-        if not matches:
-            pattern = rf'<[^>]*:{tag}[^>]*contextRef="([^"]*)"[^>]*>\s*([+-]?[\d,]+\.?\d*)\s*<'
-            matches = re.findall(pattern, xbrl_text)
-        if not matches:
-            continue
+    """XBRL本文から指定タグ名のいずれかに一致する数値を抽出する。
 
-        # CurrentYear/CurrentQuarter を優先（累計実績）
-        best_val = None
-        for ctx, val_str in matches:
-            ctx_lower = ctx.lower()
-            if "prior" in ctx_lower or "lastquarter" in ctx_lower:
-                continue
-            val = float(val_str.replace(",", ""))
-            if "currentyear" in ctx_lower or "currentquarter" in ctx_lower:
-                return val
-            if best_val is None:
-                best_val = val
-        if best_val is not None:
-            return best_val
+    1周目は連結（contextRef に Member が付かない当期）だけを見る。IFRS会社の有報には
+    日本基準の単体数値（*_NonConsolidatedMember）も載っており、先に単体を拾うと
+    売上・EPS・BPSが単体の値になる（実例: 4183三井化学 FY2026 で売上7,498億円＝単体）。
+    連結の無い会社は2周目で単体（NonConsolidatedMember）を使う。
+    タグ名は完全一致（部分一致だと OperatingIncome が NonOperatingIncome にも当たる）。
+    """
+    for allow_non_consolidated in (False, True):
+        for tag in tag_names:
+            pattern = rf'<[\w-]+:{tag}\s[^>]*contextRef="([^"]*)"[^>]*>\s*([+-]?[\d,]+\.?\d*)\s*<'
+            best_val = None
+            for ctx, val_str in re.findall(pattern, xbrl_text):
+                ctx_lower = ctx.lower()
+                if "prior" in ctx_lower or "lastquarter" in ctx_lower:
+                    continue
+                if "member" in ctx_lower:
+                    if not (allow_non_consolidated and ctx_lower.endswith("_nonconsolidatedmember")):
+                        continue
+                val = float(val_str.replace(",", ""))
+                if ctx_lower.startswith(("currentyear", "currentquarter", "currentytd", "interim")):
+                    return val
+                if best_val is None:
+                    best_val = val
+            if best_val is not None:
+                return best_val
     return None
 
 
@@ -139,31 +148,8 @@ def _extract_fiscal_year_end(xbrl_text: str) -> str | None:
 
 
 def _detect_doc_type(doc_type_code: str, xbrl_text: str) -> str:
-    """docTypeCode + XBRL内容からFY/1Q/2Q/3Qを判定。"""
-    if doc_type_code == "120":
-        return "FY"
-    # 四半期: XBRL内のquarterを探す
-    m = re.search(r'<[^>]*CurrentFiscalYearStartDateDEI[^>]*>\s*(\d{4}-\d{2}-\d{2})\s*<', xbrl_text)
-    m2 = re.search(r'<[^>]*CurrentPeriodEndDateDEI[^>]*>\s*(\d{4}-\d{2}-\d{2})\s*<', xbrl_text)
-    if m and m2:
-        from datetime import date as _d
-        try:
-            start = _d.fromisoformat(m.group(1))
-            end = _d.fromisoformat(m2.group(1))
-            months = (end.year - start.year) * 12 + end.month - start.month
-            if months <= 4:
-                return "1Q"
-            elif months <= 7:
-                return "2Q"
-            elif months <= 10:
-                return "3Q"
-            else:
-                return "FY"
-        except Exception:
-            pass
-    if doc_type_code == "140":
-        return "2Q"
-    return "1Q"
+    """docTypeCode から FY（有価証券報告書）/ 2Q（半期報告書）を返す。"""
+    return "FY" if doc_type_code == "120" else "2Q"
 
 
 def parse_financial_xbrl(doc_id: str, doc_type_code: str, disc_date: str) -> dict | None:
