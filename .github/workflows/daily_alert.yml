@@ -109,11 +109,23 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_jpx_market.py
 
+      # 押し目買い候補通知（Step 5）の「従業員1000人以上」用。年1回しか変わらないので
+      # 取得から30日以内は取り直さず、古い順に400銘柄ずつ（約10日で一巡）。
+      - name: Step 2h - 従業員数の更新（company_employees、古い順に400銘柄）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_employees.py --limit 400
+
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
 
       - name: Step 4 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
+
+      # 日経平均が-2%以下の日だけ、押し目買い候補をLINEへ送る（それ以外の日は何も送らない）。
+      # Step 0の終値とStep 2dの決算を使うので、その後段に置く。失敗してもランキングには影響させない。
+      - name: Step 5 - 押し目買い候補のLINE通知（日経-2%以下の日のみ）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/dip_buy_alert.py
 
       # Step 5c（ブログ記事自動生成・投稿）は edinet_blog.yml（毎時）に移管済み。
 

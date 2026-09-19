@@ -17,6 +17,9 @@ name: Ops (keepalive + watchdog)
 #                               これより早いと遅延を不発と誤判定して余計なAPI課金を生む）。
 #                               成否ではなく「起動したか」だけを見る（赤で終わった便は上の経路が
 #                               既に通知済みで、再実行しても同じ理由で落ちるだけ）。
+#   手動のみ        dip_alert : 指定日の押し目買い候補（web/dip_buy_alert.py）をLINEへ送る。
+#                               通常は daily_alert.yml Step 5 が毎日判定する。LINEの認証情報が
+#                               Secretsにしか無いため、過去日の再送・送信テストはここから行う。
 #   平日 14:30 UTC  watchdog  : daily_alert.yml が今日成功していなければ再実行する。
 #                               daily_alertのschedule実行は遅延が多く、実測では予定より最大2〜3時間遅れて
 #                               開始する。早い時刻に監視すると「まだ成功していない」と誤判定して二重起動
@@ -33,8 +36,12 @@ on:
       job:
         description: 'どれを実行するか'
         type: choice
-        options: [watchdog, watchdog_blog, keepalive, heartbeat]
+        options: [watchdog, watchdog_blog, keepalive, heartbeat, dip_alert]
         default: watchdog
+      dip_date:
+        description: 'dip_alert: 判定日（YYYY-MM-DD）。過去日の押し目買い候補をLINEへ送り直す'
+        type: string
+        default: ''
 
 jobs:
   keepalive:
@@ -173,3 +180,35 @@ jobs:
         run: |
           echo "Daily alert not completed today. Triggering..."
           gh workflow run daily_alert.yml --repo "${{ github.repository }}"
+
+  dip_alert:
+    if: inputs.job == 'dip_alert'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas numpy python-dotenv yfinance
+
+      # daily_alert.yml が保存した全銘柄終値のミラー。無いと全件をRESTで引き直す（約85MBのegress）
+      - name: Restore price store cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/_price_store.pkl
+          key: price-store-${{ github.run_id }}
+          restore-keys: price-store-
+
+      - name: 押し目買い候補をLINEへ送る
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          DIP_DATE: ${{ inputs.dip_date }}
+        run: python web/dip_buy_alert.py ${DIP_DATE:+--date "$DIP_DATE"}
