@@ -115,6 +115,12 @@ jobs:
       - name: Step 4 - Webエクスポート（Supabase）
         run: cd ~/stock-alert && python web/export_to_web.py
 
+      # 日経平均が-2%以下の日だけ、押し目買い候補をLINEへ送る（それ以外の日は何も送らない）。
+      # Step 0の終値とStep 2dの決算を使うので、その後段に置く。失敗してもランキングには影響させない。
+      - name: Step 5 - 押し目買い候補のLINE通知（日経-2%以下の日のみ）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/dip_buy_alert.py
+
       # Step 5c（ブログ記事自動生成・投稿）は edinet_blog.yml（毎時）に移管済み。
 
       - name: Step 6 - モデル学習（金曜 or 初回のみ）
