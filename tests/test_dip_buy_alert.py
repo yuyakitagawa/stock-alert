@@ -128,6 +128,24 @@ def test_employees_get_reads_table_and_fills_only_missing():
     assert saved == {"3000": 1234}
 
 
+def test_employees_fetch_many_skips_errors_and_stops_on_rate_limit():
+    """取得エラーは「値が無い」として保存しない。連続で断られたら打ち切る。"""
+    import lib.employees as emp
+    orig = emp.fetch_one
+    table = {"1000": (True, 5000), "2000": (True, None), "3000": (False, None)}
+    emp.fetch_one = lambda c: table[c]
+    try:
+        assert emp.fetch_many(["1000", "2000", "3000"]) == {"1000": 5000, "2000": None}
+        emp.fetch_one = lambda c: (False, None)
+        try:
+            emp.fetch_many([str(i) for i in range(40)])
+            raise AssertionError("RateLimited が送出されない")
+        except emp.RateLimited as e:
+            assert e.args[0] == {}
+    finally:
+        emp.fetch_one = orig
+
+
 if __name__ == "__main__":
     import inspect
     fns = [f for n, f in sorted(globals().items()) if n.startswith("test_") and inspect.isfunction(f)]

@@ -40,12 +40,21 @@ def main() -> int:
         todo = todo[: a.limit]
     print(f"[employees] 銘柄 {len(codes)} / 保存済み {len(rows)} / 今回取得 {len(todo)}")
     for i in range(0, len(todo), 100):
-        chunk = employees.fetch_many(todo[i:i + 100])
+        batch = todo[i:i + 100]
+        limited = False
+        try:
+            chunk = employees.fetch_many(batch)
+        except employees.RateLimited as e:
+            chunk, limited = e.args[0], True
         ok = employees.save(chunk)
         got = sum(v is not None for v in chunk.values())
-        print(f"[employees] {i + len(chunk)}/{len(todo)} 値あり{got} 保存{'OK' if ok else '失敗'}", flush=True)
+        print(f"[employees] {i + len(batch)}/{len(todo)} 取得{len(chunk)} 値あり{got} 保存{'OK' if ok else '失敗'}", flush=True)
         if not ok:
             return 1
+        if limited:
+            # 取れなかった銘柄は保存していないので、次回また未取得として先頭に来る
+            print("[employees] Yahooのレート制限に当たったため打ち切ります（残りは次回）")
+            return 0
     return 0
 
 

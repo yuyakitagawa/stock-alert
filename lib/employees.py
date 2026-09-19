@@ -16,25 +16,57 @@ import lib.supabase_client as sb
 TABLE = "company_employees"
 
 
-def fetch_one(code: str) -> int | None:
-    """Yahooから1銘柄。値が無い・取れないときは None。"""
+class RateLimited(Exception):
+    """Yahooに続けて断られた。以降を取りに行っても無駄なので打ち切る。"""
+
+
+def fetch_one(code: str) -> tuple[bool, int | None]:
+    """Yahooから1銘柄。(取れたか, 従業員数)。
+
+    取得エラー（レート制限・通信断）は (False, None)。企業情報は返ってきたが従業員数が
+    載っていないときだけ (True, None)。この2つを混ぜると、レート制限中に取った銘柄が
+    「値が無い」として保存され、30日間取り直されなくなる（2026-09-19に2,432件で起きた）。
+    """
     try:
         import yfinance as yf
-        v = yf.Ticker(f"{code}.T").info.get("fullTimeEmployees")
-        return int(v) if v else None
+        info = yf.Ticker(f"{code}.T").info
     except Exception:
-        return None
+        return False, None
+    if not info or len(info) < 5:  # 断られたときは空に近い辞書が返る
+        return False, None
+    v = info.get("fullTimeEmployees")
+    return True, (int(v) if v else None)
 
 
-def fetch_many(codes: list[str], workers: int = 8) -> dict[str, int | None]:
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        vals = list(ex.map(fetch_one, codes))
-    # 並列で取ると一部がレート制限で空振りするので、取れなかった分だけ1件ずつ取り直す
-    return {c: (v if v is not None else fetch_one(c)) for c, v in zip(codes, vals)}
+# 連続でこの回数断られたらレート制限とみなして打ち切る
+MAX_CONSECUTIVE_ERRORS = 15
+
+
+def fetch_many(codes: list[str], workers: int = 4) -> dict[str, int | None]:
+    """取れた銘柄だけを返す（取得エラーの銘柄は含めない＝保存されず次回また取りに行く）。
+
+    レート制限に当たったら RateLimited を送出する。それまでに取れた分は e.args[0]。
+    """
+    out: dict[str, int | None] = {}
+    errors = 0
+    for i in range(0, len(codes), workers * 5):
+        chunk = codes[i:i + workers * 5]
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            res = list(ex.map(fetch_one, chunk))
+        for c, (ok, v) in zip(chunk, res):
+            if ok:
+                out[c] = v
+                errors = 0
+            else:
+                errors += 1
+        if errors >= MAX_CONSECUTIVE_ERRORS:
+            raise RateLimited(out)
+    return out
 
 
 def save(values: dict[str, int | None], today: date | None = None) -> bool:
-    """None も「Yahooに値が無かった」として保存する（毎回取り直さないため）。"""
+    """None も「Yahooに値が無かった」として保存する（毎回取り直さないため）。
+    渡すのは fetch_many が「取れた」と返した銘柄だけにすること。"""
     d = (today or date.today()).isoformat()
     rows = [{"code": c, "employees": v, "source": "yahoo", "fetched_date": d} for c, v in values.items()]
     return sb.upsert(TABLE, rows, on_conflict="code") if rows else True
@@ -58,7 +90,10 @@ def get(codes: list[str]) -> dict[str, int | None]:
     """テーブルから読み、行が無い銘柄だけYahooで取って書き戻す。"""
     have = load(codes)
     missing = [c for c in codes if c not in have]
-    got = fetch_many(missing) if missing else {}
+    try:
+        got = fetch_many(missing) if missing else {}
+    except RateLimited as e:
+        got = e.args[0]
     if got:
         save(got)
     return {c: (have[c]["employees"] if c in have else got.get(c)) for c in codes}
