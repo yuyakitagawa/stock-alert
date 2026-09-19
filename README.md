@@ -182,7 +182,7 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `video/youtube_analytics.py` | **視聴維持率の取得**（YouTube Analytics API v2）。平均視聴率・平均視聴秒・登録者獲得数（`video_stats()`）と、尺に対する経過割合0.00〜1.00での維持率カーブ（`retention_curve()`）を読む。`survival_at()`はカーブを尺で割り戻して「先頭3秒で何割残ったか」を本ごとに比較できる形にする（カーブは秒ではなく割合で返るため、尺の違う動画をそのまま並べても比べられない）。サービスアカウントでは読めずチャンネル所有者本人のOAuthが要るので、投稿用のリフレッシュトークンを流用する。**再生数・高評価しか記録できていなかったので「hookで何割消えたか」が分からず、演出を変えても良し悪しを言えなかった**（2026-08-30に追加）。scope不足の403では例外を投げず空を返し、再生数の記録は成立させる |
 | `tools/output_heartbeat.py` | **成果物ハートビート**（ops.yml heartbeat、平日22:00 JST）。ワークフローの成否ではなく成果物そのもの（microCMSの当日公開記事数・素材側は**EDINET API を直接叩いた当日の大量保有件数**（`count_edinet_disclosures()`、`EDINET_API_KEY`必須）と`tdnet_buybacks`）を数え、「EDINETに開示があるのにDBが0件（保存の故障）」「素材があるのに記事0件」をLINEへ通知する。X投稿と動画は2026-08-30に定期実行を止めたため数えない（止めた成果物を数え続けると毎日「X投稿0件」で誤報になる）。素材をSupabaseの`edinet_large_holdings`から数えていた頃は、保存側が壊れると素材も成果物も同時に0になり「開示が無い静かな日」と区別できず無言で通していた（2026-08-26〜27）。EDINETを引けなかった場合(-1)のみDBの件数にフォールバックする。各ワークフローが`continue-on-error`で緑のまま止まる無言停止を検知するための見張りで、Claudeを一切使わない。開示が無い日（祝日等）の0件は異常としない。取得できなかった件数(-1)では判定しない。**対象日は「起動時刻のJST日付」ではない**。JSTの正午より前に起動した便は前日を判定する（GitHubのscheduleは数時間遅れることがあり、13:00 UTCの便が翌8/28 07:40 JSTに起動して、始まったばかりの当日を「0件」と誤報した＝2026-08-28）。件数の集計もJSTの当日0時〜24時で必ず閉じる（上限が無いと前日判定の便が当日ぶんのbackfill記事まで数える）。`--always`で正常時も1通、`--dry-run`で送信せず本文表示、`--strict`で異常時に終了コード1、`--date`で対象日を明示 |
 | `tests/test_fundamentals.py` | point-in-timeファンダ（`lib/fundamentals.py`）のユニットテスト。先読みバイアス防止（as_of日より後の開示を含めない）を確認（6件）|
-| `tests/test_edinet_financials.py` | EDINET決算XBRL抽出（`lib/edinet_financials.py`）のユニットテスト（IFRS会社で単体より連結を優先・親会社株主帰属利益・連結なし会社の単体フォールバック・タグ完全一致・取得対象は有報/半期報のみ）（7件）|
+| `tests/test_edinet_financials.py` | EDINET決算XBRL抽出（`lib/edinet_financials.py`）のユニットテスト（IFRS会社で単体より連結を優先・親会社株主帰属利益・連結なし会社の単体フォールバック・タグ完全一致・取得対象は有報/半期報のみ・保存済み書類の読み飛ばし・日ごとの保存・`--force`での取り直し）（10件）|
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（銘柄コード絞り込み正規表現の新形式コード対応込み、13件）|
 | `tests/test_fetch_history.py` | 株価キャッシュ更新の銘柄コード収集ロジック（既存コード+JPX最新リストの和集合・JPX取得失敗時のフォールバック・J-REIT含む市場フィルター）のユニットテスト（6件）・保存失敗銘柄の再送（最大3回・途中成功は除外・空なら何もしない） |
@@ -333,7 +333,7 @@ DBキャッシュは廃止。
 | `gen_rankings` | 毎日のランキングスコア（コード・下落確率・推奨・rank）|
 | `jpx_stock_list` | 業種分類・優待月ほかメタ |
 | `gen_market_compare` | 日経 vs S&P500 相対強弱判定 |
-| `jquants_fin_summary` | 財務サマリ（2026-04-24まではJ-Quants、以降はEDINETの有価証券報告書・半期報告書のXBRLから抽出。テーブル名は旧J-Quants由来）|
+| `jquants_fin_summary` | 財務サマリ（2026-04-24まではJ-Quants、以降はEDINETの有価証券報告書・半期報告書のXBRLから抽出。テーブル名は旧J-Quants由来）。日次（daily_alert Step 2d）は直近21日の書類一覧を見て、未保存の (code, disc_date) だけXBRLを取る（ジョブが数日落ちても次の成功日に拾う）。抽出を直したら `tools/fetch_edinet_financials.py --start <日付> --force` で取り直す。1Q/3Qは四半期報告書の廃止（2024-04）でEDINETに無く、会社予想(fsales/fop/fnp)も有報・半期報には無いため、2026-04-25以降の行は空 |
 | `yahoo_price_cache` | 株価履歴キャッシュ（バックテスト高速化用）|
 | `yahoo_market_index` | VIX/S&P500/USDJPY 日次 |
 | `edinet_large_holdings` | EDINET大量保有/変更報告書の日次蓄積（先回り突合用）|

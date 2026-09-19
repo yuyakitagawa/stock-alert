@@ -311,6 +311,16 @@ def bulk_upsert_jquants_fin_summary(rows: list):
     sb.upsert("jquants_fin_summary", rows, on_conflict="code,disc_date")
 
 
+def get_jquants_fin_keys(start: str, end: str) -> set[tuple[str, str]]:
+    """disc_date が start〜end の保存済み (code, disc_date)。EDINET取得で取得済みの書類を飛ばすのに使う。"""
+    rows = sb.select(
+        "jquants_fin_summary",
+        f"select=code,disc_date&disc_date=gte.{start}&disc_date=lte.{end}",
+        strict=True,
+    )
+    return {(r["code"], r["disc_date"]) for r in rows}
+
+
 def get_jquants_fin_history(code: str, as_of_date: str, n: int = 4) -> list:
     return sb.select(
         "jquants_fin_summary",

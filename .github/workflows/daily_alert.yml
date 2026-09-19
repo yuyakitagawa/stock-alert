@@ -87,7 +87,7 @@ jobs:
 
       - name: Step 2d - EDINET決算XBRL取得（財務サマリー差分更新）
         continue-on-error: true
-        run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 7
+        run: cd ~/stock-alert && python tools/fetch_edinet_financials.py --days 21
 
       # 銘柄ランキング(/trending)の推定売買金額。株価キャッシュ(Step 0)と
       # 発行済株式数(Step 2d)の両方に依存するので、財務サマリー更新の直後に再計算する。

@@ -220,31 +220,44 @@ def extract_financial_docs(results: list, disc_date: str) -> list[dict]:
 
 def scan_financial_reports(days_back: int = 30, persist: bool = True,
                            start_date: str | None = None,
+                           end_date: str | None = None,
                            skip_weekends: bool = True,
-                           sleep_sec: float = 1.0) -> list[dict]:
+                           sleep_sec: float = 1.0,
+                           force: bool = False) -> list[dict]:
     """指定期間のEDINET決算書類をスキャンし、財務データを抽出してDBに保存。
 
     Args:
         days_back: 遡る日数
         persist: DBに保存するか
         start_date: 開始日(YYYY-MM-DD)。指定時はdays_back無視
+        end_date: 終了日(YYYY-MM-DD)。省略時は今日。長期間のbackfillを分割するのに使う
         skip_weekends: 土日スキップ
         sleep_sec: XBRL取得間のスリープ(秒)
+        force: 保存済み (code, disc_date) もXBRLを取り直して上書きする（抽出ロジック修正後の再取得用）
+
+    保存済みの (code, disc_date) はXBRLを取りに行かない（一覧APIの secCode で判定）。
+    これで遡る日数を広げても毎日の取得量は新着分だけで済み、日次ジョブが数日落ちても
+    次に成功した日に取りこぼしを拾える。保存は日ごと（途中でジョブが止まっても済んだ日は残る）。
 
     Returns: 取得した財務データdictのリスト
     """
     import time
     from lib.db import bulk_upsert_jquants_fin_summary as upsert_jquants_fin_summary
+    from lib.db import get_jquants_fin_keys
 
-    today = date.today()
+    last = date.fromisoformat(end_date) if end_date else date.today()
     if start_date:
         d0 = date.fromisoformat(start_date)
-        dates = [d0 + timedelta(days=i) for i in range((today - d0).days + 1)]
+        dates = [d0 + timedelta(days=i) for i in range((last - d0).days + 1)]
     else:
-        dates = [today - timedelta(days=i) for i in range(days_back)]
+        dates = [last - timedelta(days=i) for i in range(days_back)]
 
     if skip_weekends:
         dates = [d for d in dates if d.weekday() < 5]
+    if not dates:
+        return []
+
+    existing = set() if force else get_jquants_fin_keys(min(dates).isoformat(), max(dates).isoformat())
 
     all_records = []
     for d in dates:
@@ -254,15 +267,17 @@ def scan_financial_reports(days_back: int = 30, persist: bool = True,
             continue
 
         fin_docs = extract_financial_docs(results, ds)
-        if not fin_docs:
+        todo = [doc for doc in fin_docs if (doc["sec_code"], ds) not in existing]
+        if not todo:
             continue
 
-        print(f"  {ds}: {len(fin_docs)}件の決算書類")
+        print(f"  {ds}: {len(fin_docs)}件の決算書類（未保存 {len(todo)}件）")
 
-        for doc in fin_docs:
+        day_records = []
+        for doc in todo:
             parsed = parse_financial_xbrl(doc["doc_id"], doc["doc_type_code"], ds)
             if parsed:
-                all_records.append(parsed)
+                day_records.append(parsed)
                 print(f"    ✅ {parsed['code']} {doc.get('filer_name','')} "
                       f"({parsed['doc_type']}) sales={parsed.get('sales')} np={parsed.get('np')}")
             else:
@@ -270,8 +285,11 @@ def scan_financial_reports(days_back: int = 30, persist: bool = True,
             if sleep_sec:
                 time.sleep(sleep_sec)
 
+        if persist and day_records:
+            upsert_jquants_fin_summary(day_records)
+        all_records.extend(day_records)
+
     if persist and all_records:
-        upsert_jquants_fin_summary(all_records)
         print(f"\n  DB保存: {len(all_records)}件")
 
     return all_records

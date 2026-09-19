@@ -1,6 +1,6 @@
 """
 tools/fetch_edinet_financials.py
-EDINET API v2 から決算書類(有報/四半期報)のXBRLを取得し、
+EDINET API v2 から決算書類(有報/半期報)のXBRLを取得し、
 財務データを jquants_fin_summary テーブルに保存する。
 
 J-Quants Free プラン期限切れ後の代替データソース。
@@ -9,7 +9,11 @@ J-Quants Free プラン期限切れ後の代替データソース。
     python3 tools/fetch_edinet_financials.py                # 直近30日をスキャン
     python3 tools/fetch_edinet_financials.py --days 90      # 直近90日
     python3 tools/fetch_edinet_financials.py --start 2026-03-18  # 指定日以降を全取得
+    python3 tools/fetch_edinet_financials.py --start 2026-04-25 --end 2026-06-30 --force  # 期間を区切って取り直す
     python3 tools/fetch_edinet_financials.py --dry-run      # DB保存なし（テスト用）
+
+保存済みの (code, disc_date) はXBRLを取りに行かない（--force を除く）ので、遡る日数を広げても
+毎日の取得は新着分だけ。
     python3 tools/fetch_edinet_financials.py --verify       # APIキー確認のみ
 
 必要: EDINET_API_KEY 環境変数
@@ -46,9 +50,11 @@ def main():
     parser = argparse.ArgumentParser(description="EDINET決算XBRL取得→DB保存")
     parser.add_argument("--days", type=int, default=30, help="遡る日数（デフォルト30）")
     parser.add_argument("--start", type=str, default=None, help="開始日 YYYY-MM-DD")
+    parser.add_argument("--end", type=str, default=None, help="終了日 YYYY-MM-DD（省略時は今日）")
     parser.add_argument("--dry-run", action="store_true", help="DB保存しない")
     parser.add_argument("--verify", action="store_true", help="APIキー確認のみ")
     parser.add_argument("--sleep", type=float, default=1.0, help="XBRL取得間のスリープ秒")
+    parser.add_argument("--force", action="store_true", help="保存済みの書類も取り直して上書き")
     args = parser.parse_args()
 
     load_env()
@@ -68,7 +74,7 @@ def main():
     print("=" * 60)
     print("EDINET 決算XBRL取得パイプライン")
     if args.start:
-        print(f"  期間: {args.start} ～ 今日")
+        print(f"  期間: {args.start} ～ {args.end or '今日'}")
     else:
         print(f"  期間: 直近{args.days}日")
     print(f"  DB保存: {'OFF (dry-run)' if args.dry_run else 'ON'}")
@@ -78,8 +84,10 @@ def main():
         days_back=args.days,
         persist=not args.dry_run,
         start_date=args.start,
+        end_date=args.end,
         skip_weekends=True,
         sleep_sec=args.sleep,
+        force=args.force,
     )
 
     print(f"\n{'=' * 60}")
