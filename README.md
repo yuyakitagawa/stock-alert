@@ -105,11 +105,11 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `tools/refresh_investor_returns.py` | Supabaseのマテリアライズドビュー`investor_return_positions_3m`（明細）と`investor_returns_3m`（投資家別の3ヶ月リターン集計）を明細→集計の順で再計算（daily_alert.yml Step 0b）。RPC`refresh_investor_returns_3m()`を叩くだけの薄いバッチで、集計ロジックは`supabase/create_investor_returns_3m.sql`側にある |
 | `tools/backfill_history.py` | 指定期間の過去営業日ぶんランキングを再生成し`gen_rankings`へupsert（アラート送信はしない。`--start`/`--end`指定可。既存日付は既定でスキップするため、価格データ修正後に再生成したい場合は`--force`で上書き。生成後に`check_price_freshness`で複数日にまたがるclose凍結（更新漏れ）を検査）|
 | `core/rf_train_v3.py` | XGBoostの下落モデルを東証全銘柄×5年データで学習（金曜のみ。上昇モデルは廃止済み）。`--cutoff YYYY-MM-DD` でウォークフォワード用モデルも生成可能 |
-| `core/rank_stocks.py` | スクリーナー通過銘柄に下落確率をつけてランキング生成・DB保存。フェーズ5(優待権利落ち)→フェーズ7(米国ETFリードラグフィルター)→フェーズ8(相場リスク管制官) |
+| `core/rank_stocks.py` | 全銘柄に下落確率をつけてランキング生成・DB保存。推奨ラベルは「🔴 売り検討」か「—」のみ（買い判定は2026-09-19に廃止）。フェーズ8で相場リスク管制官の判定を保存（情報表示のみ） |
 | `web/export_to_web.py` | Supabaseへランキング・日経 vs S&P500判定をエクスポート（Step 4）|
 | `web/market_timing_alert.py` | N225シグナル・日経 vs S&P500相対強弱・EDINET大口保有動向・ウォッチリストをLINE Messaging APIへ送る手動実行用スクリプト。日次プッシュ通知（旧Step 5b）は2026-09-10に停止。コードは調査・手動実行用に残している |
 | `config.py` | 戦略パラメータ（`BASE_DIR`・下落相場判定 `BEAR_MARKET_THRESHOLD`・市場タイミング `MARKET_TIMING_20D_THRESH`）。学習時スクリーニングの閾値は`core/rf_train_v3.py`の`_SC_*`、バックテストは`tools/backtest.py`の`_SC_*`が保持する |
-| `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, recommend_from_scores 等）|
+| `lib/utils.py` | 共通関数（get_prices, extract_features, add_cs_rank_features, sell_label 等）|
 | `lib/db.py` | Supabase永続化層（gen_rankings / jpx_stock_list / yahoo_price_cache ほか）。`lib/supabase_client.py` のREST API経由（タイムアウト等の一時的なネットワーク失敗と、5xx／Cloudflare 52x＝522 Connection timed out 等のサーバー側一時障害は指数バックオフ2s/4s/8sで最大3回自動リトライ。400系は再試行しない。実例: 2026-09-03、Supabaseが522を返した間に`yahoo_price_cache`の書き込みが再試行されず約55銘柄の当日終値が欠けた）。失敗時のログ・LINE通知の詳細は`_error_detail()`が作り、CloudflareのHTMLエラーページは`<title>`（"522: Connection timed out"等）だけに要約する。`upsert()`・`insert_ignore()`は全バッチ成功でTrue／1バッチでも失敗でFalseを返す。書けたかどうかがジョブの成否そのものである処理（`web/x_metrics.py`等）は必ず戻り値を見ること。送信直前に`_group_by_keys()`がキー構成の同じ行どうしへ分割する（PostgRESTは1リクエスト内でキーが不一致だとPGRST102で400を返しバッチ丸ごと落ちる。「値があるときだけ送る」列＝`issuer_name`・`short_term_transfers`等が混ざると必ず踏む。実例: 2026-08-26〜27、EDINET大量保有の全件が保存されずブログ記事が0件になった）。書き込みが失敗したら`_record_write_failure()`がテーブル別に記録し**その場でLINEへ通知**する（テーブルごと1プロセス1回。各ステップが`continue-on-error`で緑のまま進むため、`if: failure()`の通知では鳴らない）。`write_failures()`で失敗したテーブルと行数を取得でき、`tools/scan_large_holdings.py`は1行でも落ちていれば終了コード1で終わる。**テスト実行中は本番プロジェクトへの書き込み（upsert/insert_ignore/update/delete）を握りつぶす**（`_block_production_write()`。読み取りは通す。テストがURLを差し替えている場合も通す）。`tests/test_api_usage.py`がatexitの`flush()`で本番`api_usage`へ合成行（task="x" / $1.35）を書き、その1行だけで当日合計が日次予算を超えて翌営業日の記事生成が全便打ち切られる状態になった（2026-08-29）ため、テスト側のモックではなく書き込みの出口で止める|
 | `lib/price_store.py` | **全銘柄の終値のローカルミラー**。`yahoo_price_cache`を1度だけpickle(`_price_store.pkl`、約39MB)へ落とし、以降は`date > 手元の最終日`の差分だけを取る（1日あたり約3,800行＝約0.2MB）。全銘柄を舐める処理（`core/rank_stocks.py`・`core/screener.py`・`core/rf_train_v3.py`・`tools/backtest.py`・`tools/fetch_history.py`）が`main()`の先頭で`price_store.enable()`を呼び、以降の`lib/db.get_price_df()`はRESTを一切叩かない。**1銘柄だけ引く処理（毎時のブログ生成など）は呼ばないこと**——数百行のために全履歴の構築が走る。有効化していないプロセスは従来どおりRESTで1銘柄ずつ引く。GitHub Actionsでは`daily_alert.yml`が`actions/cache`でrun間を持ち回す（`price-store-<run_id>`で保存し`restore-keys: price-store-`で直近を拾う。同一キーは上書きできないため）。手元の訂正取り込み漏れを防ぐため30日で全件を取り直す。全履歴の取得は主キー(code,date)順に40銘柄ずつに刻む（1リクエストで全部引くとoffsetが深くなり35万行あたりでstatement timeoutに当たる）。導入理由: この読み出しだけで1回52MB・月1.1GBのegressがあり、2026-09-07にSupabase Free枠(5GB/月)を超えて全RESTが402で止まったため |
 | `lib/api_budget.py` | **Claude APIの利用上限フェイルファスト**。400の "You have reached your specified API usage limits" を検知すると同一プロセス内にフラグを立て、以降の呼び出しをAPIに投げる前にスキップさせる（`reached()`／`note(exc)`）。上限はリトライで直らないため、1件目で気づいて残りを諦めるのが正しい（2026-08-24の毎時実行では上限後も候補ごとに叩き続け、1回の実行で十数回失敗した末に記事が無言で欠落していた）。429や529などの一時的失敗では打ち切らない（SDKのリトライを殺さないため）。同じフラグは**日次予算の打ち切り**でも立てる（`stop_for_daily_cap()`。判定は`lib/api_usage.py`側）。上限を初めて検知した時点で`lib/notify.py`経由でLINEへ1回だけ通知する（同一プロセス内は`_notified`、プロセスを跨ぐ連投は`notify.push_once`の`dedupe_key`で抑制。毎時13便が同じ理由で落ちても1日1通）。**通知本文には原因と対処まで書く**（`_build_message()`）: 「Consoleで月間の**使用上限**を引き上げる」「**クレジット追加では解除されない**（残高不足ではなく上限設定に当たっている）」と、`regain_access_at()`がエラー文言から抜いた自動復旧日時（`You will regain access on ...`）。2026-08-24に実際にチャージで復旧を試みて空振りし、上限引き上げに気づくまで時間を要したため |
@@ -124,7 +124,7 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `lib/gsc_search_guard.py` | **検索に出ている記事を削除対象から外すガード**（2026-09-13）。記事を消す手動3ツール（`delete_low_value_blog_articles.py`・`delete_articles_by_id.py`・`fix_misreported_blog_articles.py --apply --delete`）が削除の直前に呼び、GSCで直近90日に表示回数が1回以上あった記事id（`/articles/<id>`・旧`/en/articles/<id>`・英語版サブドメイン）を除く。GSCが取れない（鍵なし・権限なし・API障害）ときは削除を中止する（fail-closed）。背景: 8/18〜29の削除・/en除却で過去3か月のクリックの21%を持つURLを消していた。日次CIの重複記事回収（`cleanup_duplicate_blog_articles.py`）は残した方の記事へ引き継ぐので対象外 |
 | `lib/article_redirects.py` | **削除した記事URLの引き継ぎ先の記録**。記事を消す3ツール（`cleanup_duplicate_blog_articles.py`＝残した方の記事へ、`delete_low_value_blog_articles.py`・`delete_articles_by_id.py`＝その銘柄ページへ）から呼ばれ、Supabase `deleted_article_redirects` に登録する。kujira-watchの記事詳細ページがmicroCMS 404のときだけ引いて308を返す。A→B→Cの多段リダイレクトを作らないよう、消した記事を指していた既存行は新しい行き先へ付け替える |
 | `lib/gcp_auth.py` | GCPサービスアカウントのアクセストークン取得（`tools/ga4_clicks.py`のGA4と`tools/gsc_report.py`のSearch Consoleで共用）。鍵はローカルの`gcp_key.json`と環境変数`GCP_SERVICE_ACCOUNT_JSON`（CI用Secret）の両方から読む。スコープはAPIごとに違うため引数で渡す |
-| `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8でリスクオフ日はS買いを自動見送り、判定を `data/risk_regime.json` に保存しメールに警告表示 |
+| `lib/risk_regime.py` | **相場リスク管制官**。日経20日・VIX・ドル円・S&P500からリスクオン/オフを判定。rank_stocksのフェーズ8で判定を `data/risk_regime.json` に保存しメールに警告表示（シグナルには影響しない） |
 | `lib/market_compare.py` | **日経 vs S&P500 相対強弱アドバイザー**。日経225とS&P500の20日・60日リターン差から「日本株優位／米国株優位／拮抗」を判定(売買シグナルには影響しない参考情報)。rank_stocksのフェーズ8bで判定し `data/market_compare.json` に保存、`gen_market_compare`経由でLINE(`market_timing_alert.py`)に表示 |
 | `tools/backtest.py` | バックテスト（先読みバイアスなし）。下落確率が低い順に選定。結果は `simulations/backtests/` に保存。`--drop-max`で下落確率上限、`--model-cutoff YYYY-MM-DD` でウォークフォワード用モデル指定可能 |
 | `tools/multi_backtest.py` | 33期間一括バックテスト＋下落確率閾値比較分析（ウォークフォワード対応） |
@@ -185,7 +185,7 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `tests/test_earnings_quality.py` | 利益の質フィルター（化粧・赤字・減益・加減点）のユニットテスト（8件）|
 | `tests/test_screener.py` | スクリーナー条件のユニットテスト（銘柄コード絞り込み正規表現の新形式コード対応込み、13件）|
 | `tests/test_fetch_history.py` | 株価キャッシュ更新の銘柄コード収集ロジック（既存コード+JPX最新リストの和集合・JPX取得失敗時のフォールバック・J-REIT含む市場フィルター）のユニットテスト（6件）・保存失敗銘柄の再送（最大3回・途中成功は除外・空なら何もしない） |
-| `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）のユニットテスト（14件）|
+| `tests/test_data_sanity.py` | QA（データ整合性・価格凍結検知）と `sell_label` の閾値・語彙のユニットテスト（17件）|
 | `tests/test_fix_body_numbers.py` | 記事是正の非課金経路（`tools/fix_misreported_blog_articles.py --fix-body-numbers`）のユニットテスト。本文中の比率・変化幅・金額の置換（表記ゆれ・符号なし変化幅・pt表記）、旧値が本文に無いときの報告、規模を語る記述と新しい比率の矛盾検出、タイトルからの旧比率の読み取りを確認、英語版（英題の組み直し・英語本文の数字置換・書き直し要否の判定）も確認（29アサーション）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_market_timing_alert.py` | LINE通知の大口保有動向セクション（開示日優先ソート・根拠なき買い/売り推測の抑制込み）・ウォッチリストdp閾値判定（ランキング本体の推奨ラベルとの矛盾防止・売り閾値ギャップの上書き・通知疲れ対策の要約表示・前日比表示込み）・投資家ウォッチ（提出者名の部分一致照合・大口保有動向セクション生成）・code_name_map未収載銘柄のEDINET issuer_nameフォールバック・大幅訂正報告書の通過/軽微な訂正の除外のユニットテスト（28件）|
@@ -227,48 +227,22 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 
 ---
 
-## S買い 発令条件（passes_buy_filter + rank_stocks.py フェーズ5・7・8）
+## 推奨ラベル（`lib/utils.py` の `sell_label`）
 
-下落モデルのみに一本化済み（上昇モデル・netスコアは廃止。詳細は `dev_log.md` 参照）。
+下落モデルのみに一本化済み（上昇モデル・netスコアは廃止）。**買い判定（💎買い・品質フィルター・優待/米国ETF/β/感情分析の降格フィルター）は2026-09-19に廃止**
+（6月以降💎買いは5件しか出ておらず、サイト・LINE Botのどこからも使われていなかった。詳細は `dev_log.md`）。
 
-品質フィルター（`passes_buy_filter`）:
-
-| 条件 | 値 | 意図 |
-|---|---|---|
-| 株価 ≥ | 300円 | 低位株除外 |
-| 3ヶ月モメンタム ≥ | +8% | 上昇トレンド確認（5%→8%: 10期間BTで勝率+7pp）|
-| 2年モメンタム | プラス | 長期下落株を除外（2年<0は勝率25%・avg-3.1%）|
-| 2年トレンド R²（504日） ≥ | 0.4 | 長期トレンド一貫性確保（R²<0.4は勝率18%・avg-2.8%）|
-| RSI（14日） | < 75 | 過熱除外のみ（下限撤廃: 30〜45帯が有効と判明）|
-| 出来高比 vr2060 ≥ | 1.0 | 出来高増加トレンド確認 |
-| 直近20日ボラ (vol20) ≤ | 22% | 高ボラ時は見送り（BT: vol>22%は平均▼0.9pp）|
-| 連続下落日数 ≤ | 3日 | 急落継続銘柄の除外 |
-| 60日ドローダウン ≥ | −15% | 深い下落銘柄の除外 |
-| 20日平均売買代金 ≥ | 50百万円 | 流動性確保（板薄銘柄除外）|
-
-モデル予測フィルター（`recommend_from_scores`）:
-
-| 条件 | S買い |
+| ラベル | 条件 |
 |---|---|
-| 下落確率 | < 8% |
-| 年率ボラティリティ | ≤ 20% |
-
-フェーズ5・7・8 追加フィルター（`rank_stocks.py`）:
-- フェーズ5: 株主優待権利落ち21日前以内の銘柄はS買い→方向感なしに降格
-- フェーズ7: 対応する米国セクターETF（XLK/XLF/XLI/XLB/XLV/XLY）の前日リターンがマイナスならS買い→方向感なしに降格。リードラグ効果（US→JP翌日）を活用。21,416サンプル(2023-2026)で全26ペア正相関・avg +0.64pp効果を確認。キャッシュは `data/sector_map.json`。
-- フェーズ8: 相場リスク管制官がリスクオフ地合いと判定した日は、S買いを全件見送り（自動防御）
-
-**推奨ラベル**:
-- 💎 買い: QV条件+ファンダ品質+モデルスコア全条件クリア
-- 🔴 売り検討: drop_prob≥10% / drawdown60<-20% / 連続下落≥5日
-- —: それ以外
+| 🔴 売り検討 | drop_prob≥10% / drawdown60<-20% / 連続下落≥5日（いずれか該当） |
+| — | それ以外 |
 
 ## スクリーナー条件（screener.py、現在は手動実行専用）
 
 `core/screener.py` は2026-08-01に日次パイプラインから除外済み（出力`data/screeners/*.csv`が
 `rank_stocks.py`から読まれておらず、全銘柄価格取得を二重に行うだけの無駄な処理だったため）。
 以下は`screener.py`単体を手動実行した場合の条件で、現在の自動配信ランキングには**適用されない**
-（自動配信の実フィルターは上記「S買い 発令条件」表のみ）。
+（自動配信のラベル判定は上記「推奨ラベル」のみ）。
 
 | 条件 | 値 |
 |---|---|
@@ -337,7 +311,7 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 
 ## ランキングロジック（core/rank_stocks.py）
 
-下落確率(%)の昇順（低い順）でランキングし、`drop_prob < 8%` を買い候補の主条件とする（詳細は上の「S買い 発令条件」）。
+下落確率(%)の昇順（低い順）でランキングする。ラベル付けは上の「推奨ラベル」を参照。
 
 > **下落確率の表示について**：モデルの確率はIsotonic較正の特性上、数十段の階段値（例: 3,566銘柄が約31個の値に収束）になり、小数第1位まで出すと多数の銘柄が同じ値（例「20.3%」）に見えてしまう。そのためWeb・メール・LINEの画面表示では小数%ではなく **高 / やや高 / 中 / やや低 / 低** の5段階で示す（しきい値: 30/22/14/7%）。並び順・スコア計算は引き続き数値の下落確率を使用。
 
@@ -392,14 +366,12 @@ DBキャッシュは廃止。
 | API | 取得データ | 用途 | 利用ファイル |
 |---|---|---|---|
 | **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
-| **kabutan.jp** (スクレイピング) | PER/PBR/ROE、株主優待月、業績テキスト | ファンダ特徴量・NLP感情分析 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
+| **kabutan.jp** (スクレイピング) | PER/PBR/ROE、株主優待月、業績テキスト | ファンダ特徴量 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
 | **EDINET API v2** | 大量保有関連報告書(350/360)、有報/四半期報の決算XBRL(BS/PL/CF) | 先回りシグナル・財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想）本体 | `lib/edinet.py`, `lib/edinet_financials.py`, `tools/scan_large_holdings.py`, `tools/fetch_edinet_financials.py` |
 | **TDnet適時開示** (やのしんWEB-API・⚠️個人運営) | 適時開示（業績修正/増配/自社株買い/M&A等のカタリスト） | 企業イベント情報（LINE通知用）。停止リスク隔離のため `ext_` テーブルに保存 | `lib/tdnet.py`, `tools/fetch_tdnet.py` |
 | **JPX 空売り残高/信用取引残高** (公式Excel/CSV) | 空売り残高報告(0.5%以上)、個別銘柄信用週末残高 | 需給シグナル（逆張り/買い残） | `lib/jpx_market_data.py`, `tools/fetch_jpx_market.py` |
 | **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
-| **yfinance** | セクターマッピング（米国ETF対応用） | 米国ETFリードラグフィルター（フェーズ7） | `core/rank_stocks.py` |
 | **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
-| **Claude API** (Anthropic) | テキスト生成 | 決算テキスト感情分析（Haiku × kabutan） | `lib/nlp_sentiment.py` |
 
 #### Claude APIのコスト管理
 
@@ -441,11 +413,7 @@ DBキャッシュは廃止。
 
 | フィルター | 条件 | データ出所 |
 |---|---|---|
-| **品質フィルター** (`passes_buy_filter`) | 株価≥300, drawdown60≥-20%, down_streak≤4日, RSI<80, 売買代金≥50M | Yahoo Finance 株価・出来高 |
-| **💎買い条件** (`recommend_from_scores`) | QV条件(Piotroski≥6/9, pos52<45%, EPS surprise>2% or BPS成長+) + 品質(CFOマージン>0, レバレッジ<5x) + drop_prob<8%, vol≤20%, ret90>-25%, 売買代金≥50M, bear時は💎抑制 | モデル予測＋jquants_fin_summary |
-| **🔴売り検討** (`recommend_from_scores`) | drop_prob≥10% / drawdown60<-20% / 連続下落≥5日（いずれか該当で警告） | モデル予測＋株価データ |
-| **優待フィルター** (フェーズ5) | 権利落ち21日前以内→S買い降格 | kabutan 優待月 |
-| **米国ETFフィルター** (フェーズ7) | 対応セクターETF前日リターン<0→S買い降格 | Yahoo Finance (XLK/XLF/XLI等) |
+| **🔴売り検討** (`sell_label`) | drop_prob≥10% / drawdown60<-20% / 連続下落≥5日（いずれか該当で警告） | モデル予測＋株価データ |
 | **レジーム調整** | 日経20日<-5%→下落相場、VIX>30→高恐怖 | Yahoo Finance (日経/VIX) |
 | **カタリストスクリーン** (RPC) | PBR<1.0, ROE<8%, 自己資本比率>50%, 売買代金≥指定値 | jquants_fin_summary |
 | **利益の質フィルター** (A/B) | 営業赤字/化粧決算/本業減益を除外 | jquants_fin_summary (営業益/売上/純利益) |
@@ -512,7 +480,7 @@ python3 tests/test_fetch_history.py  # 株価キャッシュ銘柄コード収�
 
 - **モデルの限界**：AUC 0.766（下落）はランダム（0.50）よりわずかに良い程度。参考指標として使い、最終判断は自分で行う。
 - **多段フィルターが必須**：モデル単体を全銘柄に適用しても効果なし。`rank_stocks.py`内のハードフィルター→モデル→下落確率フィルターの順で使うことでアルファが出る（`core/screener.py`による事前スクリーニングは2026-08-01に廃止。詳細は上の「スクリーナー条件」参照）。
-- **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告（`lib/risk_regime.py`の相場リスク管制官がS買いを自動見送り）。
+- **下落相場では慎重に**：日経20日 < -5% のとき赤バナー警告（`lib/risk_regime.py`の相場リスク管制官）。
 - **日経急騰時の限界**：大型株主導の急騰相場（例：2025年7月 日経+21%超）では中小型株主体の選定が相対的に不利。日経60日 ≥ +15% のときオレンジバナーで警告（新規の日経超え率: 7% vs 通常時59%）。
 - **季節性**：3〜5月エントリーが最も好成績（avg+8〜10%、勝率75〜82%）。8〜9月は低調（avg−2.6〜+2.7%）。
 - **主要特徴量**：下落モデルはcs_vol20（ボラ相対ランク、8%）・sin_month（7%）・div_ex_feat（7%）が上位。

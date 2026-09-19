@@ -347,7 +347,7 @@ def build_watchlist_section(
             continue
         buy_th = w.get("dp_threshold", 8.0)
         # dp_sell_thresholdの既定値20%はランキング本体の売り検討基準（drop_prob>=10%等、
-        # recommend_from_scores）より緩い。既定のままだと10〜20%の間で「システムは売り検討と
+        # sell_label）より緩い。既定のままだと10〜20%の間で「システムは売り検討と
         # 判定済みなのにウォッチ通知は沈黙する」期間が生じるため、recommendが既に
         # 「🔴 売り検討」の銘柄は個人の閾値設定に関わらず必ず警告する（下のelif dp>=sell_thは
         # ユーザーが独自により厳しい閾値を設定した場合のための補助的な分岐として残す）。

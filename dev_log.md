@@ -1,5 +1,26 @@
 # Dev Log
 
+## 2026-09-19 買い判定（💎買い）を廃止し、推奨ラベルを「🔴 売り検討 / —」の2値に
+
+7/20の「下落モデルに一本化」（コミット aed1a60a、件名は「💎買いシステムを廃止」）は、実際には買い判定を
+drop_prob<8%＋QV条件に作り直しただけで、💎買いと4つの降格フィルターがコードに残っていた。
+実測: 6/1以降の gen_rankings で💎買いは 6/13 の5件のみ。サイト（kujira-watch）からの参照は0件、
+ウォッチリスト通知（market_timing_alert）が見るのは「🔴 売り検討」だけ。オーナー判断で買い判定を撤去。
+
+削除:
+- `lib/utils.py`: `recommend_from_scores()` → 売り判定だけの `sell_label()`。`clean_recommend_label()` も削除（旧ラベル変換で不要に）
+- `core/rank_stocks.py`: `passes_buy_filter`・βフィルター・QV可観測性ログ・決算テキスト感情分析（Claude Haiku）・優待権利落ち・米国ETFリードラグ・リスク管制官による買い見送り。
+  リスク管制官の判定と `data/risk_regime.json` の保存は残す（メール/Web表示用）
+- `lib/nlp_sentiment.py`・`data/sector_map.json`・`lib/db.py` の優待キャッシュ（rank_stocksだけが使用）
+- `tools/backfill_history.py`: 買い判定とETF履歴取得。ラベルは日次と同じ `sell_label` に揃えた（従来はdrop_probだけで判定していた）
+- `lib/data_sanity.py`: 既知ラベルを2値に。CLAUDE.md §2 の Hard Filters・βフィルター（買い候補用）も撤去
+
+副次: 感情分析は毎日上位20銘柄でHaikuを呼んでいたが、9/18の実行は20銘柄とも中立(0.0)で、api_usageにも記録が無かった＝実質動いていなかった。
+優待チェックは `_KABUTAN_HEADERS` が未定義のまま例外で握りつぶされており、こちらも動いていなかった。
+
+検証: 下落確率の計算・ランキング順・売り検討の条件は変更なし（backtest.py は下落確率ベースで買い判定に依存しないため対象外）。
+tests 全ファイル緑。`sell_label` の閾値と語彙のテストを追加（test_data_sanity 17件）。
+
 ## 2026-09-13 検索流入の急減対応（Googlebot巡回1/4・削除ガード・/enの向け直し）
 
 GSCのクリックが8/21前後の日10件超から9月は日0〜2件に落ちた。実測（詳細は `docs/progress_seo_crawl_recovery.md`）:

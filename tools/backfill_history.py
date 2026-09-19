@@ -21,12 +21,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from lib.utils import get_prices, extract_features, add_cs_rank_features, recommend_from_scores, clean_recommend_label
+from lib.utils import get_prices, extract_features, add_cs_rank_features, sell_label
 from lib.db import save_daily_ranking
 import lib.supabase_client as sb
 from config import BASE_DIR
 from core.screener import get_tse_stock_list
-from core.rank_stocks import passes_buy_filter, SECTOR_TO_ETF, STRONG_EFFECT_ETFS, get_sector_etf, _load_sector_cache, _save_sector_cache
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 
@@ -48,40 +47,6 @@ def fetch_nikkei_history():
     if nk_df is None or len(nk_df) == 0:
         return {}
     return {d.strftime("%Y-%m-%d"): float(c) for d, c in zip(nk_df.index, nk_df["Close"])}
-
-
-def fetch_etf_history():
-    """米国セクターETFの終値履歴を {etf: {date_str: close}} で返す（約500日分）"""
-    import yfinance as yf
-    etfs = sorted(set(SECTOR_TO_ETF.values()))
-    try:
-        data = yf.download(etfs, period="600d", auto_adjust=True, progress=False)["Close"]
-        out = {e: {} for e in etfs}
-        for e in etfs:
-            col = data[e] if e in data.columns else None
-            if col is None:
-                continue
-            for dt, val in col.dropna().items():
-                out[e][dt.strftime("%Y-%m-%d")] = float(val)
-        return out
-    except Exception as ex:
-        print(f"  ETF履歴取得失敗: {ex}")
-        return {}
-
-
-def etf_prev_ret(etf_hist, etf, date_str):
-    """date_str 時点での etf の前日比リターン(%)を返す。データ不足なら None。"""
-    closes = etf_hist.get(etf, {})
-    sorted_dates = sorted(closes.keys())
-    try:
-        idx = sorted_dates.index(date_str)
-    except ValueError:
-        return None
-    if idx < 1:
-        return None
-    prev_close = closes[sorted_dates[idx - 1]]
-    curr_close = closes[date_str]
-    return (curr_close - prev_close) / prev_close * 100
 
 
 def nk_rets_at(nk_hist, trading_dates, target_date_str):
@@ -131,12 +96,6 @@ def main():
     nk_hist = fetch_nikkei_history()
     nk_dates = sorted(nk_hist.keys())
     print(f"  日経営業日: {len(nk_dates)} 日")
-
-    # 米国セクターETF 履歴
-    print("米国セクターETF履歴取得中...")
-    etf_hist = fetch_etf_history()
-    _load_sector_cache()
-    print(f"  ETF取得完了: {len(etf_hist)} セクター")
 
     # 対象営業日（START_DATE〜END_DATE）
     target_dates = [d for d in nk_dates if START_DATE.isoformat() <= d <= END_DATE.isoformat()]
@@ -215,17 +174,11 @@ def main():
             vol = round(feat[7], 1)
 
             nk20_pct = round(nk[1] * 100, 2) if nk else None
-            p = closes
-            ret_504 = float((p[-1]-p[-505])/p[-505]) if len(p) >= 505 else None
-            p504 = p[-504:] if len(p) >= 504 else p
-            t504 = np.arange(len(p504), dtype=float)
-            _coef504 = np.polyfit(t504, p504, 1)
-            _pred504 = np.polyval(_coef504, t504)
-            _ss_res504 = float(np.sum((p504 - _pred504)**2))
-            _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
-            r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
-            buy_ok = passes_buy_filter(feat, close, volumes or [], nk20=nk20_pct, ret_504=ret_504, r2_504=r2_504)
-            recommend = recommend_from_scores(drop_pct, allow_buy=buy_ok, vol=vol)
+            recommend = sell_label(
+                drop_pct,
+                drawdown60=float(feat[10]),
+                down_streak_raw=round(feat[12] * 20),
+            )
 
             p = closes
             s20 = (p[-1]-p[-21])/p[-21]*100 if len(p)>=21 else 0
@@ -247,21 +200,10 @@ def main():
         # 下落確率が低い順にソートして rank 付け
         db_rows.sort(key=lambda r: r["drop_prob"])
 
-        # 米国セクターETFリードラグフィルター（強相関セクターでの前日マイナスは💎買いを降格）
-        buy_now = [r for r in db_rows if r["recommend"] == "💎 買い"]
-        for r in buy_now:
-            etf = get_sector_etf(str(r["code"]))
-            if etf not in STRONG_EFFECT_ETFS:
-                continue
-            ret = etf_prev_ret(etf_hist, etf, date_str)
-            if ret is not None and ret < 0:
-                r["recommend"] = "⏳ 方向感なし"
-        _save_sector_cache()
-
         # DB 保存
         save_daily_ranking(date_str, db_rows)
-        buy_count = sum(1 for r in db_rows if r["recommend"] == "💎 買い")
-        print(f"  DB保存: {len(db_rows)}件 (💎買い:{buy_count})")
+        sell_count = sum(1 for r in db_rows if r["recommend"] == "🔴 売り検討")
+        print(f"  DB保存: {len(db_rows)}件 (🔴売り検討:{sell_count})")
 
     # 価格凍結チェック（今回生成した複数日にまたがりcloseが同一値のまま=更新漏れの疑い）
     if len(target_dates) >= 2:
@@ -300,15 +242,14 @@ def export_all_to_supabase(dates, names):
                 "drop_prob": r["drop_prob"],
                 "net":       r["net"],
                 "vol":       r["vol"],
-                "recommend": clean_recommend_label(r["recommend"]),
+                "recommend": r["recommend"],
                 "rel20":     r["rel20"],
                 "per":       r["per"],
                 "pbr":       r["pbr"],
             })
 
         sb.upsert("gen_rankings", web_rows)
-        s_buy = sum(1 for r in web_rows if r["recommend"] == "S買い")
-        print(f"  {date_str}: {len(web_rows)}件 upsert (S買い:{s_buy})")
+        print(f"  {date_str}: {len(web_rows)}件 upsert")
 
 
 if __name__ == "__main__":

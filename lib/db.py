@@ -68,29 +68,6 @@ def save_daily_ranking(date_str, rows):
     sb.upsert("gen_rankings", sb_rows, on_conflict="date,code")
 
 
-CACHE_MISS = object()
-
-def get_yutai_cache(code, today_str):
-    """jpx_stock_listから優待情報を返す。キャッシュ済みなら (has_yutai, yutai_month)。"""
-    row = sb.select_one(
-        "jpx_stock_list",
-        f"code=eq.{code}&select=has_yutai,yutai_month,fetched_date"
-    )
-    if row and row.get("fetched_date") == today_str:
-        return (bool(row.get("has_yutai")), row.get("yutai_month"))
-    return CACHE_MISS
-
-
-def set_yutai_cache(code, today_str, has_yutai, record_month):
-    sb.upsert("jpx_stock_list", [{
-        "code": str(code),
-        "has_yutai": bool(has_yutai),
-        "yutai_month": record_month,
-        "fetched_date": today_str,
-    }], on_conflict="code")
-
-
-
 # ── sector_cache (→ jpx_stock_list) ───────────────────────────────────────
 
 def get_all_sectors():

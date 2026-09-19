@@ -12,202 +12,17 @@ if not hasattr(_LR, "_multi_class_patched"):
     _LR.predict_proba = _lr_pp
     _LR._multi_class_patched = True
 
-import json
-import re
 import threading
 import pandas as pd
 import numpy as np
 import time
 import os
-import requests as _requests
-from datetime import datetime, timedelta, date as _date
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
-from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_fundamentals, recommend_from_scores, classify_market_regime, get_market_index_df_cached
+from lib.utils import get_prices, get_nikkei_returns, extract_features, add_cs_rank_features, get_fundamentals, sell_label, classify_market_regime, get_market_index_df_cached
 from config import BASE_DIR, BEAR_MARKET_THRESHOLD, MARKET_TIMING_20D_THRESH
 from core.screener import get_tse_stock_list
-
-MIN_LIQUIDITY_M  = 50.0   # 20日平均売買代金(百万円)
-BULL_SMA_PERIOD  = 20     # 強気判定に使うSMA期間（日）
-BETA_MIN_BULL    = 0.4    # 強気相場時の最低β（日経との連動性）
-
-# 米国セクターETFリードラグフィルター（US前日リターンが負なら降格）
-SECTOR_TO_ETF = {
-    "Technology":             "XLK",
-    "Financial Services":     "XLF",
-    "Financials":             "XLF",
-    "Industrials":            "XLI",
-    "Basic Materials":        "XLB",
-    "Materials":              "XLB",
-    "Healthcare":             "XLV",
-    "Consumer Cyclical":      "XLY",
-    "Consumer Defensive":     "XLP",
-    "Real Estate":            "XLRE",
-    "Communication Services": "XLC",
-    "Energy":                 "XLE",
-    "Utilities":              "XLU",
-}
-# 相関係数 > 0.15 の強相関セクターのみフィルター対象（2023-2026 21,416サンプル検証済み）
-STRONG_EFFECT_ETFS = {"XLK", "XLF", "XLI", "XLB", "XLV", "XLY"}
-
-_SECTOR_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "sector_map.json")
-_sector_cache: dict = {}
-
-
-def _load_sector_cache():
-    global _sector_cache
-    if os.path.exists(_SECTOR_CACHE_PATH):
-        try:
-            with open(_SECTOR_CACHE_PATH, "r") as f:
-                _sector_cache = json.load(f)
-        except Exception:
-            _sector_cache = {}
-
-
-def _save_sector_cache():
-    try:
-        os.makedirs(os.path.dirname(_SECTOR_CACHE_PATH), exist_ok=True)
-        with open(_SECTOR_CACHE_PATH, "w") as f:
-            json.dump(_sector_cache, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
-def get_sector_etf(code: str) -> "str | None":
-    """JPX銘柄コードを米国セクターETFティッカーに変換（sector_map.jsonでキャッシュ）"""
-    import yfinance as yf
-    if code in _sector_cache:
-        return _sector_cache[code]
-    try:
-        info = yf.Ticker(f"{code}.T").info
-        sector = info.get("sector", "")
-        etf = SECTOR_TO_ETF.get(sector)
-        _sector_cache[code] = etf
-        return etf
-    except Exception:
-        _sector_cache[code] = None
-        return None
-
-
-def fetch_us_sector_etf_returns() -> dict:
-    """前営業日の米国セクターETF Close-to-Close リターン(%)を返す"""
-    import yfinance as yf
-    etfs = sorted(set(SECTOR_TO_ETF.values()))
-    try:
-        data = yf.download(etfs, period="5d", auto_adjust=True, progress=False)["Close"]
-        result = {}
-        for e in etfs:
-            col = data[e] if e in data.columns else None
-            if col is None:
-                continue
-            vals = col.dropna()
-            if len(vals) >= 2:
-                result[e] = float((vals.iloc[-1] - vals.iloc[-2]) / vals.iloc[-2] * 100)
-        return result
-    except Exception as ex:
-        print(f"  米国ETF取得失敗: {ex}")
-        return {}
-
-
-YUTAI_SKIP_DAYS = 21  # 権利落ち日N日前からS買いを除外
-
-
-def _get_yutai_record_month(code: str):
-    """kabutan.jp から株主優待の権利確定月を取得。優待なし→None、取得失敗→None。"""
-    from lib.db import get_yutai_cache, set_yutai_cache, CACHE_MISS
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    cached = get_yutai_cache(code, today_str)
-    if cached is not CACHE_MISS:
-        has_yutai, record_month = cached
-        return record_month if has_yutai else None
-    try:
-        resp = _requests.get(f"https://kabutan.jp/stock/yutai?code={code}",
-                             headers=_KABUTAN_HEADERS, timeout=8)
-        record_month = None
-        has_yutai = False
-        if resp.status_code == 200:
-            m = re.search(r'権利確定月は(\d{1,2})月', resp.text)
-            if m:
-                record_month = int(m.group(1))
-                has_yutai = True
-        set_yutai_cache(code, today_str, has_yutai, record_month)
-        return record_month if has_yutai else None
-    except Exception:
-        return None
-
-
-def _days_to_yutai_record(code: str, today=None) -> "int | None":
-    """権利落ち日（権利確定月の最終営業日-1）までの日数。優待なし→None。"""
-    record_month = _get_yutai_record_month(code)
-    if record_month is None:
-        return None
-    if today is None:
-        today = datetime.now().date()
-    year = today.year
-    # 権利確定月の月末日を求め、そこから2営業日前を権利落ち日と近似
-    import calendar
-    last_day = calendar.monthrange(year, record_month)[1]
-    ex_date = _date(year, record_month, last_day) - timedelta(days=2)
-    # 来年分も考慮
-    delta = (ex_date - today).days
-    if delta < -7:
-        last_day2 = calendar.monthrange(year + 1, record_month)[1]
-        ex_date2 = _date(year + 1, record_month, last_day2) - timedelta(days=2)
-        delta = (ex_date2 - today).days
-    return delta
-
-
-def passes_buy_filter(feat, close, volumes, nk20=None, ret_504=None, r2_504=None):
-    """最小限の品質フィルター（スクリーナーを廃止、モデルスコアで選別）
-    残す条件: 株価・流動性・急落中の除外のみ
-    """
-    if close < 300:               return False  # 株価 < 300円（低位株除外）
-    if feat[10] < -0.20:          return False  # drawdown60 < -20%（急落中は除外）
-    if feat[12] > 0.20:           return False  # down_streak > 4日（連続下落中は除外）
-    if feat[6] >= 80.0:            return False  # RSI ≥ 80（過熱域のみ除外）
-    if volumes and len(volumes) >= 20:
-        valid = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
-        if valid:
-            va20 = np.mean(valid)
-            if va20 * close / 1e6 < MIN_LIQUIDITY_M:
-                return False  # 流動性なし（売買代金 < 50百万円）
-    return True
-
-
-
-
-
-
-
-
-
-
-
-
-def _is_nk225_bull(nk_closes, sma_period=BULL_SMA_PERIOD):
-    """N225終値系列から短期SMAで強気判定。N225 > SMA(period) なら True。"""
-    if nk_closes is None or len(nk_closes) < sma_period:
-        return False
-    return float(nk_closes[-1]) >= float(np.mean(nk_closes[-sma_period:]))
-
-
-def _calc_nk225_beta(stock_prices, nk_closes, window=60):
-    """直近window日の株価 vs N225のβ値を計算。"""
-    if stock_prices is None or nk_closes is None:
-        return None
-    s = stock_prices[-window-1:] if len(stock_prices) >= window+1 else stock_prices
-    n = nk_closes[-window-1:] if len(nk_closes) >= window+1 else nk_closes
-    min_len = min(len(s), len(n))
-    if min_len < 21:
-        return None
-    s_ret = np.diff(s[-min_len:]) / s[-min_len:-1]
-    n_ret = np.diff(n[-min_len:]) / n[-min_len:-1]
-    var_n = np.var(n_ret)
-    if var_n == 0:
-        return None
-    return float(np.cov(s_ret, n_ret)[0][1] / var_n)
-
-
 
 
 def main():
@@ -278,23 +93,10 @@ def main():
         dynamic_top_n = max(1, dynamic_top_n - 1)
         print(f"  ⚠️ 高VIX({vix_val:.1f} > 30): 推奨銘柄数を {dynamic_top_n + 1}→{dynamic_top_n}に縮小")
 
-    # N225終値系列を取得して強気判定（βフィルター用）
-    _nk225_closes = None
-    _nk225_bull = False
-    try:
-        _nk_df = get_market_index_df_cached("N225", "%5EN225", 400)
-        if _nk_df is not None and len(_nk_df) >= BULL_SMA_PERIOD:
-            _nk225_closes = _nk_df["Close"].values
-            _nk225_bull = _is_nk225_bull(_nk225_closes, BULL_SMA_PERIOD)
-    except Exception:
-        pass
-
     if nk5 is not None:
         print(f"  日経225: 5日{nk5:+.2f}% / 20日{nk20:+.2f}% / 60日{nk60:+.2f}%")
         regime_label = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
-        bull_label = "強気(SMA20超)" if _nk225_bull else "非強気"
         print(f"  相場レジーム: {regime_label}  →  推奨銘柄数: {dynamic_top_n}銘柄")
-        print(f"  βフィルター: {bull_label} → {'β>={:.1f}の銘柄のみ💎対象'.format(BETA_MIN_BULL) if _nk225_bull else 'フィルターなし'}")
         if is_bear:
             print(f"  ⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）")
     else:
@@ -358,9 +160,6 @@ def main():
                 "piotroski":    pit.get("piotroski"),
                 "bps_growth":   pit.get("bps_growth"),
                 "eps_surprise": pit.get("eps_surprise"),
-                "cfo_margin":   pit.get("cfo_margin"),
-                "leverage":     pit.get("leverage"),
-                "op_margin_improve": pit.get("op_margin_improve"),
             }
         # 配当利回り: ライブ株価 × PBR/PER から配当を逆算 or pit.dps使用
         _dps = pit.get("dps"); _close = prices["Close"].iloc[-1] if len(prices) > 0 else None
@@ -436,7 +235,6 @@ def main():
 
     # フェーズ3: モデルスコア計算
     results = []
-    _qv_fund_missing_count = 0  # ファンダ欠損によりQV条件(qv_ok)が成立しない銘柄数（可観測性用）
     for idx, (code, prices, feat) in enumerate(raw_data):
         feat_aug = feats_aug[idx]
         drop_prob = float(drop_model.predict_proba([feat_aug])[0][1])
@@ -462,48 +260,11 @@ def main():
         else:
             judgment = "🔴危険    "
 
-        volumes = prices["Volume"].tolist() if "Volume" in prices.columns else []
-        p_arr = prices["Close"].values
-        ret_504 = float((p_arr[-1]-p_arr[-505])/p_arr[-505]) if len(p_arr) >= 505 else None
-        p504 = p_arr[-504:] if len(p_arr) >= 504 else p_arr
-        t504 = np.arange(len(p504), dtype=float)
-        _coef504 = np.polyfit(t504, p504, 1)
-        _pred504 = np.polyval(_coef504, t504)
-        _ss_res504 = float(np.sum((p504 - _pred504)**2))
-        _ss_tot504 = float(np.sum((p504 - p504.mean())**2))
-        r2_504 = 1.0 - _ss_res504 / _ss_tot504 if _ss_tot504 > 0 else 0.0
-        buy_ok = passes_buy_filter(feat, close, volumes)
-        _fm = fund_map.get(code) or {}
-        if _fm.get("piotroski") is None or (_fm.get("eps_surprise") is None and _fm.get("bps_growth") is None):
-            # piotroski欠損、またはeps_surprise/bps_growthが両方欠損だとqv_okが常にFalseになり
-            # 下落確率がどれだけ低くても💎買いになり得ない。「相場が悪い」のか「データ欠損」なのか
-            # 運用上区別できるよう件数だけ集計する。
-            _qv_fund_missing_count += 1
-        valid_vols = [v for v in volumes[-20:] if v is not None and not np.isnan(v)]
-        _turnover_m = float(np.mean(valid_vols) * close / 1e6) if len(valid_vols) >= 10 else None
-        _down_streak_raw = round(feat[12] * 20)
-        recommend = recommend_from_scores(
-            drop_pct, allow_buy=buy_ok, vol=vol,
-            piotroski=_fm.get("piotroski"),
-            pos52=float(feat[9]),
-            bps_growth=_fm.get("bps_growth"),
-            eps_surprise=_fm.get("eps_surprise"),
-            ret90=float(feat[3]),
-            turnover_m=_turnover_m,
-            regime=regime,
+        recommend = sell_label(
+            drop_pct,
             drawdown60=float(feat[10]),
-            down_streak_raw=_down_streak_raw,
-            cfo_margin=_fm.get("cfo_margin"),
-            leverage=_fm.get("leverage"),
-            op_margin_improve=_fm.get("op_margin_improve"),
+            down_streak_raw=round(feat[12] * 20),
         )
-
-        # βフィルター: 日経強気時に低β銘柄の💎買いを降格
-        if recommend == "💎 買い" and _nk225_bull and _nk225_closes is not None:
-            p_arr_beta = prices["Close"].values
-            beta = _calc_nk225_beta(p_arr_beta, _nk225_closes)
-            if beta is not None and beta < BETA_MIN_BULL:
-                recommend = "⏳ 方向感なし"
 
         # 日経比相対リターン
         p = prices["Close"].values
@@ -549,35 +310,20 @@ def main():
 
     # PER/PBR/ROE は全銘柄 fund_map（pit eps/bps 由来）で既に設定済み
 
-    # 可観測性: 💎買いが0件の日に「相場が悪い」のか「ファンダ欠損でQV条件に入れない」のかを
-    # 区別できるよう、ファンダ欠損銘柄数を常にログ出力する。
-    _buy_count_now = int((result_df["推奨"] == "💎 買い").sum())
-    if _qv_fund_missing_count > 0:
-        print(
-            f"[QV可観測性] piotroski/eps_surprise・bps_growth欠損によりQV条件(qv_ok)に"
-            f"入れない銘柄: {_qv_fund_missing_count}/{len(result_df)}件"
-            f"（現時点の💎買い: {_buy_count_now}件）"
-        )
-
     # 表示（動的銘柄数: レジームに応じて 3/5/10）
     print(f"\n{'='*90}")
     regime_label_disp = {'bull': '📈強気', 'bear': '📉弱気', 'uncertain': '🔶中立'}.get(regime, regime)
     print(f"上位{dynamic_top_n}銘柄ランキング [{regime_label_disp}レジーム]（下落確率が低い順）")
     if is_bear:
-        print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。買いは慎重に。")
+        print(f"⚠️ 下落相場検知（日経20日: {nk20:+.1f}%）: モデルスコアの信頼性低下。")
     print(f"{'='*90}")
     print(f"{'順位':>4}  {'コード':>6}  {'銘柄名':<16}  {'株価':>8}  {'下落確率':>7}  {'判定':<12}  "
-          f"{'PER':>6}  {'PBR':>5}  {'感情':>5}  {'Gトレ':>5}  推奨")
+          f"{'PER':>6}  {'PBR':>5}  {'Gトレ':>5}  推奨")
     print("-" * 140)
     for _, row in result_df.head(dynamic_top_n).iterrows():
         per_val = row.get("PER"); pbr_val = row.get("PBR")
         per_str = f"{per_val:>5.1f}x" if per_val is not None else "   N/A"
         pbr_str = f"{pbr_val:>4.2f}x" if pbr_val is not None else "  N/A"
-
-        # NLP感情
-        sent = row.get("感情スコア", 0.0) or 0.0
-        sent_emoji = "😊" if sent > 0.3 else ("😞" if sent < -0.3 else "😐")
-        sent_str = f"{sent_emoji}{sent:+.1f}"
 
         # Googleトレンド
         gtr = row.get("Gトレンド", 0.0) or 0.0
@@ -590,7 +336,6 @@ def main():
             f"{row['下落確率(%)']:>+6.1f}%  "
             f"{row['判定']:<12}  "
             f"{per_str}  {pbr_str}  "
-            f"{sent_str:>5}  "
             f"{gtr_str:>5}  "
             f"{row['推奨']}"
         )
@@ -632,76 +377,7 @@ def main():
         print(f"  オルタナティブデータ取得エラー: {_ae}")
         result_df["Gトレンド"] = 0.0
 
-    # フェーズ4d: 上位銘柄の決算テキスト感情分析（Claude Haiku NLP）
-    NLP_TOP = min(20, len(result_df))
-    print(f"\n決算テキスト感情分析中（上位{NLP_TOP}銘柄、Claude Haiku）...")
-    try:
-        from lib.nlp_sentiment import get_earnings_sentiment
-        sentiment_scores = {}
-        for _, row in result_df.head(NLP_TOP).iterrows():
-            c = str(row["銘柄コード"])
-            sentiment_scores[c] = get_earnings_sentiment(c)
-        result_df["感情スコア"] = result_df["銘柄コード"].astype(str).map(
-            lambda x: sentiment_scores.get(x, 0.0)
-        )
-        # 強い悲観（< -0.5）の場合は 💎 買い → 方向感なし に降格
-        for idx, row in result_df.iterrows():
-            if row.get("推奨") == "💎 買い" and row.get("感情スコア", 0.0) <= -0.5:
-                result_df.at[idx, "推奨"] = "⏳ 方向感なし"
-                print(f"  ⚠️ {row['銘柄名']}({row['銘柄コード']}): 感情スコア{row['感情スコア']:.2f} → S買い降格")
-        pos_count = (result_df.head(NLP_TOP)["感情スコア"] > 0.2).sum()
-        neg_count = (result_df.head(NLP_TOP)["感情スコア"] < -0.2).sum()
-        print(f"  楽観的: {pos_count}銘柄 / 悲観的: {neg_count}銘柄 / 中立: {NLP_TOP-pos_count-neg_count}銘柄")
-    except Exception as _e:
-        print(f"  感情分析スキップ（APIキー未設定 or エラー: {_e}）")
-        result_df["感情スコア"] = 0.0
-
-    # フェーズ5: 株主優待権利落ち日チェック（権利落ち日21日前以内は除外）
-    buy_mask = result_df["推奨"] == "💎 買い"
-    buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
-    if buy_codes:
-        print(f"\n株主優待権利落ちチェック中（S買い {len(buy_codes)}銘柄）...")
-        today = datetime.now().date()
-        for code in buy_codes:
-            days = _days_to_yutai_record(code, today)
-            if days is not None and 0 <= days <= YUTAI_SKIP_DAYS:
-                idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
-                name = result_df.loc[idx, "銘柄名"].values[0]
-                print(f"  ⚠️ {name}({code}): 優待権利落ち{days}日前 → S買いを方向感なしに降格")
-
-    # フェーズ7: 米国セクターETF前日リターンフィルター（リードラグ効果）
-    # 強相関セクター(XLK/XLF/XLI/XLB/XLV/XLY)のETFが前日マイナスならS買い→方向感なし に降格
-    buy_mask = result_df["推奨"] == "💎 買い"
-    buy_codes = result_df.loc[buy_mask, "銘柄コード"].astype(str).tolist()
-    if buy_codes:
-        print(f"\n米国ETFリードラグフィルター中（S買い {len(buy_codes)}銘柄）...")
-        _load_sector_cache()
-        etf_rets = fetch_us_sector_etf_returns()
-        if etf_rets:
-            ret_str = " ".join(f"{k}:{v:+.1f}%" for k, v in sorted(etf_rets.items()))
-            print(f"  前営業日ETFリターン: {ret_str}")
-            degraded = []
-            for code in buy_codes:
-                etf = get_sector_etf(code)
-                if etf not in STRONG_EFFECT_ETFS:
-                    continue
-                ret = etf_rets.get(etf)
-                if ret is not None and ret < 0:
-                    idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-                    name = result_df.loc[idx, "銘柄名"].values[0]
-                    result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
-                    degraded.append(f"{name}({code})[{etf}:{ret:+.1f}%] S買い→方向感なし")
-            _save_sector_cache()
-            if degraded:
-                print(f"  ⚠️ ETF前日マイナスのため降格: {', '.join(degraded)}")
-            else:
-                print(f"  ✅ 全S買い銘柄のETFは前日プラス（フィルター通過）")
-        else:
-            print(f"  ETFデータ取得失敗: フィルタースキップ")
-
-    # フェーズ8: 相場リスク管制官 — マクロからリスクオン/オフを判定し、
-    #            リスクオフ地合いではS買いを全件見送り（自動防御）
+    # フェーズ8: 相場リスク管制官 — マクロからリスクオン/オフを判定（情報表示のみ）
     from lib.risk_regime import assess as _assess_risk, summary_line as _risk_summary
     risk_verdict = _assess_risk(
         nk20=nk20,
@@ -711,13 +387,6 @@ def main():
         us5=_live_macro.get("us5"),
     )
     print(f"\n🛡️ 相場リスク管制官: {_risk_summary(risk_verdict)}")
-    if risk_verdict["suppress_buy"]:
-        risk_buy = result_df[result_df["推奨"] == "💎 買い"]["銘柄コード"].astype(str).tolist()
-        for code in risk_buy:
-            idx = result_df[result_df["銘柄コード"].astype(str) == code].index
-            result_df.loc[idx, "推奨"] = "⏳ 方向感なし"
-        if risk_buy:
-            print(f"  🔴 リスクオフ地合い → S買い{len(risk_buy)}件を全て見送り（方向感なしに降格）")
     # 当日のリスク判定を保存（メール・Web・活動ログが参照）
     try:
         import json as _json

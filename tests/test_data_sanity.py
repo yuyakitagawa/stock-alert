@@ -25,7 +25,7 @@ def _healthy_rows(n=3200):
         rows.append({
             "code": f"{1000+i}",
             "drop_prob": drop,
-            "recommend": "⏳ 方向感なし",
+            "recommend": "—",
         })
     return rows
 
@@ -49,7 +49,7 @@ class TestPredictionCollapse(unittest.TestCase):
         for i in range(3200):
             drop = 8.8 if i % 2 == 0 else 7.1   # 2種類のみ
             rows.append({"code": f"{i}", "drop_prob": drop,
-                         "recommend": "⏳ 方向感なし"})
+                         "recommend": "—"})
         v = check_ranking(rows)
         self.assertTrue(any(x.check == "prediction_collapse" for x in v))
 
@@ -59,7 +59,7 @@ class TestPredictionCollapse(unittest.TestCase):
         for i in range(3200):
             drop = 8.8 if i < 1400 else round(10 + (i % 17), 1)  # 偏った18種
             rows.append({"code": f"{i}", "drop_prob": drop,
-                         "recommend": "⏳ 方向感なし"})
+                         "recommend": "—"})
         v = check_ranking(rows)
         self.assertTrue(any(x.check == "low_diversity" and x.severity == "warning" for x in v))
 
@@ -79,10 +79,10 @@ class TestMissingAndVocab(unittest.TestCase):
         self.assertTrue(any(x.check == "recommend_vocab" and x.severity == "warning" for x in v))
 
     def test_known_recommend_labels_are_not_flagged(self):
-        """recommend_from_scores() が返す3値は語彙違反にしない。「🔴 売り検討」の登録漏れで
+        """sell_label() が返す2値は語彙違反にしない。「🔴 売り検討」の登録漏れで
         毎run warning が出ていた（2026-08-29 のログレビューで検出）。"""
         rows = _healthy_rows(50)
-        for i, label in enumerate(("💎 買い", "🔴 売り検討", "—")):
+        for i, label in enumerate(("🔴 売り検討", "—")):
             rows[i]["recommend"] = label
         v = check_ranking(rows)
         self.assertFalse(any(x.check == "recommend_vocab" for x in v))
@@ -138,6 +138,26 @@ class TestPriceFreshness(unittest.TestCase):
 
     def test_empty_history_ignored(self):
         self.assertEqual(check_price_freshness({}), [])
+
+
+class TestSellLabel(unittest.TestCase):
+    """sell_label() の3条件と、返す語彙が KNOWN_RECOMMEND に揃っていること。"""
+
+    def test_thresholds(self):
+        from lib.utils import sell_label
+        self.assertEqual(sell_label(10.0), "🔴 売り検討")
+        self.assertEqual(sell_label(9.9), "—")
+        self.assertEqual(sell_label(3.0, drawdown60=-0.21), "🔴 売り検討")
+        self.assertEqual(sell_label(3.0, drawdown60=-0.20), "—")
+        self.assertEqual(sell_label(3.0, down_streak_raw=5), "🔴 売り検討")
+        self.assertEqual(sell_label(3.0, down_streak_raw=4), "—")
+        self.assertEqual(sell_label(None), "—")
+
+    def test_outputs_are_known_vocab(self):
+        from lib.utils import sell_label
+        from lib.data_sanity import KNOWN_RECOMMEND
+        for label in (sell_label(50.0), sell_label(1.0)):
+            self.assertIn(label, KNOWN_RECOMMEND)
 
 
 if __name__ == "__main__":
