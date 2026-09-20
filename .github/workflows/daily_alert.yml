@@ -97,6 +97,11 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_earnings_forecast.py --days 3
 
+      # 通知に添える「どんな会社か」の元データ。有報は年1回なので新着だけ拾えばよい。
+      - name: Step 2d3 - 有報の事業情報取得（company_profile）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_company_profiles.py --days 3
+
       - name: Step 2e - 推定売買金額ビュー更新（Supabase）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/refresh_holding_amounts.py
