@@ -9,6 +9,7 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   4. PBR < 1.5（株式分割は補正する）
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
   6. 従業員数 1000人以上（Supabase company_employees。tools/fetch_employees.py が更新）
+  各銘柄には有報の「事業の内容」から作った一文を添える（lib/company_profile.py）
   並びはβ（過去250日・日経平均に対する感応度）の高い順。
 
 なぜこの条件か（検証は docs/dip_buy_strategy.md）:
@@ -150,6 +151,8 @@ def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int
         pair = [f"{i} {p['name']} {p['code']}",
                 f"  {p['ret'] * 100:+.1f}% ｜ β{p['beta']:.2f} ｜ PBR{p['pbr']:.2f} "
                 f"｜ 増益{p['growth'] * 100:+.0f}%{stale}"]
+        if p.get("business"):
+            pair.append(f"  └ {p['business']}")
         add = len("\n".join(pair)) + 1
         if budget - add < 0:
             break
@@ -248,15 +251,18 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
             stage2.append(s)
     print(f"[dip] PBR<1.5・予想増益: {len(stage2)}（PBR<1.5だが会社予想が無く判定できず: {no_forecast}）")
 
-    from lib import employees
+    from lib import company_profile, employees
     emp_map = employees.get([s["code"] for s in stage2])  # company_employees、無い銘柄だけYahooで補う
     emps = [emp_map.get(s["code"]) for s in stage2]
     names = _load_names()
+    profiles = company_profile.load([s["code"] for s in stage2])  # 有報の「事業の内容」
     picks = []
     for s, e in zip(stage2, emps):
         if e is not None and e >= MIN_EMPLOYEES:
+            prof = profiles.get(s["code"]) or {}
             picks.append({k: s[k] for k in ("code", "ret", "beta", "pbr", "growth", "stale")}
-                         | {"name": names.get(s["code"], ""), "employees": e})
+                         | {"name": names.get(s["code"], ""), "employees": e,
+                            "business": company_profile.headline(prof.get("business") or "")})
     unknown = sum(e is None for e in emps)
     print(f"[dip] 従業員1000人以上: {len(picks)}（従業員数を取得できず除外: {unknown}）")
     picks.sort(key=lambda p: p["beta"], reverse=True)
