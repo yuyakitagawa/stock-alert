@@ -3,7 +3,8 @@ name: Backfill (JPX / TDnet / EDINET / 株価 / ランキング / アイキャ�
 # 手動実行専用。過去データの遡及取得・再生成をまとめた1本。targets で対象を選ぶ。
 #   jpx      : JPX 空売り・信用残（tools/fetch_jpx_market.py）
 #   tdnet    : TDnet 適時開示（tools/fetch_tdnet.py --days）
-#   edinet   : EDINET 決算XBRL（tools/fetch_edinet_financials.py --days / --start）
+#   edinet   : EDINET 決算XBRL（tools/fetch_edinet_financials.py --days / --start / --end / --force）
+#              保存済みの書類は飛ばすので、途中で落ちても同じ指定で流し直せば続きから進む。
 #   prices   : Yahoo Finance 株価キャッシュ（tools/fetch_history.py --years）
 #   rankings : gen_rankings の遡及生成（tools/backfill_history.py --start/--end/--force）
 #              ※通常 prices とセットで使う（例: targets=prices,rankings）
@@ -26,6 +27,13 @@ on:
       edinet_start_date:
         description: '[edinet] 開始日 (YYYY-MM-DD, 指定時はdays無視)'
         default: ''
+      edinet_end_date:
+        description: '[edinet] 終了日 (YYYY-MM-DD, 省略時は今日)。長期間は区切って流す'
+        default: ''
+      edinet_force:
+        description: '[edinet] 保存済みの書類も取り直して上書きする（抽出ロジック修正後の再取得用）'
+        type: boolean
+        default: false
       price_years:
         description: '[prices] 株価キャッシュを遡って更新する年数'
         default: '1'
@@ -116,10 +124,14 @@ jobs:
         run: |
           cd ~/stock-alert
           python tools/fetch_edinet_financials.py --verify
+          OPTS=""
+          # set -e で落ちないよう || true（テストが偽のときの && は終了コード1）
+          [ -n "${{ inputs.edinet_end_date }}" ] && OPTS="$OPTS --end ${{ inputs.edinet_end_date }}" || true
+          [ "${{ inputs.edinet_force }}" = "true" ] && OPTS="$OPTS --force" || true
           if [ -n "${{ inputs.edinet_start_date }}" ]; then
-            python tools/fetch_edinet_financials.py --start "${{ inputs.edinet_start_date }}" --sleep 1.5
+            python tools/fetch_edinet_financials.py --start "${{ inputs.edinet_start_date }}" --sleep 1.0 $OPTS
           else
-            python tools/fetch_edinet_financials.py --days "${{ inputs.edinet_days }}" --sleep 1.5
+            python tools/fetch_edinet_financials.py --days "${{ inputs.edinet_days }}" --sleep 1.0 $OPTS
           fi
 
       - name: 株価キャッシュ更新（Yahoo Finance）

@@ -2,6 +2,8 @@
 import os
 import sys
 import unittest
+from datetime import date
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -60,6 +62,48 @@ class TestDocTypes(unittest.TestCase):
     def test_detect_doc_type(self):
         self.assertEqual(_detect_doc_type("120", ""), "FY")
         self.assertEqual(_detect_doc_type("160", ""), "2Q")
+
+
+class TestScanSkipsSaved(unittest.TestCase):
+    """保存済みの (code, disc_date) はXBRLを取りに行かず、日ごとに保存する。"""
+
+    def _run(self, existing, force=False):
+        import lib.edinet_financials as ef
+        docs = [{"docID": "S1", "docTypeCode": "120", "secCode": "58010", "filerName": "a"},
+                {"docID": "S2", "docTypeCode": "120", "secCode": "58020", "filerName": "b"}]
+        parse = mock.Mock(side_effect=lambda doc_id, dtc, ds: {"code": {"S1": "5801", "S2": "5802"}[doc_id],
+                                                               "disc_date": ds, "doc_type": "FY", "np": 1.0})
+        upsert = mock.Mock()
+        keys = mock.Mock(return_value=existing)
+
+        class _D(date):
+            @classmethod
+            def today(cls):
+                return date(2026, 6, 30)  # 火曜
+
+        with mock.patch.object(ef, "fetch_documents_list", return_value=docs), \
+             mock.patch.object(ef, "parse_financial_xbrl", parse), \
+             mock.patch.object(ef, "date", _D), \
+             mock.patch("lib.db.get_jquants_fin_keys", keys), \
+             mock.patch("lib.db.bulk_upsert_jquants_fin_summary", upsert):
+            out = ef.scan_financial_reports(start_date="2026-06-29", sleep_sec=0, force=force)
+        return out, parse, upsert, keys
+
+    def test_skips_saved_docs(self):
+        out, parse, upsert, keys = self._run({("5801", "2026-06-29"), ("5801", "2026-06-30")})
+        keys.assert_called_once_with("2026-06-29", "2026-06-30")
+        self.assertEqual([c.args[0] for c in parse.call_args_list], ["S2", "S2"])
+        self.assertEqual(len(out), 2)
+
+    def test_saves_per_day(self):
+        _, _, upsert, _ = self._run(set())
+        self.assertEqual(upsert.call_count, 2)
+        self.assertEqual({r["disc_date"] for r in upsert.call_args_list[0].args[0]}, {"2026-06-29"})
+
+    def test_force_refetches_saved_docs(self):
+        _, parse, _, keys = self._run({("5801", "2026-06-29"), ("5802", "2026-06-29")}, force=True)
+        keys.assert_not_called()
+        self.assertEqual(parse.call_count, 4)
 
 
 if __name__ == "__main__":
