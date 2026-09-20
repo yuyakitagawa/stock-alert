@@ -47,7 +47,8 @@ STALE_FY_DAYS = 400
 # 分割の検出: 前日比が1/nまたはn（n=2..10）の±8%以内かつ±40%以上。
 # 分割日にも株価自体が動くため、±3%では古河電工(0.104=1:10)・住友電工(0.268=1:4)を取りこぼした
 SPLIT_TOL = 0.08
-MAX_LINES = 40
+# LINEの1通の上限（lib.notify.MAX_CHARS と同じ）。ここに収まる分だけ並べる
+MAX_CHARS = 4_000
 # 当日の終値がそろっている銘柄がこれ未満なら株価更新の失敗とみなす（平常時は約3,800）
 MIN_PRICED_CODES = 1000
 
@@ -127,27 +128,37 @@ def passes_fundamentals(close: float, fund: dict, k_fy: float) -> tuple[bool, fl
 
 
 def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int = 0) -> str:
-    lines = [
-        f"📉 押し目買い候補 {asof:%Y-%m-%d}",
-        f"日経平均 {nk_ret * 100:+.1f}% ／ 該当 {len(picks)}銘柄（β順）",
-        "",
-    ]
-    for i, p in enumerate(picks[:MAX_LINES], 1):
-        stale = " ⚠決算古" if p.get("stale") else ""
-        lines.append(
-            f"{i}. {p['code']} {p['name']} {p['ret'] * 100:+.1f}% "
-            f"β{p['beta']:.2f} PBR{p['pbr']:.2f} 増益{p['growth'] * 100:+.0f}%{stale}"
-        )
-    if len(picks) > MAX_LINES:
-        lines.append(f"…ほか{len(picks) - MAX_LINES}銘柄")
+    """1銘柄2行（銘柄名＋コード／数字）で全件並べる。
+
+    LINEの1通は5,000文字（lib.notify は4,000で切る）。急落が深い日は候補が数百になり
+    全部は入らないので、入る分だけ並べて残りは件数で示す（途中で切れて末尾の条件文が
+    消えるのを防ぐ）。
+    """
+    week = "月火水木金土日"[asof.weekday()]
+    head = [f"📉 押し目買い候補 {asof.month}/{asof.day}（{week}）",
+            f"日経 {nk_ret * 100:+.1f}%／該当{len(picks)}銘柄（β順）", ""]
+    tail = []
     if no_forecast:
-        lines.append(f"※会社予想が未取得で増益を判定できず除外: {no_forecast}銘柄（PBR<1.5は満たす）")
-    lines += [
-        "",
-        "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上",
-        "検証は当日終値買い・63日保有（10年で平均+10%前後）。この通知は引け後なので約定は翌日以降",
-    ]
-    return "\n".join(lines)
+        tail.append(f"※会社予想が未取得で増益を判定できず除外: {no_forecast}銘柄（PBR<1.5は満たす）")
+    tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上",
+             "検証は当日終値買い・63日保有。引け後の通知なので約定は翌日以降"]
+
+    body, shown = [], 0
+    budget = MAX_CHARS - len("\n".join(head + tail)) - 20  # 20は「…ほかN銘柄」の行ぶん
+    for i, p in enumerate(picks, 1):
+        stale = " ⚠決算古" if p.get("stale") else ""
+        pair = [f"{i} {p['name']} {p['code']}",
+                f"  {p['ret'] * 100:+.1f}% ｜ β{p['beta']:.2f} ｜ PBR{p['pbr']:.2f} "
+                f"｜ 増益{p['growth'] * 100:+.0f}%{stale}"]
+        add = len("\n".join(pair)) + 1
+        if budget - add < 0:
+            break
+        budget -= add
+        body += pair
+        shown = i
+    if shown < len(picks):
+        body.append(f"…ほか{len(picks) - shown}銘柄")
+    return "\n".join(head + body + tail)
 
 
 # ── データ取得 ─────────────────────────────────────────────────────────

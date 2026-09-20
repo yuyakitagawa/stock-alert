@@ -11,7 +11,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from web.dip_buy_alert import (beta, build_message, daily_return, passes_fundamentals,
-                               pick_fundamentals, split_factor, MAX_LINES)
+                               pick_fundamentals, split_factor, MAX_CHARS)
 
 
 def test_daily_return():
@@ -88,19 +88,33 @@ def test_passes_fundamentals_requires_growth_from_profit():
     assert passes_fundamentals(500.0, {"bps": 1000.0, "np": 100.0, "fnp": 120.0}, 1.0)[0] is True
 
 
-def test_build_message_truncates_and_marks_stale():
-    picks = [{"code": str(1000 + i), "name": "銘柄", "ret": -0.05, "beta": 1.2, "pbr": 1.0,
-              "growth": 0.1, "stale": i == 0} for i in range(MAX_LINES + 3)]
-    text = build_message(date(2026, 9, 2), -0.029, picks)
-    assert "日経平均 -2.9%" in text and f"該当 {MAX_LINES + 3}銘柄" in text
-    assert "⚠決算古" in text.splitlines()[3]
-    assert "…ほか3銘柄" in text
-    assert len(text) < 4000
+def test_build_message_two_lines_per_stock_and_marks_stale():
+    picks = [{"code": "6994", "name": "指月電機製作所", "ret": -0.051, "beta": 1.54, "pbr": 1.24,
+              "growth": 0.382, "stale": True},
+             {"code": "5713", "name": "住友金属鉱山", "ret": -0.115, "beta": 1.34, "pbr": 1.50,
+              "growth": 7.492, "stale": False}]
+    lines = build_message(date(2026, 9, 2), -0.0285, picks).splitlines()
+    assert lines[0] == "📉 押し目買い候補 9/2（水）"
+    assert lines[1] == "日経 -2.9%／該当2銘柄（β順）"
+    assert lines[3] == "1 指月電機製作所 6994"
+    assert lines[4] == "  -5.1% ｜ β1.54 ｜ PBR1.24 ｜ 増益+38% ⚠決算古"
+    assert lines[5] == "2 住友金属鉱山 5713"
+    assert "⚠決算古" not in lines[6]
+
+
+def test_build_message_fits_one_line_message():
+    """候補が数百でも1通に収め、末尾の条件文を切らさない。"""
+    picks = [{"code": str(1000 + i), "name": "長い会社名テスト株式会社", "ret": -0.05, "beta": 1.2,
+              "pbr": 1.0, "growth": 0.1, "stale": False} for i in range(300)]
+    text = build_message(date(2026, 9, 2), -0.05, picks)
+    assert len(text) <= MAX_CHARS
+    assert "…ほか" in text
+    assert text.endswith("引け後の通知なので約定は翌日以降")
 
 
 def test_build_message_reports_missing_forecasts():
     text = build_message(date(2026, 9, 2), -0.029, [], no_forecast=12)
-    assert "該当 0銘柄" in text and "判定できず除外: 12銘柄" in text
+    assert "該当0銘柄" in text and "判定できず除外: 12銘柄" in text
 
 
 def test_employees_stale_codes_orders_missing_first_then_oldest():
