@@ -30,7 +30,7 @@ _CATEGORY_RULES = [
     ("自社株買い",   ["自己株式の取得", "自己株式取得", "自社株買い"]),
     ("株式分割",     ["株式分割"]),
     ("M&A・資本提携", ["株式取得", "子会社化", "合併", "資本提携", "業務提携", "TOB", "公開買付"]),
-    ("決算",         ["決算short", "決算説明", "四半期報告", "決算short信"]),
+    ("決算",         ["決算短信", "決算説明", "四半期報告"]),
     ("自己株式処分", ["自己株式の処分", "第三者割当"]),
     ("株主優待",     ["株主優待"]),
 ]
@@ -92,7 +92,7 @@ def fetch_disclosures(cond: str, limit: int = 100) -> list[dict]:
             "title": title,
             "category": _classify(title),
             "doc_url": td.get("document_url") or None,
-            "xbrl_url": td.get("document_url_xbrl") or None,
+            "xbrl_url": td.get("url_xbrl") or None,
             "source": "yanoshin",
         })
     return out

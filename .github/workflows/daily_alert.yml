@@ -91,6 +91,12 @@ jobs:
 
       # 銘柄ランキング(/trending)の推定売買金額。株価キャッシュ(Step 0)と
       # 発行済株式数(Step 2d)の両方に依存するので、財務サマリー更新の直後に再計算する。
+      # 会社予想（fnp/fop/fsales）はJ-Quants Freeの提供終了（2026-04-24分まで）で入らなくなった。
+      # 決算短信のXBRLから取り直す。TDnetはファイルを約1か月で消すので毎日拾う必要がある。
+      - name: Step 2d2 - 決算短信の会社予想取得（TDnet XBRL）
+        continue-on-error: true
+        run: cd ~/stock-alert && python tools/fetch_earnings_forecast.py --days 3
+
       - name: Step 2e - 推定売買金額ビュー更新（Supabase）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/refresh_holding_amounts.py
