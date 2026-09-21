@@ -10,21 +10,22 @@ type FooterGroup = { heading: string; links: FooterLink[] };
 
 const JA_GROUPS: FooterGroup[] = [
   {
-    heading: "主要ページ",
+    heading: "株主データベース",
     links: [
-      { href: "/", label: "TOP" },
-      { href: "/trending", label: "銘柄ランキング" },
-      { href: "/ranking/returns", label: "投資家ランキング" },
+      { href: "/", label: "ホーム" },
+      { href: "/stocks", label: "日本株・大株主データベース" },
+      { href: "/investors", label: "機関投資家・大株主データベース" },
+      { href: "/trending", label: "買い増しランキング" },
       { href: "/weekly", label: "週次トレンド" },
       { href: "/activists", label: "アクティビスト注目銘柄" },
     ],
   },
   {
-    heading: "一覧・アーカイブ",
+    heading: "調査・読み物",
     links: [
-      { href: "/articles", label: "記事一覧" },
-      { href: "/investors", label: "投資家一覧" },
-      { href: "/stocks", label: "銘柄一覧" },
+      { href: "/articles", label: "新着開示" },
+      { href: "/guides", label: "読み方ガイド" },
+      { href: "/weekly", label: "週次トレンド" },
       { href: "/monthly", label: "月別アーカイブ" },
     ],
   },

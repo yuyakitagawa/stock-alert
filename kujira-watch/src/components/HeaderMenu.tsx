@@ -28,7 +28,7 @@ export default function HeaderMenu() {
   // 別々に定義するとページ改名時にメニューだけ取り残されるため）。タブに無い
   // ページはその下に見出し付きグループで置く（フッター(Footer.tsx)と同じ分類名）。
   const menuGroups: MenuGroup[] = [
-    { heading: "主要ページ", links: mainNavLinks() },
+    { heading: "株主データベース", links: mainNavLinks() },
     {
       heading: "サイト情報",
       links: [

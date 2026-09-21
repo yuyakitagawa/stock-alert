@@ -25,7 +25,7 @@ export type SearchOption =
 // ssr:false なのは、閉じている状態のHTMLにパネルの分の出力を含める意味が無いため。
 const StockSearchPanel = dynamic(() => import("./StockSearchPanel"), { ssr: false });
 
-export default function StockSearch() {
+export default function StockSearch({ prominent = false }: { prominent?: boolean }) {
   const t = UI;
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -101,7 +101,10 @@ export default function StockSearch() {
   };
 
   return (
-    <Box ref={containerRef} sx={{ position: "relative", flexShrink: 0 }}>
+    <Box
+      ref={containerRef}
+      sx={{ position: "relative", flexShrink: 0, width: prominent ? "100%" : "auto" }}
+    >
       {/* モバイルはヘッダーの横幅をロゴに使いたいので虫眼鏡のまま。
           PC(md以上)は常時表示の検索窓にする。 */}
       <IconButton
@@ -109,7 +112,7 @@ export default function StockSearch() {
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         size="small"
-        sx={{ display: { md: "none" }, color: "primary.main" }}
+        sx={{ display: prominent ? "none" : { md: "none" }, color: "primary.main" }}
       >
         <SearchIcon fontSize="small" />
       </IconButton>
@@ -120,15 +123,15 @@ export default function StockSearch() {
       {!(open && panelReady) && (
         <Box
           sx={{
-            display: { xs: "none", md: "flex" },
+            display: prominent ? "flex" : { xs: "none", md: "flex" },
             alignItems: "center",
             gap: 0.75,
-            width: 220,
-            px: 1,
-            py: 0.5,
+            width: prominent ? "100%" : 220,
+            px: prominent ? 1.5 : 1,
+            py: prominent ? 1.25 : 0.5,
             border: 1,
             borderColor: "divider",
-            borderRadius: 1,
+            borderRadius: prominent ? 2 : 1,
             bgcolor: "background.paper",
           }}
         >
@@ -163,9 +166,9 @@ export default function StockSearch() {
             position: "absolute",
             right: 0,
             // モバイルは虫眼鏡の下に落とす。PCは平常時の検索窓と同じ位置に重ねる。
-            top: { xs: 44, md: 0 },
+            top: prominent ? 0 : { xs: 44, md: 0 },
             zIndex: (theme) => theme.zIndex.appBar + 1,
-            width: { xs: 288, sm: 320 },
+            width: prominent ? "100%" : { xs: 288, sm: 320 },
           }}
         >
           <StockSearchPanel

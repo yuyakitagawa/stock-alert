@@ -93,7 +93,7 @@ export default function Header() {
                   className="kicker"
                   sx={{ display: { xs: "none", sm: "block" }, mt: 0.25, color: "brand.blue" }}
                 >
-                  EDINET大量保有報告書から読む大口投資家の動き
+                  大量保有報告書から投資家の増減と開示後成績を追う
                 </Box>
               </Box>
             </Box>
