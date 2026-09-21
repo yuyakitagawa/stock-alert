@@ -22,6 +22,7 @@ import {
   isIndexableDatePage,
   isIndexableInvestorPage,
   isIndexableStockPage,
+  isSearchIndexableInvestorPage,
 } from "@/lib/pageIndexability";
 
 // 集合はキャッシュに入れない（unstable_cacheは戻り値をJSONで直列化するためSetが{}になる。
@@ -82,6 +83,29 @@ export async function getPublishedFilerNames(): Promise<Set<string>> {
     }
   }
   return published;
+}
+
+/**
+ * 検索インデックス対象にする投資家ページの提出者名集合（サイトマップ掲載＝noindexを付けない対象）。
+ * 公開集合（getPublishedFilerNames）の部分集合で、外れたページも200のまま出す＝内部リンクは切らない。
+ */
+export async function getSearchIndexableFilerNames(): Promise<Set<string>> {
+  const [filers, filersWithProfile] = await Promise.all([
+    getAllFilers(),
+    getFilersWithProfile(),
+  ]);
+  const indexable = new Set<string>();
+  for (const filer of filers) {
+    if (
+      isSearchIndexableInvestorPage({
+        holdingCount: filer.holdingCount,
+        hasProfile: filersWithProfile.has(filer.filerName),
+      })
+    ) {
+      indexable.add(filer.filerName);
+    }
+  }
+  return indexable;
 }
 
 /** 銘柄ページへのリンク先。公開していない銘柄はnull（呼び出し側はテキストで出す）。 */

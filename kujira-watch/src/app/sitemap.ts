@@ -8,7 +8,7 @@ import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import {
   getPublishedDates,
-  getPublishedFilerNames,
+  getSearchIndexableFilerNames,
   getPublishedStockCodes,
 } from "@/lib/publishedPages";
 import { CATEGORIES } from "@/types/article";
@@ -140,15 +140,17 @@ async function dateEntries(): Promise<MetadataRoute.Sitemap> {
 
 // 投資家ページ2,972件のうち、解説文が無いものが2,152件・開示1件だけが1,002件あり、
 // 大半はEDINETの数行を表に起こしただけの定型ページになる。開示が複数あって推移が読め、
-// かつ解説文があるものだけを載せる（判定は lib/pageIndexability.ts、ページ側と共通）。
-// 除外した投資家のページは公開していない（404）。内部リンクも同じ判定で出し分けている。
+// かつ解説文があるものだけを公開している（判定は lib/pageIndexability.ts、ページ側と共通）。
+// さらに2026-09-21から、載せるのは開示10件以上の投資家だけにした（クロールの割り当てが
+// 投資家ページに寄って新記事が巡回されていなかったため。経緯は pageIndexability.ts）。
+// 10件未満のページは200のまま残し、ページ側で noindex,follow を付けている。
 async function investorEntries(): Promise<MetadataRoute.Sitemap> {
-  const [filers, publishedFilers] = await Promise.all([
+  const [filers, indexableFilers] = await Promise.all([
     getAllFilers(),
-    getPublishedFilerNames(),
+    getSearchIndexableFilerNames(),
   ]);
   return filers
-    .filter((filer) => publishedFilers.has(filer.filerName))
+    .filter((filer) => indexableFilers.has(filer.filerName))
     .map((filer) => ({
       url: `${SITE_URL}${investorPath(filer.filerId, filer.filerName)}`,
       lastModified: filer.latestDiscDate,
