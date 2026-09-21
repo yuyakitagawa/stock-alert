@@ -5,7 +5,8 @@ export const SITE_URL = (
 ).replace(/\/$/, "");
 
 // 正式ブランド名。旧称は構造化データのalternateNameに残す。
-export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "KUJIRA WATCH";
+// 環境変数に旧名が残っていてもブランドが巻き戻らないよう、名称はコードで固定する。
+export const SITE_NAME = "KUJIRA WATCH";
 
 export const SITE_DESCRIPTION =
   "EDINETの大量保有報告書とTDnet開示を集計し、企業別の大株主、投資家別の保有銘柄、買い増し・売却履歴を検索できる日本株データベースです。";

@@ -30,7 +30,7 @@ export const revalidate = 3600;
 // 滞在75秒と全種別で最も長いのに検索から直接来ていない。説明文には既に検索語が入っている
 // 一方で<title>が「銘柄ランキング」のような内部呼称のままだったため、そこを揃える（2026-08-27）。
 // ※SEOの反映には数日〜数週間かかるので、直後に順位で判定しないこと。
-const metaTitle = "大量保有報告書の提出者一覧";
+const metaTitle = "機関投資家・大株主データベース";
 const description =
   "EDINET大量保有報告書（5%ルール）を提出した機関投資家・アクティビストファンド・創業家の資産管理会社などの一覧。投資家別に保有銘柄・保有比率の推移を確認できます。";
 
@@ -91,7 +91,7 @@ export default async function InvestorsPage({ searchParams }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "投資家一覧", item: `${SITE_URL}/investors` },
+      { "@type": "ListItem", position: 2, name: metaTitle, item: `${SITE_URL}/investors` },
     ],
   };
 
@@ -104,9 +104,9 @@ export default async function InvestorsPage({ searchParams }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-ink-secondary">投資家一覧</span>
+        <span className="text-ink-secondary">{metaTitle}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">投資家一覧</h1>
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{metaTitle}</h1>
       <Suspense fallback={<ListFallback rows={12} />}>
         <InvestorsBody searchParams={searchParams} />
       </Suspense>
@@ -221,7 +221,7 @@ async function InvestorsBody({ searchParams }: Props) {
       )}
       {filers.length > 0 && (
         <FilterButtonNav
-          ariaLabel="カテゴリで絞り込む"
+          ariaLabel="投資家タイプで絞り込む"
           items={[
             {
               href: buildHref(null, 1),

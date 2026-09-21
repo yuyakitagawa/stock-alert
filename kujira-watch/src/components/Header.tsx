@@ -93,7 +93,7 @@ export default function Header() {
                   className="kicker"
                   sx={{ display: { xs: "none", sm: "block" }, mt: 0.25, color: "brand.blue" }}
                 >
-                  EDINET大量保有報告書から読む大口投資家の動き
+                  日本株の大株主・機関投資家データベース
                 </Box>
               </Box>
             </Box>

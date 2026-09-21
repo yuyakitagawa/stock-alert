@@ -22,7 +22,7 @@ export const revalidate = 300;
 // 滞在75秒と全種別で最も長いのに検索から直接来ていない。説明文には既に検索語が入っている
 // 一方で<title>が「銘柄ランキング」のような内部呼称のままだったため、そこを揃える（2026-08-27）。
 // ※SEOの反映には数日〜数週間かかるので、直後に順位で判定しないこと。
-const metaTitle = "大量保有報告書が出た銘柄一覧";
+const metaTitle = "日本株・大株主データベース";
 const description =
   "EDINET大量保有報告書（5%ルール）・自社株買いなど、大口投資家の動きが開示された銘柄の一覧。銘柄別に保有・取引の履歴を確認できます。";
 
@@ -67,7 +67,7 @@ export default async function StocksIndexPage({ searchParams }: Props) {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "トップ", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "銘柄一覧", item: `${SITE_URL}/stocks` },
+      { "@type": "ListItem", position: 2, name: metaTitle, item: `${SITE_URL}/stocks` },
     ],
   };
 
@@ -80,9 +80,9 @@ export default async function StocksIndexPage({ searchParams }: Props) {
       <nav aria-label="パンくずリスト" className="mb-4 text-xs text-ink-tertiary">
         <Link href="/" className="hover:text-brand-blue">トップ</Link>
         {" / "}
-        <span className="text-ink-secondary">銘柄一覧</span>
+        <span className="text-ink-secondary">{metaTitle}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">銘柄一覧</h1>
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{metaTitle}</h1>
       <Suspense fallback={<ListFallback rows={12} />}>
         <StocksBody searchParams={searchParams} />
       </Suspense>

@@ -6,5 +6,6 @@
 - [x] サイトマップlastmodを検索可視コンテンツの更新日に合わせる
 - [x] READMEを更新
 - [x] lint・型検査・buildで検証
+- [x] トップ検索・ナビゲーション・一覧ページ名をDB中心へ変更
 
 検証結果（2026-09-21）: `npm run lint`、`npx tsc --noEmit`、`npm run build` はすべて成功。静的ページ188件を生成。
