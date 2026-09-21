@@ -31,7 +31,7 @@ export default function CategoryFilterDetails() {
         sx={{ px: 0, minHeight: "auto", "& .MuiAccordionSummary-content": { my: 1 } }}
       >
         <Typography variant="overline" sx={{ color: "text.secondary" }}>
-          カテゴリで絞り込む
+          投資家タイプから新着開示を絞り込む
         </Typography>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 0, pb: 2 }}>

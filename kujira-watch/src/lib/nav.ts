@@ -6,18 +6,16 @@ export type NavLink = { href: string; label: string };
 // /weekly改名後もメニューだけ「今週のまとめ」のままだった）、ここで一元管理する。
 export function mainNavLinks(): NavLink[] {
   return [
-    { href: "/", label: "TOP" },
-    { href: "/trending", label: "銘柄ランキング" },
-    { href: "/ranking/returns", label: "投資家ランキング" },
-    { href: "/weekly", label: "週次トレンド" },
+    { href: "/", label: "ホーム" },
+    { href: "/stocks", label: "銘柄を探す" },
+    { href: "/investors", label: "投資家を探す" },
+    { href: "/trending", label: "買い増しランキング" },
     // ページタイトルは「アクティビスト注目銘柄」のままだが、上部タブでは長くて
     // 他タブを押し出すため短縮ラベルにする（2026-08-23）。
     { href: "/activists", label: "アクティビスト" },
     { href: "/buybacks", label: "自社株買い" },
-    { href: "/investors", label: "投資家一覧" },
-    { href: "/stocks", label: "銘柄一覧" },
-    // 月別アーカイブは回遊の起点というより過去分の入口なので一番右に置く。
-    { href: "/monthly", label: "月別アーカイブ" },
+    { href: "/guides", label: "読み方ガイド" },
+    { href: "/articles", label: "新着開示" },
   ];
 }
 
@@ -25,13 +23,14 @@ export function mainNavLinks(): NavLink[] {
 // TOPへの内部到達が398件＝他ページからTOPへ戻る動きが多く、データページ間を直接渡り歩けて
 // いなかった。各ページの末尾に「次に見る」として兄弟ページを2〜3件出す。
 const DATA_PAGES: NavLink[] = [
-  { href: "/trending", label: "銘柄ランキング" },
-  { href: "/ranking/returns", label: "投資家ランキング" },
+  { href: "/stocks", label: "日本株・大株主データベース" },
+  { href: "/investors", label: "機関投資家・大株主データベース" },
+  { href: "/trending", label: "買い増し・大量保有ランキング" },
+  { href: "/ranking/returns", label: "買い開示の3ヶ月後成績" },
   { href: "/weekly", label: "週次トレンド" },
   { href: "/activists", label: "アクティビスト注目銘柄" },
   { href: "/buybacks", label: "自社株買い" },
-  { href: "/investors", label: "投資家一覧" },
-  { href: "/stocks", label: "銘柄一覧" },
+  { href: "/guides", label: "大量保有報告書の読み方ガイド" },
   { href: "/monthly", label: "月別アーカイブ" },
 ];
 

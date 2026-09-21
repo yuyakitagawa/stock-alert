@@ -2,6 +2,8 @@ import CategoryFilterDetails from "@/components/CategoryFilterDetails";
 import DataUpdatedAt from "@/components/DataUpdatedAt";
 import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
+import Link from "next/link";
+import StockSearch from "@/components/StockSearch";
 import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getFeaturedArticle } from "@/lib/microcms";
@@ -27,7 +29,7 @@ export default async function HomePage() {
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    name: `${SITE_NAME}｜新着記事`,
+    name: `${SITE_NAME}｜大量保有・売買の新着開示`,
     itemListElement: contents.map((article, index) => ({
       "@type": "ListItem",
       position: index + 1,
@@ -51,6 +53,23 @@ export default async function HomePage() {
         EDINETの大量保有報告書とTDnet開示を集計し、企業別の大株主、投資家別の保有銘柄、
         買い増し・売却履歴を検索できます。
       </p>
+      <div className="relative z-10 mt-5 mb-3 rounded-lg border border-rule bg-section-tint p-4">
+        <p className="mb-2 text-sm font-bold text-brand-navy">
+          企業名・証券コード・投資家名から検索
+        </p>
+        <StockSearch prominent />
+      </div>
+      <nav aria-label="データベースの入口" className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        <Link href="/stocks" className="font-medium text-brand-blue hover:underline">
+          日本株・大株主データベース
+        </Link>
+        <Link href="/investors" className="font-medium text-brand-blue hover:underline">
+          機関投資家・大株主データベース
+        </Link>
+        <Link href="/guides" className="font-medium text-brand-blue hover:underline">
+          大量保有報告書の読み方
+        </Link>
+      </nav>
       {latestDealDate && (
         <DataUpdatedAt
           className="mb-4"
@@ -76,7 +95,7 @@ export default async function HomePage() {
             </div>
           )}
           {/* 一覧は最新の開示日ぶんとは限らない（土日は数日前が最新）ため「今日」と言い切らない。 */}
-          <h2 className="mb-4 text-xl font-bold text-brand-navy">新着の取引</h2>
+          <h2 className="mb-4 text-xl font-bold text-brand-navy">大量保有・売買の新着開示</h2>
           <CategoryFilterDetails />
           <InfiniteArticleList
             dateHeadingLevel="h3"
