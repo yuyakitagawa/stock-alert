@@ -19,8 +19,24 @@
 /** 取引日別ページ: この件数以上の記事がある日だけインデックスする。 */
 export const INDEXABLE_MIN_DATE_ARTICLES = 3;
 
-/** 投資家別ページ: この件数以上の開示がある投資家だけインデックスする（保有比率の「推移」が読める下限）。 */
+/** 投資家別ページ: この件数以上の開示がある投資家だけ公開する（保有比率の「推移」が読める下限）。 */
 export const INDEXABLE_MIN_FILER_HOLDINGS = 2;
+
+/**
+ * 投資家別ページ: この件数以上の開示がある投資家だけを検索インデックス対象にする
+ * （サイトマップに載せる／noindexを付けない）。公開の下限（上記）より厳しい。
+ *
+ * 2026-09-21の実測。9/15以降にGooglebotが取得したURLの53%（706回・424URL）が投資家ページで、
+ * 一方で8/31以降の新記事249件は1件も取得されていなかった（GSCでは全件「検出-インデックス未登録」）。
+ * 巡回の割り当てが、成果の出ていない集約ページに寄っている。直近28日のGSC実績は
+ *   開示2〜3件: 167ページ → クリック0・表示24
+ *   開示4〜9件: 172ページ → クリック0・表示53
+ *   開示10件〜: 148ページ → クリック2・表示327
+ * で、10件未満の339ページはクリック0だった。ここをサイトマップから外しnoindexにして、
+ * 巡回を記事へ寄せる。8月の大量404で検索に出ていたURLを失った反省から、ページ自体は
+ * 404にせず200のまま残す（内部リンクもそのまま＝リンク切れを作らない）。
+ */
+export const SEARCH_INDEXABLE_MIN_FILER_HOLDINGS = 10;
 
 /** 銘柄別ページ: 解説記事がこの件数以上あればインデックスする（事業内容の説明が無くても可）。 */
 export const INDEXABLE_MIN_STOCK_ARTICLES = 2;
@@ -43,6 +59,22 @@ export function isIndexableInvestorPage(input: {
   hasProfile: boolean;
 }): boolean {
   return input.holdingCount >= INDEXABLE_MIN_FILER_HOLDINGS && input.hasProfile;
+}
+
+/**
+ * 投資家別 /investors/[filer] を検索インデックス対象にするか。
+ * falseでも公開（200）は続けるので、ページ側は notFound() ではなく noindex,follow を付ける。
+ * 「公開するが検索には出さない」ページはサイトマップにも載せない
+ * （載せたままだと「サイトマップに載っているのにnoindex」を送ることになる）。
+ */
+export function isSearchIndexableInvestorPage(input: {
+  holdingCount: number;
+  hasProfile: boolean;
+}): boolean {
+  return (
+    isIndexableInvestorPage(input) &&
+    input.holdingCount >= SEARCH_INDEXABLE_MIN_FILER_HOLDINGS
+  );
 }
 
 /**

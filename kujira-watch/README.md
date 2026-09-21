@@ -30,7 +30,7 @@ cp .env.local.example .env.local
 MICROCMS_SERVICE_DOMAIN=xxxx
 MICROCMS_API_KEY=xxxx
 NEXT_PUBLIC_SITE_URL=https://kujira-watch.com
-NEXT_PUBLIC_SITE_NAME=大口投資家の監視ブログ
+NEXT_PUBLIC_SITE_NAME=KUJIRA WATCH
 ```
 
 `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_SITE_NAME` は独自ドメイン・ブランド名が決まった際に
@@ -196,6 +196,7 @@ npm run dev
 
 ## SEO/AIO対策
 
+- **DB中心のブランド（2026-09-21）**: 正式名を`KUJIRA WATCH`、トップのtitle/H1を「日本株の大株主・機関投資家データベース」とする。旧称「大口投資家の監視ブログ」は`Organization.alternateName`に残す。銘柄ページは「大株主・機関投資家・大量保有報告書」、投資家ページは「日本株保有銘柄・売買履歴」をtitleの主検索意図にする。
 - **GEO向けエンティティ・データセット宣言**: `Organization` と `WebSite` に永続的な `@id` を付け、`publisher` で同一運営主体へ接続する。運営方針は `publishingPrinciples=/about`、実際に扱う専門領域は `knowsAbout` で明示する。`/weekly` は記事ではなくEDINET開示の期間集計なので、画面上の直近7日集計と同じ値から `Dataset`（期間・更新日・算出方法・変数・一次情報源）を生成する。`robots.txt` では主要AI検索・回答クローラーを個別に `Allow` し、将来の包括ルール追加でも意図せず遮断しない。
 - **metadata**: `src/lib/site.ts` の `SITE_URL`/`SITE_NAME` を起点に、ルートレイアウトで `metadataBase`・タイトルテンプレート（`%s｜${SITE_NAME}` の順＝固有名を先頭にする。全ページのtitleが同じ11字で始まると検索結果で見分けがつかず、Googleにタイトルを書き換えられやすいため）。**記事詳細だけはサイト名サフィックスを付けない**（`title: { absolute: article.title }`）。記事タイトルは銘柄名・提出者名・保有比率だけで既に40〜60字あり、検索結果に出る約32字にサイト名は入らない。2026-08-29のGSC実測で、8位前後・表示10〜53回でクリック0の記事が16本あった・OGP・Twitter Card・`robots` を設定。記事詳細・カテゴリ別一覧は `generateMetadata` で動的に title/description/canonical/OGPを生成する。
 - **アイコン/OGP画像/ロゴ**: `src/app/icon.tsx`（ファビコン。`generateImageMetadata`で32/192/512pxの3サイズを`/icon/32`等として生成し、HTMLページの`<head>`にのみ`<link rel="icon">`として注入される。Next 16では`id`がPromiseで渡るので`await`する）・`src/app/apple-icon.tsx`（iOS「ホーム画面に追加」用の180x180、`<link rel="apple-touch-icon">`。2026-08-23追加＝それまで32pxのiconしか無くホーム追加時に引き伸ばされてぼやけていた。iOS側で角丸が付くので正方形で塗る）・`src/app/manifest.ts`（`/manifest.webmanifest`。Android Chromeやアプリ内ブラウザは manifest が無いと「ホーム画面に追加」を出さない／失敗するため2026-08-23追加。`display: standalone`、アイコンは`/icon/192`・`/icon/512`・`/apple-icon`を指す）・`src/app/(ja)/opengraph-image.tsx`（SNSシェア用1200x630。**appルート直下に置くと`(ja)`ルートグループ内ページの`<head>`に`og:image`/`twitter:image`が一切注入されない**＝Xカードのサムネが出ない不具合が実際に起きたため、必ずルートグループ内に置くこと。`icon.tsx`はルート直下でも全ページに効くが、OGP画像はルートレイアウトを持つルートグループの境界を越えない）・`src/app/logo/route.ts`（構造化データ用の正方形512x512ロゴ、`/logo`）は `next/og` の `ImageResponse` でクジラ絵文字🐋をブランドネイビー背景に合成して動的生成（画像アセット不要）。`logo`はOGP画像と違い横長ではなく正方形にしてある（構造化データの`logo`にはOGP用の横長比率ではなく正方形〜近い比率の画像を指定するのがGoogleの推奨のため）。加えて`src/app/favicon.ico`（同デザインの静的PNG内蔵ICO、16/32/48/64px）を配置している。Next.jsは`favicon`をコードから生成できず画像ファイルが必須なため、`icon.tsx`だけでは`/sitemap.xml`・`/robots.txt`・`/feed.xml`のような`<head>`を持たないルートを直接開いたときにブラウザが`/favicon.ico`にフォールバックし、ファイルが無いとVercelの既定favicon（三角ロゴ）が表示されてしまう。静的ファイルを置くことでサイト全体のフォールバック先を統一している。

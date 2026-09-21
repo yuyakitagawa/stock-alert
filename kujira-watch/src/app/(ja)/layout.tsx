@@ -44,7 +44,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME}｜大量保有報告書から読む大口投資家の動き`,
+    default: `日本株の大株主・機関投資家データベース｜${SITE_NAME}`,
     // 固有名（記事タイトル）を先頭にする。全記事の<title>が同じ11文字で始まっていると
     // 検索結果でどれも同じ見出しに見え、Googleにもタイトルを書き換えられやすい。
     // ブラウザタブでサイト名が切れる不利はあるが、検索結果での識別を優先する。

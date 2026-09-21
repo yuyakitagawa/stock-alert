@@ -334,6 +334,7 @@ export async function searchStocks(keyword: string): Promise<StockSearchResult[]
 // dealTypeはカテゴリページの<lastmod>（カテゴリ内の記事の最新updatedAt）算出に使う。
 export type SitemapArticleRef = {
   id: string;
+  updatedAt?: string;
   stockCode: string;
   dealDate: string;
   dealType: DealType;
@@ -346,19 +347,20 @@ export type SitemapArticleRef = {
 export const getAllArticlesForSitemap = unstable_cache(
   async (): Promise<SitemapArticleRef[]> => {
     const contents = await client.getAllContents<
-      Pick<Article, "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "filerName">
+      Pick<ArticleContent, "stockCode" | "dealDate" | "dealType" | "dealAmount" | "ratioChangePct" | "filerName" | "updatedAt">
     >({
       endpoint: "articles",
       queries: {
-        fields: "id,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,tags",
+        fields: "id,updatedAt,stockCode,dealDate,dealType,dealAmount,ratioChangePct,filerName,tags",
         orders: "-publishedAt",
       },
       customRequestInit: { next: { revalidate: REVALIDATE_SECONDS } },
     });
     return contents
       .map(normalizeDealType)
-      .map(({ id, stockCode, dealDate, dealType, dealAmount, ratioChangePct, filerName }) => ({
+      .map(({ id, updatedAt, stockCode, dealDate, dealType, dealAmount, ratioChangePct, filerName }) => ({
         id,
+        updatedAt,
         stockCode,
         dealDate,
         dealType,

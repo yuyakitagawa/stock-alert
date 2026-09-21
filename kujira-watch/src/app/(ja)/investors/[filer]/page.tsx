@@ -23,7 +23,10 @@ import {
 import { displayFilerName, formatDate, toDateAttr } from "@/lib/format";
 import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { SITE_URL } from "@/lib/site";
-import { isIndexableInvestorPage } from "@/lib/pageIndexability";
+import {
+  isIndexableInvestorPage,
+  isSearchIndexableInvestorPage,
+} from "@/lib/pageIndexability";
 import { getPublishedStockCodes } from "@/lib/publishedPages";
 import AdUnit from "@/components/AdUnit";
 import FilerReturnRecord from "@/components/FilerReturnRecord";
@@ -105,9 +108,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return {};
   }
 
-  const title = `${filerName}の大量保有報告書・保有銘柄一覧`;
-  const description = `${filerName}がEDINET大量保有報告書（5%ルール）で開示した保有銘柄・保有比率の推移を${holdings.length}件まとめました。`;
+  const title = `${displayFilerName(filerName)}の日本株保有銘柄・売買履歴`;
+  const description = `${displayFilerName(filerName)}がEDINETで開示した日本株の保有銘柄、保有比率、買い増し・売却履歴を集計。最新開示日と過去の保有推移も確認できます。`;
   const url = `${SITE_URL}/investors/${filer}`;
+  // 開示件数が少ない投資家のページは検索に出さない（サイトマップからも外している）。
+  // ページ自体は公開したまま＝記事からのリンクは生きているので follow は残す。
+  const searchIndexable = isSearchIndexableInvestorPage({
+    holdingCount: holdings.length,
+    hasProfile: filersWithProfile.has(filerName),
+  });
 
   return {
     title,
@@ -117,6 +126,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       types: { "application/rss+xml": `${url}/feed.xml` },
     },
     openGraph: { title, description, url },
+    ...(searchIndexable ? {} : { robots: { index: false, follow: true } }),
   };
 }
 
@@ -239,7 +249,9 @@ export default async function InvestorPage({ params }: Props) {
         {" / "}
         <span className="text-ink-secondary">{displayFilerName(filerName)}</span>
       </nav>
-      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{displayFilerName(filerName)}</h1>
+      <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">
+        {displayFilerName(filerName)}の保有銘柄・大量保有報告書
+      </h1>
       <div className="mb-2 flex flex-wrap items-center gap-3">
         <DealTypeBadge dealType={category} />
         {classification?.description && (

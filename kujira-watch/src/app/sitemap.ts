@@ -8,7 +8,7 @@ import { SITE_URL, SITEMAP_IDS, type SitemapId } from "@/lib/site";
 import { isIndexableArticle, supersededArticleIds } from "@/lib/articleIndexability";
 import {
   getPublishedDates,
-  getPublishedFilerNames,
+  getSearchIndexableFilerNames,
   getPublishedStockCodes,
 } from "@/lib/publishedPages";
 import { CATEGORIES } from "@/types/article";
@@ -48,9 +48,9 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
     getAllFilers(),
     getAboutUpdatedAtForSitemap(),
   ]);
-  const latestArticle = maxDate(articles.map((a) => a.dealDate));
+  const latestArticle = maxDate(articles.map((a) => a.updatedAt || a.dealDate));
   const latestDisclosure = maxDate(filers.map((f) => f.latestDiscDate));
-  const latestByCategory = latestDealDateBy(articles, (a) => a.dealType);
+  const latestByCategory = latestArticleUpdateBy(articles, (a) => a.dealType);
   return [
     { url: SITE_URL, lastModified: latestArticle },
     { url: `${SITE_URL}/articles`, lastModified: latestArticle },
@@ -85,9 +85,9 @@ async function pageEntries(): Promise<MetadataRoute.Sitemap> {
 }
 
 
-// キー（銘柄コード・取引日など）ごとの記事の最新取引日(=EDINET開示日)。
+// キー（銘柄コード・取引日など）ごとの記事コンテンツの最終更新日。
 // 銘柄・日別・月別ページの<lastmod>に使う。
-function latestDealDateBy<T extends { dealDate: string }>(
+function latestArticleUpdateBy<T extends { dealDate: string; updatedAt?: string }>(
   items: T[],
   keyOf: (item: T) => string
 ): Map<string, string> {
@@ -96,7 +96,8 @@ function latestDealDateBy<T extends { dealDate: string }>(
     const key = keyOf(item);
     if (!key) continue;
     const prev = latest.get(key);
-    if (!prev || item.dealDate > prev) latest.set(key, item.dealDate);
+    const modifiedAt = item.updatedAt || item.dealDate;
+    if (!prev || modifiedAt > prev) latest.set(key, modifiedAt);
   }
   return latest;
 }
@@ -106,7 +107,7 @@ async function stockEntries(): Promise<MetadataRoute.Sitemap> {
     getAllArticlesForSitemap(),
     getPublishedStockCodes(),
   ]);
-  const latestByStock = latestDealDateBy(articles, (a) => a.stockCode);
+  const latestByStock = latestArticleUpdateBy(articles, (a) => a.stockCode);
   // 記事が乏しい銘柄のページは公開していない（404）のでサイトマップからも外す。
   return [...latestByStock.entries()]
     .filter(([code]) => publishedCodes.has(code))
@@ -121,8 +122,8 @@ async function dateEntries(): Promise<MetadataRoute.Sitemap> {
     getAllArticlesForSitemap(),
     getPublishedDates(),
   ]);
-  const latestByDate = latestDealDateBy(articles, (a) => a.dealDate.slice(0, 10));
-  const latestByMonth = latestDealDateBy(articles, (a) => a.dealDate.slice(0, 7));
+  const latestByDate = latestArticleUpdateBy(articles, (a) => a.dealDate.slice(0, 10));
+  const latestByMonth = latestArticleUpdateBy(articles, (a) => a.dealDate.slice(0, 7));
   return [
     ...[...latestByMonth.entries()].map(([month, lastModified]) => ({
       url: `${SITE_URL}/monthly/${month}`,
@@ -140,15 +141,17 @@ async function dateEntries(): Promise<MetadataRoute.Sitemap> {
 
 // 投資家ページ2,972件のうち、解説文が無いものが2,152件・開示1件だけが1,002件あり、
 // 大半はEDINETの数行を表に起こしただけの定型ページになる。開示が複数あって推移が読め、
-// かつ解説文があるものだけを載せる（判定は lib/pageIndexability.ts、ページ側と共通）。
-// 除外した投資家のページは公開していない（404）。内部リンクも同じ判定で出し分けている。
+// かつ解説文があるものだけを公開している（判定は lib/pageIndexability.ts、ページ側と共通）。
+// さらに2026-09-21から、載せるのは開示10件以上の投資家だけにした（クロールの割り当てが
+// 投資家ページに寄って新記事が巡回されていなかったため。経緯は pageIndexability.ts）。
+// 10件未満のページは200のまま残し、ページ側で noindex,follow を付けている。
 async function investorEntries(): Promise<MetadataRoute.Sitemap> {
-  const [filers, publishedFilers] = await Promise.all([
+  const [filers, indexableFilers] = await Promise.all([
     getAllFilers(),
-    getPublishedFilerNames(),
+    getSearchIndexableFilerNames(),
   ]);
   return filers
-    .filter((filer) => publishedFilers.has(filer.filerName))
+    .filter((filer) => indexableFilers.has(filer.filerName))
     .map((filer) => ({
       url: `${SITE_URL}${investorPath(filer.filerId, filer.filerName)}`,
       lastModified: filer.latestDiscDate,
@@ -166,7 +169,7 @@ async function articleEntries(): Promise<MetadataRoute.Sitemap> {
     .filter((article) => isIndexableArticle(article) && !superseded.has(article.id))
     .map((article) => ({
       url: `${SITE_URL}/articles/${article.id}`,
-      lastModified: article.dealDate,
+      lastModified: article.updatedAt || article.dealDate,
     }));
 }
 

@@ -4,12 +4,11 @@ export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL || "https://kujira-watch.com"
 ).replace(/\/$/, "");
 
-// 表示ブランド名(日本語)とドメイン(kujira-watch.com)は別物として管理する
-// （ブランド名は「大口投資家の監視ブログ」、ドメインはクジラのイメージで先に確保したもの）。
-export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "大口投資家の監視ブログ";
+// 正式ブランド名。旧称は構造化データのalternateNameに残す。
+export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "KUJIRA WATCH";
 
 export const SITE_DESCRIPTION =
-  "誰がどの日本株を買い増したか、毎日わかる。5%超の株主に開示が義務づけられた大量保有報告書（EDINET）を集計し、機関投資家・アクティビスト・自社株買いの動きを解説します。";
+  "EDINETの大量保有報告書とTDnet開示を集計し、企業別の大株主、投資家別の保有銘柄、買い増し・売却履歴を検索できる日本株データベースです。";
 
 // Organization構造化データの alternateName。サイトは「大口投資家の監視ブログ」（ブランド名）・
 // 「クジラウォッチ」（/aboutの自称）・「kujira-watch」（ドメイン）の3表記で呼ばれており、
