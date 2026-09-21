@@ -23,8 +23,8 @@ export function mainNavLinks(): NavLink[] {
 // TOPへの内部到達が398件＝他ページからTOPへ戻る動きが多く、データページ間を直接渡り歩けて
 // いなかった。各ページの末尾に「次に見る」として兄弟ページを2〜3件出す。
 const DATA_PAGES: NavLink[] = [
-  { href: "/stocks", label: "日本株・大株主データベース" },
-  { href: "/investors", label: "機関投資家・大株主データベース" },
+  { href: "/stocks", label: "大量保有報告書で探す日本株・大株主DB" },
+  { href: "/investors", label: "大量保有報告書で探す機関投資家・保有銘柄DB" },
   { href: "/trending", label: "買い増し・大量保有ランキング" },
   { href: "/ranking/returns", label: "買い開示の3ヶ月後成績" },
   { href: "/weekly", label: "週次トレンド" },

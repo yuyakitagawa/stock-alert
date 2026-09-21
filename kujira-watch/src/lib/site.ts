@@ -9,7 +9,7 @@ export const SITE_URL = (
 export const SITE_NAME = "KUJIRA WATCH";
 
 export const SITE_DESCRIPTION =
-  "EDINETの大量保有報告書とTDnet開示を集計し、企業別の大株主、投資家別の保有銘柄、買い増し・売却履歴を検索できる日本株データベースです。";
+  "EDINETの大量保有報告書とTDnet開示を集計し、企業別の大口保有者、投資家別の保有銘柄、買い増し・売却履歴と開示後の成績を追える日本株データベースです。";
 
 // Organization構造化データの alternateName。サイトは「大口投資家の監視ブログ」（ブランド名）・
 // 「クジラウォッチ」（/aboutの自称）・「kujira-watch」（ドメイン）の3表記で呼ばれており、
