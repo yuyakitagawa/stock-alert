@@ -22,7 +22,7 @@ export const revalidate = 300;
 // 滞在75秒と全種別で最も長いのに検索から直接来ていない。説明文には既に検索語が入っている
 // 一方で<title>が「銘柄ランキング」のような内部呼称のままだったため、そこを揃える（2026-08-27）。
 // ※SEOの反映には数日〜数週間かかるので、直後に順位で判定しないこと。
-const metaTitle = "日本株・大株主データベース";
+const metaTitle = "大量保有報告書で探す日本株・大株主DB";
 const description =
   "EDINET大量保有報告書（5%ルール）・自社株買いなど、大口投資家の動きが開示された銘柄の一覧。銘柄別に保有・取引の履歴を確認できます。";
 
@@ -83,6 +83,9 @@ export default async function StocksIndexPage({ searchParams }: Props) {
         <span className="text-ink-secondary">{metaTitle}</span>
       </nav>
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">{metaTitle}</h1>
+      <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
+        EDINETの大量保有報告書（5%ルール）を対象に、銘柄ごとの大口保有者と保有比率の増減を掲載しています。
+      </p>
       <Suspense fallback={<ListFallback rows={12} />}>
         <StocksBody searchParams={searchParams} />
       </Suspense>
