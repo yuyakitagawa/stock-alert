@@ -86,14 +86,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // 「銘柄名 株主構成」の形なので、タイトルとH1をその語に揃える。「の動き」のような
   // 検索されない語を削り、社名が長い銘柄でもキーワードが省略されない位置に置く。
   // 「大量保有報告書」はdescriptionとページ本文側に残す。
-  const title = `${stockName}（${code}）の大株主・株主構成`;
-  const dealSummaryText =
-    contents.length > 0
-      ? formatStockDealSummary(buildStockDealSummary(contents), stockName, code)
-      : `${stockName}（${code}）の大量保有報告書（EDINET）の提出履歴と会社情報。`;
-  const description = companyInfo?.description
-    ? `${companyInfo.description.replace(/。+$/, "")}。${dealSummaryText}`
-    : dealSummaryText;
+  const title = `${stockName}（${code}）の大株主・機関投資家・大量保有報告書`;
+  const description = `${stockName}（${code}）の大株主と機関投資家を、EDINETの大量保有報告書（5%ルール）から集計。最新保有比率、買い増し・売却履歴、自社株買いを掲載。`;
   const url = `${SITE_URL}/stocks/${code}`;
 
   return {

@@ -4,7 +4,7 @@ import type { MetadataRoute } from "next";
 // インストール導線を出さない。アイコンは icon.tsx が生成する 192/512px を指す
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "大口投資家の監視ブログ",
+    name: "KUJIRA WATCH",
     short_name: "大口投資家",
     description: "EDINET大量保有報告をもとに大口投資家の売買を毎日解説",
     start_url: "/",

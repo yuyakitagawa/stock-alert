@@ -6,7 +6,6 @@ import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getFeaturedArticle } from "@/lib/microcms";
 import { getPublishedDates } from "@/lib/publishedPages";
-import { formatDate } from "@/lib/format";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 // クローラーが最初のHTML(SSR)だけで辿れるリンク数を増やすため、初回取得件数を
@@ -45,17 +44,12 @@ export default async function HomePage() {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
         />
       )}
-      {/* H1は日付だけにせず主要検索語（大量保有報告書／大口投資家）を含める。
-          初見の訪問者向けに「何のサイトか」を1文で添える（検索流入のほとんどは記事ページから
-          入ってTOPへ上がってくるため、TOP単体でも自己紹介できるようにする）。 */}
       <h1 className="mb-2 text-2xl font-bold text-brand-navy sm:text-3xl">
-        {latestDealDate
-          ? `大量保有報告書で読む大口投資家の動き（${formatDate(latestDealDate)}の取引）`
-          : "大量保有報告書で読む大口投資家の動き"}
+        日本株の大株主・機関投資家データベース
       </h1>
       <p className="mb-2 text-sm leading-relaxed text-ink-secondary">
-        EDINETに提出された大量保有報告書を平日毎時チェックし、機関投資家・アクティビスト・創業家など
-        大口投資家の売買を開示当日のうちに記事にしています。
+        EDINETの大量保有報告書とTDnet開示を集計し、企業別の大株主、投資家別の保有銘柄、
+        買い増し・売却履歴を検索できます。
       </p>
       {latestDealDate && (
         <DataUpdatedAt
