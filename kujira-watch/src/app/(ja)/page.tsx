@@ -4,7 +4,6 @@ import FeaturedArticleCard from "@/components/FeaturedArticleCard";
 import InfiniteArticleList from "@/components/InfiniteArticleList";
 import Link from "next/link";
 import StockSearch from "@/components/StockSearch";
-import TopReturnPreview from "@/components/TopReturnPreview";
 import TopTrendingPreview from "@/components/TopTrendingPreview";
 import { getArticleList, getFeaturedArticle } from "@/lib/microcms";
 import { getPublishedDates } from "@/lib/publishedPages";
@@ -117,9 +116,6 @@ export default async function HomePage() {
               /trendingは閲覧者全員が押している（2026-08-27のGA4実測）。ヘッダーに同じリンクは
               あるので、足りないのはリンクではなく押す理由＝実際の銘柄名と金額。 */}
           <TopTrendingPreview />
-          {/* 「誰が買ったか」の次に「そのあとどうなったか」を置く。株価と結び付けた数字は
-              大量保有アラート型の競合が持っていない情報なので、TOPで見えるようにする。 */}
-          <TopReturnPreview />
           {featured && (
             <div className="mb-8">
               <FeaturedArticleCard article={featured} rank={1} />
