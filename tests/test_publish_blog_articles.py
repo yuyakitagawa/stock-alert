@@ -93,6 +93,26 @@ def test_generate_article_body_allows_raw_newlines_in_json():
     assert out is not None and out["body"] == body
 
 
+def test_generate_article_body_salvages_unescaped_quotes():
+    """本文HTMLの " がエスケープされていないJSONでも本文を取り出せること。
+    2026-09-25 run 36093689506 でニプロ(8086)が "Expecting ',' delimiter" で落ち、便が赤くなった。"""
+    body = '<p>提出者は「"純投資"」と記載。</p>\n<a href="https://example.com">リンク</a>'
+    raw = '{"body": "' + body + '"}'
+    with mock.patch.object(m, "ANTHROPIC_API_KEY", "dummy"), \
+         mock.patch("anthropic.Anthropic", return_value=_fake_client(raw)):
+        out = m.generate_article_body(_fact_sheet())
+    assert out is not None and out["body"] == body
+
+
+def test_parse_body_json_keeps_escaped_quotes_and_raises_on_garbage():
+    assert m.parse_body_json(json.dumps({"body": '<a href="x">y</a>'})) == {"body": '<a href="x">y</a>'}
+    try:
+        m.parse_body_json('本文だけ')
+        raise AssertionError("JSONでない応答は例外にする")
+    except json.JSONDecodeError:
+        pass
+
+
 def test_generate_article_body_none_on_empty_body():
     fact_sheet = _fact_sheet()
     raw = json.dumps({"body": ""})
@@ -2399,6 +2419,8 @@ if __name__ == "__main__":
     test_build_and_publish_skips_disclosure_already_articled()
     test_build_and_publish_records_ledger_after_publishing()
     test_generate_article_body_allows_raw_newlines_in_json()
+    test_generate_article_body_salvages_unescaped_quotes()
+    test_parse_body_json_keeps_escaped_quotes_and_raises_on_garbage()
     test_already_published_skips_when_lookup_fails()
     test_already_published_narrows_query_to_the_disclosure_date()
     test_ledger_marks_below_threshold_run_as_healthy()
@@ -2417,4 +2439,4 @@ if __name__ == "__main__":
     test_pick_lead_angle_threshold_crossing_down()
     test_format_filing_details()
     test_generate_article_body_prompt_includes_filing_details_and_angle()
-    print("全テスト成功 (152件)")
+    print("全テスト成功 (154件)")
