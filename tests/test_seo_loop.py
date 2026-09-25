@@ -88,3 +88,19 @@ def test_join_conversions_matches_by_path_and_flags_leaks():
 def test_render_marks_empty_sections():
     text = s.render([("x", "do", []), ("y", "do", ["- a"])])
     assert "## x（0件）" in text and "- 該当なし" in text and "- a" in text
+
+
+def test_line_text_lists_only_flags_with_hits():
+    from datetime import date
+    text = s.line_text(date(2026, 9, 22), [
+        ("almost_there（3〜20位）", "a", ["- 「q1」 /x", "- 「q2」 /y", "- 「q3」 /z", "- 「q4」 /w"]),
+        ("no_clicks（x）", "b", []),
+        ("leak / converts（GA4突き合わせ）", "c", ["- 省略: GA4_PROPERTY_ID が未設定"]),
+    ])
+    assert "■ almost_there 4件" in text and "「q3」" in text and "「q4」" not in text
+    assert "no_clicks" not in text and "leak" not in text
+
+
+def test_line_text_says_nothing_to_do_when_no_hits():
+    from datetime import date
+    assert "動くべきフラグなし" in s.line_text(date(2026, 9, 22), [("x", "a", [])])

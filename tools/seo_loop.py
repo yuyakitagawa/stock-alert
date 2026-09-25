@@ -24,6 +24,7 @@ GA4 の着地ページ別の行動（CTAクリック）と突き合わせて「�
   python3 tools/seo_loop.py --limit 10      # 各フラグの表示行数
   python3 tools/seo_loop.py --no-titles     # untargeted 用のtitle取得（HTTP）を省く
   python3 tools/seo_loop.py --out logs/seo_loop.md   # Markdownでファイルにも書く（Actionsのサマリ用）
+  python3 tools/seo_loop.py --line          # 要約をLINEに送る（LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID）
 
 必要な設定は gsc_report.py / ga4_clicks.py と同じ（GA4_PROPERTY_ID が無ければ突き合わせ節だけ省く）。
 Anthropic API は使わない。
@@ -40,7 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
 
-from lib import gcp_auth
+from lib import gcp_auth, notify
 from tools import ga4_clicks, gsc_report
 
 WINDOW_DAYS = 7
@@ -63,6 +64,8 @@ AI_MODE_MIN_WORDS = 7
 AI_MODE_MIN_CHARS = 20
 # leak: GSCで週10クリック以上あるのにCTAが1回も押されていない着地ページ。
 LEAK_MIN_CLICKS = 10
+# LINEには各フラグの上位だけ載せる。
+LINE_PER_SECTION = 3
 
 BRAND_TERMS = ("クジラウォッチ", "くじらウォッチ", "kujira", "kujira-watch", "kujira watch")
 
@@ -264,7 +267,21 @@ def render(sections: list) -> str:
     return "\n".join(out)
 
 
-def run(limit: int, with_titles: bool, out_path: "str | None") -> int:
+def line_text(end: date, sections: list, per: int = LINE_PER_SECTION) -> str:
+    """LINE用の要約。全件はActionsのサマリに任せ、フラグごとの件数と上位だけ載せる。
+    該当なしの節は1行も出さない（毎朝読むものは短くないと読まれなくなる）。"""
+    hits = [(t, ls) for t, _, ls in sections if ls and ls[0].startswith("- ")
+            and not ls[0].startswith(("- 省略", "- --no-titles"))]
+    out = [f"🔎 SEOループ {end}"]
+    if not hits:
+        out.append("動くべきフラグなし")
+    for title, lines in hits:
+        out.append(f"\n■ {title.split('（')[0]} {len(lines)}件")
+        out.extend(l[2:][:80] for l in lines[:per])
+    return "\n".join(out)
+
+
+def run(limit: int, with_titles: bool, out_path: "str | None", to_line: bool = False) -> int:
     site = os.getenv("GSC_SITE_URL", "").strip() or gsc_report.DEFAULT_SITE
     try:
         token = gcp_auth.access_token(gsc_report.SCOPE)
@@ -347,6 +364,8 @@ def run(limit: int, with_titles: bool, out_path: "str | None") -> int:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         with open(out_path, "w") as f:
             f.write(text + "\n")
+    if to_line:
+        notify.push(line_text(end, sections))
     return 0
 
 
@@ -355,8 +374,9 @@ def main():
     p.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     p.add_argument("--no-titles", action="store_true", help="untargeted用のtitle取得を省く")
     p.add_argument("--out", help="Markdownの出力先")
+    p.add_argument("--line", action="store_true", help="要約をLINEに送る")
     a = p.parse_args()
-    sys.exit(run(a.limit, not a.no_titles, a.out))
+    sys.exit(run(a.limit, not a.no_titles, a.out, a.line))
 
 
 if __name__ == "__main__":

@@ -9,6 +9,10 @@
   leak（週10クリック以上でCTA0）と converts（クリックあたりCTAが多い）を出す
 - 集計・表示のみでサイトは変更しない。バックテスト対象外（効果測定はこのレポート自体の前後比較）
 - Actions の Secret `GCP_SERVICE_ACCOUNT_JSON` 未登録時はスキップ。Anthropic API は使わない
+- 追加: `--line` でフラグごとの件数と上位3件をLINEへ（該当なしの節は載せない）
+- 追加: `tools/indexnow_ping.py` でサイトマップの lastmod 直近2日のURLを IndexNow へ毎日通知
+  （ChatGPT検索はBingの索引を使うため）。鍵ファイルは `kujira-watch/public/` にコミット
+- 確認: next.config の redirects は全て `permanent: true`（308）で、記事の「307で正規URLを誤認」には該当しない
 
 ## 2026-09-21 有報の事業情報を取り込み、押し目買い通知に「どんな会社か」を添える
 
