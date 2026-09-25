@@ -1,5 +1,15 @@
 # Dev Log
 
+## 2026-09-25 SEOループのRead段（6フラグ＋GA4着地後CTA突き合わせ）を毎朝自動化
+
+`tools/gsc_report.py` は28日分の全体像で、手動実行のため定点観測されていなかった。
+毎朝「動くべき行だけ」を出す `tools/seo_loop.py` と `seo_loop.yml`（08:47 JST）を追加。
+- 6フラグ: almost_there / no_clicks / decaying / untargeted / wrong_intent / ai_mode（しきい値は定数）
+- GSCはクリックまでしか見えないため、GA4 landingPage 別の click イベントとパスで突き合わせ、
+  leak（週10クリック以上でCTA0）と converts（クリックあたりCTAが多い）を出す
+- 集計・表示のみでサイトは変更しない。バックテスト対象外（効果測定はこのレポート自体の前後比較）
+- Actions の Secret `GCP_SERVICE_ACCOUNT_JSON` 未登録時はスキップ。Anthropic API は使わない
+
 ## 2026-09-21 有報の事業情報を取り込み、押し目買い通知に「どんな会社か」を添える
 
 オーナー要望（企業HPのスクレイピングで定性データを増やしたい）に対し、一次ソースを有価証券報告書にした。

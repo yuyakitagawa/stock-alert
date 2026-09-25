@@ -1,0 +1,37 @@
+name: SEO Loop (Read)
+
+# 毎朝、Search Consoleを6フラグで読み、GA4の着地後CTAクリックと突き合わせて
+# ジョブサマリーに出す（tools/seo_loop.py）。Anthropic APIは使わない。
+# Secret GCP_SERVICE_ACCOUNT_JSON が未登録なら何もせず成功で終わる。
+on:
+  schedule:
+    - cron: '47 23 * * *'   # 毎日 08:47 JST
+  workflow_dispatch:
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    env:
+      GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+      GA4_PROPERTY_ID: ${{ secrets.GA4_PROPERTY_ID }}
+      GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        if: env.GCP_SERVICE_ACCOUNT_JSON != ''
+        run: pip install requests python-dotenv google-auth
+
+      - name: Read Search Console (6 flags + GA4 join)
+        if: env.GCP_SERVICE_ACCOUNT_JSON != ''
+        run: |
+          python3 tools/seo_loop.py --out logs/seo_loop.md
+          cat logs/seo_loop.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Secret未登録
+        if: env.GCP_SERVICE_ACCOUNT_JSON == ''
+        run: echo "GCP_SERVICE_ACCOUNT_JSON が未登録のためスキップ" >> "$GITHUB_STEP_SUMMARY"
