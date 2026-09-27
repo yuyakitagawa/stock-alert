@@ -41,7 +41,7 @@ comment on column blog_crawler_log.user_agent is
   'INSERT時の受け口。トリガーが blog_crawler_ua へ寄せて ua_id に変換するため保存後は常にNULL。読むときは ua_id を使う。';
 
 -- ── 2. 保持期間（tools/purge_supabase.py から日次で呼ぶ）─────────────────
--- AIクローラーの巡回ログはGEO実験の観測データなので長く残す。
+-- AIクローラーの巡回ログはGEO実験の観測データなので他より長く残す（2026-09-27に400日→90日。Free枠のDB 500MBに収めるため）。
 create or replace function purge_blog_crawler_log()
 returns table(bucket text, deleted bigint)
 language plpgsql
@@ -59,14 +59,14 @@ begin
 
   delete from blog_crawler_log
    where bot_name <> 'Browser' and not (bot_name = any(ai_bots))
-     and occurred_at < now() - interval '60 days';
+     and occurred_at < now() - interval '30 days';
   get diagnostics n = row_count;
-  bucket := 'その他bot(60日)'; deleted := n; return next;
+  bucket := 'その他bot(30日)'; deleted := n; return next;
 
   delete from blog_crawler_log
-   where bot_name = any(ai_bots) and occurred_at < now() - interval '400 days';
+   where bot_name = any(ai_bots) and occurred_at < now() - interval '90 days';
   get diagnostics n = row_count;
-  bucket := 'AIクローラー(400日)'; deleted := n; return next;
+  bucket := 'AIクローラー(90日)'; deleted := n; return next;
 
   delete from blog_crawler_ua u
    where not exists (select 1 from blog_crawler_log l where l.ua_id = u.id);
