@@ -10,7 +10,7 @@ import { getArticlesByFilerNames, getRecentArticles } from "@/lib/microcms";
 import { SITE_URL } from "@/lib/site";
 import { getInvestorReturns, getLatestReturnCohort, MIN_POSITIONS, RETURN_TRADING_DAYS } from "@/lib/investorReturns";
 import { buildStockRows } from "@/lib/rankingStats";
-import { getFilerIdMap, investorPath } from "@/lib/investors";
+import { getFilerIds, investorPath } from "@/lib/investors";
 import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
 import AdUnit from "@/components/AdUnit";
 import InvestorReturnRanking from "@/components/InvestorReturnRanking";
@@ -98,7 +98,7 @@ export default async function RankingSlugPage({ params }: Props) {
   const recentArticles =
     ranking.axis === "stock" ? (await getRecentArticles(RANKING_DAYS)).contents : [];
   const stockRows = ranking.axis === "stock" ? buildStockRows(recentArticles, RANKING_SIZE) : [];
-  const filerIds = ranking.axis === "stock" ? await getFilerIdMap() : {};
+  const filerIds = ranking.axis === "stock" ? await getFilerIds(stockRows.flatMap((row) => (row.filerName ? [row.filerName] : []))) : {};
   // 集約ページは公開しているものだけリンクにする（薄いものは404。lib/publishedPages.ts）。
   const [publishedCodes, publishedFilers] = await Promise.all([
     getPublishedStockCodes().catch(() => new Set<string>()),

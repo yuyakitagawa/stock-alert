@@ -217,7 +217,7 @@ async function getFilersByStockCodeUncached(stockCode: string): Promise<StockFil
   const categoryByFiler = new Map(
     (classifications ?? []).map((c) => [c.filer_name, c.category as DealType])
   );
-  const idByFiler = await getFilerIdMap();
+  const idByFiler = await getFilerIds(filerNames);
   return filerNames
     .map((filerName) => ({
       filerName,
@@ -511,30 +511,29 @@ export const getHoldingSnapshot = unstable_cache(getHoldingSnapshotUncached, ["g
 
 export { investorPath } from "@/lib/investorPath";
 
-// 提出者名→IDの全件対応表。約3,000件で1回の読み取りに収まるため、リンクを大量に組み立てる
-// ページ（銘柄ページの推移表・ランキング等）はこれを1度取って引く。
-// unstable_cacheはJSON化して保存するため、MapではなくRecordで返す。
-export const getFilerIdMap = unstable_cache(
-  async (): Promise<Record<string, number>> => {
-    const supabase = getSupabaseServerClient();
-    const map: Record<string, number> = {};
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      const offset = page * PAGE_SIZE;
-      const { data, error } = await supabase
-        .from("edinet_filer_ids")
-        .select("id, filer_name")
-        .order("id", { ascending: true })
-        .range(offset, offset + PAGE_SIZE - 1);
-      if (error) throw new Error(`getFilerIdMap failed: ${error.message}`);
-      if (!data || data.length === 0) break;
-      for (const r of data) map[r.filer_name] = r.id;
-      if (data.length < PAGE_SIZE) break;
-    }
-    return map;
-  },
-  ["filer-id-map"],
-  { revalidate: SUPABASE_REVALIDATE_SECONDS }
-);
+// 提出者名→IDの対応表。ページに実際に出す提出者の分だけを引く。
+// 以前は全件（約3,800件・約235KB）を1時間キャッシュで持っていたが、本番ではキャッシュが
+// 効かず1日837回の全件読みになり、Supabaseのegressの大半を占めていた（2026-09-27の
+// ログ実測。Free枠5GB/月を超える主因）。必要な名前だけなら1ページ数KBで済む。
+// 日本語名はURLエンコードで1件100〜200バイトになるため、URL長を抑えるよう小分けに引く。
+const FILER_ID_CHUNK = 40;
+
+export async function getFilerIds(filerNames: Iterable<string>): Promise<Record<string, number>> {
+  const names = [...new Set([...filerNames].filter(Boolean))];
+  const map: Record<string, number> = {};
+  if (names.length === 0) return map;
+  const supabase = getSupabaseServerClient();
+  const chunks: string[][] = [];
+  for (let i = 0; i < names.length; i += FILER_ID_CHUNK) chunks.push(names.slice(i, i + FILER_ID_CHUNK));
+  const results = await Promise.all(
+    chunks.map((chunk) => supabase.from("edinet_filer_ids").select("id, filer_name").in("filer_name", chunk))
+  );
+  for (const { data, error } of results) {
+    if (error) throw new Error(`getFilerIds failed: ${error.message}`);
+    for (const r of data ?? []) map[r.filer_name] = r.id;
+  }
+  return map;
+}
 
 async function getFilerNameByIdUncached(filerId: number): Promise<string | null> {
   const supabase = getSupabaseServerClient();

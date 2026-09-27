@@ -1,6 +1,6 @@
 import { displayFilerName, formatDate } from "@/lib/format";
 import { getCompanyInfo } from "@/lib/companyInfo";
-import { getFilerIdMap, getHoldingsByStockCode, investorPath } from "@/lib/investors";
+import { getFilerIds, getHoldingsByStockCode, investorPath } from "@/lib/investors";
 import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
 import { buildRss, rssResponse } from "@/lib/rss";
 import { SITE_URL } from "@/lib/site";
@@ -12,15 +12,17 @@ const FEED_ITEMS = 20;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const [holdings, company, filerIds, publishedCodes, publishedFilers] = await Promise.all([
+  const [holdings, company, publishedCodes, publishedFilers] = await Promise.all([
     getHoldingsByStockCode(code).catch(() => []),
     getCompanyInfo(code).catch(() => null),
-    getFilerIdMap().catch(() => ({}) as Record<string, number>),
     getPublishedStockCodes().catch(() => new Set<string>()),
     getPublishedFilerNames().catch(() => new Set<string>()),
   ]);
   // 銘柄ページ自体を公開していない銘柄はRSSも配信しない（lib/publishedPages.ts）。
   if (!publishedCodes.has(code)) return new Response("Not Found", { status: 404 });
+  const filerIds = await getFilerIds(holdings.slice(0, FEED_ITEMS).map((h) => h.filerName)).catch(
+    () => ({}) as Record<string, number>
+  );
   const pageUrl = `${SITE_URL}/stocks/${code}`;
   const stockLabel = company?.name ? `${company.name}（${code}）` : code;
 

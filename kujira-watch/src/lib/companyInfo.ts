@@ -90,7 +90,9 @@ const getStockDescriptionCodeList = unstable_cache(
       for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
         const { data } = await supabase
           .from("jpx_stock_list")
-          .select("code, description")
+          // 絞り込みにだけ使う列は返さない。descriptionごと取ると1回約518KBになり、
+          // 1日73回でegressを食っていた（2026-09-27のログ実測）。
+          .select("code")
           .not("description", "is", null)
           .neq("description", "")
           .range(from, from + SUPABASE_PAGE_SIZE - 1);
