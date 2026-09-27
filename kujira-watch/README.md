@@ -16,6 +16,7 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - microCMS（`microcms-js-sdk`）
 - Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を参照）
 - Vercel想定（ISR: `revalidate = 60`、`@vercel/speed-insights`でCore Web Vitals計測。アクセス計測はGA4のみ＝`@vercel/analytics`はProプランだと無料枠なしの従量課金になるため2026-09-03に撤去）。CDN（Vercel Edge Network）のキャッシュはページのISRに加え、APIルート（`/api/articles`・`/api/stocks/search`に`Cache-Control: s-maxage + stale-while-revalidate`）・`/feed.xml`（`revalidate = 300`でISR化）・画像最適化（`images.minimumCacheTTL` 31日）でも明示的に効かせている。 ビルドの要否は`vercel.json`の`ignoreCommand`（Ignored Build Step）で判定し、main以外のブランチとkujira-watch/に差分の無いコミット（docsのみ・keepalive）はビルドしない（2026-09-03。Vercel側はビルドマシンStandard固定＋オンデマンド並列ビルドOFF＝ビルド課金なし）。設計の考え方と動作確認方法は `docs/cdn_study.md` を参照
+- 本番ビルドの要否は `vercel.json` の `ignoreCommand` で判定する: main以外はビルドしない。mainは前回成功した本番デプロイ（`VERCEL_GIT_PREVIOUS_SHA`）以降に `kujira-watch/` の差分がある場合だけビルドする（未設定時は `HEAD^` と比較、SHAがcloneに無いときはビルド）。親コミットとだけ比べると、webの変更の直後に別PRがマージされた場合にwebの変更が本番に出ないため（2026-09-27）
 
 ## セットアップ
 
