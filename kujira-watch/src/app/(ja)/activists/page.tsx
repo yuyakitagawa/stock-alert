@@ -20,7 +20,7 @@ import AdUnit from "@/components/AdUnit";
 import FactBox from "@/components/FactBox";
 import { getCompanyBriefs, type CompanyBrief } from "@/lib/companyInfo";
 import { getPublishedFilerNames, getPublishedStockCodes } from "@/lib/publishedPages";
-import { getFilerIdMap, investorPath } from "@/lib/investors";
+import { getFilerIds, investorPath } from "@/lib/investors";
 
 export const revalidate = 3600;
 
@@ -44,15 +44,17 @@ export const metadata: Metadata = {
 };
 
 export default async function ActivistsPage() {
-  const [summary, recentMoves, publishedCodes, filerIds, { contents: activistArticles }, publishedFilers] = await Promise.all([
+  const [summary, recentMoves, publishedCodes, { contents: activistArticles }, publishedFilers] = await Promise.all([
     getActivistHoldingsSummary(),
     getActivistRecentMoves(MOVES_WINDOW_DAYS).catch(() => []),
     getPublishedStockCodes().catch(() => new Set<string>()),
-    getFilerIdMap().catch(() => ({}) as Record<string, number>),
     // アイキャッチ付き記事カード用のアクティビスト分類の最新記事。取れなくてもページは成立させる。
     getArticleList({ dealType: "アクティビスト", limit: 8 }).catch(() => ({ contents: [] })),
     getPublishedFilerNames().catch(() => new Set<string>()),
   ]);
+  const filerIds = await getFilerIds(recentMoves.map((move) => move.filerName)).catch(
+    () => ({}) as Record<string, number>
+  );
 
   // 銘柄ページ(/stocks/[code])は解説記事か事業内容の説明があるものだけ公開している。
   // 公開していないコードはリンクにせずテキストのまま出す（404へのリンクを作らない。

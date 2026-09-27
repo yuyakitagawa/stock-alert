@@ -13,7 +13,7 @@ import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { formatDealAmount, formatMonth, latestDateOf } from "@/lib/format";
 import DataUpdatedAt from "@/components/DataUpdatedAt";
 import { getAllMonthsForIndex, getArticlesByMonth, MONTH_PATTERN } from "@/lib/microcms";
-import { getFilerIdMap, getFilerNamesByStockAndDate, investorPath } from "@/lib/investors";
+import { getFilerIds, getFilerNamesByStockAndDate, investorPath } from "@/lib/investors";
 import {
   getPublishedDates,
   getPublishedFilerNames,
@@ -73,13 +73,12 @@ export default async function MonthlyArchivePage({ params }: Props) {
     notFound();
   }
 
-  const [{ contents }, months, filerByKey, filerIds, publishedCodes, publishedFilers, publishedDates] =
+  const [{ contents }, months, filerByKey, publishedCodes, publishedFilers, publishedDates] =
     await Promise.all([
       getArticlesByMonth(month),
       getAllMonthsForIndex(),
       // disc_dateはtext型のYYYY-MM-DDなので、月末日は31日固定の文字列比較で足りる。
       getFilerNamesByStockAndDate(`${month}-01`, `${month}-31`),
-      getFilerIdMap(),
       // 集約ページは公開しているものだけリンクにする（薄いものは404。lib/publishedPages.ts）。
       getPublishedStockCodes().catch(() => new Set<string>()),
       getPublishedFilerNames().catch(() => new Set<string>()),
@@ -89,6 +88,7 @@ export default async function MonthlyArchivePage({ params }: Props) {
   if (contents.length === 0) {
     notFound();
   }
+  const filerIds = await getFilerIds(filerByKey.values());
 
   const label = formatMonth(month);
   const url = `${SITE_URL}/monthly/${month}`;

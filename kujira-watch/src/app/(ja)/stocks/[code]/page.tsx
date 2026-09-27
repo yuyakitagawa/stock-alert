@@ -13,7 +13,7 @@ import DealTypeBadge from "@/components/DealTypeBadge";
 import { getCompanyInfo, getStockDescriptionCodes } from "@/lib/companyInfo";
 import { groupArticlesByDealDate } from "@/lib/groupByDealDate";
 import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
-import { getFilerIdMap, getFilersByStockCode, getHoldingsByStockCode, investorPath } from "@/lib/investors";
+import { getFilerIds, getFilersByStockCode, getHoldingsByStockCode, investorPath } from "@/lib/investors";
 import { getBuybacksByStockCode } from "@/lib/buybacks";
 import BuybackHistory from "@/components/BuybackHistory";
 import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
@@ -103,14 +103,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function StockPage({ params }: Props) {
   const { code } = await params;
-  const [{ contents }, companyInfo, filers, holdings, buybacks, filerIds, publishedFilers] =
+  const [{ contents }, companyInfo, filers, holdings, buybacks, publishedFilers] =
     await Promise.all([
       getArticlesByStockCode(code),
       getCompanyInfo(code),
       getFilersByStockCode(code),
       getHoldingsByStockCode(code),
       getBuybacksByStockCode(code),
-      getFilerIdMap(),
       // 投資家ページは公開しているものだけリンクにする（lib/publishedPages.ts）。
       getPublishedFilerNames().catch(() => new Set<string>()),
     ]);
@@ -118,6 +117,7 @@ export default async function StockPage({ params }: Props) {
   // 1時間キャッシュのコード集合を正にする。getCompanyInfo() は Supabase が一時的に落ちると
   // description を null で返し、そのまま notFound() すると 404 が ISR に24時間残る
   // （2026-09-10 の実測: サイトマップ掲載の /stocks/6420 3726 7810 が404、再取得で200）。
+  const filerIds = await getFilerIds(holdings.map((h) => h.filerName));
   const describedCodes = await getStockDescriptionCodes().catch(() => new Set<string>());
   const publishedDates = await getPublishedDates().catch(() => new Set<string>());
 
