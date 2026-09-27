@@ -1385,6 +1385,25 @@ def pick_lead_angle(fact_sheet: dict) -> str:
     return "保有比率がどれだけ動いたかから書き出してください。"
 
 
+_BODY_JSON_RE = re.compile(r'^\s*\{\s*"body"\s*:\s*"(.*)"\s*\}\s*$', re.DOTALL)
+
+
+def parse_body_json(text: str) -> dict:
+    """{"body": "..."} 形式の応答をパースする。本文HTMLの中の " をモデルがエスケープし忘れる
+    （<a href="..."> や「"〜"」の引用）と json.loads が "Expecting ',' delimiter" で落ち、
+    記事が1本消えてワークフローが赤くなる（2026-09-25 run 36093689506 のニプロ(8086)）。
+    その場合は先頭の {"body": " から末尾の "} までを本文とみなし、未エスケープの " を
+    エスケープし直して読み直す（再生成はAPI課金が増えるのでしない）。"""
+    try:
+        return json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        m = _BODY_JSON_RE.match(text)
+        if not m:
+            raise
+        inner = re.sub(r'(?<!\\)"', r'\\"', m.group(1))
+        return {"body": json.loads(f'"{inner}"', strict=False)}
+
+
 def generate_article_body(fact_sheet: dict) -> "dict | None":
     """Claudeに与えた事実のみからbodyを生成させる。JSONで
     {"body"} を返す（タイトルはbuild_article_titles()で別途組み立てる）。
@@ -1561,7 +1580,7 @@ def generate_article_body(fact_sheet: dict) -> "dict | None":
         # strict=False は必須。本文はHTMLなのでモデルがJSON文字列の中に生の改行を入れてくる。
         # 既定の strict=True だと "Invalid control character at ..." で丸ごと落ち、記事が1本消える
         # （2026-08-27のbackfill便では22回の生成のうち7回がこれで失敗し、再生成で拾い直していた）。
-        data = json.loads(text, strict=False)
+        data = parse_body_json(text)
         if not data.get("body"):
             return None
         return data
