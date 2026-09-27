@@ -58,13 +58,15 @@ AhrefsBot 19,670、MJ12bot 18,372、SemrushBot 4,820。
 - [x] E-1 `yahoo_price_cache` を620日保持に（`HISTORY_DAYS=600` が最長。174MB → 約140MB）
 - [x] Z-1 `VACUUM FULL` で実サイズを回収（削除だけでは pg_database_size は縮まない）
 
-### Phase 4: 確認とダウングレード（9/8〜10月）※未着手
+### Phase 4: 確認とダウングレード（9/8〜10月）
 - [ ] V-1 1週間 Supabase dashboard の usage を観察（egress の実測値をこのファイルに追記）
 - [ ] V-2 DB 500MB / egress 5GB を両方下回っていることを確認
       - 2026-09-27: DB 382MB（9/7から+45MB、主因は blog_crawler_log のAIクローラー400日保持）。
         保持を Browser 30日 / その他bot 30日 / AIクローラー 90日 に短縮し VACUUM FULL → **326MB**。
         blog_crawler_log は 82MB → 25MB。定常は約13万行・約23MBで頭打ちの見込み。egress は未確認
-- [ ] V-3 次の請求サイクル（10月）で Free にダウングレード
+- [x] V-3 Free にダウングレード（2026-09-27、オーナー実施。直後のREST 200を確認）
+      - egress は 9/7〜9/27 で 4.03GB（30日換算約6GB）。主因はサイトの `edinet_filer_ids` 全件読み（1日837回・約200MB）で、PR #340 で解消予定
+- [ ] V-4 PR #340 マージ後、edge_logs で1日のegressが150MB未満になったことを確認
 
 ## 結果（2026-09-07 実測）
 
