@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ] && exit 0; git diff --quiet HEAD^ HEAD -- . && exit 0 || exit 1"
+  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ] && exit 0; BASE=\"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\"; git cat-file -e \"$BASE^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$BASE\" HEAD -- . && exit 0 || exit 1"
 }
