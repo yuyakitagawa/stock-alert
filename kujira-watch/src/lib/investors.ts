@@ -162,7 +162,9 @@ const getFilerNamesWithProfile = unstable_cache(
       const offset = page * PAGE_SIZE;
       const { data } = await supabase
         .from("edinet_filer_classification")
-        .select("filer_name, profile")
+        // 絞り込みにだけ使う列は返さない。profile本文（1件平均約1.6KB）ごと取ると1回約1.1MBになり、
+        // 1日42回でegressを食っていた（2026-09-27のログ実測）。
+        .select("filer_name")
         .not("profile", "is", null)
         .neq("profile", "")
         .order("filer_name", { ascending: true })
