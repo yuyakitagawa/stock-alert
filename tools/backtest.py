@@ -82,7 +82,7 @@ if not os.path.isdir(BASE_DIR):
 FETCH_DAYS = max(800, (date.today() - BACKTEST_DATE).days + 180)
 
 # ── point-in-time ファンダメンタル（lib/fundamentals に集約）─────────────────
-from lib.fundamentals import pit_fundamental_features
+from lib.fundamentals import pit_fundamental_features, price_split_jumps
 from lib.utils import extract_features as _extract_features
 
 # ── スクリーナー定数（v1） ───────────────────────
@@ -227,7 +227,9 @@ def extract_features_at(hist, target_date, nk_rets=None, code=None):
 
     # fundamentals dict を組み立て（pit_fundamental_featuresはdictを返すよう変更済み）
     if code is not None:
-        fundamentals = pit_fundamental_features(code, target_date, current)
+        fundamentals = pit_fundamental_features(
+            code, target_date, current,
+            jumps=price_split_jumps(past_close.index, past_close.values))
     else:
         fundamentals = {"month": target_date.month}
 

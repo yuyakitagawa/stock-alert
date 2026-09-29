@@ -140,15 +140,17 @@ def main():
             return None
 
         # ファンダメンタル取得（PER/PBR/ROE/決算まで日数/権利落ち後経過日数）
-        from lib.fundamentals import get_pit_fundamentals as _get_pit
+        from lib.fundamentals import get_pit_fundamentals as _get_pit, price_split_jumps
         fd_raw    = get_fundamentals(code)
         today     = _date.today()
-        pit       = _get_pit(code, today) or {}
+        # 株式分割の段差（分割前の開示と分割後の株価の組み合わせを補正する）
+        _jumps    = price_split_jumps(prices.index, prices["Close"].values)
+        pit       = _get_pit(code, today, jumps=_jumps) or {}
         per_live = fd_raw.get("PER"); pbr_live = fd_raw.get("PBR")
         # PER/PBR は J-Quants の eps/bps から算出。
         # ライブ取得(yfinance)は日本株でNoneが多いのでフォールバックに留める。
         from lib.fundamentals import get_pit_valuation as _get_val
-        _val = _get_val(code, today)
+        _val = _get_val(code, today, jumps=_jumps)
         _close_px = float(prices["Close"].iloc[-1]) if len(prices) > 0 else None
         _eps = _val.get("eps"); _bps = _val.get("bps")
         per_calc = (round(_close_px / _eps, 1) if _eps and _eps > 0 and _close_px else per_live)

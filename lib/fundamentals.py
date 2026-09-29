@@ -10,6 +10,7 @@ point-in-time（先読みバイアスなし）のファンダメンタルを再�
   days_since_yutai_ex   : 前回優待権利落ち日からの経過日数（同上）
 """
 import calendar
+import math
 from datetime import datetime, timedelta, date as _date_type
 
 _YUTAI_MONTH = None   # {code: record_month or None}
@@ -30,6 +31,117 @@ def _filter_asof(rows, as_of_iso, n, fy_only=False):
         if len(out) >= n:
             break
     return out
+
+
+# ── 株式分割の検出 ─────────────────────────────────────────────────
+# jquants_fin_summary の1株当たり値（eps/bps/div_ann）は「開示時点の株数」ベース。
+# 分割をまたぐと前期比が 1/分割比 に潰れ（378A: bps_growth −33% ← 実際は+33%）、
+# 分割後の株価と分割前の開示を組み合わせた PER/PBR が 1/分割比 に過小化する。
+_SPLIT_CANDS = [float(n) for n in range(2, 11)] + [1.0 / n for n in range(2, 11)]
+_FIN_SPLIT_TOL = 0.10    # 開示間の株数比が分割比の±10%以内なら分割とみなす
+_PRICE_SPLIT_TOL = 0.08  # 終値の前日比（web/dip_buy_alert.py と同じ基準）
+
+
+def _near_split(x, tol):
+    if x is None or x <= 0:
+        return None
+    for c in _SPLIT_CANDS:
+        if abs(x / c - 1) <= tol:
+            return c
+    return None
+
+
+def _implied_shares(r):
+    """equity / bps = 1株当たり値の分母になっている株数（開示時点のベース）。"""
+    eq, b = r.get("equity"), r.get("bps")
+    if eq is None or b is None or eq <= 0 or b <= 0:
+        return None
+    return eq / b
+
+
+def disclosure_split_ratio(curr, prev):
+    """prev→curr の開示間に起きた株式分割の比率（1株→n株 の n。無ければ1.0）。
+
+    判定は equity/bps（1株当たり値の分母の株数）の比 R を使い、増資・自社株買いと
+    分割を切り分けるため、次の順で分割比に近いものを採る:
+      1. (equity/bps/sh_out) の比: 期末後〜開示前の分割（期末株数は分割前のまま、
+         BPSだけ分割後で再表示。378A: 1.997）
+      2. sh_out の比: 期中の分割
+      3. R そのもの
+    誤検出ガード: 増資・自社株買い込みでも R/分割比 が 0.6〜1.5 に収まり、かつ補正後の
+    BPS前期比が 0.5〜2.0倍 か、補正前より1倍に近いこと（sh_outの単位違い・大型増資を弾く。
+    2026-09-27時点のFY開示で 416件を分割と判定、2134・9327・9602 等48件を除外）。
+    """
+    ic, ip = _implied_shares(curr), _implied_shares(prev)
+    if ic is None or ip is None:
+        return 1.0
+    R = ic / ip
+    sc, sp = curr.get("sh_out"), prev.get("sh_out")
+    qr = sr = None
+    if sc and sp and sc > 0 and sp > 0:
+        qr = (ic / sc) / (ip / sp)
+        sr = sc / sp
+    s = _near_split(qr, _FIN_SPLIT_TOL) or _near_split(sr, _FIN_SPLIT_TOL) \
+        or _near_split(R, _FIN_SPLIT_TOL)
+    if s is None or not (0.6 <= R / s <= 1.5):
+        return 1.0
+    raw = curr["bps"] / prev["bps"]
+    adj = raw * s
+    if not (0.5 <= adj <= 2.0) and abs(math.log(adj)) >= abs(math.log(raw)):
+        return 1.0
+    return s
+
+
+def price_split_jumps(dates, closes):
+    """終値系列の分割段差 [(日付ISO, 分割比n), ...]。
+    yahoo_price_cache は過去行を上書きしないため、分割調整前の行と調整後の行の境目で
+    終値が 1/n に飛ぶ（378A: 2026-06-19 2138→1025.5）。段差より後の終値は分割後ベース。"""
+    out = []
+    if dates is None or closes is None:
+        return out
+    for i in range(1, len(closes)):
+        p0, p1 = closes[i - 1], closes[i]
+        if not p0 or not p1 or p0 <= 0 or p1 <= 0:
+            continue
+        r = p0 / p1
+        if abs(r - 1) < 0.4:
+            continue
+        s = _near_split(r, _PRICE_SPLIT_TOL)
+        if s is not None:
+            out.append((str(dates[i])[:10], s))
+    return out
+
+
+def split_factor_to_price(src, known_rows, target_iso, jumps):
+    """src開示の1株当たり値を、target日の株価と同じ株数ベースに直す倍率 k
+    （eps/bps/dps を k で割る）。jumps=None（株価情報なし）なら補正しない。
+
+    - src開示後〜target日の終値の段差: その日以降の株価は分割後ベース
+    - src以降の開示で検出した分割のうち、終値に段差が無いもの: 株価が遡って
+      調整済み（yfinance auto_adjust で取り直した区間）なので、それ以前の株価も分割後ベース
+    known_rows: 手元にある開示（未来分を含んでよい。学習時は全履歴）。
+    """
+    if jumps is None or src is None:
+        return 1.0
+    src_d = str(src.get("disc_date"))
+    k = 1.0
+    for d, s in jumps:
+        if src_d < d <= target_iso:
+            k *= s
+    later = sorted((r for r in known_rows or [] if str(r.get("disc_date")) > src_d
+                    and _implied_shares(r) is not None),
+                   key=lambda r: str(r["disc_date"]))
+    prev = src if _implied_shares(src) is not None else None
+    for c in later:
+        if prev is not None:
+            s = disclosure_split_ratio(c, prev)
+            if s != 1.0:
+                lo, hi = str(prev["disc_date"]), str(c["disc_date"])
+                matched = any(lo < d <= hi and abs(sj / s - 1) <= 0.15 for d, sj in jumps)
+                if not matched:
+                    k *= s
+        prev = c
+    return k
 
 
 def load_fundamentals_cache():
@@ -70,11 +182,8 @@ def _days_since_last_ex(target_date, record_months):
     return best
 
 
-def _jq_split_safe_bps(code, target_date, rows=None):
-    """J-Quants(jquants_fin_summary)の直近開示BPS(>0)を返す。
-    開示ごとに分割後株数で再表示されるため、分割調整済み株価と整合する。
-    表示PER/PBR専用。
-
+def _jq_split_safe_bps_row(code, target_date, rows=None):
+    """J-Quants(jquants_fin_summary)の直近開示でBPS(>0)を持つ行を返す。
     rows（銘柄の全履歴、disc_date降順）が渡された場合はDBに問い合わせず
     メモリ上でフィルタする（多数のas_of_dateを扱う学習ループ用）。"""
     try:
@@ -88,18 +197,28 @@ def _jq_split_safe_bps(code, target_date, rows=None):
     for r in asof_rows:
         b = r.get("bps")
         if b is not None and b > 0:
-            return b
+            return r
     return None
 
 
-def get_pit_valuation(code, target_date, rows=None):
+def _jq_split_safe_bps(code, target_date, rows=None, jumps=None):
+    """直近開示BPS(>0)を、target日の株価と同じ株数ベースに直して返す。
+    jumps: price_split_jumps() の結果（省略時は開示時点ベースのまま）。"""
+    r = _jq_split_safe_bps_row(code, target_date, rows=rows)
+    if r is None:
+        return None
+    return r["bps"] / split_factor_to_price(r, rows, target_date.isoformat(), jumps)
+
+
+def get_pit_valuation(code, target_date, rows=None, jumps=None):
     """表示用バリュエーション: target_date時点で既知の eps/bps を返す。
     J-Quants(jquants_fin_summary)から取得。PER/PBR表示専用、特徴量には不使用。
     rows: _jq_split_safe_bps/get_pit_fundamentals と同じ（省略時はDB問い合わせ）。
+    jumps: price_split_jumps() の結果。渡すと株式分割をまたいでも株価と同じ株数ベースにそろえる。
     返り値: {"eps": float|None, "bps": float|None}
     """
     code = str(code)
-    bps = _jq_split_safe_bps(code, target_date, rows=rows)
+    bps = _jq_split_safe_bps(code, target_date, rows=rows, jumps=jumps)
     eps = None
     try:
         if rows is not None:
@@ -110,18 +229,21 @@ def get_pit_valuation(code, target_date, rows=None):
         for r in asof_rows:
             e = r.get("eps")
             if e is not None:
-                eps = e
+                eps = e / split_factor_to_price(r, rows, target_date.isoformat(), jumps)
                 break
     except Exception:
         pass
     return {"eps": eps, "bps": bps}
 
 
-def get_pit_fundamentals(code, target_date, rows=None):
+def get_pit_fundamentals(code, target_date, rows=None, jumps=None):
     """target_date 時点で既知のファンダ生値を返す。データ皆無なら None。
     rows: 銘柄の全履歴（disc_date降順）を渡すとDBに問い合わせずメモリ上で
     point-in-timeフィルタする（rf_train_v3.pyのように同一銘柄を多数の
     target_dateで呼ぶ場合の高速化用）。省略時は従来通りDB問い合わせ。
+    jumps: price_split_jumps() の結果。渡すと eps/bps/dps を target日の株価と
+    同じ株数ベースにそろえる（株式分割対策。省略時は開示時点ベース）。
+    前期比（eps/bps/dps_growth）は jumps に関係なく開示間の分割を補正する。
     返り値: {eps, bps, roe, days_to_earnings, days_to_dividend, days_to_yutai, ...}
     """
     load_fundamentals_cache()
@@ -149,9 +271,12 @@ def get_pit_fundamentals(code, target_date, rows=None):
         if n4_rows:
             has_jq = True
             latest = n4_rows[0]
+            k = split_factor_to_price(latest, rows, td_iso, jumps)
             eps = latest.get("eps")
-            bps = _jq_split_safe_bps(code, target_date, rows=rows)
+            eps = eps / k if eps is not None else None
+            bps = _jq_split_safe_bps(code, target_date, rows=rows, jumps=jumps)
             dps = latest.get("div_ann")
+            dps = dps / k if dps is not None else None
             pr = latest.get("payout_ratio")
             if pr is not None:
                 payout = pr / 100.0 if pr > 1.5 else pr
@@ -174,16 +299,21 @@ def get_pit_fundamentals(code, target_date, rows=None):
         if len(jq_fy) >= 2:
             has_jq = True
             curr, prev = jq_fy[0], jq_fy[1]
+            # 前期の1株当たり値を今期の株数ベースへ（分割が無ければ1.0）
+            sp = disclosure_split_ratio(curr, prev)
 
             curr_eps, prev_eps = curr.get("eps"), prev.get("eps")
+            prev_eps = prev_eps / sp if prev_eps is not None else None
             if curr_eps is not None and prev_eps is not None and prev_eps != 0:
                 eps_growth = (curr_eps - prev_eps) / abs(prev_eps)
 
             curr_bps, prev_bps = curr.get("bps"), prev.get("bps")
+            prev_bps = prev_bps / sp if prev_bps is not None else None
             if curr_bps is not None and prev_bps is not None and prev_bps > 0:
                 bps_growth = (curr_bps - prev_bps) / prev_bps
 
             curr_div, prev_div = curr.get("div_ann"), prev.get("div_ann")
+            prev_div = prev_div / sp if prev_div is not None else None
             if curr_div is not None and prev_div is not None and prev_div > 0:
                 dps_growth = (curr_div - prev_div) / prev_div
 
@@ -266,15 +396,15 @@ def get_pit_fundamentals(code, target_date, rows=None):
     }
 
 
-def pit_fundamental_features(code, target_date, price, rows=None):
+def pit_fundamental_features(code, target_date, price, rows=None, jumps=None):
     """point-in-timeファンダをファンダメンタル部の正規化済み辞書として返す。
     extract_features()に渡すfundamentals dictを生成するためのヘルパー。
     backtest.py が extract_features() を直接呼び出す際に使用。
-    rows: get_pit_fundamentals()と同じ（省略時はDB問い合わせ）。
+    rows, jumps: get_pit_fundamentals()と同じ（省略時はDB問い合わせ・分割補正なし）。
 
     返り値: fundamentals dict（extract_features()のfd引数と互換）
     """
-    fd = get_pit_fundamentals(code, target_date, rows=rows)
+    fd = get_pit_fundamentals(code, target_date, rows=rows, jumps=jumps)
     m = target_date.month
     result = {"month": m}
     if fd is not None:
