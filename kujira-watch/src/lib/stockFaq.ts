@@ -1,12 +1,13 @@
 import type { FaqItem } from "@/lib/faqData";
 import type { StockHoldingRow } from "@/lib/investors";
 import { disclosureDocLabel } from "@/lib/disclosures";
-import { formatDate } from "@/lib/format";
+import { displayFilerName, formatDate } from "@/lib/format";
 
 // 銘柄ページのFAQ（可視ブロック＋FAQPage構造化データの共通ソース）。
 // 「◯◯ 大量保有」「◯◯ 大株主」で検索した人の質問に、そのページのEDINETデータから
 // 直接答える。構造化データと可視コンテンツはGoogleのガイドラインで一致が必須のため、
 // 両方をこの1関数の戻り値から作ること（faqData.tsxと同じ方針）。
+// 提出者名は回答文の一部なので半角表示に寄せる（全角英字のままだと英字社名の検索語と一致しにくい）。
 export function buildStockFaqItems(
   stockName: string,
   code: string,
@@ -16,7 +17,7 @@ export function buildStockFaqItems(
   const items: FaqItem[] = [];
 
   if (filers.length > 0) {
-    const names = filers.slice(0, 3).map((f) => f.filerName).join("、");
+    const names = filers.slice(0, 3).map((f) => displayFilerName(f.filerName)).join("、");
     const suffix = filers.length > 3 ? `をはじめ計${filers.length}者` : "";
     items.push({
       question: `${stockName}（${code}）の株を大量保有している投資家は？`,
@@ -29,7 +30,7 @@ export function buildStockFaqItems(
   if (latest) {
     items.push({
       question: `${stockName}の直近の大量保有報告書の内容は？`,
-      answer: `${formatDate(latest.discDate)}に${latest.filerName}が${disclosureDocLabel(latest)}を提出し、保有比率${latest.holdingRatio}%を開示しています。`,
+      answer: `${formatDate(latest.discDate)}に${displayFilerName(latest.filerName)}が${disclosureDocLabel(latest)}を提出し、保有比率${latest.holdingRatio}%を開示しています。`,
       category: "stock-page",
     });
   }

@@ -4,19 +4,20 @@ export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL || "https://kujira-watch.com"
 ).replace(/\/$/, "");
 
-// 正式ブランド名。旧称は構造化データのalternateNameに残す。
-// 環境変数に旧名が残っていてもブランドが巻き戻らないよう、名称はコードで固定する。
-export const SITE_NAME = "KUJIRA WATCH";
+// 表示ブランド名(日本語)とドメイン(kujira-watch.com)は別物として管理する。
+// 2026-09-21に一度「KUJIRA WATCH」へ変えたが、2026-10-03にオーナー判断で戻した
+// （サイトの中身＝株主データベース化はそのまま）。環境変数で巻き戻らないようコードで固定する。
+export const SITE_NAME = "大口投資家の監視ブログ";
 
 export const SITE_DESCRIPTION =
   "EDINETの大量保有報告書とTDnet開示を集計し、企業別の大口保有者、投資家別の保有銘柄、買い増し・売却履歴と開示後の成績を追える日本株データベースです。";
 
-// Organization構造化データの alternateName。サイトは「大口投資家の監視ブログ」（ブランド名）・
+// Organization構造化データの alternateName。サイトは「KUJIRA WATCH」（2026-09-21〜10-03の正式名）・
 // 「クジラウォッチ」（/aboutの自称）・「kujira-watch」（ドメイン）の3表記で呼ばれており、
 // AI検索エンジンが別エンティティと誤認しないよう、正式名以外の呼び名をここで1つに束ねる。
 // 英語名 "Big Investor Watch" は英語版のサブドメイン（en.kujira-watch.com、lib/en.ts）が
 // 対応するページを持つので含める（対応ページの無い呼び名は宣言しない）。
-export const SITE_ALTERNATE_NAMES = ["大口投資家の監視ブログ", "クジラウォッチ", "kujira-watch", "Big Investor Watch"];
+export const SITE_ALTERNATE_NAMES = ["KUJIRA WATCH", "クジラウォッチ", "kujira-watch", "Big Investor Watch"];
 // generateSitemapsで分割した子サイトマップのID一覧。/sitemap/<id>.xml のURLになる。
 // app/sitemap.ts（子の生成）と app/sitemap.xml/route.ts（sitemapindex）の両方から参照する。
 // app/sitemap.tsから直接exportしないのは、metadata routeのnamed exportは

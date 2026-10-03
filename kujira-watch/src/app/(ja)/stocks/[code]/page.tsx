@@ -16,7 +16,7 @@ import { disclosureDocLabel, edinetPdfUrl } from "@/lib/disclosures";
 import { getFilerIds, getFilersByStockCode, getHoldingsByStockCode, investorPath } from "@/lib/investors";
 import { getBuybacksByStockCode } from "@/lib/buybacks";
 import BuybackHistory from "@/components/BuybackHistory";
-import { formatDate, latestDateOf, toDateAttr } from "@/lib/format";
+import { displayFilerName, formatDate, latestDateOf, toDateAttr } from "@/lib/format";
 import DataUpdatedAt from "@/components/DataUpdatedAt";
 import RatioTransition from "@/components/RatioTransition";
 import Table from "@mui/material/Table";
@@ -237,10 +237,10 @@ export default async function StockPage({ params }: Props) {
                     href={investorPath(filer.filerId, filer.filerName)}
                     className="text-brand-blue hover:underline"
                   >
-                    {filer.filerName}
+                    {displayFilerName(filer.filerName)}
                   </Link>
                 ) : (
-                  <span>{filer.filerName}</span>
+                  <span>{displayFilerName(filer.filerName)}</span>
                 )}
                 <DealTypeBadge dealType={filer.category} />
                 {filer.latestRatio !== null && filer.latestDiscDate && (
@@ -285,10 +285,10 @@ export default async function StockPage({ params }: Props) {
                           href={investorPath(filerIds[h.filerName], h.filerName)}
                           className="text-brand-blue hover:underline"
                         >
-                          {h.filerName}
+                          {displayFilerName(h.filerName)}
                         </Link>
                       ) : (
-                        h.filerName
+                        displayFilerName(h.filerName)
                       )}
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary" }}>
