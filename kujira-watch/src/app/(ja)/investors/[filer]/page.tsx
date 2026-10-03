@@ -350,7 +350,7 @@ export default async function InvestorPage({ params }: Props) {
       <div className="mb-6 border-t border-rule pt-4">
         <h2 className="text-xl font-bold text-brand-navy">最近の取引</h2>
         <p className="mt-1 text-sm text-ink-tertiary">
-          EDINET大量保有報告書（5%ルール）にもとづき、{filerName}が開示した保有銘柄・保有比率の推移を
+          EDINET大量保有報告書（5%ルール）にもとづき、{displayFilerName(filerName)}が開示した保有銘柄・保有比率の推移を
           {holdings.length}件まとめています。「3ヶ月後」は買い増し・新規取得の開示について、開示日の終値から
           63営業日後の終値までの騰落率です（売却の開示・訂正報告書・まだ3ヶ月経っていない開示は「—」）。
           個別銘柄の詳しい解説記事は各銘柄ページからご覧いただけます。
