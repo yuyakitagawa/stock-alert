@@ -8,6 +8,9 @@ import RippleEffect from "@/components/RippleEffect";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ThemeRegistry from "@/components/ThemeRegistry";
+import StoryblokBridge from "@/components/StoryblokBridge";
+import { getStoryContent, isStoryblokDraft } from "@/lib/storyblok";
+import { normalizeSiteTheme, siteThemeCss } from "@/lib/siteTheme";
 import {
   SITE_DESCRIPTION,
   SITE_NAME,
@@ -115,17 +118,22 @@ const organizationJsonLd = {
   logo: `${SITE_URL}/logo`,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // 配色・見出し書体・カード質感はStoryblokの「サイト設定」（slug: site-settings）で切り替える。
+  const [settings, draft] = await Promise.all([getStoryContent("site-settings"), isStoryblokDraft()]);
+  const siteTheme = normalizeSiteTheme(settings);
+  const themeCss = siteThemeCss(siteTheme);
   return (
     <html
       lang="ja"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background">
+        {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
         <script
           type="application/ld+json"
           // JSON.stringify of a static, code-defined object - no user input, safe to inline.
@@ -135,7 +143,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
-        <ThemeRegistry>
+        <ThemeRegistry palette={siteTheme.palette}>
           <Header />
           <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
             {children}
@@ -146,6 +154,7 @@ export default function RootLayout({
         <SpeedInsights />
         <GaClickTracker />
         <RippleEffect />
+        {draft && <StoryblokBridge />}
       </body>
       <GoogleAnalytics gaId="G-0Z3FMTXC5B" />
     </html>

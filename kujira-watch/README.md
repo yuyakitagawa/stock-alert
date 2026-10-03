@@ -13,7 +13,8 @@ SEO/AIO（AI Overview・LLM引用）対策済み。
 - Next.js 16 (App Router) + TypeScript
 - MUI (Material UI) v9 + Emotion（`@mui/material-nextjs`でApp Router用SSR配線。テーマは`src/theme.ts`、ブランドカラー[紺/青/金]を反映）。**「開くまで表示されない」重いコンポーネントは`next/dynamic`で遅延読み込みする**（`StockSearchPanel`のAutocomplete/TextField、`HeaderMenuDrawer`のDrawer=Modal/Portal/Backdrop/Slide一式）。どちらも閉じているのが既定なのに全ページの初期JSに積まれていた。見た目・挙動は据え置きで読み込みのタイミングだけ後ろにずらす方式なので、Material Designの構成は変えずに初期JSを約33KB(gzip)削れる
 - Tailwind CSS v4（ページレイアウト・グリッド・`@tailwindcss/typography`でのリッチテキスト本文装飾を担当。コンポーネント単位のスタイルはMUI側）。一覧のカードUIは`src/app/globals.css`の`@layer components`に`.card`/`.card-grid`/`.card-grid-wide`として定義する（索引ページは1ページに100件以上並ぶため、ユーティリティクラスの羅列やMUI Cardではclass属性だけでHTMLが肥大化する。`@layer components`に入れるのは、レイヤー無しで書くとTailwindのユーティリティより優先されて`flex`等での上書きが効かなくなるため）
-- microCMS（`microcms-js-sdk`）
+- microCMS（`microcms-js-sdk`）: 記事・aboutなど本文コンテンツ
+- Storyblok（SDKなし・CDN APIを直接取得。`src/lib/storyblok.ts`）: TOPの見出し・リード文・セクションの並び順と、サイト全体の配色・見出し書体・カード質感をビジュアルエディタで編集する。詳細は下の「Storyblok側の前提」
 - Supabase（`@supabase/supabase-js`。フッターの累計訪問者カウンター用。トレーディングシステム側と同じプロジェクトの`blog_visit_counter`テーブル+`increment_blog_visit_counter` RPC。加えて`/stocks/[code]`の会社情報カードが同プロジェクトの`jpx_stock_list`・`gen_rankings`テーブルを、`/investors`・`/investors/[filer]`が`edinet_large_holdings`・`edinet_filer_classification`・集計ビュー`edinet_filer_summary`を参照）
 - Vercel想定（ISR: `revalidate = 60`、`@vercel/speed-insights`でCore Web Vitals計測。アクセス計測はGA4のみ＝`@vercel/analytics`はProプランだと無料枠なしの従量課金になるため2026-09-03に撤去）。CDN（Vercel Edge Network）のキャッシュはページのISRに加え、APIルート（`/api/articles`・`/api/stocks/search`に`Cache-Control: s-maxage + stale-while-revalidate`）・`/feed.xml`（`revalidate = 300`でISR化）・画像最適化（`images.minimumCacheTTL` 31日）でも明示的に効かせている。 ビルドの要否は`vercel.json`の`ignoreCommand`（Ignored Build Step）で判定し、main以外のブランチとkujira-watch/に差分の無いコミット（docsのみ・keepalive）はビルドしない（2026-09-03。Vercel側はビルドマシンStandard固定＋オンデマンド並列ビルドOFF＝ビルド課金なし）。設計の考え方と動作確認方法は `docs/cdn_study.md` を参照
 - 本番ビルドの要否は `vercel.json` の `ignoreCommand` で判定する: main以外はビルドしない。mainは前回成功した本番デプロイ（`VERCEL_GIT_PREVIOUS_SHA`）以降に `kujira-watch/` の差分がある場合だけビルドする（未設定時は `HEAD^` と比較、SHAがcloneに無いときはビルド）。親コミットとだけ比べると、webの変更の直後に別PRがマージされた場合にwebの変更が本番に出ないため（2026-09-27）
@@ -33,12 +34,31 @@ MICROCMS_API_KEY=xxxx
 NEXT_PUBLIC_SITE_URL=https://kujira-watch.com
 ```
 
+Storyblokを使う場合は次も設定する（未設定・取得失敗時はコード内の既定値＝現行の見た目で表示される）。
+
+```
+STORYBLOK_PUBLIC_TOKEN=xxxx        # 公開版の取得
+STORYBLOK_PREVIEW_TOKEN=xxxx       # ビジュアルエディタ内の下書き取得
+STORYBLOK_PREVIEW_SECRET=xxxx      # /api/storyblok/preview の合言葉
+STORYBLOK_REVALIDATE_SECRET=xxxx   # /api/storyblok/revalidate（公開Webhook）の合言葉
+STORYBLOK_MANAGEMENT_TOKEN=xxxx    # scripts/storyblok-setup.mjs 実行時のみ（Vercelには入れない）
+```
+
 `NEXT_PUBLIC_SITE_URL` はmetadata・OGP・構造化データ・サイトマップの全ページに反映される。
 ブランド名は旧環境変数で巻き戻らないよう、`src/lib/site.ts`の`SITE_NAME`に固定する。
 
 ```bash
 npm run dev
 ```
+
+## Storyblok側の前提
+
+- ストーリーは2つ。`home`（TOPページ: 見出し・リード文・セクション）と `site-settings`（サイト設定: 配色・見出し書体・カード質感）。記事・aboutはmicroCMSのまま。
+- ブロック定義・初期ストーリー・プレビューURL・公開Webhookは `node --env-file=.env.local scripts/storyblok-setup.mjs` で作る（何度実行しても同じ状態。編集済みのストーリーは上書きしない）。
+- TOPのセクションは `top_features`（わかること3枚）/ `top_trending`（取引急増ランキング）/ `top_featured`（注目記事）/ `top_latest`（新着開示一覧）/ `notice`（お知らせ枠）。CMSが持つのは並び順と見出しの文言だけで、中身はデータから描く。`top_latest` を消しても末尾に自動で足す（SSRの記事リンク30件＝クロールの入口を消さないため）。
+- 配色は自由入力にせず、コントラスト実測済みの5プリセット（`src/lib/siteTheme.ts`）から選ぶ。リンク色が上昇色・下落色と紛れないようにしてある。
+- 公開版はNext.jsのデータキャッシュ（タグ `storyblok`、保険で24時間）に載せ、公開Webhookで破棄する。Vercelのビルドは走らない。StarterプランのAPI上限（月10万リクエスト・追加購入不可）を超えないための構成。下書きはDraft Mode時のみ毎回取得する。
+- 編集後に同じブラウザでサイトを見ると下書き表示のままになるので、`/api/storyblok/exit` で解除する。
 
 ## microCMS側の前提（APIスキーマ: `articles`）
 
