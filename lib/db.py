@@ -312,10 +312,14 @@ def bulk_upsert_jquants_fin_summary(rows: list):
 
 
 def get_jquants_fin_keys(start: str, end: str) -> set[tuple[str, str]]:
-    """disc_date が start〜end の保存済み (code, disc_date)。EDINET取得で取得済みの書類を飛ばすのに使う。"""
+    """disc_date が start〜end の保存済み (code, disc_date)。EDINET取得で取得済みの書類を飛ばすのに使う。
+
+    決算短信の予想だけの行（doc_type='短信予想'）は含めない。含めると、短信と半期報告書が同じ日に
+    出た銘柄で半期報告書の実績が取り込まれなくなる。
+    """
     rows = sb.select(
         "jquants_fin_summary",
-        f"select=code,disc_date&disc_date=gte.{start}&disc_date=lte.{end}",
+        f"select=code,disc_date&disc_date=gte.{start}&disc_date=lte.{end}&doc_type=neq.短信予想",
         strict=True,
     )
     return {(r["code"], r["disc_date"]) for r in rows}

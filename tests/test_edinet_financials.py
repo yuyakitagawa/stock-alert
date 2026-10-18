@@ -64,6 +64,19 @@ class TestDocTypes(unittest.TestCase):
         self.assertEqual(_detect_doc_type("160", ""), "2Q")
 
 
+class TestForecastColumns(unittest.TestCase):
+    def test_none_forecast_columns_are_not_sent(self):
+        """予想の列を None で送ると、同じ日の決算短信の予想（短信予想）を NULL で消す。"""
+        import lib.edinet_financials as ef
+        xbrl = '<x>58010</x>' + _fact("NetSalesSummaryOfBusinessResults", "CurrentYearDuration", "100")
+        with mock.patch.object(ef, "_fetch_xbrl_text", return_value=xbrl), \
+             mock.patch.object(ef, "_extract_sec_code", return_value="5801"):
+            r = ef.parse_financial_xbrl("S1", "160", "2026-11-13")
+        self.assertEqual(r["sales"], 100.0)
+        for k in ("fnp", "fop", "fsales"):
+            self.assertNotIn(k, r)
+
+
 class TestScanSkipsSaved(unittest.TestCase):
     """保存済みの (code, disc_date) はXBRLを取りに行かず、日ごとに保存する。"""
 

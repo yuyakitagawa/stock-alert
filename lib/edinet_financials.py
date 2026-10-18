@@ -195,6 +195,12 @@ def parse_financial_xbrl(doc_id: str, doc_type_code: str, disc_date: str) -> dic
     if not has_data:
         return None
 
+    # 有報・半期報告書には会社予想がほぼ載らない。None のまま upsert すると、同じ (code, disc_date)
+    # に入っている決算短信の予想（tools/fetch_earnings_forecast.py）を NULL で消すので送らない
+    for k in ("fsales", "fop", "fnp"):
+        if result.get(k) is None:
+            result.pop(k, None)
+
     return result
 
 

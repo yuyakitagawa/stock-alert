@@ -10,7 +10,8 @@ lib/earnings_forecast.py — 決算短信（TDnet）のXBRLから会社予想を
 
 保存:
   jquants_fin_summary に doc_type='短信予想' の行として入れる（code, disc_date が主キー）。
-  実績（FY/1Q/2Q/3Q）の行は触らない。`lib/fundamentals.py` の年次フィルタは doc_type が
+  同じ日に半期報告書（EDINET）の実績行がある銘柄は、主キーがぶつかるので実績行に予想の列
+  （fnp/fop/fsales）だけを足す（`merge_with_actuals`）。実績の doc_type・fy_end は触らない。`lib/fundamentals.py` の年次フィルタは doc_type が
   "FY" で始まる行だけを見るので、この行が混ざっても既存の処理は変わらない。
 
 XBRLの形:
@@ -154,3 +155,26 @@ def fetch_forecast(item: dict) -> dict | None:
         return None
     return {"code": item["code"], "disc_date": item["disclosed_at"], "doc_type": DOC_TYPE,
             "fy_end": f["fy_end"], "fnp": f["fnp"], "fop": f["fop"], "fsales": f["fsales"]}
+
+
+FORECAST_COLS = ("fnp", "fop", "fsales")
+
+
+def merge_with_actuals(rows: list[dict], actuals: dict[str, dict]) -> tuple[list[dict], int]:
+    """同じ (code, disc_date) に実績行がある予想を、実績行への列追加に変える。
+
+    actuals: {code: {"fy_end", "doc_type"}}（同じ disc_date の 短信予想 以外の行）
+    実績行と年度が同じ予想（半期報告書と2Q短信の今期予想）だけを足す。年度が違う予想
+    （有報と通期短信の来期予想）を足すと、実績の年度に来期の予想が付いて増益判定を誤るので捨てる。
+    戻り値: (書く行, 捨てた件数)
+    """
+    out, dropped = [], 0
+    for r in rows:
+        a = actuals.get(r["code"])
+        if a is None:
+            out.append(r)
+        elif str(a.get("fy_end") or "") == str(r.get("fy_end") or ""):
+            out.append({"code": r["code"], "disc_date": r["disc_date"], **{k: r.get(k) for k in FORECAST_COLS}})
+        else:
+            dropped += 1
+    return out, dropped
