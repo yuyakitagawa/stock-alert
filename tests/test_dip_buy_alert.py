@@ -136,6 +136,33 @@ def test_build_message_reports_missing_forecasts():
     assert "該当0銘柄" in text and "判定できず除外: 12銘柄" in text
 
 
+def test_build_message_lists_refs_without_forecast_top5_by_given_order():
+    """予想未取得だが他の条件はクリアの銘柄を、判定外の参考として上位5つまで出す。"""
+    refs = [{"code": f"{1000 + i}", "name": f"参考{i}", "ret": -0.08, "beta": 1.5 - i * 0.1, "pbr": 1.2,
+             "np": 20.0, "np_prev": 12.0, "fnp_ly": 17.0} for i in range(7)]
+    text = build_message(date(2026, 10, 15), -0.049, [], no_forecast=133, refs=refs)
+    assert "📎 参考: 会社予想が未取得だが他の条件はクリア（β順・判定外）" in text
+    assert "参考4 1004" in text and "参考5" not in text           # 上位5まで
+    assert "-8.0% ｜ β1.50 ｜ PBR1.20 ｜ 前期+67%・予想超" in text
+    assert text.index("📎 参考") < text.index("判定できず除外: 133銘柄") < text.index("条件:")
+
+
+def test_ref_note_handles_missing_and_losses():
+    from web.dip_buy_alert import ref_note
+    assert ref_note({"np": 13.0, "np_prev": 78.0, "fnp_ly": 110.0}) == "前期-83%・予想未達"
+    assert ref_note({"np": 21.0, "np_prev": -63.0, "fnp_ly": None}) == ""   # 前期赤字は増益率を出さない
+
+
+def test_pick_fundamentals_returns_prev_year_and_same_year_forecast():
+    rows = [
+        {"disc_date": "2025-05-13", "doc_type": "FY", "fy_end": "2025-03-31", "bps": 900, "np": 12},
+        {"disc_date": "2025-11-10", "doc_type": "2Q", "fy_end": "2026-03-31", "bps": None, "np": 8, "fnp": 17},
+        {"disc_date": "2026-06-24", "doc_type": "FY", "fy_end": "2026-03-31", "bps": 1000, "np": 20},
+    ]
+    f = pick_fundamentals(rows, date(2026, 10, 15))
+    assert f["np_prev"] == 12 and f["fnp_ly"] == 17 and f["fnp"] is None and f["prev_bps"] == 900
+
+
 def test_employees_stale_codes_orders_missing_first_then_oldest():
     from lib.employees import stale_codes
     rows = {"1000": {"fetched_date": "2026-09-18"},   # 新しい→対象外
