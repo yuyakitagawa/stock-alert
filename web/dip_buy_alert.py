@@ -6,7 +6,7 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   1. 日経平均の当日騰落が -2% 以下
   2. その銘柄の当日騰落が -4% 以下（下限なし）
   3. 株価300円以上・直近20日の平均売買代金1億円以上
-  4. PBR < 1.5（株式分割は補正する）
+  4. PBR < 1.5（株式分割は補正する。期末〜有報提出の間の分割も含む）
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
   6. 従業員数 1000人以上（Supabase company_employees。tools/fetch_employees.py が更新）
   各銘柄には有報の「事業の内容」から作った一文を添える（lib/company_profile.py）
@@ -112,12 +112,32 @@ def pick_fundamentals(rows: list[dict], asof: date) -> dict | None:
     # 予想は「直近の本決算より後の年度」のものだけ使う。同じ年度の予想と実績を比べると
     # 増益判定の意味が無くなる（2026-04-25以降はEDINET由来で予想が入らず、放置すると起きる）
     fc = [r for r in past if r.get("fnp") is not None and str(r.get("fy_end") or "") > str(f.get("fy_end") or "")]
+    fy_end = str(f.get("fy_end") or "")[:10]
     return {
         "fy_disc": date.fromisoformat(str(f["disc_date"])[:10]),
+        "fy_end": date.fromisoformat(fy_end) if len(fy_end) == 10 else None,
+        "prev_bps": float(fy[-2]["bps"]) if len(fy) >= 2 else None,
         "bps": float(f["bps"]),
         "np": float(f["np"]),
         "fnp": float(fc[-1]["fnp"]) if fc else None,
     }
+
+
+def bps_split_factor(dates, closes, fund: dict, asof: date) -> float:
+    """本決算のBPSを asof の株価と同じ株数ベースにそろえる比率（PBR = 終値 / (BPS × 比率)）。
+
+    開示後の分割に加え、期末〜開示の間の分割も見る。有報のBPSは期末の株数ベースのことが多く、
+    開示より前に株価だけ分割後になる（古河電工: 2026-03期、6/3に1:10分割、有報6/24のBPS 5,928円は
+    分割前ベースで、PBR 0.57 に見えていた。実際は約5.7）。
+    ただし前期BPSから分割比ぶん下がっていれば、有報が分割後ベースに直してあるので掛けない。
+    """
+    k = split_factor(dates, closes, fund["fy_disc"], asof)
+    if fund.get("fy_end") is None:
+        return k
+    gap = split_factor(dates, closes, fund["fy_end"], fund["fy_disc"])
+    prev = fund.get("prev_bps")
+    restated = prev is not None and prev > 0 and fund["bps"] / prev < gap * 1.5
+    return k * gap if gap != 1.0 and not restated else k
 
 
 def passes_fundamentals(close: float, fund: dict, k_fy: float) -> tuple[bool, float | None, float | None]:
@@ -239,7 +259,7 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
         fund = pick_fundamentals(fins.get(s["code"], []), asof)
         if not fund:
             continue
-        k = split_factor(s["dates"], s["closes"], fund["fy_disc"], asof)
+        k = bps_split_factor(s["dates"], s["closes"], fund, asof)
         if fund["fnp"] is None:
             # 会社予想が無い＝増益を判定できない。PBRは満たしていたかだけ数えて本文に出す
             if s["close"] / (fund["bps"] * k) < MAX_PBR:

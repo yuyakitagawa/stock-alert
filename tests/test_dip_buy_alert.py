@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.dip_buy_alert import (beta, build_message, daily_return, passes_fundamentals,
+from web.dip_buy_alert import (beta, bps_split_factor, build_message, daily_return, passes_fundamentals,
                                pick_fundamentals, split_factor, MAX_CHARS)
 
 
@@ -44,6 +44,24 @@ def test_split_factor_ignores_split_before_disclosure_and_real_drops():
     assert split_factor(d, closes, date(2026, 2, 1), date(2026, 3, 31)) == 1.0
 
 
+def test_bps_split_factor_includes_split_between_fy_end_and_filing():
+    """期末(3/31)〜有報(6/24)の間の1:10分割。有報のBPSが分割前ベースなら比率を掛ける（古河電工の実例）。"""
+    d = [date(2026, 6, 2), date(2026, 6, 3), date(2026, 10, 15)]
+    closes = np.array([50910.0, 5310.0, 3376.0])
+    fund = {"fy_disc": date(2026, 6, 24), "fy_end": date(2026, 3, 31), "bps": 5928.21, "prev_bps": 5200.0}
+    k = bps_split_factor(d, closes, fund, date(2026, 10, 15))
+    assert abs(k - 0.1043) < 0.001
+    assert 5.0 < 3376.0 / (5928.21 * k) < 6.0               # PBR 0.57 → 約5.5
+
+
+def test_bps_split_factor_skips_restated_bps():
+    """前期BPSから分割比ぶん下がっている＝有報が分割後ベースに直してある。二重に掛けない。"""
+    d = [date(2026, 6, 2), date(2026, 6, 3)]
+    closes = np.array([50910.0, 5310.0])
+    fund = {"fy_disc": date(2026, 6, 24), "fy_end": date(2026, 3, 31), "bps": 592.8, "prev_bps": 5200.0}
+    assert bps_split_factor(d, closes, fund, date(2026, 10, 15)) == 1.0
+
+
 def test_pick_fundamentals_uses_only_disclosures_before_the_day():
     rows = [
         {"disc_date": "2025-05-13", "doc_type": "FY", "fy_end": "2025-03-31", "bps": 1000, "np": 100, "fnp": None},
@@ -53,6 +71,7 @@ def test_pick_fundamentals_uses_only_disclosures_before_the_day():
     f = pick_fundamentals(rows, date(2026, 9, 2))
     assert f["bps"] == 1000 and f["np"] == 100 and f["fnp"] == 120
     assert f["fy_disc"] == date(2025, 5, 13)
+    assert f["fy_end"] == date(2025, 3, 31) and f["prev_bps"] is None
 
 
 def test_pick_fundamentals_none_without_fy():
