@@ -42,10 +42,17 @@ _HEAD_RE = re.compile(r"^[０-９0-9]+\s*[【\[][^】\]]+[】\]]\s*")
 # 会社の構成だけを述べる文が来ることが多い。何をしている会社かは、その次の文から始まる。
 _SKIP_SENTENCE = re.compile(
     r"(構成され|持株会社制|純粋持株会社|により構成|から構成|以下の通りであります|記載のとおり|"
-    r"記載しており|セグメントと同一|経理の状況|当連結会計年度より|位置付け|次のとおり|"
+    r"記載しており|セグメントと同一|経理の状況|当連結会計年度より|位置付け|位置づけ|次のとおり|次の通り|"
+    r"以下のとおり|"
     r"^なお|^また|^これら|^その他|^以上|^[）\)）]|^（)")
 # 「何をしている会社か」を述べている文の目印
 _BUSINESS_WORD = re.compile(r"(事業|製造|販売|開発|提供|サービス|運営|手掛け|営んで)")
+# 構成説明と事業の説明が1文にまとまっている形。何をしている会社かの部分だけを取り出す
+#   後ろ: 「…子会社43社…で構成され、各事業に関する製品の製造・加工・販売を主な内容とし…」（リンテック）
+#   前:   「当社グループ(…)は、プレス機械…の製造・販売…を主な事業として、当社、連結子会社22社…で構成」（アイダ）
+_COMPOSED_THEN = re.compile(r"構成(?:され|し)(?:ており|ています)?[、,]")
+_MAIN_THEN_COMPOSED = re.compile(r"^(?:.{0,60}?は[、,])?(.+?)を主(?:な|たる)(?:事業|内容|業務)(?:として|とし)[、,].*構成")
+_LIST_INTRO = re.compile(r"[、,][^、,]*(?:位置付け|位置づけ|次のとおり|次の通り|以下のとおり|以下の通り)")
 
 
 def _text_block(xbrl: str, tag: str) -> str:
@@ -68,6 +75,23 @@ def _number(xbrl: str, tag: str) -> float | None:
         return None
 
 
+def _business_part(s: str) -> str:
+    """構成説明の文から事業の説明部分を切り出す。該当しなければ空文字。"""
+    m = _COMPOSED_THEN.search(s)
+    if m:
+        part = s[m.end():]
+        cut_at = _LIST_INTRO.search(part)  # 「…を展開しており、当企業集団に係る位置づけは、次のとおり」
+        if cut_at:
+            part = part[:cut_at.start()]
+    else:
+        m = _MAIN_THEN_COMPOSED.search(s)
+        part = m.group(1) if m else ""
+    part = part.strip()
+    if len(part) < 10 or part.endswith("は") or not _BUSINESS_WORD.search(part):
+        return ""
+    return part
+
+
 def headline(business: str, limit: int = HEADLINE_CHARS) -> str:
     """事業の内容から通知に載せる一文を作る。
 
@@ -81,7 +105,12 @@ def headline(business: str, limit: int = HEADLINE_CHARS) -> str:
     cands = []
     for raw in t.split("。"):
         s = re.sub(r"^[、,。\s]+", "", raw).strip()
-        if len(s) < 10 or _SKIP_SENTENCE.search(s):
+        if len(s) < 10:
+            continue
+        part = _business_part(s)
+        if part:
+            return cut(part)
+        if _SKIP_SENTENCE.search(s):
             continue
         if _BUSINESS_WORD.search(s):
             return cut(s)

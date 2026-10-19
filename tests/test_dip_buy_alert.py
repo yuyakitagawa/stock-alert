@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.dip_buy_alert import (beta, build_message, daily_return, passes_fundamentals,
+from web.dip_buy_alert import (beta, bps_split_factor, build_message, daily_return, passes_fundamentals,
                                pick_fundamentals, split_factor, MAX_CHARS)
 
 
@@ -44,6 +44,24 @@ def test_split_factor_ignores_split_before_disclosure_and_real_drops():
     assert split_factor(d, closes, date(2026, 2, 1), date(2026, 3, 31)) == 1.0
 
 
+def test_bps_split_factor_includes_split_between_fy_end_and_filing():
+    """期末(3/31)〜有報(6/24)の間の1:10分割。有報のBPSが分割前ベースなら比率を掛ける（古河電工の実例）。"""
+    d = [date(2026, 6, 2), date(2026, 6, 3), date(2026, 10, 15)]
+    closes = np.array([50910.0, 5310.0, 3376.0])
+    fund = {"fy_disc": date(2026, 6, 24), "fy_end": date(2026, 3, 31), "bps": 5928.21, "prev_bps": 5200.0}
+    k = bps_split_factor(d, closes, fund, date(2026, 10, 15))
+    assert abs(k - 0.1043) < 0.001
+    assert 5.0 < 3376.0 / (5928.21 * k) < 6.0               # PBR 0.57 → 約5.5
+
+
+def test_bps_split_factor_skips_restated_bps():
+    """前期BPSから分割比ぶん下がっている＝有報が分割後ベースに直してある。二重に掛けない。"""
+    d = [date(2026, 6, 2), date(2026, 6, 3)]
+    closes = np.array([50910.0, 5310.0])
+    fund = {"fy_disc": date(2026, 6, 24), "fy_end": date(2026, 3, 31), "bps": 592.8, "prev_bps": 5200.0}
+    assert bps_split_factor(d, closes, fund, date(2026, 10, 15)) == 1.0
+
+
 def test_pick_fundamentals_uses_only_disclosures_before_the_day():
     rows = [
         {"disc_date": "2025-05-13", "doc_type": "FY", "fy_end": "2025-03-31", "bps": 1000, "np": 100, "fnp": None},
@@ -53,6 +71,7 @@ def test_pick_fundamentals_uses_only_disclosures_before_the_day():
     f = pick_fundamentals(rows, date(2026, 9, 2))
     assert f["bps"] == 1000 and f["np"] == 100 and f["fnp"] == 120
     assert f["fy_disc"] == date(2025, 5, 13)
+    assert f["fy_end"] == date(2025, 3, 31) and f["prev_bps"] is None
 
 
 def test_pick_fundamentals_none_without_fy():
@@ -115,6 +134,33 @@ def test_build_message_fits_one_line_message():
 def test_build_message_reports_missing_forecasts():
     text = build_message(date(2026, 9, 2), -0.029, [], no_forecast=12)
     assert "該当0銘柄" in text and "判定できず除外: 12銘柄" in text
+
+
+def test_build_message_lists_refs_without_forecast_top5_by_given_order():
+    """予想未取得だが他の条件はクリアの銘柄を、判定外の参考として上位5つまで出す。"""
+    refs = [{"code": f"{1000 + i}", "name": f"参考{i}", "ret": -0.08, "beta": 1.5 - i * 0.1, "pbr": 1.2,
+             "np": 20.0, "np_prev": 12.0, "fnp_ly": 17.0} for i in range(7)]
+    text = build_message(date(2026, 10, 15), -0.049, [], no_forecast=133, refs=refs)
+    assert "📎 参考: 会社予想が未取得だが他の条件はクリア（β順・判定外）" in text
+    assert "参考4 1004" in text and "参考5" not in text           # 上位5まで
+    assert "-8.0% ｜ β1.50 ｜ PBR1.20 ｜ 前期+67%・予想超" in text
+    assert text.index("📎 参考") < text.index("判定できず除外: 133銘柄") < text.index("条件:")
+
+
+def test_ref_note_handles_missing_and_losses():
+    from web.dip_buy_alert import ref_note
+    assert ref_note({"np": 13.0, "np_prev": 78.0, "fnp_ly": 110.0}) == "前期-83%・予想未達"
+    assert ref_note({"np": 21.0, "np_prev": -63.0, "fnp_ly": None}) == ""   # 前期赤字は増益率を出さない
+
+
+def test_pick_fundamentals_returns_prev_year_and_same_year_forecast():
+    rows = [
+        {"disc_date": "2025-05-13", "doc_type": "FY", "fy_end": "2025-03-31", "bps": 900, "np": 12},
+        {"disc_date": "2025-11-10", "doc_type": "2Q", "fy_end": "2026-03-31", "bps": None, "np": 8, "fnp": 17},
+        {"disc_date": "2026-06-24", "doc_type": "FY", "fy_end": "2026-03-31", "bps": 1000, "np": 20},
+    ]
+    f = pick_fundamentals(rows, date(2026, 10, 15))
+    assert f["np_prev"] == 12 and f["fnp_ly"] == 17 and f["fnp"] is None and f["prev_bps"] == 900
 
 
 def test_employees_stale_codes_orders_missing_first_then_oldest():

@@ -54,6 +54,12 @@ def main() -> int:
                 rows.append(row)
             if a.sleep:
                 time.sleep(a.sleep)
+        if rows:
+            actuals = {str(r["code"]): r for r in sb.select(
+                "jquants_fin_summary", f"disc_date=eq.{d}&doc_type=neq.{ef.DOC_TYPE}&select=code,fy_end,doc_type")}
+            rows, dropped = ef.merge_with_actuals(rows, actuals)
+            if dropped:
+                print(f"[forecast] {d}: 同じ日の実績行と年度が違う予想を{dropped}件捨てた")
         total_rows += len(rows)
         if rows and not a.dry_run:
             if sb.upsert("jquants_fin_summary", rows, on_conflict="code,disc_date"):

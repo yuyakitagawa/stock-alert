@@ -6,10 +6,12 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   1. 日経平均の当日騰落が -2% 以下
   2. その銘柄の当日騰落が -4% 以下（下限なし）
   3. 株価300円以上・直近20日の平均売買代金1億円以上
-  4. PBR < 1.5（株式分割は補正する）
+  4. PBR < 1.5（株式分割は補正する。期末〜有報提出の間の分割も含む）
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
   6. 従業員数 1000人以上（Supabase company_employees。tools/fetch_employees.py が更新）
   各銘柄には有報の「事業の内容」から作った一文を添える（lib/company_profile.py）
+  会社予想が未取得で 5 を判定できない銘柄のうち、ほかの条件をすべて満たすものは
+  「参考」としてβ順に上位5つまで末尾に出す（判定には入れない。2026-10-18 オーナー確定）。
   並びはβ（過去250日・日経平均に対する感応度）の高い順。
 
 なぜこの条件か（検証は docs/dip_buy_strategy.md）:
@@ -51,6 +53,9 @@ SPLIT_TOL = 0.08
 # LINEの1通の上限（lib.notify.MAX_CHARS と同じ）。ここに収まる分だけ並べる
 MAX_CHARS = 4_000
 # 当日の終値がそろっている銘柄がこれ未満なら株価更新の失敗とみなす（平常時は約3,800）
+# 予想未取得で判定できない銘柄の参考表示の件数。2026-04-25〜08-19の短信予想が欠けているための措置で、
+# 予想が出そろえば（3月決算は2Q短信の11月中旬）該当がほぼ無くなり、表示も出なくなる
+REF_MAX = 5
 MIN_PRICED_CODES = 1000
 
 JST = timezone(timedelta(hours=9))
@@ -112,12 +117,36 @@ def pick_fundamentals(rows: list[dict], asof: date) -> dict | None:
     # 予想は「直近の本決算より後の年度」のものだけ使う。同じ年度の予想と実績を比べると
     # 増益判定の意味が無くなる（2026-04-25以降はEDINET由来で予想が入らず、放置すると起きる）
     fc = [r for r in past if r.get("fnp") is not None and str(r.get("fy_end") or "") > str(f.get("fy_end") or "")]
+    fy_end = str(f.get("fy_end") or "")[:10]
     return {
         "fy_disc": date.fromisoformat(str(f["disc_date"])[:10]),
+        "fy_end": date.fromisoformat(fy_end) if len(fy_end) == 10 else None,
+        "prev_bps": float(fy[-2]["bps"]) if len(fy) >= 2 else None,
+        "np_prev": float(fy[-2]["np"]) if len(fy) >= 2 else None,
+        # 直近の本決算と同じ年度の会社予想（実績が予想を上回ったかの参考表示用）
+        "fnp_ly": next((float(r["fnp"]) for r in reversed(past)
+                        if r.get("fnp") is not None and str(r.get("fy_end") or "") == str(f.get("fy_end") or "")), None),
         "bps": float(f["bps"]),
         "np": float(f["np"]),
         "fnp": float(fc[-1]["fnp"]) if fc else None,
     }
+
+
+def bps_split_factor(dates, closes, fund: dict, asof: date) -> float:
+    """本決算のBPSを asof の株価と同じ株数ベースにそろえる比率（PBR = 終値 / (BPS × 比率)）。
+
+    開示後の分割に加え、期末〜開示の間の分割も見る。有報のBPSは期末の株数ベースのことが多く、
+    開示より前に株価だけ分割後になる（古河電工: 2026-03期、6/3に1:10分割、有報6/24のBPS 5,928円は
+    分割前ベースで、PBR 0.57 に見えていた。実際は約5.7）。
+    ただし前期BPSから分割比ぶん下がっていれば、有報が分割後ベースに直してあるので掛けない。
+    """
+    k = split_factor(dates, closes, fund["fy_disc"], asof)
+    if fund.get("fy_end") is None:
+        return k
+    gap = split_factor(dates, closes, fund["fy_end"], fund["fy_disc"])
+    prev = fund.get("prev_bps")
+    restated = prev is not None and prev > 0 and fund["bps"] / prev < gap * 1.5
+    return k * gap if gap != 1.0 and not restated else k
 
 
 def passes_fundamentals(close: float, fund: dict, k_fy: float) -> tuple[bool, float | None, float | None]:
@@ -128,7 +157,18 @@ def passes_fundamentals(close: float, fund: dict, k_fy: float) -> tuple[bool, fl
     return ok, pbr, growth
 
 
-def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int = 0) -> str:
+def ref_note(p: dict) -> str:
+    """参考表示の補足。前期の実績増益率と、前期の会社予想を上回ったか（どちらも成績は未検証）。"""
+    out = []
+    if p.get("np_prev") and p["np_prev"] > 0 and p.get("np") is not None:
+        out.append(f"前期{(p['np'] / p['np_prev'] - 1) * 100:+.0f}%")
+    if p.get("fnp_ly") and p.get("np") is not None:
+        out.append("予想超" if p["np"] > p["fnp_ly"] else "予想未達")
+    return "・".join(out)
+
+
+def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int = 0,
+                  refs: list[dict] | None = None) -> str:
     """1銘柄2行（銘柄名＋コード／数字）で全件並べる。
 
     LINEの1通は5,000文字（lib.notify は4,000で切る）。急落が深い日は候補が数百になり
@@ -139,6 +179,12 @@ def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int
     head = [f"📉 押し目買い候補 {asof.month}/{asof.day}（{week}）",
             f"日経 {nk_ret * 100:+.1f}%／該当{len(picks)}銘柄（β順）", ""]
     tail = []
+    if refs:
+        tail += ["", "📎 参考: 会社予想が未取得だが他の条件はクリア（β順・判定外）"]
+        for p in refs[:REF_MAX]:
+            note = ref_note(p)
+            tail += [f"・{p['name']} {p['code']}",
+                     f"  {p['ret'] * 100:+.1f}% ｜ β{p['beta']:.2f} ｜ PBR{p['pbr']:.2f}" + (f" ｜ {note}" if note else "")]
     if no_forecast:
         tail.append(f"※会社予想が未取得で増益を判定できず除外: {no_forecast}銘柄（PBR<1.5は満たす）")
     tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上",
@@ -186,7 +232,7 @@ def _fin_rows(codes: list[str]) -> dict[str, list[dict]]:
     return out
 
 
-def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
+def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict]]:
     from lib import price_store
     from lib.utils import get_market_index_df_cached
 
@@ -196,11 +242,11 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
     nk = nk[nk.index <= asof]
     if nk.index[-1] != asof:
         print(f"[dip] 日経平均の {asof} の終値が無い（休場日か未取得）: 最終 {nk.index[-1]}")
-        return None, [], 0
+        return None, [], 0, []
     nk_ret = daily_return(nk["Close"].values)
     print(f"[dip] 日経平均 {asof}: {nk_ret * 100:+.2f}%")
     if nk_ret is None or nk_ret > NIKKEI_DROP:
-        return nk_ret, [], 0
+        return nk_ret, [], 0, []
 
     nk_r = nk["Close"].pct_change()
     price_store.enable()
@@ -233,17 +279,20 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
         raise RuntimeError(f"{asof} の終値がある銘柄が{n_today}件しかありません（株価更新の失敗の疑い）")
 
     fins = _fin_rows([s["code"] for s in stage])
-    stage2 = []
+    stage2, nofc = [], []
     no_forecast = 0
     for s in stage:
         fund = pick_fundamentals(fins.get(s["code"], []), asof)
         if not fund:
             continue
-        k = split_factor(s["dates"], s["closes"], fund["fy_disc"], asof)
+        k = bps_split_factor(s["dates"], s["closes"], fund, asof)
         if fund["fnp"] is None:
             # 会社予想が無い＝増益を判定できない。PBRは満たしていたかだけ数えて本文に出す
-            if s["close"] / (fund["bps"] * k) < MAX_PBR:
+            pbr = s["close"] / (fund["bps"] * k)
+            if pbr < MAX_PBR:
                 no_forecast += 1
+                s.update(pbr=pbr, np=fund["np"], np_prev=fund["np_prev"], fnp_ly=fund["fnp_ly"])
+                nofc.append(s)
             continue
         ok, pbr, growth = passes_fundamentals(s["close"], fund, k)
         if ok:
@@ -252,7 +301,7 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
     print(f"[dip] PBR<1.5・予想増益: {len(stage2)}（PBR<1.5だが会社予想が無く判定できず: {no_forecast}）")
 
     from lib import company_profile, employees
-    emp_map = employees.get([s["code"] for s in stage2])  # company_employees、無い銘柄だけYahooで補う
+    emp_map = employees.get([s["code"] for s in stage2 + nofc])  # company_employees、無い銘柄だけYahooで補う
     emps = [emp_map.get(s["code"]) for s in stage2]
     names = _load_names()
     profiles = company_profile.load([s["code"] for s in stage2])  # 有報の「事業の内容」
@@ -266,7 +315,12 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int]:
     unknown = sum(e is None for e in emps)
     print(f"[dip] 従業員1000人以上: {len(picks)}（従業員数を取得できず除外: {unknown}）")
     picks.sort(key=lambda p: p["beta"], reverse=True)
-    return nk_ret, picks, no_forecast
+    refs = sorted(({k: s[k] for k in ("code", "ret", "beta", "pbr", "np", "np_prev", "fnp_ly")}
+                   | {"name": names.get(s["code"], "")}
+                   for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES),
+                  key=lambda p: p["beta"], reverse=True)
+    print(f"[dip] 参考（予想未取得・他の条件クリア）: {len(refs)}")
+    return nk_ret, picks, no_forecast, refs
 
 
 def main() -> int:
@@ -281,7 +335,7 @@ def main() -> int:
     asof = date.fromisoformat(a.date) if a.date else datetime.now(JST).date()
 
     try:
-        nk_ret, picks, no_forecast = find_candidates(asof)
+        nk_ret, picks, no_forecast, refs = find_candidates(asof)
     except Exception as e:
         print(f"[dip] ⚠ 判定できませんでした: {e}")
         if not a.dry_run:
@@ -292,7 +346,7 @@ def main() -> int:
         print("[dip] 通知対象なし")
         return 0
     # 候補0でも「予想が無くて判定できなかった」銘柄があれば知らせる（データ欠落で黙らない）
-    text = build_message(asof, nk_ret, picks, no_forecast)
+    text = build_message(asof, nk_ret, picks, no_forecast, refs)
     print(text)
     if a.dry_run:
         return 0

@@ -9,7 +9,7 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.earnings_forecast import parse_forecast
+from lib.earnings_forecast import merge_with_actuals, parse_forecast
 
 
 def _zip(body: str, path: str = "XBRLData/Summary/tse-scedjpsy-ixbrl.htm") -> bytes:
@@ -72,6 +72,23 @@ def test_none_when_no_forecast_or_broken_zip():
     assert parse_forecast(_zip(body)) is None          # 実績しかない短信（予想未定）
     assert parse_forecast(b"not a zip") is None
     assert parse_forecast(_zip("x", path="XBRLData/Attachment/other.htm")) is None
+
+
+def test_merge_with_actuals_adds_columns_to_same_year_row():
+    """半期報告書と2Q短信が同じ日に出た銘柄は主キー (code, disc_date) がぶつかる。
+    実績行の doc_type・fy_end を消さないよう、予想の列だけを書く。"""
+    rows = [{"code": "1111", "disc_date": "2026-11-13", "doc_type": "短信予想", "fy_end": "2027-03-31",
+             "fnp": 5.0, "fop": 7.0, "fsales": 9.0},
+            {"code": "2222", "disc_date": "2026-11-13", "doc_type": "短信予想", "fy_end": "2027-03-31",
+             "fnp": 1.0, "fop": None, "fsales": None},
+            {"code": "3333", "disc_date": "2026-11-13", "doc_type": "短信予想", "fy_end": "2027-03-31",
+             "fnp": 2.0, "fop": None, "fsales": None}]
+    actuals = {"1111": {"fy_end": "2027-03-31", "doc_type": "2Q"},
+               "3333": {"fy_end": "2026-03-31", "doc_type": "FY"}}   # 有報と通期短信（来期予想）
+    out, dropped = merge_with_actuals(rows, actuals)
+    assert out[0] == {"code": "1111", "disc_date": "2026-11-13", "fnp": 5.0, "fop": 7.0, "fsales": 9.0}
+    assert out[1] == rows[1]                       # 実績行が無ければそのまま
+    assert len(out) == 2 and dropped == 1          # 年度が違う予想は実績行に付けない
 
 
 if __name__ == "__main__":
