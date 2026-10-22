@@ -7,6 +7,8 @@ lib/employees.py — 銘柄ごとの従業員数（Supabase `company_employees`�
 
   - tools/fetch_employees.py が古い順に少しずつ取り直す（daily_alert.yml Step 2h）
   - web/dip_buy_alert.py は get() で読み、無い銘柄だけYahooで補って書き戻す
+  - Yahooで取れない銘柄は有報（EDINET）や会社HPの値を source='edinet'/'web' で手で入れる。
+    従業員数は年1回しか変わらないので、これらは1年（NON_YAHOO_MAX_AGE_DAYS）取り直さない
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -37,6 +39,9 @@ def fetch_one(code: str) -> tuple[bool, int | None]:
     v = info.get("fullTimeEmployees")
     return True, (int(v) if v else None)
 
+
+# Yahoo以外（有報・会社HP）から入れた値を取り直すまでの日数
+NON_YAHOO_MAX_AGE_DAYS = 365
 
 # 連続でこの回数断られたらレート制限とみなして打ち切る
 MAX_CONSECUTIVE_ERRORS = 15
@@ -76,12 +81,12 @@ def load(codes: list[str] | None = None) -> dict[str, dict]:
     """{code: {"employees": int|None, "fetched_date": str}}。codes 省略で全件。"""
     out: dict[str, dict] = {}
     if codes is None:
-        for r in sb.select(TABLE, "select=code,employees,fetched_date"):
+        for r in sb.select(TABLE, "select=code,employees,source,fetched_date"):
             out[str(r["code"])] = r
         return out
     for i in range(0, len(codes), 100):
         q = ",".join(f'"{c}"' for c in codes[i:i + 100])
-        for r in sb.select(TABLE, f"code=in.({q})&select=code,employees,fetched_date"):
+        for r in sb.select(TABLE, f"code=in.({q})&select=code,employees,source,fetched_date"):
             out[str(r["code"])] = r
     return out
 
@@ -100,11 +105,14 @@ def get(codes: list[str]) -> dict[str, int | None]:
 
 
 def stale_codes(all_codes: list[str], rows: dict[str, dict], max_age_days: int, today: date) -> list[str]:
-    """未取得の銘柄を先に、次に取得日が古い順。max_age_days 以内のものは含めない。"""
+    """未取得の銘柄を先に、次に取得日が古い順。max_age_days 以内のものは含めない。
+    Yahoo以外から入れた行は NON_YAHOO_MAX_AGE_DAYS まで取り直さない。"""
+    def limit(r: dict) -> int:
+        return max_age_days if (r.get("source") or "yahoo") == "yahoo" else NON_YAHOO_MAX_AGE_DAYS
     never = [c for c in all_codes if c not in rows]
     old = sorted(
         (c for c in all_codes if c in rows
-         and (today - date.fromisoformat(str(rows[c]["fetched_date"])[:10])).days > max_age_days),
+         and (today - date.fromisoformat(str(rows[c]["fetched_date"])[:10])).days > limit(rows[c])),
         key=lambda c: str(rows[c]["fetched_date"]),
     )
     return never + old
