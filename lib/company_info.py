@@ -8,6 +8,11 @@ lib/company_info.py — 上場銘柄の会社HP URLと最新決算（Supabase `c
 jquants_fin_summary（EDINET XBRL）は有報・半期報しか入らず、四半期報告書の廃止以降は
 1Q/3Q が欠ける。決算短信ベースの最新値はこちらで持つ。金額は株探の表示単位（百万円）。
 
+最新の決算短信の URL（tanshin_*）は TDnet（ext_tdnet_disclosures、Step 2f が保存）から付け、
+その短信の XBRL（tanshin_xbrl_url）から会社予想（tanshin_fc_*、百万円）を読む（lib/earnings_forecast.py の
+パーサを使う）。TDnet の XBRL は約1か月で消えるので、読めるのは新しい短信だけ。
+従業員数（employees_*）も同じテーブルにあるが、読み書きは lib/employees.py。
+
 tools/fetch_company_info.py が古い順に巡回する（daily_alert.yml Step 2i）。
 """
 import re
@@ -175,8 +180,103 @@ def save(rows: list[dict]) -> bool:
 
 
 def load() -> dict[str, dict]:
-    """{code: {"fetched_at": str, "website_checked_at": str|None}}"""
-    return {str(r["code"]): r for r in sb.select(TABLE, "select=code,fetched_at,website_checked_at")}
+    """{code: {"fetched_at": str|None, "website_checked_at": str|None, "tanshin_url": str|None}}
+
+    fetched_at が NULL の行（従業員数・短信URLだけ入っている行）は、決算は未取得として扱う。
+    """
+    return {str(r["code"]): r for r in sb.select(
+        TABLE, "select=code,fetched_at,website_checked_at,tanshin_url,tanshin_fc_fetched_at")}
+
+
+# やのしん経由の URL（webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/...）から TDnet 本体を取り出す
+_RD_PREFIX = "rd.php?"
+
+
+def tdnet_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    i = url.find(_RD_PREFIX)
+    return url[i + len(_RD_PREFIX):] if i >= 0 else url
+
+
+# 短信本体だけ: 「…決算短信」「…決算短信〔日本基準〕（連結）」「…決算短信（REIT）」。
+# 「決算短信の開示延期に関するお知らせ」「決算短信補足説明資料」「決算説明資料（…決算短信）」は除く
+_TANSHIN_RE = re.compile(r"決算短信\s*([〔［\[（(【].*)?$")
+
+
+def pick_tanshin(rows: list[dict]) -> dict[str, dict]:
+    """TDnet の開示から銘柄ごとの最新の決算短信 {code: tanshin_* の行}。訂正・お知らせ・URL無しは除く。"""
+    out: dict[str, dict] = {}
+    for r in rows:
+        title = r.get("title") or ""
+        url = tdnet_url(r.get("doc_url"))
+        xbrl = tdnet_url(r.get("xbrl_url"))
+        if not _TANSHIN_RE.search(title) or "訂正" in title or not url:
+            continue
+        code = str(r["code"])
+        if str(r["disclosed_at"]) > str((out.get(code) or {}).get("tanshin_disclosed_at") or ""):
+            out[code] = {"code": code, "tanshin_url": url, "tanshin_title": title,
+                         "tanshin_disclosed_at": r["disclosed_at"], "tanshin_xbrl_url": xbrl}
+    return out
+
+
+def latest_tanshin() -> dict[str, dict]:
+    """ext_tdnet_disclosures（Step 2f が保存。2026-06-24〜）の最新の決算短信。取れなければ {}。"""
+    rows = sb.select("ext_tdnet_disclosures",
+                     "title=like.*%E6%B1%BA%E7%AE%97%E7%9F%AD%E4%BF%A1*&select=code,disclosed_at,title,doc_url,xbrl_url")
+    return pick_tanshin(rows)
+
+
+def tanshin_updates(saved: dict[str, dict], latest: dict[str, dict]) -> list[dict]:
+    """書き直す銘柄の行: 保存済みの URL と違う（新しい短信が出た・未保存）か、予想をまだ読めていない。"""
+    return [row for c, row in sorted(latest.items())
+            if (saved.get(c) or {}).get("tanshin_url") != row["tanshin_url"]
+            or not (saved.get(c) or {}).get("tanshin_fc_fetched_at")]
+
+
+_FC_EMPTY = {"tanshin_fc_fy_end": None, "tanshin_fc_sales": None, "tanshin_fc_op": None, "tanshin_fc_np": None}
+
+
+def _mil(v: float | None) -> float | None:
+    return None if v is None else round(v / 1e6, 3)
+
+
+def tanshin_forecast(xbrl_url: str | None) -> dict | None:
+    """短信の XBRL から tanshin_fc_* を作る。取得エラー（通信断・5xx）は None＝次回また読む。
+
+    XBRL が消えている（4xx）・予想が載っていない短信は、値を NULL にして読んだ時刻だけ刻む
+    （消えた URL を毎日取りに行かない）。金額は company_info の他の列に合わせて百万円。
+    """
+    from lib import earnings_forecast as ef
+    now = datetime.now(timezone.utc).isoformat()
+    if not xbrl_url:
+        return {**_FC_EMPTY, "tanshin_fc_fetched_at": now}
+    try:
+        r = requests.get(xbrl_url, headers=ef.HEADERS, timeout=60)
+    except Exception:
+        return None
+    if r.status_code >= 500:
+        return None
+    f = ef.parse_forecast(r.content) if r.status_code == 200 else None
+    if not f:
+        return {**_FC_EMPTY, "tanshin_fc_fetched_at": now}
+    return {"tanshin_fc_fy_end": f["fy_end"], "tanshin_fc_sales": _mil(f.get("fsales")),
+            "tanshin_fc_op": _mil(f.get("fop")), "tanshin_fc_np": _mil(f.get("fnp")),
+            "tanshin_fc_fetched_at": now}
+
+
+def with_tanshin_forecasts(rows: list[dict], max_reads: int, sleep_sec: float = 0.5) -> list[dict]:
+    """tanshin_updates の各行に短信 XBRL の予想を付ける。新しい短信から max_reads 件まで読む。
+    読めなかった行・上限を超えた行は予想の列を NULL、tanshin_fc_fetched_at も NULL にして返す
+    （URL は保存し、予想は次回また読む）。決算発表の集中日は短信が1日数百件出るため上限を置く。"""
+    out = []
+    rows = sorted(rows, key=lambda r: str(r.get("tanshin_disclosed_at") or ""), reverse=True)
+    for i, row in enumerate(rows):
+        fc = tanshin_forecast(row.get("tanshin_xbrl_url")) if i < max_reads else None
+        out.append(row | (fc or {**_FC_EMPTY, "tanshin_fc_fetched_at": None}))
+        if sleep_sec and i + 1 < min(len(rows), max_reads):
+            time.sleep(sleep_sec)
+    return out
 
 
 def target_codes() -> list[str]:

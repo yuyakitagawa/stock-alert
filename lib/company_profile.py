@@ -10,17 +10,23 @@ Claude APIは使わない（要約せず、先頭の一文を機械的に切り�
   対処すべき課題（...IssuesToAddressEtcTextBlock）   → issues（先頭400字）
   従業員の状況                                       → employees / avg_age / avg_salary / avg_service
 
-保存先は Supabase の `company_profile`（supabase/create_company_profile.sql）。
+保存先は Supabase の `company_info`（2026-10-25 に旧 company_profile を統合）。
+列名は company_info 側で衝突しないよう employees→profile_employees、fy_end/doc_id/disc_date/fetched_at に
+profile_ を付けている。この関数群の呼び出し側は統合前の名前のまま扱う（save/load で読み替える）。
 本文をそのまま持つとDBが膨らむ（有報1本で3MB前後あり、Free枠は500MB）ので、
 先頭だけを残す。
 """
 import html
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 
 import lib.supabase_client as sb
 
-TABLE = "company_profile"
+TABLE = "company_info"
+# 統合前の名前 → company_info の列名（名前が同じ business/issues/avg_* は載せない）
+_COLS = {"employees": "profile_employees", "fy_end": "profile_fy_end",
+         "doc_id": "profile_doc_id", "disc_date": "profile_disc_date"}
+_HAS = "profile_doc_id=not.is.null"  # 有報を取り込んだ行だけ（決算・従業員数だけの行を除く）
 DOC_TYPE_ANNUAL = "120"          # 有価証券報告書
 BUSINESS_CHARS = 800
 ISSUES_CHARS = 400
@@ -132,12 +138,14 @@ def parse_profile(xbrl: str) -> dict:
 
 
 def save(rows: list[dict]) -> bool:
-    return sb.upsert(TABLE, rows, on_conflict="code") if rows else True
+    now = datetime.now(timezone.utc).isoformat()
+    out = [{_COLS.get(k, k): v for k, v in r.items()} | {"profile_fetched_at": now} for r in rows]
+    return sb.upsert(TABLE, out, on_conflict="code") if out else True
 
 
 def load(codes: list[str] | None = None) -> dict[str, dict]:
     out: dict[str, dict] = {}
-    q = "select=code,business,employees,avg_age,avg_salary,disc_date"
+    q = f"{_HAS}&select=code,business,employees:profile_employees,avg_age,avg_salary,disc_date:profile_disc_date"
     if codes is None:
         for r in sb.select(TABLE, q):
             out[str(r["code"])] = r
@@ -150,7 +158,7 @@ def load(codes: list[str] | None = None) -> dict[str, dict]:
 
 
 def row_from_document(doc: dict, xbrl: str, today: date | None = None) -> dict | None:
-    """EDINETの書類メタデータ＋XBRL本文から company_profile の1行を作る。"""
+    """EDINETの書類メタデータ＋XBRL本文から1行を作る（統合前の列名。save() が読み替える）。"""
     code = (doc.get("secCode") or "")[:4]
     if not code or not xbrl:
         return None

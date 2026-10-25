@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/fetch_company_profiles.py — 有報の事業情報を company_profile に取り込む
+tools/fetch_company_profiles.py — 有報の事業情報を company_info（business 等）に取り込む
 
 daily_alert.yml Step 2d3 が毎日 --days 3 で呼ぶ。EDINETに出た有価証券報告書（docTypeCode=120）
 から「事業の内容」「対処すべき課題」「従業員の状況」を抜いて保存する。

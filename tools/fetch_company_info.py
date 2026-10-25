@@ -5,6 +5,8 @@ tools/fetch_company_info.py — 会社HP URLと最新決算（company_info）を
 daily_alert.yml Step 2i が毎日 --limit 400 で呼ぶ（普通株 約3,800銘柄を10日弱で一巡）。
 直近2日に決算短信を出した銘柄（TDnet）を先頭に回すので、決算は開示の翌営業日には入る。
 会社サイトはほぼ変わらないので --website-max-age-days（既定90日）以内は取り直さない。
+最新の決算短信の URL（tanshin_*）は株探を見に行かず、TDnet の保存分（ext_tdnet_disclosures）から
+全銘柄ぶんを毎回付け直す（変わった銘柄だけ書く）。その短信の XBRL から会社予想（tanshin_fc_*）も読む。
 
 使い方:
   python tools/fetch_company_info.py                 # 優先順に400銘柄
@@ -30,6 +32,7 @@ def main() -> int:
     ap.add_argument("--max-age-days", type=int, default=7)
     ap.add_argument("--website-max-age-days", type=int, default=90)
     ap.add_argument("--sleep", type=float, default=1.0, help="株探へのリクエスト間隔（秒）")
+    ap.add_argument("--max-tanshin", type=int, default=300, help="1回に読む決算短信XBRLの上限（残りは次回）")
     ap.add_argument("--dry-run", action="store_true", help="DB保存しない")
     a = ap.parse_args()
 
@@ -46,6 +49,14 @@ def main() -> int:
         website &= set(todo)
     print(f"[company_info] 対象 {len(codes)} / 保存済み {len(saved)} / 決算短信 {len(announced)} / "
           f"今回 {len(todo)}（うち会社サイト {len(website)}）")
+
+    tanshin = ci.tanshin_updates(saved, {c: r for c, r in ci.latest_tanshin().items() if c in set(codes)})
+    tanshin = ci.with_tanshin_forecasts(tanshin, a.max_tanshin)
+    ok = True if a.dry_run else ci.save(tanshin)
+    n_fc = sum(r.get("tanshin_fc_np") is not None for r in tanshin)
+    n_retry = sum(r.get("tanshin_fc_fetched_at") is None for r in tanshin)
+    print(f"[company_info] 決算短信 更新 {len(tanshin)}（予想あり {n_fc} / 読めず次回 {n_retry}） "
+          f"保存{'OK' if ok else '失敗'}", flush=True)
 
     for i in range(0, len(todo), 50):
         batch = todo[i:i + 50]
