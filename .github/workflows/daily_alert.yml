@@ -126,6 +126,13 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_employees.py --limit 400
 
+      # 会社HP URLと最新決算（株探）。直近に決算短信を出した銘柄を先に、残りは古い順に400銘柄ずつ。
+      # 失敗しても日次ランキングには影響しない（参照用テーブル company_info）。
+      - name: Step 2i - 会社HP URL・最新決算の更新（company_info、古い順に400銘柄）
+        continue-on-error: true
+        timeout-minutes: 30
+        run: cd ~/stock-alert && python tools/fetch_company_info.py --limit 400
+
       - name: Step 3 - ランキング生成
         run: cd ~/stock-alert && python core/rank_stocks.py
 
