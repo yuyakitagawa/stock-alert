@@ -172,6 +172,16 @@ def test_employees_stale_codes_orders_missing_first_then_oldest():
     assert got == ["4000", "3000", "2000"]
 
 
+def test_employees_stale_codes_keeps_non_yahoo_rows_for_a_year():
+    """有報・会社HPから入れた行（source != yahoo）は1年取り直さない。Yahooの行は30日で取り直す。"""
+    from lib.employees import stale_codes
+    rows = {"1000": {"fetched_date": "2026-08-01", "source": "yahoo"},
+            "2000": {"fetched_date": "2026-08-01", "source": "edinet"},
+            "3000": {"fetched_date": "2025-09-01", "source": "web"}}
+    got = stale_codes(["1000", "2000", "3000"], rows, 30, date(2026, 10, 22))
+    assert got == ["3000", "1000"]
+
+
 def test_employees_get_reads_table_and_fills_only_missing():
     import lib.employees as emp
     saved = {}

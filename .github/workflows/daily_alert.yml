@@ -145,6 +145,11 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python web/dip_buy_alert.py
 
+      # 押し目買いで実際に買った銘柄（data/dip_positions.json）が63営業日に達したら1回だけ通知
+      - name: Step 5b - 押し目買い保有の満了通知（63営業日）
+        continue-on-error: true
+        run: cd ~/stock-alert && python web/dip_position_alert.py
+
       # Step 5c（ブログ記事自動生成・投稿）は edinet_blog.yml（毎時）に移管済み。
 
       - name: Step 6 - モデル学習（金曜 or 初回のみ）
