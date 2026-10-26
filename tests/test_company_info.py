@@ -121,6 +121,80 @@ def test_fetch_many_stops_on_consecutive_errors():
             raise AssertionError("RateLimited が送出されない")
 
 
+def test_pick_tanshin_latest_and_skips_corrections():
+    rd = "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/"
+    rows = [
+        {"code": "7203", "disclosed_at": "2026-08-01T06:00:00+00:00", "title": "2027年3月期 第1四半期決算短信", "doc_url": rd + "a.pdf"},
+        {"code": "7203", "disclosed_at": "2026-10-30T06:00:00+00:00", "title": "2027年3月期 第2四半期（中間期）決算短信", "doc_url": rd + "b.pdf"},
+        {"code": "7203", "disclosed_at": "2026-11-05T06:00:00+00:00", "title": "（訂正）「2027年3月期 第2四半期決算短信」の一部訂正", "doc_url": rd + "c.pdf"},
+        {"code": "6758", "disclosed_at": "2026-10-30T06:00:00+00:00", "title": "2027年3月期 第2四半期決算短信", "doc_url": None},
+        {"code": "9984", "disclosed_at": "2026-10-30T06:00:00+00:00", "title": "自己株式の取得状況", "doc_url": rd + "d.pdf"},
+        {"code": "3856", "disclosed_at": "2026-06-26T06:00:00+00:00", "title": "2026年３月期決算短信の開示延期に関するお知らせ", "doc_url": rd + "e.pdf"},
+        {"code": "4000", "disclosed_at": "2026-10-10T06:00:00+00:00", "title": "2026年８月期決算短信補足説明資料", "doc_url": rd + "f.pdf"},
+        {"code": "4000", "disclosed_at": "2026-10-10T06:00:00+00:00", "title": "決算説明資料（2026年８月期 決算短信）", "doc_url": rd + "g.pdf"},
+        {"code": "3492", "disclosed_at": "2026-10-23T06:00:00+00:00", "title": "2026年８月期　決算短信（REIT）", "doc_url": rd + "h.pdf"},
+    ]
+    out = m.pick_tanshin(rows)
+    assert sorted(out) == ["3492", "7203"]  # URL無し・お知らせ・補足資料・短信以外は入れない
+    assert out["7203"]["tanshin_url"] == "https://www.release.tdnet.info/inbs/b.pdf"  # 訂正より本体、やのしんを外す
+    assert out["7203"]["tanshin_disclosed_at"] == "2026-10-30T06:00:00+00:00"
+    assert out["7203"]["tanshin_xbrl_url"] is None  # xbrl_url が無い開示は None
+
+
+def test_tanshin_updates_only_changed():
+    latest = {"1000": {"code": "1000", "tanshin_url": "u1"}, "2000": {"code": "2000", "tanshin_url": "u2new"},
+              "3000": {"code": "3000", "tanshin_url": "u3"}}
+    saved = {"1000": {"tanshin_url": "u1", "tanshin_fc_fetched_at": "2026-10-25T00:00:00+00:00"},
+             "2000": {"tanshin_url": "u2old", "tanshin_fc_fetched_at": "2026-10-25T00:00:00+00:00"}}
+    assert [r["code"] for r in m.tanshin_updates(saved, latest)] == ["2000", "3000"]
+    saved["1000"]["tanshin_fc_fetched_at"] = None  # 予想をまだ読めていない → 読み直す
+    assert [r["code"] for r in m.tanshin_updates(saved, latest)] == ["1000", "2000", "3000"]
+
+
+def _resp(status, content=b""):
+    r = mock.Mock()
+    r.status_code, r.content = status, content
+    return r
+
+
+def test_tanshin_forecast_units_and_errors():
+    """予想は百万円で保存。5xx・通信断は None（次回また読む）、4xx・予想なしは NULL で読んだ時刻を刻む。"""
+    f = {"fy_end": "2027-03-31", "fnp": 29_000_000_000.0, "fop": 41_000_000_000.0, "fsales": None}
+    with mock.patch.object(m.requests, "get", return_value=_resp(200, b"zip")), \
+         mock.patch("lib.earnings_forecast.parse_forecast", return_value=f):
+        row = m.tanshin_forecast("https://www.release.tdnet.info/inbs/x.zip")
+    assert row["tanshin_fc_np"] == 29000.0 and row["tanshin_fc_op"] == 41000.0 and row["tanshin_fc_sales"] is None
+    assert row["tanshin_fc_fy_end"] == "2027-03-31" and row["tanshin_fc_fetched_at"]
+    with mock.patch.object(m.requests, "get", return_value=_resp(503)):
+        assert m.tanshin_forecast("u") is None
+    with mock.patch.object(m.requests, "get", side_effect=OSError("down")):
+        assert m.tanshin_forecast("u") is None
+    with mock.patch.object(m.requests, "get", return_value=_resp(404)):
+        row = m.tanshin_forecast("u")
+    assert row["tanshin_fc_np"] is None and row["tanshin_fc_fetched_at"]
+    assert m.tanshin_forecast(None)["tanshin_fc_fetched_at"]
+
+
+def test_with_tanshin_forecasts_reads_newest_up_to_cap():
+    rows = [{"code": c, "tanshin_disclosed_at": d, "tanshin_xbrl_url": c}
+            for c, d in (("1000", "2026-10-01"), ("2000", "2026-10-20"), ("3000", "2026-10-10"))]
+    fc = {"tanshin_fc_fy_end": "2027-03-31", "tanshin_fc_sales": None, "tanshin_fc_op": None,
+          "tanshin_fc_np": 1.0, "tanshin_fc_fetched_at": "now"}
+    with mock.patch.object(m, "tanshin_forecast", return_value=fc) as tf:
+        out = m.with_tanshin_forecasts(rows, max_reads=2, sleep_sec=0)
+    assert [c.args[0] for c in tf.call_args_list] == ["2000", "3000"]  # 新しい順に2件だけ
+    by = {r["code"]: r for r in out}
+    assert by["2000"]["tanshin_fc_np"] == 1.0 and by["1000"]["tanshin_fc_fetched_at"] is None
+    assert len({tuple(sorted(r)) for r in out}) == 1  # 一括upsertのため全行のキーをそろえる
+
+
+def test_plan_treats_rows_without_fetched_at_as_never():
+    """従業員数・短信URLだけの行（fetched_at が NULL）は決算未取得として扱う。"""
+    saved = {"1000": {"fetched_at": None, "website_checked_at": None}}
+    todo, website = m.plan(["1000"], saved, {}, NOW, max_age_days=7, website_max_age_days=90)
+    assert todo == ["1000"] and website == {"1000"}
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

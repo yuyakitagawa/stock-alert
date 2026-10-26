@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/fetch_employees.py — 従業員数（company_employees）を古い順に更新する
+tools/fetch_employees.py — 従業員数（company_info.employees）を古い順に更新する
 
 daily_alert.yml Step 2h が毎日 --limit 400 で呼ぶ（約3,800銘柄を10日弱で一巡）。
 従業員数は年1回（有価証券報告書）しか変わらないので、取得日から --max-age-days

@@ -8,7 +8,8 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   3. 株価300円以上・直近20日の平均売買代金1億円以上
   4. PBR < 1.5（株式分割は補正する。期末〜有報提出の間の分割も含む）
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
-  6. 従業員数 1000人以上（Supabase company_employees。tools/fetch_employees.py が更新）
+     予想は jquants_fin_summary → company_info の短信XBRL予想（tanshin_fc_*）→ 株探の会社予想（fc_*）の順
+  6. 従業員数 1000人以上（Supabase company_info.employees。tools/fetch_employees.py が更新）
   各銘柄には有報の「事業の内容」から作った一文を添える（lib/company_profile.py）
   会社予想が未取得で 5 を判定できない銘柄のうち、ほかの条件をすべて満たすものは
   「参考」としてβ順に上位5つまで末尾に出す（判定には入れない。2026-10-18 オーナー確定）。
@@ -149,6 +150,28 @@ def bps_split_factor(dates, closes, fund: dict, asof: date) -> float:
     return k * gap if gap != 1.0 and not restated else k
 
 
+def company_forecast(row: dict | None, fund: dict, asof: date) -> float | None:
+    """company_info の会社予想の純利益（円）。使えなければ None。
+
+    jquants_fin_summary は 2026-04-25〜08-19 の短信予想が欠けている（TDnetのXBRLは約1か月で消え、
+    遡って取れない）。company_info で補う。先に最新の決算短信のXBRLから読んだ予想（tanshin_fc_*）、
+    無ければ株探の決算ページの「予」行（fc_*）。どちらも jquants 側と同じく、asof より前（前日まで）に
+    出ていて、直近の本決算より後の年度の予想に限る。company_info は百万円単位なので円に直す。
+    """
+    fy_end = fund.get("fy_end")
+    if not row or fy_end is None:
+        return None
+    for np_key, end_key, ann_key in (("tanshin_fc_np", "tanshin_fc_fy_end", "tanshin_disclosed_at"),
+                                     ("fc_np", "fc_period", "fc_announced")):
+        v, end, ann = row.get(np_key), row.get(end_key), row.get(ann_key)
+        if v is None or not end or not ann or date.fromisoformat(str(ann)[:10]) >= asof:
+            continue
+        if str(end).replace(".", "-")[:7] <= fy_end.isoformat()[:7]:
+            continue
+        return float(v) * 1e6
+    return None
+
+
 def passes_fundamentals(close: float, fund: dict, k_fy: float) -> tuple[bool, float | None, float | None]:
     """(合格か, PBR, 予想増益率)。PBRは分割補正後、予想増益は前期黒字が前提。"""
     pbr = close / (fund["bps"] * k_fy) if fund["bps"] > 0 else None
@@ -232,6 +255,17 @@ def _fin_rows(codes: list[str]) -> dict[str, list[dict]]:
     return out
 
 
+def _company_forecasts(codes: list[str]) -> dict[str, dict]:
+    import lib.supabase_client as sb
+    out: dict[str, dict] = {}
+    for i in range(0, len(codes), 100):
+        q = ",".join(f'"{c}"' for c in codes[i:i + 100])
+        for r in sb.select("company_info", f"code=in.({q})&or=(fc_np.not.is.null,tanshin_fc_np.not.is.null)"
+                                 "&select=code,fc_period,fc_np,fc_announced,tanshin_fc_fy_end,tanshin_fc_np,tanshin_disclosed_at"):
+            out[str(r["code"])] = r
+    return out
+
+
 def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict]]:
     from lib import price_store
     from lib.utils import get_market_index_df_cached
@@ -279,12 +313,16 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         raise RuntimeError(f"{asof} の終値がある銘柄が{n_today}件しかありません（株価更新の失敗の疑い）")
 
     fins = _fin_rows([s["code"] for s in stage])
+    kfc = _company_forecasts([s["code"] for s in stage])
     stage2, nofc = [], []
-    no_forecast = 0
+    no_forecast = n_ci = 0
     for s in stage:
         fund = pick_fundamentals(fins.get(s["code"], []), asof)
         if not fund:
             continue
+        if fund["fnp"] is None:
+            fund["fnp"] = company_forecast(kfc.get(s["code"]), fund, asof)
+            n_ci += fund["fnp"] is not None
         k = bps_split_factor(s["dates"], s["closes"], fund, asof)
         if fund["fnp"] is None:
             # 会社予想が無い＝増益を判定できない。PBRは満たしていたかだけ数えて本文に出す
@@ -298,13 +336,14 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         if ok:
             s.update(pbr=pbr, growth=growth, stale=(asof - fund["fy_disc"]).days > STALE_FY_DAYS)
             stage2.append(s)
-    print(f"[dip] PBR<1.5・予想増益: {len(stage2)}（PBR<1.5だが会社予想が無く判定できず: {no_forecast}）")
+    print(f"[dip] PBR<1.5・予想増益: {len(stage2)}（予想をcompany_infoで補った: {n_ci} / "
+          f"PBR<1.5だが会社予想が無く判定できず: {no_forecast}）")
 
     from lib import company_profile, employees
-    emp_map = employees.get([s["code"] for s in stage2 + nofc])  # company_employees、無い銘柄だけYahooで補う
+    emp_map = employees.get([s["code"] for s in stage2 + nofc])  # company_info.employees、無い銘柄だけYahooで補う
     emps = [emp_map.get(s["code"]) for s in stage2]
     names = _load_names()
-    profiles = company_profile.load([s["code"] for s in stage2])  # 有報の「事業の内容」
+    profiles = company_profile.load([s["code"] for s in stage2])  # 有報の「事業の内容」（company_info.business）
     picks = []
     for s, e in zip(stage2, emps):
         if e is not None and e >= MIN_EMPLOYEES:

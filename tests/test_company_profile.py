@@ -73,6 +73,26 @@ def test_row_from_document_requires_code_and_business():
     assert row_from_document(doc, "<xbrl></xbrl>") is None        # 事業の内容が無い書類は保存しない
 
 
+def test_save_and_load_use_company_info_columns():
+    """事業情報は company_info に統合。統合前の名前で渡し、列名（profile_*）へ読み替えて保存する。"""
+    from unittest import mock
+    import lib.company_profile as cp
+    with mock.patch.object(cp.sb, "upsert", return_value=True) as up:
+        cp.save([{"code": "5801", "business": "電線", "issues": None, "employees": 100, "avg_age": 40.0,
+                  "avg_salary": 8_000_000, "avg_service": 15.0, "fy_end": "2026-03-31",
+                  "doc_id": "S100X", "disc_date": "2026-06-24"}])
+    table, rows = up.call_args.args[:2]
+    assert table == "company_info"
+    r = rows[0]
+    assert r["profile_employees"] == 100 and r["profile_fy_end"] == "2026-03-31"
+    assert r["profile_doc_id"] == "S100X" and r["profile_disc_date"] == "2026-06-24" and r["profile_fetched_at"]
+    assert "employees" not in r and "fy_end" not in r  # 株探・Yahooの列を上書きしない
+    with mock.patch.object(cp.sb, "select", return_value=[{"code": "5801", "business": "電線"}]) as sel:
+        assert cp.load(["5801"])["5801"]["business"] == "電線"
+    q = sel.call_args.args[1]
+    assert "profile_doc_id=not.is.null" in q and "employees:profile_employees" in q
+
+
 if __name__ == "__main__":
     import inspect
     fns = [f for n, f in sorted(globals().items()) if n.startswith("test_") and inspect.isfunction(f)]

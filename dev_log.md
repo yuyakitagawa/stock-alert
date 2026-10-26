@@ -1,5 +1,19 @@
 # Dev Log
 
+## 2026-10-25 company_info へ従業員数・有報の事業情報を統合し、決算短信のURLとXBRL予想を追加
+
+押し目買い通知の「※会社予想が未取得で増益を判定できず除外: 76銘柄」（10/22）の改善。原因は jquants_fin_summary の
+短信予想が 2026-04-25〜08-19 分だけ欠けていること（TDnetのXBRLは遡れない）。オーナー依頼で銘柄単位の情報を company_info に集約。
+- 統合: company_employees（2,490行）→ `employees`/`employees_source`/`employees_fetched_date`、company_profile（2,535行）→
+  `business`/`issues`/`profile_employees`/`avg_*`/`profile_*`。lib/employees.py・lib/company_profile.py は列名を読み替えるだけで呼び出し側は不変。
+  `fetched_at` は NULL 可にし、決算以外の列だけの行は決算未取得として巡回の先頭に来る。旧2テーブルは main マージ後に差分を取り込み直してから drop する
+- 決算短信: ext_tdnet_disclosures から最新の短信（訂正・延期のお知らせ・補足資料を除く）の PDF/XBRL URL を `tanshin_*` に。
+  XBRL から会社予想を `tanshin_fc_*`（百万円）に読む（lib/earnings_forecast.py のパーサを再利用、Anthropic API なし）。
+  初回: 515銘柄に URL、451銘柄で予想取得。株探の予想と重なる76銘柄は年度・金額とも全件一致
+- 押し目買い: jquants に予想が無いとき company_info の短信XBRL予想→株探予想の順で補う（`company_forecast()`、前日まで・翌年度のみ）。
+  10/22 を dry-run（株探の全件取り込みが22%時点）: 補完16銘柄、判定できず71銘柄、該当5銘柄
+- tests: test_company_info 14件・test_dip_buy_alert 25件・test_company_profile 7件、全テストOK
+
 ## 2026-10-22 押し目買いで買った銘柄の63営業日満了をLINEで通知（web/dip_position_alert.py）
 
 オーナーが10/15の通知から 10/16 に5銘柄を購入（プリモGHD 367A 1株@3,220・アイダ 6118 100株@1,168・不二越 6474 1株@5,530・

@@ -98,7 +98,7 @@ jobs:
         run: cd ~/stock-alert && python tools/fetch_earnings_forecast.py --days 3
 
       # 通知に添える「どんな会社か」の元データ。有報は年1回なので新着だけ拾えばよい。
-      - name: Step 2d3 - 有報の事業情報取得（company_profile）
+      - name: Step 2d3 - 有報の事業情報取得（company_info.business 等）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_company_profiles.py --days 3
 
@@ -122,13 +122,13 @@ jobs:
 
       # 押し目買い候補通知（Step 5）の「従業員1000人以上」用。年1回しか変わらないので
       # 取得から30日以内は取り直さず、古い順に400銘柄ずつ（約10日で一巡）。
-      - name: Step 2h - 従業員数の更新（company_employees、古い順に400銘柄）
+      - name: Step 2h - 従業員数の更新（company_info.employees、古い順に400銘柄）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_employees.py --limit 400
 
       # 会社HP URLと最新決算（株探）。直近に決算短信を出した銘柄を先に、残りは古い順に400銘柄ずつ。
       # 失敗しても日次ランキングには影響しない（参照用テーブル company_info）。
-      - name: Step 2i - 会社HP URL・最新決算の更新（company_info、古い順に400銘柄）
+      - name: Step 2i - 会社HP URL・最新決算・決算短信URLと短信予想の更新（company_info、古い順に400銘柄）
         continue-on-error: true
         timeout-minutes: 30
         run: cd ~/stock-alert && python tools/fetch_company_info.py --limit 400

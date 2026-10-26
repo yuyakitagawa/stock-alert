@@ -1,5 +1,5 @@
 """
-lib/employees.py — 銘柄ごとの従業員数（Supabase `company_employees`）
+lib/employees.py — 銘柄ごとの従業員数（Supabase `company_info` の employees_* 列）
 
 値の出どころは Yahoo Finance の fullTimeEmployees（連結・現在値）。
 通知のたびにYahooへ候補の数だけ問い合わせると、急落日（候補が数百）に数分かかり、
@@ -9,13 +9,18 @@ lib/employees.py — 銘柄ごとの従業員数（Supabase `company_employees`�
   - web/dip_buy_alert.py は get() で読み、無い銘柄だけYahooで補って書き戻す
   - Yahooで取れない銘柄は有報（EDINET）や会社HPの値を source='edinet'/'web' で手で入れる。
     従業員数は年1回しか変わらないので、これらは1年（NON_YAHOO_MAX_AGE_DAYS）取り直さない
+  - 2026-10-25 に旧 company_employees を company_info へ統合。employees_fetched_date が
+    NULL の行は「従業員数は未取得」（決算だけ入っている行）として扱う
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import lib.supabase_client as sb
 
-TABLE = "company_employees"
+TABLE = "company_info"
+# 呼び出し側（stale_codes・テスト）は統合前の employees/source/fetched_date の形で扱う
+_SELECT = "select=code,employees,source:employees_source,fetched_date:employees_fetched_date"
+_HAS = "employees_fetched_date=not.is.null"
 
 
 class RateLimited(Exception):
@@ -73,7 +78,8 @@ def save(values: dict[str, int | None], today: date | None = None) -> bool:
     """None も「Yahooに値が無かった」として保存する（毎回取り直さないため）。
     渡すのは fetch_many が「取れた」と返した銘柄だけにすること。"""
     d = (today or date.today()).isoformat()
-    rows = [{"code": c, "employees": v, "source": "yahoo", "fetched_date": d} for c, v in values.items()]
+    rows = [{"code": c, "employees": v, "employees_source": "yahoo", "employees_fetched_date": d}
+            for c, v in values.items()]
     return sb.upsert(TABLE, rows, on_conflict="code") if rows else True
 
 
@@ -81,12 +87,12 @@ def load(codes: list[str] | None = None) -> dict[str, dict]:
     """{code: {"employees": int|None, "fetched_date": str}}。codes 省略で全件。"""
     out: dict[str, dict] = {}
     if codes is None:
-        for r in sb.select(TABLE, "select=code,employees,source,fetched_date"):
+        for r in sb.select(TABLE, f"{_HAS}&{_SELECT}"):
             out[str(r["code"])] = r
         return out
     for i in range(0, len(codes), 100):
         q = ",".join(f'"{c}"' for c in codes[i:i + 100])
-        for r in sb.select(TABLE, f"code=in.({q})&select=code,employees,source,fetched_date"):
+        for r in sb.select(TABLE, f"code=in.({q})&{_HAS}&{_SELECT}"):
             out[str(r["code"])] = r
     return out
 

@@ -10,7 +10,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.dip_buy_alert import (beta, bps_split_factor, build_message, daily_return, passes_fundamentals,
+from web.dip_buy_alert import (beta, bps_split_factor, build_message, company_forecast, daily_return,
+                               passes_fundamentals,
                                pick_fundamentals, split_factor, MAX_CHARS)
 
 
@@ -214,6 +215,51 @@ def test_employees_fetch_many_skips_errors_and_stops_on_rate_limit():
             assert e.args[0] == {}
     finally:
         emp.fetch_one = orig
+
+
+def test_company_forecast_fills_missing_forecast():
+    """jquants に予想が無い銘柄は company_info（百万円）の会社予想で補う。前日まで・翌年度のみ。"""
+    fund = {"fy_end": date(2026, 3, 31)}
+    row = {"fc_period": "2027.03", "fc_np": 29000.0, "fc_announced": "2026-08-06"}
+    asof = date(2026, 10, 15)
+    assert company_forecast(row, fund, asof) == 29000.0 * 1e6
+    assert company_forecast(row, fund, date(2026, 8, 6)) is None             # 当日の発表は使わない
+    assert company_forecast(row | {"fc_period": "2026.03"}, fund, asof) is None  # 実績と同じ年度
+    assert company_forecast(row | {"fc_np": None}, fund, asof) is None
+    assert company_forecast(None, fund, asof) is None
+    assert company_forecast(row, {"fy_end": None}, asof) is None
+
+
+def test_company_forecast_prefers_tanshin_xbrl():
+    """短信XBRLの予想（tanshin_fc_*）があれば株探より先に使う。使えない短信予想なら株探へ落ちる。"""
+    fund = {"fy_end": date(2026, 3, 31)}
+    row = {"fc_period": "2027.03", "fc_np": 29000.0, "fc_announced": "2026-05-15",
+           "tanshin_fc_fy_end": "2027-03-31", "tanshin_fc_np": 31000.0,
+           "tanshin_disclosed_at": "2026-08-06T06:00:00+00:00"}
+    assert company_forecast(row, fund, date(2026, 10, 15)) == 31000.0 * 1e6
+    assert company_forecast(row, fund, date(2026, 8, 6)) == 29000.0 * 1e6      # 短信は当日分→株探
+    assert company_forecast(row | {"tanshin_fc_fy_end": "2026-03-31"}, fund, date(2026, 10, 15)) == 29000.0 * 1e6
+
+
+def test_employees_reads_company_info_columns():
+    """従業員数は company_info の employees_* 列。統合前の形（source/fetched_date）で返し、書くときは列名に直す。"""
+    import lib.employees as emp
+    calls = {}
+    orig_sel, orig_up = emp.sb.select, emp.sb.upsert
+    emp.sb.select = lambda t, q="": calls.setdefault("select", (t, q)) and [
+        {"code": "1000", "employees": 5000, "source": "yahoo", "fetched_date": "2026-09-01"}]
+    emp.sb.upsert = lambda t, rows, on_conflict="": calls.setdefault("upsert", (t, rows)) and True
+    try:
+        assert emp.load(["1000"])["1000"]["fetched_date"] == "2026-09-01"
+        t, q = calls["select"]
+        assert t == "company_info" and "employees_fetched_date=not.is.null" in q
+        assert "fetched_date:employees_fetched_date" in q
+        emp.save({"2000": 1200}, today=date(2026, 10, 25))
+        t, rows = calls["upsert"]
+        assert t == "company_info" and rows == [{"code": "2000", "employees": 1200, "employees_source": "yahoo",
+                                                 "employees_fetched_date": "2026-10-25"}]
+    finally:
+        emp.sb.select, emp.sb.upsert = orig_sel, orig_up
 
 
 if __name__ == "__main__":
