@@ -125,6 +125,30 @@ def fetch_company_name(code: str) -> str:
     return ""
 
 
+# 1日あたりの取得上限。決算集中日でも1日2,000件弱（2026-08-07: 1,627件）なので余裕を持たせる
+DAY_LIMIT = 5000
+
+
+def fetch_days(start: date, end: date, limit: int = DAY_LIMIT, sleep_sec: float = 1.0) -> list[dict]:
+    """start〜end（両端含む）の開示を1日ずつ取る。
+
+    期間をまとめて1回で取ると、件数の上限で古い日が丸ごと落ちる（直近3日を上限2,000件で
+    取っていたため、2026-08-05〜07 の3,037件のうち 8/5 全部と 8/6 の一部が保存されていなかった）。
+    """
+    out: list[dict] = []
+    d = start
+    while d <= end:
+        day = d.strftime("%Y%m%d")
+        recs = fetch_disclosures(f"{day}-{day}", limit=limit)
+        if len(recs) >= limit:
+            print(f"[tdnet] {d} は上限{limit}件に達した（取りこぼしの可能性）")
+        out.extend(recs)
+        d += timedelta(days=1)
+        if sleep_sec and d <= end:
+            time.sleep(sleep_sec)
+    return out
+
+
 def scan_disclosures(days_back: int = 3, codes: list[str] | None = None,
                      persist: bool = True, sleep_sec: float = 1.0,
                      only_categorized: bool = False) -> list[dict]:
@@ -149,11 +173,9 @@ def scan_disclosures(days_back: int = 3, codes: list[str] | None = None,
             if sleep_sec:
                 time.sleep(sleep_sec)
     else:
-        # 期間指定: 日付範囲でまとめて取得
+        # 期間指定: 1日ずつ取得（まとめて取ると件数の上限で古い日が落ちる）
         end = date.today()
-        start = end - timedelta(days=days_back)
-        cond = f"{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}"
-        records = fetch_disclosures(cond, limit=2000)
+        records = fetch_days(end - timedelta(days=days_back), end, sleep_sec=sleep_sec)
 
     if only_categorized:
         records = [r for r in records if r["category"]]
