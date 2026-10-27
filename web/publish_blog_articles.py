@@ -1393,10 +1393,16 @@ def parse_body_json(text: str) -> dict:
     （<a href="..."> や「"〜"」の引用）と json.loads が "Expecting ',' delimiter" で落ち、
     記事が1本消えてワークフローが赤くなる（2026-09-25 run 36093689506 のニプロ(8086)）。
     その場合は先頭の {"body": " から末尾の "} までを本文とみなし、未エスケープの " を
-    エスケープし直して読み直す（再生成はAPI課金が増えるのでしない）。"""
+    エスケープし直して読み直す（再生成はAPI課金が増えるのでしない）。
+    JSONの後ろに補足文などが続くと "Extra data" で落ちる（2026-10-27 run 40487221838 の
+    資生堂(4911)）。その場合は先頭のJSONオブジェクトだけを採用する。"""
     try:
         return json.loads(text, strict=False)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        if e.msg == "Extra data":
+            data = json.JSONDecoder(strict=False).raw_decode(text.lstrip())[0]
+            if isinstance(data, dict):
+                return data
         m = _BODY_JSON_RE.match(text)
         if not m:
             raise

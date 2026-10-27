@@ -1,5 +1,12 @@
 # Dev Log
 
+## 2026-10-27 ブログ本文JSONの後ろに余計な文が付くと記事が落ちる不具合を修正
+
+EDINET Blog Hourly（run 40487221838）が「ブログ生成」失敗で赤。資生堂(4911)の本文生成で
+`json.loads` が "Extra data: line 5 column 1" で落ち、記事生成失敗1件 → 終了コード4。モデルが `{"body": ...}` の後ろに
+補足文を付けたため。`parse_body_json()` は "Extra data" のとき先頭のJSONオブジェクトだけを採用する（再生成はしない）。
+- tests: test_publish_blog_articles 155件 全OK
+
 ## 2026-10-25 company_info へ従業員数・有報の事業情報を統合し、決算短信のURLとXBRL予想を追加
 
 押し目買い通知の「※会社予想が未取得で増益を判定できず除外: 76銘柄」（10/22）の改善。原因は jquants_fin_summary の
