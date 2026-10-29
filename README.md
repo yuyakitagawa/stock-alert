@@ -202,6 +202,7 @@ EDINET Blog Hourly・サイトのISR再検証が全て失敗した（Next.jsの�
 | `tests/test_fix_body_numbers.py` | 記事是正の非課金経路（`tools/fix_misreported_blog_articles.py --fix-body-numbers`）のユニットテスト。本文中の比率・変化幅・金額の置換（表記ゆれ・符号なし変化幅・pt表記）、旧値が本文に無いときの報告、規模を語る記述と新しい比率の矛盾検出、タイトルからの旧比率の読み取りを確認、英語版（英題の組み直し・英語本文の数字置換・書き直し要否の判定）も確認（29アサーション）|
 | `tests/test_market_compare.py` | 日経 vs S&P500 相対強弱アドバイザーのユニットテスト（4件）|
 | `tests/test_earnings_forecast.py` | 決算短信XBRLからの会社予想抽出のユニットテスト（今期予想の取り出しとscale解決・通期短信で来期予想を優先しNextYearInstantが無ければ今期末の1年後を使うこと・連結優先・赤字予想のsign解決とレンジ予想の除外・予想が無い短信/壊れたzipでNoneを返すこと・同じ日の実績行には予想の列だけを足し年度違いは捨てること、6件）|
+| `tests/test_tdnet.py` | TDnet適時開示の取得のユニットテスト（期間を1日ずつ取ること・`scan_disclosures()`がそれを使うこと、2件）|
 | `tests/test_company_profile.py` | 有報からの事業情報抽出のユニットテスト（テキストブロックのHTML除去と見出し落とし・人数/平均年齢/平均年収の数値抽出・構成説明と「なお〜」を飛ばして事業の文を採ること・構成説明と同じ文にある事業説明の切り出し・40字での切り詰め・銘柄コードや事業の内容が無い書類を保存しないこと・company_infoの列名（profile_*）で読み書きすること、7件）|
 | `tests/test_dip_position_alert.py` | 押し目買い保有の満了通知のユニットテスト（買付日を0日目とした営業日数・損益と合計の本文・現在値が取れない銘柄の表示・保有ファイルの形式、3件）|
 | `tests/test_dip_buy_alert.py` | 押し目買い候補通知のユニットテスト（β・日次騰落・開示後の株式分割の検出と分割比から外れた急落の無視・期末〜有報提出の間の分割をBPSに反映し分割後ベースに直された有報には掛けないこと・前日までの開示だけを使うこと・直近の本決算と同じ年度の予想で増益判定しないこと・分割補正後のPBR・前期赤字/横ばいの除外・本文の2行組みと「⚠決算古」・候補300件でも1通に収め条件文を切らさないこと・予想未取得の件数表示・予想未取得銘柄の参考表示（上位5・前期増益率/予想超過の表記・前期赤字で増益率を出さないこと）・前期実績と同年度予想の取り出し・従業員数テーブルの取り直し順（未取得→古い順、30日以内は除外）・テーブルに無い銘柄だけYahooで補うこと・取得エラーを「値が無い」として保存しないこと/連続エラーで打ち切ること・Yahoo以外の行は1年取り直さないこと・従業員数をcompany_infoの列で読み書きすること・予想未取得をcompany_infoの会社予想で補う条件（前日まで・翌年度・百万円→円・短信XBRL予想を株探より優先）、25件）|
@@ -387,7 +388,7 @@ DBキャッシュは廃止。
 | **Yahoo Finance** (非公式REST) | 株価OHLCV（日次）、日経225/VIX/S&P500/USD/JPY | テクニカル特徴量・マクロ特徴量・バックテスト | `lib/utils.py` (`get_prices`, `get_market_index_df`) |
 | **kabutan.jp** (スクレイピング) | PER/PBR/ROE、株主優待月、業績テキスト | ファンダ特徴量 | `lib/utils.py`, `lib/alt_data.py`, `lib/kabutan_earnings.py` |
 | **EDINET API v2** | 大量保有関連報告書(350/360)、有報(120)/半期報(160)の決算XBRL(BS/PL/CF)。連結を優先し、連結が無い会社だけ単体。訂正報告書(130)は対象外 | 先回りシグナル・財務サマリ（EPS/BPS/ROE/CFO/売上/営業益/予想）本体 | `lib/edinet.py`, `lib/edinet_financials.py`, `tools/scan_large_holdings.py`, `tools/fetch_edinet_financials.py` |
-| **TDnet適時開示** (やのしんWEB-API・⚠️個人運営) | 適時開示（業績修正/増配/自社株買い/M&A等のカタリスト） | 企業イベント情報（LINE通知用）。停止リスク隔離のため `ext_` テーブルに保存 | `lib/tdnet.py`, `tools/fetch_tdnet.py` |
+| **TDnet適時開示** (やのしんWEB-API・⚠️個人運営) | 適時開示（業績修正/増配/自社株買い/M&A等のカタリスト） | 企業イベント情報（LINE通知用）。停止リスク隔離のため `ext_` テーブルに保存。期間は1日ずつ取る（`fetch_days()`、1日の上限5,000件。直近3日を上限2,000件でまとめて取っていた頃は決算集中日に古い日が丸ごと落ちていた＝2026-08-05〜07は3,037件中2,000件のみ） | `lib/tdnet.py`, `tools/fetch_tdnet.py` |
 | **JPX 空売り残高/信用取引残高** (公式Excel/CSV) | 空売り残高報告(0.5%以上)、個別銘柄信用週末残高 | 需給シグナル（逆張り/買い残） | `lib/jpx_market_data.py`, `tools/fetch_jpx_market.py` |
 | **JPX 東証上場銘柄一覧** (Excel) | 銘柄コード・名前・市場区分・33業種分類 | スクリーニング母集団・セクター分類 | `lib/utils.py`, `core/screener.py` |
 | **Supabase REST API** | 全テーブルCRUD | データ永続化（DB一元管理） | `lib/supabase_client.py` |
