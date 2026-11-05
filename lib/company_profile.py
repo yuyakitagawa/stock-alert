@@ -50,7 +50,7 @@ _SKIP_SENTENCE = re.compile(
     r"(構成され|持株会社制|純粋持株会社|により構成|から構成|以下の通りであります|記載のとおり|"
     r"記載しており|セグメントと同一|経理の状況|当連結会計年度より|位置付け|位置づけ|次のとおり|次の通り|"
     r"以下のとおり|"
-    r"^なお|^また|^これら|^その他|^以上|^[）\)）]|^（)")
+    r"^なお|^また|^従いまして|^これら|^その他|^以上|^[）\)）]|^（)")
 # 「何をしている会社か」を述べている文の目印
 _BUSINESS_WORD = re.compile(r"(事業|製造|販売|開発|提供|サービス|運営|手掛け|営んで)")
 # 構成説明と事業の説明が1文にまとまっている形。何をしている会社かの部分だけを取り出す
@@ -58,7 +58,12 @@ _BUSINESS_WORD = re.compile(r"(事業|製造|販売|開発|提供|サービス|�
 #   前:   「当社グループ(…)は、プレス機械…の製造・販売…を主な事業として、当社、連結子会社22社…で構成」（アイダ）
 _COMPOSED_THEN = re.compile(r"構成(?:され|し)(?:ており|ています)?[、,]")
 _MAIN_THEN_COMPOSED = re.compile(r"^(?:.{0,60}?は[、,])?(.+?)を主(?:な|たる)(?:事業|内容|業務)(?:として|とし)[、,].*構成")
-_LIST_INTRO = re.compile(r"[、,][^、,]*(?:位置付け|位置づけ|次のとおり|次の通り|以下のとおり|以下の通り)")
+_LIST_WORDS = r"(?:位置付け|位置づけ|次のとおり|次の通り|以下のとおり|以下の通り)"
+_LIST_INTRO = re.compile(rf"[、,][^、,]*{_LIST_WORDS}")
+# 括弧書き（「（以下、「当社グループ」といいます。）」「（公共分野）」など）。中の「。」で文が切れないよう先に落とす
+_PAREN = re.compile(r"[（(][^（）()]{0,150}[）)]")
+# 表の行（「セグメント 主要な製品 主要な生産会社 …」）は単語が空白で区切られて並ぶ
+_TABLE_ROW = re.compile(r"(?:\S{1,12}\s){4}")
 
 
 def _text_block(xbrl: str, tag: str) -> str:
@@ -93,7 +98,8 @@ def _business_part(s: str) -> str:
         m = _MAIN_THEN_COMPOSED.search(s)
         part = m.group(1) if m else ""
     part = part.strip()
-    if len(part) < 10 or part.endswith("は") or not _BUSINESS_WORD.search(part):
+    if (len(part) < 10 or part.endswith("は") or not _BUSINESS_WORD.search(part)
+            or re.search(_LIST_WORDS, part)):
         return ""
     return part
 
@@ -105,23 +111,32 @@ def headline(business: str, limit: int = HEADLINE_CHARS) -> str:
     最初に出てくる「何をしている会社か」の文を採る。
     """
     t = (business or "").strip()
+    while True:
+        stripped = _PAREN.sub("", t)
+        if stripped == t:
+            break
+        t = stripped
     if not t:
         return ""
     cut = lambda s: (s[:limit].rstrip("、,") + "…") if len(s) > limit else s
     cands = []
     for raw in t.split("。"):
         s = re.sub(r"^[、,。\s]+", "", raw).strip()
-        if len(s) < 10:
+        if len(s) < 10 or _TABLE_ROW.match(s):
             continue
         part = _business_part(s)
         if part:
             return cut(part)
-        if _SKIP_SENTENCE.search(s):
+        cut_at = _LIST_INTRO.search(s)  # 「…事業を主として行っており、各事業における位置付け等は次のとおり」
+        if cut_at:
+            s = s[:cut_at.start()]
+        if len(s) < 10 or _SKIP_SENTENCE.search(s):
             continue
         if _BUSINESS_WORD.search(s):
             return cut(s)
         cands.append(s)
-    return cut(cands[0]) if cands else cut(t.split("。")[0].strip())
+    # 構成説明や表しか無い有報は、会社の構成を述べるだけの文を出すより空欄にする
+    return cut(cands[0]) if cands else ""
 
 
 def parse_profile(xbrl: str) -> dict:
