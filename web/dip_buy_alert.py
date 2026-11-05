@@ -78,6 +78,11 @@ def session_date(now_jst: datetime) -> date:
     return d
 
 
+def prices_missing(n_priced: int) -> bool:
+    """判定日の終値が欠けているか。0件は休場日、MIN_PRICED_CODES以上はそろっている。"""
+    return 0 < n_priced < MIN_PRICED_CODES
+
+
 def missing_index_reason(asof: date, nk_last: date, n_priced: int) -> str | None:
     """日経平均の asof の終値が無いとき、休場日なら None、取得漏れなら警告文を返す。
     休場日は個別株の終値も1件も無い。1件でもあれば取引日なので日経平均の取得漏れ
@@ -290,6 +295,14 @@ def _company_forecasts(codes: list[str]) -> dict[str, dict]:
     return out
 
 
+def count_priced(asof: date) -> int:
+    """asof の終値がある銘柄数（price_store のミラー）。"""
+    from lib import price_store
+    price_store.enable()
+    return sum(1 for c in price_store.codes()
+               if price_store.frame(c, start=asof.isoformat(), end=asof.isoformat()) is not None)
+
+
 def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict]]:
     from lib import price_store
     from lib.utils import get_market_index_df_cached
@@ -300,8 +313,7 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
     nk = nk[nk.index <= asof]
     price_store.enable()
     if nk.index[-1] != asof:
-        n_priced = sum(1 for c in price_store.codes()
-                       if price_store.frame(c, start=asof.isoformat(), end=asof.isoformat()) is not None)
+        n_priced = count_priced(asof)
         reason = missing_index_reason(asof, nk.index[-1], n_priced)
         if reason:
             raise RuntimeError(reason)
@@ -399,8 +411,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="判定日（既定: 直近の取引日。JST15:30より前なら前の平日）")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--check-prices", action="store_true",
+                    help="判定日の終値がそろっていれば0、欠けていれば1で終わる（daily_alert の再取得判定用）")
     a = ap.parse_args()
     asof = date.fromisoformat(a.date) if a.date else session_date(datetime.now(JST))
+    if a.check_prices:
+        n = count_priced(asof)
+        print(f"[dip] {asof} の終値がある銘柄: {n}")
+        return 1 if prices_missing(n) else 0
 
     try:
         nk_ret, picks, no_forecast, refs = find_candidates(asof)
