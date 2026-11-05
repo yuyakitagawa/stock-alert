@@ -4,15 +4,38 @@
 """
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from web.dip_buy_alert import (beta, bps_split_factor, build_message, company_forecast, daily_return,
-                               passes_fundamentals,
+                               missing_index_reason, passes_fundamentals, prices_missing, session_date,
                                pick_fundamentals, split_factor, MAX_CHARS)
+
+
+def test_session_date_uses_previous_weekday_before_close():
+    # 2026-11-04(水)分が11/5 00:55に走り、11/5を判定して取りこぼした
+    assert session_date(datetime(2026, 11, 5, 0, 55)) == date(2026, 11, 4)
+    assert session_date(datetime(2026, 11, 5, 15, 29)) == date(2026, 11, 4)
+    assert session_date(datetime(2026, 11, 5, 15, 30)) == date(2026, 11, 5)
+    assert session_date(datetime(2026, 11, 7, 1, 0)) == date(2026, 11, 6)    # 土の深夜→金
+    assert session_date(datetime(2026, 11, 9, 2, 0)) == date(2026, 11, 6)    # 月の深夜→金
+    assert session_date(datetime(2026, 11, 8, 20, 0)) == date(2026, 11, 6)   # 日→金
+
+
+def test_missing_index_reason_holiday_vs_fetch_failure():
+    assert missing_index_reason(date(2026, 11, 3), date(2026, 11, 2), 0) is None   # 文化の日
+    msg = missing_index_reason(date(2026, 11, 4), date(2026, 11, 2), 23)
+    assert msg and "2026-11-04" in msg and "23銘柄" in msg
+
+
+def test_prices_missing():
+    assert prices_missing(0) is False      # 休場日
+    assert prices_missing(2) is True       # 2026-11-05（0時台開始の便）
+    assert prices_missing(999) is True
+    assert prices_missing(3746) is False
 
 
 def test_daily_return():
