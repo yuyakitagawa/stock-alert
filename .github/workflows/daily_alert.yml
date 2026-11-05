@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 7 * * 1-5'  # 平日7:00 UTC = 平日16:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
+    inputs:
+      dip_date:
+        description: '押し目買い通知の判定日（YYYY-MM-DD。空なら直近の取引日）'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -143,7 +148,9 @@ jobs:
       # Step 0の終値とStep 2dの決算を使うので、その後段に置く。失敗してもランキングには影響させない。
       - name: Step 5 - 押し目買い候補のLINE通知（日経-2%以下の日のみ）
         continue-on-error: true
-        run: cd ~/stock-alert && python web/dip_buy_alert.py
+        env:
+          DIP_DATE: ${{ inputs.dip_date }}
+        run: cd ~/stock-alert && python web/dip_buy_alert.py ${DIP_DATE:+--date "$DIP_DATE"}
 
       # 押し目買いで実際に買った銘柄（data/dip_positions.json）が63営業日に達したら1回だけ通知
       - name: Step 5b - 押し目買い保有の満了通知（63営業日）

@@ -60,9 +60,33 @@ REF_MAX = 5
 MIN_PRICED_CODES = 1000
 
 JST = timezone(timedelta(hours=9))
+# 東証の大引け（2024-11-05から15:30）。これより前は当日の終値がまだ無い
+TSE_CLOSE_JST = (15, 30)
 
 
 # ── 純粋関数（テスト対象） ─────────────────────────────────────────────
+
+def session_date(now_jst: datetime) -> date:
+    """判定する取引日。日次ジョブは遅れて日本時間の0時を越えることがある（2026-11-04分は
+    11/5 00:55に実行され、11/5の終値が無いとして判定されなかった）ので、
+    大引け前なら前の平日、土日なら金曜を返す。祝日は日経平均の終値が無いことで判別する。"""
+    d = now_jst.date()
+    if (now_jst.hour, now_jst.minute) < TSE_CLOSE_JST:
+        d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def missing_index_reason(asof: date, nk_last: date, n_priced: int) -> str | None:
+    """日経平均の asof の終値が無いとき、休場日なら None、取得漏れなら警告文を返す。
+    休場日は個別株の終値も1件も無い。1件でもあれば取引日なので日経平均の取得漏れ
+    （2026-11-04は株価23銘柄だけ・日経平均なしで、黙って「通知対象なし」になっていた）。"""
+    if n_priced == 0:
+        return None
+    return (f"日経平均の {asof} の終値が未取得です（最終 {nk_last}）。"
+            f"個別株は{n_priced}銘柄に終値があり休場日ではありません（株価更新の失敗の疑い）")
+
 
 def daily_return(closes) -> float | None:
     if closes is None or len(closes) < 2 or not closes[-2]:
@@ -274,8 +298,14 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
     if nk is None or len(nk) < BETA_MIN_DAYS:
         raise RuntimeError("日経平均の株価が取得できません")
     nk = nk[nk.index <= asof]
+    price_store.enable()
     if nk.index[-1] != asof:
-        print(f"[dip] 日経平均の {asof} の終値が無い（休場日か未取得）: 最終 {nk.index[-1]}")
+        n_priced = sum(1 for c in price_store.codes()
+                       if price_store.frame(c, start=asof.isoformat(), end=asof.isoformat()) is not None)
+        reason = missing_index_reason(asof, nk.index[-1], n_priced)
+        if reason:
+            raise RuntimeError(reason)
+        print(f"[dip] {asof} は休場日（日経平均・個別株とも終値なし）")
         return None, [], 0, []
     nk_ret = daily_return(nk["Close"].values)
     print(f"[dip] 日経平均 {asof}: {nk_ret * 100:+.2f}%")
@@ -283,7 +313,6 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         return nk_ret, [], 0, []
 
     nk_r = nk["Close"].pct_change()
-    price_store.enable()
     stage = []
     n_today = 0
     for code in price_store.codes():
@@ -368,10 +397,10 @@ def main() -> int:
     from lib import notify
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--date", help="判定日（既定: JSTの今日）")
+    ap.add_argument("--date", help="判定日（既定: 直近の取引日。JST15:30より前なら前の平日）")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    asof = date.fromisoformat(a.date) if a.date else datetime.now(JST).date()
+    asof = date.fromisoformat(a.date) if a.date else session_date(datetime.now(JST))
 
     try:
         nk_ret, picks, no_forecast, refs = find_candidates(asof)
