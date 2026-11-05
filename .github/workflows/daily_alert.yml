@@ -4,11 +4,6 @@ on:
   schedule:
     - cron: '0 7 * * 1-5'  # 平日7:00 UTC = 平日16:00 JST（市場閉場後・当日終値データで配信）
   workflow_dispatch:       # 手動実行ボタン
-    inputs:
-      dip_date:
-        description: '押し目買い通知の判定日（YYYY-MM-DD。空なら直近の取引日）'
-        required: false
-        default: ''
 
 permissions:
   contents: read
@@ -75,6 +70,21 @@ jobs:
       - name: Step 0 - 株価キャッシュ更新（Yahoo Finance 差分）
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_history.py --years 1
+
+      # 日本時間0時台に始まった便は、Yahooから当日の終値がほぼ取れない（11/4は23銘柄・11/5は2銘柄。
+      # 01:54開始の11/2は全銘柄取れた）。欠けていれば30分おいて最大2回取り直す。
+      # 金曜の再学習(最大180分)と合わせても timeout 360分に収まる回数にしている。
+      - name: Step 0r - 当日終値が欠けていれば取り直す
+        continue-on-error: true
+        run: |
+          cd ~/stock-alert
+          for i in 1 2; do
+            python web/dip_buy_alert.py --check-prices && exit 0
+            echo "当日の終値が欠けている。30分後に取り直す ($i/2)"
+            sleep 1800
+            python tools/fetch_history.py --years 1
+          done
+          python web/dip_buy_alert.py --check-prices
 
       # 投資家リターンランキング(/ranking/returns)の集計ビュー。株価キャッシュと
       # EDINET開示の両方に依存するため、Step 0の株価更新の直後に再計算する。
@@ -148,9 +158,7 @@ jobs:
       # Step 0の終値とStep 2dの決算を使うので、その後段に置く。失敗してもランキングには影響させない。
       - name: Step 5 - 押し目買い候補のLINE通知（日経-2%以下の日のみ）
         continue-on-error: true
-        env:
-          DIP_DATE: ${{ inputs.dip_date }}
-        run: cd ~/stock-alert && python web/dip_buy_alert.py ${DIP_DATE:+--date "$DIP_DATE"}
+        run: cd ~/stock-alert && python web/dip_buy_alert.py
 
       # 押し目買いで実際に買った銘柄（data/dip_positions.json）が63営業日に達したら1回だけ通知
       - name: Step 5b - 押し目買い保有の満了通知（63営業日）
