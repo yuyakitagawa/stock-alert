@@ -57,6 +57,7 @@ def get_market_index_df(ticker_encoded, days=2200):
         data = resp.json()
         result = data.get("chart", {}).get("result", [])
         if not result:
+            print(f"[index] {ticker_encoded}: Yahooの応答に result が無い (HTTP {resp.status_code})")
             return None
         ts     = result[0].get("timestamp", [])
         closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
@@ -64,7 +65,9 @@ def get_market_index_df(ticker_encoded, days=2200):
         df  = pd.DataFrame({"Close": closes}, index=idx).dropna()
         df.index = df.index.date
         return df
-    except Exception:
+    except Exception as e:
+        # 黙って None を返すと取得漏れに気付けない（2026-11-04の日経平均が欠けた）
+        print(f"[index] {ticker_encoded}: Yahoo取得失敗: {e}")
         return None
 
 
