@@ -11,7 +11,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from web.dip_buy_alert import (beta, bps_split_factor, build_message, company_forecast, daily_return,
-                               missing_index_reason, passes_fundamentals, prices_missing, session_date,
+                               index_missing, missing_index_reason, passes_fundamentals, prices_missing, session_date,
                                pick_fundamentals, split_factor, MAX_CHARS)
 
 
@@ -36,6 +36,34 @@ def test_prices_missing():
     assert prices_missing(2) is True       # 2026-11-05（0時台開始の便）
     assert prices_missing(999) is True
     assert prices_missing(3746) is False
+
+
+def test_index_missing():
+    d = date(2026, 11, 6)
+    assert index_missing(1073, date(2026, 11, 5), d) is True   # 2026-11-06: 個別株はそろい日経だけ欠け
+    assert index_missing(1073, d, d) is False
+    assert index_missing(0, date(2026, 11, 2), date(2026, 11, 3)) is False  # 休場日
+    assert index_missing(3746, None, d) is True
+
+
+def test_parse_index_chart_fills_null_adjclose_and_missing_last_bar():
+    from lib.utils import parse_index_chart
+    t5, t6 = 1793836800, 1793923200  # 2026-11-05 / 11-06 09:00 JST
+    end6 = t6 + 6 * 3600 + 30 * 60   # 15:30 JST
+    base = {"timestamp": [t5, t6],
+            "indicators": {"quote": [{"close": [100.0, 98.0]}], "adjclose": [{"adjclose": [100.0, None]}]},
+            "meta": {"exchangeTimezoneName": "Asia/Tokyo"}}
+    df = parse_index_chart(base)
+    assert list(df.index) == [date(2026, 11, 5), date(2026, 11, 6)] and df["Close"].iloc[-1] == 98.0
+    # 日足に当日行が無い → 取引終了後なら meta の終値で補う
+    meta = {"exchangeTimezoneName": "Asia/Tokyo", "regularMarketPrice": 97.5, "regularMarketTime": end6 - 2,
+            "currentTradingPeriod": {"regular": {"start": t6, "end": end6}}}
+    one = {"timestamp": [t5], "indicators": {"quote": [{"close": [100.0]}], "adjclose": [{"adjclose": [100.0]}]},
+           "meta": meta}
+    df = parse_index_chart(one, now_ts=end6 + 9 * 3600)
+    assert list(df.index) == [date(2026, 11, 5), date(2026, 11, 6)] and df["Close"].iloc[-1] == 97.5
+    # 取引中は終値ではないので補わない
+    assert list(parse_index_chart(one, now_ts=end6 - 600).index) == [date(2026, 11, 5)]
 
 
 def test_daily_return():

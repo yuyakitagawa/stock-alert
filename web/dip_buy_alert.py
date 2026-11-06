@@ -83,6 +83,12 @@ def prices_missing(n_priced: int) -> bool:
     return 0 < n_priced < MIN_PRICED_CODES
 
 
+def index_missing(n_priced: int, nk_last: date | None, asof: date) -> bool:
+    """取引日（個別株の終値が1件でもある日）なのに日経平均の asof の終値が無いか。
+    2026-11-06分は個別株1073銘柄そろい Step 0r を素通りし、日経平均だけ欠けて判定できなかった。"""
+    return n_priced > 0 and (nk_last is None or nk_last < asof)
+
+
 def missing_index_reason(asof: date, nk_last: date, n_priced: int) -> str | None:
     """日経平均の asof の終値が無いとき、休場日なら None、取得漏れなら警告文を返す。
     休場日は個別株の終値も1件も無い。1件でもあれば取引日なので日経平均の取得漏れ
@@ -295,6 +301,16 @@ def _company_forecasts(codes: list[str]) -> dict[str, dict]:
     return out
 
 
+def nikkei_last_date(asof: date) -> date | None:
+    """asof 以前で日経平均の終値がある最終日。"""
+    from lib.utils import get_market_index_df_cached
+    nk = get_market_index_df_cached("N225", "%5EN225", 30)
+    if nk is None:
+        return None
+    nk = nk[nk.index <= asof]
+    return nk.index[-1] if len(nk) else None
+
+
 def count_priced(asof: date) -> int:
     """asof の終値がある銘柄数（price_store のミラー）。"""
     from lib import price_store
@@ -412,13 +428,14 @@ def main() -> int:
     ap.add_argument("--date", help="判定日（既定: 直近の取引日。JST15:30より前なら前の平日）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-prices", action="store_true",
-                    help="判定日の終値がそろっていれば0、欠けていれば1で終わる（daily_alert の再取得判定用）")
+                    help="判定日の終値（個別株・日経平均）がそろっていれば0、欠けていれば1で終わる（daily_alert の再取得判定用）")
     a = ap.parse_args()
     asof = date.fromisoformat(a.date) if a.date else session_date(datetime.now(JST))
     if a.check_prices:
         n = count_priced(asof)
-        print(f"[dip] {asof} の終値がある銘柄: {n}")
-        return 1 if prices_missing(n) else 0
+        nk_last = nikkei_last_date(asof)  # Yahooから差分を取り直してDBに保存する
+        print(f"[dip] {asof} の終値がある銘柄: {n} / 日経平均の最終日: {nk_last}")
+        return 1 if prices_missing(n) or index_missing(n, nk_last, asof) else 0
 
     try:
         nk_ret, picks, no_forecast, refs = find_candidates(asof)
