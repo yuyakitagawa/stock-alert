@@ -36,6 +36,12 @@ def test_prices_missing():
     assert prices_missing(2) is True       # 2026-11-05（0時台開始の便）
     assert prices_missing(999) is True
     assert prices_missing(3746) is False
+    # 前の取引日の件数がある日は90%未満で欠け
+    assert prices_missing(1073, 3746) is True   # 2026-11-06（23:51開始・0時で途切れた）
+    assert prices_missing(3746, 3746) is False
+    assert prices_missing(3371, 3746) is True   # 3746×0.9=3371.4 未満
+    assert prices_missing(3372, 3746) is False
+    assert prices_missing(0, 3746) is False     # 休場日
 
 
 def test_index_missing():
