@@ -1,0 +1,72 @@
+name: Dip Buy Alert
+
+# 押し目買い候補（web/dip_buy_alert.py）を大引け直後に判定してLINEへ送る。
+# GitHubのscheduleはこのリポジトリで毎回約7〜8時間遅れて起動する（11/2〜11/6実測: ops.yml 06:00 UTC→13:56〜15:37、
+# daily_alert.yml 07:00 UTC→14:50〜16:53）ため使わない。Supabase の pg_cron（平日 06:50 UTC = 15:50 JST）が
+# workflow_dispatch API で起動する（supabase/create_dip_alert_cron.sql）。
+# daily_alert.yml Step 5 も同じ判定を夜に回す予備。同じ日の二重送信は notify.push_once が防ぐ。
+# 決算・会社予想・従業員数は前夜の daily_alert が更新した分を使う（判定は前日までの開示だけを使う仕様）。
+# 手動実行で dip_date を入れると過去日を判定し直す（株価の取得はしない）。
+on:
+  workflow_dispatch:
+    inputs:
+      dip_date:
+        description: '判定日（YYYY-MM-DD）。空なら直近の取引日。過去日の押し目買い候補をLINEへ送り直す'
+        required: false
+        default: ''
+
+concurrency:
+  group: dip-alert
+  cancel-in-progress: false
+
+jobs:
+  dip:
+    runs-on: ubuntu-latest
+    # 株価取得31分 + 取り直し（30分待ち+31分）×2 ≒ 3時間
+    timeout-minutes: 200
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+      DIP_DATE: ${{ inputs.dip_date }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas numpy python-dotenv yfinance
+
+      # daily_alert.yml と共有する全銘柄終値のミラー（lib/price_store.py）。無いと全件をRESTで引き直す（約85MBのegress）
+      - name: Restore price store cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/_price_store.pkl
+          key: price-store-${{ github.run_id }}
+          restore-keys: price-store-
+
+      - name: 株価キャッシュ更新（Yahoo Finance 差分）
+        if: inputs.dip_date == ''
+        continue-on-error: true
+        run: python tools/fetch_history.py --years 1
+
+      # 大引け直後はYahooに当日の終値がそろっていないことがある。欠けていれば30分おきに最大2回取り直す
+      - name: 当日終値が欠けていれば取り直す
+        if: inputs.dip_date == ''
+        continue-on-error: true
+        run: bash tools/ensure_prices.sh
+
+      - name: 押し目買い候補をLINEへ送る
+        run: python web/dip_buy_alert.py ${DIP_DATE:+--date "$DIP_DATE"}
+
+      - name: Save price store cache
+        if: always() && inputs.dip_date == ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/_price_store.pkl
+          key: price-store-${{ github.run_id }}

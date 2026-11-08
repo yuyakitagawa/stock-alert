@@ -68,8 +68,10 @@ def test_parse_index_chart_fills_null_adjclose_and_missing_last_bar():
            "meta": meta}
     df = parse_index_chart(one, now_ts=end6 + 9 * 3600)
     assert list(df.index) == [date(2026, 11, 5), date(2026, 11, 6)] and df["Close"].iloc[-1] == 97.5
-    # 取引中は終値ではないので補わない
+    # 取引中・大引けから15分以内は終値が確定していないので補わない
     assert list(parse_index_chart(one, now_ts=end6 - 600).index) == [date(2026, 11, 5)]
+    assert list(parse_index_chart(one, now_ts=end6 + 600).index) == [date(2026, 11, 5)]
+    assert list(parse_index_chart(one, now_ts=end6 + 900).index)[-1] == date(2026, 11, 6)
 
 
 def test_daily_return():
