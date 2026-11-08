@@ -1,5 +1,22 @@
 # Dev Log
 
+## 2026-11-08 押し目買い判定を大引け直後（15:50 JST）に回す
+オーナー依頼「市場が閉じたらすぐデータ取得して、判定を回してほしい」。
+- GitHubのscheduleはこのリポジトリで毎回約7〜8時間遅れる（11/2〜11/6実測: ops.yml 06:00 UTC→13:56〜15:37、
+  daily_alert.yml 07:00 UTC→14:50〜16:53）。cronを変えても大引け直後には起動できない。
+- 直し:
+  - `.github/workflows/dip_alert.yml`（新規・workflow_dispatchのみ）: 株価取得→`tools/ensure_prices.sh`→判定。
+    ops.yml の手動ジョブ `dip_alert` はここに統合して削除（入力 `dip_date` も移した）。
+  - 起動は Supabase pg_cron（ジョブ `dip_alert_dispatch`、平日 06:50 UTC = 15:50 JST）→ `public.dispatch_dip_alert()` が
+    pg_net で GitHub workflow_dispatch API を叩く（`supabase/create_dip_alert_cron.sql`、本番に適用済み）。
+    Vault の `github_dispatch_token` が無い間は何もしない（11/8 に呼んで null を返すことを確認）。
+  - `tools/ensure_prices.sh`: daily_alert.yml Step 0r の取り直しを切り出して dip_alert.yml と共有。
+  - `parse_index_chart()`: meta の値で日経平均を補うのは取引終了から15分後以降（大引け直後は最終値が確定していないことがある）。
+  - daily_alert.yml Step 5 は夜の予備として残す。同じ日の二重送信は `notify.push_once` が防ぐ。
+  - 決算・会社予想・従業員数は前夜の daily_alert が更新した分を使う（判定は前日までの開示だけを使う仕様なので変わらない）。
+- 戦略・条件は変更なし（バックテスト対象外）。テスト test_dip_buy_alert 30件。
+- 未実施: PAT の発行と Vault 登録（オーナー作業）。dip_alert.yml の実地起動（main マージとトークン登録の後）。
+
 ## 2026-11-06 日経平均の当日終値だけ欠けて押し目買い判定が止まった
 LINE警告「日経平均の 2026-11-06 の終値が未取得です（最終 2026-11-05）。個別株は1073銘柄に終値があり」。
 - 便: 14:50 UTC開始。Step 5 は 15:57 UTC（11/7 00:57 JST）。`yahoo_market_index` は N225 だけ 11/5 止まり、
