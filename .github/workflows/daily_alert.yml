@@ -2,7 +2,10 @@ name: Daily Stock Alert
 
 on:
   schedule:
-    - cron: '0 7 * * 1-5'  # 平日7:00 UTC = 平日16:00 JST（市場閉場後・当日終値データで配信）
+    # 平日7:13 UTC = 16:13 JST（市場閉場後）。毎時0分はGitHub側が混み遅延・欠落しやすい（GitHub Docs）ので13分にずらす。
+    # 実測の開始は 21:28〜翌01:53 JST と大きく遅れており、0時を越えると当日の終値が取れない（Step 0r）。
+    # 前倒しは不可: 定刻どおり起動した日に大引け(15:30)前だと、前の取引日を判定してしまう（session_date）。
+    - cron: '13 7 * * 1-5'
   workflow_dispatch:       # 手動実行ボタン
 
 permissions:
@@ -71,18 +74,32 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_history.py --years 1
 
-      # 日本時間0時台に始まった便は、Yahooから当日の終値がほぼ取れない（11/4は23銘柄・11/5は2銘柄。
-      # 01:54開始の11/2は全銘柄取れた）。欠けていれば30分おいて最大2回取り直す。
-      # 金曜の再学習(最大180分)と合わせても timeout 360分に収まる回数にしている。
+      # 日本時間0時を越えると、Yahooから当日の日足が取れなくなる（推定）。
+      #   11/4（00:13開始）23銘柄・11/5（00:14開始）2銘柄・11/6（23:51開始）1,073銘柄＝0:00までに取れた分、日経平均なし。
+      #   01:53開始の11/2はそろった。いつ戻るかは未確認。
+      # 欠け（前の取引日の90%未満、または日経平均なし）なら取り直す。JST 0〜1時台なら 02:05 JST まで待つ
+      # （待ちは2回合わせて最大120分）。それ以外は30分待つ。0〜1時台で待った後は1回だけ、それ以外は最大2回。
+      # 最悪 Step0 31分 + 待ち120分 + 取り直し2回62分 + Step0b〜5b 34分 = 247分。timeout 360分の残りは約112分で、
+      # 金曜の再学習（11/6実測28分）が112分を超えると打ち切られる。
       - name: Step 0r - 当日終値が欠けていれば取り直す
         continue-on-error: true
         run: |
           cd ~/stock-alert
+          WAITED=0
           for i in 1 2; do
             python web/dip_buy_alert.py --check-prices && exit 0
-            echo "当日の終値が欠けている。30分後に取り直す ($i/2)"
-            sleep 1800
+            H=$(TZ=Asia/Tokyo date +%H); M=$(TZ=Asia/Tokyo date +%M)
+            if [ "$H" -lt 2 ]; then
+              WAIT=$(( (2 * 60 + 5 - (10#$H * 60 + 10#$M)) * 60 )); LAST=1
+            else
+              WAIT=1800; LAST=0
+            fi
+            if [ $((WAITED + WAIT)) -gt 7200 ]; then WAIT=$((7200 - WAITED)); fi
+            WAITED=$((WAITED + WAIT))
+            echo "当日の終値が欠けている。${WAIT}秒後に取り直す ($i/2)"
+            sleep "$WAIT"
             python tools/fetch_history.py --years 1
+            if [ "$LAST" = 1 ]; then break; fi
           done
           python web/dip_buy_alert.py --check-prices
 
