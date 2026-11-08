@@ -113,6 +113,12 @@ def test_parse_body_json_keeps_escaped_quotes_and_raises_on_garbage():
         pass
 
 
+def test_parse_body_json_ignores_trailing_text_after_json():
+    # 2026-10-27 資生堂(4911): JSONの後ろに補足が続き "Extra data" で記事が1本消えた
+    text = '{"body": "<p>本文</p>"}\n\n補足: 事実のみで書きました。'
+    assert m.parse_body_json(text) == {"body": "<p>本文</p>"}
+
+
 def test_generate_article_body_none_on_empty_body():
     fact_sheet = _fact_sheet()
     raw = json.dumps({"body": ""})
@@ -2421,6 +2427,7 @@ if __name__ == "__main__":
     test_generate_article_body_allows_raw_newlines_in_json()
     test_generate_article_body_salvages_unescaped_quotes()
     test_parse_body_json_keeps_escaped_quotes_and_raises_on_garbage()
+    test_parse_body_json_ignores_trailing_text_after_json()
     test_already_published_skips_when_lookup_fails()
     test_already_published_narrows_query_to_the_disclosure_date()
     test_ledger_marks_below_threshold_run_as_healthy()
@@ -2439,4 +2446,4 @@ if __name__ == "__main__":
     test_pick_lead_angle_threshold_crossing_down()
     test_format_filing_details()
     test_generate_article_body_prompt_includes_filing_details_and_angle()
-    print("全テスト成功 (154件)")
+    print("全テスト成功 (155件)")

@@ -2,7 +2,10 @@ name: Daily Stock Alert
 
 on:
   schedule:
-    - cron: '0 7 * * 1-5'  # 平日7:00 UTC = 平日16:00 JST（市場閉場後・当日終値データで配信）
+    # 平日7:13 UTC = 16:13 JST（市場閉場後）。毎時0分はGitHub側が混み遅延・欠落しやすい（GitHub Docs）ので13分にずらす。
+    # 実測の開始は 21:28〜翌01:53 JST と大きく遅れており、0時を越えると当日の終値が取れない（Step 0r）。
+    # 前倒しは不可: 定刻どおり起動した日に大引け(15:30)前だと、前の取引日を判定してしまう（session_date）。
+    - cron: '13 7 * * 1-5'
   workflow_dispatch:       # 手動実行ボタン
 
 permissions:
@@ -71,20 +74,13 @@ jobs:
         continue-on-error: true
         run: cd ~/stock-alert && python tools/fetch_history.py --years 1
 
-      # 日本時間0時台に始まった便は、Yahooから当日の終値がほぼ取れない（11/4は23銘柄・11/5は2銘柄。
-      # 01:54開始の11/2は全銘柄取れた）。欠けていれば30分おいて最大2回取り直す。
-      # 金曜の再学習(最大180分)と合わせても timeout 360分に収まる回数にしている。
+      # 判定日の終値（個別株・日経平均）が欠けていれば取り直す（中身は tools/ensure_prices.sh）。
+      # 最悪 Step0 31分 + 待ち120分 + 取り直し2回62分 + Step0b〜5b 34分 = 247分。timeout 360分の残りは約112分で、
+      # 金曜の再学習（11/6実測28分）が112分を超えると打ち切られる。
+      # 押し目買い判定は dip_alert.yml（Supabase pg_cron が 15:50 JST に起動）が先に済ませ、ここ（Step 5）は予備。
       - name: Step 0r - 当日終値が欠けていれば取り直す
         continue-on-error: true
-        run: |
-          cd ~/stock-alert
-          for i in 1 2; do
-            python web/dip_buy_alert.py --check-prices && exit 0
-            echo "当日の終値が欠けている。30分後に取り直す ($i/2)"
-            sleep 1800
-            python tools/fetch_history.py --years 1
-          done
-          python web/dip_buy_alert.py --check-prices
+        run: bash ~/stock-alert/tools/ensure_prices.sh
 
       # 投資家リターンランキング(/ranking/returns)の集計ビュー。株価キャッシュと
       # EDINET開示の両方に依存するため、Step 0の株価更新の直後に再計算する。

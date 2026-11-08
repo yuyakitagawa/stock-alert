@@ -53,11 +53,13 @@ STALE_FY_DAYS = 400
 SPLIT_TOL = 0.08
 # LINEの1通の上限（lib.notify.MAX_CHARS と同じ）。ここに収まる分だけ並べる
 MAX_CHARS = 4_000
-# 当日の終値がそろっている銘柄がこれ未満なら株価更新の失敗とみなす（平常時は約3,800）
 # 予想未取得で判定できない銘柄の参考表示の件数。2026-04-25〜08-19の短信予想が欠けているための措置で、
 # 予想が出そろえば（3月決算は2Q短信の11月中旬）該当がほぼ無くなり、表示も出なくなる
 REF_MAX = 5
+# 前の取引日の件数が無いとき、当日の終値がそろっている銘柄がこれ未満なら株価更新の失敗とみなす（平常時は約3,750）
 MIN_PRICED_CODES = 1000
+# 前の取引日に対してこの割合未満しか終値が無ければ欠けとみなす（平常の日次の増減は数銘柄）
+PRICED_RATIO = 0.9
 
 JST = timezone(timedelta(hours=9))
 # 東証の大引け（2024-11-05から15:30）。これより前は当日の終値がまだ無い
@@ -78,9 +80,21 @@ def session_date(now_jst: datetime) -> date:
     return d
 
 
-def prices_missing(n_priced: int) -> bool:
-    """判定日の終値が欠けているか。0件は休場日、MIN_PRICED_CODES以上はそろっている。"""
-    return 0 < n_priced < MIN_PRICED_CODES
+def prices_missing(n_priced: int, n_prev: int | None = None) -> bool:
+    """判定日の終値が欠けているか。0件は休場日。前の取引日の件数があればその90%未満で欠けとみなす
+    （2026-11-06は1,073銘柄＝前日3,746の29%で、旧基準の1,000以上を越えて取り直されなかった）。
+    前の取引日の件数が無いときは MIN_PRICED_CODES 未満で欠けとみなす。"""
+    if n_priced == 0:
+        return False
+    if n_prev:
+        return n_priced < n_prev * PRICED_RATIO
+    return n_priced < MIN_PRICED_CODES
+
+
+def index_missing(n_priced: int, nk_last: date | None, asof: date) -> bool:
+    """取引日（個別株の終値が1件でもある日）なのに日経平均の asof の終値が無いか。
+    2026-11-06分は個別株1073銘柄そろい Step 0r を素通りし、日経平均だけ欠けて判定できなかった。"""
+    return n_priced > 0 and (nk_last is None or nk_last < asof)
 
 
 def missing_index_reason(asof: date, nk_last: date, n_priced: int) -> str | None:
@@ -295,12 +309,35 @@ def _company_forecasts(codes: list[str]) -> dict[str, dict]:
     return out
 
 
+def nikkei_last_date(asof: date) -> date | None:
+    """asof 以前で日経平均の終値がある最終日。"""
+    from lib.utils import get_market_index_df_cached
+    nk = get_market_index_df_cached("N225", "%5EN225", 30)
+    if nk is None:
+        return None
+    nk = nk[nk.index <= asof]
+    return nk.index[-1] if len(nk) else None
+
+
 def count_priced(asof: date) -> int:
     """asof の終値がある銘柄数（price_store のミラー）。"""
     from lib import price_store
     price_store.enable()
     return sum(1 for c in price_store.codes()
                if price_store.frame(c, start=asof.isoformat(), end=asof.isoformat()) is not None)
+
+
+def prev_count_priced(asof: date, max_back: int = 7) -> int | None:
+    """asof より前で、終値が1件でもある直近の日の銘柄数（祝日・土日を飛ばす）。"""
+    d = asof
+    for _ in range(max_back):
+        d -= timedelta(days=1)
+        if d.weekday() >= 5:
+            continue
+        n = count_priced(d)
+        if n:
+            return n
+    return None
 
 
 def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict]]:
@@ -349,9 +386,11 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         stage.append({"code": code, "ret": r, "close": float(closes[-1]), "beta": b,
                       "dates": list(df.index), "closes": closes})
     print(f"[dip] 当日の終値がある銘柄: {n_today} / 株価条件を満たす銘柄: {len(stage)}")
-    if n_today < MIN_PRICED_CODES:
+    n_all, n_prev = count_priced(asof), prev_count_priced(asof)  # --check-prices と同じ数え方
+    if n_all == 0 or prices_missing(n_all, n_prev):
         # Step 0（株価更新）が落ちた日に「該当なし」で黙って終わらないようにする
-        raise RuntimeError(f"{asof} の終値がある銘柄が{n_today}件しかありません（株価更新の失敗の疑い）")
+        raise RuntimeError(f"{asof} の終値がある銘柄が{n_all}件しかありません"
+                           f"（前の取引日 {n_prev}件。株価更新の失敗の疑い）")
 
     fins = _fin_rows([s["code"] for s in stage])
     kfc = _company_forecasts([s["code"] for s in stage])
@@ -412,13 +451,14 @@ def main() -> int:
     ap.add_argument("--date", help="判定日（既定: 直近の取引日。JST15:30より前なら前の平日）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-prices", action="store_true",
-                    help="判定日の終値がそろっていれば0、欠けていれば1で終わる（daily_alert の再取得判定用）")
+                    help="判定日の終値（個別株・日経平均）がそろっていれば0、欠けていれば1で終わる（daily_alert の再取得判定用）")
     a = ap.parse_args()
     asof = date.fromisoformat(a.date) if a.date else session_date(datetime.now(JST))
     if a.check_prices:
-        n = count_priced(asof)
-        print(f"[dip] {asof} の終値がある銘柄: {n}")
-        return 1 if prices_missing(n) else 0
+        n, n_prev = count_priced(asof), prev_count_priced(asof)
+        nk_last = nikkei_last_date(asof)  # Yahooから差分を取り直してDBに保存する
+        print(f"[dip] {asof} の終値がある銘柄: {n}（前の取引日 {n_prev}） / 日経平均の最終日: {nk_last}")
+        return 1 if prices_missing(n, n_prev) or index_missing(n, nk_last, asof) else 0
 
     try:
         nk_ret, picks, no_forecast, refs = find_candidates(asof)

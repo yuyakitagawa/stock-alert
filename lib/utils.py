@@ -44,6 +44,42 @@ def get_price_at_date(code, target_date):
     return best_price
 
 
+# 取引終了からこの秒数たつまでは meta の値を終値とみなさない（大引け直後は最終値が確定していないことがある）
+INDEX_SETTLE_SEC = 15 * 60
+
+
+def parse_index_chart(res: dict, label: str = "", now_ts: int | None = None):
+    """Yahoo chart API の result[0] を date-indexed DataFrame(Close) にする。
+    2026-11-06（金）分は 11/7 00:57 JST の取得で日経平均の当日行が入らず、押し目買い判定が止まった
+    （VIX・S&P500 は同じ便で当日まで入った）。直前の 11/4・11/5 分も日本時間0時台の便で欠けている。
+    当日行が落ちる経路を塞ぐ:
+      1. adjclose が null の日は quote の close を使う（指数は配当・分割調整が無く同じ値）
+      2. 日足に当日行が無くても、そのセッションの取引終了から15分たっていれば meta の regularMarketPrice（＝終値）で補う。
+         取引中の値は終値ではなく、DB は insert_ignore で後から直らないので、終了前は補わない
+    """
+    tz = (res.get("meta") or {}).get("exchangeTimezoneName") or "Asia/Tokyo"
+    ts = res.get("timestamp") or []
+    ind = res.get("indicators") or {}
+    adj = ((ind.get("adjclose") or [{}])[0] or {}).get("adjclose") or [None] * len(ts)
+    raw = ((ind.get("quote") or [{}])[0] or {}).get("close") or [None] * len(ts)
+    closes = [a if a is not None else c for a, c in zip(adj, raw)]
+    idx = pd.to_datetime(ts, unit="s", utc=True).tz_convert(tz)
+    df = pd.DataFrame({"Close": closes}, index=idx).dropna()
+    df.index = df.index.date
+
+    meta = res.get("meta") or {}
+    price, mtime = meta.get("regularMarketPrice"), meta.get("regularMarketTime")
+    reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+    start, end = reg.get("start"), reg.get("end")
+    now = int(datetime.now().timestamp()) if now_ts is None else now_ts
+    if price is not None and mtime and start and end and start <= mtime and now >= end + INDEX_SETTLE_SEC:
+        d = pd.Timestamp(mtime, unit="s", tz="UTC").tz_convert(tz).date()
+        if len(df) == 0 or df.index[-1] < d:
+            print(f"[index] {label}: 日足に {d} が無いため meta の終値 {price} で補った")
+            df = pd.concat([df, pd.DataFrame({"Close": [float(price)]}, index=[d])])
+    return df
+
+
 def get_market_index_df(ticker_encoded, days=2200):
     """Yahoo Finance から市場指数の日次終値を date-indexed DataFrame で返す。
     ticker_encoded: URLエンコード済みティッカー（例: %5EN225, %5EVIX, %5EGSPC）
@@ -59,12 +95,7 @@ def get_market_index_df(ticker_encoded, days=2200):
         if not result:
             print(f"[index] {ticker_encoded}: Yahooの応答に result が無い (HTTP {resp.status_code})")
             return None
-        ts     = result[0].get("timestamp", [])
-        closes = result[0].get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        idx = pd.to_datetime(ts, unit="s", utc=True).tz_convert("Asia/Tokyo")
-        df  = pd.DataFrame({"Close": closes}, index=idx).dropna()
-        df.index = df.index.date
-        return df
+        return parse_index_chart(result[0], ticker_encoded)
     except Exception as e:
         # 黙って None を返すと取得漏れに気付けない（2026-11-04の日経平均が欠けた）
         print(f"[index] {ticker_encoded}: Yahoo取得失敗: {e}")
