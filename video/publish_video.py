@@ -24,7 +24,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.expanduser("~/stock-alert"))
 
 from video import background, build_script, line_notify, render, thumbnail, tts  # noqa: E402
-from video import youtube_client, youtube_metrics  # noqa: E402
+from video import youtube_client  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.expanduser("~/stock-alert"), "video", "out")
 
@@ -82,9 +82,6 @@ def run(dry_run: bool = False, render_only: bool = False, keep_video: bool = Fal
     youtube_id = youtube_client.upload(video_path, props)
     if youtube_id:
         posted += 1
-        # 公開した事実をその場でSupabaseに残す。当日のハートビートが「今日、動画が出たか」を
-        # 数えられるようにするため（統計の収集は手動実行なので、それ待ちだと0本に見える）。
-        youtube_metrics.record_upload(youtube_id, youtube_client.build_title(props))
         # 記事URLのコメントを自チャンネルから残す。Shortsは説明文が畳まれていて
         # 開かないとURLに触れられず、再生に対するサイト流入が約0.5%しか無いため。
         # 失敗しても動画は公開済みなので投稿数には影響させない。

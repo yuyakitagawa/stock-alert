@@ -17,8 +17,6 @@ name: X Post
 #   手動のみ        activists : 今週のアクティビストの動き（web/x_weekly_activists.py）
 #   手動のみ        followup  : 3ヶ月前の大量保有報告の答え合わせ（web/x_followup.py）
 #   手動のみ        buyback   : 本日の自社株買い決定（web/x_buyback.py。投稿前にTDnet取得＋取得枠抽出）
-#   手動のみ        metrics   : 投稿のインプレッション等を収集（web/x_metrics.py）
-#                               ※non_public_metricsは30日以内の自分の投稿しか取れない
 #   手動のみ        verify    : アクセストークンの実権限確認（投稿しない。web/x_client --verify）
 #                               App権限変更前に発行したトークンは読み取り専用のままで投稿だけ403になる
 #                               （実例: 2026-08-18）ため、トークン更新後の確認に使う。
@@ -41,7 +39,7 @@ on:
       target:
         description: 'どれを実行するか'
         type: choice
-        options: [trending, activists, followup, buyback, metrics, verify, discover, follow, benchmark, facts]
+        options: [trending, activists, followup, buyback, verify, discover, follow, benchmark, facts]
         default: trending
       dry_run:
         description: '本文の生成・表示のみで投稿しない（trending/activists/followup/buyback/facts）'
@@ -118,10 +116,6 @@ jobs:
       - name: Post daily buybacks (平日)
         if: env.TARGET == 'buyback'
         run: cd ~/stock-alert && python web/x_buyback.py $DRY_RUN
-
-      - name: Collect metrics (毎日)
-        if: env.TARGET == 'metrics'
-        run: cd ~/stock-alert && python web/x_metrics.py --report
 
       - name: Verify X access token permissions (手動)
         if: env.TARGET == 'verify'

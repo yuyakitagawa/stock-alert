@@ -2981,3 +2981,8 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - 既存テスト全件を実行。失敗は `test_video_pipeline.py::test_thumbnail_compose_writes_1280x720_png`
   のみで、これは本修正前（stash して確認）でも同じく失敗する日本語フォント未導入によるもの。
 - 未実施: 全量計上のまま公開済みの80本（うち特例40本）の後追い対応。ラベル変更か非公開かは未決。
+
+## 2026-11-08 Supabase 未使用テーブルの整理
+- DROP: `tmp_dip_ev`（急落押し目検証の一時テーブル・参照ゼロ）、`seogeo_audit_log`＋関数`seogeo_log_audit`（参照ゼロ・9/28以降書込なし）、YouTube計測4表（`youtube_videos`/`youtube_video_metrics`/`youtube_video_retention`/`youtube_channel_stats`）、X計測2表（`x_post_metrics`/`x_followers`）。後者6表は 8/30 の X・動画停止以降書込なし。public は 37→29。
+- 同時に収集コード `video/youtube_metrics.py`・`video/youtube_analytics.py`・`web/x_metrics.py`、そのテスト、`supabase/create_youtube_metrics.sql`、x_post.yml の `metrics` ターゲットを削除。`x_posts` は土曜の trending 投稿が記録しているため残す。
+- テスト 898 passed。
