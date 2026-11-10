@@ -35,7 +35,7 @@ from collections import Counter
 
 from lib import notify
 
-# 異常があったときの終了コード。x_metrics(3)・scan_large_holdings(3)と区別する。
+# 異常があったときの終了コード。scan_large_holdings(3)と区別する。
 EXIT_ANOMALY = 4
 
 # ── 正常な見送り（記事が出ないのが仕様どおり）──────────────────────────

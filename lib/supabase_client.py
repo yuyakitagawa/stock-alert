@@ -172,7 +172,7 @@ def _group_by_keys(batch: list[dict]) -> list[list[dict]]:
 def upsert(table: str, rows: list[dict], on_conflict: str = "") -> bool:
     """全バッチが書けたら True、1バッチでも落ちたら False を返す。
     呼び出し側が戻り値を無視すれば従来どおりの「失敗してもログだけ」の挙動になるが、
-    保存できたかどうかがジョブの成否そのものである処理（x_metrics等）は必ず見ること。
+    保存できたかどうかがジョブの成否そのものである処理（scan_large_holdings等）は必ず見ること。
     見ていなかったせいで、NOT NULL違反で18行が毎日落ちてもジョブは success のままだった
     （2026-08-24〜25）。"""
     if not rows or not is_configured():
