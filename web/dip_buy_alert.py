@@ -29,6 +29,7 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
 """
 import argparse
 import json
+import math
 import os
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -60,6 +61,10 @@ REF_MAX = 5
 MIN_PRICED_CODES = 1000
 # 前の取引日に対してこの割合未満しか終値が無ければ欠けとみなす（平常の日次の増減は数銘柄）
 PRICED_RATIO = 0.9
+
+# 判定できなかった日を後の便で判定し直す範囲（判定日より前の平日の数）。日本時間0時を越えて始まった便は
+# 当日の日足が取れないが、翌日の便では前日分がそろう（11/6分は11/6の便で1,073銘柄、11/9の便で3,746銘柄）
+CATCHUP_WEEKDAYS = 5
 
 JST = timezone(timedelta(hours=9))
 # 東証の大引け（2024-11-05から15:30）。これより前は当日の終値がまだ無い
@@ -105,6 +110,28 @@ def missing_index_reason(asof: date, nk_last: date, n_priced: int) -> str | None
         return None
     return (f"日経平均の {asof} の終値が未取得です（最終 {nk_last}）。"
             f"個別株は{n_priced}銘柄に終値があり休場日ではありません（株価更新の失敗の疑い）")
+
+
+def catchup_dates(asof: date, n: int = CATCHUP_WEEKDAYS) -> list[date]:
+    """asof より前の平日 n 日を古い順に返す（祝日は find_candidates が休場日として飛ばす）。"""
+    out, d = [], asof
+    while len(out) < n:
+        d -= timedelta(days=1)
+        if d.weekday() < 5:
+            out.append(d)
+    return out[::-1]
+
+
+def recovered_message(asof: date, nk_ret: float | None) -> str:
+    """「判定できませんでした」と警告した日を後から判定し、通知対象が無かったときの本文。"""
+    week = "月火水木金土日"[asof.weekday()]
+    if nk_ret is None:
+        result = "日経平均・個別株とも終値が無く休場日でした"
+    elif nk_ret > NIKKEI_DROP:
+        result = f"日経 {nk_ret * 100:+.1f}%（-2%に届かず）で通知対象なし"
+    else:
+        result = f"日経 {nk_ret * 100:+.1f}%。条件を満たす銘柄なし"
+    return f"✅ 押し目買い候補\n{asof.month}/{asof.day}（{week}）分を判定し直しました: {result}"
 
 
 def daily_return(closes) -> float | None:
@@ -234,7 +261,7 @@ def ref_note(p: dict) -> str:
 
 
 def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int = 0,
-                  refs: list[dict] | None = None) -> str:
+                  refs: list[dict] | None = None, late: bool = False) -> str:
     """1銘柄2行（銘柄名＋コード／数字）で全件並べる。
 
     LINEの1通は5,000文字（lib.notify は4,000で切る）。急落が深い日は候補が数百になり
@@ -244,6 +271,8 @@ def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int
     week = "月火水木金土日"[asof.weekday()]
     head = [f"📉 押し目買い候補 {asof.month}/{asof.day}（{week}）",
             f"日経 {nk_ret * 100:+.1f}%／該当{len(picks)}銘柄（β順）", ""]
+    if late:
+        head.insert(0, "⏰ 株価の取得が遅れたため後から判定しました")
     tail = []
     if refs:
         tail += ["", "📎 参考: 会社予想が未取得だが他の条件はクリア（β順・判定外）"]
@@ -254,7 +283,8 @@ def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int
     if no_forecast:
         tail.append(f"※会社予想が未取得で増益を判定できず除外: {no_forecast}銘柄（PBR<1.5は満たす）")
     tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上",
-             "検証は当日終値買い・63日保有。引け後の通知なので約定は翌日以降"]
+             "検証は当日終値買い・63日保有。引け後の通知なので約定は翌日以降"
+             + ("（今回は通知が1日以上遅れている）" if late else "")]
 
     body, shown = [], 0
     budget = MAX_CHARS - len("\n".join(head + tail)) - 20  # 20は「…ほかN銘柄」の行ぶん
@@ -460,26 +490,44 @@ def main() -> int:
         print(f"[dip] {asof} の終値がある銘柄: {n}（前の取引日 {n_prev}） / 日経平均の最終日: {nk_last}")
         return 1 if prices_missing(n, n_prev) or index_missing(n, nk_last, asof) else 0
 
+    if not a.date:
+        # 先に、過去の平日で判定できていない日を判定し直す（送信済みの日は飛ばす）
+        for d in catchup_dates(asof):
+            judge(d, notify, a.dry_run, late=True)
+    return judge(asof, notify, a.dry_run)
+
+
+def judge(asof: date, notify, dry_run: bool, late: bool = False) -> int:
+    """asof を判定して送る。late=True は後の便での判定し直し（送信済みなら何もしない）。"""
+    if late and (notify.was_sent(f"dip_buy_{asof.isoformat()}")
+                 or notify.was_sent(f"dip_buy_recovered_{asof.isoformat()}")):
+        return 0
     try:
         nk_ret, picks, no_forecast, refs = find_candidates(asof)
     except Exception as e:
-        print(f"[dip] ⚠ 判定できませんでした: {e}")
-        if not a.dry_run:
-            notify.warn("押し目買い候補", "判定できませんでした", detail=str(e),
+        print(f"[dip] ⚠ {asof} を判定できませんでした: {e}")
+        if late:
+            return 1  # 警告はその日の便で送っている。次の便でまた判定し直す
+        if not dry_run:
+            notify.warn("押し目買い候補", "判定できませんでした",
+                        detail=f"{e}。後の便（{CATCHUP_WEEKDAYS}平日以内）で株価がそろえば自動で判定し直して送ります",
                         dedupe_key=f"dip_buy_error_{asof.isoformat()}")
         return 1
     if not picks and not no_forecast:
-        print("[dip] 通知対象なし")
+        print(f"[dip] {asof}: 通知対象なし")
+        # 「判定できませんでした」と送った日は、判定し直した結果も知らせて区切りを付ける
+        if late and not dry_run and notify.was_sent(f"dip_buy_error_{asof.isoformat()}"):
+            notify.push_once(f"dip_buy_recovered_{asof.isoformat()}", recovered_message(asof, nk_ret),
+                             window_hours=math.inf)
         return 0
     # 候補0でも「予想が無くて判定できなかった」銘柄があれば知らせる（データ欠落で黙らない）
-    text = build_message(asof, nk_ret, picks, no_forecast, refs)
+    text = build_message(asof, nk_ret, picks, no_forecast, refs, late=late)
     print(text)
-    if a.dry_run:
+    if dry_run:
         return 0
-    # watchdog の再実行で同じ日に二重送信しない
-    notify.push_once(f"dip_buy_{asof.isoformat()}", text)
+    # watchdog の再実行で同じ日に二重送信しない。判定し直しは一度送った日に二度と送らない
+    notify.push_once(f"dip_buy_{asof.isoformat()}", text, **({"window_hours": math.inf} if late else {}))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

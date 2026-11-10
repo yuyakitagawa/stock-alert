@@ -326,11 +326,10 @@ def plan(codes: list[str], saved: dict[str, dict], announced: dict[str, str],
 def recent_earnings_announcements(days_back: int = 2) -> dict[str, str]:
     """TDnet（やのしん）の直近の決算短信 {code: 開示日時}。取れなければ {}（優先付けが無くなるだけ）。"""
     from datetime import date
-    from lib.tdnet import fetch_disclosures
+    from lib.tdnet import fetch_days
     end = date.today()
-    cond = f"{(end - timedelta(days=days_back)).strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}"
     out: dict[str, str] = {}
-    for d in fetch_disclosures(cond, limit=2000):
+    for d in fetch_days(end - timedelta(days=days_back), end):
         if "決算短信" in d["title"]:
             # やのしんの pubdate は JST の "YYYY-MM-DD HH:MM:SS"
             ts = d["disclosed_at"].replace(" ", "T") + "+09:00"

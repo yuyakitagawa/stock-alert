@@ -19,8 +19,8 @@ publish_blog_articles.py が投稿した新着記事のうち、足切りプー�
   投稿コストのほぼ全部がこの加算だった（2026-08-22、14本で$2.2）。誘導は末尾の
   PROFILE_CTA「詳細はプロフィールのリンクから」に統一する（自己リプライにURLを置いても
   そのリプライが$0.20になるので回避にならない）
-- 投稿したtweet_idはSupabaseの`x_posts`に記録し、web/x_metrics.pyが日次で
-  インプレッション等を追記する（どの型が伸びたかを検証できるようにするため）
+- 投稿したtweet_idはSupabaseの`x_posts`に記録する（メトリクス収集の web/x_metrics.py は
+  2026-11-08に撤去済み）
 
 認証はOAuth 1.0a User Context（X API v2 POST /2/tweetsの投稿、および画像アップロード用の
 v1.1 media/uploadエンドポイントの両方に必須）。
