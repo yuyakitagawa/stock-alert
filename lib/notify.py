@@ -112,6 +112,11 @@ def _record_send(dedupe_key: str, text: str, prev: "dict | None") -> None:
         print(f"[notify] ⚠ 送信履歴の記録に失敗（通知自体は送信済み）: {e}")
 
 
+def was_sent(dedupe_key: str) -> bool:
+    """この dedupe_key で一度でも送っていれば True（Supabase障害で判定できないときは False）。"""
+    return _recent_send(dedupe_key, math.inf) is not None
+
+
 def push_once(dedupe_key: str, text: str, window_hours: float = DEDUPE_WINDOW_HOURS) -> bool:
     """同じdedupe_keyでwindow_hours以内に送っていなければ送る。
 

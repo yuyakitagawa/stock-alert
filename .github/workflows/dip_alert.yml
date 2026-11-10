@@ -55,6 +55,7 @@ jobs:
         run: python tools/fetch_history.py --years 1
 
       # 大引け直後はYahooに当日の終値がそろっていないことがある。欠けていれば30分おきに最大2回取り直す
+      # （JST 15:30〜23:59 に始まったときだけ。判定できなかった日は後の便で dip_buy_alert.py が判定し直す）
       - name: 当日終値が欠けていれば取り直す
         if: inputs.dip_date == ''
         continue-on-error: true
