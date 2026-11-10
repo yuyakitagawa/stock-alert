@@ -3,5 +3,17 @@
   {"code": "6118", "name": "アイダエンジニアリング", "buy_date": "2026-10-16", "qty": 100, "price": 1168},
   {"code": "6474", "name": "不二越", "buy_date": "2026-10-16", "qty": 1, "price": 5530},
   {"code": "6966", "name": "三井ハイテック", "buy_date": "2026-10-16", "qty": 100, "price": 868},
-  {"code": "7966", "name": "リンテック", "buy_date": "2026-10-16", "qty": 1, "price": 5730}
+  {"code": "7966", "name": "リンテック", "buy_date": "2026-10-16", "qty": 1, "price": 5730},
+  {"code": "6832", "name": "アオイ電子", "buy_date": "2026-11-02", "qty": 5, "price": 2385},
+  {"code": "6994", "name": "指月電機製作所", "buy_date": "2026-11-02", "qty": 100, "price": 1080},
+  {"code": "6996", "name": "ニチコン", "buy_date": "2026-11-02", "qty": 5, "price": 2083},
+  {"code": "7717", "name": "ブイ・テクノロジー", "buy_date": "2026-11-02", "qty": 3, "price": 4530},
+  {"code": "2768", "name": "双日", "buy_date": "2026-11-06", "qty": 2, "price": 4800},
+  {"code": "4212", "name": "積水樹脂", "buy_date": "2026-11-06", "qty": 3, "price": 2649},
+  {"code": "5713", "name": "住友金属鉱山", "buy_date": "2026-11-06", "qty": 2, "price": 7366},
+  {"code": "1662", "name": "石油資源開発", "buy_date": "2026-11-09", "qty": 7, "price": 1497},
+  {"code": "1945", "name": "東京エネシス", "buy_date": "2026-11-09", "qty": 5, "price": 1757},
+  {"code": "3105", "name": "日清紡ホールディングス", "buy_date": "2026-11-09", "qty": 6, "price": 1891},
+  {"code": "3153", "name": "八洲電機", "buy_date": "2026-11-09", "qty": 4, "price": 2553},
+  {"code": "3445", "name": "RS Technologies", "buy_date": "2026-11-09", "qty": 3, "price": 4115}
 ]
