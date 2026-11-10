@@ -10,7 +10,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.dip_buy_alert import (beta, bps_split_factor, build_message, company_forecast, daily_return,
+import web.dip_buy_alert as dba
+from web.dip_buy_alert import (beta, bps_split_factor, build_message, catchup_dates, company_forecast, daily_return,
+                               recovered_message,
                                index_missing, missing_index_reason, passes_fundamentals, prices_missing, session_date,
                                pick_fundamentals, split_factor, MAX_CHARS)
 
@@ -319,6 +321,85 @@ def test_employees_reads_company_info_columns():
                                                  "employees_fetched_date": "2026-10-25"}]
     finally:
         emp.sb.select, emp.sb.upsert = orig_sel, orig_up
+
+
+def test_catchup_dates_weekdays_before_asof():
+    # 11/10(火)の判定時は 11/3〜11/9 の平日5日（土日を飛ばす。11/3文化の日は find_candidates が休場日として扱う）
+    assert catchup_dates(date(2026, 11, 10)) == [date(2026, 11, 3), date(2026, 11, 4), date(2026, 11, 5),
+                                                 date(2026, 11, 6), date(2026, 11, 9)]
+    assert catchup_dates(date(2026, 11, 9), 1) == [date(2026, 11, 6)]   # 月→金
+
+
+def test_recovered_message():
+    assert "11/9（月）分を判定し直しました" in recovered_message(date(2026, 11, 9), -0.012)
+    assert "-1.2%（-2%に届かず）" in recovered_message(date(2026, 11, 9), -0.012)
+    assert "条件を満たす銘柄なし" in recovered_message(date(2026, 11, 9), -0.03)
+    assert "休場日" in recovered_message(date(2026, 11, 3), None)
+
+
+def test_build_message_late_marks_delay():
+    p = {"code": "1000", "name": "テスト", "ret": -0.05, "beta": 1.2, "pbr": 0.8, "growth": 0.1}
+    late = build_message(date(2026, 11, 9), -0.03, [p], late=True)
+    assert late.startswith("⏰ 株価の取得が遅れたため後から判定しました") and "1日以上遅れている" in late
+    assert "⏰" not in build_message(date(2026, 11, 9), -0.03, [p])
+
+
+class _FakeNotify:
+    def __init__(self, sent=()):
+        self.sent, self.pushed, self.warned = set(sent), [], []
+
+    def was_sent(self, key):
+        return key in self.sent
+
+    def push_once(self, key, text, window_hours=None):
+        self.pushed.append((key, window_hours))
+        self.sent.add(key)
+        return True
+
+    def warn(self, where, message, detail="", dedupe_key=""):
+        self.warned.append((dedupe_key, detail))
+        self.sent.add(dedupe_key)
+        return True
+
+
+def _with_candidates(result):
+    """find_candidates を差し替える。result が例外なら投げる。"""
+    def fake(asof):
+        if isinstance(result, Exception):
+            raise result
+        return result
+    return fake
+
+
+def test_judge_recovery_flow():
+    """欠けた日は警告→後の便で判定し直して送る。送信済みの日は判定し直さない。"""
+    import math
+    orig = dba.find_candidates
+    p = {"code": "1000", "name": "テスト", "ret": -0.05, "beta": 1.2, "pbr": 0.8, "growth": 0.1}
+    try:
+        n = _FakeNotify()
+        dba.find_candidates = _with_candidates(RuntimeError("日経平均の 2026-11-09 の終値が未取得です"))
+        assert dba.judge(date(2026, 11, 9), n, False) == 1
+        assert n.warned[0][0] == "dip_buy_error_2026-11-09" and "自動で判定し直して" in n.warned[0][1]
+        # 後の便でもまだ欠けている: 警告を重ねない
+        assert dba.judge(date(2026, 11, 9), n, False, late=True) == 1 and len(n.warned) == 1
+        # そろった: 候補ありなら遅れ表示つきで一度だけ送る（窓は無限）
+        dba.find_candidates = _with_candidates((-0.03, [p], 0, []))
+        assert dba.judge(date(2026, 11, 9), n, False, late=True) == 0
+        assert n.pushed == [("dip_buy_2026-11-09", math.inf)]
+        dba.find_candidates = _with_candidates(AssertionError("送信済みの日を判定し直した"))
+        assert dba.judge(date(2026, 11, 9), n, False, late=True) == 0
+        # 警告した日が通知対象なしだった: 判定し直した結果を一度だけ知らせる
+        n = _FakeNotify({"dip_buy_error_2026-11-06"})
+        dba.find_candidates = _with_candidates((-0.01, [], 0, []))
+        assert dba.judge(date(2026, 11, 6), n, False, late=True) == 0
+        assert n.pushed == [("dip_buy_recovered_2026-11-06", math.inf)]
+        assert dba.judge(date(2026, 11, 6), n, False, late=True) == 0 and len(n.pushed) == 1
+        # 警告していない日（その日のうちに判定済み）は何も送らない
+        n = _FakeNotify()
+        assert dba.judge(date(2026, 11, 5), n, False, late=True) == 0 and n.pushed == []
+    finally:
+        dba.find_candidates = orig
 
 
 if __name__ == "__main__":

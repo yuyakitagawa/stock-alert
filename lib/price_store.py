@@ -7,8 +7,8 @@
   egress 5GB/月はこれだけでほぼ埋まり、2026-09-07に402で全RESTが止まった。
 
 やり方:
-  全履歴を1度だけpickleに落とし、以降は `date > 手元の最終日` の差分だけを
-  1リクエスト（ページング込み）で取る。1日あたり約3,800行 = 約0.2MB。
+  全履歴を1度だけpickleに落とし、以降は手元の最終日の7日前からの差分だけを
+  1リクエスト（ページング込み）で取る（後から埋まった行も拾うため。約1MB）。
   GitHub Actions では actions/cache に載せてrun間で持ち回す（daily_alert.yml）。
   手元では BASE_DIR に残るのでbacktestの再実行がタダになる。
 
@@ -33,6 +33,10 @@ STORE_PATH = os.path.join(BASE_DIR, "_price_store.pkl")
 # (2) 差分取得より前に入った古い日付の行。どちらも差分同期では拾えないので、
 # この日数を超えたら全件を取り直す。
 _FULL_REBUILD_AFTER_DAYS = 30
+# 差分同期は手元の最終日のこの日数前から取り直す。当日分が一部だけ入って翌日の便で残りが埋まる日があり
+# （2026-11-06: 11/6の便で1,073銘柄→11/9の便で3,746銘柄）、`date > 最終日` だけでは後から埋まった行を
+# 二度と拾えなかった（11/9の便の判定で11/6が1,073銘柄のままだった）。1日約3,800行×5営業日≒1MB。
+_RESYNC_DAYS = 7
 
 _lock = threading.Lock()
 _store: dict | None = None
@@ -129,6 +133,11 @@ def _full_fetch() -> dict:
     return _fetch_codes(codes)
 
 
+def resync_since(max_date: str, days: int = _RESYNC_DAYS) -> str:
+    """差分同期で取り直す最初の日（手元の最終日の days 日前）。"""
+    return (date.fromisoformat(max_date) - timedelta(days=days)).isoformat()
+
+
 def _sync(store: dict) -> dict:
     """差分だけ取り込む。手元に無い銘柄は全履歴を取る。"""
     max_date = store.get("max_date")
@@ -141,9 +150,10 @@ def _sync(store: dict) -> dict:
         store["prices"] = _full_fetch()
         store["built_at"] = date.today().isoformat()
     else:
-        rows = _fetch(f"date=gt.{max_date}&select=code,date,close,volume&order=date.asc")
+        since = resync_since(max_date)
+        rows = _fetch(f"date=gte.{since}&select=code,date,close,volume&order=date.asc")
         if rows:
-            print(f"[price_store] 差分 {len(rows):,}行（{max_date} より後）")
+            print(f"[price_store] 差分 {len(rows):,}行（{since} 以降。手元の最終日 {max_date}）")
             store["prices"] = _merge(store["prices"], _rows_to_prices(rows))
 
         # fetch_history が新規上場銘柄を過去分ごと入れた場合、差分同期では
