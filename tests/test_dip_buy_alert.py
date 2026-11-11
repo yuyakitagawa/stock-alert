@@ -402,6 +402,74 @@ def test_judge_recovery_flow():
         dba.find_candidates = orig
 
 
+def test_past_session_day():
+    from datetime import datetime
+    jst = dba.JST
+    assert not dba.past_session_day(date(2026, 11, 11), datetime(2026, 11, 11, 23, 59, tzinfo=jst))
+    assert dba.past_session_day(date(2026, 11, 11), datetime(2026, 11, 12, 0, 10, tzinfo=jst))  # 11/11分の実例
+    assert dba.past_session_day(date(2026, 11, 6), datetime(2026, 11, 9, 2, 28, tzinfo=jst))    # 金→月
+
+
+def test_judge_quiet_after_midnight():
+    """0時を越えた便の欠けは警告しない。翌日以降の判定し直しでもそろわなければ一度だけ警告する。"""
+    orig = dba.find_candidates
+    try:
+        n = _FakeNotify()
+        # 終値の欠け以外（DB障害など）は quiet でもその日のうちに警告する
+        dba.find_candidates = _with_candidates(RuntimeError("Supabase 503"))
+        assert dba.judge(date(2026, 11, 12), n, False, quiet=True) == 1 and n.warned[0][0] == "dip_buy_error_2026-11-12"
+        n = _FakeNotify()
+        dba.find_candidates = _with_candidates(dba.PricesMissing("日経平均の 2026-11-11 の終値が未取得です"))
+        assert dba.judge(date(2026, 11, 11), n, False, quiet=True) == 0 and n.warned == []
+        assert dba.judge(date(2026, 11, 11), n, False, late=True) == 1
+        assert n.warned[0][0] == "dip_buy_error_2026-11-11" and "翌日以降の便でもそろいません" in n.warned[0][1]
+        assert dba.judge(date(2026, 11, 11), n, False, late=True) == 1 and len(n.warned) == 1
+        # quiet でも判定できれば通常どおり送る
+        n = _FakeNotify()
+        p = {"code": "1000", "name": "テスト", "ret": -0.05, "beta": 1.2, "pbr": 0.8, "growth": 0.1}
+        dba.find_candidates = _with_candidates((-0.03, [p], 0, []))
+        assert dba.judge(date(2026, 11, 11), n, False, quiet=True) == 0 and n.pushed[0][0] == "dip_buy_2026-11-11"
+        dba.find_candidates = _with_candidates(dba.PricesMissing("日経平均の 2026-11-11 の終値が未取得です"))
+        # 直前の平日以外（warn_late=False）は判定し直しでそろわなくても警告しない
+        n = _FakeNotify()
+        assert dba.judge(date(2026, 11, 10), n, False, late=True, warn_late=False) == 1 and n.warned == []
+        # 警告していない日がそろって通知対象なし: 何も送らない
+        n = _FakeNotify()
+        dba.find_candidates = _with_candidates((-0.01, [], 0, []))
+        assert dba.judge(date(2026, 11, 11), n, False, late=True) == 0 and n.pushed == [] and n.warned == []
+    finally:
+        dba.find_candidates = orig
+
+
+def test_main_passes_quiet_and_warn_late():
+    """main(): 0時越えの便は当日分を quiet、判定し直しの警告は直前の平日だけ。--date 指定は quiet にしない。"""
+    import sys
+    from datetime import datetime
+    calls = []
+    orig = (dba.judge, dba.datetime, sys.argv)
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 12, 0, 10, tzinfo=dba.JST)
+    try:
+        dba.judge = lambda d, notify, dry, late=False, quiet=False, warn_late=True: calls.append(
+            (d, late, quiet, warn_late)) or 0
+        dba.datetime = _Now
+        sys.argv = ["x", "--dry-run"]
+        dba.main()
+        assert calls[-1] == (date(2026, 11, 11), False, True, True)
+        late = [c for c in calls if c[1]]
+        assert [c[0] for c in late] == dba.catchup_dates(date(2026, 11, 11))
+        assert [c[3] for c in late] == [False] * 4 + [True]
+        calls.clear()
+        sys.argv = ["x", "--dry-run", "--date", "2026-11-11"]
+        dba.main()
+        assert calls == [(date(2026, 11, 11), False, False, True)]
+    finally:
+        dba.judge, dba.datetime, sys.argv = orig
+
+
 if __name__ == "__main__":
     import inspect
     fns = [f for n, f in sorted(globals().items()) if n.startswith("test_") and inspect.isfunction(f)]

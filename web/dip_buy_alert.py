@@ -71,6 +71,11 @@ JST = timezone(timedelta(hours=9))
 TSE_CLOSE_JST = (15, 30)
 
 
+class PricesMissing(RuntimeError):
+    """判定日の終値（個別株・日経平均）が欠けている。0時JSTを越えた便では想定内なので警告しない（judge の quiet）。
+    DB障害・コードの不具合など他の例外は quiet でもその日のうちに警告する。"""
+
+
 # ── 純粋関数（テスト対象） ─────────────────────────────────────────────
 
 def session_date(now_jst: datetime) -> date:
@@ -110,6 +115,13 @@ def missing_index_reason(asof: date, nk_last: date, n_priced: int) -> str | None
         return None
     return (f"日経平均の {asof} の終値が未取得です（最終 {nk_last}）。"
             f"個別株は{n_priced}銘柄に終値があり休場日ではありません（株価更新の失敗の疑い）")
+
+
+def past_session_day(asof: date, now_jst: datetime) -> bool:
+    """判定日の翌日（日本時間）以降に動いた便か。Yahoo は日本時間0時を越えると当日の日足を返さず、
+    翌日の夕方までに埋まる（11/4・11/5・11/9・11/11分。翌日の便では3,746銘柄そろった）。
+    このときの欠けは想定内なので、その日の便では警告せず翌日以降の判定し直しに任せる。"""
+    return now_jst.date() > asof
 
 
 def catchup_dates(asof: date, n: int = CATCHUP_WEEKDAYS) -> list[date]:
@@ -383,7 +395,7 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         n_priced = count_priced(asof)
         reason = missing_index_reason(asof, nk.index[-1], n_priced)
         if reason:
-            raise RuntimeError(reason)
+            raise PricesMissing(reason)
         print(f"[dip] {asof} は休場日（日経平均・個別株とも終値なし）")
         return None, [], 0, []
     nk_ret = daily_return(nk["Close"].values)
@@ -419,7 +431,7 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
     n_all, n_prev = count_priced(asof), prev_count_priced(asof)  # --check-prices と同じ数え方
     if n_all == 0 or prices_missing(n_all, n_prev):
         # Step 0（株価更新）が落ちた日に「該当なし」で黙って終わらないようにする
-        raise RuntimeError(f"{asof} の終値がある銘柄が{n_all}件しかありません"
+        raise PricesMissing(f"{asof} の終値がある銘柄が{n_all}件しかありません"
                            f"（前の取引日 {n_prev}件。株価更新の失敗の疑い）")
 
     fins = _fin_rows([s["code"] for s in stage])
@@ -492,13 +504,20 @@ def main() -> int:
 
     if not a.date:
         # 先に、過去の平日で判定できていない日を判定し直す（送信済みの日は飛ばす）
-        for d in catchup_dates(asof):
-            judge(d, notify, a.dry_run, late=True)
-    return judge(asof, notify, a.dry_run)
+        days = catchup_dates(asof)
+        for d in days:
+            # 判定し直しでそろわないときの警告は直前の平日（前夜の便が0時越えで黙った日）だけ。
+            # それより前の日は前の便で警告済み。日経平均の取得自体が落ちた便で5日分の警告が並ばないようにする
+            judge(d, notify, a.dry_run, late=True, warn_late=(d == days[-1]))
+    quiet = not a.date and past_session_day(asof, datetime.now(JST))
+    return judge(asof, notify, a.dry_run, quiet=quiet)
 
 
-def judge(asof: date, notify, dry_run: bool, late: bool = False) -> int:
-    """asof を判定して送る。late=True は後の便での判定し直し（送信済みなら何もしない）。"""
+def judge(asof: date, notify, dry_run: bool, late: bool = False, quiet: bool = False,
+          warn_late: bool = True) -> int:
+    """asof を判定して送る。late=True は後の便での判定し直し（送信済みなら何もしない）。
+    quiet=True は日本時間0時を越えた便（当日の終値が無いのは想定内）: 終値の欠け（PricesMissing）なら警告しない。
+    後の便の判定し直し（late）でもそろわなければ、そこで初めて警告する（一度だけ）。"""
     if late and (notify.was_sent(f"dip_buy_{asof.isoformat()}")
                  or notify.was_sent(f"dip_buy_recovered_{asof.isoformat()}")):
         return 0
@@ -506,11 +525,16 @@ def judge(asof: date, notify, dry_run: bool, late: bool = False) -> int:
         nk_ret, picks, no_forecast, refs = find_candidates(asof)
     except Exception as e:
         print(f"[dip] ⚠ {asof} を判定できませんでした: {e}")
-        if late:
-            return 1  # 警告はその日の便で送っている。次の便でまた判定し直す
+        if quiet and isinstance(e, PricesMissing):
+            print(f"[dip] 日本時間0時を越えた便のため警告しない（次の便で {asof} を判定し直す）")
+            return 0
+        if late and (not warn_late or not isinstance(e, PricesMissing)
+                     or notify.was_sent(f"dip_buy_error_{asof.isoformat()}")):
+            return 1  # 警告は直前の平日の終値欠けだけ・一度だけ（障害は当日分の警告で知らせる）。次の便でまた判定し直す
         if not dry_run:
             notify.warn("押し目買い候補", "判定できませんでした",
-                        detail=f"{e}。後の便（{CATCHUP_WEEKDAYS}平日以内）で株価がそろえば自動で判定し直して送ります",
+                        detail=(f"{e}。翌日以降の便でもそろいません（株価更新の失敗の疑い）" if late else
+                                f"{e}。後の便（{CATCHUP_WEEKDAYS}平日以内）で株価がそろえば自動で判定し直して送ります"),
                         dedupe_key=f"dip_buy_error_{asof.isoformat()}")
         return 1
     if not picks and not no_forecast:
