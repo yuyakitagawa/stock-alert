@@ -59,7 +59,7 @@ def _normalize_code(raw) -> str | None:
     s = re.sub(r"\.0$", "", s)  # pandas が 7203 → '7203.0' にするケース
     if len(s) == 5 and s.endswith("0"):
         s = s[:4]
-    if not re.match(r"^[0-9A-Z]{4}", s):
+    if not re.match(r"^[0-9][0-9A-Z]{3}", s):  # 先頭は必ず数字（英語見出し "CODE" 等を弾く）
         return None
     return s[:4]
 
@@ -276,8 +276,9 @@ def _parse_margin_file(content: bytes, url: str = "") -> list[dict]:
     if m_url_date:
         fallback_date = f"{m_url_date.group(1)}-{m_url_date.group(2)}-{m_url_date.group(3)}"
 
-    # mtdailyk 形式: 位置ベースの列レイアウト（キーワードヘッダーなし）
-    if "mtdailyk" in url.lower():
+    # mtdaily 形式: 位置ベースの列レイアウト（キーワードヘッダーなし）
+    # 2026-09末にファイル名が mtdailykYYYYMMDD.xls → YYYYMMDD_mtdaily.xlsx に変わった（列配置は同じ）
+    if "mtdaily" in url.lower():
         return _parse_mtdailyk(df, fallback_date)
 
     # ヘッダー行を探す（「コード」or「銘柄」を含む行）
