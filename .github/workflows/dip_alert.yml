@@ -2,12 +2,22 @@ name: Dip Buy Alert
 
 # 押し目買い候補（web/dip_buy_alert.py）を大引け直後に判定してLINEへ送る。
 # GitHubのscheduleはこのリポジトリで毎回約7〜8時間遅れて起動する（11/2〜11/6実測: ops.yml 06:00 UTC→13:56〜15:37、
-# daily_alert.yml 07:00 UTC→14:50〜16:53）ため使わない。Supabase の pg_cron（平日 06:50 UTC = 15:50 JST）が
+# daily_alert.yml 07:00 UTC→14:50〜16:53）ので、当日の起動は Supabase の pg_cron（平日 06:50 UTC = 15:50 JST）が
 # workflow_dispatch API で起動する（supabase/create_dip_alert_cron.sql）。
 # daily_alert.yml Step 5 も同じ判定を夜に回す予備。同じ日の二重送信は notify.push_once が防ぐ。
 # 決算・会社予想・従業員数は前夜の daily_alert が更新した分を使う（判定は前日までの開示だけを使う仕様）。
 # 手動実行で dip_date を入れると過去日を判定し直す（株価の取得はしない）。
+#
+# 予備の schedule（2026-11-12 追加）: Vault の github_dispatch_token が未登録で pg_cron の起動が空振りし、
+# 夜の daily_alert は毎日 0時JSTを越えて（11/3〜11/11 実測 23:50〜02:28 JST）当日の終値が取れず警告が続いた。
+# 04:13 UTC（13:13 JST）に置くと、実測の遅れ 7.6〜10.3 時間（daily_alert 07:13 UTC→14:50〜17:28 UTC）なら
+# 20:50〜23:28 JST に始まる（推定。早い時刻の cron も同じだけ遅れる前提）。定刻どおり始まったら下の
+# 「大引けまで待つ」で 15:45 JST まで待つ。pg_cron と両方動いた日は後発が concurrency で待つ。
+# daily_alert.yml Step 5 とは別グループなので、二重送信は notify.push_once（送信済みの確認→送信。
+# 同時に走ると漏れうるが、判定は数十秒で終わるため重なる幅は狭い）で防ぐ。
 on:
+  schedule:
+    - cron: '13 4 * * 1-5'
   workflow_dispatch:
     inputs:
       dip_date:
@@ -22,8 +32,8 @@ concurrency:
 jobs:
   dip:
     runs-on: ubuntu-latest
-    # 株価取得31分 + 取り直し（30分待ち+31分）×2 ≒ 3時間
-    timeout-minutes: 200
+    # 大引けまでの待ち最大165分（13:00→15:45） + 株価取得31分 + 取り直し（30分待ち+31分）×2 ≒ 5.3時間
+    timeout-minutes: 350
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -32,6 +42,18 @@ jobs:
       DIP_DATE: ${{ inputs.dip_date }}
     steps:
       - uses: actions/checkout@v4
+
+      # schedule が定刻どおり（大引け前）に始まったら 15:45 JST まで待つ。待たないと session_date が
+      # 前の取引日を返し、当日分を判定しない。待つのは 13:00〜15:44 JST に始まったときだけ
+      - name: 大引けまで待つ
+        if: github.event_name == 'schedule'
+        run: |
+          HM=$(TZ=Asia/Tokyo date +%H%M)
+          if [ "$((10#$HM))" -ge 1300 ] && [ "$((10#$HM))" -lt 1545 ]; then
+            W=$(( $(TZ=Asia/Tokyo date -d 'today 15:45' +%s) - $(date +%s) ))
+            echo "JST ${HM} 開始。15:45 JST まで ${W} 秒待つ"
+            if [ "$W" -gt 0 ]; then sleep "$W"; fi
+          fi
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
