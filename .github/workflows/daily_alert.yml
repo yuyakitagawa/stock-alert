@@ -1,11 +1,9 @@
 name: Daily Stock Alert
 
+# 起動は Supabase pg_cron（平日 09:30 UTC = 18:30 JST、supabase/create_daily_alert_cron.sql）が workflow_dispatch で行う。
+# GitHub の schedule（旧 07:13 UTC）は 7〜10 時間遅れて 0 時 JST を越え、LINE が翌朝 7 時台に届いていたため外した（2026-11-13）。
+# pg_cron が動かなかった日は ops.yml の watchdog（今日成功していなければ再実行）が予備。
 on:
-  schedule:
-    # 平日7:13 UTC = 16:13 JST（市場閉場後）。毎時0分はGitHub側が混み遅延・欠落しやすい（GitHub Docs）ので13分にずらす。
-    # 実測の開始は 21:28〜翌01:53 JST と大きく遅れており、0時を越えると当日の終値が取れない（Step 0r）。
-    # 前倒しは不可: 定刻どおり起動した日に大引け(15:30)前だと、前の取引日を判定してしまう（session_date）。
-    - cron: '13 7 * * 1-5'
   workflow_dispatch:       # 手動実行ボタン
 
 permissions:
