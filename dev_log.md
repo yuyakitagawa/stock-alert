@@ -3048,3 +3048,10 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - DROP: `tmp_dip_ev`（急落押し目検証の一時テーブル・参照ゼロ）、`seogeo_audit_log`＋関数`seogeo_log_audit`（参照ゼロ・9/28以降書込なし）、YouTube計測4表（`youtube_videos`/`youtube_video_metrics`/`youtube_video_retention`/`youtube_channel_stats`）、X計測2表（`x_post_metrics`/`x_followers`）。後者6表は 8/30 の X・動画停止以降書込なし。public は 37→29。
 - 同時に収集コード `video/youtube_metrics.py`・`video/youtube_analytics.py`・`web/x_metrics.py`、そのテスト、`supabase/create_youtube_metrics.sql`、x_post.yml の `metrics` ターゲットを削除。`x_posts` は土曜の trending 投稿が記録しているため残す。
 - テスト 898 passed。
+
+## 2026-11-13 daily_alert の LINE を 20:00 JST までに届ける（pg_cron 起動へ移行）
+- 事象: 11/13 の LINE が 07:22 JST に届いた。経路は daily_alert の schedule 便（11/12 15:58〜17:58 UTC＝00:58〜02:58 JST、失敗）→ ops.yml watchdog（21:31 UTC＝06:31 JST）が再実行 → 22:22 UTC＝07:22 JST 完了。
+- 原因: GitHub の schedule が 7〜10 時間遅れる（07:13 UTC 予定 → 実測 23:50〜02:28 JST 開始）。
+- 直し: `supabase/create_daily_alert_cron.sql` を追加し、pg_cron `daily_alert_dispatch`（平日 09:30 UTC＝18:30 JST）から workflow_dispatch で起動。daily_alert.yml の schedule は削除（残すと深夜に2本目が走り API 課金が倍になるため）。watchdog は予備として残す。
+- 所要時間の実測: 51分（11/13 dispatch 便）・60分（11/10）・83分（11/11）→ 19:21〜19:53 JST 完了の見込み（推定）。
+- 前提: Vault `github_dispatch_token` が未登録の間は起動しない（dip_alert と共用）。
