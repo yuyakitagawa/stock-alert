@@ -75,7 +75,7 @@ jobs:
       # 判定日の終値（個別株・日経平均）が欠けていれば取り直す（中身は tools/ensure_prices.sh）。
       # 最悪 Step0 31分 + 待ち120分 + 取り直し2回62分 + Step0b〜5b 34分 = 247分。timeout 360分の残りは約112分で、
       # 金曜の再学習（11/6実測28分）が112分を超えると打ち切られる。
-      # 押し目買い判定は dip_alert.yml（Supabase pg_cron が 15:50 JST に起動）が先に済ませ、ここ（Step 5）は予備。
+      # 押し目買い判定は dip_alert.yml（Supabase pg_cron が 19:00 JST に起動）が先に済ませ、ここ（Step 5）は予備。
       - name: Step 0r - 当日終値が欠けていれば取り直す
         continue-on-error: true
         run: bash ~/stock-alert/tools/ensure_prices.sh
