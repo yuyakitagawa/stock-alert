@@ -45,5 +45,5 @@ $$;
 
 revoke all on function public.dispatch_dip_alert() from public, anon, authenticated;
 
--- 平日 06:50 UTC = 15:50 JST（大引け15:30の20分後）。祝日も起動するが、dip_buy_alert.py が休場日と判定して何も送らない。
-select cron.schedule('dip_alert_dispatch', '50 6 * * 1-5', $$select public.dispatch_dip_alert()$$);
+-- 平日 10:00 UTC = 19:00 JST（LINEは約30分後の19:30頃。業務時間中に届かないよう2026-11-17に15:50から変更）。祝日も起動するが、dip_buy_alert.py が休場日と判定して何も送らない。
+select cron.schedule('dip_alert_dispatch', '0 10 * * 1-5', $$select public.dispatch_dip_alert()$$);
