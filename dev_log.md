@@ -1,5 +1,12 @@
 # Dev Log
 
+## 2026-11-21 Webサイト（kujira-watch.com）廃止に伴い、サイト前提の定期ジョブを削除
+- 背景（事実）: Vercel の Hobby 上限超過でチームのデプロイが停止。オーナー判断で Vercel の stock-alert プロジェクト（kujira-watch.com）とドメインを廃止する。株価取得・LINE通知（daily_alert / dip_alert / ops）は GitHub Actions＋Supabase で動いており、Vercel に依存しない。
+- 削除: `perf_check.yml`＋`tools/perf_check.py`＋`tests/test_perf_check.py`（サイトへHTTPで計測するため、サイト消滅後は毎週失敗しIssueを作る）。
+- 削除: `seo_loop.yml`＋`tools/seo_loop.py`・`tools/indexnow_ping.py`＋各テスト、IndexNow鍵ファイル `kujira-watch/public/<鍵>.txt`（サイトマップ取得とSEO報告のLINE送信がサイト前提）。
+- 残した: `gsc_report.py`・`ga4_clicks.py`・`lib/gsc_search_guard.py`（記事削除・修正ツールが使用）、`kujira-watch/` のソース、ブログ・X・動画のワークフロー（失敗はしない。止めるかはオーナー判断）。
+- 戦略・モデル・LINE本文は変更なし（バックテスト対象外）。テスト 885件中884件成功、1件（test_video_pipeline のサムネイル）はローカルに日本語フォントが無いための失敗でCIでは入る。
+
 ## 2026-11-17 押し目買い判定のLINEを19:30頃に届ける（Vault登録・起動時刻変更）
 - 原因（事実）: 11/16 のLINEは 22:12 JST 着。pg_cron `dip_alert_dispatch` は毎日成功扱いだが Vault の `github_dispatch_token` が0件で空振りし、予備の schedule（04:13 UTC→実測 21:41 JST 開始）だけが届いていた。
 - 対応: オーナーが fine-grained PAT を Vault に登録（名前が空で登録されていたため `vault.update_secret` で `github_dispatch_token` を付与。Actions 権限が無く 403 → 権限追加後 204、run #4 起動を確認）。
