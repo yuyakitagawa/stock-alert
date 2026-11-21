@@ -209,6 +209,26 @@ def test_build_message_lists_refs_without_forecast_top5_by_given_order():
     assert text.index("📎 参考") < text.index("判定できず除外: 133銘柄") < text.index("条件:")
 
 
+def test_is_semiconductor_by_main_business_or_code():
+    from web.dip_buy_alert import is_semiconductor
+    assert is_semiconductor("7717", "半導体・フォトマスク装置事業、及びＦＰＤ装置事業を主たる業務としております。")
+    assert is_semiconductor("6928", "事業は主にパワー半導体用リードフレーム、コネクタ用部品の製造・販売を行っております。")
+    assert is_semiconductor("6627", "")                         # 事業の内容が未取得でもコード一覧で除く
+    # 兼業の大手は主たる事業の文に半導体が出ないので残す（住友電工）
+    assert not is_semiconductor("5802", "当社グループにおいては、環境エネルギー関連事業、情報通信関連事業、自動車関連事業、"
+                                        "エレクトロニクス関連事業、産業素材関連事業他の5部門にわたって、製品の開発、製造、"
+                                        "販売、サービス等の事業活動を展開しております。")
+    assert not is_semiconductor("6779", "水晶振動子、水晶発振器等の水晶関連製品の一貫製造とその販売を行っております。")
+
+
+def test_build_message_lists_excluded_semiconductors_before_conditions():
+    semis = [{"code": "6627", "name": "テラプローブ", "beta": 2.18}, {"code": "6890", "name": "フェローテック", "beta": 1.61}]
+    text = build_message(date(2026, 11, 20), -0.051, [], semis=semis)
+    assert "🔌 半導体のため除外（2銘柄・β順）" in text and "・テラプローブ 6627、フェローテック 6890" in text
+    assert text.index("🔌") < text.index("条件:") and "半導体以外" in text
+    assert "🔌" not in build_message(date(2026, 11, 20), -0.051, [])
+
+
 def test_ref_note_handles_missing_and_losses():
     from web.dip_buy_alert import ref_note
     assert ref_note({"np": 13.0, "np_prev": 78.0, "fnp_ly": 110.0}) == "前期-83%・予想未達"
@@ -384,14 +404,14 @@ def test_judge_recovery_flow():
         # 後の便でもまだ欠けている: 警告を重ねない
         assert dba.judge(date(2026, 11, 9), n, False, late=True) == 1 and len(n.warned) == 1
         # そろった: 候補ありなら遅れ表示つきで一度だけ送る（窓は無限）
-        dba.find_candidates = _with_candidates((-0.03, [p], 0, []))
+        dba.find_candidates = _with_candidates((-0.03, [p], 0, [], []))
         assert dba.judge(date(2026, 11, 9), n, False, late=True) == 0
         assert n.pushed == [("dip_buy_2026-11-09", math.inf)]
         dba.find_candidates = _with_candidates(AssertionError("送信済みの日を判定し直した"))
         assert dba.judge(date(2026, 11, 9), n, False, late=True) == 0
         # 警告した日が通知対象なしだった: 判定し直した結果を一度だけ知らせる
         n = _FakeNotify({"dip_buy_error_2026-11-06"})
-        dba.find_candidates = _with_candidates((-0.01, [], 0, []))
+        dba.find_candidates = _with_candidates((-0.01, [], 0, [], []))
         assert dba.judge(date(2026, 11, 6), n, False, late=True) == 0
         assert n.pushed == [("dip_buy_recovered_2026-11-06", math.inf)]
         assert dba.judge(date(2026, 11, 6), n, False, late=True) == 0 and len(n.pushed) == 1
@@ -427,7 +447,7 @@ def test_judge_quiet_after_midnight():
         # quiet でも判定できれば通常どおり送る
         n = _FakeNotify()
         p = {"code": "1000", "name": "テスト", "ret": -0.05, "beta": 1.2, "pbr": 0.8, "growth": 0.1}
-        dba.find_candidates = _with_candidates((-0.03, [p], 0, []))
+        dba.find_candidates = _with_candidates((-0.03, [p], 0, [], []))
         assert dba.judge(date(2026, 11, 11), n, False, quiet=True) == 0 and n.pushed[0][0] == "dip_buy_2026-11-11"
         dba.find_candidates = _with_candidates(dba.PricesMissing("日経平均の 2026-11-11 の終値が未取得です"))
         # 直前の平日以外（warn_late=False）は判定し直しでそろわなくても警告しない
@@ -435,7 +455,7 @@ def test_judge_quiet_after_midnight():
         assert dba.judge(date(2026, 11, 10), n, False, late=True, warn_late=False) == 1 and n.warned == []
         # 警告していない日がそろって通知対象なし: 何も送らない
         n = _FakeNotify()
-        dba.find_candidates = _with_candidates((-0.01, [], 0, []))
+        dba.find_candidates = _with_candidates((-0.01, [], 0, [], []))
         assert dba.judge(date(2026, 11, 11), n, False, late=True) == 0 and n.pushed == [] and n.warned == []
     finally:
         dba.find_candidates = orig

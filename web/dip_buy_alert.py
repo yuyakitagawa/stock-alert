@@ -10,6 +10,8 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
      予想は jquants_fin_summary → company_info の短信XBRL予想（tanshin_fc_*）→ 株探の会社予想（fc_*）の順
   6. 従業員数 1000人以上（Supabase company_info.employees。tools/fetch_employees.py が更新）
+  7. 半導体銘柄は除く（2026-11-21 オーナー指示）。有報「事業の内容」の主たる事業の文に半導体の語があるか、
+     SEMI_CODES に載っている銘柄。除いた銘柄は末尾に名前だけ並べる（is_semiconductor()）
   各銘柄には有報の「事業の内容」から作った一文を添える（lib/company_profile.py）
   会社予想が未取得で 5 を判定できない銘柄のうち、ほかの条件をすべて満たすものは
   「参考」としてβ順に上位5つまで末尾に出す（判定には入れない。2026-10-18 オーナー確定）。
@@ -31,6 +33,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 from datetime import date, datetime, timedelta, timezone
 
@@ -65,6 +68,23 @@ PRICED_RATIO = 0.9
 # 判定できなかった日を後の便で判定し直す範囲（判定日より前の平日の数）。日本時間0時を越えて始まった便は
 # 当日の日足が取れないが、翌日の便では前日分がそろう（11/6分は11/6の便で1,073銘柄、11/9の便で3,746銘柄）
 CATCHUP_WEEKDAYS = 5
+
+# 半導体銘柄の除外（2026-11-21 オーナー指示）。東証33業種に「半導体」は無いので、有報「事業の内容」の
+# 主たる事業の文（通知の└行と同じ文を200字まで）に次の語があれば半導体とみなす。兼業の大手（住友電工など）は
+# 主たる事業の文に出てこないので残る。
+SEMI_WORD = re.compile(r"半導体|ウエハ|ウェーハ|フォトマスク")
+SEMI_HEADLINE_CHARS = 200
+# 語では拾えない半導体の本業銘柄（事業の内容が未取得・主たる事業の文に語が出ない）
+SEMI_CODES = frozenset({
+    "8035", "6857", "6146", "7735", "6920", "6525", "3436", "6723", "6963", "6526", "4062",
+    "7729", "6871", "6315", "6254", "6266", "6323", "6590", "4186", "6967",
+    "6627",  # テラプローブ（半導体テスト）
+    "3445",  # RS Technologies（再生ウエハ）
+    "6966",  # 三井ハイテック（リードフレーム）
+    "6728",  # アルバック（半導体製造装置）
+    "6832",  # アオイ電子（半導体パッケージ）
+    "6961",  # エンプラス（半導体検査用ソケット）
+})
 
 JST = timezone(timedelta(hours=9))
 # 東証の大引け（2024-11-05から15:30）。これより前は当日の終値がまだ無い
@@ -262,6 +282,14 @@ def passes_fundamentals(close: float, fund: dict, k_fy: float) -> tuple[bool, fl
     return ok, pbr, growth
 
 
+def is_semiconductor(code: str, business: str) -> bool:
+    """半導体銘柄か。SEMI_CODES に載っているか、主たる事業の文に半導体の語がある。"""
+    from lib import company_profile
+    if code in SEMI_CODES:
+        return True
+    return bool(SEMI_WORD.search(company_profile.headline(business or "", SEMI_HEADLINE_CHARS)))
+
+
 def ref_note(p: dict) -> str:
     """参考表示の補足。前期の実績増益率と、前期の会社予想を上回ったか（どちらも成績は未検証）。"""
     out = []
@@ -273,7 +301,8 @@ def ref_note(p: dict) -> str:
 
 
 def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int = 0,
-                  refs: list[dict] | None = None, late: bool = False) -> str:
+                  refs: list[dict] | None = None, late: bool = False,
+                  semis: list[dict] | None = None) -> str:
     """1銘柄2行（銘柄名＋コード／数字）で全件並べる。
 
     LINEの1通は5,000文字（lib.notify は4,000で切る）。急落が深い日は候補が数百になり
@@ -292,9 +321,12 @@ def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int
             note = ref_note(p)
             tail += [f"・{p['name']} {p['code']}",
                      f"  {p['ret'] * 100:+.1f}% ｜ β{p['beta']:.2f} ｜ PBR{p['pbr']:.2f}" + (f" ｜ {note}" if note else "")]
+    if semis:
+        tail += ["", f"🔌 半導体のため除外（{len(semis)}銘柄・β順）",
+                 "・" + "、".join(f"{p['name']} {p['code']}" for p in semis)]
     if no_forecast:
         tail.append(f"※会社予想が未取得で増益を判定できず除外: {no_forecast}銘柄（PBR<1.5は満たす）")
-    tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上",
+    tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上×半導体以外",
              "検証は当日終値買い・63日保有。引け後の通知なので約定は翌日以降"
              + ("（今回は通知が1日以上遅れている）" if late else "")]
 
@@ -382,7 +414,7 @@ def prev_count_priced(asof: date, max_back: int = 7) -> int | None:
     return None
 
 
-def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict]]:
+def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict], list[dict]]:
     from lib import price_store
     from lib.utils import get_market_index_df_cached
 
@@ -397,11 +429,11 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         if reason:
             raise PricesMissing(reason)
         print(f"[dip] {asof} は休場日（日経平均・個別株とも終値なし）")
-        return None, [], 0, []
+        return None, [], 0, [], []
     nk_ret = daily_return(nk["Close"].values)
     print(f"[dip] 日経平均 {asof}: {nk_ret * 100:+.2f}%")
     if nk_ret is None or nk_ret > NIKKEI_DROP:
-        return nk_ret, [], 0, []
+        return nk_ret, [], 0, [], []
 
     nk_r = nk["Close"].pct_change()
     stage = []
@@ -465,23 +497,28 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
     emp_map = employees.get([s["code"] for s in stage2 + nofc])  # company_info.employees、無い銘柄だけYahooで補う
     emps = [emp_map.get(s["code"]) for s in stage2]
     names = _load_names()
-    profiles = company_profile.load([s["code"] for s in stage2])  # 有報の「事業の内容」（company_info.business）
-    picks = []
+    profiles = company_profile.load([s["code"] for s in stage2 + nofc])  # 有報の「事業の内容」（company_info.business）
+    semi = lambda c: is_semiconductor(c, (profiles.get(c) or {}).get("business") or "")
+    picks, semis = [], []
     for s, e in zip(stage2, emps):
         if e is not None and e >= MIN_EMPLOYEES:
             prof = profiles.get(s["code"]) or {}
+            if semi(s["code"]):
+                semis.append({"code": s["code"], "beta": s["beta"], "name": names.get(s["code"], "")})
+                continue
             picks.append({k: s[k] for k in ("code", "ret", "beta", "pbr", "growth", "stale")}
                          | {"name": names.get(s["code"], ""), "employees": e,
                             "business": company_profile.headline(prof.get("business") or "")})
     unknown = sum(e is None for e in emps)
-    print(f"[dip] 従業員1000人以上: {len(picks)}（従業員数を取得できず除外: {unknown}）")
+    print(f"[dip] 従業員1000人以上・半導体以外: {len(picks)}（従業員数を取得できず除外: {unknown} / 半導体で除外: {len(semis)}）")
+    semis.sort(key=lambda p: p["beta"], reverse=True)
     picks.sort(key=lambda p: p["beta"], reverse=True)
     refs = sorted(({k: s[k] for k in ("code", "ret", "beta", "pbr", "np", "np_prev", "fnp_ly")}
                    | {"name": names.get(s["code"], "")}
-                   for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES),
+                   for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES and not semi(s["code"])),
                   key=lambda p: p["beta"], reverse=True)
     print(f"[dip] 参考（予想未取得・他の条件クリア）: {len(refs)}")
-    return nk_ret, picks, no_forecast, refs
+    return nk_ret, picks, no_forecast, refs, semis
 
 
 def main() -> int:
@@ -522,7 +559,7 @@ def judge(asof: date, notify, dry_run: bool, late: bool = False, quiet: bool = F
                  or notify.was_sent(f"dip_buy_recovered_{asof.isoformat()}")):
         return 0
     try:
-        nk_ret, picks, no_forecast, refs = find_candidates(asof)
+        nk_ret, picks, no_forecast, refs, semis = find_candidates(asof)
     except Exception as e:
         print(f"[dip] ⚠ {asof} を判定できませんでした: {e}")
         if quiet and isinstance(e, PricesMissing):
@@ -545,7 +582,7 @@ def judge(asof: date, notify, dry_run: bool, late: bool = False, quiet: bool = F
                              window_hours=math.inf)
         return 0
     # 候補0でも「予想が無くて判定できなかった」銘柄があれば知らせる（データ欠落で黙らない）
-    text = build_message(asof, nk_ret, picks, no_forecast, refs, late=late)
+    text = build_message(asof, nk_ret, picks, no_forecast, refs, late=late, semis=semis)
     print(text)
     if dry_run:
         return 0
