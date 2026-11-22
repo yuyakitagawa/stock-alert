@@ -505,9 +505,12 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
     unknown = sum(e is None for e in emps)
     print(f"[dip] 従業員1000人以上・バブル感なし: {len(picks)}（従業員数を取得できず除外: {unknown} / バブル感ありで除外: {n_bubble}）")
     picks.sort(key=lambda p: p["beta"], reverse=True)
+    ref_ok = [s for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES]
+    ref_nb = [s for s in ref_ok if no_bubble(s["closes"])]
+    n_bubble += len(ref_ok) - len(ref_nb)  # 参考枠で除いた分も「バブル感ありで除外」に数える
     refs = sorted(({k: s[k] for k in ("code", "ret", "beta", "pbr", "np", "np_prev", "fnp_ly")}
                    | {"name": names.get(s["code"], "")}
-                   for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES and no_bubble(s["closes"])),
+                   for s in ref_nb),
                   key=lambda p: p["beta"], reverse=True)
     print(f"[dip] 参考（予想未取得・他の条件クリア）: {len(refs)}")
     return nk_ret, picks, no_forecast, refs, n_bubble
