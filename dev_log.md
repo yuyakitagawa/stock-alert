@@ -3068,3 +3068,9 @@ proxy.ts の classifyVisitor() は「既知botのUAでなくブラウザのUA」
 - 直し: `supabase/create_daily_alert_cron.sql` を追加し、pg_cron `daily_alert_dispatch`（平日 09:30 UTC＝18:30 JST）から workflow_dispatch で起動。daily_alert.yml の schedule は削除（残すと深夜に2本目が走り API 課金が倍になるため）。watchdog は予備として残す。
 - 所要時間の実測: 51分（11/13 dispatch 便）・60分（11/10）・83分（11/11）→ 19:21〜19:53 JST 完了の見込み（推定）。
 - 前提: Vault `github_dispatch_token` が未登録の間は起動しない（dip_alert と共用）。
+
+## 2026-11-22 押し目買い通知に「バブル感なし」を追加
+- 条件: 判定日の前日までの400営業日で最高値が期間の始めの2倍以下、かつ250営業日前からの上昇が+30%以下。分割は前日比±40%以上の日を1倍とみなして消す（yahoo_price_cache は分割未調整）。履歴251日未満は判定せず残す。
+- 検証（2015-01〜2026-11、Yahoo調整済み終値・4,446銘柄、日経-2%×-4%の全件、63日後）: 平均 +10.8%→+13.4%、勝率 63.9%→72.3%、大勝率(≥15%) 36.4%→41.1%、大負け 12.7%→7.1%（n=35,973→18,892）。β上位5では平均 +12.4%→+13.1%・大勝 37.3%→37.4% だが勝率 69.5%→64.6%・大負け 7.5%→10.8%。詳細は docs/dip_buy_strategy.md。
+- 11/20 を dry-run: 196→40銘柄（バブル感ありで156除外）。
+- テスト: test_dip_buy_alert.py / test_dip_position_alert.py 42 passed。
