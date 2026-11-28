@@ -10,6 +10,8 @@ web/dip_buy_alert.py — 市場急落日の押し目買い候補をLINEへ通知
   5. 会社予想の純利益 > 前期実績の純利益（前期は黒字）
      予想は jquants_fin_summary → company_info の短信XBRL予想（tanshin_fc_*）→ 株探の会社予想（fc_*）の順
   6. 従業員数 1000人以上（Supabase company_info.employees。tools/fetch_employees.py が更新）
+  7. バブル感なし（2026-11-22 オーナー採用）: 前日までの400営業日で、最高値が期間の始めの2倍以下かつ
+     1年（250営業日）前からの上昇が+30%以下。除いた件数だけ末尾に出す（no_bubble()）
   各銘柄には有報の「事業の内容」から作った一文を添える（lib/company_profile.py）
   会社予想が未取得で 5 を判定できない銘柄のうち、ほかの条件をすべて満たすものは
   「参考」としてβ順に上位5つまで末尾に出す（判定には入れない。2026-10-18 オーナー確定）。
@@ -65,6 +67,13 @@ PRICED_RATIO = 0.9
 # 判定できなかった日を後の便で判定し直す範囲（判定日より前の平日の数）。日本時間0時を越えて始まった便は
 # 当日の日足が取れないが、翌日の便では前日分がそろう（11/6分は11/6の便で1,073銘柄、11/9の便で3,746銘柄）
 CATCHUP_WEEKDAYS = 5
+
+# バブル感なし（2026-11-22 オーナー採用）。検証は docs/dip_buy_strategy.md（2015-2026、日経-2%×-4%の全件で
+# 平均+10.8%→+13.4%・勝率63.9%→72.3%・大勝率36.4%→41.1%・大負け12.7%→7.1%）
+BUBBLE_DAYS = 400
+BUBBLE_MAX_PEAK = 1.0    # 期間の始めからの最高値の上昇率がこれを超えたら除く（2倍超）
+BUBBLE_MAX_1Y = 0.3      # 250営業日前からの上昇率がこれを超えたら除く
+BUBBLE_MIN_DAYS = 251    # これより履歴が短い銘柄（新規上場など）は判定せず残す
 
 JST = timezone(timedelta(hours=9))
 # 東証の大引け（2024-11-05から15:30）。これより前は当日の終値がまだ無い
@@ -164,6 +173,21 @@ def beta(stock_rets, index_rets, min_days: int = BETA_MIN_DAYS) -> float | None:
     if var <= 0:
         return None
     return float(((s - s.mean()) * (m - m.mean())).mean() / var)
+
+
+def no_bubble(closes) -> bool:
+    """判定日の前日までのチャートにバブル感が無いか。closes は判定日を含む終値（古い順・分割未調整）。
+
+    yahoo_price_cache は過去行を分割調整しないので、前日比±40%以上の日は1倍とみなして分割を消す
+    （β と同じ扱い）。履歴が BUBBLE_MIN_DAYS 未満なら判定できないので True（残す）。"""
+    cl = np.asarray(closes, dtype=float)[:-1]
+    if len(cl) < BUBBLE_MIN_DAYS:
+        return True
+    r = cl[1:] / cl[:-1]
+    r = np.where(np.abs(r - 1) < 0.4, r, 1.0)
+    p = np.concatenate([[1.0], np.cumprod(r)])
+    w = p[-(BUBBLE_DAYS + 1):]
+    return bool(w.max() / w[0] - 1 <= BUBBLE_MAX_PEAK and p[-1] / p[-251] - 1 <= BUBBLE_MAX_1Y)
 
 
 def split_factor(dates, closes, after, until) -> float:
@@ -273,7 +297,7 @@ def ref_note(p: dict) -> str:
 
 
 def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int = 0,
-                  refs: list[dict] | None = None, late: bool = False) -> str:
+                  refs: list[dict] | None = None, late: bool = False, bubble: int = 0) -> str:
     """1銘柄2行（銘柄名＋コード／数字）で全件並べる。
 
     LINEの1通は5,000文字（lib.notify は4,000で切る）。急落が深い日は候補が数百になり
@@ -292,9 +316,11 @@ def build_message(asof: date, nk_ret: float, picks: list[dict], no_forecast: int
             note = ref_note(p)
             tail += [f"・{p['name']} {p['code']}",
                      f"  {p['ret'] * 100:+.1f}% ｜ β{p['beta']:.2f} ｜ PBR{p['pbr']:.2f}" + (f" ｜ {note}" if note else "")]
+    if bubble:
+        tail.append(f"※バブル感ありで除外: {bubble}銘柄（400日の最高値が2倍超 or 1年で+30%超）")
     if no_forecast:
         tail.append(f"※会社予想が未取得で増益を判定できず除外: {no_forecast}銘柄（PBR<1.5は満たす）")
-    tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上",
+    tail += ["", "条件: 日経-2%以下×当日-4%以下×PBR<1.5×予想増益×従業員1000人以上×バブル感なし",
              "検証は当日終値買い・63日保有。引け後の通知なので約定は翌日以降"
              + ("（今回は通知が1日以上遅れている）" if late else "")]
 
@@ -382,7 +408,7 @@ def prev_count_priced(asof: date, max_back: int = 7) -> int | None:
     return None
 
 
-def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict]]:
+def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dict], int]:
     from lib import price_store
     from lib.utils import get_market_index_df_cached
 
@@ -397,17 +423,17 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
         if reason:
             raise PricesMissing(reason)
         print(f"[dip] {asof} は休場日（日経平均・個別株とも終値なし）")
-        return None, [], 0, []
+        return None, [], 0, [], 0
     nk_ret = daily_return(nk["Close"].values)
     print(f"[dip] 日経平均 {asof}: {nk_ret * 100:+.2f}%")
     if nk_ret is None or nk_ret > NIKKEI_DROP:
-        return nk_ret, [], 0, []
+        return nk_ret, [], 0, [], 0
 
     nk_r = nk["Close"].pct_change()
     stage = []
     n_today = 0
     for code in price_store.codes():
-        df = price_store.frame(code, end=asof.isoformat(), days=(date.today() - asof).days + 420)
+        df = price_store.frame(code, end=asof.isoformat(), days=(date.today() - asof).days + 620)
         if df is None or len(df) < 22 or df.index[-1] != asof:
             continue
         n_today += 1
@@ -466,22 +492,28 @@ def find_candidates(asof: date) -> tuple[float | None, list[dict], int, list[dic
     emps = [emp_map.get(s["code"]) for s in stage2]
     names = _load_names()
     profiles = company_profile.load([s["code"] for s in stage2])  # 有報の「事業の内容」（company_info.business）
-    picks = []
+    picks, n_bubble = [], 0
     for s, e in zip(stage2, emps):
         if e is not None and e >= MIN_EMPLOYEES:
+            if not no_bubble(s["closes"]):
+                n_bubble += 1
+                continue
             prof = profiles.get(s["code"]) or {}
             picks.append({k: s[k] for k in ("code", "ret", "beta", "pbr", "growth", "stale")}
                          | {"name": names.get(s["code"], ""), "employees": e,
                             "business": company_profile.headline(prof.get("business") or "")})
     unknown = sum(e is None for e in emps)
-    print(f"[dip] 従業員1000人以上: {len(picks)}（従業員数を取得できず除外: {unknown}）")
+    print(f"[dip] 従業員1000人以上・バブル感なし: {len(picks)}（従業員数を取得できず除外: {unknown} / バブル感ありで除外: {n_bubble}）")
     picks.sort(key=lambda p: p["beta"], reverse=True)
+    ref_ok = [s for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES]
+    ref_nb = [s for s in ref_ok if no_bubble(s["closes"])]
+    n_bubble += len(ref_ok) - len(ref_nb)  # 参考枠で除いた分も「バブル感ありで除外」に数える
     refs = sorted(({k: s[k] for k in ("code", "ret", "beta", "pbr", "np", "np_prev", "fnp_ly")}
                    | {"name": names.get(s["code"], "")}
-                   for s in nofc if (emp_map.get(s["code"]) or 0) >= MIN_EMPLOYEES),
+                   for s in ref_nb),
                   key=lambda p: p["beta"], reverse=True)
     print(f"[dip] 参考（予想未取得・他の条件クリア）: {len(refs)}")
-    return nk_ret, picks, no_forecast, refs
+    return nk_ret, picks, no_forecast, refs, n_bubble
 
 
 def main() -> int:
@@ -522,7 +554,7 @@ def judge(asof: date, notify, dry_run: bool, late: bool = False, quiet: bool = F
                  or notify.was_sent(f"dip_buy_recovered_{asof.isoformat()}")):
         return 0
     try:
-        nk_ret, picks, no_forecast, refs = find_candidates(asof)
+        nk_ret, picks, no_forecast, refs, n_bubble = find_candidates(asof)
     except Exception as e:
         print(f"[dip] ⚠ {asof} を判定できませんでした: {e}")
         if quiet and isinstance(e, PricesMissing):
@@ -545,7 +577,7 @@ def judge(asof: date, notify, dry_run: bool, late: bool = False, quiet: bool = F
                              window_hours=math.inf)
         return 0
     # 候補0でも「予想が無くて判定できなかった」銘柄があれば知らせる（データ欠落で黙らない）
-    text = build_message(asof, nk_ret, picks, no_forecast, refs, late=late)
+    text = build_message(asof, nk_ret, picks, no_forecast, refs, late=late, bubble=n_bubble)
     print(text)
     if dry_run:
         return 0

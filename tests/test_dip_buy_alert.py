@@ -209,6 +209,26 @@ def test_build_message_lists_refs_without_forecast_top5_by_given_order():
     assert text.index("📎 参考") < text.index("判定できず除外: 133銘柄") < text.index("条件:")
 
 
+def test_no_bubble_peak_and_one_year_rise():
+    from web.dip_buy_alert import no_bubble
+    flat = [1000.0] * 420 + [950.0]
+    assert no_bubble(flat)
+    ramp = lambda a, b, n: list(np.linspace(a, b, n))           # 1日±40%未満で上げる（一気に動くと分割とみなす）
+    doubled = [1000.0] * 100 + ramp(1000, 2100, 60) + [1000.0] * 260 + [950.0]   # 最高値が2倍超（今は戻っていても除く）
+    assert not no_bubble(doubled)
+    rise_1y = [1000.0] * 200 + ramp(1000, 1400, 20) + [1400.0] * 200 + [1350.0]  # 1年前から+40%
+    assert not no_bubble(rise_1y)
+    split = [1000.0] * 300 + [200.0] * 120 + [190.0]           # 1:5分割は上げ下げに数えない
+    assert no_bubble(split)
+    assert no_bubble([1000.0] * 100 + [5000.0] * 100 + [4000.0])  # 履歴が短い銘柄は判定せず残す
+
+
+def test_build_message_reports_bubble_count_before_conditions():
+    text = build_message(date(2026, 11, 20), -0.051, [], bubble=139)
+    assert "※バブル感ありで除外: 139銘柄" in text and text.index("バブル感あり") < text.index("条件:")
+    assert "バブル感ありで除外" not in build_message(date(2026, 11, 20), -0.051, [])
+
+
 def test_ref_note_handles_missing_and_losses():
     from web.dip_buy_alert import ref_note
     assert ref_note({"np": 13.0, "np_prev": 78.0, "fnp_ly": 110.0}) == "前期-83%・予想未達"
@@ -384,14 +404,14 @@ def test_judge_recovery_flow():
         # 後の便でもまだ欠けている: 警告を重ねない
         assert dba.judge(date(2026, 11, 9), n, False, late=True) == 1 and len(n.warned) == 1
         # そろった: 候補ありなら遅れ表示つきで一度だけ送る（窓は無限）
-        dba.find_candidates = _with_candidates((-0.03, [p], 0, []))
+        dba.find_candidates = _with_candidates((-0.03, [p], 0, [], 0))
         assert dba.judge(date(2026, 11, 9), n, False, late=True) == 0
         assert n.pushed == [("dip_buy_2026-11-09", math.inf)]
         dba.find_candidates = _with_candidates(AssertionError("送信済みの日を判定し直した"))
         assert dba.judge(date(2026, 11, 9), n, False, late=True) == 0
         # 警告した日が通知対象なしだった: 判定し直した結果を一度だけ知らせる
         n = _FakeNotify({"dip_buy_error_2026-11-06"})
-        dba.find_candidates = _with_candidates((-0.01, [], 0, []))
+        dba.find_candidates = _with_candidates((-0.01, [], 0, [], 0))
         assert dba.judge(date(2026, 11, 6), n, False, late=True) == 0
         assert n.pushed == [("dip_buy_recovered_2026-11-06", math.inf)]
         assert dba.judge(date(2026, 11, 6), n, False, late=True) == 0 and len(n.pushed) == 1
@@ -427,7 +447,7 @@ def test_judge_quiet_after_midnight():
         # quiet でも判定できれば通常どおり送る
         n = _FakeNotify()
         p = {"code": "1000", "name": "テスト", "ret": -0.05, "beta": 1.2, "pbr": 0.8, "growth": 0.1}
-        dba.find_candidates = _with_candidates((-0.03, [p], 0, []))
+        dba.find_candidates = _with_candidates((-0.03, [p], 0, [], 0))
         assert dba.judge(date(2026, 11, 11), n, False, quiet=True) == 0 and n.pushed[0][0] == "dip_buy_2026-11-11"
         dba.find_candidates = _with_candidates(dba.PricesMissing("日経平均の 2026-11-11 の終値が未取得です"))
         # 直前の平日以外（warn_late=False）は判定し直しでそろわなくても警告しない
@@ -435,7 +455,7 @@ def test_judge_quiet_after_midnight():
         assert dba.judge(date(2026, 11, 10), n, False, late=True, warn_late=False) == 1 and n.warned == []
         # 警告していない日がそろって通知対象なし: 何も送らない
         n = _FakeNotify()
-        dba.find_candidates = _with_candidates((-0.01, [], 0, []))
+        dba.find_candidates = _with_candidates((-0.01, [], 0, [], 0))
         assert dba.judge(date(2026, 11, 11), n, False, late=True) == 0 and n.pushed == [] and n.warned == []
     finally:
         dba.find_candidates = orig
